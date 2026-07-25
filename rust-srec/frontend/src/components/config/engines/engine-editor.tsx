@@ -12,7 +12,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -55,6 +54,12 @@ import { MesioForm } from './forms/mesio-form';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 interface EngineEditorProps {
   engine?: z.infer<typeof EngineConfigSchema>;
@@ -180,9 +185,9 @@ function EngineForm({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  <ConfigFieldLabel>
                     <Trans>Engine Name</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors"
@@ -190,7 +195,7 @@ function EngineForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       A unique and descriptive name for this configuration.
                     </Trans>
@@ -205,9 +210,9 @@ function EngineForm({
               name="engine_type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  <ConfigFieldLabel>
                     <Trans>Engine Type</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <Select
                     onValueChange={(value) => {
                       field.onChange(value);
@@ -231,11 +236,11 @@ function EngineForm({
                     value={field.value}
                   >
                     <FormControl>
-                      <SelectTrigger className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors">
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue placeholder={i18n._(msg`Select type`)} />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="FFMPEG">
                         <div className="flex items-center gap-2">
                           <Terminal className="w-4 h-4 text-emerald-500" />
@@ -256,7 +261,7 @@ function EngineForm({
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>The underlying tool used for downloading.</Trans>
                   </FormDescription>
                   <FormMessage />

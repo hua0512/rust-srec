@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ExtractorSelectionSchema } from './platform-configs';
 import { DagPipelineDefinitionSchema } from './pipeline';
 
 // --- System Schemas ---
@@ -21,6 +22,7 @@ export const GlobalConfigSchema = z.object({
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
+  default_extractor: ExtractorSelectionSchema.nullable().optional(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),
@@ -97,6 +99,7 @@ export const GlobalConfigFormSchema = z.object({
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
+  default_extractor: ExtractorSelectionSchema.nullable().optional(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),
@@ -134,6 +137,7 @@ export const GlobalConfigWriteSchema = z.object({
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
+  default_extractor: ExtractorSelectionSchema.nullable().optional(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),

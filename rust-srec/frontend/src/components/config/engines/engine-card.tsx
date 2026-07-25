@@ -1,23 +1,20 @@
-import { useEffect, useState } from 'react';
 import {
   Card,
   CardContent,
   CardFooter,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Settings2,
-  Trash2,
-  Cpu,
+  AlertCircle,
   CheckCircle2,
-  XCircle,
+  Cpu,
   Loader2,
   Plus,
-  AlertCircle,
-  PlayCircle,
+  Settings2,
+  Trash2,
+  XCircle,
 } from 'lucide-react';
 import { EngineConfigSchema } from '@/api/schemas';
 import { testEngine, deleteEngine } from '@/server/functions';
@@ -33,202 +30,157 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
 import { Link } from '@tanstack/react-router';
 
-interface EngineCardProps {
-  engine: z.infer<typeof EngineConfigSchema>;
+type Engine = z.infer<typeof EngineConfigSchema>;
+
+type EngineStatus = 'loading' | 'available' | 'unavailable' | 'error';
+
+const STATUS_STYLE: Record<EngineStatus, string> = {
+  loading: 'bg-muted text-muted-foreground border-border/50',
+  available:
+    'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+  unavailable:
+    'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
+  error:
+    'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+};
+
+function StatusIcon({ status }: { status: EngineStatus }) {
+  const className = 'h-3.5 w-3.5 shrink-0';
+  switch (status) {
+    case 'loading':
+      return <Loader2 className={cn(className, 'animate-spin')} />;
+    case 'available':
+      return <CheckCircle2 className={className} />;
+    case 'unavailable':
+      return <XCircle className={className} />;
+    case 'error':
+      return <AlertCircle className={className} />;
+  }
 }
 
-export function EngineCard({ engine }: EngineCardProps) {
+function StatusLabel({ status }: { status: EngineStatus }) {
+  switch (status) {
+    case 'loading':
+      return <Trans>Checking</Trans>;
+    case 'available':
+      return <Trans>Ready</Trans>;
+    case 'unavailable':
+      return <Trans>Not installed</Trans>;
+    case 'error':
+      return <Trans>Check failed</Trans>;
+  }
+}
+
+export function EngineCard({ engine }: { engine: Engine }) {
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<
-    'loading' | 'available' | 'unavailable' | 'error'
-  >('loading');
-  const [version, setVersion] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    const checkAvailability = async () => {
-      setStatus('loading');
-      try {
-        const result = await testEngine({ data: engine.id });
-        if (mounted) {
-          setStatus(result.available ? 'available' : 'unavailable');
-          setVersion(result.version ?? 'unknown');
-        }
-      } catch (error) {
-        if (mounted) {
-          setStatus('error');
-          console.error('Failed to checked engine availability:', error);
-        }
-      }
-    };
+  // Keyed on the config as well as the id, so editing an engine re-checks it. Going through
+  // react-query rather than a bare effect also dedupes the probe and keeps the result cached
+  // while navigating between config pages.
+  const { data, isPending, isError } = useQuery({
+    queryKey: ['engine-test', engine.id, engine.config],
+    queryFn: () => testEngine({ data: engine.id }),
+    retry: false,
+    staleTime: 60_000,
+  });
 
-    void checkAvailability();
-
-    return () => {
-      mounted = false;
-    };
-  }, [engine.id, engine.config]);
+  const status: EngineStatus = isPending
+    ? 'loading'
+    : isError
+      ? 'error'
+      : data?.available
+        ? 'available'
+        : 'unavailable';
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteEngine({ data: id }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['engines'] });
-      toast.success('Engine configuration deleted');
+      toast.success(i18n._(msg`Engine deleted`));
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete engine: ${error.message}`);
+      toast.error(error.message || i18n._(msg`Failed to delete engine`));
     },
   });
 
-  const getStatusColor = () => {
-    switch (status) {
-      case 'available':
-        return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-      case 'unavailable':
-        return 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20';
-      case 'error':
-        return 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20';
-      default:
-        return 'bg-muted text-muted-foreground border-border/50';
-    }
-  };
-
   return (
-    <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
-      {/* Status Line (Gradient like JobCard but colored by status) */}
-      <div
-        className={cn(
-          'absolute inset-x-0 top-0 h-0.5 transition-opacity duration-700',
-          status === 'available'
-            ? 'bg-gradient-to-r from-transparent via-emerald-500/60 to-transparent'
-            : status === 'unavailable'
-              ? 'bg-gradient-to-r from-transparent via-rose-500/60 to-transparent'
-              : status === 'error'
-                ? 'bg-gradient-to-r from-transparent via-amber-500/60 to-transparent'
-                : 'bg-gradient-to-r from-transparent via-muted-foreground/20 to-transparent',
-          'opacity-50 group-hover:opacity-100',
-        )}
-      />
-
-      {/* Hover Glow Effect */}
-      <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
-
-      <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
-        <div className="p-3 rounded-2xl bg-primary/10 text-primary ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3">
+    <Card className="flex h-full flex-col border-border/50 shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-start gap-3 space-y-0 pb-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Cpu className="h-5 w-5" />
-        </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
+        </span>
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <h3 className="truncate font-semibold leading-tight">
             {engine.name}
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {engine.engine_type}
-            </span>
-          </div>
+          </h3>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">
+            {engine.engine_type}
+          </p>
         </div>
+        {/* The single place status is stated; the body carries the version detail only. */}
         <Badge
           variant="outline"
-          className={cn(
-            'capitalize font-medium border px-2 py-0.5 h-auto text-[10px]',
-            getStatusColor(),
-          )}
+          className={cn('gap-1.5 whitespace-nowrap', STATUS_STYLE[status])}
         >
-          {status === 'loading' ? (
-            <Trans>Checking</Trans>
-          ) : status === 'available' ? (
-            <Trans>Ready</Trans>
-          ) : status === 'unavailable' ? (
-            <Trans>Down</Trans>
-          ) : (
-            <Trans>Error</Trans>
-          )}
+          <StatusIcon status={status} />
+          <StatusLabel status={status} />
         </Badge>
       </CardHeader>
 
-      <CardContent className="relative pb-4 flex-1 z-10 space-y-4">
-        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40 border border-border/50 backdrop-blur-sm group-hover:bg-muted/60 transition-colors">
-          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-            {status === 'loading' && (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            )}
-            {status === 'available' && (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            )}
-            {status === 'unavailable' && (
-              <XCircle className="w-3.5 h-3.5 text-rose-500" />
-            )}
-            {status === 'error' && (
-              <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-            )}
-            <Trans>System Status</Trans>
-          </span>
-          <span
-            className={cn(
-              'text-[10px] font-mono',
-              status === 'available'
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-muted-foreground',
-            )}
-          >
-            {status === 'loading'
-              ? '...'
-              : status === 'available'
-                ? 'ONLINE'
-                : status === 'unavailable'
-                  ? 'OFFLINE'
-                  : 'ERROR'}
-          </span>
-        </div>
-
-        {version && (
+      <CardContent className="flex-1">
+        {status === 'available' && data?.version ? (
           <div className="space-y-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold ml-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               <Trans>Version</Trans>
-            </span>
-            <div className="text-xs bg-background/50 p-2.5 rounded-md font-mono border border-border/50 text-foreground/80 break-all shadow-sm group-hover:border-primary/20 transition-colors">
-              {version}
-            </div>
+            </p>
+            <p className="break-all rounded-md border bg-muted/40 px-2.5 py-2 font-mono text-xs">
+              {data.version}
+            </p>
           </div>
-        )}
+        ) : status === 'unavailable' ? (
+          <p className="text-sm text-muted-foreground">
+            <Trans>This tool was not found on the server.</Trans>
+          </p>
+        ) : status === 'error' ? (
+          <p className="text-sm text-muted-foreground">
+            <Trans>Could not check whether this tool is installed.</Trans>
+          </p>
+        ) : null}
       </CardContent>
 
-      <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-end items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5 gap-2">
-        <Button
-          asChild
-          className="h-9 px-4 text-sm font-medium bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-primary-foreground shadow-sm hover:shadow-primary/25 hover:scale-[1.02] transition-all duration-300 border-0"
-        >
-          <Link to="/config/engines/$engineId" params={{ engineId: engine.id }}>
-            <Settings2 className="w-4 h-4 mr-2" />
-            <Trans>Configure</Trans>
-          </Link>
-        </Button>
-
+      <CardFooter className="mt-auto justify-end gap-2 border-t pt-4">
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-colors"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="h-4 w-4" />
+              <span className="sr-only">
+                <Trans>Delete engine</Trans>
+              </span>
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                <Trans>Delete Engine?</Trans>
+                <Trans>Delete this engine?</Trans>
               </AlertDialogTitle>
               <AlertDialogDescription>
                 <Trans>
-                  This will permanently remove the "{engine.name}"
-                  configuration. This action cannot be undone.
+                  "{engine.name}" will be removed. Streamers using it fall back
+                  to the default engine.
                 </Trans>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -238,13 +190,20 @@ export function EngineCard({ engine }: EngineCardProps) {
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => deleteMutation.mutate(engine.id)}
-                className="bg-rose-600 hover:bg-rose-700 text-white"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 <Trans>Delete</Trans>
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Button asChild>
+          <Link to="/config/engines/$engineId" params={{ engineId: engine.id }}>
+            <Settings2 className="mr-2 h-4 w-4" />
+            <Trans>Configure</Trans>
+          </Link>
+        </Button>
       </CardFooter>
     </Card>
   );
@@ -254,34 +213,19 @@ export function CreateEngineCard() {
   return (
     <Link
       to="/config/engines/create"
-      className="group relative flex flex-col h-full min-h-[250px]"
+      className="group flex h-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <Card className="relative h-full flex flex-col items-center justify-center border-dashed border-2 border-muted/60 hover:border-primary/40 bg-muted/5 hover:bg-muted/10 transition-all duration-500 cursor-pointer overflow-hidden hover:shadow-2xl hover:shadow-primary/5">
-        {/* Hover Glow */}
-        <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col items-center justify-center p-6 text-center space-y-4">
-          <div className="p-4 rounded-full bg-background/50 ring-1 ring-border/50 group-hover:bg-primary/10 group-hover:ring-primary/20 group-hover:scale-110 transition-all duration-500 shadow-sm">
-            <Plus className="w-8 h-8 text-muted-foreground/60 group-hover:text-primary transition-colors" />
-          </div>
-
-          <div className="space-y-1.5">
-            <h3 className="font-semibold text-lg group-hover:text-primary transition-colors duration-300">
-              <Trans>Add New Engine</Trans>
-            </h3>
-            <p className="text-sm text-muted-foreground/80 max-w-[200px] font-light">
-              <Trans>Configure a new download tool.</Trans>
-            </p>
-          </div>
-
-          <Button
-            size="sm"
-            variant="secondary"
-            className="mt-4 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 pointer-events-none bg-background/50 backdrop-blur-sm border-primary/10"
-          >
-            <PlayCircle className="w-4 h-4 mr-2" />
-            <Trans>Get Started</Trans>
-          </Button>
+      <Card className="flex h-full w-full flex-col items-center justify-center gap-3 border-2 border-dashed border-border/60 p-6 text-center shadow-none transition-colors group-hover:border-primary/40 group-hover:bg-muted/40">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted transition-colors group-hover:bg-primary/10">
+          <Plus className="h-6 w-6 text-muted-foreground transition-colors group-hover:text-primary" />
+        </span>
+        <div className="space-y-1">
+          <p className="font-semibold">
+            <Trans>Add an engine</Trans>
+          </p>
+          <p className="max-w-[220px] text-sm text-muted-foreground">
+            <Trans>Configure another download tool.</Trans>
+          </p>
         </div>
       </Card>
     </Link>

@@ -3,6 +3,11 @@ import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { ProxyConfigObjectSchema } from '@/api/schemas';
 import { Input } from '@/components/ui/input';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
+  CONFIG_SELECT_TRIGGER,
+} from './config-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
@@ -32,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { CONFIG_SELECT_CONTENT } from './config-field';
 
 // --- Inner Component (User's UI) ---
 type ProxyConfig = z.infer<typeof ProxyConfigObjectSchema>;
@@ -114,11 +120,11 @@ export function ProxyConfigSettings({
             <div className="space-y-0.5">
               <Label
                 htmlFor="proxy-enabled"
-                className="text-base font-medium cursor-pointer"
+                className="cursor-pointer text-sm font-semibold"
               >
                 <Trans>Enable Proxy</Trans>
               </Label>
-              <p className="text-xs text-muted-foreground">
+              <p className={CONFIG_DESCRIPTION}>
                 <Trans>Route traffic through an intermediate server</Trans>
               </p>
             </div>
@@ -132,12 +138,12 @@ export function ProxyConfigSettings({
 
         {parsedConfig.enabled && (
           <div className="space-y-4 animate-in fade-in slide-in-from-top-2 pt-2">
-            <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+            <div className="flex items-center justify-between rounded-xl border border-border/50 bg-background p-3">
               <div className="flex items-center gap-3">
                 <Monitor className="w-4 h-4 text-muted-foreground" />
                 <Label
                   htmlFor="system-proxy"
-                  className="text-sm font-medium cursor-pointer"
+                  className="cursor-pointer text-sm font-semibold"
                 >
                   <Trans>Use System Proxy</Trans>
                 </Label>
@@ -152,11 +158,11 @@ export function ProxyConfigSettings({
             </div>
 
             {!parsedConfig.use_system_proxy && (
-              <div className="grid gap-4 p-4 rounded-lg bg-background border">
+              <div className="grid gap-4 rounded-xl border border-border/50 bg-background p-4">
                 <div className="space-y-2">
                   <Label
                     htmlFor="proxy-url"
-                    className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"
+                    className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground"
                   >
                     <Globe className="w-3 h-3" />
                     <Trans>Proxy URL</Trans>
@@ -164,7 +170,7 @@ export function ProxyConfigSettings({
                   <Input
                     id="proxy-url"
                     placeholder="http://127.0.0.1:8080"
-                    className="font-mono"
+                    className={cn(CONFIG_INPUT, 'font-mono')}
                     value={parsedConfig.url || ''}
                     onChange={(e) => handleChange({ url: e.target.value })}
                   />
@@ -173,13 +179,14 @@ export function ProxyConfigSettings({
                   <div className="space-y-2">
                     <Label
                       htmlFor="proxy-username"
-                      className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"
+                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground"
                     >
                       <User className="w-3 h-3" />
                       <Trans>Username</Trans>
                     </Label>
                     <Input
                       id="proxy-username"
+                      className={CONFIG_INPUT}
                       placeholder={i18n._(msg`Optional`)}
                       value={parsedConfig.username || ''}
                       onChange={(e) =>
@@ -191,7 +198,7 @@ export function ProxyConfigSettings({
                   <div className="space-y-2">
                     <Label
                       htmlFor="proxy-password"
-                      className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"
+                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground"
                     >
                       <Lock className="w-3 h-3" />
                       <Trans>Password</Trans>
@@ -199,6 +206,7 @@ export function ProxyConfigSettings({
                     <Input
                       id="proxy-password"
                       type="password"
+                      className={CONFIG_INPUT}
                       placeholder={i18n._(msg`Optional`)}
                       value={parsedConfig.password || ''}
                       onChange={(e) =>
@@ -263,7 +271,7 @@ export function ProxySettingsCard({
                     <FormLabel className="text-sm font-semibold flex items-center gap-2">
                       <Trans>Proxy Strategy</Trans>
                     </FormLabel>
-                    <FormDescription className="text-xs">
+                    <FormDescription className={CONFIG_DESCRIPTION}>
                       <Trans>
                         Choose how this streamer handles proxy connections.
                       </Trans>
@@ -290,11 +298,13 @@ export function ProxySettingsCard({
                     }}
                   >
                     <FormControl>
-                      <SelectTrigger className="w-[180px] bg-background h-9 rounded-lg">
+                      <SelectTrigger
+                        className={cn(CONFIG_SELECT_TRIGGER, 'w-[180px]')}
+                      >
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="inherit">
                         <Trans>Global Default</Trans>
                       </SelectItem>

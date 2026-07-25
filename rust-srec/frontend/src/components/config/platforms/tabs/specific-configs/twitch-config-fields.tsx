@@ -4,11 +4,14 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
 import { Key } from 'lucide-react';
+import {
+  ConfigFieldLabel,
+  ConfigSectionHeading,
+} from '@/components/config/shared/config-field';
 
 interface TwitchConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -23,12 +26,9 @@ export function TwitchConfigFields({
     <div className="space-y-12">
       {/* Authentication Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Key className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Authentication</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Key} accent="indigo">
+          <Trans>Authentication</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <FormField
@@ -36,12 +36,9 @@ export function TwitchConfigFields({
             name={`${fieldName}.oauth_token`}
             render={({ field }) => (
               <FormItem className="space-y-4">
-                <div className="flex items-center gap-2 px-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>OAuth Token</Trans>
-                  </FormLabel>
-                </div>
+                <ConfigFieldLabel accent="indigo">
+                  <Trans>OAuth Token</Trans>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     type="password"

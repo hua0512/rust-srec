@@ -11,6 +11,50 @@ use crate::extractor::platforms::{
 use regex::Regex;
 use reqwest::Client;
 
+/// Which extractor resolves a stream URL.
+///
+/// [`Self::Auto`] dispatches on the URL regex registry and falls through to
+/// [`StreamlinkExtractor`] only when no built-in platform claims the URL.
+/// [`Self::Streamlink`] forces the CLI extractor even for a URL a built-in platform would
+/// otherwise handle, which is the escape hatch when a native extractor breaks upstream.
+///
+/// This is independent of the download engine: the extractor resolves the stream URL, the engine
+/// downloads it. Selecting the streamlink *engine* leaves extraction with the native extractor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtractorSelection {
+    #[default]
+    Auto,
+    Streamlink,
+}
+
+impl ExtractorSelection {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Streamlink => "streamlink",
+        }
+    }
+}
+
+impl std::str::FromStr for ExtractorSelection {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "streamlink" => Ok(Self::Streamlink),
+            _ => Err(format!("Unknown extractor: {s}")),
+        }
+    }
+}
+
+impl std::fmt::Display for ExtractorSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 static REDBOOK_PROFILE_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:https?://)?(?:www\.)?xiaohongshu\.com/user/profile/").unwrap()
 });
@@ -73,7 +117,16 @@ impl ExtractorFactory {
         url: &str,
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
+        selection: ExtractorSelection,
     ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
+        // Checked before the RedBook guard below: that guard steers users toward share links for
+        // the native RedBook extractor, which is moot once streamlink is doing the extraction.
+        if selection == ExtractorSelection::Streamlink {
+            return StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
+                .map(|e| Box::new(e) as Box<dyn PlatformExtractor>)
+                .or(Err(ExtractorError::UnsupportedExtractor));
+        }
+
         if REDBOOK_PROFILE_URL_REGEX.is_match(url) {
             return Err(ExtractorError::ValidationError(
                 "RedBook profile URLs are not supported; use xhslink.com/m share links".to_string(),
@@ -112,10 +165,64 @@ mod tests {
                 "https://www.xiaohongshu.com/user/profile/6260c44f0000000010006079",
                 None,
                 None,
+                ExtractorSelection::Auto,
             )
             .err()
             .expect("expected error");
 
         assert!(matches!(err, ExtractorError::ValidationError(_)));
+    }
+
+    /// A URL a built-in platform claims must still go to that platform under `Auto`.
+    #[test]
+    fn auto_prefers_the_builtin_platform() {
+        let factory = ExtractorFactory::new(default_client());
+        let extractor = factory
+            .create_extractor(
+                "https://www.twitch.tv/someone",
+                None,
+                None,
+                ExtractorSelection::Auto,
+            )
+            .expect("twitch is a built-in platform");
+
+        assert_eq!(extractor.get_extractor().platform_name, "Twitch");
+    }
+
+    /// Forcing streamlink bypasses the registry, which is the whole point of the setting: it is
+    /// the only recourse when a native extractor breaks upstream.
+    ///
+    /// Skipped when the `streamlink` CLI is absent, since `StreamlinkExtractor::new` probes for it.
+    #[test]
+    fn streamlink_selection_overrides_the_builtin_platform() {
+        if !StreamlinkExtractor::is_available() {
+            return;
+        }
+
+        let factory = ExtractorFactory::new(default_client());
+        let extractor = factory
+            .create_extractor(
+                "https://www.twitch.tv/someone",
+                None,
+                None,
+                ExtractorSelection::Streamlink,
+            )
+            .expect("streamlink is available");
+
+        assert_eq!(extractor.get_extractor().platform_name, "Streamlink");
+    }
+
+    #[test]
+    fn extractor_selection_round_trips_through_strings() {
+        assert_eq!(
+            "streamlink".parse::<ExtractorSelection>().unwrap(),
+            ExtractorSelection::Streamlink
+        );
+        assert_eq!(
+            "auto".parse::<ExtractorSelection>().unwrap(),
+            ExtractorSelection::Auto
+        );
+        assert_eq!(ExtractorSelection::default(), ExtractorSelection::Auto);
+        assert!("ffmpeg".parse::<ExtractorSelection>().is_err());
     }
 }

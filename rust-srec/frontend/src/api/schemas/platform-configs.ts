@@ -96,6 +96,19 @@ export const BigoConfigSchema = z
   })
   .strict();
 
+// Streamlink *extractor* configuration.
+//
+// Distinct from `StreamlinkConfigSchema` in `engine.ts`, which configures the streamlink download
+// engine. This one configures stream-URL resolution and is nested under a `streamlink` key in the
+// extras blob rather than sitting at the top level like the platform configs above.
+export const StreamlinkExtractorConfigSchema = z
+  .object({
+    binary_path: z.string().nullable().optional(),
+    quality: z.string().nullable().optional(),
+    extra_args: z.array(z.string()).nullable().optional(),
+  })
+  .strict();
+
 // Union of all platform configs
 export const AllPlatformConfigsSchema = z.union([
   HuyaConfigSchema,
@@ -109,3 +122,12 @@ export const AllPlatformConfigsSchema = z.union([
   BigoConfigSchema,
   z.record(z.string(), z.any()), // Fallback for other platforms
 ]);
+
+/**
+ * Extractor selection, mirroring `ExtractorSelection` on the backend.
+ *
+ * `auto` dispatches on the URL; `streamlink` forces the streamlink CLI even for a URL a built-in
+ * platform would otherwise handle. Independent of the download engine.
+ */
+export const ExtractorSelectionSchema = z.enum(['auto', 'streamlink']);
+export type ExtractorSelection = z.infer<typeof ExtractorSelectionSchema>;

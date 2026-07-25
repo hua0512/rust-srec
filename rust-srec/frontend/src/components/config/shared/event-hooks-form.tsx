@@ -1,11 +1,6 @@
 import { memo, useEffect, useState } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormItem,
-  FormLabel,
-} from '@/components/ui/form';
+import { FormControl, FormDescription, FormItem } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Card,
@@ -16,6 +11,7 @@ import {
 } from '@/components/ui/card';
 import { Webhook } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { CONFIG_DESCRIPTION, ConfigFieldLabel } from './config-field';
 
 interface EventHooks {
   on_online?: string;
@@ -94,8 +90,8 @@ export const EventHooksForm = memo(
       placeholder: string,
       description: React.ReactNode,
     ) => (
-      <FormItem>
-        <FormLabel>{label}</FormLabel>
+      <FormItem className="space-y-2">
+        <ConfigFieldLabel>{label}</ConfigFieldLabel>
         <FormControl>
           <Input
             placeholder={placeholder}
@@ -104,7 +100,9 @@ export const EventHooksForm = memo(
             className="font-mono text-sm"
           />
         </FormControl>
-        <FormDescription>{description}</FormDescription>
+        <FormDescription className={CONFIG_DESCRIPTION}>
+          {description}
+        </FormDescription>
       </FormItem>
     );
 

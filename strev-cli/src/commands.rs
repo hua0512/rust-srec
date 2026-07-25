@@ -9,7 +9,9 @@ use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use platforms_parser::{
     extractor::{
-        ProxyConfig, factory::ExtractorFactory, factory_with_proxy,
+        ProxyConfig,
+        factory::{ExtractorFactory, ExtractorSelection},
+        factory_with_proxy,
         platform_extractor::PlatformExtractor,
     },
     media::{MediaInfo, StreamInfo},
@@ -97,6 +99,7 @@ impl CommandExecutor {
             url,
             cookies.map(String::from),
             extras.and_then(|s| serde_json::from_str(s).ok()),
+            ExtractorSelection::default(),
         )?;
 
         extractor.get_url(&mut stream_info).await?;
@@ -246,7 +249,12 @@ impl CommandExecutor {
 
                 let result = timeout(timeout_duration, async {
                     let factory = factory_with_proxy(proxy_config);
-                    let extractor = factory.create_extractor(&url, None, None)?;
+                    let extractor = factory.create_extractor(
+                        &url,
+                        None,
+                        None,
+                        ExtractorSelection::default(),
+                    )?;
                     let mut media_info = extractor.extract().await?;
 
                     if media_info.streams.is_empty() {
@@ -408,6 +416,7 @@ impl CommandExecutor {
                     url,
                     cookies.map(String::from),
                     extras_json,
+                    ExtractorSelection::default(),
                 )?;
                 let media_info = extractor.extract().await?;
                 Ok::<_, CliError>((media_info, extractor))

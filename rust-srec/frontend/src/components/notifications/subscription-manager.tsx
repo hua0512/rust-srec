@@ -421,7 +421,7 @@ export function SubscriptionManager({
                               variant="outline"
                               className={`text-[10px] h-5 transition-colors ${isSelected ? 'bg-primary/10 border-primary/20 text-primary' : 'text-muted-foreground'}`}
                             >
-                              {priorityLabel(type.priority)}
+                              {i18n._(priorityLabel(type.priority))}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground/80 leading-relaxed font-mono">

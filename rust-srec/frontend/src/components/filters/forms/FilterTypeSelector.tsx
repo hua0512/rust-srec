@@ -1,66 +1,16 @@
 import { useFormContext } from 'react-hook-form';
-import {
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Trans } from '@lingui/react/macro';
+import { FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { useLingui } from '@lingui/react';
-import { Clock, Tag, Calendar, Regex } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { msg } from '@lingui/core/macro';
+import { FILTER_TYPES } from '../filter-types';
 
-const FILTER_TYPES = [
-  {
-    value: 'KEYWORD',
-    label: msg`Keyword`,
-    icon: Tag,
-    description: msg`Filter by title keywords`,
-    color: 'text-emerald-500',
-    bg: 'bg-emerald-500/10',
-    border: 'peer-data-[state=checked]:border-emerald-500',
-  },
-  {
-    value: 'TIME_BASED',
-    label: msg`Time Based`,
-    icon: Clock,
-    description: msg`Schedule recording times`,
-    color: 'text-blue-500',
-    bg: 'bg-blue-500/10',
-    border: 'peer-data-[state=checked]:border-blue-500',
-  },
-  /*
-  {
-    value: 'CATEGORY',
-    label: t`Category`,
-    icon: Folder,
-    description: t`Filter by game/category`,
-    color: 'text-violet-500',
-    bg: 'bg-violet-500/10',
-    border: 'peer-data-[state=checked]:border-violet-500',
-  },
-  */
-  {
-    value: 'CRON',
-    label: msg`Cron`,
-    icon: Calendar,
-    description: msg`Advanced scheduling`,
-    color: 'text-orange-500',
-    bg: 'bg-orange-500/10',
-    border: 'peer-data-[state=checked]:border-orange-500',
-  },
-  {
-    value: 'REGEX',
-    label: msg`Regex`,
-    icon: Regex,
-    description: msg`Complex patterns`,
-    color: 'text-pink-500',
-    bg: 'bg-pink-500/10',
-    border: 'peer-data-[state=checked]:border-pink-500',
-  },
-];
-
+/**
+ * Filter type picker.
+ *
+ * Built from real `<button role="radio">` elements inside a `radiogroup` rather than clickable
+ * `<div>`s, so the options are reachable by keyboard and announced as a single choice.
+ */
 export function FilterTypeSelector() {
   const { i18n } = useLingui();
   const { control } = useFormContext();
@@ -71,44 +21,52 @@ export function FilterTypeSelector() {
       name="filter_type"
       render={({ field }) => (
         <FormItem className="space-y-3">
-          <FormLabel className="text-base font-semibold">
-            <Trans>Filter Type</Trans>
-          </FormLabel>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div
+            role="radiogroup"
+            aria-label={i18n._({ id: 'Filter Type', message: 'Filter Type' })}
+            className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+          >
             {FILTER_TYPES.map((type) => {
               const Icon = type.icon;
               const isSelected = field.value === type.value;
               return (
-                <div
+                <button
                   key={type.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
                   onClick={() => field.onChange(type.value)}
                   className={cn(
-                    'cursor-pointer rounded-xl border-2 p-4 transition-all hover:bg-muted/50 relative',
+                    'group relative flex items-start gap-3 rounded-xl border p-3 text-left transition-all',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     isSelected
-                      ? `border-primary bg-primary/5 shadow-md ${type.border.replace('peer-data-[state=checked]:', '')}`
-                      : 'border-muted bg-card',
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border/60 hover:border-border hover:bg-muted/40',
                   )}
                 >
-                  <div
+                  <span
                     className={cn(
-                      'mb-2 w-8 h-8 rounded-lg flex items-center justify-center',
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
                       type.bg,
                     )}
                   >
-                    <Icon className={cn('w-5 h-5', type.color)} />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="font-semibold text-sm leading-none">
+                    <Icon className={cn('h-4.5 w-4.5', type.color)} />
+                  </span>
+                  <span className="min-w-0 flex-1 space-y-0.5">
+                    <span className="block text-sm font-semibold leading-tight">
                       {i18n._(type.label)}
-                    </div>
-                    <div className="text-xs text-muted-foreground line-clamp-1">
+                    </span>
+                    <span className="block text-xs leading-snug text-muted-foreground">
                       {i18n._(type.description)}
-                    </div>
-                  </div>
+                    </span>
+                  </span>
                   {isSelected && (
-                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
+                    <Check
+                      className="h-4 w-4 shrink-0 text-primary"
+                      aria-hidden
+                    />
                   )}
-                </div>
+                </button>
               );
             })}
           </div>

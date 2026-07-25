@@ -5,13 +5,14 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { FlagFormField } from '@/components/ui/flag-form-field';
 import { FolderOutput } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { ConfigFieldLabel } from '@/components/config/shared/config-field';
+import { CONFIG_INPUT } from '@/components/config/shared/config-field';
 
 export const FileConfigCard = memo(() => {
   return (
@@ -48,12 +49,16 @@ export const FileConfigCard = memo(() => {
           <FormField
             name="output_folder"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Output Folder</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
-                  <Input placeholder="/path/to/downloads" {...field} />
+                  <Input
+                    className={CONFIG_INPUT}
+                    placeholder="/path/to/downloads"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -63,12 +68,13 @@ export const FileConfigCard = memo(() => {
           <FormField
             name="output_filename_template"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Filename Template</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
+                    className={CONFIG_INPUT}
                     placeholder="{streamer}-%Y%m%d-%H%M%S-{title}"
                     {...field}
                   />
@@ -88,12 +94,16 @@ export const FileConfigCard = memo(() => {
           <FormField
             name="output_file_format"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Format</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
-                  <Input placeholder="mp4" {...field} />
+                  <Input
+                    className={CONFIG_INPUT}
+                    placeholder="mp4"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

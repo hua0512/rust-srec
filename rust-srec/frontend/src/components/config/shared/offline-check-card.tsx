@@ -3,7 +3,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +14,11 @@ import { Input } from '@/components/ui/input';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { memo } from 'react';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
+  ConfigFieldLabel,
+} from './config-field';
 
 interface OfflineCheckCardProps {
   form: UseFormReturn<any>;
@@ -56,10 +60,10 @@ export const OfflineCheckCard = memo(
                 : 'offline_check_delay_ms'
             }
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Offline Check Interval</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <InputWithUnit
                     unitType="duration"
@@ -72,10 +76,10 @@ export const OfflineCheckCard = memo(
                       field.onChange(val !== null ? val * 1000 : null)
                     }
                     placeholder={i18n._(msg`Inherited`)}
-                    className="bg-background"
+                    className={CONFIG_INPUT}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>Interval between offline checks.</Trans>
                 </FormDescription>
                 <FormMessage />
@@ -90,10 +94,10 @@ export const OfflineCheckCard = memo(
                 : 'offline_check_count'
             }
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Offline Detection Count</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     type="number"
@@ -104,10 +108,10 @@ export const OfflineCheckCard = memo(
                       field.onChange(v === '' ? null : Number(v));
                     }}
                     placeholder={i18n._(msg`Inherited`)}
-                    className="bg-background"
+                    className={CONFIG_INPUT}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Consecutive failed checks needed to confirm offline.
                   </Trans>

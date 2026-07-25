@@ -2,7 +2,6 @@ import {
   FilterSchema,
   TimeBasedFilterConfigSchema,
   KeywordFilterConfigSchema,
-  // CategoryFilterConfigSchema,
   CronFilterConfigSchema,
   RegexFilterConfigSchema,
   type FilterType,
@@ -12,8 +11,12 @@ import { z } from 'zod';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { Edit, Trash2, Clock, Tag, Calendar, Regex } from 'lucide-react';
+import { AlertTriangle, Pencil, Trash2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { cn } from '@/lib/utils';
+import { filterTypeMeta } from './filter-types';
 
 type Filter = z.infer<typeof FilterSchema>;
 
@@ -23,213 +26,136 @@ interface FilterCardProps {
   onDelete: (filterId: string) => void;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  TIME_BASED: 'border-t-blue-500',
-  KEYWORD: 'border-t-emerald-500',
-  CATEGORY: 'border-t-violet-500',
-  CRON: 'border-t-orange-500',
-  REGEX: 'border-t-pink-500',
-};
-
-const TYPE_BG_COLORS: Record<string, string> = {
-  TIME_BASED: 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
-  KEYWORD: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  CATEGORY: 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
-  CRON: 'bg-orange-500/10 text-orange-700 dark:text-orange-300',
-  REGEX: 'bg-pink-500/10 text-pink-700 dark:text-pink-300',
-};
+/**
+ * Day initials for the time-window summary.
+ *
+ * Two pairs collide in English (Tuesday/Thursday, Saturday/Sunday), so each carries a `context`
+ * to keep them separate message ids and independently translatable.
+ */
+const DAY_INITIALS = [
+  { id: 'Monday', label: msg({ message: 'M', context: 'Monday initial' }) },
+  { id: 'Tuesday', label: msg({ message: 'T', context: 'Tuesday initial' }) },
+  {
+    id: 'Wednesday',
+    label: msg({ message: 'W', context: 'Wednesday initial' }),
+  },
+  { id: 'Thursday', label: msg({ message: 'T', context: 'Thursday initial' }) },
+  { id: 'Friday', label: msg({ message: 'F', context: 'Friday initial' }) },
+  { id: 'Saturday', label: msg({ message: 'S', context: 'Saturday initial' }) },
+  { id: 'Sunday', label: msg({ message: 'S', context: 'Sunday initial' }) },
+];
 
 export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
-  const borderColor = TYPE_COLORS[filter.filter_type] || 'border-t-gray-500';
-  const headerStyle = TYPE_BG_COLORS[filter.filter_type] || 'bg-gray-500/10';
+  const { i18n } = useLingui();
+  const meta = filterTypeMeta(filter.filter_type);
+  const Icon = meta?.icon;
 
   const renderConfig = () => {
     switch (filter.filter_type) {
       case 'TIME_BASED': {
-        const normalized = normalizeFilterConfigForType(
-          filter.filter_type as FilterType,
-          filter.config,
+        const config = TimeBasedFilterConfigSchema.safeParse(
+          normalizeFilterConfigForType(
+            filter.filter_type as FilterType,
+            filter.config,
+          ),
         );
-        const config = TimeBasedFilterConfigSchema.safeParse(normalized);
-        if (!config.success)
-          return (
-            <span className="text-destructive text-xs">Invalid Config</span>
-          );
+        if (!config.success) return <InvalidConfig />;
         const { days_of_week, start_time, end_time } = config.data;
-        const allDays = [
-          { id: 'Monday', label: 'M' },
-          { id: 'Tuesday', label: 'T' },
-          { id: 'Wednesday', label: 'W' },
-          { id: 'Thursday', label: 'T' },
-          { id: 'Friday', label: 'F' },
-          { id: 'Saturday', label: 'S' },
-          { id: 'Sunday', label: 'S' },
-        ];
 
         return (
           <div className="space-y-3">
             <div className="flex gap-1">
-              {allDays.map((d) => {
-                const isActive = days_of_week.includes(d.id as any);
+              {DAY_INITIALS.map((day) => {
+                const isActive = days_of_week.includes(day.id as any);
                 return (
-                  <div
-                    key={d.id}
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground opacity-50'}`}
+                  <span
+                    key={day.id}
+                    title={day.id}
+                    className={cn(
+                      'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground/60',
+                    )}
                   >
-                    {d.label}
-                  </div>
+                    {i18n._(day.label)}
+                  </span>
                 );
               })}
             </div>
-            <div className="flex items-center text-sm font-mono text-muted-foreground bg-muted/40 px-2 py-1 rounded-md border w-fit">
-              <Clock className="w-3.5 h-3.5 mr-2 text-primary" />
-              {start_time.slice(0, 5)} - {end_time.slice(0, 5)}
-            </div>
+            <p className="font-mono text-sm tabular-nums">
+              {start_time.slice(0, 5)}
+              <span className="px-1.5 text-muted-foreground">–</span>
+              {end_time.slice(0, 5)}
+            </p>
           </div>
         );
       }
+
       case 'KEYWORD': {
-        const normalized = normalizeFilterConfigForType(
-          filter.filter_type as FilterType,
-          filter.config,
+        const config = KeywordFilterConfigSchema.safeParse(
+          normalizeFilterConfigForType(
+            filter.filter_type as FilterType,
+            filter.config,
+          ),
         );
-        const config = KeywordFilterConfigSchema.safeParse(normalized);
-        if (!config.success)
+        if (!config.success) return <InvalidConfig />;
+        const { include, exclude } = config.data;
+
+        if (include.length === 0 && exclude.length === 0) {
           return (
-            <span className="text-destructive text-xs">Invalid Config</span>
+            <p className="text-sm text-muted-foreground">
+              <Trans>No keywords set</Trans>
+            </p>
           );
-        const include = config.data.include;
-        const exclude = config.data.exclude;
-        const hasAnyKeywords = include.length > 0 || exclude.length > 0;
+        }
 
         return (
           <div className="space-y-3">
-            <div className="flex gap-2 items-center flex-wrap">
-              {include.length > 0 && (
-                <Badge
-                  variant="default"
-                  className="text-[10px] px-2 h-5 shadow-none rounded-md"
-                >
-                  <Trans>Include</Trans>
-                </Badge>
-              )}
-              {exclude.length > 0 && (
-                <Badge
-                  variant="destructive"
-                  className="text-[10px] px-2 h-5 shadow-none rounded-md"
-                >
-                  <Trans>Exclude</Trans>
-                </Badge>
-              )}
-            </div>
-
-            {hasAnyKeywords ? (
-              <div className="flex gap-1.5 flex-wrap">
-                {include.map((k) => (
-                  <Badge
-                    key={`include:${k}`}
-                    variant="secondary"
-                    className="px-1.5 py-0 h-5 text-[11px] font-normal border bg-background hover:bg-muted transition-colors"
-                  >
-                    {k}
-                  </Badge>
-                ))}
-                {exclude.map((k) => (
-                  <Badge
-                    key={`exclude:${k}`}
-                    variant="destructive"
-                    className="px-1.5 py-0 h-5 text-[11px] font-normal shadow-none"
-                  >
-                    {k}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground italic pl-1 flex items-center gap-1 opacity-70">
-                <Tag className="w-3 h-3" /> <Trans>No keywords set</Trans>
-              </div>
+            {include.length > 0 && (
+              <KeywordGroup
+                title={<Trans>Include</Trans>}
+                words={include}
+                tone="include"
+              />
+            )}
+            {exclude.length > 0 && (
+              <KeywordGroup
+                title={<Trans>Exclude</Trans>}
+                words={exclude}
+                tone="exclude"
+              />
             )}
           </div>
         );
       }
-      /*
-      case 'CATEGORY': {
-        const config = CategoryFilterConfigSchema.safeParse(filter.config);
-        if (!config.success)
-          return (
-            <span className="text-destructive text-xs">Invalid Config</span>
-          );
-        const hasCategories = config.data.categories.length > 0;
 
-        return (
-          <div className="space-y-3">
-            <div className="flex gap-2 items-center">
-              <Badge
-                variant={config.data.exclude ? 'destructive' : 'default'}
-                className="text-[10px] px-2 h-5 shadow-none rounded-md"
-              >
-                {config.data.exclude ? (
-                  <Trans>Exclude</Trans>
-                ) : (
-                  <Trans>Include</Trans>
-                )}
-              </Badge>
-            </div>
-            {hasCategories ? (
-              <div className="flex gap-1.5 flex-wrap">
-                {config.data.categories.map((c) => (
-                  <Badge
-                    key={c}
-                    variant="secondary"
-                    className="px-1.5 py-0 h-5 text-[11px] font-normal border-transparent bg-violet-100 text-violet-800 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300"
-                  >
-                    {c}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground italic pl-1 flex items-center gap-1 opacity-70">
-                <Folder className="w-3 h-3" /> <Trans>No categories set</Trans>
-              </div>
-            )}
-          </div>
-        );
-      }
-      */
       case 'CRON': {
         const config = CronFilterConfigSchema.safeParse(filter.config);
-        if (!config.success)
-          return (
-            <span className="text-destructive text-xs">Invalid Config</span>
-          );
+        if (!config.success) return <InvalidConfig />;
         return (
           <div className="space-y-2">
-            <div className="bg-muted/50 p-2 rounded-lg border flex items-center justify-between group-hover:border-primary/20 transition-colors">
-              <code className="text-sm font-bold text-primary font-mono tracking-tight">
-                {config.data.expression}
-              </code>
-            </div>
+            <code className="block rounded-lg border bg-muted/50 px-3 py-2 font-mono text-sm">
+              {config.data.expression}
+            </code>
             {config.data.timezone && (
-              <div className="flex items-center text-[10px] text-muted-foreground px-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+              <p className="text-xs text-muted-foreground">
                 {config.data.timezone}
-              </div>
+              </p>
             )}
           </div>
         );
       }
+
       case 'REGEX': {
         const config = RegexFilterConfigSchema.safeParse(filter.config);
-        if (!config.success)
-          return (
-            <span className="text-destructive text-xs">Invalid Config</span>
-          );
+        if (!config.success) return <InvalidConfig />;
         return (
           <div className="space-y-3">
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge
-                variant={config.data.exclude ? 'destructive' : 'default'}
-                className="text-[10px] px-2 h-5 shadow-none rounded-md"
+                variant={config.data.exclude ? 'destructive' : 'secondary'}
+                className="h-5 rounded-md px-2 text-[10px]"
               >
                 {config.data.exclude ? (
                   <Trans>Exclude</Trans>
@@ -240,86 +166,120 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
               {config.data.case_insensitive && (
                 <Badge
                   variant="outline"
-                  className="text-[10px] px-2 h-5 bg-background text-muted-foreground"
+                  className="h-5 rounded-md px-2 text-[10px] font-normal text-muted-foreground"
                 >
-                  <Trans>i</Trans>
+                  <Trans>Ignore case</Trans>
                 </Badge>
               )}
             </div>
-            <div className="bg-slate-950 text-slate-50 px-3 py-2 rounded-lg border shadow-sm font-mono text-[11px] break-all leading-relaxed">
+            <code className="block rounded-lg border bg-muted/50 px-3 py-2 font-mono text-xs leading-relaxed break-all">
               {config.data.pattern || (
-                <span className="opacity-50 italic">Empty pattern</span>
+                <span className="text-muted-foreground italic">
+                  <Trans>Empty pattern</Trans>
+                </span>
               )}
-            </div>
+            </code>
           </div>
         );
       }
+
       default:
         return (
-          <span className="text-muted-foreground">Unknown Filter Type</span>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Unknown filter type</Trans>
+          </p>
         );
-    }
-  };
-
-  const FilterIcon = () => {
-    switch (filter.filter_type) {
-      case 'TIME_BASED':
-        return <Clock className="w-3.5 h-3.5" />;
-      case 'KEYWORD':
-        return <Tag className="w-3.5 h-3.5" />;
-      /*
-      case 'CATEGORY':
-        return <Folder className="w-3.5 h-3.5" />;
-      */
-      case 'CRON':
-        return <Calendar className="w-3.5 h-3.5" />;
-      case 'REGEX':
-        return <Regex className="w-3.5 h-3.5" />;
-      default:
-        return <Tag className="w-3.5 h-3.5" />;
     }
   };
 
   return (
-    <Card
-      className={`group relative overflow-hidden border-t-4 transition-all hover:shadow-lg hover:-translate-y-1 ${borderColor}`}
-    >
-      <CardHeader className="pb-3 pt-4">
-        <div className="flex items-center justify-between">
-          <div
-            className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold ${headerStyle}`}
-          >
-            <FilterIcon />
-            {filter.filter_type.replace('_', ' ')}
+    <Card className="group flex h-full flex-col border-border/50 shadow-sm transition-all hover:shadow-md">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            {Icon && (
+              <span
+                className={cn('rounded-lg p-1.5', meta.bg, meta.color)}
+                aria-hidden
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+            )}
+            <span className="text-sm font-semibold">
+              {meta ? i18n._(meta.label) : filter.filter_type}
+            </span>
           </div>
 
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Kept at reduced opacity rather than hidden: hover-only actions are unreachable on
+              touch and undiscoverable with a keyboard. */}
+          <div className="flex gap-1 opacity-60 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <Button
+              type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-full hover:bg-muted"
+              className="h-7 w-7"
               onClick={() => onEdit(filter)}
             >
-              <Edit className="h-3.5 w-3.5" />
+              <Pencil className="h-3.5 w-3.5" />
               <span className="sr-only">
-                <Trans>Edit</Trans>
+                <Trans>Edit filter</Trans>
               </span>
             </Button>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               onClick={() => onDelete(filter.id)}
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span className="sr-only">
-                <Trans>Delete</Trans>
+                <Trans>Delete filter</Trans>
               </span>
             </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-2">{renderConfig()}</CardContent>
+      <CardContent className="flex-1">{renderConfig()}</CardContent>
     </Card>
+  );
+}
+
+/** Shown when a stored config no longer matches its type's schema. */
+function InvalidConfig() {
+  return (
+    <p className="flex items-center gap-1.5 text-sm text-destructive">
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+      <Trans>This filter's settings could not be read.</Trans>
+    </p>
+  );
+}
+
+function KeywordGroup({
+  title,
+  words,
+  tone,
+}: {
+  title: React.ReactNode;
+  words: string[];
+  tone: 'include' | 'exclude';
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {words.map((word) => (
+          <Badge
+            key={word}
+            variant={tone === 'exclude' ? 'destructive' : 'secondary'}
+            className="h-5 px-1.5 text-[11px] font-normal"
+          >
+            {word}
+          </Badge>
+        ))}
+      </div>
+    </div>
   );
 }

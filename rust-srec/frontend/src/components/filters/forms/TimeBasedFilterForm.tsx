@@ -8,6 +8,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
 import {
   Clock,
@@ -35,30 +37,69 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useMemo } from 'react';
 
+/**
+ * `id` is the wire value stored in `config.days_of_week` and must stay English; `label` and
+ * `full` are display only.
+ *
+ * The initials collide in pairs (Tuesday/Thursday, Saturday/Sunday), so each carries a `context`
+ * to keep them separate message ids, matching `DAY_INITIALS` in `FilterCard`.
+ */
 const DAYS = [
-  { id: 'Monday', label: 'M', full: 'Monday' },
-  { id: 'Tuesday', label: 'T', full: 'Tuesday' },
-  { id: 'Wednesday', label: 'W', full: 'Wednesday' },
-  { id: 'Thursday', label: 'T', full: 'Thursday' },
-  { id: 'Friday', label: 'F', full: 'Friday' },
-  { id: 'Saturday', label: 'S', full: 'Saturday' },
-  { id: 'Sunday', label: 'S', full: 'Sunday' },
+  {
+    id: 'Monday',
+    label: msg({ message: 'M', context: 'Monday initial' }),
+    full: msg`Monday`,
+  },
+  {
+    id: 'Tuesday',
+    label: msg({ message: 'T', context: 'Tuesday initial' }),
+    full: msg`Tuesday`,
+  },
+  {
+    id: 'Wednesday',
+    label: msg({ message: 'W', context: 'Wednesday initial' }),
+    full: msg`Wednesday`,
+  },
+  {
+    id: 'Thursday',
+    label: msg({ message: 'T', context: 'Thursday initial' }),
+    full: msg`Thursday`,
+  },
+  {
+    id: 'Friday',
+    label: msg({ message: 'F', context: 'Friday initial' }),
+    full: msg`Friday`,
+  },
+  {
+    id: 'Saturday',
+    label: msg({ message: 'S', context: 'Saturday initial' }),
+    full: msg`Saturday`,
+  },
+  {
+    id: 'Sunday',
+    label: msg({ message: 'S', context: 'Sunday initial' }),
+    full: msg`Sunday`,
+  },
 ];
 
 const TIME_PRESETS = [
-  { label: 'Full Day', start: '00:00:00', end: '23:59:59' },
-  { label: 'Prime Time', start: '19:00:00', end: '23:00:00' },
-  { label: 'Morning', start: '06:00:00', end: '12:00:00' },
-  { label: 'Night', start: '22:00:00', end: '06:00:00' },
+  { label: msg`Full Day`, start: '00:00:00', end: '23:59:59' },
+  { label: msg`Prime Time`, start: '19:00:00', end: '23:00:00' },
+  { label: msg`Morning`, start: '06:00:00', end: '12:00:00' },
+  { label: msg`Night`, start: '22:00:00', end: '06:00:00' },
 ];
 
 const DAY_PRESETS = [
-  { label: 'All', type: 'all' as const },
-  { label: 'Weekdays', type: 'work' as const },
-  { label: 'Weekends', type: 'weekend' as const },
+  {
+    label: msg({ message: 'All', context: 'day-of-week preset' }),
+    type: 'all' as const,
+  },
+  { label: msg`Weekdays`, type: 'work' as const },
+  { label: msg`Weekends`, type: 'weekend' as const },
 ];
 
 export function TimeBasedFilterForm() {
+  const { i18n } = useLingui();
   const { control, setValue } = useFormContext();
 
   const startTime = useWatch({ control, name: 'config.start_time' });
@@ -152,10 +193,10 @@ export function TimeBasedFilterForm() {
                 <DropdownMenuContent align="end" className="w-40">
                   {DAY_PRESETS.map((p) => (
                     <DropdownMenuItem
-                      key={p.label}
+                      key={p.type}
                       onClick={() => setPreset(field.onChange, p.type)}
                     >
-                      <Trans>{p.label}</Trans>
+                      {i18n._(p.label)}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -184,11 +225,11 @@ export function TimeBasedFilterForm() {
                             field.onChange(updated);
                           }}
                         >
-                          {day.label}
+                          {i18n._(day.label)}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
-                        <Trans>{day.full}</Trans>
+                        {i18n._(day.full)}
                       </TooltipContent>
                     </Tooltip>
                   );
@@ -227,13 +268,11 @@ export function TimeBasedFilterForm() {
             <DropdownMenuContent align="end" className="w-48">
               {TIME_PRESETS.map((p) => (
                 <DropdownMenuItem
-                  key={p.label}
+                  key={p.start}
                   onClick={() => setTimePreset(p.start, p.end)}
                   className="flex justify-between items-center"
                 >
-                  <span>
-                    <Trans>{p.label}</Trans>
-                  </span>
+                  <span>{i18n._(p.label)}</span>
                   <span className="text-[10px] text-muted-foreground font-mono">
                     {p.start.slice(0, 5)} - {p.end.slice(0, 5)}
                   </span>
@@ -337,7 +376,9 @@ export function TimeBasedFilterForm() {
             {duration && (
               <div className="mt-1 h-0 relative">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full bg-primary/10 text-[10px] font-black text-primary uppercase tracking-tight ring-1 ring-primary/20">
-                  {duration.hours}h {duration.minutes}m
+                  <Trans>
+                    {duration.hours}h {duration.minutes}m
+                  </Trans>
                 </div>
               </div>
             )}

@@ -7,6 +7,10 @@ import {
   PrioritySchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
+import {
+  AllPlatformConfigsSchema,
+  ExtractorSelectionSchema,
+} from './platform-configs';
 
 // --- Streamer Schemas ---
 export const StreamerStateSchema = z.enum([
@@ -130,10 +134,18 @@ export const StreamerSpecificConfigSchema = z.object({
     .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
     .nullable()
     .optional(),
-  engines_override: z
-    .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
+  // Which extractor resolves the stream URL. Independent of `download_engine`, which only
+  // decides how the resolved URL is downloaded.
+  extractor: z
+    .preprocess(
+      (v) => (v === '' ? null : v),
+      ExtractorSelectionSchema.nullable().optional(),
+    )
     .nullable()
     .optional(),
+  // Platform-specific extractor options for this streamer's own platform, merged over the
+  // platform row's. Shallow merge: a nested object replaces its counterpart wholesale.
+  platform_extras: AllPlatformConfigsSchema.nullable().optional(),
   // Per-streamer override for the offline-confirmation cadence.
   offline_check_count: z
     .preprocess(
@@ -171,7 +183,8 @@ export const StreamerSpecificConfigFormSchema = z.object({
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
-  engines_override: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
+  platform_extras: AllPlatformConfigsSchema.nullable().optional(),
   offline_check_count: z.number().int().min(1).nullable().optional(),
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
@@ -195,10 +208,10 @@ export const StreamerSchema = z.object({
   streamer_specific_config: StreamerSpecificConfigSchema.nullable().optional(),
 });
 
+// `platform_config_id` is absent by design: the backend derives it from `url`.
 export const CreateStreamerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   url: z.url('Invalid URL'),
-  platform_config_id: z.string().min(1, 'Platform configuration is required'),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean(),
@@ -250,7 +263,6 @@ export const BatchStreamerResponseSchema = z.object({
 export const StreamerFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   url: z.url('Invalid URL'),
-  platform_config_id: z.string().min(1, 'Platform configuration is required'),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean(),

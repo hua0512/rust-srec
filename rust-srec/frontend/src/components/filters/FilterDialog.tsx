@@ -6,7 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Filter as FilterIcon } from 'lucide-react';
+import { Filter as FilterIcon, Loader2, SlidersHorizontal } from 'lucide-react';
+import { ConfigSectionHeading } from '@/components/config/shared/config-field';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { type SubmitHandler, useForm } from 'react-hook-form';
@@ -177,6 +178,8 @@ export function FilterDialog({
     }
   };
 
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
   const renderSubForm = () => {
     switch (filterType) {
       case 'TIME_BASED':
@@ -198,39 +201,53 @@ export function FilterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl gap-0 p-0 overflow-hidden border-none shadow-2xl flex flex-col max-h-[85vh]">
-        <DialogHeader className="px-6 py-6 bg-muted/30 border-b flex-shrink-0">
+      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <FilterIcon className="w-5 h-5 text-primary" />
-            </div>
-            <div className="space-y-1 text-left">
-              <DialogTitle>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <FilterIcon className="h-5 w-5 text-primary" />
+            </span>
+            <div className="space-y-0.5 text-left">
+              <DialogTitle className="text-base">
                 {isEditing ? (
-                  <Trans>Edit Filter</Trans>
+                  <Trans>Edit filter</Trans>
                 ) : (
-                  <Trans>Add New Filter</Trans>
+                  <Trans>New recording filter</Trans>
                 )}
               </DialogTitle>
-              <DialogDescription>
-                <Trans>Configure recording rules for this streamer.</Trans>
+              <DialogDescription className="text-sm">
+                <Trans>Choose when this streamer should be recorded.</Trans>
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <Form {...form}>
             <form
               id="filter-form"
-              onSubmit={form.handleSubmit(onSubmit)}
+              // React propagates synthetic events up the React tree, not the DOM tree, so this
+              // submit would otherwise reach any form that renders this dialog — the streamer
+              // editor's form wraps its Filters tab, and would save and navigate away.
+              onSubmit={(e) => {
+                e.stopPropagation();
+                void form.handleSubmit(onSubmit)(e);
+              }}
               className="space-y-6 px-6 py-6"
             >
-              <FilterTypeSelector />
+              <section className="space-y-4">
+                <ConfigSectionHeading icon={FilterIcon}>
+                  <Trans>Filter Type</Trans>
+                </ConfigSectionHeading>
+                <FilterTypeSelector />
+              </section>
 
-              <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-5 transition-all">
+              <section className="space-y-4">
+                <ConfigSectionHeading icon={SlidersHorizontal}>
+                  <Trans>Settings</Trans>
+                </ConfigSectionHeading>
                 {renderSubForm()}
-              </div>
+              </section>
 
               {/* Hidden submit button to ensure Enter key submission works reliably within dialog */}
               <button type="submit" className="hidden" aria-hidden="true" />
@@ -238,7 +255,7 @@ export function FilterDialog({
           </Form>
         </div>
 
-        <DialogFooter className="px-6 py-4 bg-muted/30 border-t flex-shrink-0 gap-2">
+        <DialogFooter className="shrink-0 gap-2 border-t px-6 py-4">
           <Button
             type="button"
             variant="outline"
@@ -249,17 +266,18 @@ export function FilterDialog({
           <Button
             type="submit"
             form="filter-form"
-            disabled={createMutation.isPending || updateMutation.isPending}
-            className="min-w-[120px]"
+            disabled={isSaving}
+            className="min-w-32"
           >
-            {createMutation.isPending || updateMutation.isPending ? (
-              <span className="animate-pulse">
-                <Trans>Saving...</Trans>
-              </span>
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Trans>Saving</Trans>
+              </>
             ) : isEditing ? (
-              <Trans>Save Changes</Trans>
+              <Trans>Save changes</Trans>
             ) : (
-              <Trans>Create Filter</Trans>
+              <Trans>Create filter</Trans>
             )}
           </Button>
         </DialogFooter>

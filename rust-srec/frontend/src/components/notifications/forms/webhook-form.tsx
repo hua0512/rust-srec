@@ -2,7 +2,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
@@ -35,9 +34,18 @@ import { memo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { motion, AnimatePresence } from 'motion/react';
 import { IconInput } from '@/components/ui/icon-input';
-import { SwitchCard } from '@/components/ui/switch-card';
 import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
-import { priorityOptions } from '@/lib/priority';
+import {
+  ChannelEnabledField,
+  MinPriorityField,
+} from './channel-delivery-fields';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+  CONFIG_INPUT,
+} from '@/components/config/shared/config-field';
 
 export const WebhookForm = memo(function WebhookForm() {
   const { i18n } = useLingui();
@@ -66,12 +74,13 @@ export const WebhookForm = memo(function WebhookForm() {
             control={form.control}
             name="settings.url"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Webhook URL</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <IconInput
+                    className={CONFIG_INPUT}
                     icon={Globe}
                     placeholder={i18n._(msg`https://api.example.com/webhook`)}
                     {...field}
@@ -82,25 +91,22 @@ export const WebhookForm = memo(function WebhookForm() {
             )}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid items-start gap-4 md:grid-cols-2">
             <FormField
               control={form.control}
               name="settings.method"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
                     <Trans>Method</Trans>
-                  </FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
+                  </ConfigFieldLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="POST">POST</SelectItem>
                       <SelectItem value="PUT">PUT</SelectItem>
                     </SelectContent>
@@ -109,20 +115,8 @@ export const WebhookForm = memo(function WebhookForm() {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="settings.enabled"
-              render={({ field }) => (
-                <SwitchCard
-                  label={<Trans>Active</Trans>}
-                  description={<Trans>Enable or disable this webhook</Trans>}
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  className="h-full"
-                />
-              )}
-            />
           </div>
+          <ChannelEnabledField />
         </CardContent>
       </Card>
 
@@ -134,56 +128,26 @@ export const WebhookForm = memo(function WebhookForm() {
           iconClassName="text-orange-500"
           iconBgClassName="bg-orange-500/10"
         />
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="settings.min_priority"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  <Trans>Minimum Priority</Trans>
-                </FormLabel>
-                <Select
-                  onValueChange={(val) => field.onChange(Number(val))}
-                  defaultValue={String(field.value)}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {priorityOptions().map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        <Trans>{opt.label}</Trans>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormDescription className="text-xs">
-                  <Trans>Filter events below this priority</Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <CardContent className="grid items-start gap-4 md:grid-cols-2">
+          <MinPriorityField />
           <FormField
             control={form.control}
             name="settings.timeout_secs"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Timeout (seconds)</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
+                    className={CONFIG_INPUT}
                     type="number"
                     min={1}
                     {...field}
                     onChange={(e) => field.onChange(e.target.valueAsNumber)}
                   />
                 </FormControl>
-                <FormDescription className="text-xs">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>Request timeout duration</Trans>
                 </FormDescription>
                 <FormMessage />
@@ -206,10 +170,10 @@ export const WebhookForm = memo(function WebhookForm() {
             control={form.control}
             name="settings.auth.type"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Auth Type</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <Select
                   onValueChange={(value) => {
                     const form_ctx = form as any;
@@ -234,14 +198,14 @@ export const WebhookForm = memo(function WebhookForm() {
                       });
                     }
                   }}
-                  defaultValue={field.value}
+                  value={field.value}
                 >
                   <FormControl>
-                    <SelectTrigger>
+                    <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                       <SelectValue />
                     </SelectTrigger>
                   </FormControl>
-                  <SelectContent>
+                  <SelectContent className={CONFIG_SELECT_CONTENT}>
                     <SelectItem value="None">
                       <Trans>None</Trans>
                     </SelectItem>
@@ -274,12 +238,13 @@ export const WebhookForm = memo(function WebhookForm() {
                   control={form.control}
                   name="settings.auth.token"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
+                    <FormItem className="space-y-2">
+                      <ConfigFieldLabel>
                         <Trans>Token</Trans>
-                      </FormLabel>
+                      </ConfigFieldLabel>
                       <FormControl>
                         <IconInput
+                          className={CONFIG_INPUT}
                           icon={Key}
                           type="password"
                           placeholder={i18n._(msg`ey...`)}
@@ -306,12 +271,13 @@ export const WebhookForm = memo(function WebhookForm() {
                     control={form.control}
                     name="settings.auth.username"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel>
                           <Trans>Username</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <FormControl>
                           <IconInput
+                            className={CONFIG_INPUT}
                             icon={User}
                             placeholder={i18n._(msg`Username`)}
                             {...field}
@@ -325,12 +291,13 @@ export const WebhookForm = memo(function WebhookForm() {
                     control={form.control}
                     name="settings.auth.password"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel>
                           <Trans>Password</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <FormControl>
                           <IconInput
+                            className={CONFIG_INPUT}
                             icon={Lock}
                             type="password"
                             placeholder={i18n._(msg`Password`)}
@@ -358,12 +325,13 @@ export const WebhookForm = memo(function WebhookForm() {
                     control={form.control}
                     name="settings.auth.name"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel>
                           <Trans>Header Key</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <FormControl>
                           <IconInput
+                            className={CONFIG_INPUT}
                             icon={Type}
                             placeholder={i18n._(msg`X-Auth-Key`)}
                             {...field}
@@ -377,12 +345,13 @@ export const WebhookForm = memo(function WebhookForm() {
                     control={form.control}
                     name="settings.auth.value"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel>
                           <Trans>Header Value</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <FormControl>
                           <IconInput
+                            className={CONFIG_INPUT}
                             icon={Shield}
                             type="password"
                             placeholder={i18n._(msg`secret`)}
@@ -438,7 +407,11 @@ export const WebhookForm = memo(function WebhookForm() {
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input {...field} placeholder={i18n._(msg`Key`)} />
+                        <Input
+                          className={CONFIG_INPUT}
+                          {...field}
+                          placeholder={i18n._(msg`Key`)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -450,7 +423,11 @@ export const WebhookForm = memo(function WebhookForm() {
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input {...field} placeholder={i18n._(msg`Value`)} />
+                        <Input
+                          className={CONFIG_INPUT}
+                          {...field}
+                          placeholder={i18n._(msg`Value`)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
-use platforms_parser::extractor::factory::ExtractorFactory;
+use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace, warn};
 
@@ -198,6 +198,23 @@ impl FilterReason {
     }
 }
 
+/// Resolved configuration a liveness check needs beyond the streamer itself.
+///
+/// Grouped rather than passed as loose parameters because every field is read from the same
+/// `MergedConfig` and they are always supplied together.
+pub struct CheckContext<'a> {
+    /// Cookies for the extractor request.
+    pub cookies: Option<String>,
+    /// Stream preferences, merged into `platform_extras` before extraction.
+    pub selection_config: Option<&'a StreamSelectionConfig>,
+    /// Platform-specific extractor options, merged from all config layers.
+    pub platform_extras: Option<serde_json::Value>,
+    /// Proxy used for the extractor's HTTP client.
+    pub proxy_config: &'a ProxyConfig,
+    /// Which extractor resolves the stream URL.
+    pub extractor: ExtractorSelection,
+}
+
 /// Stream detector for checking live status.
 pub struct StreamDetector {
     request_timeout: std::time::Duration,
@@ -291,25 +308,33 @@ impl StreamDetector {
         selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
         let proxy_config = ProxyConfig::disabled();
-        self.check_status_with_cookies(streamer, None, selection_config, None, &proxy_config)
-            .await
+        self.check_status_with_cookies(
+            streamer,
+            CheckContext {
+                cookies: None,
+                selection_config,
+                platform_extras: None,
+                proxy_config: &proxy_config,
+                extractor: ExtractorSelection::default(),
+            },
+        )
+        .await
     }
 
-    /// Check the live status of a streamer with optional cookies, selection config, and platform extras.
-    ///
-    /// # Arguments
-    /// * `streamer` - The streamer to check
-    /// * `cookies` - Optional cookies to use for the request
-    /// * `selection_config` - Optional stream selection configuration
-    /// * `platform_extras` - Optional platform-specific extractor configuration (merged from all config layers)
+    /// Check the live status of a streamer using resolved configuration.
     pub async fn check_status_with_cookies(
         &self,
         streamer: &StreamerMetadata,
-        cookies: Option<String>,
-        selection_config: Option<&StreamSelectionConfig>,
-        platform_extras: Option<serde_json::Value>,
-        proxy_config: &ProxyConfig,
+        context: CheckContext<'_>,
     ) -> Result<LiveStatus> {
+        let CheckContext {
+            cookies,
+            selection_config,
+            platform_extras,
+            proxy_config,
+            extractor: selection,
+        } = context;
+
         trace!(
             streamer_name = %streamer.name,
             streamer_url = %streamer.url,
@@ -325,20 +350,24 @@ impl StreamDetector {
         let extractor_factory = ExtractorFactory::new(self.client_for_proxy_config(proxy_config));
 
         // Create platform extractor for this streamer's URL
-        let extractor =
-            match extractor_factory.create_extractor(&streamer.url, cookies, merged_extras) {
-                Ok(ext) => ext,
-                Err(ExtractorError::UnsupportedExtractor) => {
-                    warn!("Unsupported platform for URL: {}", streamer.url);
-                    return Ok(LiveStatus::UnsupportedPlatform);
-                }
-                Err(e) => {
-                    return Err(crate::Error::Monitor(format!(
-                        "Failed to create extractor: {}",
-                        e
-                    )));
-                }
-            };
+        let extractor = match extractor_factory.create_extractor(
+            &streamer.url,
+            cookies,
+            merged_extras,
+            selection,
+        ) {
+            Ok(ext) => ext,
+            Err(ExtractorError::UnsupportedExtractor) => {
+                warn!("Unsupported platform for URL: {}", streamer.url);
+                return Ok(LiveStatus::UnsupportedPlatform);
+            }
+            Err(e) => {
+                return Err(crate::Error::Monitor(format!(
+                    "Failed to create extractor: {}",
+                    e
+                )));
+            }
+        };
 
         // Extract media information
         let mut media_info = match extractor.extract().await {
@@ -586,25 +615,14 @@ impl StreamDetector {
     /// * `filters` - Filters to apply to the live status
     /// * `cookies` - Optional cookies to use for the request
     /// * `selection_config` - Optional stream selection configuration
-    /// * `platform_extras` - Optional platform-specific extractor configuration
+    /// * `context` - Resolved configuration for the check
     pub async fn check_status_with_filters(
         &self,
         streamer: &StreamerMetadata,
         filters: &[Filter],
-        cookies: Option<String>,
-        selection_config: Option<&StreamSelectionConfig>,
-        platform_extras: Option<serde_json::Value>,
-        proxy_config: &ProxyConfig,
+        context: CheckContext<'_>,
     ) -> Result<LiveStatus> {
-        let status = self
-            .check_status_with_cookies(
-                streamer,
-                cookies,
-                selection_config,
-                platform_extras,
-                proxy_config,
-            )
-            .await?;
+        let status = self.check_status_with_cookies(streamer, context).await?;
 
         // If offline, no need to filter
         if status.is_offline() {

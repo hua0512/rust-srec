@@ -25,7 +25,7 @@ const SwitchCard = React.forwardRef<HTMLDivElement, SwitchCardProps>(
       <FormItem
         ref={ref}
         className={cn(
-          'flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm',
+          'flex flex-row items-center justify-between gap-4 rounded-xl border border-border/50 bg-background/50 px-4 py-3 shadow-sm',
           className,
         )}
       >

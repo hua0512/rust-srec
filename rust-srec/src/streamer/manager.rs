@@ -50,6 +50,8 @@ pub struct StreamerUpdateParams {
     pub id: String,
     pub name: Option<String>,
     pub url: Option<String>,
+    /// Derived from `url` by the API layer, never supplied by clients.
+    pub platform_config_id: Option<String>,
     pub template_config_id: Option<Option<String>>,
     pub priority: Option<Priority>,
     pub state: Option<StreamerState>,
@@ -408,6 +410,7 @@ where
             id,
             name,
             url,
+            platform_config_id,
             template_config_id,
             priority,
             state,
@@ -434,6 +437,9 @@ where
                 self.url_index.insert(new_url_lower, id.clone());
             }
             metadata.url = new_url;
+        }
+        if let Some(new_platform) = platform_config_id {
+            metadata.platform_config_id = new_platform;
         }
         if let Some(new_template) = template_config_id {
             metadata.template_config_id = new_template;
@@ -1331,6 +1337,7 @@ mod tests {
                 id: "s1".to_string(),
                 name: Some("New Name".to_string()),
                 url: None,                // Don't change URL
+                platform_config_id: None, // Don't change platform
                 template_config_id: None, // Don't change template
                 priority: Some(Priority::High),
                 state: None, // Don't change state
@@ -1365,6 +1372,7 @@ mod tests {
                 id: "s1".to_string(),
                 name: None,
                 url: None,                      // Don't change URL
+                platform_config_id: None,       // Don't change platform
                 template_config_id: Some(None), // Set template to None
                 priority: None,
                 state: None,
@@ -1374,5 +1382,66 @@ mod tests {
             .unwrap();
 
         assert_eq!(updated.template_config_id, None);
+    }
+
+    /// The API layer re-derives `platform_config_id` from the URL and passes it here; moving a
+    /// streamer to another platform must land on the metadata that `config::resolver` reads.
+    #[tokio::test]
+    async fn test_partial_update_applies_platform_config_id() {
+        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model(
+            "s1",
+            "platform-douyin",
+        )]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: Some("https://live.bilibili.com/4063253".to_string()),
+                platform_config_id: Some("platform-bilibili".to_string()),
+                template_config_id: None,
+                priority: None,
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.platform_config_id, "platform-bilibili");
+        assert_eq!(
+            manager.get_streamer("s1").unwrap().platform_config_id,
+            "platform-bilibili"
+        );
+    }
+
+    /// Updates that carry no URL (batch priority/template changes) must leave the platform alone.
+    #[tokio::test]
+    async fn test_partial_update_leaves_platform_config_id_when_none() {
+        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model(
+            "s1",
+            "platform-douyin",
+        )]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: Some(Priority::High),
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.platform_config_id, "platform-douyin");
     }
 }

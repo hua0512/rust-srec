@@ -5,7 +5,7 @@ use axum::{
     extract::{FromRef, State},
     routing::post,
 };
-use platforms_parser::extractor::factory::ExtractorFactory;
+use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -60,6 +60,8 @@ pub fn router() -> Router<AppState> {
 struct ResolvedExtractorConfig {
     cookies: Option<String>,
     platform_extras: Option<serde_json::Value>,
+    /// Mirrors the recording path so a parse preview uses the same extractor a session would.
+    extractor: ExtractorSelection,
 }
 
 #[utoipa::path(
@@ -85,6 +87,7 @@ pub async fn parse_url(
         request.url,
         extractor_config.cookies,
         extractor_config.platform_extras,
+        extractor_config.extractor,
     )
     .await;
     Ok(Json(response))
@@ -116,6 +119,7 @@ pub async fn parse_url_batch(
                 request.url,
                 extractor_config.cookies,
                 extractor_config.platform_extras,
+                extractor_config.extractor,
             )
             .await,
         );
@@ -137,6 +141,7 @@ async fn resolve_extractor_config_for_url(
     let mut resolved = ResolvedExtractorConfig {
         cookies: explicit_cookies,
         platform_extras: None,
+        extractor: ExtractorSelection::default(),
     };
 
     let config_service = &state.config_service;
@@ -147,6 +152,7 @@ async fn resolve_extractor_config_for_url(
             Ok(context) => {
                 let config = &context.config;
                 resolved.platform_extras = config.platform_extras.clone();
+                resolved.extractor = config.extractor;
                 if !has_explicit_cookies {
                     resolved.cookies = config.cookies.clone();
                 }
@@ -340,6 +346,7 @@ pub async fn resolve_url(
         &request.url,
         extractor_config.cookies,
         extractor_config.platform_extras,
+        extractor_config.extractor,
     ) {
         Ok(ext) => ext,
         Err(e) => {
@@ -379,6 +386,7 @@ async fn process_parse_request(
     url: String,
     cookies: Option<String>,
     platform_extras: Option<serde_json::Value>,
+    extractor_selection: ExtractorSelection,
 ) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
@@ -393,8 +401,12 @@ async fn process_parse_request(
     debug!("Parsing URL: {}", url);
 
     // Create extractor for the URL
-    let extractor = match extractor_factory.create_extractor(&url, cookies.clone(), platform_extras)
-    {
+    let extractor = match extractor_factory.create_extractor(
+        &url,
+        cookies.clone(),
+        platform_extras,
+        extractor_selection,
+    ) {
         Ok(ext) => ext,
         Err(platforms_parser::extractor::error::ExtractorError::UnsupportedExtractor) => {
             warn!("Unsupported platform for URL: {}", url);

@@ -1,9 +1,4 @@
-import {
-  FormControl,
-  FormDescription,
-  FormItem,
-  FormLabel,
-} from '@/components/ui/form';
+import { FormControl, FormDescription, FormItem } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/ui/tag-input';
 import { Trans } from '@lingui/react/macro';
@@ -11,6 +6,11 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Filter, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CONFIG_INPUT } from '@/components/config/shared/config-field';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 export interface StreamSelectionConfig {
   preferred_qualities?: string[];
@@ -64,19 +64,19 @@ export function StreamSelectionInput({
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 gap-6">
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Preferred Qualities</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <TagInput
                   value={value.preferred_qualities || []}
                   onChange={(tags) => updateField('preferred_qualities', tags)}
                   placeholder={i18n._(msg`e.g. 1080p, source, 原画`)}
-                  className="bg-background"
+                  className={CONFIG_INPUT}
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Prioritize specific qualities (case-insensitive). Press Enter
                   to add.
@@ -84,57 +84,57 @@ export function StreamSelectionInput({
               </FormDescription>
             </FormItem>
 
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Preferred Formats</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <TagInput
                   value={value.preferred_formats || []}
                   onChange={(tags) => updateField('preferred_formats', tags)}
                   placeholder={i18n._(msg`e.g. flv, hls`)}
-                  className="bg-background"
+                  className={CONFIG_INPUT}
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Prioritize specific streaming protocols. Press Enter to add.
                 </Trans>
               </FormDescription>
             </FormItem>
 
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Preferred CDNs</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <TagInput
                   value={value.preferred_cdns || []}
                   onChange={(tags) => updateField('preferred_cdns', tags)}
                   placeholder={i18n._(msg`e.g. aliyun, akamaized`)}
-                  className="bg-background"
+                  className={CONFIG_INPUT}
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Prioritize specific CDN providers. Press Enter to add.
                 </Trans>
               </FormDescription>
             </FormItem>
 
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Blacklisted CDNs</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <TagInput
                   value={value.blacklisted_cdns || []}
                   onChange={(tags) => updateField('blacklisted_cdns', tags)}
                   placeholder={i18n._(msg`e.g. cdn-to-avoid`)}
-                  className="bg-background"
+                  className={CONFIG_INPUT}
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Exclude streams from these CDN providers entirely. Press Enter
                   to add.
@@ -157,10 +157,10 @@ export function StreamSelectionInput({
           </div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Min Bitrate (bps)</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 type="number"
@@ -173,18 +173,18 @@ export function StreamSelectionInput({
                   )
                 }
                 placeholder={i18n._(msg`No limit`)}
-                className="bg-background"
+                className={CONFIG_INPUT}
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Ignore streams below this bitrate.</Trans>
             </FormDescription>
           </FormItem>
 
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Max Bitrate (bps)</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 type="number"
@@ -197,10 +197,10 @@ export function StreamSelectionInput({
                   )
                 }
                 placeholder={i18n._(msg`No limit`)}
-                className="bg-background"
+                className={CONFIG_INPUT}
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Ignore streams above this bitrate.</Trans>
             </FormDescription>
           </FormItem>

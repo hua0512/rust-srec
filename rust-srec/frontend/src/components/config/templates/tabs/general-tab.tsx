@@ -3,7 +3,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 
@@ -14,6 +13,13 @@ import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { UpdateTemplateRequestSchema } from '@/api/schemas';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CONFIG_INPUT } from '@/components/config/shared/config-field';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 type EditTemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
@@ -22,6 +28,7 @@ interface GeneralTabProps {
 }
 
 export function GeneralTab({ form }: GeneralTabProps) {
+  const { i18n } = useLingui();
   return (
     <div className="grid gap-6">
       {/* Template Information */}
@@ -46,19 +53,19 @@ export function GeneralTab({ form }: GeneralTabProps) {
             control={form.control}
             name="name"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Template Name</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     {...field}
                     value={field.value ?? ''}
-                    placeholder="My Template"
-                    className="bg-background"
+                    placeholder={i18n._(msg`My Template`)}
+                    className={CONFIG_INPUT}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>A unique name for this configuration template.</Trans>
                 </FormDescription>
                 <FormMessage />

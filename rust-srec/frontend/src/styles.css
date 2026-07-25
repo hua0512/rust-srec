@@ -183,6 +183,17 @@ html {
   }
 }
 
+/* Hides the scrollbar on horizontally-scrolling rails (tab strips, filter bars) while keeping
+   them scrollable by wheel, touch and keyboard. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Animations */
 @keyframes blob {
   0% {

@@ -29,7 +29,7 @@ use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
 use super::batch_detector::{BatchDetector, BatchResult};
-use super::detector::{FilterReason, LiveStatus, StreamDetector};
+use super::detector::{CheckContext, FilterReason, LiveStatus, StreamDetector};
 use crate::domain::streamer::FatalErrorType;
 
 use super::events::{MonitorEvent, MonitorEventBroadcaster, MonitorEventDelivery};
@@ -602,10 +602,13 @@ impl<
                         .check_status_with_filters(
                             streamer,
                             &filters,
-                            cookies,
-                            Some(&config.stream_selection),
-                            config.platform_extras.clone(),
-                            &config.proxy_config,
+                            CheckContext {
+                                cookies,
+                                selection_config: Some(&config.stream_selection),
+                                platform_extras: config.platform_extras.clone(),
+                                proxy_config: &config.proxy_config,
+                                extractor: config.extractor,
+                            },
                         )
                         .await
                 };

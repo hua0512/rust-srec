@@ -23,21 +23,26 @@ msgstr " - 会话：{0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:174
+#: src/components/config/engines/forms/streamlink-form.tsx:177
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
-#: src/components/notifications/forms/telegram-form.tsx:62
+#: src/components/notifications/forms/telegram-form.tsx:69
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:182
+#: src/components/config/engines/forms/ffmpeg-form.tsx:185
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:152
+#: src/components/config/engines/forms/ffmpeg-form.tsx:155
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
+
+#. placeholder {0}: engine.name
+#: src/components/config/engines/engine-card.tsx:181
+msgid "\"{0}\" will be removed. Streamers using it fall back to the default engine."
+msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:193
 msgid "(Delete source)"
@@ -93,20 +98,6 @@ msgstr "{0, plural, other {# 个警告}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, other {个文件}}"
 
-#. placeholder {0}: day.full
-#. placeholder {0}: opt.label
-#. placeholder {0}: p.label
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:158
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:191
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:235
-#: src/components/notifications/forms/discord-form.tsx:113
-#: src/components/notifications/forms/email-form.tsx:190
-#: src/components/notifications/forms/gotify-form.tsx:92
-#: src/components/notifications/forms/telegram-form.tsx:116
-#: src/components/notifications/forms/webhook-form.tsx:158
-msgid "{0}"
-msgstr "{0}"
-
 #. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
 #. placeholder {1}: i18n.date(new Date(entry.checked_at), { timeStyle: 'short' })
 #: src/components/streamers/edit/status-check-history.tsx:161
@@ -114,7 +105,7 @@ msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:109
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
@@ -129,6 +120,12 @@ msgstr "成功添加 {0} 个流"
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} 步"
 
+#. placeholder {0}: duration.hours
+#. placeholder {1}: duration.minutes
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:379
+msgid "{0}h {1}m"
+msgstr "{0}小时{1}分"
+
 #: src/components/streamers/edit/status-check-history.tsx:475
 msgid "{hours}h"
 msgstr "{hours} 小时"
@@ -141,11 +138,7 @@ msgstr "{minutes} 分钟"
 msgid "{seconds}s"
 msgstr "{seconds} 秒"
 
-#: src/components/notifications/channel-form.tsx:339
-msgid "{val} channel support is coming soon!"
-msgstr "即将支持 {val} 渠道！"
-
-#: src/components/filters/forms/CronFilterForm.tsx:31
+#: src/components/filters/forms/CronFilterForm.tsx:35
 msgid "* * * * * *"
 msgstr "* * * * * *"
 
@@ -153,7 +146,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:48
+#: src/components/config/engines/forms/ffmpeg-form.tsx:51
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg 或 ffmpeg"
 
@@ -161,7 +154,7 @@ msgstr "/usr/bin/ffmpeg 或 ffmpeg"
 msgid "/usr/share/fonts"
 msgstr "/usr/share/fonts"
 
-#: src/components/filters/forms/RegexFilterForm.tsx:33
+#: src/components/filters/forms/RegexFilterForm.tsx:37
 msgid "^Started.*"
 msgstr "^Started.*"
 
@@ -177,11 +170,11 @@ msgstr "0（无）- 9（最佳）"
 msgid "0 = unlimited"
 msgstr "0 = 不限"
 
-#: src/components/config/global/resource-limits-card.tsx:60
+#: src/components/config/global/resource-limits-card.tsx:63
 msgid "0 = Unlimited"
 msgstr "0 = 不限"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1497
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1545
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
@@ -193,7 +186,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
-#: src/components/notifications/forms/telegram-form.tsx:42
+#: src/components/notifications/forms/telegram-form.tsx:49
 msgid "123456:ABC-DEF..."
 msgstr "123456:ABC-DEF..."
 
@@ -217,7 +210,7 @@ msgstr "44100"
 msgid "587"
 msgstr "587"
 
-#: src/components/config/engines/engine-editor.tsx:194
+#: src/components/config/engines/engine-editor.tsx:199
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
@@ -225,19 +218,19 @@ msgstr "为此配置提供一个唯一且易于识别的名称。"
 msgid "A unique ID used by other steps to reference this one."
 msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 
-#: src/components/config/templates/tabs/general-tab.tsx:62
+#: src/components/config/templates/tabs/general-tab.tsx:69
 msgid "A unique name for this configuration template."
 msgstr "为此配置模板提供一个唯一的名称。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:53
+#: src/components/config/engines/forms/ffmpeg-form.tsx:56
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:45
+#: src/components/config/engines/forms/streamlink-form.tsx:48
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:852
+#: src/components/config/engines/forms/mesio-hls-form.tsx:879
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
@@ -254,14 +247,12 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
-#: src/components/notifications/forms/webhook-form.tsx:117
-#: src/components/streamers/edit/streamer-meta-form.tsx:226
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:108
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:475
 msgid "Active"
 msgstr "启用"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:130
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:171
 msgid "Active Days"
 msgstr "生效日期"
 
@@ -273,11 +264,11 @@ msgstr "正在录制"
 msgid "Active Recordings"
 msgstr "正在录制"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:997
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1027
 msgid "Adaptive Refresh (Default: On)"
 msgstr "自适应刷新（默认：开）"
 
-#: src/components/notifications/forms/webhook-form.tsx:423
+#: src/components/notifications/forms/webhook-form.tsx:392
 msgid "Add"
 msgstr "添加"
 
@@ -289,7 +280,15 @@ msgstr "在上方添加模块以配置其日志级别"
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
+#: src/components/streamers/streamer-editor.tsx:207
+msgid "Add a streamer"
+msgstr "添加主播"
+
+#: src/components/config/engines/engine-card.tsx:224
+msgid "Add an engine"
+msgstr "添加引擎"
+
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "添加覆盖项以自定义特定平台的行为。"
 
@@ -325,7 +324,7 @@ msgstr "添加邮箱地址并按 Enter"
 msgid "Add Environment Variable"
 msgstr "添加环境变量"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:266
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:268
 msgid "Add exclude regex pattern"
 msgstr "添加排除正则模式"
 
@@ -333,7 +332,7 @@ msgstr "添加排除正则模式"
 msgid "Add extra argument"
 msgstr "添加额外参数"
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:46
+#: src/components/streamers/edit/streamer-filters-tab.tsx:47
 msgid "Add Filter"
 msgstr "添加过滤器"
 
@@ -353,24 +352,12 @@ msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。
 msgid "Add module..."
 msgstr "添加模块..."
 
-#: src/components/config/engines/engine-card.tsx:270
-msgid "Add New Engine"
-msgstr "添加新引擎"
-
-#: src/components/filters/FilterDialog.tsx:212
-msgid "Add New Filter"
-msgstr "添加新过滤器"
-
-#: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:51
-msgid "Add New Streamer"
-msgstr "添加新主播"
-
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:92
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:94
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:97
 msgid "Add Override"
 msgstr "添加覆盖项"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:128
+#: src/components/config/engines/forms/mesio-hls-form.tsx:152
 msgid "Add parameter"
 msgstr "添加参数"
 
@@ -378,7 +365,7 @@ msgstr "添加参数"
 msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
 
-#: src/components/config/shared/retry-policy-form.tsx:136
+#: src/components/config/shared/retry-policy-form.tsx:132
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "为重试延迟添加随机性，避免“惊群”。"
 
@@ -407,13 +394,9 @@ msgstr "添加自定义标签"
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1000
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1030
 msgid "Adjust rate based on target duration"
 msgstr "根据目标时长调整速率"
-
-#: src/components/config/shared/danmu-config-form.tsx:146
-msgid "Adjust sampling rate based on danmu traffic volume."
-msgstr "根据弹幕流量动态调整采样率。"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:282
 msgid "Adjust sidebar style and behavior."
@@ -426,13 +409,11 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:239
-#: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:246
+#: src/components/streamers/streamer-editor.tsx:169
 msgid "Advanced"
 msgstr "高级"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:320
+#: src/components/streamers/streamer-editor.tsx:173
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -441,7 +422,7 @@ msgstr "高级配置"
 msgid "Advanced Options"
 msgstr "高级选项"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:48
+#: src/components/filters/filter-types.ts:46
 msgid "Advanced scheduling"
 msgstr "高级排程"
 
@@ -476,6 +457,11 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:94
+msgctxt "day-of-week preset"
+msgid "All"
+msgstr "全部"
+
 #: src/components/logging/log-viewer.tsx:432
 msgid "All Levels"
 msgstr "所有级别"
@@ -492,15 +478,16 @@ msgstr "所有模板"
 msgid "All Time"
 msgstr "全部时间"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:346
+#: src/components/danmu/danmu-viewer.tsx:193
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:349
 msgid "All Types"
 msgstr "所有类型"
 
-#: src/components/config/global/network-system-card.tsx:39
+#: src/components/config/global/network-system-card.tsx:37
 msgid "Allow private stream proxy targets"
 msgstr "允许私有网络流代理目标"
 
-#: src/components/config/global/network-system-card.tsx:286
+#: src/components/config/global/network-system-card.tsx:260
 msgid "Allow Private Stream Proxy Targets"
 msgstr "允许私有网络流代理目标"
 
@@ -508,11 +495,15 @@ msgstr "允许私有网络流代理目标"
 msgid "Allowed Extensions"
 msgstr "允许的扩展名"
 
+#: src/components/config/shared/output-settings-card.tsx:230
+msgid "Always use Streamlink"
+msgstr "始终使用 Streamlink"
+
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:177
 msgid "An error occurred"
 msgstr "发生错误"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:179
+#: src/components/config/engines/forms/streamlink-form.tsx:182
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
@@ -520,19 +511,19 @@ msgstr "传递给 Streamlink 的其他命令行参数"
 msgid "Any priority"
 msgstr "任意优先级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:96
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:139
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:134
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:66
 msgid "API Settings"
 msgstr "API 设置"
 
-#: src/components/notifications/forms/gotify-form.tsx:56
+#: src/components/notifications/forms/gotify-form.tsx:54
 msgid "App Token"
 msgstr "应用令牌"
 
@@ -544,11 +535,11 @@ msgstr "外观与样式"
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:709
+#: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:204
+#: src/components/streamers/config/streamer-recording-fields.tsx:84
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
@@ -597,11 +588,11 @@ msgstr "确定要删除此会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:157
+#: src/components/config/engines/forms/ffmpeg-form.tsx:160
 msgid "Args inserted before -i input_url"
 msgstr "插入到 -i input_url 之前的参数"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:187
+#: src/components/config/engines/forms/ffmpeg-form.tsx:190
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
@@ -629,11 +620,11 @@ msgstr "分配模板"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:42
 msgid "Attempt to get the highest original quality available."
 msgstr "尝试获取可用的最高原画质量。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:63
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:64
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
@@ -666,7 +657,7 @@ msgstr "提取音频"
 msgid "Audio Extraction"
 msgstr "音频提取"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:491
+#: src/components/config/engines/forms/mesio-hls-form.tsx:515
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:109
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:128
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:129
@@ -685,14 +676,14 @@ msgstr "音频属性"
 msgid "Audio Settings"
 msgstr "音频设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:211
+#: src/components/notifications/forms/webhook-form.tsx:175
 msgid "Auth Type"
 msgstr "认证类型"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:25
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:29
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:29
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:30
 #: src/components/config/shared/network-settings-card.tsx:162
-#: src/components/notifications/forms/webhook-form.tsx:200
+#: src/components/notifications/forms/webhook-form.tsx:164
 msgid "Authentication"
 msgstr "认证"
 
@@ -700,7 +691,11 @@ msgstr "认证"
 msgid "Authentication & Setup"
 msgstr "身份验证与设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:753
+#: src/components/config/engines/forms/mesio-hls-form.tsx:775
+msgid "Auto"
+msgstr "自动"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:780
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
@@ -712,7 +707,7 @@ msgstr "自动 (二维码 → 手机号和验证码 → 桌面)"
 msgid "Auto Layout"
 msgstr "自动布局"
 
-#: src/components/config/global/file-config-card.tsx:38
+#: src/components/config/global/file-config-card.tsx:39
 msgid "Auto Thumbnail"
 msgstr "自动封面"
 
@@ -728,8 +723,8 @@ msgstr "已关闭自动滚动"
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:125
-#: src/components/streamers/edit/streamer-meta-form.tsx:173
+#: src/components/streamers/config/streamer-identity-fields.tsx:123
+#: src/components/streamers/config/streamer-identity-fields.tsx:128
 msgid "Autofill name from URL"
 msgstr "从 URL 自动填充名称"
 
@@ -737,7 +732,11 @@ msgstr "从 URL 自动填充名称"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
 
-#: src/components/config/global/file-config-card.tsx:40
+#: src/components/config/shared/output-settings-card.tsx:227
+msgid "Automatic (match the site)"
+msgstr "自动（按站点匹配）"
+
+#: src/components/config/global/file-config-card.tsx:41
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
 
@@ -745,7 +744,7 @@ msgstr "自动为每个会话的第一段生成封面图。"
 msgid "available"
 msgstr "可选"
 
-#: src/components/notifications/forms/discord-form.tsx:78
+#: src/components/notifications/forms/discord-form.tsx:73
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
@@ -767,14 +766,14 @@ msgstr "等待首次检查"
 msgid "Back"
 msgstr "返回"
 
-#: src/components/streamers/streamer-form.tsx:268
-msgid "Back to Details"
-msgstr "返回详情"
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:143
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
+
+#: src/components/streamers/streamer-editor.tsx:277
+msgid "Back to link"
+msgstr "返回链接"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:177
 msgid "Back to Pipeline Jobs"
@@ -792,11 +791,11 @@ msgstr "后台"
 msgid "Background refresh enabled"
 msgstr "后台刷新已启用"
 
-#: src/components/config/engines/forms/mesio-form.tsx:195
+#: src/components/config/engines/forms/mesio-form.tsx:205
 msgid "Backjump Threshold"
 msgstr "回跳阈值"
 
-#: src/components/config/shared/retry-policy-form.tsx:76
+#: src/components/config/shared/retry-policy-form.tsx:72
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
@@ -823,7 +822,7 @@ msgstr "带宽限制"
 msgid "Bandwidth Limit help"
 msgstr "带宽限制帮助"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1611
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1654
 msgid "Base"
 msgstr "基础"
 
@@ -835,15 +834,15 @@ msgstr "重试之间的基础延迟"
 msgid "Base path for remote storage. Supports metadata and time placeholders."
 msgstr "远端存储的基础路径。支持元数据和时间占位符。"
 
-#: src/components/notifications/forms/webhook-form.tsx:252
+#: src/components/notifications/forms/webhook-form.tsx:216
 msgid "Basic Auth"
 msgstr "Basic Auth"
 
-#: src/components/config/templates/tabs/general-tab.tsx:39
+#: src/components/config/templates/tabs/general-tab.tsx:46
 msgid "Basic details for this configuration template."
 msgstr "此配置模板的基本信息。"
 
-#: src/components/config/engines/engine-editor.tsx:169
+#: src/components/config/engines/engine-editor.tsx:174
 msgid "Basic Information"
 msgstr "基本信息"
 
@@ -851,10 +850,9 @@ msgstr "基本信息"
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:287
+#: src/components/streamers/streamer-editor.tsx:154
 msgid "Basic settings for the streamer."
-msgstr "主播的基本设置。"
+msgstr "主播的基础设置。"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
@@ -865,15 +863,15 @@ msgstr "批量解析失败：{0}"
 msgid "Batch URLs"
 msgstr "批量 URL"
 
-#: src/components/notifications/forms/webhook-form.tsx:249
+#: src/components/notifications/forms/webhook-form.tsx:213
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:62
+#: src/components/config/engines/forms/streamlink-form.tsx:65
 msgid "best"
 msgstr "最佳"
 
-#: src/components/config/engines/forms/mesio-form.tsx:148
+#: src/components/config/engines/forms/mesio-form.tsx:158
 msgid "BETA"
 msgstr "测试版"
 
@@ -881,8 +879,8 @@ msgstr "测试版"
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:43
-#: src/components/config/engines/forms/streamlink-form.tsx:35
+#: src/components/config/engines/forms/ffmpeg-form.tsx:46
+#: src/components/config/engines/forms/streamlink-form.tsx:38
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "可执行文件路径"
@@ -907,18 +905,22 @@ msgstr "被浏览器阻止"
 msgid "Border Radius"
 msgstr "圆角半径"
 
-#: src/components/notifications/forms/discord-form.tsx:63
+#: src/components/notifications/forms/discord-form.tsx:58
 msgid "Bot Name"
 msgstr "机器人名称"
 
 #: src/components/notifications/channel-card.tsx:111
-#: src/components/notifications/forms/telegram-form.tsx:36
+#: src/components/notifications/forms/telegram-form.tsx:43
 msgid "Bot Token"
 msgstr "机器人令牌"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:432
 msgid "both directions at 10 MiB/s"
 msgstr "双向均为 10 MiB/s"
+
+#: src/components/danmu/danmu-viewer.tsx:211
+msgid "Bottom Fixed"
+msgstr "底部固定"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:235
 msgid "Brand Colors"
@@ -945,7 +947,7 @@ msgstr "浏览器通知"
 msgid "Browser Status"
 msgstr "浏览器状态"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1546
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1594
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
@@ -957,24 +959,28 @@ msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支�
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
 msgstr "TPS 限制的突发容量（--tpslimit-burst）。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:314
+#: src/components/config/engines/forms/mesio-form.tsx:324
 msgid "bytes"
+msgstr "字节"
+
+#: src/components/ui/input-with-unit.tsx:27
+msgid "Bytes"
 msgstr "字节"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:299
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1669
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
 msgid "Cache"
 msgstr "缓存"
 
-#: src/components/config/engines/engine-card.tsx:237
+#: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:580
 #: src/components/config/templates/template-card.tsx:196
-#: src/components/filters/FilterDialog.tsx:247
+#: src/components/filters/FilterDialog.tsx:264
 #: src/components/notifications/channel-card.tsx:226
-#: src/components/notifications/channel-form.tsx:400
+#: src/components/notifications/channel-form.tsx:435
 #: src/components/notifications/subscription-manager.tsx:454
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
@@ -984,7 +990,7 @@ msgstr "缓存"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:636
 #: src/components/pipeline/workflows/workflow-card.tsx:195
 #: src/components/streamers/streamer-batch-action-bar.tsx:276
-#: src/components/streamers/streamer-form.tsx:224
+#: src/components/streamers/streamer-editor.tsx:235
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
@@ -1024,15 +1030,15 @@ msgstr "已取消处理管道中的 {0} 个步骤"
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "限制整体传输带宽（rclone --bwlimit）。"
 
-#: src/components/config/shared/record-danmu-card.tsx:58
+#: src/components/config/shared/record-danmu-card.tsx:64
 msgid "Capture Mode"
 msgstr "采集模式"
 
-#: src/components/config/shared/record-danmu-card.tsx:43
+#: src/components/config/shared/record-danmu-card.tsx:49
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:95
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1040,11 +1046,11 @@ msgstr "采集分离的流数据。"
 msgid "Capture Settings"
 msgstr "采集设置"
 
-#: src/components/filters/forms/RegexFilterForm.tsx:73
+#: src/components/filters/forms/RegexFilterForm.tsx:77
 msgid "Case Insensitive"
 msgstr "不区分大小写"
 
-#: src/components/filters/forms/CategoryFilterForm.tsx:25
+#: src/components/filters/forms/CategoryFilterForm.tsx:32
 msgid "Categories"
 msgstr "分类"
 
@@ -1077,11 +1083,15 @@ msgstr "需要修改密码"
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1102
+#: src/components/notifications/channel-form.tsx:352
+msgid "Channel"
+msgstr "渠道"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1135
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "已处理分段的通道缓冲倍数。"
 
-#: src/components/notifications/channel-form.tsx:214
+#: src/components/notifications/channel-form.tsx:252
 msgid "Channel created"
 msgstr "渠道已创建"
 
@@ -1089,11 +1099,11 @@ msgstr "渠道已创建"
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:228
+#: src/components/notifications/channel-form.tsx:266
 msgid "Channel updated"
 msgstr "渠道已更新"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:142
+#: src/components/config/engines/forms/streamlink-form.tsx:145
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
@@ -1105,12 +1115,12 @@ msgstr "个渠道"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:403
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:406
 msgid "Channels"
 msgstr "声道"
 
 #: src/components/notifications/channel-card.tsx:121
-#: src/components/notifications/forms/telegram-form.tsx:57
+#: src/components/notifications/forms/telegram-form.tsx:64
 msgid "Chat ID"
 msgstr "聊天 ID"
 
@@ -1122,6 +1132,10 @@ msgstr "此操作开销较低，默认值 8 通常已足够。如果远端较慢
 msgid "Check duration"
 msgstr "检查耗时"
 
+#: src/components/config/engines/engine-card.tsx:78
+msgid "Check failed"
+msgstr "检测失败"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:179
 msgid "Check if file exists after conversion"
 msgstr "转换后检查文件是否存在"
@@ -1130,9 +1144,13 @@ msgstr "转换后检查文件是否存在"
 msgid "Check Login"
 msgstr "检查登录"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:211
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:213
 msgid "Check size after copy"
 msgstr "复制后检查大小"
+
+#: src/components/streamers/config/streamer-recording-fields.tsx:136
+msgid "Check this streamer and record when it goes live."
+msgstr "检查该主播，并在开播时自动录制。"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:129
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:332
@@ -1147,25 +1165,29 @@ msgstr "校验数"
 msgid "Checkers help"
 msgstr "校验数帮助"
 
-#: src/components/config/engines/engine-card.tsx:144
+#: src/components/config/engines/engine-card.tsx:72
 msgid "Checking"
 msgstr "检查中"
+
+#: src/components/streamers/streamer-editor.tsx:246
+msgid "Checking link"
+msgstr "检查链接中"
 
 #: src/components/streamers/card/use-streamer-status.tsx:338
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
-#: src/components/streamers/streamer-form.tsx:235
-msgid "Checking..."
-msgstr "检查中..."
-
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:211
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:267
+#: src/components/config/shared/proxy-settings-card.tsx:275
 msgid "Choose how this streamer handles proxy connections."
 msgstr "选择此主播如何处理代理连接。"
+
+#: src/components/filters/FilterDialog.tsx:219
+msgid "Choose when this streamer should be recorded."
+msgstr "设置该主播在什么情况下会被录制。"
 
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:87
 msgid "Choose your display language"
@@ -1199,7 +1221,7 @@ msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 msgstr "用于流认证签名的客户端平台类型。不同平台使用不同的签名方式。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
 msgid "Client Type (ctype)"
 msgstr "客户端类型 (ctype)"
 
@@ -1230,7 +1252,7 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:488
+#: src/components/config/engines/forms/mesio-hls-form.tsx:512
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
@@ -1238,7 +1260,11 @@ msgstr "最接近目标码率"
 msgid "Collapsible"
 msgstr "折叠方式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:147
+#: src/components/notifications/channel-form.tsx:457
+msgid "Coming soon"
+msgstr "即将推出"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:150
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "用于排除代理的频道列表（逗号分隔）"
 
@@ -1281,7 +1307,7 @@ msgctxt "terminal-cause"
 msgid "Completed"
 msgstr "下载断开"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:57
+#: src/components/filters/filter-types.ts:55
 msgid "Complex patterns"
 msgstr "复杂模式"
 
@@ -1320,17 +1346,18 @@ msgstr "压缩/归档"
 msgid "Compression Level"
 msgstr "压缩级别"
 
+#: src/components/config/global/concurrency-card.tsx:78
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:517
 msgid "Concurrency"
 msgstr "并发"
 
-#: src/components/config/global/concurrency-card.tsx:63
-msgid "Concurrency & Performance"
-msgstr "并发与性能"
-
 #: src/components/streamers/card/use-streamer-status.tsx:274
 msgid "Concurrency limit reached"
 msgstr "已达到并发限制"
+
+#: src/components/config/global/concurrency-card.tsx:67
+msgid "Concurrency limits, pipeline timeouts, and engine defaults."
+msgstr "并发限制、流水线超时与引擎默认值。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:599
 msgid "Concurrent checkers (--checkers)."
@@ -1349,7 +1376,7 @@ msgstr "配置"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:381
+#: src/components/notifications/channel-form.tsx:419
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:395
 #: src/components/pipeline/workflows/workflow-editor.tsx:303
@@ -1365,28 +1392,24 @@ msgstr "配置已成功导出"
 msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
-#: src/components/config/engines/engine-card.tsx:209
+#: src/components/config/engines/engine-card.tsx:204
 #: src/components/pipeline/workflows/step-config-dialog.tsx:297
 msgid "Configure"
 msgstr "配置"
-
-#: src/components/config/engines/engine-card.tsx:273
-msgid "Configure a new download tool."
-msgstr "配置新的录制工具。"
-
-#: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:53
-msgid "Configure a new streamer to monitor and record."
-msgstr "配置一个新的主播以进行监控和录制。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:154
 msgid "Configure and launch a manual processing pipeline."
 msgstr "配置并启动手动处理管道。"
 
-#: src/components/config/engines/engine-editor.tsx:352
+#: src/components/config/engines/engine-card.tsx:227
+msgid "Configure another download tool."
+msgstr "配置另一个下载工具。"
+
+#: src/components/config/engines/engine-editor.tsx:357
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
-#: src/components/config/engines/engine-editor.tsx:95
+#: src/components/config/engines/engine-editor.tsx:100
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
 
@@ -1402,13 +1425,9 @@ msgstr "配置从所选备份文件导入数据的方式。"
 msgid "Configure native OS notifications for important events while running the desktop app."
 msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:245
+#: src/components/config/shared/proxy-settings-card.tsx:253
 msgid "Configure proxy strategies and connection details."
 msgstr "配置代理策略和连接详情。"
-
-#: src/components/filters/FilterDialog.tsx:216
-msgid "Configure recording rules for this streamer."
-msgstr "配置此主播的录制规则。"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:554
 msgid "Configure Settings"
@@ -1418,7 +1437,7 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:291
+#: src/components/notifications/channel-form.tsx:336
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
@@ -1442,7 +1461,7 @@ msgstr "确认密码"
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:652
+#: src/components/config/engines/forms/mesio-hls-form.tsx:679
 msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
@@ -1463,11 +1482,11 @@ msgstr "连接错误"
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:76
+#: src/components/config/engines/forms/ffmpeg-form.tsx:79
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
-#: src/components/config/shared/offline-check-card.tsx:111
+#: src/components/config/shared/offline-check-card.tsx:115
 msgid "Consecutive failed checks needed to confirm offline."
 msgstr "确认离线所需的连续失败检查次数。"
 
@@ -1487,6 +1506,10 @@ msgstr "容器"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:362
 msgid "Context"
 msgstr "上下文"
+
+#: src/components/streamers/streamer-editor.tsx:250
+msgid "Continue"
+msgstr "继续"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:537
 msgid "Continue on Error"
@@ -1508,7 +1531,7 @@ msgstr "Cookie"
 msgid "Cookies Only"
 msgstr "仅 Cookie"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:524
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:527
 msgid "Copied"
 msgstr "已复制"
 
@@ -1549,11 +1572,11 @@ msgstr "复制目录"
 msgid "Copy File"
 msgstr "复制文件"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:81
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:83
 msgid "Copy Files"
 msgstr "复制文件"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:530
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:533
 msgid "Copy JSON"
 msgstr "复制 JSON"
 
@@ -1569,21 +1592,29 @@ msgstr "将文件复制到其他位置，保留原始文件。"
 msgid "Copy/Move"
 msgstr "复制/移动"
 
+#: src/components/config/engines/engine-card.tsx:155
+msgid "Could not check whether this tool is installed."
+msgstr "无法检测该工具是否已安装。"
+
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:75
 msgid "Could not connect to the server. Please check your connection."
 msgstr "无法连接到服务器，请检查网络连接。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:321
-#: src/components/config/engines/forms/mesio-hls-form.tsx:366
+#: src/components/config/engines/forms/mesio-hls-form.tsx:345
+#: src/components/config/engines/forms/mesio-hls-form.tsx:390
 #: src/components/sessions/danmu-stats-panel.tsx:268
 msgid "Count"
 msgstr "次数"
 
-#: src/components/config/global/concurrency-card.tsx:197
+#: src/components/config/global/network-system-card.tsx:273
+msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
+msgstr "涵盖局域网转推、摄像头和 tailnet 地址。除非你从本地源拉流，否则请保持关闭：它会为任何已登录用户重新开放对内部地址的请求。"
+
+#: src/components/config/global/concurrency-card.tsx:265
 msgid "CPU Job"
 msgstr "CPU 任务"
 
-#: src/components/config/global/concurrency-card.tsx:205
+#: src/components/config/global/concurrency-card.tsx:268
 msgid "CPU Job Timeout"
 msgstr "CPU 任务超时"
 
@@ -1620,25 +1651,24 @@ msgstr "创建模板以定义可复用的录制配置。"
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
-#: src/components/notifications/channel-form.tsx:288
-#: src/components/notifications/channel-form.tsx:410
-msgid "Create Channel"
+#: src/components/notifications/channel-form.tsx:442
+msgid "Create channel"
 msgstr "创建渠道"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:185
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:187
 msgid "Create Directories"
 msgstr "创建目录"
 
-#: src/components/config/engines/engine-editor.tsx:298
-#: src/components/config/engines/engine-editor.tsx:348
+#: src/components/config/engines/engine-editor.tsx:303
+#: src/components/config/engines/engine-editor.tsx:353
 msgid "Create Engine"
 msgstr "创建引擎"
 
-#: src/components/filters/FilterDialog.tsx:262
-msgid "Create Filter"
+#: src/components/filters/FilterDialog.tsx:280
+msgid "Create filter"
 msgstr "创建过滤器"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:188
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
 msgid "Create missing folders"
 msgstr "创建缺失的文件夹"
 
@@ -1662,8 +1692,8 @@ msgstr "创建处理管道"
 msgid "Create Preset"
 msgstr "创建预设"
 
-#: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:55
-msgid "Create Streamer"
+#: src/components/streamers/streamer-editor.tsx:310
+msgid "Create streamer"
 msgstr "创建主播"
 
 #: src/components/config/templates/template-editor.tsx:163
@@ -1693,7 +1723,7 @@ msgstr "已创建"
 msgid "Creating..."
 msgstr "创建中..."
 
-#: src/components/config/engines/engine-editor.tsx:369
+#: src/components/config/engines/engine-editor.tsx:374
 msgid "Creation Mode"
 msgstr "创建模式"
 
@@ -1721,6 +1751,11 @@ msgstr "CRF（恒定码率因子）"
 msgid "Critical"
 msgstr "严重"
 
+#: src/lib/priority.ts:24
+msgctxt "priority"
+msgid "Critical"
+msgstr "紧急"
+
 #: src/components/notifications/subscription-manager.tsx:188
 msgid "Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail."
 msgstr "GPU 不可用时(通常由 NVIDIA Container Toolkit 在 cgroup v2 上的已知问题导致),NVENC 转封装/转码任务会失败,此时发出严重告警。"
@@ -1743,11 +1778,11 @@ msgstr "仅限严重"
 msgid "Critical system errors or streamer failures."
 msgstr "严重的系统错误或主播故障。"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:46
+#: src/components/filters/filter-types.ts:45
 msgid "Cron"
 msgstr "Cron"
 
-#: src/components/filters/forms/CronFilterForm.tsx:27
+#: src/components/filters/forms/CronFilterForm.tsx:31
 msgid "Cron Expression"
 msgstr "Cron 表达式"
 
@@ -1763,8 +1798,8 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:204
-#: src/components/config/engines/forms/mesio-hls-form.tsx:500
+#: src/components/config/engines/forms/mesio-hls-form.tsx:228
+#: src/components/config/engines/forms/mesio-hls-form.tsx:524
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
@@ -1776,7 +1811,7 @@ msgstr "自定义"
 msgid "Custom Config"
 msgstr "自定义配置"
 
-#: src/components/config/shared/proxy-settings-card.tsx:302
+#: src/components/config/shared/proxy-settings-card.tsx:312
 msgid "Custom Configuration"
 msgstr "自定义配置"
 
@@ -1788,11 +1823,11 @@ msgstr "自定义 FFmpeg"
 msgid "Custom Flags"
 msgstr "自定义标志"
 
-#: src/components/notifications/forms/webhook-form.tsx:255
+#: src/components/notifications/forms/webhook-form.tsx:219
 msgid "Custom Header"
 msgstr "自定义 Header"
 
-#: src/components/notifications/forms/webhook-form.tsx:407
+#: src/components/notifications/forms/webhook-form.tsx:376
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
@@ -1800,7 +1835,7 @@ msgstr "自定义请求头"
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:126
+#: src/components/config/engines/forms/streamlink-form.tsx:129
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
@@ -1812,7 +1847,7 @@ msgstr "自定义画质值"
 msgid "Custom Tags"
 msgstr "自定义标签"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:126
+#: src/components/config/engines/forms/ffmpeg-form.tsx:129
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
@@ -1860,7 +1895,7 @@ msgstr "DanmakuFactory"
 msgid "Danmu"
 msgstr "弹幕"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:262
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:255
 msgid "Danmu Control"
 msgstr "弹幕控制"
 
@@ -1913,7 +1948,7 @@ msgstr "数据库查询"
 msgid "Date"
 msgstr "日期"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:126
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:279
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
@@ -1926,11 +1961,15 @@ msgstr "日期范围："
 msgid "Day (01-31)"
 msgstr "天 (01-31)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1659
+#: src/components/ui/input-with-unit.tsx:39
+msgid "Days"
+msgstr "天"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1682
 msgid "Decryption"
 msgstr "解密"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1389
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1434
 msgid "Decryption Key TTL (ms)"
 msgstr "解密密钥 TTL（毫秒）"
 
@@ -1939,10 +1978,10 @@ msgstr "解密密钥 TTL（毫秒）"
 msgid "default"
 msgstr "默认"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:198
-#: src/components/config/engines/forms/mesio-hls-form.tsx:298
-#: src/components/config/engines/forms/mesio-hls-form.tsx:479
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
+#: src/components/config/engines/forms/mesio-hls-form.tsx:222
+#: src/components/config/engines/forms/mesio-hls-form.tsx:322
+#: src/components/config/engines/forms/mesio-hls-form.tsx:503
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
@@ -1955,7 +1994,7 @@ msgstr "默认"
 msgid "Default Douyu quality"
 msgstr "斗鱼默认画质"
 
-#: src/components/config/global/concurrency-card.tsx:413
+#: src/components/config/global/concurrency-card.tsx:380
 msgid "Default Engine"
 msgstr "默认引擎"
 
@@ -1963,11 +2002,11 @@ msgstr "默认引擎"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:126
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:117
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:53
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -1975,13 +2014,17 @@ msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1471
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1519
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "默认使用 Mesio 内置的直播停顿超时；禁用表示无限等待。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
+
+#: src/hooks/use-default-placeholder.ts:21
+msgid "Default: {value}"
+msgstr "默认值：{value}"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:477
 msgid "Define how this step identifies itself and connects to others."
@@ -2005,14 +2048,17 @@ msgstr "已确认离线"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/global/network-system-card.tsx:44
+#: src/components/config/global/network-system-card.tsx:99
+msgid "Delay between the re-checks used to confirm a streamer has really gone offline."
+msgstr "用于确认主播确实已下播的复查之间的间隔。"
+
+#: src/components/config/global/network-system-card.tsx:43
 msgid "Delays, proxy, and retention policies."
 msgstr "延迟、代理与保留策略。"
 
-#: src/components/config/engines/engine-card.tsx:243
+#: src/components/config/engines/engine-card.tsx:195
 #: src/components/config/templates/template-card.tsx:128
 #: src/components/config/templates/template-card.tsx:202
-#: src/components/filters/FilterCard.tsx:316
 #: src/components/notifications/channel-card.tsx:209
 #: src/components/notifications/channel-card.tsx:232
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:216
@@ -2034,13 +2080,17 @@ msgstr "删除"
 msgid "Delete Channel?"
 msgstr "删除渠道？"
 
-#: src/components/config/engines/engine-card.tsx:226
-msgid "Delete Engine?"
-msgstr "删除引擎？"
+#: src/components/config/engines/engine-card.tsx:171
+msgid "Delete engine"
+msgstr "删除引擎"
 
 #: src/components/pipeline/presets/processors/registry.ts:96
 msgid "Delete File"
 msgstr "删除文件"
+
+#: src/components/filters/FilterCard.tsx:237
+msgid "Delete filter"
+msgstr "删除过滤器"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:342
 msgid "Delete Job"
@@ -2095,6 +2145,10 @@ msgstr "删除模板"
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
+#: src/components/config/engines/engine-card.tsx:178
+msgid "Delete this engine?"
+msgstr "确定删除该引擎吗？"
+
 #: src/components/pipeline/workflows/workflow-card.tsx:184
 msgid "Delete Workflow?"
 msgstr "删除工作流？"
@@ -2115,7 +2169,7 @@ msgstr "导入前删除所有现有配置。此操作无法撤销。"
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/notifications/forms/webhook-form.tsx:133
+#: src/components/notifications/forms/webhook-form.tsx:127
 msgid "Delivery Policy"
 msgstr "投递策略"
 
@@ -2153,7 +2207,7 @@ msgstr "桌面通知"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:99
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:101
 msgid "Destination Directory"
 msgstr "目标文件夹"
 
@@ -2177,6 +2231,14 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
+#: src/components/streamers/config/streamer-identity-fields.tsx:177
+msgid "Detecting…"
+msgstr "识别中…"
+
+#: src/components/streamers/config/streamer-identity-fields.tsx:204
+msgid "Determined from the URL. Platform settings apply automatically."
+msgstr "根据链接自动识别，并自动应用该平台的设置。"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:559
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
@@ -2199,7 +2261,8 @@ msgstr "禁用"
 msgid "Disable selected"
 msgstr "禁用所选"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:201
+#: src/components/config/engines/forms/mesio-hls-form.tsx:225
+#: src/components/config/shared/record-danmu-card.tsx:102
 #: src/components/streamers/card/use-streamer-status.tsx:49
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
@@ -2234,7 +2297,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:91
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:92
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -2249,10 +2312,6 @@ msgstr "斗鱼标清或低清画质值"
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:33
 msgid "Douyu UHD rate"
 msgstr "斗鱼超清画质值"
-
-#: src/components/config/engines/engine-card.tsx:148
-msgid "Down"
-msgstr "不可用"
 
 #: src/components/sessions/recordings-tab.tsx:173
 #: src/components/streamers/progress-indicator.tsx:110
@@ -2280,15 +2339,15 @@ msgstr "下载备份"
 msgid "Download complete"
 msgstr "下载完成"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1068
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1101
 msgid "Download Concurrency"
 msgstr "下载并发数"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:78
+#: src/components/config/platforms/tabs/general-tab.tsx:82
 msgid "Download Delay"
 msgstr "录制延迟"
 
-#: src/components/config/shared/output-settings-card.tsx:161
+#: src/components/config/shared/output-settings-card.tsx:167
 msgid "Download Engine"
 msgstr "录制引擎"
 
@@ -2337,8 +2396,8 @@ msgstr "双格式输出"
 msgid "Duration"
 msgstr "时长"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:343
-#: src/components/config/engines/forms/mesio-hls-form.tsx:385
+#: src/components/config/engines/forms/mesio-hls-form.tsx:367
+#: src/components/config/engines/forms/mesio-hls-form.tsx:409
 msgid "Duration (ms)"
 msgstr "时长（毫秒）"
 
@@ -2350,7 +2409,7 @@ msgstr "时长限制"
 msgid "e.g. --namespace my_account"
 msgstr "例如 --namespace my_account"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:67
+#: src/components/config/engines/forms/streamlink-form.tsx:70
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
@@ -2410,7 +2469,7 @@ msgstr "例如 flv, hls"
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
-#: src/components/config/engines/engine-editor.tsx:189
+#: src/components/config/engines/engine-editor.tsx:194
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
@@ -2419,8 +2478,7 @@ msgstr "例如 高质量 Streamlink"
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:99
-#: src/components/streamers/edit/streamer-meta-form.tsx:146
+#: src/components/streamers/config/streamer-identity-fields.tsx:101
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
@@ -2446,7 +2504,6 @@ msgstr "例如：标准处理"
 
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:116
-#: src/components/filters/FilterCard.tsx:305
 #: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:176
@@ -2456,16 +2513,17 @@ msgstr "例如：标准处理"
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/notifications/channel-form.tsx:287
-msgid "Edit Channel"
+#: src/components/notifications/channel-form.tsx:330
+msgid "Edit channel"
 msgstr "编辑渠道"
 
-#: src/components/config/engines/engine-editor.tsx:348
+#: src/components/config/engines/engine-editor.tsx:353
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
-#: src/components/filters/FilterDialog.tsx:210
-msgid "Edit Filter"
+#: src/components/filters/FilterCard.tsx:225
+#: src/components/filters/FilterDialog.tsx:213
+msgid "Edit filter"
 msgstr "编辑过滤器"
 
 #. placeholder {0}: preset.name
@@ -2478,7 +2536,7 @@ msgstr "编辑预设：{0}"
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
-#: src/components/config/engines/engine-editor.tsx:367
+#: src/components/config/engines/engine-editor.tsx:372
 msgid "Editing Mode"
 msgstr "编辑模式"
 
@@ -2486,36 +2544,36 @@ msgstr "编辑模式"
 msgid "Effective Scope"
 msgstr "生效范围"
 
+#: src/components/filters/FilterCard.tsx:178
+msgid "Empty pattern"
+msgstr "表达式为空"
+
 #: src/components/streamers/card/stream-actions-menu.tsx:69
 #: src/components/streamers/streamer-batch-action-bar.tsx:134
 msgid "Enable"
 msgstr "启用"
 
-#: src/components/config/engines/forms/mesio-form.tsx:339
+#: src/components/config/engines/forms/mesio-form.tsx:349
 msgid "Enable advanced FLV timestamp repairing"
 msgstr "启用高级 FLV 时间戳修复"
 
-#: src/components/config/engines/forms/mesio-form.tsx:361
+#: src/components/config/engines/forms/mesio-form.tsx:371
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "启用高级 HLS 分段重建"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:257
-msgid "Enable Monitoring"
+#: src/components/streamers/config/streamer-recording-fields.tsx:133
+msgid "Enable monitoring"
 msgstr "启用监控"
 
-#: src/components/notifications/forms/webhook-form.tsx:118
-msgid "Enable or disable this webhook"
-msgstr "启用或禁用此 Webhook"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1531
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1579
 msgid "Enable Output Metrics (Default: On)"
 msgstr "启用输出指标（默认：开）"
 
-#: src/components/config/shared/proxy-settings-card.tsx:119
+#: src/components/config/shared/proxy-settings-card.tsx:125
 msgid "Enable Proxy"
 msgstr "启用代理"
 
-#: src/components/config/global/file-config-card.tsx:30
+#: src/components/config/global/file-config-card.tsx:31
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
 
@@ -2524,11 +2582,9 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enable selected"
 msgstr "启用所选"
 
+#: src/components/config/shared/record-danmu-card.tsx:99
 #: src/components/notifications/desktop-channel-dialog.tsx:102
-#: src/components/notifications/forms/discord-form.tsx:127
-#: src/components/notifications/forms/email-form.tsx:216
-#: src/components/notifications/forms/gotify-form.tsx:130
-#: src/components/notifications/forms/telegram-form.tsx:130
+#: src/components/notifications/forms/channel-delivery-fields.tsx:94
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
@@ -2547,7 +2603,7 @@ msgstr "编码预设"
 msgid "Encoding Settings"
 msgstr "编码设置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:352
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:393
 msgid "End"
 msgstr "结束"
 
@@ -2567,7 +2623,7 @@ msgstr "结束时间"
 msgid "Ended"
 msgstr "已结束"
 
-#: src/components/notifications/forms/webhook-form.tsx:62
+#: src/components/notifications/forms/webhook-form.tsx:70
 msgid "Endpoint Configuration"
 msgstr "端点配置"
 
@@ -2576,11 +2632,19 @@ msgstr "端点配置"
 msgid "Engine"
 msgstr "引擎"
 
+#: src/components/config/global/concurrency-card.tsx:371
+msgid "Engine & Hardware"
+msgstr "引擎与硬件"
+
 #: src/routes/_authed/_dashboard/config/engines/create.lazy.tsx:21
 msgid "Engine created successfully"
 msgstr "引擎创建成功"
 
-#: src/components/config/engines/engine-editor.tsx:184
+#: src/components/config/engines/engine-card.tsx:108
+msgid "Engine deleted"
+msgstr "引擎已删除"
+
+#: src/components/config/engines/engine-editor.tsx:189
 msgid "Engine Name"
 msgstr "引擎名称"
 
@@ -2588,7 +2652,7 @@ msgstr "引擎名称"
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
-#: src/components/config/engines/engine-editor.tsx:209
+#: src/components/config/engines/engine-editor.tsx:214
 msgid "Engine Type"
 msgstr "引擎类型"
 
@@ -2596,7 +2660,7 @@ msgstr "引擎类型"
 msgid "Engine updated successfully"
 msgstr "引擎更新成功"
 
-#: src/components/config/global/concurrency-card.tsx:436
+#: src/components/config/global/concurrency-card.tsx:403
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "未在平台/主播中指定时使用的录制引擎。"
 
@@ -2615,19 +2679,27 @@ msgstr "引擎列表"
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
+#: src/components/streamers/config/streamer-identity-fields.tsx:194
+msgid "Enter a URL above"
+msgstr "请在上方输入链接"
+
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:426
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
 
-#: src/components/filters/forms/CategoryFilterForm.tsx:36
+#: src/components/filters/forms/CategoryFilterForm.tsx:43
 msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgstr "输入要匹配的分类（例如 Just Chatting、Gaming）。"
 
-#: src/components/filters/forms/KeywordFilterForm.tsx:59
+#: src/components/filters/forms/CategoryFilterForm.tsx:37
+msgid "Enter categories..."
+msgstr "输入分类…"
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:62
 msgid "Enter keywords to exclude..."
 msgstr "输入要排除的关键词..."
 
-#: src/components/filters/forms/KeywordFilterForm.tsx:32
+#: src/components/filters/forms/KeywordFilterForm.tsx:35
 msgid "Enter keywords to include..."
 msgstr "输入要包含的关键词..."
 
@@ -2643,10 +2715,9 @@ msgstr "条"
 msgid "Environment Variables"
 msgstr "环境变量"
 
-#: src/components/config/engines/engine-card.tsx:150
 #: src/components/streamers/card/use-streamer-status.tsx:48
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
-#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:38
+#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:37
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:60
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:111
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:269
@@ -2671,7 +2742,7 @@ msgstr "加载处理任务失败"
 msgid "Error Loading Pipeline"
 msgstr "加载处理管道失败"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:81
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:80
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
@@ -2688,7 +2759,7 @@ msgstr "加载录制会话失败"
 msgid "Error loading streamers: {0}"
 msgstr "加载主播失败：{0}"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:74
 msgid "Error loading template"
 msgstr "加载模板失败"
 
@@ -2708,11 +2779,11 @@ msgstr "错误：无法加载预设详情。"
 msgid "ETA"
 msgstr "预计剩余时间"
 
-#: src/components/config/shared/event-hooks-form.tsx:120
+#: src/components/config/shared/event-hooks-form.tsx:118
 msgid "Event Hooks"
 msgstr "事件钩子"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:342
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:345
 msgid "Event Type"
 msgstr "事件类型"
 
@@ -2734,10 +2805,10 @@ msgstr "示例："
 msgid "Exceptional states"
 msgstr "异常状态"
 
-#: src/components/filters/FilterCard.tsx:121
-#: src/components/filters/FilterCard.tsx:235
-#: src/components/filters/forms/CategoryFilterForm.tsx:52
-#: src/components/filters/forms/RegexFilterForm.tsx:52
+#: src/components/filters/FilterCard.tsx:124
+#: src/components/filters/FilterCard.tsx:161
+#: src/components/filters/forms/CategoryFilterForm.tsx:59
+#: src/components/filters/forms/RegexFilterForm.tsx:56
 msgid "Exclude"
 msgstr "排除"
 
@@ -2745,11 +2816,11 @@ msgstr "排除"
 msgid "Exclude ASS from Passthrough"
 msgstr "从透传中排除 ASS"
 
-#: src/components/filters/forms/KeywordFilterForm.tsx:54
+#: src/components/filters/forms/KeywordFilterForm.tsx:57
 msgid "Exclude Keywords"
 msgstr "排除关键字"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:253
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:255
 msgid "Exclude Patterns"
 msgstr "排除模式"
 
@@ -2761,21 +2832,25 @@ msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 msgid "Excluded Extensions"
 msgstr "排除的扩展名"
 
+#: src/components/config/global/concurrency-card.tsx:324
+msgid "Execute"
+msgstr "执行"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:23
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
 #: src/components/pipeline/presets/processors/registry.ts:106
 msgid "Execute Command"
 msgstr "执行命令"
 
-#: src/components/config/shared/event-hooks-form.tsx:123
+#: src/components/config/shared/event-hooks-form.tsx:121
 msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
 msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中运行。"
 
-#: src/components/config/global/concurrency-card.tsx:283
+#: src/components/config/global/concurrency-card.tsx:327
 msgid "Execute Timeout"
 msgstr "执行超时"
 
-#: src/components/config/global/concurrency-card.tsx:275
+#: src/components/config/global/concurrency-card.tsx:65
 msgid "Execution"
 msgstr "执行"
 
@@ -2783,7 +2858,7 @@ msgstr "执行"
 msgid "Execution Settings"
 msgstr "执行设置"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:145
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:147
 msgid "Execution time (default)"
 msgstr "执行时间（默认）"
 
@@ -2802,15 +2877,15 @@ msgstr "退出沉浸模式"
 msgid "Exit selection mode"
 msgstr "退出选择模式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:60
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:251
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:256
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:248
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:243
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "用于所有请求的显式 TTWID Cookie 值。"
 
@@ -2830,7 +2905,7 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:162
+#: src/components/config/engines/forms/streamlink-form.tsx:165
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:813
 msgid "Extra Arguments"
@@ -2860,20 +2935,26 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:64
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:28
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:49
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:30
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:28
 msgid "Extraction Settings"
 msgstr "提取设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:285
+#: src/components/notifications/forms/webhook-form.tsx:250
 msgid "ey..."
 msgstr "ey..."
+
+#: src/components/filters/FilterCard.tsx:43
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:70
+msgctxt "Friday initial"
+msgid "F"
+msgstr "五"
 
 #: src/components/pipeline/status-config.ts:108
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
@@ -2891,8 +2972,7 @@ msgstr "下载失败"
 msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
-#: src/components/streamers/streamer-form.tsx:124
-#: src/hooks/use-edit-streamer.ts:123
+#: src/hooks/use-streamer-form.ts:107
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
 
@@ -2914,6 +2994,10 @@ msgstr "修改密码失败"
 msgid "Failed to check TDL status: {0}"
 msgstr "检查 TDL 状态失败：{0}"
 
+#: src/components/streamers/streamer-editor.tsx:140
+msgid "Failed to check this link. Please try again."
+msgstr "检查该链接失败，请重试。"
+
 #. placeholder {0}: error.message
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:194
 msgid "Failed to clone preset: {0}"
@@ -2924,15 +3008,15 @@ msgstr "克隆预设失败：{0}"
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:526
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:529
 msgid "Failed to copy"
 msgstr "复制失败"
 
-#: src/components/notifications/channel-form.tsx:221
+#: src/components/notifications/channel-form.tsx:259
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:153
+#: src/components/filters/FilterDialog.tsx:154
 msgid "Failed to create filter"
 msgstr "创建过滤器失败"
 
@@ -2945,7 +3029,7 @@ msgstr "创建处理任务失败"
 msgid "Failed to create preset: {0}"
 msgstr "创建预设失败：{0}"
 
-#: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:26
+#: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:27
 msgid "Failed to create streamer"
 msgstr "创建主播失败"
 
@@ -2963,7 +3047,11 @@ msgstr "创建工作流失败：{0}"
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
-#: src/hooks/use-edit-streamer.ts:96
+#: src/components/config/engines/engine-card.tsx:111
+msgid "Failed to delete engine"
+msgstr "删除引擎失败"
+
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:94
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -3018,14 +3106,17 @@ msgstr "启用 Web 推送失败"
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
 
-#: src/components/streamers/streamer-form.tsx:120
-#: src/hooks/use-edit-streamer.ts:119
+#: src/hooks/use-streamer-form.ts:103
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
 
 #: src/components/config/global/backup-restore-card.tsx:120
 msgid "Failed to import configuration"
 msgstr "导入配置失败"
+
+#: src/components/danmu/danmu-viewer.tsx:236
+msgid "Failed to load content"
+msgstr "内容加载失败"
 
 #: src/components/sessions/danmu-stats-panel.tsx:170
 msgid "Failed to load danmu statistics."
@@ -3037,11 +3128,11 @@ msgid "Failed to load engine: {0}"
 msgstr "加载引擎失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:41
+#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:40
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:272
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:275
 msgid "Failed to load events"
 msgstr "加载事件失败"
 
@@ -3122,11 +3213,11 @@ msgstr "启动登录失败：{0}"
 msgid "Failed to trigger check"
 msgstr "触发检查失败"
 
-#: src/components/notifications/channel-form.tsx:235
+#: src/components/notifications/channel-form.tsx:273
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:168
+#: src/components/filters/FilterDialog.tsx:169
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
@@ -3135,7 +3226,7 @@ msgid "Failed to update logging configuration"
 msgstr "更新日志配置失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:52
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:53
 msgid "Failed to update platform: {0}"
 msgstr "更新平台失败：{0}"
 
@@ -3148,12 +3239,12 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:135
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:168
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
-#: src/hooks/use-edit-streamer.ts:82
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:142
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:80
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:345
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
@@ -3163,7 +3254,7 @@ msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:47
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:48
 msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
@@ -3214,11 +3305,11 @@ msgstr "致命："
 msgid "Fetch"
 msgstr "获取"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:46
+#: src/components/config/platforms/tabs/general-tab.tsx:50
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1639
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1670
 msgid "Fetcher"
 msgstr "获取器"
 
@@ -3238,7 +3329,7 @@ msgstr "FFmpeg 路径"
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/components/config/global/file-config-card.tsx:19
+#: src/components/config/global/file-config-card.tsx:20
 msgid "File Configuration"
 msgstr "文件配置"
 
@@ -3268,8 +3359,8 @@ msgstr "文件大小阈值（--multi-thread-cutoff）。"
 msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "文件名模式（例如 thumb.jpg）"
 
-#: src/components/config/global/file-config-card.tsx:68
-#: src/components/config/shared/output-settings-card.tsx:89
+#: src/components/config/global/file-config-card.tsx:73
+#: src/components/config/shared/output-settings-card.tsx:95
 msgid "Filename Template"
 msgstr "文件名模板"
 
@@ -3286,39 +3377,44 @@ msgstr "文件"
 msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 msgstr "小于此值的文件仍以单线程传输。示例：<0>250M</0>、<1>1G</1>。"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:19
+#: src/components/filters/filter-types.ts:28
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
 
-#: src/components/filters/FilterDialog.tsx:146
+#: src/components/filters/FilterDialog.tsx:147
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/hooks/use-edit-streamer.ts:90
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:88
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
-#: src/components/notifications/forms/webhook-form.tsx:164
+#: src/components/notifications/forms/channel-delivery-fields.tsx:75
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:111
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:106
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
-#: src/components/config/engines/forms/mesio-form.tsx:152
+#: src/components/config/engines/forms/mesio-form.tsx:162
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:75
+#: src/components/filters/FilterDialog.tsx:240
 msgid "Filter Type"
 msgstr "过滤器类型"
 
-#: src/components/filters/FilterDialog.tsx:161
+#. js-lingui-explicit-id
+#: src/components/filters/forms/FilterTypeSelector.tsx:26
+msgid "Filter Type"
+msgstr "过滤器类型"
+
+#: src/components/filters/FilterDialog.tsx:162
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
-#: src/components/config/engines/forms/mesio-form.tsx:176
+#: src/components/config/engines/forms/mesio-form.tsx:186
 msgid "Filter Window Size"
 msgstr "过滤窗口大小"
 
@@ -3356,17 +3452,13 @@ msgstr "第一个输出文件路径"
 msgid "Fix configuration errors before saving"
 msgstr "保存前修复配置错误"
 
-#: src/components/config/engines/forms/mesio-form.tsx:336
+#: src/components/config/engines/forms/mesio-form.tsx:346
 msgid "Fix FLV Streams"
 msgstr "修复 FLV 流"
 
-#: src/components/config/engines/forms/mesio-form.tsx:358
+#: src/components/config/engines/forms/mesio-form.tsx:368
 msgid "Fix HLS Discontinuities"
 msgstr "修复 HLS 不连续性"
-
-#: src/components/config/shared/danmu-config-form.tsx:135
-msgid "Fixed Interval"
-msgstr "固定间隔"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
 msgid "Floating"
@@ -3384,11 +3476,11 @@ msgstr "FLV 解析器"
 msgid "FLV stream fixing pipeline"
 msgstr "FLV 流修复管道"
 
-#: src/components/config/engines/forms/mesio-form.tsx:265
+#: src/components/config/engines/forms/mesio-form.tsx:275
 msgid "FLV Tuning"
 msgstr "FLV 调优"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:835
+#: src/components/config/engines/forms/mesio-hls-form.tsx:862
 msgid "Follow Redirects (Default: On)"
 msgstr "跟随重定向（默认：开）"
 
@@ -3396,21 +3488,21 @@ msgstr "跟随重定向（默认：开）"
 msgid "Fonts Directory"
 msgstr "字体目录"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:869
+#: src/components/config/engines/forms/mesio-hls-form.tsx:896
 msgid "Force IPv4 (Default: Off)"
 msgstr "强制 IPv4（默认：关闭）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:886
+#: src/components/config/engines/forms/mesio-hls-form.tsx:913
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:122
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:168
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:165
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:39
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
@@ -3418,19 +3510,19 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:171
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:168
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
-#: src/components/config/shared/output-settings-card.tsx:146
+#: src/components/config/shared/output-settings-card.tsx:152
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:140
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:145
 msgid "Form"
 msgstr "表单"
 
-#: src/components/config/global/file-config-card.tsx:93
+#: src/components/config/global/file-config-card.tsx:99
 #: src/components/config/templates/template-card.tsx:150
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:212
@@ -3441,9 +3533,17 @@ msgstr "格式"
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
+msgid "Friday"
+msgstr "星期五"
+
 #: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "发件人地址"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:86
+msgid "Full Day"
+msgstr "全天"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:10
 msgid "Full HD Thumbnail"
@@ -3457,24 +3557,26 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1454
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1502
 msgid "Gap Eval Interval (ms)"
 msgstr "缺口评估间隔（毫秒）"
 
-#: src/components/config/engines/forms/mesio-form.tsx:257
+#: src/components/ui/input-with-unit.tsx:30
+msgid "GB"
+msgstr "GB"
+
+#: src/components/config/engines/forms/mesio-form.tsx:267
 #: src/components/config/platforms/platform-editor.tsx:190
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
 #: src/components/config/templates/template-editor.tsx:248
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
-#: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:239
+#: src/components/streamers/streamer-editor.tsx:149
 msgid "General"
 msgstr "常规"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:284
+#: src/components/streamers/streamer-editor.tsx:153
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -3514,36 +3616,33 @@ msgstr "生成新二维码"
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
-#: src/components/config/engines/engine-card.tsx:283
-msgid "Get Started"
-msgstr "开始使用"
-
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:206
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:201
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:42
 msgid "Global"
 msgstr "全局"
 
-#: src/components/config/engines/forms/mesio-form.tsx:304
+#: src/components/config/engines/forms/mesio-form.tsx:314
 msgid "Global Buffer Size"
 msgstr "全局缓冲区大小"
 
-#: src/components/config/engines/forms/mesio-form.tsx:295
+#: src/components/config/engines/forms/mesio-form.tsx:305
 msgid "Global Configuration"
 msgstr "全局配置"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:59
-#: src/components/config/platforms/tabs/general-tab.tsx:91
-#: src/components/config/shared/limits-card.tsx:60
-#: src/components/config/shared/limits-card.tsx:88
-#: src/components/config/shared/limits-card.tsx:114
-#: src/components/config/shared/output-settings-card.tsx:137
-#: src/components/config/shared/proxy-settings-card.tsx:299
+#: src/components/config/platforms/tabs/general-tab.tsx:63
+#: src/components/config/platforms/tabs/general-tab.tsx:95
+#: src/components/config/shared/limits-card.tsx:64
+#: src/components/config/shared/limits-card.tsx:92
+#: src/components/config/shared/limits-card.tsx:118
+#: src/components/config/shared/output-settings-card.tsx:143
+#: src/components/config/shared/proxy-settings-card.tsx:309
+#: src/components/config/shared/record-danmu-card.tsx:96
 msgid "Global Default"
 msgstr "全局默认"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:633
+#: src/components/config/engines/forms/mesio-hls-form.tsx:660
 msgid "Global Timeout (ms)"
 msgstr "全局超时 (ms)"
 
@@ -3558,20 +3657,20 @@ msgid "Go Back"
 msgstr "返回"
 
 #: src/components/ui/pagination.tsx:99
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:902
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:905
 msgid "Go to next page"
 msgstr "下一页"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:888
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:891
 msgid "Go to page {p}"
 msgstr "跳转到第 {p} 页"
 
 #: src/components/ui/pagination.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:868
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:871
 msgid "Go to previous page"
 msgstr "上一页"
 
-#: src/components/notifications/forms/gotify-form.tsx:62
+#: src/components/notifications/forms/gotify-form.tsx:60
 msgid "Gotify application token"
 msgstr "Gotify 应用令牌"
 
@@ -3579,8 +3678,8 @@ msgstr "Gotify 应用令牌"
 msgid "GPU"
 msgstr "GPU"
 
-#: src/components/config/global/concurrency-card.tsx:367
-#: src/components/config/global/concurrency-card.tsx:375
+#: src/components/config/global/concurrency-card.tsx:418
+#: src/components/config/global/concurrency-card.tsx:421
 msgid "GPU Health Probe Interval"
 msgstr "GPU 健康探测间隔"
 
@@ -3600,8 +3699,8 @@ msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:88
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/ffmpeg-form.tsx:91
+#: src/components/config/engines/forms/streamlink-form.tsx:82
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
 
@@ -3619,7 +3718,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:775
+#: src/components/config/engines/forms/mesio-hls-form.tsx:802
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 保活（毫秒）"
 
@@ -3635,7 +3734,7 @@ msgstr "高清"
 msgid "HD Thumbnail"
 msgstr "高清缩略图"
 
-#: src/components/notifications/forms/webhook-form.tsx:363
+#: src/components/notifications/forms/webhook-form.tsx:330
 msgid "Header Key"
 msgstr "Header 键"
 
@@ -3643,7 +3742,7 @@ msgstr "Header 键"
 msgid "Header received"
 msgstr "收到头部"
 
-#: src/components/notifications/forms/webhook-form.tsx:382
+#: src/components/notifications/forms/webhook-form.tsx:350
 msgid "Header Value"
 msgstr "Header 值"
 
@@ -3657,7 +3756,7 @@ msgstr "健康"
 msgid "Healthy"
 msgstr "正常"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:551
+#: src/components/config/engines/forms/mesio-hls-form.tsx:575
 msgid "Height"
 msgstr "高度"
 
@@ -3668,10 +3767,14 @@ msgstr "高度"
 msgid "Hide password"
 msgstr "隐藏密码"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:229
-#: src/components/streamers/edit/streamer-meta-form.tsx:204
+#: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:232
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
+msgid "High"
+msgstr "高"
+
+#: src/lib/priority.ts:23
+msgctxt "priority"
 msgid "High"
 msgstr "高"
 
@@ -3718,13 +3821,13 @@ msgstr "高+"
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "数值越高，在高速网络下越快，但对远端和本机 CPU 的压力也更大。仅在网络与服务方能承受时才建议调高。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:482
+#: src/components/config/engines/forms/mesio-hls-form.tsx:506
 msgid "Highest bitrate"
 msgstr "最高码率"
 
 #: src/components/streamers/edit/status-check-history.tsx:87
-msgid "History ({slots} pts)"
-msgstr "历史（{slots} 点）"
+msgid "History"
+msgstr "历史"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:63
 msgid "HLS parser"
@@ -3734,7 +3837,7 @@ msgstr "HLS 解析器"
 msgid "HLS stream fixing pipeline"
 msgstr "HLS 流修复管道"
 
-#: src/components/config/engines/forms/mesio-form.tsx:278
+#: src/components/config/engines/forms/mesio-form.tsx:288
 msgid "HLS Tuning"
 msgstr "HLS 调优"
 
@@ -3752,21 +3855,53 @@ msgstr "钩子"
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1293
+#: src/components/ui/input-with-unit.tsx:38
+msgid "Hours"
+msgstr "小时"
+
+#: src/components/config/global/concurrency-card.tsx:249
+msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
+msgstr "流水线步骤在被取消前允许运行的时长。这些值在工作线程池创建时读取，因此修改后需要重启才能生效。"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1332
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "解密/处理后的分段在缓存中保留的时间。"
+
+#: src/components/config/global/concurrency-card.tsx:151
+msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
+msgstr "可同时运行的 CPU 密集型流水线步骤（如转码）数量。设置超过 CPU 核心数会拖慢所有任务。"
+
+#: src/components/config/global/concurrency-card.tsx:181
+msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
+msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）数量。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:531
 msgid "How many files rclone uploads in parallel."
 msgstr "rclone 并行上传的文件数量。"
 
+#: src/components/config/global/concurrency-card.tsx:123
+msgid "How many pipeline upload steps may run at the same time."
+msgstr "可同时运行的流水线上传步骤数量。"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:672
 msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
 msgstr "在节流生效之前，可短时超出 TPS 限制的请求数量。"
 
-#: src/components/config/global/concurrency-card.tsx:379
-msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe — no restart required. Values below 30 seconds are discouraged."
+#: src/components/config/global/concurrency-card.tsx:93
+msgid "How many streamers may record at the same time. Recordings past this limit wait in the queue until a slot frees up."
+msgstr "可同时录制的主播数量。超出此限制的录制会在队列中等待，直到有空闲名额。"
+
+#: src/components/config/global/concurrency-card.tsx:445
+msgid "How often nvidia-smi is polled to confirm the GPU is still reachable."
+msgstr "轮询 nvidia-smi 以确认 GPU 仍可访问的频率。"
+
+#: src/components/config/global/concurrency-card.tsx:424
+msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问权限(NVIDIA Container Toolkit 在 cgroup v2 主机上的已知问题)。仅在系统中存在 nvidia-smi 时启用,否则不会注册 GPU 行。默认 30 秒。修改会在下一次探测时生效,无需重启。不建议设置低于 30 秒。"
+
+#: src/components/config/shared/output-settings-card.tsx:235
+msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
+msgstr "获取直播地址的方式。当某个站点失效时可切换为 Streamlink，该方式需要已安装 Streamlink 工具。"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
 msgid "How to pair video files with .ass subtitles"
@@ -3784,47 +3919,43 @@ msgstr "HTTP 中间件"
 msgid "HTTP requests"
 msgstr "HTTP 请求"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:740
+#: src/components/config/engines/forms/mesio-hls-form.tsx:767
 msgid "HTTP Version Preference"
 msgstr "HTTP 版本偏好"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:759
+#: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "HTTP/1.1 Only"
 msgstr "仅 HTTP/1.1"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:756
+#: src/components/config/engines/forms/mesio-hls-form.tsx:783
 msgid "HTTP/2 Only"
 msgstr "仅 HTTP/2"
 
-#: src/components/notifications/forms/discord-form.tsx:82
+#: src/components/notifications/forms/discord-form.tsx:77
 msgid "https://..."
 msgstr "https://..."
 
-#: src/components/notifications/forms/webhook-form.tsx:76
+#: src/components/notifications/forms/webhook-form.tsx:85
 msgid "https://api.example.com/webhook"
 msgstr "https://api.example.com/webhook"
 
-#: src/components/notifications/forms/discord-form.tsx:42
+#: src/components/notifications/forms/discord-form.tsx:37
 msgid "https://discord.com/api/webhooks/..."
 msgstr "https://discord.com/api/webhooks/..."
 
-#: src/components/notifications/forms/gotify-form.tsx:41
+#: src/components/notifications/forms/gotify-form.tsx:39
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:121
+#: src/components/config/engines/forms/streamlink-form.tsx:124
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:72
+#: src/components/streamers/config/streamer-identity-fields.tsx:76
 msgid "https://twitch.tv/..."
 msgstr "https://twitch.tv/..."
 
-#: src/components/filters/FilterCard.tsx:245
-msgid "i"
-msgstr "i"
-
-#: src/components/filters/forms/CronFilterForm.tsx:57
+#: src/components/filters/forms/CronFilterForm.tsx:65
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 
@@ -3840,29 +3971,33 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "必须填写 ID"
 
-#: src/components/config/engines/engine-editor.tsx:172
+#: src/components/config/engines/engine-editor.tsx:177
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
-#: src/components/filters/forms/KeywordFilterForm.tsx:65
+#: src/components/filters/forms/KeywordFilterForm.tsx:68
 msgid "If any of these keywords appear in the title, the stream will be ignored."
 msgstr "如果标题中出现任何这些关键字，该流将被忽略。"
 
-#: src/components/filters/forms/CategoryFilterForm.tsx:55
+#: src/components/filters/forms/CategoryFilterForm.tsx:62
 msgid "If enabled, streams in these categories will be ignored."
 msgstr "启用后，将忽略这些分类的流。"
 
-#: src/components/filters/forms/RegexFilterForm.tsx:55
+#: src/components/filters/forms/RegexFilterForm.tsx:59
 msgid "If enabled, streams matching this pattern will be ignored."
 msgstr "启用后，将忽略匹配此模式的流。"
 
-#: src/components/filters/forms/KeywordFilterForm.tsx:38
+#: src/components/filters/forms/KeywordFilterForm.tsx:41
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "如果设置，直播标题必须包含至少一个这些关键字。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:242
 msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
 msgstr "如果你的账户启用了 Telegram 两步验证，请使用桌面登录（`-T desktop`）或在终端中本地运行 `tdl login`。"
+
+#: src/components/filters/FilterCard.tsx:171
+msgid "Ignore case"
+msgstr "忽略大小写"
 
 #: src/components/streamers/config/stream-selection-input.tsx:204
 msgid "Ignore streams above this bitrate."
@@ -3909,8 +4044,8 @@ msgstr "进行中"
 msgid "Inactive"
 msgstr "未激活"
 
-#: src/components/filters/FilterCard.tsx:113
-#: src/components/filters/FilterCard.tsx:237
+#: src/components/filters/FilterCard.tsx:117
+#: src/components/filters/FilterCard.tsx:163
 msgid "Include"
 msgstr "包含"
 
@@ -3918,7 +4053,7 @@ msgstr "包含"
 msgid "Include Images"
 msgstr "包含图片"
 
-#: src/components/filters/forms/KeywordFilterForm.tsx:27
+#: src/components/filters/forms/KeywordFilterForm.tsx:30
 msgid "Include Keywords"
 msgstr "包含关键字"
 
@@ -3926,12 +4061,13 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
-#: src/components/config/shared/offline-check-card.tsx:74
-#: src/components/config/shared/offline-check-card.tsx:106
+#: src/components/config/shared/offline-check-card.tsx:78
+#: src/components/config/shared/offline-check-card.tsx:110
 msgid "Inherited"
 msgstr "继承自上层"
 
-#: src/components/config/shared/output-settings-card.tsx:178
+#: src/components/config/shared/output-settings-card.tsx:184
+#: src/components/config/shared/output-settings-card.tsx:224
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
@@ -3939,11 +4075,11 @@ msgstr "继承/默认"
 msgid "INITIAL"
 msgstr "初始"
 
-#: src/components/config/shared/retry-policy-form.tsx:100
+#: src/components/config/shared/retry-policy-form.tsx:96
 msgid "Initial Delay (ms)"
 msgstr "初始延迟（ms）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:911
+#: src/components/config/engines/forms/mesio-hls-form.tsx:941
 msgid "Initial Fetch Timeout (ms)"
 msgstr "初始获取超时（ms）"
 
@@ -3959,7 +4095,7 @@ msgstr "内联：{stepName}"
 msgid "Input"
 msgstr "输入"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:140
+#: src/components/config/engines/forms/ffmpeg-form.tsx:143
 msgid "Input Arguments"
 msgstr "输入参数"
 
@@ -3985,11 +4121,11 @@ msgstr "嵌入"
 msgid "Inspecting"
 msgstr "检查中"
 
-#: src/components/notifications/events/event-card.tsx:172
+#: src/components/notifications/events/event-card.tsx:174
 msgid "Interact"
 msgstr "查看详情"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:210
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:251
 msgid "Interactive 24-hour timeline selection."
 msgstr "24小时交互式时间线选择。"
 
@@ -4001,39 +4137,35 @@ msgstr "Windows 不支持通过此 API 进行交互式密码输入。请使用�
 msgid "Internal"
 msgstr "内部"
 
-#: src/components/config/shared/danmu-config-form.tsx:156
-msgid "Interval (seconds)"
-msgstr "间隔（秒）"
-
-#: src/components/config/global/network-system-card.tsx:70
+#: src/components/config/global/network-system-card.tsx:66
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
 
-#: src/components/config/global/network-system-card.tsx:112
-msgid "Interval between checks when a streamer is live to detect when the stream ends."
-msgstr "主播直播时检测流结束的检查间隔。"
-
-#: src/components/config/platforms/tabs/general-tab.tsx:64
+#: src/components/config/platforms/tabs/general-tab.tsx:68
 msgid "Interval between checks."
 msgstr "检查间隔。"
 
-#: src/components/config/shared/offline-check-card.tsx:79
+#: src/components/config/shared/offline-check-card.tsx:83
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/components/config/global/concurrency-card.tsx:236
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:250
+msgid "Invalid JSON: {error}"
+msgstr "JSON 格式有误：{error}"
+
+#: src/components/config/global/concurrency-card.tsx:293
 msgid "IO Job"
 msgstr "IO 任务"
 
-#: src/components/config/global/concurrency-card.tsx:244
+#: src/components/config/global/concurrency-card.tsx:296
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:213
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
-#: src/components/config/shared/retry-policy-form.tsx:134
+#: src/components/config/shared/retry-policy-form.tsx:130
 msgid "Jitter"
 msgstr "抖动"
 
@@ -4049,7 +4181,7 @@ msgstr "处理任务配置"
 msgid "Job configurations"
 msgstr "任务配置"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:148
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:150
 msgid "Job creation time"
 msgstr "任务创建时间"
 
@@ -4065,10 +4197,6 @@ msgstr "处理任务已删除"
 msgid "Job Details"
 msgstr "处理任务详情"
 
-#: src/components/config/global/concurrency-card.tsx:64
-msgid "Job limits and engine settings."
-msgstr "任务限制与引擎设置。"
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:195
 msgid "Job not found"
 msgstr "未找到处理任务"
@@ -4081,7 +4209,7 @@ msgstr "任务预设"
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
-#: src/components/config/global/concurrency-card.tsx:174
+#: src/components/config/global/concurrency-card.tsx:247
 msgid "Job Timeouts"
 msgstr "任务超时"
 
@@ -4096,7 +4224,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:156
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:161
 msgid "JSON"
 msgstr "JSON"
 
@@ -4107,6 +4235,10 @@ msgstr "所有输入的 JSON 数组"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:100
 msgid "JSON array of all outputs"
 msgstr "所有输出的 JSON 数组"
+
+#: src/components/ui/input-with-unit.tsx:28
+msgid "KB"
+msgstr "KB"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:247
 msgid "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
@@ -4124,26 +4256,26 @@ msgstr "保持运行"
 msgid "Keep uploading other files if one fails"
 msgstr "如果一个文件上传失败，继续上传其他文件"
 
-#: src/components/notifications/forms/webhook-form.tsx:441
+#: src/components/notifications/forms/webhook-form.tsx:413
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
 msgid "Key"
 msgstr "键"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1313
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1355
 msgid "Key Cache TTL (ms)"
 msgstr "密钥缓存 TTL（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1237
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1273
 msgid "Key Retry Delay (ms)"
 msgstr "密钥重试延迟（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1199
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1235
 msgid "Key Timeout (ms)"
 msgstr "密钥超时（毫秒）"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:17
+#: src/components/filters/filter-types.ts:27
 msgid "Keyword"
 msgstr "关键字"
 
@@ -4188,9 +4320,9 @@ msgstr "留空以进行流复制"
 msgid "Left"
 msgstr "左侧"
 
-#: src/components/config/global/network-system-card.tsx:289
-msgid "Let the in-app stream player proxy sources on private or local networks (LAN restreamers, cameras, tailnet addresses). Leave off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
-msgstr "允许应用内播放器代理位于私有或本地网络上的源（局域网转推、摄像头、tailnet 地址）。除非你从本地源拉流，否则请保持关闭：它会为任何已登录用户重新开放对内部地址的请求。"
+#: src/components/config/global/network-system-card.tsx:263
+msgid "Let the player proxy sources on private or local networks."
+msgstr "允许播放器代理位于私有或本地网络上的源。"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
 msgid "libx264"
@@ -4204,7 +4336,7 @@ msgstr "浅色"
 msgid "Limits"
 msgstr "限制"
 
-#: src/components/config/shared/limits-card.tsx:34
+#: src/components/config/shared/limits-card.tsx:38
 msgid "Limits & Validation"
 msgstr "限制与校验"
 
@@ -4240,7 +4372,7 @@ msgstr "直播"
 msgid "LIVE"
 msgstr "直播中"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1506
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1554
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
@@ -4257,7 +4389,7 @@ msgstr "实时轮询通知已启用"
 msgid "Live Preview"
 msgstr "实时预览"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:930
+#: src/components/config/engines/forms/mesio-hls-form.tsx:960
 msgid "Live Refresh Interval (ms)"
 msgstr "直播刷新间隔 (ms)"
 
@@ -4265,6 +4397,10 @@ msgstr "直播刷新间隔 (ms)"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:32
 msgid "Loaded template: {0}"
 msgstr "已加载模板：{0}"
+
+#: src/components/danmu/danmu-viewer.tsx:226
+msgid "Loading Danmu"
+msgstr "正在加载弹幕"
 
 #: src/components/config/global/pipeline-config-card.tsx:115
 msgid "Loading editor components..."
@@ -4369,7 +4505,7 @@ msgstr "日志"
 msgid "Logs downloaded successfully"
 msgstr "日志下载成功"
 
-#: src/components/config/engines/forms/mesio-form.tsx:143
+#: src/components/config/engines/forms/mesio-form.tsx:153
 msgid "Loop Protection"
 msgstr "循环保护"
 
@@ -4377,10 +4513,14 @@ msgstr "循环保护"
 msgid "Lossless Split"
 msgstr "无损分割"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:235
-#: src/components/streamers/edit/streamer-meta-form.tsx:210
+#: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:236
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:636
+msgid "Low"
+msgstr "低"
+
+#: src/lib/priority.ts:21
+msgctxt "priority"
 msgid "Low"
 msgstr "低"
 
@@ -4392,9 +4532,15 @@ msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:485
+#: src/components/config/engines/forms/mesio-hls-form.tsx:509
 msgid "Lowest bitrate"
 msgstr "最低码率"
+
+#: src/components/filters/FilterCard.tsx:36
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:50
+msgctxt "Monday initial"
+msgid "M"
+msgstr "一"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:59
 msgid "Main application"
@@ -4408,11 +4554,11 @@ msgstr "维护"
 msgid "Manage credentials and session cookies."
 msgstr "管理凭据和会话 Cookie。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:118
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:123
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
-#: src/components/config/shared/output-settings-card.tsx:47
+#: src/components/config/shared/output-settings-card.tsx:53
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
@@ -4440,7 +4586,7 @@ msgstr "清单（按顺序配对）"
 msgid "Manual update required"
 msgstr "需要手动更新"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:377
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:380
 msgid "Mark Read"
 msgstr "标记已读"
 
@@ -4452,7 +4598,7 @@ msgstr "已全部标记为已读"
 msgid "Match Strategy"
 msgstr "匹配策略"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:497
+#: src/components/config/engines/forms/mesio-hls-form.tsx:521
 msgid "Matching resolution"
 msgstr "匹配分辨率"
 
@@ -4460,24 +4606,26 @@ msgstr "匹配分辨率"
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1573
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1621
 msgid "Max Bytes"
 msgstr "最大字节数"
 
-#: src/components/config/global/concurrency-card.tsx:112
+#: src/components/config/global/concurrency-card.tsx:146
+#: src/components/config/global/concurrency-card.tsx:149
 msgid "Max CPU Jobs"
 msgstr "最大 CPU 任务数"
 
-#: src/components/config/shared/retry-policy-form.tsx:117
+#: src/components/config/shared/retry-policy-form.tsx:113
 msgid "Max Delay (ms)"
 msgstr "最大延迟（ms）"
 
-#: src/components/config/global/concurrency-card.tsx:76
+#: src/components/config/global/concurrency-card.tsx:88
+#: src/components/config/global/concurrency-card.tsx:91
 msgid "Max Downloads"
 msgstr "最大并发录制数"
 
-#: src/components/config/global/resource-limits-card.tsx:49
-#: src/components/config/shared/limits-card.tsx:53
+#: src/components/config/global/resource-limits-card.tsx:52
+#: src/components/config/shared/limits-card.tsx:57
 msgid "Max Duration"
 msgstr "最大时长"
 
@@ -4485,40 +4633,37 @@ msgstr "最大时长"
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:794
+#: src/components/config/engines/forms/mesio-hls-form.tsx:821
 msgid "Max Idle per Host"
 msgstr "每主机最大空闲连接数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1039
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1069
 msgid "Max Interval (ms)"
 msgstr "最大间隔（毫秒）"
 
-#: src/components/config/shared/danmu-config-form.tsx:199
-msgid "Max Interval (s)"
-msgstr "最大间隔（s）"
-
-#: src/components/config/global/concurrency-card.tsx:130
+#: src/components/config/global/concurrency-card.tsx:175
+#: src/components/config/global/concurrency-card.tsx:178
 msgid "Max IO Jobs"
 msgstr "最大 IO 任务数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1218
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1254
 msgid "Max Key Retries"
 msgstr "最大密钥重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1256
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1292
 msgid "Max Key Retry Delay (ms)"
 msgstr "最大密钥重试延迟（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:149
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "元数据获取的最大重试次数。"
 
-#: src/components/config/global/resource-limits-card.tsx:71
-#: src/components/config/shared/limits-card.tsx:107
+#: src/components/config/global/resource-limits-card.tsx:74
+#: src/components/config/shared/limits-card.tsx:111
 msgid "Max Part Size"
 msgstr "最大分片大小"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1486
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1534
 msgid "Max Pending Init Segments"
 msgstr "待处理初始化分段上限"
 
@@ -4526,30 +4671,30 @@ msgstr "待处理初始化分段上限"
 msgid "Max Quality Thumbnail"
 msgstr "最高质量缩略图"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:949
+#: src/components/config/engines/forms/mesio-hls-form.tsx:979
 msgid "Max Refresh Retries"
 msgstr "最大刷新重试次数"
 
-#: src/components/config/shared/retry-policy-form.tsx:56
+#: src/components/config/shared/retry-policy-form.tsx:52
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:375
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:614
 msgid "Max Retries"
 msgstr "最大重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1180
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1216
 msgid "Max Retry Delay (ms)"
 msgstr "最大重试延迟（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1142
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1178
 msgid "Max Segment Retries"
 msgstr "最大分段重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1554
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1602
 msgid "Max Segments"
 msgstr "最大分段数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1469
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1517
 msgid "Max Stall Duration (ms)"
 msgstr "最大停顿时间（毫秒）"
 
@@ -4557,7 +4702,8 @@ msgstr "最大停顿时间（毫秒）"
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 
-#: src/components/config/global/concurrency-card.tsx:94
+#: src/components/config/global/concurrency-card.tsx:117
+#: src/components/config/global/concurrency-card.tsx:120
 msgid "Max Uploads"
 msgstr "最大上传数"
 
@@ -4569,11 +4715,11 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1079
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1112
 msgid "Maximum number of concurrent segment downloads."
 msgstr "分段下载的最大并发数。"
 
-#: src/components/config/shared/retry-policy-form.tsx:70
+#: src/components/config/shared/retry-policy-form.tsx:66
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
@@ -4582,6 +4728,7 @@ msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:103
+#: src/components/ui/input-with-unit.tsx:29
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:405
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:416
 msgid "MB"
@@ -4639,7 +4786,7 @@ msgstr "元数据标签"
 msgid "Metadata Variables"
 msgstr "元数据变量"
 
-#: src/components/notifications/forms/webhook-form.tsx:92
+#: src/components/notifications/forms/webhook-form.tsx:101
 msgid "Method"
 msgstr "请求方法"
 
@@ -4647,37 +4794,33 @@ msgstr "请求方法"
 msgid "Min Bitrate (bps)"
 msgstr "最小比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1020
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1050
 msgid "Min Interval (ms)"
 msgstr "最小间隔（毫秒）"
 
-#: src/components/config/shared/danmu-config-form.tsx:179
-msgid "Min Interval (s)"
-msgstr "最小间隔（s）"
-
-#: src/components/notifications/forms/discord-form.tsx:99
-#: src/components/notifications/forms/email-form.tsx:176
-#: src/components/notifications/forms/gotify-form.tsx:78
-#: src/components/notifications/forms/telegram-form.tsx:102
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:517
 msgid "Min Priority"
 msgstr "最低优先级"
 
-#: src/components/config/global/resource-limits-card.tsx:30
-#: src/components/config/shared/limits-card.tsx:81
+#: src/components/config/global/resource-limits-card.tsx:33
+#: src/components/config/shared/limits-card.tsx:85
 msgid "Min Segment Size"
 msgstr "最小分段大小"
 
-#: src/components/config/shared/limits-card.tsx:93
+#: src/components/config/shared/limits-card.tsx:97
 msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:131
-#: src/components/notifications/forms/webhook-form.tsx:144
+#: src/components/notifications/forms/channel-delivery-fields.tsx:50
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:79
+#: src/components/ui/input-with-unit.tsx:37
+msgid "Mins"
+msgstr "分钟"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:77
 msgid "Mint Integrity Token"
 msgstr "签发完整性 token"
 
@@ -4693,13 +4836,17 @@ msgstr "修改此处理步骤的参数。"
 msgid "Module Log Levels"
 msgstr "模块日志级别"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
+msgid "Monday"
+msgstr "星期一"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:295
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:229
-msgid "Monitor this streamer"
-msgstr "监控此主播"
+#: src/components/config/global/network-system-card.tsx:51
+msgid "Monitoring"
+msgstr "监控"
 
 #: src/components/streamers/card/use-streamer-status.tsx:209
 #: src/components/streamers/card/use-streamer-status.tsx:218
@@ -4723,6 +4870,10 @@ msgstr "更多筛选"
 msgid "More pages"
 msgstr "更多页面"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
+msgid "Morning"
+msgstr "上午"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:190
 msgid "Move"
 msgstr "移动"
@@ -4731,7 +4882,7 @@ msgstr "移动"
 msgid "Move File"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:84
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:86
 msgid "Move Files"
 msgstr "移动文件"
 
@@ -4739,13 +4890,17 @@ msgstr "移动文件"
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:121
+#: src/components/config/engines/forms/ffmpeg-form.tsx:124
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:82
 msgid "MP"
 msgstr "MP"
+
+#: src/components/ui/input-with-unit.tsx:35
+msgid "ms"
+msgstr "毫秒"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:711
 msgid "Multi-Thread Copy"
@@ -4767,7 +4922,7 @@ msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
-#: src/components/config/shared/retry-policy-form.tsx:94
+#: src/components/config/shared/retry-policy-form.tsx:90
 msgid "Multiplier for exponential backoff."
 msgstr "指数退避的倍率。"
 
@@ -4775,15 +4930,18 @@ msgstr "指数退避的倍率。"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:315
+#: src/components/notifications/channel-form.tsx:366
 msgid "My Channel"
 msgstr "我的渠道"
 
-#: src/components/notifications/channel-form.tsx:309
+#: src/components/config/templates/tabs/general-tab.tsx:64
+msgid "My Template"
+msgstr "我的模板"
+
+#: src/components/notifications/channel-form.tsx:361
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
-#: src/components/streamers/config/streamer-general-settings.tsx:92
-#: src/components/streamers/edit/streamer-meta-form.tsx:140
+#: src/components/streamers/config/streamer-identity-fields.tsx:95
 msgid "Name"
 msgstr "名称"
 
@@ -4791,8 +4949,7 @@ msgstr "名称"
 msgid "Name A-Z"
 msgstr "名称 A-Z"
 
-#: src/components/streamers/streamer-form.tsx:116
-#: src/hooks/use-edit-streamer.ts:115
+#: src/hooks/use-streamer-form.ts:99
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
 
@@ -4824,11 +4981,11 @@ msgstr "原始分辨率缩略图"
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:95
 msgid "Network & Content"
 msgstr "网络与内容"
 
-#: src/components/config/global/network-system-card.tsx:43
+#: src/components/config/global/network-system-card.tsx:42
 msgid "Network & System"
 msgstr "网络与系统"
 
@@ -4837,9 +4994,13 @@ msgstr "网络与系统"
 msgid "New"
 msgstr "新建"
 
-#: src/components/config/engines/forms/mesio-form.tsx:90
+#: src/components/config/engines/forms/mesio-form.tsx:100
 msgid "NEW"
 msgstr "新"
+
+#: src/components/notifications/channel-form.tsx:332
+msgid "New notification channel"
+msgstr "新建通知渠道"
 
 #: src/routes/_authed/change-password.lazy.tsx:182
 msgid "New Password"
@@ -4853,12 +5014,15 @@ msgstr "新密码（至少 8 个字符）"
 msgid "New Preset Name"
 msgstr "新预设名称"
 
+#: src/components/filters/FilterDialog.tsx:215
+msgid "New recording filter"
+msgstr "新建录制过滤器"
+
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:233
 msgid "New Template Name"
 msgstr "新模板名称"
 
-#: src/components/streamers/streamer-form.tsx:239
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:489
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:492
 msgid "Next"
 msgstr "下一步"
 
@@ -4866,6 +5030,10 @@ msgstr "下一步"
 msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
+msgid "Night"
+msgstr "夜间"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:451
 msgid "No active recordings"
@@ -4895,7 +5063,7 @@ msgstr "无配置。"
 msgid "No credentials found."
 msgstr "未找到凭据。"
 
-#: src/components/notifications/forms/webhook-form.tsx:430
+#: src/components/notifications/forms/webhook-form.tsx:399
 msgid "No custom headers configured"
 msgstr "未配置自定义请求头"
 
@@ -4924,7 +5092,7 @@ msgstr "未定义环境变量"
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:440
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:443
 msgid "No events found"
 msgstr "未找到事件"
 
@@ -4948,7 +5116,7 @@ msgstr "未检测到问题"
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
-#: src/components/filters/FilterCard.tsx:149
+#: src/components/filters/FilterCard.tsx:108
 msgid "No keywords set"
 msgstr "未设置关键字"
 
@@ -5005,7 +5173,7 @@ msgstr "未找到媒体文件"
 msgid "No overrides configured"
 msgstr "未配置覆盖项"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:93
+#: src/components/config/engines/forms/mesio-hls-form.tsx:117
 msgid "No parameters configured."
 msgstr "未配置任何参数。"
 
@@ -5017,18 +5185,18 @@ msgstr "未发现处理管道 DAG。"
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
-#: src/components/streamers/streamer-form.tsx:153
-#: src/components/streamers/streamer-form.tsx:180
-msgid "No platform configurations found. Please create one first."
-msgstr "未找到平台配置，请先创建。"
-
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
 msgid "No platform found."
 msgstr "未找到平台。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:126
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
 msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
+
+#: src/components/streamers/config/streamer-identity-fields.tsx:200
+#: src/components/streamers/streamer-editor.tsx:132
+msgid "No platform recognizes this link, so it cannot be recorded."
+msgstr "无法识别该链接所属的平台，因此无法录制。"
 
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:133
 msgid "No platforms configured"
@@ -5067,7 +5235,11 @@ msgstr "未找到最近的录制会话。"
 msgid "No refresh needed or not supported"
 msgstr "无需刷新或不支持"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
+#: src/components/danmu/danmu-viewer.tsx:264
+msgid "No results found"
+msgstr "没有找到结果"
+
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:174
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -5121,13 +5293,14 @@ msgstr "未找到工作流"
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
-#: src/components/notifications/forms/webhook-form.tsx:246
+#: src/components/notifications/forms/webhook-form.tsx:210
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:801
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:462
 msgid "None"
 msgstr "无"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:194
+#: src/components/streamers/config/streamer-recording-fields.tsx:74
 msgid "None (Default)"
 msgstr "无（默认）"
 
@@ -5136,12 +5309,16 @@ msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
-#: src/components/streamers/config/streamer-general-settings.tsx:232
-#: src/components/streamers/edit/streamer-meta-form.tsx:207
+#: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:234
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:633
 msgid "Normal"
 msgstr "正常"
+
+#: src/lib/priority.ts:22
+msgctxt "priority"
+msgid "Normal"
+msgstr "普通"
 
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:52
@@ -5162,16 +5339,20 @@ msgstr "未找到"
 msgid "Not Found"
 msgstr "未找到主播"
 
+#: src/components/config/engines/engine-card.tsx:76
+msgid "Not installed"
+msgstr "未安装"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:327
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:262
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:292
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:265
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:295
 msgid "Notification Events"
 msgstr "通知事件"
 
-#: src/components/config/global/network-system-card.tsx:228
+#: src/components/config/global/network-system-card.tsx:201
 msgid "Notification Log Retention"
 msgstr "通知日志保留"
 
@@ -5179,7 +5360,7 @@ msgstr "通知日志保留"
 msgid "Notification permission not granted"
 msgstr "未授予通知权限"
 
-#: src/components/config/global/network-system-card.tsx:236
+#: src/components/config/global/network-system-card.tsx:204
 msgid "Notification Retention"
 msgstr "通知保留"
 
@@ -5215,20 +5396,20 @@ msgstr "第 N 个输出：{output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
-#: src/components/config/global/network-system-card.tsx:153
+#: src/components/config/global/network-system-card.tsx:131
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
 
-#: src/components/config/global/network-system-card.tsx:198
+#: src/components/config/global/network-system-card.tsx:172
 msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
 msgstr "在数据库中保留已完成、失败或已取消的任务及工作流执行记录的天数。设置为 0 可无限期保留。"
 
-#: src/components/config/global/network-system-card.tsx:240
+#: src/components/config/global/network-system-card.tsx:207
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:84
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:90
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
@@ -5260,7 +5441,7 @@ msgstr "NVENC HEVC 快速"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:40
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
@@ -5283,30 +5464,30 @@ msgstr "离线"
 msgid "OFFLINE"
 msgstr "离线"
 
-#: src/components/config/global/network-system-card.tsx:100
-#: src/components/config/global/network-system-card.tsx:108
-#: src/components/config/shared/offline-check-card.tsx:39
+#: src/components/config/global/network-system-card.tsx:93
+#: src/components/config/global/network-system-card.tsx:96
+#: src/components/config/shared/offline-check-card.tsx:43
 msgid "Offline Check"
 msgstr "离线检查"
 
-#: src/components/config/shared/offline-check-card.tsx:61
+#: src/components/config/shared/offline-check-card.tsx:65
 msgid "Offline Check Interval"
 msgstr "离线检查间隔"
 
-#: src/components/config/global/network-system-card.tsx:149
+#: src/components/config/global/network-system-card.tsx:128
 msgid "Offline Detection"
 msgstr "离线检测"
 
-#: src/components/config/global/network-system-card.tsx:141
-#: src/components/config/shared/offline-check-card.tsx:95
+#: src/components/config/global/network-system-card.tsx:125
+#: src/components/config/shared/offline-check-card.tsx:99
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1328
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
 msgid "Offload Decryption (Default: On)"
 msgstr "解密下放到线程池（默认：开）"
 
-#: src/components/config/engines/forms/mesio-form.tsx:215
+#: src/components/config/engines/forms/mesio-form.tsx:225
 msgid "Offset Consistency Check"
 msgstr "偏移一致性检查"
 
@@ -5314,27 +5495,27 @@ msgstr "偏移一致性检查"
 msgid "OK"
 msgstr "正常"
 
-#: src/components/config/shared/event-hooks-form.tsx:152
+#: src/components/config/shared/event-hooks-form.tsx:150
 msgid "On Download Complete"
 msgstr "录制完成时"
 
-#: src/components/config/shared/event-hooks-form.tsx:158
+#: src/components/config/shared/event-hooks-form.tsx:156
 msgid "On Download Error"
 msgstr "录制出错时"
 
-#: src/components/config/shared/event-hooks-form.tsx:146
+#: src/components/config/shared/event-hooks-form.tsx:144
 msgid "On Download Start"
 msgstr "录制开始时"
 
-#: src/components/config/shared/event-hooks-form.tsx:140
+#: src/components/config/shared/event-hooks-form.tsx:138
 msgid "On Offline"
 msgstr "离线时"
 
-#: src/components/config/shared/event-hooks-form.tsx:134
+#: src/components/config/shared/event-hooks-form.tsx:132
 msgid "On Online"
 msgstr "上线时"
 
-#: src/components/config/shared/event-hooks-form.tsx:164
+#: src/components/config/shared/event-hooks-form.tsx:162
 msgid "On Pipeline Complete"
 msgstr "处理管道完成时"
 
@@ -5381,12 +5562,12 @@ msgstr "操作模式"
 msgid "Operation Type"
 msgstr "操作类型"
 
-#: src/components/config/engines/forms/mesio-form.tsx:116
+#: src/components/config/engines/forms/mesio-form.tsx:126
 msgid "Optimize Stream Headers"
 msgstr "优化流头部"
 
-#: src/components/config/shared/proxy-settings-card.tsx:183
-#: src/components/config/shared/proxy-settings-card.tsx:202
+#: src/components/config/shared/proxy-settings-card.tsx:190
+#: src/components/config/shared/proxy-settings-card.tsx:210
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:242
 msgid "Optional"
 msgstr "可选"
@@ -5400,9 +5581,13 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr "附加到 `tdl login` 的可选额外参数。"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:118
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:173
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:175
 msgid "Options"
 msgstr "选项"
+
+#: src/components/streamers/config/streamer-recording-fields.tsx:118
+msgid "Order this streamer is checked in."
+msgstr "该主播的检查优先顺序。"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:26
 msgid "Original / Blu-ray"
@@ -5421,7 +5606,7 @@ msgstr "空间不足"
 msgid "Out of Space"
 msgstr "空间不足"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1678
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:161
@@ -5429,11 +5614,11 @@ msgstr "空间不足"
 msgid "Output"
 msgstr "输出"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:170
+#: src/components/config/engines/forms/ffmpeg-form.tsx:173
 msgid "Output Arguments"
 msgstr "输出参数"
 
-#: src/components/config/shared/output-settings-card.tsx:44
+#: src/components/config/shared/output-settings-card.tsx:50
 msgid "Output Configuration"
 msgstr "输出配置"
 
@@ -5441,12 +5626,12 @@ msgstr "输出配置"
 msgid "Output Detection"
 msgstr "输出检测"
 
-#: src/components/config/global/file-config-card.tsx:53
-#: src/components/config/shared/output-settings-card.tsx:60
+#: src/components/config/global/file-config-card.tsx:54
+#: src/components/config/shared/output-settings-card.tsx:66
 msgid "Output Folder"
 msgstr "输出文件夹"
 
-#: src/components/config/shared/output-settings-card.tsx:120
+#: src/components/config/shared/output-settings-card.tsx:126
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:409
 msgid "Output Format"
 msgstr "输出格式"
@@ -5459,7 +5644,7 @@ msgstr "输出选项"
 msgid "Output Path"
 msgstr "输出路径"
 
-#: src/components/config/global/file-config-card.tsx:20
+#: src/components/config/global/file-config-card.tsx:21
 msgid "Output paths, templates, and formats."
 msgstr "输出路径、模板与格式。"
 
@@ -5491,32 +5676,27 @@ msgstr "总体健康"
 msgid "Overall system status"
 msgstr "整体系统状态"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
 msgid "Override configuration (paths, delays, etc.) for specific platforms."
 msgstr "为特定平台覆盖配置（路径、延迟等）。"
 
-#: src/components/config/shared/output-settings-card.tsx:188
-msgid "Override download engine."
-msgstr "覆盖录制引擎。"
-
-#: src/components/config/shared/output-settings-card.tsx:101
+#: src/components/config/shared/output-settings-card.tsx:107
 msgid "Override filename template."
 msgstr "覆盖文件名模板。"
 
-#: src/components/config/shared/record-danmu-card.tsx:61
+#: src/components/config/shared/record-danmu-card.tsx:67
 msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:323
+#: src/components/streamers/streamer-editor.tsx:175
 msgid "Override global defaults for this streamer."
-msgstr "为此主播覆盖全局默认值。"
+msgstr "为该主播覆盖全局默认设置。"
 
-#: src/components/config/shared/offline-check-card.tsx:42
+#: src/components/config/shared/offline-check-card.tsx:46
 msgid "Override how aggressively the scheduler confirms a stream has ended."
 msgstr "覆盖调度器确认直播结束的激进程度。"
 
-#: src/components/config/shared/output-settings-card.tsx:72
+#: src/components/config/shared/output-settings-card.tsx:78
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
@@ -5529,7 +5709,7 @@ msgstr "概览"
 msgid "Overwrite"
 msgstr "覆盖"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:231
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:233
 msgid "Overwrite Existing"
 msgstr "覆盖已存在文件"
 
@@ -5550,7 +5730,7 @@ msgstr "覆盖文件"
 msgid "Overwrite Output"
 msgstr "覆盖输出"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:478
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:481
 msgid "Page"
 msgstr "页码"
 
@@ -5596,7 +5776,7 @@ msgstr "批量解析"
 msgid "Parse error: {0}"
 msgstr "解析失败：{0}"
 
-#: src/components/notifications/forms/telegram-form.tsx:78
+#: src/components/notifications/forms/telegram-form.tsx:85
 msgid "Parse Mode"
 msgstr "解析模式"
 
@@ -5618,12 +5798,12 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:70
-#: src/components/config/shared/proxy-settings-card.tsx:197
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:68
+#: src/components/config/shared/proxy-settings-card.tsx:204
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
-#: src/components/notifications/forms/webhook-form.tsx:330
-#: src/components/notifications/forms/webhook-form.tsx:336
+#: src/components/notifications/forms/webhook-form.tsx:296
+#: src/components/notifications/forms/webhook-form.tsx:303
 #: src/routes/_public/login.lazy.tsx:188
 msgid "Password"
 msgstr "密码"
@@ -5641,9 +5821,20 @@ msgstr "请修改密码"
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:49
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:51
+msgid "Password..."
+msgstr "密码…"
+
 #: src/components/streamers/edit/status-check-history.tsx:131
 msgid "Past"
 msgstr "过去"
+
+#: src/components/streamers/streamer-editor.tsx:210
+msgid "Paste a channel link. Everything else can wait."
+msgstr "先粘贴频道链接，其他设置稍后再填。"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:72
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
@@ -5718,7 +5909,7 @@ msgstr "逐段"
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:212
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:207
 msgid "Per-Streamer"
 msgstr "按主播"
 
@@ -5764,8 +5955,8 @@ msgstr "处理管道执行"
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "处理管道中有失败的处理任务。点击查看详情。"
 
-#: src/components/config/global/network-system-card.tsx:186
-#: src/components/config/global/network-system-card.tsx:194
+#: src/components/config/global/network-system-card.tsx:166
+#: src/components/config/global/network-system-card.tsx:169
 msgid "Pipeline History Retention"
 msgstr "流水线历史保留期"
 
@@ -5784,10 +5975,6 @@ msgstr "处理管道有效"
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:105
 msgid "Pipeline job created successfully"
 msgstr "处理任务创建成功"
-
-#: src/components/config/global/concurrency-card.tsx:151
-msgid "Pipeline Job Timeouts"
-msgstr "管道任务超时"
 
 #: src/components/sessions/jobs-tab.tsx:33
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:292
@@ -5819,6 +6006,10 @@ msgstr "处理管道统计"
 msgid "Pipeline Structure"
 msgstr "处理管道结构"
 
+#: src/components/config/global/concurrency-card.tsx:244
+msgid "Pipeline Timeouts"
+msgstr "流水线超时"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:313
 msgid "pipelines"
 msgstr "处理管道"
@@ -5827,15 +6018,12 @@ msgstr "处理管道"
 msgid "Placeholders"
 msgstr "占位符"
 
+#: src/components/streamers/config/streamer-identity-fields.tsx:167
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:504
 msgid "Platform"
 msgstr "平台"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:146
-msgid "Platform Configuration"
-msgstr "平台配置"
-
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:44
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:45
 msgid "Platform configuration updated successfully"
 msgstr "平台配置更新成功"
 
@@ -5843,27 +6031,27 @@ msgstr "平台配置更新成功"
 msgid "Platform configurations will appear here when available."
 msgstr "平台配置可用时将显示在此处。"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:51
-msgid "Platform Detected: {detectedPlatform}"
-msgstr "检测到平台：{detectedPlatform}"
-
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:161
 msgid "Platform name"
 msgstr "平台名称"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:84
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
 msgid "Platform not found"
 msgstr "未找到平台"
+
+#: src/components/streamers/config/streamer-configuration.tsx:52
+msgid "Platform options"
+msgstr "平台选项"
 
 #: src/components/config/templates/tabs/platform-override-card.tsx:120
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:79
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:119
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -5893,7 +6081,7 @@ msgstr "播放"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1620
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1658
 msgid "Playlist"
 msgstr "播放列表"
 
@@ -5902,7 +6090,7 @@ msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "播放列表已失效"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1351
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1396
 msgid "Playlist TTL (ms)"
 msgstr "播放列表 TTL（毫秒）"
 
@@ -5918,7 +6106,7 @@ msgstr "请至少输入一个 URL"
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/hooks/use-edit-streamer.ts:151
+#: src/hooks/use-streamer-form.ts:133
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
@@ -5942,7 +6130,7 @@ msgstr "正在解析流 URL，请稍候。"
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:813
+#: src/components/config/engines/forms/mesio-hls-form.tsx:840
 msgid "Pool Idle Timeout (ms)"
 msgstr "连接池空闲超时（毫秒）"
 
@@ -5958,7 +6146,7 @@ msgstr "位置"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:377
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:418
 msgid "Precision Schedule"
 msgstr "精确时间表"
 
@@ -5974,7 +6162,7 @@ msgstr "优先使用二维码登录；其次是手机号和验证码（可选两
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:43
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
@@ -5990,7 +6178,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -6034,8 +6222,8 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:147
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:222
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:188
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:263
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -6063,7 +6251,7 @@ msgstr "预览缩略图"
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:474
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:477
 msgid "Previous"
 msgstr "上一页"
 
@@ -6084,6 +6272,10 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
+msgid "Prime Time"
+msgstr "黄金时段"
+
 #: src/components/streamers/config/stream-selection-input.tsx:119
 msgid "Prioritize specific CDN providers. Press Enter to add."
 msgstr "优先选择特定 CDN 提供商。按 Enter 添加。"
@@ -6096,8 +6288,7 @@ msgstr "优先选择特定画质（不区分大小写）。按 Enter 添加。"
 msgid "Prioritize specific streaming protocols. Press Enter to add."
 msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:219
-#: src/components/streamers/edit/streamer-meta-form.tsx:194
+#: src/components/streamers/config/streamer-recording-fields.tsx:97
 #: src/components/streamers/streamer-batch-action-bar.tsx:218
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
 msgid "Priority"
@@ -6114,6 +6305,10 @@ msgstr "优先级从高到低"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
 msgid "Priority low-high"
 msgstr "优先级从低到高"
+
+#: src/components/config/global/network-system-card.tsx:270
+msgid "Private Network Access"
+msgstr "私有网络访问"
 
 #. placeholder {0}: status.exited.code ?? 0
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
@@ -6134,11 +6329,11 @@ msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 msgid "Processed {0} streamers; {1} failed"
 msgstr "已处理 {0} 个主播；{1} 个失败"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1091
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1124
 msgid "Processed Buffer Multiplier"
 msgstr "已处理缓冲倍数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1282
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1321
 msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
@@ -6157,7 +6352,7 @@ msgstr "处理行为"
 msgid "Processing nodes"
 msgstr "处理节点"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1649
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1676
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
 msgid "Processor"
 msgstr "处理器"
@@ -6174,29 +6369,30 @@ msgstr "进度"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:26
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:29
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:31
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:33
 msgid "Protection Settings"
 msgstr "保护设置"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:49
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:54
 msgid "Protocol Settings"
 msgstr "协议设置"
 
+#: src/components/config/global/network-system-card.tsx:236
 #: src/components/config/shared-config-editor.tsx:190
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:270
-#: src/components/config/shared/proxy-settings-card.tsx:242
+#: src/components/config/global/network-system-card.tsx:244
+#: src/components/config/shared/proxy-settings-card.tsx:250
 msgid "Proxy Configuration"
 msgstr "代理配置"
 
-#: src/components/config/shared/proxy-settings-card.tsx:264
+#: src/components/config/shared/proxy-settings-card.tsx:272
 msgid "Proxy Strategy"
 msgstr "代理策略"
 
-#: src/components/config/shared/proxy-settings-card.tsx:162
+#: src/components/config/shared/proxy-settings-card.tsx:168
 msgid "Proxy URL"
 msgstr "代理 URL"
 
@@ -6213,7 +6409,7 @@ msgstr "二维码已过期"
 msgid "QR Login"
 msgstr "扫码登录"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:57
+#: src/components/config/engines/forms/streamlink-form.tsx:60
 #: src/components/player/stream-info-card.tsx:171
 msgid "Quality"
 msgstr "质量"
@@ -6226,15 +6422,15 @@ msgstr "质量（qscale）"
 msgid "Quality Control"
 msgstr "质量控制"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:70
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:156
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:154
 msgid "Quality Settings"
 msgstr "画质设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:707
+#: src/components/config/engines/forms/mesio-hls-form.tsx:734
 msgid "Query Parameters"
 msgstr "查询参数"
 
@@ -6250,8 +6446,8 @@ msgstr "排队中"
 msgid "Queued for download"
 msgstr "等待下载"
 
-#: src/components/config/global/concurrency-card.tsx:319
-#: src/components/config/global/concurrency-card.tsx:327
+#: src/components/config/global/concurrency-card.tsx:206
+#: src/components/config/global/concurrency-card.tsx:209
 msgid "Queued Refresh Threshold"
 msgstr "排队刷新阈值"
 
@@ -6280,7 +6476,7 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:231
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:236
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -6311,11 +6507,11 @@ msgstr "Rclone 可执行文件"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:671
+#: src/components/config/engines/forms/mesio-hls-form.tsx:698
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
-#: src/components/config/engines/engine-card.tsx:146
+#: src/components/config/engines/engine-card.tsx:74
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:330
 msgid "Ready"
 msgstr "就绪"
@@ -6348,8 +6544,8 @@ msgstr "当直播结束时接收通知。"
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:265
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:294
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:268
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:297
 msgid "Recent notification events persisted by the backend"
 msgstr "后端持久化的最近通知事件"
 
@@ -6365,21 +6561,22 @@ msgstr "最近更新"
 msgid "Recommended"
 msgstr "推荐"
 
-#: src/components/config/engines/forms/mesio-form.tsx:319
+#: src/components/config/engines/forms/mesio-form.tsx:329
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "推荐：8388608 (8 MiB)"
 
-#: src/components/config/global/file-config-card.tsx:28
-#: src/components/config/shared/record-danmu-card.tsx:40
+#: src/components/config/global/file-config-card.tsx:29
+#: src/components/config/shared/record-danmu-card.tsx:46
 msgid "Record Danmu"
 msgstr "录制弹幕"
 
+#: src/components/streamers/config/streamer-recording-fields.tsx:49
 #: src/components/streamers/edit/streamer-header.tsx:61
 msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:253
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:141
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -6405,7 +6602,7 @@ msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
 #: src/components/config/shared/network-settings-card.tsx:199
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:393
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:396
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:604
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:138
 msgid "Refresh"
@@ -6415,15 +6612,15 @@ msgstr "刷新"
 msgid "Refresh failed: Manual login required"
 msgstr "刷新失败：需要手动登录"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:55
+#: src/components/filters/filter-types.ts:54
 msgid "Regex"
 msgstr "正则表达式"
 
-#: src/components/filters/forms/RegexFilterForm.tsx:28
+#: src/components/filters/forms/RegexFilterForm.tsx:32
 msgid "Regex Pattern"
 msgstr "正则模式"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:270
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:272
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
 
@@ -6432,7 +6629,7 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:117
+#: src/components/config/engines/forms/mesio-hls-form.tsx:141
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
 msgid "Remove"
 msgstr "移除"
@@ -6486,11 +6683,11 @@ msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改�
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1416
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1464
 msgid "Reorder Duration (ms)"
 msgstr "重排持续时间（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1435
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1483
 msgid "Reorder Max Segments"
 msgstr "重排最大分段数"
 
@@ -6498,7 +6695,7 @@ msgstr "重排最大分段数"
 msgid "Replace All"
 msgstr "全部替换"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:234
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:236
 msgid "Replace destination files if they exist"
 msgstr "如果目标文件已存在则替换"
 
@@ -6523,7 +6720,7 @@ msgstr "替换步骤"
 msgid "Request AAC audio without a video track."
 msgstr "请求不含视频轨的 AAC 音频。"
 
-#: src/components/notifications/forms/webhook-form.tsx:187
+#: src/components/notifications/forms/webhook-form.tsx:151
 msgid "Request timeout duration"
 msgstr "请求超时时长"
 
@@ -6554,7 +6751,7 @@ msgstr "分辨率（缩放）"
 msgid "Resolution change"
 msgstr "分辨率变化"
 
-#: src/components/config/global/resource-limits-card.tsx:18
+#: src/components/config/global/resource-limits-card.tsx:21
 msgid "Resource Limits"
 msgstr "资源限制"
 
@@ -6563,9 +6760,12 @@ msgid "Resources"
 msgstr "资源"
 
 #: src/components/config/global/backup-restore-card.tsx:432
-#: src/components/config/global/concurrency-card.tsx:172
 msgid "Restart Required"
 msgstr "需要重启"
+
+#: src/components/config/global/concurrency-card.tsx:358
+msgid "Restart rust-srec after saving for the new timeouts to take effect."
+msgstr "保存后需重启 rust-srec，新的超时设置才会生效。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:552
 msgid "Restart with -d"
@@ -6600,6 +6800,10 @@ msgstr "恢复启动"
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
+#: src/components/config/global/network-system-card.tsx:157
+msgid "Retention"
+msgstr "保留策略"
+
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:65
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
@@ -6612,12 +6816,12 @@ msgstr "重试"
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:968
+#: src/components/config/engines/forms/mesio-hls-form.tsx:998
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "重试延迟（ms）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1161
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1197
 msgid "Retry Delay Base (ms)"
 msgstr "重试延迟基数（毫秒）"
 
@@ -6650,7 +6854,7 @@ msgstr "查看录制内容并管理归档"
 msgid "Right"
 msgstr "右侧"
 
-#: src/components/config/shared/proxy-settings-card.tsx:122
+#: src/components/config/shared/proxy-settings-card.tsx:128
 msgid "Route traffic through an intermediate server"
 msgstr "通过中间服务器转发流量"
 
@@ -6670,7 +6874,7 @@ msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1330
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1372
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
@@ -6689,15 +6893,15 @@ msgstr "在整个会话结束且所有分段管道均已完成后运行一次。
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
-#: src/components/config/shared/event-hooks-form.tsx:148
+#: src/components/config/shared/event-hooks-form.tsx:146
 msgid "Runs when a download begins."
 msgstr "录制开始时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:154
+#: src/components/config/shared/event-hooks-form.tsx:152
 msgid "Runs when a download completes successfully."
 msgstr "录制成功完成时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:160
+#: src/components/config/shared/event-hooks-form.tsx:158
 msgid "Runs when a download encounters an error."
 msgstr "录制发生错误时运行。"
 
@@ -6714,19 +6918,19 @@ msgstr "当视频和弹幕分段都可用时运行。"
 msgid "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
 msgstr "当视频和弹幕分段都可用时运行。需要启用“录制弹幕”。"
 
-#: src/components/config/shared/event-hooks-form.tsx:166
+#: src/components/config/shared/event-hooks-form.tsx:164
 msgid "Runs when the post-processing pipeline completes."
 msgstr "后处理管道完成时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:142
+#: src/components/config/shared/event-hooks-form.tsx:140
 msgid "Runs when the streamer goes offline."
 msgstr "主播离线时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:136
+#: src/components/config/shared/event-hooks-form.tsx:134
 msgid "Runs when the streamer goes online."
 msgstr "主播上线时运行。"
 
-#: src/components/filters/forms/RegexFilterForm.tsx:38
+#: src/components/filters/forms/RegexFilterForm.tsx:42
 msgid "Rust regex syntax supported."
 msgstr "支持 Rust 正则语法。"
 
@@ -6736,17 +6940,21 @@ msgstr "支持 Rust 正则语法。"
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
-#: src/components/config/shared/danmu-config-form.tsx:144
-msgid "Sample danmu at a constant time interval."
-msgstr "按固定时间间隔采样弹幕。"
+#: src/components/filters/FilterCard.tsx:44
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:75
+msgctxt "Saturday initial"
+msgid "S"
+msgstr "六"
+
+#: src/components/filters/FilterCard.tsx:45
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:80
+msgctxt "Sunday initial"
+msgid "S"
+msgstr "日"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:164
 msgid "Sample Rate (Hz)"
 msgstr "采样率（Hz）"
-
-#: src/components/config/shared/danmu-config-form.tsx:120
-msgid "Sampling Strategy"
-msgstr "采样策略"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:154
 msgid "Sanitized session title"
@@ -6756,15 +6964,23 @@ msgstr "清理后的会话标题"
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
-#: src/components/config/engines/engine-editor.tsx:297
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
+msgid "Saturday"
+msgstr "星期六"
+
+#: src/components/filters/FilterDialog.tsx:278
+#: src/components/notifications/channel-form.tsx:440
+#: src/components/shared/save-fab.tsx:89
+#: src/components/streamers/streamer-editor.tsx:312
+msgid "Save changes"
+msgstr "保存更改"
+
+#: src/components/config/engines/engine-editor.tsx:302
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
-#: src/components/filters/FilterDialog.tsx:260
 #: src/components/notifications/subscription-manager.tsx:464
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:612
-#: src/components/streamers/edit/streamer-save-fab.tsx:53
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:90
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "保存更改"
@@ -6777,12 +6993,14 @@ msgstr "将设置保存为 JSON 文件"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
+#: src/components/filters/FilterDialog.tsx:275
+#: src/components/shared/save-fab.tsx:87
+msgid "Saving"
+msgstr "保存中"
+
 #: src/components/config/platforms/platform-editor.tsx:157
 #: src/components/config/templates/template-editor.tsx:209
-#: src/components/filters/FilterDialog.tsx:257
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
-#: src/components/streamers/edit/streamer-save-fab.tsx:48
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:90
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
 msgstr "保存中..."
@@ -6807,7 +7025,7 @@ msgstr "使用哔哩哔哩移动端 App 扫码"
 msgid "Scanned! Please confirm on your phone"
 msgstr "已扫描！请在手机上确认"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:28
+#: src/components/filters/filter-types.ts:37
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
@@ -6816,7 +7034,7 @@ msgstr "安排录制时间"
 msgid "Scheduled"
 msgstr "已计划"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1630
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1664
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:331
 msgid "Scheduler"
 msgstr "调度器"
@@ -6825,6 +7043,10 @@ msgstr "调度器"
 msgid "Script"
 msgstr "脚本"
 
+#: src/components/danmu/danmu-viewer.tsx:199
+msgid "Scrolling"
+msgstr "滚动弹幕"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:44
 msgid "SD / Low"
 msgstr "标清 / 低清"
@@ -6832,6 +7054,10 @@ msgstr "标清 / 低清"
 #: src/components/pipeline/workflows/step-library.tsx:292
 msgid "Search by name or description..."
 msgstr "按名称或描述搜索..."
+
+#: src/components/danmu/danmu-viewer.tsx:165
+msgid "Search comments..."
+msgstr "搜索弹幕…"
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
 msgid "Search engines..."
@@ -6853,6 +7079,10 @@ msgstr "搜索日志..."
 msgid "Search outputs..."
 msgstr "搜索媒体文件..."
 
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
+msgid "Search platform..."
+msgstr "搜索平台…"
+
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:76
 msgid "Search platforms..."
 msgstr "搜索平台..."
@@ -6865,7 +7095,7 @@ msgstr "搜索预设..."
 msgid "Search sessions..."
 msgstr "搜索录制会话..."
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:301
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:304
 msgid "Search streamer..."
 msgstr "搜索主播..."
 
@@ -6890,11 +7120,15 @@ msgstr "秒 (00-59)"
 msgid "Secondary"
 msgstr "次要"
 
-#: src/components/notifications/forms/webhook-form.tsx:388
+#: src/components/notifications/forms/webhook-form.tsx:357
 msgid "secret"
 msgstr "secret"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:179
+#: src/components/ui/input-with-unit.tsx:36
+msgid "Secs"
+msgstr "秒"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
 msgid "Security & Identity"
 msgstr "安全与身份"
 
@@ -6903,11 +7137,11 @@ msgstr "安全与身份"
 msgid "Segment"
 msgstr "分段"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1123
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1159
 msgid "Segment Timeout (ms)"
 msgstr "分段超时（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1415
 msgid "Segment TTL (ms)"
 msgstr "分段 TTL（毫秒）"
 
@@ -6920,15 +7154,15 @@ msgstr "分段"
 msgid "Select"
 msgstr "选择"
 
-#: src/components/config/global/concurrency-card.tsx:423
+#: src/components/config/global/concurrency-card.tsx:390
 msgid "Select a default engine"
 msgstr "选择默认引擎"
 
-#: src/components/config/shared/output-settings-card.tsx:131
+#: src/components/config/shared/output-settings-card.tsx:137
 msgid "Select a format"
 msgstr "选择格式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:80
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "选择预设或输入斗鱼画质值。仅音频会请求不含视频的 AAC。"
 
@@ -6953,11 +7187,15 @@ msgstr "选择主播"
 msgid "Select All"
 msgstr "全选"
 
-#: src/components/config/shared/output-settings-card.tsx:172
+#: src/components/config/shared/output-settings-card.tsx:178
 msgid "Select an engine"
 msgstr "选择引擎"
 
-#: src/components/config/shared/record-danmu-card.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:72
+msgid "Select API Mode"
+msgstr "选择 API 模式"
+
+#: src/components/config/shared/record-danmu-card.tsx:90
 msgid "Select behavior"
 msgstr "选择行为"
 
@@ -6965,21 +7203,21 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:122
+msgid "Select Client Type"
+msgstr "选择客户端类型"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:277
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:373
 msgid "Select codec"
 msgstr "选择编解码器"
-
-#: src/components/streamers/config/streamer-general-settings.tsx:154
-msgid "Select config"
-msgstr "选择配置"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:92
 #: src/components/streamers/streamer-batch-action-bar.tsx:98
 msgid "Select current page"
 msgstr "选择当前页"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:139
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:141
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:288
 msgid "Select date anchor"
 msgstr "选择日期锚点"
@@ -7000,6 +7238,7 @@ msgstr "选择格式"
 msgid "Select login type"
 msgstr "选择登录类型"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Select operation"
 msgstr "选择操作"
@@ -7008,14 +7247,21 @@ msgstr "选择操作"
 msgid "Select or type a rate"
 msgstr "选择或输入画质值"
 
+#: src/components/notifications/forms/telegram-form.tsx:93
+msgid "Select parse mode"
+msgstr "选择解析模式"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:330
 msgid "Select preset"
 msgstr "选择预设"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:224
-#: src/components/streamers/edit/streamer-meta-form.tsx:199
+#: src/components/streamers/config/streamer-recording-fields.tsx:102
 msgid "Select priority"
 msgstr "选择优先级"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:67
+msgid "Select quality"
+msgstr "选择画质"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:183
 msgid "Select strategy"
@@ -7025,11 +7271,11 @@ msgstr "选择策略"
 msgid "Select streamers"
 msgstr "选择主播"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:189
+#: src/components/streamers/config/streamer-recording-fields.tsx:69
 msgid "Select template"
 msgstr "选择模板"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:133
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:174
 msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
@@ -7046,8 +7292,8 @@ msgstr "选择你想要尝试采集的最高质量等级。"
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
-#: src/components/config/engines/engine-editor.tsx:235
-#: src/components/notifications/channel-form.tsx:352
+#: src/components/config/engines/engine-editor.tsx:240
+#: src/components/notifications/channel-form.tsx:392
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
 msgid "Select type"
 msgstr "选择类型"
@@ -7074,7 +7320,7 @@ msgstr "已选择的流"
 msgid "Send"
 msgstr "发送"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启；仅在你所在网络签发失败时关闭。"
 
@@ -7091,7 +7337,7 @@ msgid "Server not configured"
 msgstr "服务器未配置"
 
 #: src/components/notifications/channel-card.tsx:133
-#: src/components/notifications/forms/gotify-form.tsx:36
+#: src/components/notifications/forms/gotify-form.tsx:34
 msgid "Server URL"
 msgstr "服务器地址"
 
@@ -7178,7 +7424,7 @@ msgstr "录制会话"
 msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
 msgstr "将“TDL 二进制路径”设置为你的 `tdl` 可执行文件，或确保 `tdl` 在 PATH 中。"
 
-#: src/components/config/shared/limits-card.tsx:37
+#: src/components/config/shared/limits-card.tsx:41
 msgid "Set constraints on downloads."
 msgstr "设置录制限制。"
 
@@ -7187,11 +7433,12 @@ msgstr "设置录制限制。"
 msgid "Set priority"
 msgstr "设置优先级"
 
-#: src/components/config/engines/engine-editor.tsx:354
+#: src/components/config/engines/engine-editor.tsx:359
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
-#: src/components/config/engines/engine-editor.tsx:92
+#: src/components/config/engines/engine-editor.tsx:97
+#: src/components/filters/FilterDialog.tsx:247
 #: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
@@ -7199,11 +7446,7 @@ msgstr "设置新的录制工具配置"
 msgid "Settings"
 msgstr "设置"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:54
-msgid "Settings have been optimized for this platform."
-msgstr "设置已针对该平台优化。"
-
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:131
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:164
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -7261,7 +7504,7 @@ msgstr "单个 URL"
 msgid "Size"
 msgstr "大小"
 
-#: src/components/config/global/resource-limits-card.tsx:19
+#: src/components/config/global/resource-limits-card.tsx:22
 msgid "Size and duration constraints for recordings."
 msgstr "录制的大小与时长限制。"
 
@@ -7269,19 +7512,19 @@ msgstr "录制的大小与时长限制。"
 msgid "Size limit"
 msgstr "大小限制"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:310
+#: src/components/config/engines/forms/mesio-hls-form.tsx:334
 msgid "Skip after both"
 msgstr "满足任一条件后跳过"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:304
+#: src/components/config/engines/forms/mesio-hls-form.tsx:328
 msgid "Skip after count"
 msgstr "达到次数后跳过"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:307
+#: src/components/config/engines/forms/mesio-hls-form.tsx:331
 msgid "Skip after duration"
 msgstr "达到时长后跳过"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:152
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -7302,7 +7545,7 @@ msgid "Something went wrong!"
 msgstr "发生错误！"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:52
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:84
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:81
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
 
@@ -7323,15 +7566,11 @@ msgstr "空间节省"
 msgid "Specific"
 msgstr "特定"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:166
-msgid "Specific settings for the platform."
-msgstr "平台的特定设置。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:237
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:232
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:55
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
@@ -7340,19 +7579,19 @@ msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 msgid "Speed"
 msgstr "速度"
 
-#: src/components/config/shared/limits-card.tsx:65
+#: src/components/config/shared/limits-card.tsx:69
 msgid "Split after duration."
 msgstr "按时长分割。"
 
-#: src/components/config/shared/limits-card.tsx:119
+#: src/components/config/shared/limits-card.tsx:123
 msgid "Split after size."
 msgstr "按大小分割。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:73
+#: src/components/config/engines/forms/mesio-form.tsx:83
 msgid "Split on any raw header change. Safe but may cause extra files."
 msgstr "在任意原始头变更时分割。安全但可能产生额外文件。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:94
+#: src/components/config/engines/forms/mesio-form.tsx:104
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "仅在编解码器配置变更时分割。减少误分割。"
 
@@ -7368,17 +7607,13 @@ msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
 msgid "Standard"
 msgstr "标准"
 
-#: src/components/filters/forms/CronFilterForm.tsx:37
+#: src/components/filters/forms/CronFilterForm.tsx:41
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:318
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:357
 msgid "Start"
 msgstr "开始"
-
-#: src/components/streamers/config/streamer-general-settings.tsx:260
-msgid "Start checking this streamer immediately."
-msgstr "立即开始检查此主播。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:313
 msgid "Start Desktop Login"
@@ -7455,9 +7690,13 @@ msgstr "存储"
 msgid "Stream Archive"
 msgstr "直播归档"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:58
+#: src/components/streamers/config/streamer-identity-fields.tsx:62
 msgid "Stream Details"
 msgstr "流详情"
+
+#: src/components/config/shared/output-settings-card.tsx:209
+msgid "Stream lookup"
+msgstr "地址获取方式"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:975
 msgid "Stream Mapping (-map)"
@@ -7476,10 +7715,10 @@ msgstr "流选项"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:39
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:100
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:112
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:104
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:43
 msgid "Stream Password"
 msgstr "直播密码"
 
@@ -7487,11 +7726,11 @@ msgstr "直播密码"
 msgid "Stream Player"
 msgstr "流播放器"
 
-#: src/components/config/engines/forms/mesio-form.tsx:55
+#: src/components/config/engines/forms/mesio-form.tsx:65
 msgid "Stream Splitting Strategy"
 msgstr "流分割策略"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:151
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:153
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:297
 msgid "Stream start time"
 msgstr "直播开始时间"
@@ -7512,8 +7751,8 @@ msgstr "主播"
 msgid "STREAMER"
 msgstr "主播"
 
-#: src/components/config/global/network-system-card.tsx:58
-#: src/components/config/global/network-system-card.tsx:66
+#: src/components/config/global/network-system-card.tsx:61
+#: src/components/config/global/network-system-card.tsx:64
 msgid "Streamer Check"
 msgstr "主播检查"
 
@@ -7529,10 +7768,6 @@ msgstr "主播创建成功"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:323
 msgid "Streamer deleted"
 msgstr "主播已删除"
-
-#: src/components/streamers/edit/streamer-meta-form.tsx:95
-msgid "Streamer Details"
-msgstr "主播详情"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:133
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:373
@@ -7556,7 +7791,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:862
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:865
 msgid "Streamer pagination"
 msgstr "主播分页"
 
@@ -7565,7 +7800,7 @@ msgstr "主播分页"
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/hooks/use-edit-streamer.ts:76
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:74
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
@@ -7587,7 +7822,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streaming services"
 msgstr "流媒体服务"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:40
+#: src/components/config/engines/forms/streamlink-form.tsx:43
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -7636,6 +7871,10 @@ msgstr "成功删除 {0} 个会话"
 msgid "Successfully processed {0} streamers"
 msgstr "成功处理 {0} 个主播"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
+msgid "Sunday"
+msgstr "星期日"
+
 #: src/components/config/shared/network-settings-card.tsx:290
 msgid "Supported"
 msgstr "支持"
@@ -7644,12 +7883,12 @@ msgstr "支持"
 msgid "Supported Platforms"
 msgstr "支持的平台"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:110
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:241
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间占位符。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:119
+#: src/components/config/engines/forms/mesio-form.tsx:129
 msgid "Suppress redundant headers to reduce player micro-stutter"
 msgstr "抑制冗余头部以减少播放器微卡顿"
 
@@ -7673,7 +7912,7 @@ msgstr "同步"
 msgid "System"
 msgstr "系统"
 
-#: src/components/notifications/events/event-card.tsx:154
+#: src/components/notifications/events/event-card.tsx:156
 msgid "SYSTEM"
 msgstr "系统"
 
@@ -7682,7 +7921,6 @@ msgstr "系统"
 msgid "System Health"
 msgstr "系统健康"
 
-#: src/components/config/engines/engine-card.tsx:170
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:189
 msgid "System Status"
 msgstr "系统状态"
@@ -7691,7 +7929,23 @@ msgstr "系统状态"
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:511
+#: src/components/filters/FilterCard.tsx:42
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:65
+msgctxt "Thursday initial"
+msgid "T"
+msgstr "四"
+
+#: src/components/filters/FilterCard.tsx:37
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:55
+msgctxt "Tuesday initial"
+msgid "T"
+msgstr "二"
+
+#: src/components/config/engines/forms/mesio-form.tsx:193
+msgid "Tags"
+msgstr "标签"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:535
 msgid "Target bitrate"
 msgstr "目标码率"
 
@@ -7703,13 +7957,9 @@ msgstr "目标比特率"
 msgid "Target Configuration"
 msgstr "目标配置"
 
-#: src/components/config/shared/danmu-config-form.tsx:219
-msgid "Target Danmus per Sample"
-msgstr "每次采样目标弹幕数"
-
-#: src/components/config/shared/danmu-config-form.tsx:236
-msgid "Target number of messages to capture per sample period."
-msgstr "每个采样周期捕获的目标消息数量。"
+#: src/components/ui/input-with-unit.tsx:31
+msgid "TB"
+msgstr "TB"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:273
 msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
@@ -7771,7 +8021,7 @@ msgstr "需要 Telegram 桌面版数据"
 msgid "Telegram Desktop Directory"
 msgstr "Telegram 桌面版目录"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:179
+#: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:175
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:537
 msgid "Template"
@@ -7785,19 +8035,19 @@ msgstr "模板克隆成功"
 msgid "Template created successfully"
 msgstr "模板创建成功"
 
-#: src/components/config/templates/tabs/general-tab.tsx:36
+#: src/components/config/templates/tabs/general-tab.tsx:43
 msgid "Template Information"
 msgstr "模板信息"
 
-#: src/components/config/templates/tabs/general-tab.tsx:51
+#: src/components/config/templates/tabs/general-tab.tsx:58
 msgid "Template Name"
 msgstr "模板名称"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:78
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
 msgid "Template not found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:39
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:40
 msgid "Template updated successfully"
 msgstr "模板更新成功"
 
@@ -7844,7 +8094,7 @@ msgstr "配置已成功处理。以下是更改摘要："
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:79
+#: src/components/streamers/config/streamer-identity-fields.tsx:82
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
@@ -7856,7 +8106,7 @@ msgstr "你要访问的页面不存在。"
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
-#: src/components/config/engines/engine-editor.tsx:260
+#: src/components/config/engines/engine-editor.tsx:265
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
@@ -7879,10 +8129,6 @@ msgstr "主题预设"
 msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道通知（Discord/电子邮件/Webhook）。"
 
-#: src/components/config/global/concurrency-card.tsx:180
-msgid "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
-msgstr "这些超时设置在管道工作线程池启动时应用。更改需要重启才能生效。"
-
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
 #: src/components/pipeline/workflows/steps-list.tsx:165
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
@@ -7896,9 +8142,13 @@ msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:380
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:421
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果开始时间在结束时间之后，窗口将自动跨越午夜。"
+
+#: src/components/filters/FilterCard.tsx:253
+msgid "This filter's settings could not be read."
+msgstr "无法读取该过滤器的设置。"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "This is a default preset. Description cannot be modified."
@@ -7933,6 +8183,10 @@ msgstr "该主播正在直播，但全局下载并发已用满。一旦有空闲
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
+#: src/components/config/engines/engine-card.tsx:151
+msgid "This tool was not found on the server."
+msgstr "服务器上未找到该工具。"
+
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:183
 msgid "This will cancel all pending and processing jobs in this pipeline."
 msgstr "这将取消此处理管道中所有待处理和处理中的任务。"
@@ -7960,11 +8214,6 @@ msgstr "这将永久删除预设“{0}”。若不更新，使用该预设的处
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要更新。"
 
-#. placeholder {0}: engine.name
-#: src/components/config/engines/engine-card.tsx:229
-msgid "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
-msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
-
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:399
 msgid "Throughput"
 msgstr "吞吐量"
@@ -7982,13 +8231,13 @@ msgstr "缩略图"
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
-#: src/components/filters/forms/FilterTypeSelector.tsx:26
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
+msgid "Thursday"
+msgstr "星期四"
+
+#: src/components/filters/filter-types.ts:36
 msgid "Time Based"
 msgstr "基于时间"
-
-#: src/components/config/shared/danmu-config-form.tsx:170
-msgid "Time between sampling attempts."
-msgstr "采样尝试之间的时间间隔。"
 
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:67
 msgid "Time offset to take screenshot from"
@@ -7998,12 +8247,12 @@ msgstr "截图时间偏移"
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:207
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:248
 msgid "Time Range"
 msgstr "时间范围"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:99
-#: src/components/config/engines/forms/streamlink-form.tsx:90
+#: src/components/config/engines/forms/ffmpeg-form.tsx:102
+#: src/components/config/engines/forms/streamlink-form.tsx:93
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
@@ -8016,27 +8265,27 @@ msgstr "按时间段调度"
 msgid "Timeline"
 msgstr "时间线"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:65
+#: src/components/config/engines/forms/ffmpeg-form.tsx:68
 msgid "Timeout"
 msgstr "超时"
 
-#: src/components/notifications/forms/gotify-form.tsx:107
+#: src/components/notifications/forms/gotify-form.tsx:77
 msgid "Timeout (s)"
 msgstr "超时（秒）"
 
-#: src/components/notifications/forms/webhook-form.tsx:176
+#: src/components/notifications/forms/webhook-form.tsx:139
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
-#: src/components/config/global/concurrency-card.tsx:287
+#: src/components/config/global/concurrency-card.tsx:330
 msgid "Timeout before cancelling `execute` processor commands."
 msgstr "取消 `execute` 处理器命令前的超时时间。"
 
-#: src/components/config/global/concurrency-card.tsx:209
+#: src/components/config/global/concurrency-card.tsx:270
 msgid "Timeout before cancelling CPU-bound processors."
 msgstr "取消 CPU 密集型处理器前的超时时间。"
 
-#: src/components/config/global/concurrency-card.tsx:248
+#: src/components/config/global/concurrency-card.tsx:299
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "取消 IO 密集型处理器前的超时时间。"
 
@@ -8044,11 +8293,11 @@ msgstr "取消 IO 密集型处理器前的超时时间。"
 msgid "Timestamp"
 msgstr "时间戳"
 
-#: src/components/filters/forms/CronFilterForm.tsx:51
+#: src/components/filters/forms/CronFilterForm.tsx:55
 msgid "Timezone"
 msgstr "时区"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:35
+#: src/components/config/platforms/tabs/general-tab.tsx:39
 msgid "Timing & Delays"
 msgstr "时间与延迟"
 
@@ -8073,9 +8322,13 @@ msgstr "收件人地址"
 msgid "Today"
 msgstr "今天"
 
-#: src/components/notifications/forms/webhook-form.tsx:279
+#: src/components/notifications/forms/webhook-form.tsx:243
 msgid "Token"
 msgstr "令牌"
+
+#: src/components/danmu/danmu-viewer.tsx:205
+msgid "Top Fixed"
+msgstr "顶部固定"
 
 #: src/components/sessions/danmu-stats-panel.tsx:315
 #: src/components/sessions/danmu-stats-panel.tsx:408
@@ -8159,11 +8412,11 @@ msgstr "瞬时错误"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:155
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:109
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
@@ -8246,7 +8499,7 @@ msgstr "裁剪与时间"
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:443
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:446
 msgid "Try adjusting your filters or limit"
 msgstr "尝试调整过滤器或限制"
 
@@ -8276,32 +8529,36 @@ msgid "Try again"
 msgstr "重试"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:280
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:283
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:80
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:192
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:107
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
+msgid "Tuesday"
+msgstr "星期二"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:110
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:116
+#: src/components/config/engines/forms/streamlink-form.tsx:119
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch 代理播放列表"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:137
+#: src/components/config/engines/forms/streamlink-form.tsx:140
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:332
+#: src/components/notifications/channel-form.tsx:382
 msgid "Type"
 msgstr "类型"
 
@@ -8334,6 +8591,10 @@ msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 msgid "Unhealthy"
 msgstr "不健康"
 
+#: src/components/ui/input-with-unit.tsx:181
+msgid "Unit"
+msgstr "单位"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:421
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T、P 等后缀表示更大的容量。"
@@ -8350,7 +8611,11 @@ msgstr "未知"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:275
+#: src/components/config/templates/tabs/engine-override-card.tsx:36
+msgid "Unknown engine type: {engineType}"
+msgstr "未知的引擎类型：{engineType}"
+
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:278
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
 msgid "Unknown error"
@@ -8360,9 +8625,21 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
+#: src/components/filters/FilterCard.tsx:189
+msgid "Unknown filter type"
+msgstr "未知的过滤器类型"
+
+#: src/components/config/global/resource-limits-card.tsx:59
+msgid "Unlimited"
+msgstr "不限"
+
 #: src/components/sessions/timeline-tab.tsx:347
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
+
+#: src/components/streamers/config/streamer-identity-fields.tsx:189
+msgid "Unsupported link"
+msgstr "不支持的链接"
 
 #: src/components/streamers/card/use-streamer-status.tsx:147
 msgid "Until"
@@ -8375,10 +8652,6 @@ msgstr "无标题直播"
 #: src/components/sessions/timeline-tab.tsx:222
 msgid "UPDATE"
 msgstr "更新"
-
-#: src/components/notifications/channel-form.tsx:409
-msgid "Update Channel"
-msgstr "更新渠道"
 
 #: src/components/config/global/backup-restore-card.tsx:179
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:549
@@ -8432,8 +8705,7 @@ msgid "Uptime"
 msgstr "运行时间"
 
 #: src/components/notifications/channel-card.tsx:144
-#: src/components/streamers/config/streamer-general-settings.tsx:66
-#: src/components/streamers/edit/streamer-meta-form.tsx:116
+#: src/components/streamers/config/streamer-identity-fields.tsx:71
 #: src/components/streamers/progress-indicator.tsx:152
 msgid "URL"
 msgstr "URL"
@@ -8450,7 +8722,7 @@ msgstr "使用 <0>-movflags +faststart</0>"
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:124
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:125
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 
@@ -8466,15 +8738,15 @@ msgstr "使用二维码登录"
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文件夹中，并将同一会话的所有分段归组到一起。"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:156
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder. Execution time preserves the existing copy/move behavior."
 msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文件夹中。执行时间会保留现有 copy/move 行为。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:142
+#: src/components/config/shared/proxy-settings-card.tsx:148
 msgid "Use System Proxy"
 msgstr "使用系统代理"
 
-#: src/components/notifications/forms/email-form.tsx:204
+#: src/components/notifications/forms/email-form.tsx:176
 msgid "Use TLS"
 msgstr "启用 TLS"
 
@@ -8482,8 +8754,8 @@ msgstr "启用 TLS"
 msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Desktop 文件夹。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:116
-#: src/components/config/engines/forms/mesio-hls-form.tsx:722
+#: src/components/config/engines/forms/ffmpeg-form.tsx:119
+#: src/components/config/engines/forms/mesio-hls-form.tsx:749
 msgid "User Agent"
 msgstr "User-Agent"
 
@@ -8492,17 +8764,17 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:38
-#: src/components/config/shared/proxy-settings-card.tsx:179
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:39
+#: src/components/config/shared/proxy-settings-card.tsx:185
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
-#: src/components/notifications/forms/webhook-form.tsx:311
-#: src/components/notifications/forms/webhook-form.tsx:316
+#: src/components/notifications/forms/webhook-form.tsx:276
+#: src/components/notifications/forms/webhook-form.tsx:282
 #: src/routes/_public/login.lazy.tsx:168
 msgid "Username"
 msgstr "用户名"
 
-#: src/components/notifications/forms/discord-form.tsx:58
+#: src/components/notifications/forms/discord-form.tsx:53
 msgid "Username (Optional)"
 msgstr "用户名（可选）"
 
@@ -8511,7 +8783,7 @@ msgstr "用户名（可选）"
 msgid "Users"
 msgstr "用户"
 
-#: src/components/filters/forms/CronFilterForm.tsx:54
+#: src/components/filters/forms/CronFilterForm.tsx:60
 msgid "UTC"
 msgstr "UTC"
 
@@ -8527,8 +8799,8 @@ msgstr "校验失败"
 msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:573
-#: src/components/notifications/forms/webhook-form.tsx:453
+#: src/components/config/engines/forms/mesio-hls-form.tsx:597
+#: src/components/notifications/forms/webhook-form.tsx:429
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1036
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
@@ -8539,19 +8811,15 @@ msgstr "值"
 msgid "Variant"
 msgstr "样式"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:987
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1017
 msgid "Variant Selection Policy"
 msgstr "变体选择策略"
 
-#: src/components/config/global/file-config-card.tsx:77
+#: src/components/config/global/file-config-card.tsx:83
 msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
 msgstr "变量：'{streamer}'、'{title}'、'{platform}' | 时间：%Y、%m、%d、%H、%M、%S"
 
-#: src/components/config/shared/danmu-config-form.tsx:138
-msgid "Velocity Based (Dynamic)"
-msgstr "基于速度（动态）"
-
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:208
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:210
 msgid "Verify Integrity"
 msgstr "校验完整性"
 
@@ -8559,7 +8827,7 @@ msgstr "校验完整性"
 msgid "Verify Output"
 msgstr "验证输出"
 
-#: src/components/config/engines/engine-card.tsx:193
+#: src/components/config/engines/engine-card.tsx:143
 msgid "Version"
 msgstr "版本"
 
@@ -8584,7 +8852,7 @@ msgstr "视频编码"
 msgid "Video codec change"
 msgstr "视频编码变化"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:494
+#: src/components/config/engines/forms/mesio-hls-form.tsx:518
 msgid "Video only"
 msgstr "仅视频"
 
@@ -8618,23 +8886,29 @@ msgstr "查看详细日志与输出"
 msgid "View Details"
 msgstr "查看详情"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1510
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1558
 msgid "VOD Gap Strategy"
 msgstr "点播缺口策略"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1516
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1564
 msgid "VOD Segment Timeout (ms)"
 msgstr "点播分段超时（毫秒）"
+
+#: src/components/filters/FilterCard.tsx:40
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:60
+msgctxt "Wednesday initial"
+msgid "W"
+msgstr "三"
 
 #: src/components/config/platforms/platform-card.tsx:115
 msgid "Wait"
 msgstr "等待"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:301
+#: src/components/config/engines/forms/mesio-hls-form.tsx:325
 msgid "Wait indefinitely"
 msgstr "无限等待"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:96
+#: src/components/config/platforms/tabs/general-tab.tsx:100
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
@@ -8654,7 +8928,7 @@ msgstr "处理队列过长时发出警告。"
 msgid "Watch"
 msgstr "观看"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:75
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:76
 msgid "WEB"
 msgstr "WEB"
 
@@ -8692,24 +8966,36 @@ msgid "Web Push priority updated"
 msgstr "Web 推送优先级已更新"
 
 #: src/components/notifications/channel-card.tsx:86
-#: src/components/notifications/forms/discord-form.tsx:37
-#: src/components/notifications/forms/webhook-form.tsx:71
+#: src/components/notifications/forms/discord-form.tsx:32
+#: src/components/notifications/forms/webhook-form.tsx:79
 msgid "Webhook URL"
 msgstr "Webhook URL"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
+msgid "Wednesday"
+msgstr "星期三"
 
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:178
 msgid "Week"
 msgstr "本周"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:97
+msgid "Weekdays"
+msgstr "工作日"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
+msgid "Weekends"
+msgstr "周末"
+
 #: src/routes/_public/login.lazy.tsx:110
 msgid "Welcome back"
 msgstr "欢迎回来"
 
-#: src/components/config/global/concurrency-card.tsx:331
+#: src/components/config/global/concurrency-card.tsx:212
 msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以获取新的流地址和请求头。低于此阈值时，会复用首次直播事件中捕获的 URL。默认 60 秒。设为 0 表示每次排队等待都刷新。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1518
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1566
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "启用后，每个点播分段都必须在该超时内完成。"
 
@@ -8721,7 +9007,11 @@ msgstr "TDL 存储其会话和配置的地方。"
 msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
 msgstr "TDL 存储会话数据的地方 (`tdl --storage ...`)。例如：`type=bolt,path=/data/tdl`。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:533
+#: src/components/config/shared/output-settings-card.tsx:194
+msgid "Which tool downloads the stream once its URL is known."
+msgstr "获取到地址后，用哪个工具下载直播流。"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:557
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
 msgid "Width"
 msgstr "宽度"
@@ -8774,15 +9064,15 @@ msgstr "工作流"
 msgid "Working Directory"
 msgstr "工作目录"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:690
+#: src/components/config/engines/forms/mesio-hls-form.tsx:717
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:88
 msgid "WUP"
 msgstr "WUP"
 
-#: src/components/notifications/forms/webhook-form.tsx:368
+#: src/components/notifications/forms/webhook-form.tsx:336
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 
@@ -8793,6 +9083,11 @@ msgstr "年 (4 位数字)"
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:177
 msgid "Yesterday"
 msgstr "昨天"
+
+#: src/components/streamers/streamer-editor.tsx:107
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:180
+msgid "You have unsaved changes. Leave without saving?"
+msgstr "有未保存的更改，确定要离开吗？"
 
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:592
 msgid "Your digital library is currently empty. Start recording to populate your sessions here."

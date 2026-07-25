@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
   DownloadRetryPolicyObjectSchema,
@@ -40,6 +41,7 @@ export const TemplateSchema = z.object({
   output_filename_template: z.string().nullable().optional(),
   output_file_format: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
   platform_overrides: z
     .preprocess((val) => {
@@ -148,6 +150,7 @@ export const CreateTemplateRequestSchema = z.object({
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   platform_overrides: z.any().nullable().optional(),
   engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:

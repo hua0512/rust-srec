@@ -10,6 +10,7 @@ import {
   EditPlatformFormValues,
 } from '@/components/config/platforms/platform-editor';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/config/platforms/$platformId',
@@ -65,11 +66,9 @@ function EditPlatformPage() {
             <Skeleton key={i} className="h-10 w-32 rounded-lg" />
           ))}
         </div>
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-        </div>
+        {/* `defaultTab="general"` opens on `GeneralTab`'s single card: three timing fields in a
+            `sm:grid-cols-2` grid, so two rows. */}
+        <SettingsCardSkeleton sections={[2]} />
       </div>
     );
   }

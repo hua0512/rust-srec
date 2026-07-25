@@ -129,6 +129,26 @@ pub struct BigoConfig {
     pub mint_token: Option<bool>,
 }
 
+/// Streamlink *extractor* configuration.
+///
+/// Distinct from `StreamlinkEngineConfig`, which configures the streamlink download engine.
+/// This one configures stream-URL resolution and lives under a nested `streamlink` key in the
+/// extras blob, matching what `StreamlinkExtractor::from_extras` reads. It applies whenever the
+/// streamlink extractor runs: as the fallback for a URL no built-in platform claims, or because
+/// `ExtractorSelection::Streamlink` forced it.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StreamlinkExtractorConfig {
+    /// Path to the `streamlink` binary. Falls back to `$STREAMLINK_PATH`, then `streamlink`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_path: Option<String>,
+    /// Quality passed to streamlink (default: "best")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+    /// Extra CLI arguments appended to every streamlink invocation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
+}
+
 /// Merge two JSON objects, with overlay taking precedence.
 ///
 /// This function performs a shallow merge of JSON objects. For nested objects,

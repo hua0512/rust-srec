@@ -1,269 +1,42 @@
-import { UseFormReturn, useWatch } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Trans } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
-import { useLingui } from '@lingui/react';
-import { Link, User, Sparkles, Loader2 } from 'lucide-react';
-import { PlatformConfig, Template } from '@/api/schemas';
-import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { UseFormReturn } from 'react-hook-form';
+import { Separator } from '@/components/ui/separator';
+import { Template } from '@/api/schemas';
+import { StreamerIdentityFields } from './streamer-identity-fields';
+import { StreamerRecordingFields } from './streamer-recording-fields';
 
 interface StreamerGeneralSettingsProps {
   form: UseFormReturn<any>;
-  platformConfigs?: PlatformConfig[];
   templates?: Template[];
-  isLoading?: boolean;
   onAutofillName?: () => void;
   isAutofilling?: boolean;
+  /**
+   * Hide URL and name. The create wizard collects them in its first step, so repeating them here
+   * would ask for the same two values twice.
+   */
+  hideIdentityFields?: boolean;
 }
 
+/** General configuration: who the streamer is, and how it is recorded. */
 export function StreamerGeneralSettings({
   form,
-  platformConfigs,
   templates,
   onAutofillName,
   isAutofilling = false,
+  hideIdentityFields = false,
 }: StreamerGeneralSettingsProps) {
-  const { i18n } = useLingui();
-  const url = useWatch({
-    control: form.control,
-    name: 'url',
-  });
-
   return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
-          <Trans>Stream Details</Trans>
-        </h3>
-        <FormField
-          control={form.control}
-          name="url"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>URL</Trans>
-              </FormLabel>
-              <FormControl>
-                <div className="relative">
-                  <Link className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder={i18n._(msg`https://twitch.tv/...`)}
-                    {...field}
-                    className="bg-background/50 font-mono text-sm pl-9"
-                  />
-                </div>
-              </FormControl>
-              <FormDescription>
-                <Trans>The direct link to the channel or stream.</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Name</Trans>
-              </FormLabel>
-              <FormControl>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder={i18n._(msg`e.g. My Favorite Streamer`)}
-                      {...field}
-                      className="bg-background/50 pl-9"
-                    />
-                  </div>
-                  {onAutofillName && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-10 w-10 shrink-0 bg-background/50"
-                            onClick={onAutofillName}
-                            disabled={isAutofilling || !url}
-                          >
-                            {isAutofilling ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                            ) : (
-                              <Sparkles className="h-4 w-4 text-primary" />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            <Trans>Autofill name from URL</Trans>
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <FormField
-          control={form.control}
-          name="platform_config_id"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Platform Configuration</Trans>
-              </FormLabel>
-              <Select
-                onValueChange={field.onChange}
-                value={field.value ? String(field.value) : undefined}
-              >
-                <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder={i18n._(msg`Select config`)} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {platformConfigs?.map((platform) => (
-                    <SelectItem key={platform.id} value={String(platform.id)}>
-                      {platform.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                <Trans>Specific settings for the platform.</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="template_id"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Template</Trans>
-              </FormLabel>
-              <Select
-                onValueChange={(val) =>
-                  field.onChange(val === 'none' ? null : val)
-                }
-                value={field.value ? String(field.value) : 'none'}
-              >
-                <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder={i18n._(msg`Select template`)} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="none">
-                    <Trans>None (Default)</Trans>
-                  </SelectItem>
-                  {templates?.map((template) => (
-                    <SelectItem key={template.id} value={String(template.id)}>
-                      {template.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                <Trans>Apply template settings.</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <FormField
-          control={form.control}
-          name="priority"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Priority</Trans>
-              </FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder={i18n._(msg`Select priority`)} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="HIGH">
-                    <Trans>High</Trans>
-                  </SelectItem>
-                  <SelectItem value="NORMAL">
-                    <Trans>Normal</Trans>
-                  </SelectItem>
-                  <SelectItem value="LOW">
-                    <Trans>Low</Trans>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="enabled"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-lg border border-border/50 p-4 bg-muted/20 mt-1">
-              <FormControl>
-                <Checkbox
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-              <div className="space-y-1 leading-none">
-                <FormLabel className="font-semibold cursor-pointer">
-                  <Trans>Enable Monitoring</Trans>
-                </FormLabel>
-                <FormDescription>
-                  <Trans>Start checking this streamer immediately.</Trans>
-                </FormDescription>
-              </div>
-            </FormItem>
-          )}
-        />
-      </div>
+    <div className="space-y-5">
+      {!hideIdentityFields && (
+        <>
+          <StreamerIdentityFields
+            form={form}
+            onAutofillName={onAutofillName}
+            isAutofilling={isAutofilling}
+          />
+          <Separator />
+        </>
+      )}
+      <StreamerRecordingFields form={form} templates={templates} />
     </div>
   );
 }

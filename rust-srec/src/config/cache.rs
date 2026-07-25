@@ -325,6 +325,7 @@ mod tests {
                 max_part_size_bytes: 8_589_934_592,
                 record_danmu: false,
                 proxy_config: ProxyConfig::disabled(),
+                extractor: None,
                 download_engine: "ffmpeg".to_string(),
                 pipeline: None,
                 session_complete_pipeline: None,

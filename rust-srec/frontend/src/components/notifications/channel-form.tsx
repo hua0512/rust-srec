@@ -20,7 +20,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import {
@@ -30,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
@@ -38,13 +36,21 @@ import { useLingui } from '@lingui/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createChannel, updateChannel } from '@/server/functions/notifications';
 import { toast } from 'sonner';
-import { Loader2, Box } from 'lucide-react';
+import { Bell, Box, Loader2, SlidersHorizontal } from 'lucide-react';
 import { DiscordForm } from './forms/discord-form';
 import { EmailForm } from './forms/email-form';
 import { GotifyForm } from './forms/gotify-form';
 import { TelegramForm } from './forms/telegram-form';
 import { WebhookForm } from './forms/webhook-form';
 import { removeEmpty } from '@/lib/format';
+import {
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+  ConfigSectionHeading,
+} from '@/components/config/shared/config-field';
+import { IconInput } from '@/components/ui/icon-input';
 
 interface ChannelFormProps {
   channel?: NotificationChannel | null;
@@ -54,6 +60,39 @@ interface ChannelFormProps {
 
 // Use the discriminated union schema from API schemas
 type FormData = ChannelFormData;
+
+/**
+ * Starting settings for each channel type, matching the defaults on the schemas in
+ * `api/schemas/notifications.ts`.
+ *
+ * The form holds one `settings` object shared by every type, so switching type has to re-seed it;
+ * otherwise the previous type's keys linger and the new type's own fields come up empty.
+ */
+const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
+  Webhook: {
+    url: '',
+    method: 'POST',
+    auth: { type: 'None' },
+    min_priority: 2,
+    enabled: true,
+    timeout_secs: 30,
+    headers: [],
+  },
+  Telegram: {
+    bot_token: '',
+    chat_id: '',
+    parse_mode: 'HTML',
+    min_priority: 5,
+    enabled: true,
+  },
+  Gotify: {
+    server_url: '',
+    app_token: '',
+    min_priority: 5,
+    enabled: true,
+    timeout_secs: 30,
+  },
+};
 
 export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const { i18n } = useLingui();
@@ -65,15 +104,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     defaultValues: {
       name: '',
       channel_type: 'Webhook',
-      settings: {
-        url: '',
-        method: 'POST',
-        auth: { type: 'None' },
-        min_priority: 2,
-        enabled: true,
-        timeout_secs: 30,
-        headers: [],
-      },
+      settings: DEFAULT_SETTINGS.Webhook as never,
     },
   });
 
@@ -81,6 +112,21 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     control: form.control,
     name: 'channel_type',
   });
+
+  // Re-seed settings whenever the type changes while creating. Editing keeps the loaded values,
+  // and the type select is disabled there anyway.
+  useEffect(() => {
+    if (isEditing || !selectedType) return;
+    const defaults = DEFAULT_SETTINGS[selectedType];
+    if (!defaults) return;
+    // `reset` rather than `setValue`: replacing the whole `settings` subtree has to re-register
+    // the new type's fields, which is what makes their controlled inputs read the new values.
+    form.reset({
+      name: form.getValues('name'),
+      channel_type: selectedType,
+      settings: defaults as never,
+    });
+  }, [selectedType, isEditing, form]);
 
   // Load channel data when editing
   useEffect(() => {
@@ -195,15 +241,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       form.reset({
         name: '',
         channel_type: 'Webhook',
-        settings: {
-          url: '',
-          method: 'POST',
-          auth: { type: 'None' },
-          min_priority: 2,
-          enabled: true,
-          timeout_secs: 30,
-          headers: [],
-        },
+        settings: DEFAULT_SETTINGS.Webhook as never,
       });
     }
   }, [channel, open, form]);
@@ -280,118 +318,115 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-background/95 backdrop-blur-xl border-border/50">
-        <DialogHeader className="pb-4 border-b border-border/40">
-          <DialogTitle className="text-xl font-semibold tracking-tight">
-            {isEditing
-              ? i18n._(msg`Edit Channel`)
-              : i18n._(msg`Create Channel`)}
-          </DialogTitle>
-          <DialogDescription>
-            <Trans>Configure where and how you receive notifications.</Trans>
-          </DialogDescription>
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]">
+        <DialogHeader className="shrink-0 border-b px-6 py-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <Bell className="h-5 w-5 text-primary" />
+            </span>
+            <div className="space-y-0.5 text-left">
+              <DialogTitle className="text-base">
+                {isEditing ? (
+                  <Trans>Edit channel</Trans>
+                ) : (
+                  <Trans>New notification channel</Trans>
+                )}
+              </DialogTitle>
+              <DialogDescription className="text-sm">
+                <Trans>
+                  Configure where and how you receive notifications.
+                </Trans>
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit as any)}
-            className="space-y-6 pt-4"
+            className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="grid gap-6">
-              {/* General Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-muted-foreground/80">
-                        <Trans>Name</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Box className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder={i18n._(msg`My Channel`)}
-                            {...field}
-                            className="pl-9 bg-muted/30 border-primary/10"
-                          />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="channel_type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-muted-foreground/80">
-                        <Trans>Type</Trans>
-                      </FormLabel>
-                      <Select
-                        onValueChange={(val) => {
-                          if (val === 'Discord' || val === 'Email') {
-                            toast.warning(
-                              i18n._(
-                                msg`${val} channel support is coming soon!`,
-                              ),
-                            );
-                            return;
-                          }
-                          field.onChange(val);
-                        }}
-                        defaultValue={field.value}
-                        disabled={isEditing}
-                      >
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
+              <section className="space-y-4">
+                <ConfigSectionHeading icon={Bell}>
+                  <Trans>Channel</Trans>
+                </ConfigSectionHeading>
+                <div className="grid items-start gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel>
+                          <Trans>Name</Trans>
+                        </ConfigFieldLabel>
                         <FormControl>
-                          <SelectTrigger className="bg-muted/30 border-primary/10">
-                            <SelectValue
-                              placeholder={i18n._(msg`Select type`)}
-                            />
-                          </SelectTrigger>
+                          <IconInput
+                            icon={Box}
+                            placeholder={i18n._(msg`My Channel`)}
+                            className={CONFIG_INPUT}
+                            {...field}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="Webhook">Webhook</SelectItem>
-                          <SelectItem value="Telegram">Telegram</SelectItem>
-                          <SelectItem value="Gotify">Gotify</SelectItem>
-                          <SelectItem value="Discord">
-                            Discord (Coming Soon)
-                          </SelectItem>
-                          <SelectItem value="Email">
-                            Email (Coming Soon)
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              {/* Separator */}
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-border/40" />
+                  <FormField
+                    control={form.control}
+                    name="channel_type"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel>
+                          <Trans>Type</Trans>
+                        </ConfigFieldLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          disabled={isEditing}
+                        >
+                          <FormControl>
+                            <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                              <SelectValue
+                                placeholder={i18n._(msg`Select type`)}
+                              />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className={CONFIG_SELECT_CONTENT}>
+                            <SelectItem value="Webhook">Webhook</SelectItem>
+                            <SelectItem value="Telegram">Telegram</SelectItem>
+                            <SelectItem value="Gotify">Gotify</SelectItem>
+                            {/* Disabled rather than selectable-then-rejected: the previous
+                              version accepted the click and answered with a warning toast. */}
+                            <SelectItem value="Discord" disabled>
+                              Discord <ComingSoon />
+                            </SelectItem>
+                            <SelectItem value="Email" disabled>
+                              Email <ComingSoon />
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background/95 px-2 text-muted-foreground">
-                    <Trans>Configuration</Trans>
-                  </span>
-                </div>
-              </div>
+              </section>
 
-              {/* Dynamic Forms */}
-              {selectedType === 'Webhook' && <WebhookForm />}
-              {selectedType === 'Discord' && <DiscordForm />}
-              {selectedType === 'Email' && <EmailForm />}
-              {selectedType === 'Gotify' && <GotifyForm />}
-              {selectedType === 'Telegram' && <TelegramForm />}
+              <section className="space-y-4">
+                <ConfigSectionHeading icon={SlidersHorizontal}>
+                  <Trans>Configuration</Trans>
+                </ConfigSectionHeading>
+                {selectedType === 'Webhook' && <WebhookForm />}
+                {selectedType === 'Discord' && <DiscordForm />}
+                {selectedType === 'Email' && <EmailForm />}
+                {selectedType === 'Gotify' && <GotifyForm />}
+                {selectedType === 'Telegram' && <TelegramForm />}
+              </section>
             </div>
 
-            <DialogFooter className="pt-4 border-t border-border/40">
+            <DialogFooter className="shrink-0 gap-2 border-t px-6 py-4">
               <Button
                 type="button"
                 variant="outline"
@@ -399,20 +434,27 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
               >
                 <Trans>Cancel</Trans>
               </Button>
-              <Button
-                type="submit"
-                disabled={isPending}
-                className="bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-              >
+              <Button type="submit" disabled={isPending} className="min-w-32">
                 {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isEditing
-                  ? i18n._(msg`Update Channel`)
-                  : i18n._(msg`Create Channel`)}
+                {isEditing ? (
+                  <Trans>Save changes</Trans>
+                ) : (
+                  <Trans>Create channel</Trans>
+                )}
               </Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Marks a channel type that exists in the schema but has no working integration yet. */
+function ComingSoon() {
+  return (
+    <span className="ml-1 text-xs text-muted-foreground">
+      (<Trans>Coming soon</Trans>)
+    </span>
   );
 }

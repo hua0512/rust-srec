@@ -61,16 +61,21 @@ interface PlatformSpecificTabProps {
   form: UseFormReturn<any>;
   basePath?: string;
   platformName?: string;
+  /**
+   * Field under `basePath` holding the options. Defaults to `platform_specific_config`, which is
+   * what the platform and template rows use; a streamer stores the same shape under
+   * `platform_extras`, which is the key its config resolver reads.
+   */
+  field?: string;
 }
 
 export function PlatformSpecificTab({
   form,
   basePath,
   platformName,
+  field: fieldKey = 'platform_specific_config',
 }: PlatformSpecificTabProps) {
-  const fieldName = basePath
-    ? `${basePath}.platform_specific_config`
-    : 'platform_specific_config';
+  const fieldName = basePath ? `${basePath}.${fieldKey}` : fieldKey;
 
   const [viewMode, setViewMode] = useState<'form' | 'json'>('form');
 
@@ -242,7 +247,7 @@ export function PlatformSpecificTab({
                           />
                           {error && (
                             <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs font-semibold text-destructive animate-in shake duration-300">
-                              Invalid JSON: {error}
+                              <Trans>Invalid JSON: {error}</Trans>
                             </div>
                           )}
                         </div>

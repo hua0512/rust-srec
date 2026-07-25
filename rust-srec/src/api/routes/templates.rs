@@ -67,6 +67,7 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         output_filename_template: model.output_filename_template.clone(),
         output_file_format: model.output_file_format.clone(),
         download_engine: model.download_engine.clone(),
+        extractor: model.extractor.clone(),
         record_danmu: model.record_danmu,
         platform_overrides: json::parse_optional_value_non_null(
             model.platform_overrides.as_deref(),
@@ -155,6 +156,7 @@ pub async fn create_template(
     template.output_filename_template = request.output_filename_template;
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
+    template.extractor = request.extractor;
     template.record_danmu = request.record_danmu;
 
     template.platform_overrides = match request.platform_overrides {
@@ -326,6 +328,7 @@ pub async fn update_template(
     template.output_filename_template = request.output_filename_template;
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
+    template.extractor = request.extractor;
     template.record_danmu = request.record_danmu;
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
@@ -476,6 +479,7 @@ pub async fn clone_template(
     cloned.output_filename_template = existing.output_filename_template;
     cloned.output_file_format = existing.output_file_format;
     cloned.download_engine = existing.download_engine;
+    cloned.extractor = existing.extractor;
     cloned.record_danmu = existing.record_danmu;
     cloned.platform_overrides = existing.platform_overrides;
     cloned.engines_override = existing.engines_override;
@@ -521,6 +525,7 @@ mod tests {
             output_filename_template: None,
             output_file_format: Some("mp4".to_string()),
             download_engine: None,
+            extractor: None,
             record_danmu: Some(true),
             platform_overrides: None,
             engines_override: None,
