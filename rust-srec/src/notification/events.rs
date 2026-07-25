@@ -651,35 +651,47 @@ impl NotificationEvent {
         }
     }
 
-    /// Get a human-readable title for this event.
+    /// Get a human-readable title for this event, in the process-wide locale.
     ///
-    /// Localized via [`crate::t_str!`]. The active locale is picked at
-    /// startup from `RUST_SREC_LOCALE` (see [`crate::i18n`]); currently
-    /// `en` and `zh-CN` are supported.
+    /// For a channel that carries its own locale, call [`Self::title_in`] instead: two channels
+    /// can be delivering the same event in different languages at once.
+    pub fn title(&self) -> String {
+        self.title_in(&crate::i18n::current_locale())
+    }
+
+    /// Get a human-readable title for this event, in `locale`.
+    ///
+    /// `locale` falls back to the embedded `en` YAML when it names a locale with no file under
+    /// `rust-srec/locales/`; currently `en` and `zh-CN` are supported.
     ///
     /// Numeric placeholders (`segment_index`, `queue_depth`, etc.) are
     /// stringified with `.to_string()` before passing to the macro because
     /// `rust_i18n` placeholders take `&str`. The YAML stays free of
     /// Rust-specific formatting.
-    pub fn title(&self) -> String {
+    pub fn title_in(&self, locale: &str) -> String {
         match self {
-            Self::StreamOnline { streamer_name, .. } => crate::t_str!(
+            Self::StreamOnline { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.stream_online.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::StreamOffline { streamer_name, .. } => crate::t_str!(
+            Self::StreamOffline { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.stream_offline.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::DownloadStarted { streamer_name, .. } => crate::t_str!(
+            Self::DownloadStarted { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_started.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::DownloadCompleted { streamer_name, .. } => crate::t_str!(
+            Self::DownloadCompleted { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_completed.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::DownloadError { streamer_name, .. } => crate::t_str!(
+            Self::DownloadError { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_error.title",
                 streamer_name = streamer_name.as_str(),
             ),
@@ -687,7 +699,8 @@ impl NotificationEvent {
                 streamer_name,
                 segment_index,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.segment_started.title",
                 streamer_name = streamer_name.as_str(),
                 segment_index = segment_index.to_string().as_str(),
@@ -696,36 +709,44 @@ impl NotificationEvent {
                 streamer_name,
                 segment_index,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.segment_completed.title",
                 streamer_name = streamer_name.as_str(),
                 segment_index = segment_index.to_string().as_str(),
             ),
-            Self::DownloadCancelled { streamer_name, .. } => crate::t_str!(
+            Self::DownloadCancelled { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_cancelled.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::DownloadRejected { streamer_name, .. } => crate::t_str!(
+            Self::DownloadRejected { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_rejected.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::ConfigUpdated { streamer_name, .. } => crate::t_str!(
+            Self::ConfigUpdated { streamer_name, .. } => crate::t_str_in!(
+                locale,
                 "notification.config_updated.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::PipelineStarted { job_type, .. } => crate::t_str!(
+            Self::PipelineStarted { job_type, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_started.title",
                 job_type = job_type.as_str(),
             ),
-            Self::PipelineCompleted { job_type, .. } => crate::t_str!(
+            Self::PipelineCompleted { job_type, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_completed.title",
                 job_type = job_type.as_str(),
             ),
-            Self::PipelineFailed { job_type, .. } => crate::t_str!(
+            Self::PipelineFailed { job_type, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_failed.title",
                 job_type = job_type.as_str(),
             ),
-            Self::PipelineCancelled { job_type, .. } => crate::t_str!(
+            Self::PipelineCancelled { job_type, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_cancelled.title",
                 job_type = job_type.as_str(),
             ),
@@ -733,66 +754,105 @@ impl NotificationEvent {
                 streamer_name,
                 error_type,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.fatal_error.title",
                 streamer_name = streamer_name.as_str(),
                 error_type = error_type.as_str(),
             ),
             Self::OutOfSpace { path, .. } => {
-                crate::t_str!("notification.out_of_space.title", path = path.as_str(),)
+                crate::t_str_in!(
+                    locale,
+                    "notification.out_of_space.title",
+                    path = path.as_str(),
+                )
             }
-            Self::OutputPathInaccessible { path, .. } => crate::t_str!(
+            Self::OutputPathInaccessible { path, .. } => crate::t_str_in!(
+                locale,
                 "notification.output_path_inaccessible.title",
                 path = path.as_str(),
             ),
-            Self::GpuUnavailable { error_kind, .. } => crate::t_str!(
+            Self::GpuUnavailable { error_kind, .. } => crate::t_str_in!(
+                locale,
                 "notification.gpu_unavailable.title",
                 error_kind = error_kind.as_str(),
             ),
-            Self::PipelineQueueWarning { queue_depth, .. } => crate::t_str!(
+            Self::PipelineQueueWarning { queue_depth, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_queue_warning.title",
                 queue_depth = queue_depth.to_string().as_str(),
             ),
-            Self::PipelineQueueCritical { queue_depth, .. } => crate::t_str!(
+            Self::PipelineQueueCritical { queue_depth, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_queue_critical.title",
                 queue_depth = queue_depth.to_string().as_str(),
             ),
-            Self::SystemStartup { version, .. } => crate::t_str!(
+            Self::SystemStartup { version, .. } => crate::t_str_in!(
+                locale,
                 "notification.system_startup.title",
                 version = version.as_str(),
             ),
-            Self::SystemShutdown { reason, .. } => crate::t_str!(
+            Self::SystemShutdown { reason, .. } => crate::t_str_in!(
+                locale,
                 "notification.system_shutdown.title",
                 reason = reason.as_str(),
             ),
-            Self::Credential { event } => credential_title(event),
+            Self::Credential { event } => credential_title(event, locale),
         }
     }
 
-    /// Get a detailed description of this event.
+    /// Title in the channel's own locale, or the process-wide one when it has none.
+    ///
+    /// The shape channels want: a configured locale is optional per channel, and spelling the
+    /// fallback out at each `send` would repeat it once per channel implementation.
+    pub fn title_for(&self, locale: Option<&str>) -> String {
+        match locale {
+            Some(locale) => self.title_in(locale),
+            None => self.title(),
+        }
+    }
+
+    /// Description counterpart to [`Self::title_for`].
+    pub fn description_for(&self, locale: Option<&str>) -> String {
+        match locale {
+            Some(locale) => self.description_in(locale),
+            None => self.description(),
+        }
+    }
+
+    /// Get a detailed description of this event, in the process-wide locale.
     pub fn description(&self) -> String {
+        self.description_in(&crate::i18n::current_locale())
+    }
+
+    /// Get a detailed description of this event, in `locale`.
+    pub fn description_in(&self, locale: &str) -> String {
         match self {
             Self::StreamOnline {
                 title, category, ..
             } => match category {
-                Some(cat) => crate::t_str!(
+                Some(cat) => crate::t_str_in!(
+                    locale,
                     "notification.stream_online.description.with_category",
                     title = title.as_str(),
                     category = cat.as_str(),
                 ),
-                None => crate::t_str!(
+                None => crate::t_str_in!(
+                    locale,
                     "notification.stream_online.description.plain",
                     title = title.as_str(),
                 ),
             },
             Self::StreamOffline { duration_secs, .. } => match duration_secs {
-                Some(secs) => crate::t_str!(
+                Some(secs) => crate::t_str_in!(
+                    locale,
                     "notification.stream_offline.description.with_duration",
                     duration = format_duration(*secs).as_str(),
                 ),
-                None => crate::t_str!("notification.stream_offline.description.plain"),
+                None => crate::t_str_in!(locale, "notification.stream_offline.description.plain"),
             },
-            Self::DownloadStarted { session_id, .. } => crate::t_str!(
+            Self::DownloadStarted { session_id, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_started.description",
                 session_id = session_id.as_str(),
             ),
@@ -800,7 +860,8 @@ impl NotificationEvent {
                 file_size_bytes,
                 duration_secs,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.download_completed.description",
                 size = format_bytes(*file_size_bytes).as_str(),
                 duration = format_duration(*duration_secs).as_str(),
@@ -815,9 +876,10 @@ impl NotificationEvent {
                 } else {
                     "notification.download_error.description.unrecoverable"
                 };
-                crate::t_str!(key, error_message = error_message.as_str())
+                crate::t_str_in!(locale, key, error_message = error_message.as_str())
             }
-            Self::SegmentStarted { segment_path, .. } => crate::t_str!(
+            Self::SegmentStarted { segment_path, .. } => crate::t_str_in!(
+                locale,
                 "notification.segment_started.description",
                 segment_path = segment_path.as_str(),
             ),
@@ -826,25 +888,30 @@ impl NotificationEvent {
                 size_bytes,
                 duration_secs,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.segment_completed.description",
                 segment_path = segment_path.as_str(),
                 size = format_bytes(*size_bytes).as_str(),
                 duration = format_duration(*duration_secs).as_str(),
             ),
-            Self::DownloadCancelled { session_id, .. } => crate::t_str!(
+            Self::DownloadCancelled { session_id, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_cancelled.description",
                 session_id = session_id.as_str(),
             ),
-            Self::DownloadRejected { reason, .. } => crate::t_str!(
+            Self::DownloadRejected { reason, .. } => crate::t_str_in!(
+                locale,
                 "notification.download_rejected.description",
                 reason = reason.as_str(),
             ),
-            Self::ConfigUpdated { update_type, .. } => crate::t_str!(
+            Self::ConfigUpdated { update_type, .. } => crate::t_str_in!(
+                locale,
                 "notification.config_updated.description",
                 update_type = update_type.as_str(),
             ),
-            Self::PipelineStarted { job_id, .. } => crate::t_str!(
+            Self::PipelineStarted { job_id, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_started.description",
                 job_id = job_id.as_str(),
             ),
@@ -855,18 +922,21 @@ impl NotificationEvent {
             } => {
                 let duration = format_duration(*duration_secs);
                 match output_path {
-                    Some(path) => crate::t_str!(
+                    Some(path) => crate::t_str_in!(
+                        locale,
                         "notification.pipeline_completed.description.with_output",
                         output_path = path.as_str(),
                         duration = duration.as_str(),
                     ),
-                    None => crate::t_str!(
+                    None => crate::t_str_in!(
+                        locale,
                         "notification.pipeline_completed.description.without_output",
                         duration = duration.as_str(),
                     ),
                 }
             }
-            Self::PipelineFailed { error_message, .. } => crate::t_str!(
+            Self::PipelineFailed { error_message, .. } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_failed.description",
                 error_message = error_message.as_str(),
             ),
@@ -875,17 +945,20 @@ impl NotificationEvent {
                 pipeline_id,
                 ..
             } => match pipeline_id {
-                Some(pid) => crate::t_str!(
+                Some(pid) => crate::t_str_in!(
+                    locale,
                     "notification.pipeline_cancelled.description.with_pipeline",
                     job_id = job_id.as_str(),
                     pipeline_id = pid.as_str(),
                 ),
-                None => crate::t_str!(
+                None => crate::t_str_in!(
+                    locale,
                     "notification.pipeline_cancelled.description.plain",
                     job_id = job_id.as_str(),
                 ),
             },
-            Self::FatalError { message, .. } => crate::t_str!(
+            Self::FatalError { message, .. } => crate::t_str_in!(
+                locale,
                 "notification.fatal_error.description",
                 message = message.as_str(),
             ),
@@ -893,7 +966,8 @@ impl NotificationEvent {
                 available_bytes,
                 threshold_bytes,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.out_of_space.description",
                 available = format_bytes(*available_bytes).as_str(),
                 threshold = format_bytes(*threshold_bytes).as_str(),
@@ -918,7 +992,12 @@ impl NotificationEvent {
                     "timed_out" => "notification.output_path_inaccessible.description.timed_out",
                     _ => "notification.output_path_inaccessible.description.other",
                 };
-                crate::t_str!(key, path = path.as_str(), kind = error_kind.as_str())
+                crate::t_str_in!(
+                    locale,
+                    key,
+                    path = path.as_str(),
+                    kind = error_kind.as_str()
+                )
             }
             Self::GpuUnavailable {
                 error_kind,
@@ -938,13 +1017,19 @@ impl NotificationEvent {
                     "not_installed" => "notification.gpu_unavailable.description.not_installed",
                     _ => "notification.gpu_unavailable.description.other",
                 };
-                crate::t_str!(key, kind = error_kind.as_str(), message = message.as_str(),)
+                crate::t_str_in!(
+                    locale,
+                    key,
+                    kind = error_kind.as_str(),
+                    message = message.as_str(),
+                )
             }
             Self::PipelineQueueWarning {
                 queue_depth,
                 threshold,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_queue_warning.description",
                 queue_depth = queue_depth.to_string().as_str(),
                 threshold = threshold.to_string().as_str(),
@@ -953,20 +1038,23 @@ impl NotificationEvent {
                 queue_depth,
                 threshold,
                 ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.pipeline_queue_critical.description",
                 queue_depth = queue_depth.to_string().as_str(),
                 threshold = threshold.to_string().as_str(),
             ),
-            Self::SystemStartup { version, .. } => crate::t_str!(
+            Self::SystemStartup { version, .. } => crate::t_str_in!(
+                locale,
                 "notification.system_startup.description",
                 version = version.as_str(),
             ),
-            Self::SystemShutdown { reason, .. } => crate::t_str!(
+            Self::SystemShutdown { reason, .. } => crate::t_str_in!(
+                locale,
                 "notification.system_shutdown.description",
                 reason = reason.as_str(),
             ),
-            Self::Credential { event } => event.to_message(),
+            Self::Credential { event } => event.to_message_in(locale),
         }
     }
 
@@ -1037,11 +1125,12 @@ impl NotificationEvent {
 /// variant has two nested match layers (`CredentialEvent` variant +
 /// `requires_relogin` branching in `RefreshFailed`); inlining it would
 /// have made the main `title()` match unreadable.
-fn credential_title(event: &CredentialEvent) -> String {
+fn credential_title(event: &CredentialEvent, locale: &str) -> String {
     match event {
         CredentialEvent::Refreshed {
             platform, scope, ..
-        } => crate::t_str!(
+        } => crate::t_str_in!(
+            locale,
             "notification.credential.refreshed.title",
             platform = platform.as_str(),
             scope = scope.describe().as_str(),
@@ -1057,7 +1146,8 @@ fn credential_title(event: &CredentialEvent) -> String {
             } else {
                 "notification.credential.refresh_failed.title.retrying"
             };
-            crate::t_str!(
+            crate::t_str_in!(
+                locale,
                 key,
                 platform = platform.as_str(),
                 scope = scope.describe().as_str(),
@@ -1065,14 +1155,16 @@ fn credential_title(event: &CredentialEvent) -> String {
         }
         CredentialEvent::Invalid {
             platform, scope, ..
-        } => crate::t_str!(
+        } => crate::t_str_in!(
+            locale,
             "notification.credential.invalid.title",
             platform = platform.as_str(),
             scope = scope.describe().as_str(),
         ),
         CredentialEvent::ExpiringSoon {
             platform, scope, ..
-        } => crate::t_str!(
+        } => crate::t_str_in!(
+            locale,
             "notification.credential.expiring_soon.title",
             platform = platform.as_str(),
             scope = scope.describe().as_str(),
@@ -1205,6 +1297,69 @@ mod tests {
         assert!(event.title().contains("TestStreamer"));
         assert!(event.description().contains("Playing Games"));
         assert_eq!(event.streamer_id(), Some("123"));
+    }
+
+    /// A `StreamOnline` event to render; the interesting part is always the rendered text.
+    fn stream_online_fixture() -> NotificationEvent {
+        NotificationEvent::StreamOnline {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            title: "Playing Games".to_string(),
+            category: Some("Gaming".to_string()),
+            timestamp: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn title_in_renders_the_requested_locale() {
+        let event = stream_online_fixture();
+
+        // Both carry the streamer name, so the locale is what distinguishes them.
+        assert!(event.title_in("en").contains("is now live"));
+        assert!(event.title_in("zh-CN").contains("开播了"));
+        assert!(event.description_in("zh-CN").contains("Gaming"));
+    }
+
+    #[test]
+    fn title_in_does_not_depend_on_the_process_locale() {
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        let event = stream_online_fixture();
+        // `set_locale` is process-wide, so asserting the requested locale wins over it is what
+        // makes two channels able to render the same event in different languages.
+        crate::i18n::set_locale("en");
+        let zh = event.title_in("zh-CN");
+        crate::i18n::set_locale("zh-CN");
+        let zh_again = event.title_in("zh-CN");
+        let en = event.title_in("en");
+        crate::i18n::set_locale("en");
+
+        assert_eq!(zh, zh_again);
+        assert_ne!(zh, en);
+    }
+
+    #[test]
+    fn title_for_falls_back_to_the_process_locale() {
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        let event = stream_online_fixture();
+        crate::i18n::set_locale("zh-CN");
+        let fallback = event.title_for(None);
+        crate::i18n::set_locale("en");
+
+        assert_eq!(fallback, event.title_in("zh-CN"));
+        assert_eq!(event.title_for(Some("en")), event.title_in("en"));
+    }
+
+    #[test]
+    fn unknown_locale_falls_back_to_english() {
+        let event = stream_online_fixture();
+        // `rust_i18n` has no YAML for this locale; it must not render an empty title.
+        assert_eq!(event.title_in("xx-YY"), event.title_in("en"));
     }
 
     #[test]

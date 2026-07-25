@@ -43,6 +43,13 @@ pub struct TelegramConfig {
     /// Minimum priority level to send (default: Normal).
     #[serde(default)]
     pub min_priority: NotificationPriority,
+    /// Language for this channel's rendered title and body.
+    ///
+    /// `None` uses the locale `crate::i18n::set_locale` applied at startup. Configured per
+    /// channel because the people reading two different channels need not share a language,
+    /// which a single process-wide locale cannot express.
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 fn default_parse_mode() -> String {
@@ -59,6 +66,7 @@ impl Default for TelegramConfig {
             chat_id: String::new(),
             parse_mode: default_parse_mode(),
             min_priority: NotificationPriority::Normal,
+            locale: None,
         }
     }
 }
@@ -88,8 +96,8 @@ impl TelegramChannel {
             NotificationPriority::Critical => "\u{1f6a8}",   // 🚨
         };
 
-        let title = event.title();
-        let description = event.description();
+        let title = event.title_for(self.config.locale.as_deref());
+        let description = event.description_for(self.config.locale.as_deref());
         let priority = event.priority().to_string();
         let event_type = event.event_type().to_string();
 

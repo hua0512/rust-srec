@@ -15,6 +15,7 @@ import { IconInput } from '@/components/ui/icon-input';
 import {
   ChannelEnabledField,
   MinPriorityField,
+  ChannelLocaleField,
 } from './channel-delivery-fields';
 import { SwitchCard } from '@/components/ui/switch-card';
 import {
@@ -166,7 +167,10 @@ export function EmailForm() {
         )}
       />
 
-      <MinPriorityField />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MinPriorityField />
+        <ChannelLocaleField />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField
           control={form.control}

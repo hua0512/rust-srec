@@ -30,6 +30,13 @@ pub struct GotifyConfig {
     /// Minimum priority level to send (default: Normal).
     #[serde(default)]
     pub min_priority: NotificationPriority,
+    /// Language for this channel's rendered title and body.
+    ///
+    /// `None` uses the locale `crate::i18n::set_locale` applied at startup. Configured per
+    /// channel because the people reading two different channels need not share a language,
+    /// which a single process-wide locale cannot express.
+    #[serde(default)]
+    pub locale: Option<String>,
     /// Request timeout in seconds.
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
@@ -62,6 +69,7 @@ impl Default for GotifyConfig {
             server_url: String::new(),
             app_token: String::new(),
             min_priority: NotificationPriority::Normal,
+            locale: None,
             timeout_secs: default_timeout(),
         }
     }
@@ -94,8 +102,8 @@ impl GotifyChannel {
     /// Build the Gotify message payload.
     fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
         json!({
-            "title": event.title(),
-            "message": event.description(),
+            "title": event.title_for(self.config.locale.as_deref()),
+            "message": event.description_for(self.config.locale.as_deref()),
             "priority": event.priority().as_int(),
         })
     }

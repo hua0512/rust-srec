@@ -13,6 +13,7 @@ import { IconInput } from '@/components/ui/icon-input';
 import {
   ChannelEnabledField,
   MinPriorityField,
+  ChannelLocaleField,
 } from './channel-delivery-fields';
 import {
   CONFIG_INPUT,
@@ -68,6 +69,7 @@ export function GotifyForm() {
       />
       <div className="grid items-start gap-4 pt-2 sm:grid-cols-2">
         <MinPriorityField />
+        <ChannelLocaleField />
         <FormField
           control={form.control}
           name="settings.timeout_secs"
