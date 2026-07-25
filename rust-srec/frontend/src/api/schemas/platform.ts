@@ -6,7 +6,10 @@ import {
   EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
-import { AllPlatformConfigsSchema } from './platform-configs';
+import {
+  AllPlatformConfigsSchema,
+  ExtractorSelectionSchema,
+} from './platform-configs';
 
 // --- Platform Config ---
 export const PlatformConfigSchema = z.object({
@@ -33,6 +36,7 @@ export const PlatformConfigSchema = z.object({
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   output_file_format: z.string().nullable().optional(),
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),

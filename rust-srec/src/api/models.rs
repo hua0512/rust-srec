@@ -138,9 +138,9 @@ pub struct CreateStreamerRequest {
     /// Streamer name
     pub name: String,
     /// Streamer URL
+    ///
+    /// The platform configuration is derived from this; there is no `platform_config_id` input.
     pub url: String,
-    /// Platform configuration ID
-    pub platform_config_id: String,
     /// Template ID (optional)
     pub template_id: Option<String>,
     /// Priority (default: Normal)
@@ -297,6 +297,8 @@ pub struct GlobalConfigResponse {
     pub offline_check_delay_ms: u64,
     pub offline_check_count: u32,
     pub default_download_engine: String,
+    /// Extractor selection ("auto" or "streamlink"); `None` resolves to auto.
+    pub default_extractor: Option<String>,
     pub max_concurrent_cpu_jobs: u32,
     pub max_concurrent_io_jobs: u32,
     pub job_history_retention_days: u32,
@@ -349,6 +351,7 @@ pub struct UpdateGlobalConfigRequest {
     pub job_history_retention_days: Option<serde_json::Value>,
     pub notification_event_log_retention_days: Option<serde_json::Value>,
     pub default_download_engine: Option<serde_json::Value>,
+    pub default_extractor: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized `Vec<PipelineStep>`)
@@ -387,6 +390,8 @@ pub struct PlatformConfigResponse {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the global default.
+    pub extractor: Option<String>,
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<u64>,
@@ -416,6 +421,8 @@ pub struct CreateTemplateRequest {
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
+    pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
@@ -443,6 +450,8 @@ pub struct UpdateTemplateRequest {
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
+    pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
@@ -471,6 +480,8 @@ pub struct TemplateResponse {
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
+    pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,

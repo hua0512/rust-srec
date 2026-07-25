@@ -5,7 +5,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
 } from '@/components/ui/form';
 import {
   Select,
@@ -15,8 +14,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Tv } from 'lucide-react';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
+import {
+  ConfigFieldLabel,
+  ConfigSectionHeading,
+} from '@/components/config/shared/config-field';
 
 interface BilibiliConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -27,6 +32,7 @@ export function BilibiliConfigFields({
   form,
   fieldName,
 }: BilibiliConfigFieldsProps) {
+  const { i18n } = useLingui();
   useEffect(() => {
     // If current value is undefined or null, initialized to 10000 (backend default for 4K)
     const currentVal = form.getValues(`${fieldName}.quality`);
@@ -39,12 +45,9 @@ export function BilibiliConfigFields({
     <div className="space-y-12">
       {/* Extraction Settings Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Tv className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Extraction Settings</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Tv} accent="indigo">
+          <Trans>Extraction Settings</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <FormField
@@ -52,19 +55,16 @@ export function BilibiliConfigFields({
             name={`${fieldName}.quality`}
             render={({ field }) => (
               <FormItem className="space-y-4">
-                <div className="flex items-center gap-2 px-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>Preferred Quality (QN)</Trans>
-                  </FormLabel>
-                </div>
+                <ConfigFieldLabel accent="indigo">
+                  <Trans>Preferred Quality (QN)</Trans>
+                </ConfigFieldLabel>
                 <Select
                   onValueChange={(v) => field.onChange(parseInt(v))}
                   value={field.value?.toString() || '10000'}
                 >
                   <FormControl>
                     <SelectTrigger className="bg-background/50 h-12 rounded-2xl border-border/50 focus:bg-background transition-all shadow-sm">
-                      <SelectValue placeholder="Select quality" />
+                      <SelectValue placeholder={i18n._(msg`Select quality`)} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent className="rounded-xl border-border/50 shadow-xl">

@@ -27,12 +27,15 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 interface PlatformOverridesTabProps {
   form: UseFormReturn<any>;
 }
 
 export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
+  const { i18n } = useLingui();
   const [open, setOpen] = useState(false);
 
   // Let's use `listPlatforms` which returns `PlatformConfigSchema[]`.
@@ -96,7 +99,7 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
             </PopoverTrigger>
             <PopoverContent className="w-[200px] p-0" align="end">
               <Command>
-                <CommandInput placeholder="Search platform..." />
+                <CommandInput placeholder={i18n._(msg`Search platform...`)} />
                 <CommandList>
                   <CommandEmpty>
                     <Trans>No platform found.</Trans>

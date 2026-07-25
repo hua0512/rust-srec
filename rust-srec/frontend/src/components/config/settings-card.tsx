@@ -60,7 +60,10 @@ export function SettingsCard({
           {action && <div className="self-end sm:self-auto">{action}</div>}
         </div>
       </CardHeader>
-      <CardContent className="pt-2">{children}</CardContent>
+      {/* Establishes the container context the cards' `@md:`/`@2xl:` field grids query. The page
+          lays these out one or two per row, so field columns have to respond to the card's own
+          width rather than the viewport's. */}
+      <CardContent className="@container pt-2">{children}</CardContent>
     </Card>
   );
 }

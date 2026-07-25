@@ -37,6 +37,7 @@ export function StreamerFiltersTab({
           </p>
         </div>
         <Button
+          type="button"
           size="sm"
           onClick={() => {
             setFilterToEdit(null);

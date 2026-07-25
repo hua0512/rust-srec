@@ -20,7 +20,9 @@ const IconInput = React.forwardRef<HTMLInputElement, IconInputProps>(
       <div className="relative">
         <Icon
           className={cn(
-            'absolute top-2.5 h-4 w-4 text-muted-foreground',
+            // Centred rather than pinned to a fixed offset, so the icon stays put
+            // whatever height the caller gives the input.
+            'pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground',
             isLeft ? 'left-2.5' : 'right-2.5',
           )}
         />

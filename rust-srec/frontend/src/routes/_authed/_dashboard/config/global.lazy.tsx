@@ -1,19 +1,20 @@
-import { createLazyFileRoute } from '@tanstack/react-router';
+import { createLazyFileRoute, useBlocker } from '@tanstack/react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
 import { GlobalConfigFormSchema } from '@/api/schemas';
 import { getGlobalConfig, updateGlobalConfig } from '@/server/functions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Save } from 'lucide-react';
-import { useForm, useFormContext } from 'react-hook-form';
-import { useMemo, useCallback, lazy, Suspense } from 'react';
+import { useForm } from 'react-hook-form';
+import { useMemo, useCallback, lazy, Suspense, ComponentType } from 'react';
+import { containerVariants, itemVariants } from '@/lib/animation';
+import { cn } from '@/lib/utils';
+import { SaveFab } from '@/components/shared/save-fab';
 
 const FileConfigCard = lazy(() =>
   import('@/components/config/global/file-config-card').then((m) => ({
@@ -41,9 +42,31 @@ const PipelineConfigCard = lazy(() =>
   })),
 );
 
+/**
+ * The settings cards, in display order.
+ *
+ * Listed as data rather than five near-identical `Suspense`/`motion` blocks, which is what the
+ * page previously carried — each differing only by an animation delay.
+ */
+const SECTIONS: { Card: ComponentType; wide?: boolean }[] = [
+  { Card: FileConfigCard },
+  { Card: ResourceLimitsCard },
+  { Card: ConcurrencyCard },
+  { Card: NetworkSystemCard },
+  { Card: PipelineConfigCard, wide: true },
+];
+
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/global')({
   component: GlobalConfigPage,
 });
+
+function CardSkeleton({ wide }: { wide?: boolean }) {
+  return (
+    <Skeleton
+      className={cn('h-96 rounded-xl', wide && 'h-[28rem] lg:col-span-2')}
+    />
+  );
+}
 
 function GlobalConfigPage() {
   const { data: config, isLoading } = useQuery({
@@ -53,18 +76,10 @@ function GlobalConfigPage() {
 
   if (isLoading || !config) {
     return (
-      <div className="space-y-6 form-container">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid gap-6 lg:gap-8 lg:grid-cols-2">
-          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
-          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
-          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
-          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
-          <Skeleton className="h-[500px] lg:col-span-2 rounded-xl border-border/40 bg-muted/60" />
-        </div>
+      <div className="grid gap-6 pb-32 lg:gap-8 lg:grid-cols-2">
+        {SECTIONS.map(({ wide }, i) => (
+          <CardSkeleton key={i} wide={wide} />
+        ))}
       </div>
     );
   }
@@ -72,30 +87,6 @@ function GlobalConfigPage() {
   return <GlobalConfigForm config={config} />;
 }
 
-function SaveButton({ isPending }: { isPending: boolean }) {
-  const { formState } = useFormContext();
-  const { i18n } = useLingui();
-
-  if (!formState.isDirty) return null;
-
-  return (
-    <div className="fixed bottom-8 right-8 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-      <Button
-        type="submit"
-        disabled={isPending}
-        size="lg"
-        className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-gradient-to-r from-primary to-primary/90 text-base font-semibold"
-      >
-        <Save className="w-5 h-5 mr-2" />
-        {isPending ? i18n._(msg`Saving...`) : i18n._(msg`Save Changes`)}
-      </Button>
-    </div>
-  );
-}
-
-const CardSkeleton = () => (
-  <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
-);
 function GlobalConfigForm({
   config,
 }: {
@@ -136,6 +127,20 @@ function GlobalConfigForm({
     },
   });
 
+  const isDirty = form.formState.isDirty;
+  const isPending = updateMutation.isPending;
+
+  // Settings only take effect once saved, so leaving with edits in place loses them silently.
+  useBlocker({
+    shouldBlockFn: () => {
+      if (!isDirty || isPending) return false;
+      return !window.confirm(
+        i18n._(msg`You have unsaved changes. Leave without saving?`),
+      );
+    },
+    enableBeforeUnload: () => isDirty && !isPending,
+  });
+
   const onSubmit = useCallback(
     (data: GlobalConfigFormValues) => {
       updateMutation.mutate(data);
@@ -145,70 +150,36 @@ function GlobalConfigForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 pb-32">
+      <form
+        id="global-config-form"
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="pb-32"
+      >
         <motion.div
           className="grid gap-6 lg:gap-8 lg:grid-cols-2"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
         >
-          <Suspense fallback={<CardSkeleton />}>
+          {SECTIONS.map(({ Card, wide }, i) => (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0 }}
+              key={i}
+              variants={itemVariants}
+              className={cn('min-w-0', wide && 'lg:col-span-2')}
             >
-              <FileConfigCard />
+              <Suspense fallback={<CardSkeleton wide={wide} />}>
+                <Card />
+              </Suspense>
             </motion.div>
-          </Suspense>
-
-          <Suspense fallback={<CardSkeleton />}>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.05 }}
-            >
-              <ResourceLimitsCard />
-            </motion.div>
-          </Suspense>
-
-          <Suspense fallback={<CardSkeleton />}>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.1 }}
-            >
-              <ConcurrencyCard />
-            </motion.div>
-          </Suspense>
-
-          <Suspense fallback={<CardSkeleton />}>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.15 }}
-            >
-              <NetworkSystemCard />
-            </motion.div>
-          </Suspense>
-
-          <Suspense
-            fallback={
-              <Skeleton className="h-[500px] lg:col-span-2 rounded-xl border-border/40 bg-muted/60" />
-            }
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.25 }}
-              className="lg:col-span-2 min-w-0"
-            >
-              <PipelineConfigCard />
-            </motion.div>
-          </Suspense>
+          ))}
         </motion.div>
 
-        <SaveButton isPending={updateMutation.isPending} />
+        <SaveFab
+          isSaving={isPending}
+          formId="global-config-form"
+          alwaysVisible
+          disabledWhenPristine
+        />
       </form>
     </Form>
   );

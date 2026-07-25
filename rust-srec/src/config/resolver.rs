@@ -4,7 +4,8 @@
 //! configuration for a streamer by merging the 4-layer hierarchy:
 //! Global → Platform → Template → Streamer
 
-use tracing::debug;
+use platforms_parser::extractor::factory::ExtractorSelection;
+use tracing::{debug, warn};
 
 use crate::Error;
 use crate::credentials::{
@@ -22,6 +23,25 @@ use super::{
     GlobalConfigLayer, MergedConfig, PlatformConfigLayer, ResolvedStreamerContext,
     TemplateConfigLayer,
 };
+
+/// Parse a stored extractor name into [`ExtractorSelection`].
+///
+/// `None` means the layer expresses no preference and the layer below it wins. An unrecognized
+/// name is treated the same way rather than failing resolution, so a bad value degrades to
+/// inheritance instead of stopping the streamer from recording.
+fn parse_extractor(value: Option<&str>, scope: &str) -> Option<ExtractorSelection> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    match value.parse::<ExtractorSelection>() {
+        Ok(selection) => Some(selection),
+        Err(e) => {
+            warn!("Ignoring {} extractor setting: {}", scope, e);
+            None
+        }
+    }
+}
 
 /// Service for resolving configuration for streamers.
 pub struct ConfigResolver<R: ConfigRepository> {
@@ -120,6 +140,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 "Invalid JSON config; using defaults",
             ),
             download_engine: global_config.default_download_engine.clone(),
+            extractor: parse_extractor(global_config.default_extractor.as_deref(), "global"),
             pipeline: global_pipeline,
             session_complete_pipeline: global_session_complete_pipeline,
             paired_segment_pipeline: global_paired_segment_pipeline,
@@ -238,6 +259,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             output_folder: platform_config.output_folder.clone(),
             output_filename_template: platform_config.output_filename_template.clone(),
             download_engine: platform_config.download_engine.clone(),
+            extractor: parse_extractor(platform_config.extractor.as_deref(), "platform"),
             stream_selection: platform_stream_selection,
             output_file_format: platform_config.output_file_format.clone(),
             min_segment_size_bytes: platform_config.min_segment_size_bytes,
@@ -446,6 +468,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 proxy_config: template_proxy,
                 cookies: template_config.cookies,
                 download_engine: template_config.download_engine,
+                extractor: parse_extractor(template_config.extractor.as_deref(), "template"),
                 download_retry_policy: template_retry,
                 danmu_sampling_config: template_danmu,
                 event_hooks: template_hooks,

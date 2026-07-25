@@ -2,23 +2,47 @@ use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo};
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 static DEFAULT_STREAMLINK_PATH: &str = "streamlink";
 static DEFAULT_STREAMLINK_QUALITY: &str = "best";
 
-static STREAMLINK_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
-    let mut cmd = process_utils::std_command(DEFAULT_STREAMLINK_PATH);
+/// How long a `--version` probe result is trusted before the binary is checked again.
+///
+/// `StreamlinkExtractor::new` runs on every monitor tick for a streamer whose extractor is forced
+/// to streamlink, so the probe must not spawn a process each time. Caching with a TTL rather than
+/// forever also means a binary installed while the process is running becomes visible.
+const PROBE_TTL: Duration = Duration::from_secs(300);
+
+static PROBE_CACHE: LazyLock<Mutex<FxHashMap<String, (bool, Instant)>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+
+/// Whether `binary_path` responds to `--version`, memoized for [`PROBE_TTL`].
+fn probe_streamlink(binary_path: &str) -> bool {
+    if let Some(&(available, checked_at)) = PROBE_CACHE.lock().get(binary_path)
+        && checked_at.elapsed() < PROBE_TTL
+    {
+        return available;
+    }
+
+    let mut cmd = process_utils::std_command(binary_path);
     cmd.arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    cmd.status().is_ok_and(|s| s.success())
-});
+    let available = cmd.status().is_ok_and(|s| s.success());
+
+    PROBE_CACHE
+        .lock()
+        .insert(binary_path.to_owned(), (available, Instant::now()));
+    available
+}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -86,7 +110,7 @@ pub struct StreamlinkExtractor {
 
 impl StreamlinkExtractor {
     pub fn is_available() -> bool {
-        *STREAMLINK_AVAILABLE
+        probe_streamlink(DEFAULT_STREAMLINK_PATH)
     }
 
     pub fn new(
@@ -98,17 +122,7 @@ impl StreamlinkExtractor {
         let config = StreamlinkConfig::from_extras(extras.as_ref());
         let binary_path = config.binary_path();
 
-        // If the user overrides the binary path, do a best-effort availability check.
-        if binary_path != DEFAULT_STREAMLINK_PATH {
-            let mut cmd = process_utils::std_command(&binary_path);
-            cmd.arg("--version")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null());
-            let ok = cmd.status().is_ok_and(|s| s.success());
-            if !ok {
-                return Err(ExtractorError::UnsupportedExtractor);
-            }
-        } else if !Self::is_available() {
+        if !probe_streamlink(&binary_path) {
             return Err(ExtractorError::UnsupportedExtractor);
         }
 

@@ -11,6 +11,10 @@ import { Trans } from '@lingui/react/macro';
 import { Switch } from '@/components/ui/switch';
 import { Zap, Cloud, Gamepad2, RotateCcw } from 'lucide-react';
 import { DouyuQualityCombobox } from './douyu-quality-combobox';
+import {
+  ConfigFieldLabel,
+  ConfigSectionHeading,
+} from '@/components/config/shared/config-field';
 
 interface DouyuConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -22,12 +26,9 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
     <div className="space-y-12">
       {/* Extraction Settings Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Zap className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Extraction Settings</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Zap} accent="indigo">
+          <Trans>Extraction Settings</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -64,12 +65,9 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
               name={`${fieldName}.rate`}
               render={({ field }) => (
                 <FormItem>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                    <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      <Trans>Quality Rate</Trans>
-                    </FormLabel>
-                  </div>
+                  <ConfigFieldLabel accent="indigo" className="mb-3">
+                    <Trans>Quality Rate</Trans>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <DouyuQualityCombobox
                       fieldName={fieldName}
@@ -93,12 +91,9 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
 
       {/* Network & Content Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Gamepad2 className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Network & Content</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Gamepad2} accent="indigo">
+          <Trans>Network & Content</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <FormField

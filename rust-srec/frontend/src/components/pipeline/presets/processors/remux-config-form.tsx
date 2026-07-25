@@ -798,7 +798,7 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         >
                           <FormControl>
                             <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                              <SelectValue placeholder="None" />
+                              <SelectValue placeholder={i18n._(msg`None`)} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>

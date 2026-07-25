@@ -84,7 +84,7 @@ export const StatusCheckHistory = memo(function StatusCheckHistory({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground whitespace-nowrap">
           <Activity className="w-4 h-4 shrink-0" />
-          <Trans>History ({slots} pts)</Trans>
+          <Trans>History</Trans>
         </div>
         <LiveIndicator
           isConnected={isConnected}

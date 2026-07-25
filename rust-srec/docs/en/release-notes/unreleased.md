@@ -2,7 +2,29 @@
 
 ## `unreleased`
 
+### Features
+
+- **Choose how a stream's address is looked up**
+
+  Each site normally has its own built-in support for finding the live stream. When a site changes and that support stops working, you can now switch to Streamlink instead, under **Stream lookup**. Set it for one streamer, for a whole site, in a template, or as the default for everything, and the most specific setting wins. It needs the Streamlink tool installed. This is separate from the download engine, which only decides how the stream is saved once its address is known.
+
+- **Per-streamer platform options**
+
+  A new **Platform options** tab on a streamer lets you set that site's own options — quality, login details, Streamlink arguments and so on — for just that streamer, instead of only site-wide. Anything you leave alone keeps coming from the site's settings.
+
+- **Rebuilt the add and edit streamer pages**
+
+  Both pages have been redesigned. Adding a streamer now asks for the link first, confirms the site is recognized, and only then asks for settings — and it no longer asks for the link and name a second time. The edit page keeps everything in one place with the recording history and recent sessions alongside. Leaving either page with unsaved changes now asks first.
+
+- **Clearer settings pages**
+
+  The global settings, notification, recording engine and recording filter pages have been reworked. Related settings sit under headings that say what the group is for, more fields explain themselves when you hover the question mark beside them, and boxes and dropdowns line up with each other. A few settings that were only described in a tooltip now say what they do on the page. None of the settings themselves have changed.
+
 ### Fixes
+
+- **Changing a streamer's link now switches it to the right site**
+
+  If you edited a streamer and replaced its link with one from a different site, the streamer kept using the old site's settings — its cookies, proxy, output folder and danmaku options — and recordings were still filed under the old site's name. The site is now worked out from the link itself, so changing the link moves the streamer across properly. It is no longer something you pick by hand: when adding or editing a streamer, the detected site is simply shown next to the link, and links that no site recognizes are flagged before you save. Streamers that already drifted onto the wrong site are corrected the next time you save them.
 
 - **Deleting a pipeline now updates the job statistics**
 

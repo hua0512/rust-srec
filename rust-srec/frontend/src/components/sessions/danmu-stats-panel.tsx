@@ -244,7 +244,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       ({
         count: {
           label: i18n._(msg`Danmu/min`),
-          color: 'hsl(var(--chart-1))',
+          color: 'var(--chart-1)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -255,7 +255,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       ({
         message_count: {
           label: i18n._(msg`Messages`),
-          color: 'hsl(var(--chart-2))',
+          color: 'var(--chart-2)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -266,7 +266,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       ({
         count: {
           label: i18n._(msg`Count`),
-          color: 'hsl(var(--chart-3))',
+          color: 'var(--chart-3)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -475,7 +475,7 @@ const RankBarChart = memo(function RankBarChart({
   return (
     <motion.div
       variants={itemVariants}
-      className="rounded-xl border border-border/50 bg-background/30 p-4 hover:border-border transition-colors"
+      className="min-w-0 rounded-xl border border-border/50 bg-background/30 p-4 hover:border-border transition-colors"
     >
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
         {icon}

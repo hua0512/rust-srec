@@ -20,6 +20,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
+import {
+  ConfigFieldLabel,
+  ConfigSectionHeading,
+} from '@/components/config/shared/config-field';
 
 interface DouyinConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -34,12 +38,9 @@ export function DouyinConfigFields({
     <div className="space-y-12">
       {/* Extraction Settings Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Zap className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Extraction Settings</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Zap} accent="indigo">
+          <Trans>Extraction Settings</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <FormField
@@ -173,12 +174,9 @@ export function DouyinConfigFields({
 
       {/* Security & Identity Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Shield className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Security & Identity</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Shield} accent="indigo">
+          <Trans>Security & Identity</Trans>
+        </ConfigSectionHeading>
 
         <div className="space-y-6">
           <FormField
@@ -186,12 +184,9 @@ export function DouyinConfigFields({
             name={`${fieldName}.ttwid_management_mode`}
             render={({ field }) => (
               <FormItem>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>TTWID Management Mode</Trans>
-                  </FormLabel>
-                </div>
+                <ConfigFieldLabel accent="indigo" className="mb-3">
+                  <Trans>TTWID Management Mode</Trans>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Tabs
                     onValueChange={field.onChange}
@@ -256,12 +251,9 @@ export function DouyinConfigFields({
       </section>
 
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Shield className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Danmu Control</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Shield} accent="indigo">
+          <Trans>Danmu Control</Trans>
+        </ConfigSectionHeading>
 
         <EndStreamOnDanmuCloseField
           form={form}

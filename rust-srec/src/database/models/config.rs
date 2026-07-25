@@ -101,6 +101,8 @@ pub struct GlobalConfigDbModel {
     pub offline_check_count: i32,
     /// Name of the default engine configuration
     pub default_download_engine: String,
+    /// Default extractor selection ("auto" or "streamlink"); `None` resolves to auto.
+    pub default_extractor: Option<String>,
     pub max_concurrent_cpu_jobs: i32,
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
@@ -168,6 +170,7 @@ impl Default for GlobalConfigDbModel {
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
             default_download_engine: "mesio".to_string(),
+            default_extractor: None,
             max_concurrent_cpu_jobs: 0, // Auto
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
@@ -209,6 +212,8 @@ pub struct PlatformConfigDbModel {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the global default.
+    pub extractor: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
@@ -251,6 +256,8 @@ pub struct TemplateConfigDbModel {
     pub danmu_sampling_config: Option<String>,
     /// Name of the engine configuration to use
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform/global value.
+    pub extractor: Option<String>,
     /// JSON map for template-specific engine configurations
     pub engines_override: Option<String>,
     /// JSON serialized ProxyConfig
@@ -288,6 +295,7 @@ impl TemplateConfigDbModel {
             download_retry_policy: None,
             danmu_sampling_config: None,
             download_engine: None,
+            extractor: None,
             engines_override: None,
             proxy_config: None,
             event_hooks: None,

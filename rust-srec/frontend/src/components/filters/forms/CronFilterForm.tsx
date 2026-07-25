@@ -4,13 +4,17 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+  CONFIG_INPUT,
+} from '@/components/config/shared/config-field';
 
 export function CronFilterForm() {
   const { i18n } = useLingui();
@@ -22,10 +26,10 @@ export function CronFilterForm() {
         control={control}
         name="config.expression"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Cron Expression</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 placeholder={i18n._(msg`* * * * * *`)}
@@ -33,7 +37,7 @@ export function CronFilterForm() {
                 className="font-mono"
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>
                 Standard cron expression (sec min hour day mon dow).
               </Trans>
@@ -46,14 +50,18 @@ export function CronFilterForm() {
         control={control}
         name="config.timezone"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Timezone</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
-              <Input placeholder={i18n._(msg`UTC`)} {...field} />
+              <Input
+                className={CONFIG_INPUT}
+                placeholder={i18n._(msg`UTC`)}
+                {...field}
+              />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>IANA Timezone (e.g. Asia/Shanghai, UTC).</Trans>
             </FormDescription>
             <FormMessage />

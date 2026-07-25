@@ -22,6 +22,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { DanmuComment } from './danmu-parser';
 import type { ParseResponse } from './danmu-parser.worker';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 
 interface DanmuViewerProps {
   url: string;
@@ -36,6 +39,7 @@ export function formatDanmuOffset(seconds: number): string {
 }
 
 export function DanmuViewer({ url, title }: DanmuViewerProps) {
+  const { i18n } = useLingui();
   const [comments, setComments] = useState<DanmuComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -158,7 +162,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       <div className="flex items-center p-2 px-4 border-b bg-background gap-3 shrink-0 h-12">
         <div className="relative flex-1 group flex items-center">
           <Input
-            placeholder="Search comments..."
+            placeholder={i18n._(msg`Search comments...`)}
             className="pl-9 h-8 w-full bg-muted/20 border-border/40 focus-visible:ring-1 focus-visible:ring-primary/20 transition-shadow text-xs rounded-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -186,25 +190,25 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
               onClick={() => setFilterMode('all')}
               className="text-xs"
             >
-              All Types {filterMode === 'all' && '✓'}
+              <Trans>All Types</Trans> {filterMode === 'all' && '✓'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setFilterMode('scrolling')}
               className="text-xs"
             >
-              Scrolling {filterMode === 'scrolling' && '✓'}
+              <Trans>Scrolling</Trans> {filterMode === 'scrolling' && '✓'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setFilterMode('top')}
               className="text-xs"
             >
-              Top Fixed {filterMode === 'top' && '✓'}
+              <Trans>Top Fixed</Trans> {filterMode === 'top' && '✓'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setFilterMode('bottom')}
               className="text-xs"
             >
-              Bottom Fixed {filterMode === 'bottom' && '✓'}
+              <Trans>Bottom Fixed</Trans> {filterMode === 'bottom' && '✓'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -219,7 +223,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <Loader2 className="h-10 w-10 animate-spin text-primary opacity-30" />
             <p className="text-xs font-medium text-muted-foreground tracking-widest uppercase">
-              Loading Danmu
+              <Trans>Loading Danmu</Trans>
             </p>
           </div>
         ) : error ? (
@@ -229,7 +233,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
             </div>
             <div className="space-y-1">
               <p className="font-bold text-foreground">
-                Failed to load content
+                <Trans>Failed to load content</Trans>
               </p>
               <p className="text-xs text-muted-foreground max-w-[300px] leading-relaxed">
                 {error}
@@ -257,7 +261,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                   <div className="py-24 flex flex-col items-center justify-center text-muted-foreground/30 gap-3">
                     <Filter className="h-12 w-12 stroke-[1px]" />
                     <p className="text-sm font-medium tracking-tight">
-                      No results found
+                      <Trans>No results found</Trans>
                     </p>
                   </div>
                 ) : (

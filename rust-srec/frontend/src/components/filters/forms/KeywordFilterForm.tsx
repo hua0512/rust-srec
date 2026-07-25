@@ -4,13 +4,16 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { TagInput } from '@/components/ui/tag-input';
 import { msg } from '@lingui/core/macro';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 export function KeywordFilterForm() {
   const { i18n } = useLingui();
@@ -22,10 +25,10 @@ export function KeywordFilterForm() {
         control={control}
         name="config.include"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Include Keywords</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <TagInput
                 {...field}
@@ -34,7 +37,7 @@ export function KeywordFilterForm() {
                 onChange={(newValue) => field.onChange(newValue)}
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>
                 If set, stream titles must contain at least one of these
                 keywords.
@@ -49,10 +52,10 @@ export function KeywordFilterForm() {
         control={control}
         name="config.exclude"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Exclude Keywords</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <TagInput
                 {...field}
@@ -61,7 +64,7 @@ export function KeywordFilterForm() {
                 onChange={(newValue) => field.onChange(newValue)}
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>
                 If any of these keywords appear in the title, the stream will be
                 ignored.

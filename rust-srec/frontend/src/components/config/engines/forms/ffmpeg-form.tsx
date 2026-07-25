@@ -4,7 +4,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -24,6 +23,10 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 
 import { InputWithUnit } from '@/components/ui/input-with-unit';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 interface FfmpegFormProps {
   basePath?: string;
@@ -38,10 +41,10 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
           name={`${basePath}.binary_path`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              <ConfigFieldLabel>
                 <Terminal className="w-3.5 h-3.5 text-primary" />
                 <Trans>Binary Path</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <Input
                   {...field}
@@ -49,7 +52,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
                   className="bg-background/50"
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>Absolute path or 'ffmpeg' if in PATH</Trans>
               </FormDescription>
               <FormMessage />
@@ -60,10 +63,10 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
           name={`${basePath}.timeout_secs`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              <ConfigFieldLabel>
                 <Clock className="w-3.5 h-3.5 text-primary" />
                 <Trans>Timeout</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <InputWithUnit
                   value={field.value}
@@ -72,7 +75,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
                   className="bg-background/50"
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>Connection/activity timeout</Trans>
               </FormDescription>
               <FormMessage />
@@ -83,10 +86,10 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
           name={`${basePath}.graceful_stop_timeout_secs`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              <ConfigFieldLabel>
                 <TimerOff className="w-3.5 h-3.5 text-primary" />
                 <Trans>Graceful Stop Timeout</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <InputWithUnit
                   value={field.value}
@@ -95,7 +98,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
                   className="bg-background/50"
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Time to wait for ffmpeg to finalize the file before
                   force-killing it
@@ -111,10 +114,10 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
         name={`${basePath}.user_agent`}
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            <ConfigFieldLabel>
               <Shield className="w-3.5 h-3.5 text-primary" />
               <Trans>User Agent</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 {...field}
@@ -122,7 +125,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
                 className="bg-background/50"
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Custom User-Agent string (Optional)</Trans>
             </FormDescription>
             <FormMessage />
@@ -153,7 +156,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
                       className="bg-background/50"
                     />
                   </FormControl>
-                  <FormDescription className="text-[10px]">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Args inserted before -i input_url</Trans>
                   </FormDescription>
                   <FormMessage />
@@ -183,7 +186,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
                       className="bg-background/50"
                     />
                   </FormControl>
-                  <FormDescription className="text-[10px]">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Args used for processing/encoding</Trans>
                   </FormDescription>
                   <FormMessage />

@@ -1,11 +1,13 @@
 //! Merged configuration.
 
+use crate::credentials::extractor_platform_extras;
 use crate::database::models::job::DagPipelineDefinition;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
+use platforms_parser::extractor::factory::ExtractorSelection;
 use platforms_parser::extractor::platform_configs::merge_platform_extras;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Fully resolved configuration for a streamer.
 ///
@@ -33,6 +35,9 @@ pub struct MergedConfig {
 
     // Engine settings
     pub download_engine: String,
+    /// Which extractor resolves the stream URL. Independent of `download_engine`, which only
+    /// decides how the resolved URL is pulled.
+    pub extractor: ExtractorSelection,
     pub download_retry_policy: RetryPolicy,
 
     // Event hooks
@@ -86,6 +91,7 @@ pub struct MergedConfigBuilder {
     proxy_config: Option<ProxyConfig>,
     cookies: Option<String>,
     download_engine: Option<String>,
+    extractor: Option<ExtractorSelection>,
     download_retry_policy: Option<RetryPolicy>,
     event_hooks: Option<EventHooks>,
     fetch_delay_ms: Option<i64>,
@@ -112,6 +118,7 @@ pub struct GlobalConfigLayer {
     pub record_danmu: bool,
     pub proxy_config: ProxyConfig,
     pub download_engine: String,
+    pub extractor: Option<ExtractorSelection>,
     pub pipeline: Option<DagPipelineDefinition>,
     pub session_complete_pipeline: Option<DagPipelineDefinition>,
     pub paired_segment_pipeline: Option<DagPipelineDefinition>,
@@ -132,6 +139,7 @@ pub struct PlatformConfigLayer {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
+    pub extractor: Option<ExtractorSelection>,
     pub stream_selection: Option<StreamSelectionConfig>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
@@ -159,6 +167,7 @@ pub struct TemplateConfigLayer {
     pub proxy_config: Option<ProxyConfig>,
     pub cookies: Option<String>,
     pub download_engine: Option<String>,
+    pub extractor: Option<ExtractorSelection>,
     pub download_retry_policy: Option<RetryPolicy>,
     pub danmu_sampling_config: Option<DanmuSamplingConfig>,
     pub event_hooks: Option<EventHooks>,
@@ -185,6 +194,7 @@ impl MergedConfigBuilder {
             record_danmu,
             proxy_config,
             download_engine,
+            extractor,
             pipeline,
             session_complete_pipeline,
             paired_segment_pipeline,
@@ -209,6 +219,10 @@ impl MergedConfigBuilder {
         self.record_danmu = Some(record_danmu);
         self.proxy_config = Some(proxy_config);
         self.download_engine = Some(download_engine);
+        // NULL at the global layer means "no preference", leaving the default `Auto`.
+        if let Some(v) = extractor {
+            self.extractor = Some(v);
+        }
         self.danmu_sampling_config = Some(DanmuSamplingConfig::default());
         self.download_retry_policy = Some(RetryPolicy::default());
         self.event_hooks = Some(EventHooks::default());
@@ -233,6 +247,7 @@ impl MergedConfigBuilder {
             output_folder,
             output_filename_template,
             download_engine,
+            extractor,
             stream_selection,
             output_file_format,
             min_segment_size_bytes,
@@ -304,6 +319,10 @@ impl MergedConfigBuilder {
             debug!("Platform override: download_engine = {}", v);
             self.download_engine = Some(v);
         }
+        if let Some(v) = extractor {
+            debug!("Platform override: extractor = {}", v);
+            self.extractor = Some(v);
+        }
         if let Some(v) = stream_selection {
             if let Some(existing) = &self.stream_selection {
                 debug!("Platform override: merging stream_selection");
@@ -367,6 +386,7 @@ impl MergedConfigBuilder {
             proxy_config,
             cookies,
             download_engine,
+            extractor,
             download_retry_policy,
             danmu_sampling_config,
             event_hooks,
@@ -429,6 +449,10 @@ impl MergedConfigBuilder {
         if let Some(v) = download_engine {
             debug!("Template override: download_engine = {}", v);
             self.download_engine = Some(v);
+        }
+        if let Some(v) = extractor {
+            debug!("Template override: extractor = {}", v);
+            self.extractor = Some(v);
         }
         if let Some(v) = download_retry_policy {
             debug!("Template override: download_retry_policy");
@@ -511,6 +535,17 @@ impl MergedConfigBuilder {
                 debug!("Streamer config override: output_filename_template = {}", v);
                 self.output_filename_template = Some(v.to_string());
             }
+            if let Some(v) = config.get("extractor").and_then(|v| v.as_str()) {
+                match v.parse::<ExtractorSelection>() {
+                    Ok(selection) => {
+                        debug!("Streamer config override: extractor = {}", selection);
+                        self.extractor = Some(selection);
+                    }
+                    // An unrecognized name inherits rather than failing the whole resolution.
+                    Err(e) => warn!("Ignoring streamer config override: {}", e),
+                }
+            }
+
             if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
                 debug!("Streamer config override: download_engine = {}", v);
                 self.download_engine = Some(v.to_string());
@@ -628,11 +663,16 @@ impl MergedConfigBuilder {
                 self.danmu_sampling_config = Some(v);
             }
 
-            // Merge platform extras from streamer layer
+            // Merge platform extras from streamer layer.
+            //
+            // Stripped the same way `ConfigResolver` strips the platform and template layers:
+            // extras are handed to extractors, which must never receive credential material.
             if let Some(extras) = config.get("platform_extras").cloned() {
                 debug!("Streamer config override: platform_extras");
-                self.platform_extras =
-                    merge_platform_extras(self.platform_extras.take(), Some(extras));
+                self.platform_extras = merge_platform_extras(
+                    self.platform_extras.take(),
+                    Some(extractor_platform_extras(extras)),
+                );
             }
 
             if let Some(v) = config.get("offline_check_count").and_then(|v| v.as_u64()) {
@@ -683,6 +723,8 @@ impl MergedConfigBuilder {
         let download_engine = self
             .download_engine
             .unwrap_or_else(|| "default-mesio".to_string());
+        // No layer expressed a preference: dispatch on the URL regex registry.
+        let extractor = self.extractor.unwrap_or_default();
         let record_danmu = self.record_danmu.unwrap_or(false);
         let stream_selection = self.stream_selection.unwrap_or_default();
         let pipeline = self.pipeline;
@@ -709,6 +751,7 @@ impl MergedConfigBuilder {
             proxy_config: self.proxy_config.unwrap_or_default(),
             cookies: self.cookies,
             download_engine,
+            extractor,
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
@@ -743,6 +786,7 @@ mod tests {
             record_danmu: false,
             proxy_config: ProxyConfig::disabled(),
             download_engine: download_engine.to_string(),
+            extractor: None,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
@@ -966,5 +1010,82 @@ mod tests {
 
         assert_eq!(config.offline_check_count, 1);
         assert_eq!(config.offline_check_delay_ms, 1_000);
+    }
+
+    /// No layer expresses a preference, so extraction stays on the URL regex registry.
+    #[test]
+    fn test_extractor_defaults_to_auto() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .build();
+
+        assert_eq!(config.extractor, ExtractorSelection::Auto);
+    }
+
+    /// Each layer overrides the one above it, and a layer that says nothing inherits.
+    #[test]
+    fn test_extractor_layer_precedence() {
+        let mut global = global_layer("mesio");
+        global.extractor = Some(ExtractorSelection::Streamlink);
+
+        // Platform stays silent, so the global choice survives it.
+        let config = MergedConfig::builder()
+            .with_global(global)
+            .with_platform(PlatformConfigLayer::default())
+            .build();
+        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
+
+        // Template overrides the platform, then the streamer overrides the template.
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                extractor: Some(ExtractorSelection::Streamlink),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                extractor: Some(ExtractorSelection::Auto),
+                ..Default::default()
+            })
+            .with_streamer(Some(&serde_json::json!({ "extractor": "streamlink" })))
+            .build();
+        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
+    }
+
+    /// An unparseable name inherits rather than failing resolution outright.
+    #[test]
+    fn test_unknown_streamer_extractor_is_ignored() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                extractor: Some(ExtractorSelection::Streamlink),
+                ..Default::default()
+            })
+            .with_streamer(Some(
+                &serde_json::json!({ "extractor": "not-an-extractor" }),
+            ))
+            .build();
+
+        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
+    }
+
+    /// Extras reach extractors, so credential material must be stripped from the streamer
+    /// layer the same way `ConfigResolver` strips the platform and template layers.
+    #[test]
+    fn test_streamer_platform_extras_strip_credentials() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_streamer(Some(&serde_json::json!({
+                "platform_extras": {
+                    "refresh_token": "secret",
+                    "session_cookies": "secret",
+                    "quality": "best"
+                }
+            })))
+            .build();
+
+        let extras = config.platform_extras.expect("extras should be set");
+        assert_eq!(extras.get("quality").and_then(|v| v.as_str()), Some("best"));
+        assert!(extras.get("refresh_token").is_none());
+        assert!(extras.get("session_cookies").is_none());
     }
 }

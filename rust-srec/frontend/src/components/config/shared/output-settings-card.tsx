@@ -4,7 +4,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -22,6 +21,13 @@ import { useLingui } from '@lingui/react';
 import { FolderOpen } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 import { EngineConfig } from '@/api/schemas';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_SELECT_TRIGGER,
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  ConfigFieldLabel,
+} from './config-field';
 
 interface OutputSettingsCardProps {
   form: UseFormReturn<any>;
@@ -55,20 +61,20 @@ export const OutputSettingsCard = memo(
               control={form.control}
               name={basePath ? `${basePath}.output_folder` : 'output_folder'}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
                     <Trans>Output Folder</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       {...field}
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       placeholder="/app/output"
-                      className="bg-background"
+                      className={CONFIG_INPUT}
                     />
                   </FormControl>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Override output folder.</Trans>
                   </FormDescription>
                   <FormMessage />
@@ -84,20 +90,20 @@ export const OutputSettingsCard = memo(
                   : 'output_filename_template'
               }
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
                     <Trans>Filename Template</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       {...field}
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       placeholder="{streamer}-%Y%m%d-%H%M%S-{title}"
-                      className="bg-background"
+                      className={CONFIG_INPUT}
                     />
                   </FormControl>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Override filename template.</Trans>
                   </FormDescription>
                   <FormMessage />
@@ -115,24 +121,24 @@ export const OutputSettingsCard = memo(
                   : 'output_file_format'
               }
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
                     <Trans>Output Format</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <Select
                     onValueChange={(val) =>
                       field.onChange(val === 'default' ? undefined : val)
                     }
-                    defaultValue={field.value || 'default'}
+                    value={field.value || 'default'}
                   >
                     <FormControl>
-                      <SelectTrigger className="bg-background">
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue
                           placeholder={i18n._(msg`Select a format`)}
                         />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="default">
                         <Trans>Global Default</Trans>
                       </SelectItem>
@@ -142,7 +148,7 @@ export const OutputSettingsCard = memo(
                       <SelectItem value="ts">TS</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Force specific output format.</Trans>
                   </FormDescription>
                   <FormMessage />
@@ -156,24 +162,24 @@ export const OutputSettingsCard = memo(
                 basePath ? `${basePath}.download_engine` : 'download_engine'
               }
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
                     <Trans>Download Engine</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <Select
                     onValueChange={(val) =>
                       field.onChange(val === 'default' ? undefined : val)
                     }
-                    defaultValue={field.value || 'default'}
+                    value={field.value || 'default'}
                   >
                     <FormControl>
-                      <SelectTrigger className="bg-background">
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue
                           placeholder={i18n._(msg`Select an engine`)}
                         />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="default">
                         <Trans>Inherited / Default</Trans>
                       </SelectItem>
@@ -184,8 +190,53 @@ export const OutputSettingsCard = memo(
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormDescription>
-                    <Trans>Override download engine.</Trans>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
+                    <Trans>
+                      Which tool downloads the stream once its URL is known.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name={basePath ? `${basePath}.extractor` : 'extractor'}
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
+                    <Trans>Stream lookup</Trans>
+                  </ConfigFieldLabel>
+                  <Select
+                    onValueChange={(val) =>
+                      field.onChange(val === 'default' ? undefined : val)
+                    }
+                    value={field.value || 'default'}
+                  >
+                    <FormControl>
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
+                      <SelectItem value="default">
+                        <Trans>Inherited / Default</Trans>
+                      </SelectItem>
+                      <SelectItem value="auto">
+                        <Trans>Automatic (match the site)</Trans>
+                      </SelectItem>
+                      <SelectItem value="streamlink">
+                        <Trans>Always use Streamlink</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
+                    <Trans>
+                      How the stream address is found. Switch to Streamlink when
+                      a site stops working; it needs the Streamlink tool
+                      installed.
+                    </Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

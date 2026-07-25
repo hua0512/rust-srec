@@ -10,8 +10,15 @@ import {
 import { TagInput } from '@/components/ui/tag-input';
 import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 export function CategoryFilterForm() {
+  const { i18n } = useLingui();
   const { control } = useFormContext();
 
   return (
@@ -20,19 +27,19 @@ export function CategoryFilterForm() {
         control={control}
         name="config.categories"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Categories</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <TagInput
                 {...field}
-                placeholder="Enter categories..."
+                placeholder={i18n._(msg`Enter categories...`)}
                 value={field.value || []}
                 onChange={(newTags) => field.onChange(newTags)}
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>
                 Enter categories to match against (e.g. Just Chatting, Gaming).
               </Trans>
@@ -51,7 +58,7 @@ export function CategoryFilterForm() {
               <FormLabel className="text-base">
                 <Trans>Exclude</Trans>
               </FormLabel>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   If enabled, streams in these categories will be ignored.
                 </Trans>

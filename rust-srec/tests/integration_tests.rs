@@ -35,6 +35,7 @@ async fn create_test_platform(pool: &DbPool, prefix: &str) -> String {
         output_folder: None,
         output_filename_template: None,
         download_engine: None,
+        extractor: None,
         stream_selection_config: None,
         output_file_format: None,
         min_segment_size_bytes: None,
@@ -366,6 +367,36 @@ mod config_repository_tests {
         assert_eq!(result.0, id);
         assert_eq!(result.1, "/app/output");
         assert!(!result.2);
+    }
+
+    /// The extractor selection is stored on three tables and read back through
+    /// `GlobalConfigDbModel` / `PlatformConfigDbModel` / `TemplateConfigDbModel`, which select
+    /// every column. A missing column would surface as a row-decode failure at runtime rather
+    /// than a compile error, so assert the migration actually added them.
+    #[tokio::test]
+    async fn test_extractor_columns_exist_after_migrations() {
+        let pool = setup_test_db().await;
+
+        let global: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('global_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect global_config");
+        assert!(global.iter().any(|c| c == "default_extractor"));
+
+        let platform: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('platform_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect platform_config");
+        assert!(platform.iter().any(|c| c == "extractor"));
+
+        let template: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('template_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect template_config");
+        assert!(template.iter().any(|c| c == "extractor"));
     }
 
     #[tokio::test]

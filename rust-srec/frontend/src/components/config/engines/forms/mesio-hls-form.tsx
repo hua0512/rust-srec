@@ -5,7 +5,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -17,11 +16,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trans } from '@lingui/react/macro';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Globe, ListMusic, Bot, Zap, Share2 } from 'lucide-react';
+import {
+  Bot,
+  CalendarClock,
+  Cpu,
+  Database,
+  Globe,
+  KeyRound,
+  ListMusic,
+  Share2,
+} from 'lucide-react';
+import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface SubFormProps {
   hlsPath: string;
@@ -99,19 +123,19 @@ function KeyValuePairsEditor({
               <Input
                 value={k}
                 onChange={(e) => updateEntry(idx, [e.target.value, v])}
-                className="h-8 text-xs font-mono sm:col-span-2"
+                className={cn(CONFIG_INPUT, 'font-mono sm:col-span-2')}
                 placeholder="key"
               />
               <Input
                 value={v}
                 onChange={(e) => updateEntry(idx, [k, e.target.value])}
-                className="h-8 text-xs font-mono sm:col-span-2"
+                className={cn(CONFIG_INPUT, 'font-mono sm:col-span-2')}
                 placeholder="value"
               />
               <Button
                 type="button"
                 variant="outline"
-                className="h-8 text-xs"
+                className={CONFIG_INPUT}
                 onClick={() => removeEntry(idx)}
               >
                 <Trans>Remove</Trans>
@@ -122,7 +146,7 @@ function KeyValuePairsEditor({
           <Button
             type="button"
             variant="outline"
-            className="h-8 text-xs w-full"
+            className={cn(CONFIG_INPUT, 'w-full')}
             onClick={addEntry}
           >
             <Trans>Add parameter</Trans>
@@ -190,10 +214,10 @@ function TriStateNullableDurationMsField({
         </div>
 
         <Select value={mode} onValueChange={(v) => setMode(v as TriStateMode)}>
-          <SelectTrigger className="h-8 text-xs">
+          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className={CONFIG_SELECT_CONTENT}>
             <SelectItem value="default">
               <Trans>Default</Trans>
             </SelectItem>
@@ -224,7 +248,7 @@ function TriStateNullableDurationMsField({
                 },
               )
             }
-            className="h-8 text-xs font-mono"
+            className={cn(CONFIG_INPUT, 'font-mono')}
             placeholder={placeholder}
           />
         )}
@@ -290,10 +314,10 @@ function GapSkipStrategyField({
         <div className="text-xs font-medium">{label}</div>
 
         <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
-          <SelectTrigger className="h-8 text-xs">
+          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className={CONFIG_SELECT_CONTENT}>
             <SelectItem value="default">
               <Trans>Default</Trans>
             </SelectItem>
@@ -316,15 +340,15 @@ function GapSkipStrategyField({
           <FormField
             name={`${path}.count`}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-[10px] text-muted-foreground">
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel size="sm">
                   <Trans>Count</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     type="number"
                     {...field}
-                    className="h-8 text-xs font-mono"
+                    className={cn(CONFIG_INPUT, 'font-mono')}
                     placeholder="10"
                   />
                 </FormControl>
@@ -338,15 +362,15 @@ function GapSkipStrategyField({
           <FormField
             name={`${path}.duration_ms`}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-[10px] text-muted-foreground">
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel size="sm">
                   <Trans>Duration (ms)</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     type="number"
                     {...field}
-                    className="h-8 text-xs font-mono"
+                    className={cn(CONFIG_INPUT, 'font-mono')}
                     placeholder="5000"
                   />
                 </FormControl>
@@ -361,15 +385,15 @@ function GapSkipStrategyField({
             <FormField
               name={`${path}.count`}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-[10px] text-muted-foreground">
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel size="sm">
                     <Trans>Count</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       type="number"
                       {...field}
-                      className="h-8 text-xs font-mono"
+                      className={cn(CONFIG_INPUT, 'font-mono')}
                       placeholder="10"
                     />
                   </FormControl>
@@ -380,15 +404,15 @@ function GapSkipStrategyField({
             <FormField
               name={`${path}.duration_ms`}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-[10px] text-muted-foreground">
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel size="sm">
                     <Trans>Duration (ms)</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       type="number"
                       {...field}
-                      className="h-8 text-xs font-mono"
+                      className={cn(CONFIG_INPUT, 'font-mono')}
                       placeholder="5000"
                     />
                   </FormControl>
@@ -471,10 +495,10 @@ function VariantSelectionPolicyField({
       <CardContent className="p-3 space-y-3">
         <div className="text-xs font-medium">{label}</div>
         <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
-          <SelectTrigger className="h-8 text-xs">
+          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className={CONFIG_SELECT_CONTENT}>
             <SelectItem value="default">
               <Trans>Default</Trans>
             </SelectItem>
@@ -506,15 +530,15 @@ function VariantSelectionPolicyField({
           <FormField
             name={`${path}.target_bitrate`}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-[10px] text-muted-foreground">
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel size="sm">
                   <Trans>Target bitrate</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     type="number"
                     {...field}
-                    className="h-8 text-xs font-mono"
+                    className={cn(CONFIG_INPUT, 'font-mono')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -528,15 +552,15 @@ function VariantSelectionPolicyField({
             <FormField
               name={`${path}.width`}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-[10px] text-muted-foreground">
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel size="sm">
                     <Trans>Width</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       type="number"
                       {...field}
-                      className="h-8 text-xs font-mono"
+                      className={cn(CONFIG_INPUT, 'font-mono')}
                     />
                   </FormControl>
                   <FormMessage />
@@ -546,15 +570,15 @@ function VariantSelectionPolicyField({
             <FormField
               name={`${path}.height`}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-[10px] text-muted-foreground">
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel size="sm">
                     <Trans>Height</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       type="number"
                       {...field}
-                      className="h-8 text-xs font-mono"
+                      className={cn(CONFIG_INPUT, 'font-mono')}
                     />
                   </FormControl>
                   <FormMessage />
@@ -568,12 +592,12 @@ function VariantSelectionPolicyField({
           <FormField
             name={`${path}.value`}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-[10px] text-muted-foreground">
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel size="sm">
                   <Trans>Value</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
-                  <Input {...field} className="h-8 text-xs font-mono" />
+                  <Input {...field} className={cn(CONFIG_INPUT, 'font-mono')} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -622,384 +646,221 @@ function DecryptionOffloadToggle({
   );
 }
 
-const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.base.timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Global Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 0 (No timeout)"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.connect_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Connect Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 30000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.read_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Read Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 30000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.write_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Write Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 30000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-
-    <KeyValuePairsEditor
-      label={<Trans>Query Parameters</Trans>}
-      description={
-        <Trans>
-          Appended to all HLS requests. Useful for signed URLs or CDN routing.
-        </Trans>
-      }
-      path={`${hlsPath}.base.params`}
-    />
-
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.base.user_agent`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>User Agent</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: Mozilla/5.0..."
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.http_version`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>HTTP Version Preference</Trans>
-            </FormLabel>
-            <Select
-              onValueChange={field.onChange}
-              defaultValue={field.value || 'auto'}
-            >
-              <FormControl>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Auto" />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                <SelectItem value="auto">
-                  <Trans>Auto (Default)</Trans>
-                </SelectItem>
-                <SelectItem value="http2_only">
-                  <Trans>HTTP/2 Only</Trans>
-                </SelectItem>
-                <SelectItem value="http1_only">
-                  <Trans>HTTP/1.1 Only</Trans>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-
-    <div className="grid gap-4 sm:grid-cols-3">
-      <FormField
-        name={`${hlsPath}.base.http2_keep_alive_interval_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>H2 Keep-Alive (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 20000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.pool_max_idle_per_host`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Max Idle per Host</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 10"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.pool_idle_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Pool Idle Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 30000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-
-    <div className="grid gap-2 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.base.follow_redirects`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-            <FormLabel className="text-[11px] font-normal">
-              <Trans>Follow Redirects (Default: On)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? true}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.danger_accept_invalid_certs`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-            <FormLabel className="text-[11px] font-normal text-destructive/80">
-              <Trans>Accept Invalid Certs (Default: Off)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? false}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.force_ipv4`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-            <FormLabel className="text-[11px] font-normal">
-              <Trans>Force IPv4 (Default: Off)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? false}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.base.force_ipv6`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-            <FormLabel className="text-[11px] font-normal">
-              <Trans>Force IPv6 (Default: Off)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? false}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-    </div>
-  </div>
-));
-HlsBaseSettings.displayName = 'HlsBaseSettings';
-
-const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.playlist_config.initial_playlist_fetch_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Initial Fetch Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 15000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.playlist_config.live_refresh_interval_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Live Refresh Interval (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 1000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.playlist_config.live_max_refresh_retries`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Max Refresh Retries</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 5"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.playlist_config.live_refresh_retry_delay_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Retry Delay (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 1000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-
-    <Card className="border-border/40 bg-muted/5">
-      <CardContent className="p-3 space-y-3">
-        <VariantSelectionPolicyField
-          label={<Trans>Variant Selection Policy</Trans>}
-          path={`${hlsPath}.playlist_config.variant_selection_policy`}
-        />
-
+const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const { i18n } = useLingui();
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <FormField
-          name={`${hlsPath}.playlist_config.adaptive_refresh_enabled`}
+          name={`${hlsPath}.base.timeout_ms`}
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between">
-              <div className="space-y-0.5">
-                <FormLabel className="text-xs font-medium">
-                  <Trans>Adaptive Refresh (Default: On)</Trans>
-                </FormLabel>
-                <FormDescription className="text-[10px]">
-                  <Trans>Adjust rate based on target duration</Trans>
-                </FormDescription>
-              </div>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Global Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder('0 (No timeout)')}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.connect_timeout_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Connect Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(30000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.read_timeout_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Read Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(30000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.write_timeout_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Write Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(30000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <KeyValuePairsEditor
+        label={<Trans>Query Parameters</Trans>}
+        description={
+          <Trans>
+            Appended to all HLS requests. Useful for signed URLs or CDN routing.
+          </Trans>
+        }
+        path={`${hlsPath}.base.params`}
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          name={`${hlsPath}.base.user_agent`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>User Agent</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder('Mozilla/5.0...')}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.http_version`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>HTTP Version Preference</Trans>
+              </ConfigFieldLabel>
+              <Select
+                onValueChange={field.onChange}
+                defaultValue={field.value || 'auto'}
+              >
+                <FormControl>
+                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                    <SelectValue placeholder={i18n._(msg`Auto`)} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent className={CONFIG_SELECT_CONTENT}>
+                  <SelectItem value="auto">
+                    <Trans>Auto (Default)</Trans>
+                  </SelectItem>
+                  <SelectItem value="http2_only">
+                    <Trans>HTTP/2 Only</Trans>
+                  </SelectItem>
+                  <SelectItem value="http1_only">
+                    <Trans>HTTP/1.1 Only</Trans>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <FormField
+          name={`${hlsPath}.base.http2_keep_alive_interval_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>H2 Keep-Alive (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(20000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.pool_max_idle_per_host`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Max Idle per Host</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(10)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.pool_idle_timeout_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Pool Idle Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(30000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <FormField
+          name={`${hlsPath}.base.follow_redirects`}
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
+              <ConfigFieldLabel size="sm">
+                <Trans>Follow Redirects (Default: On)</Trans>
+              </ConfigFieldLabel>
               <FormControl>
                 <Switch
                   checked={field.value ?? true}
@@ -1010,555 +871,81 @@ const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => (
             </FormItem>
           )}
         />
-
-        <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-border/40">
-          <FormField
-            name={`${hlsPath}.playlist_config.adaptive_refresh_min_interval_ms`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-[10px] text-muted-foreground">
-                  <Trans>Min Interval (ms)</Trans>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className="h-7 text-xs font-mono"
-                    placeholder="Default: 500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            name={`${hlsPath}.playlist_config.adaptive_refresh_max_interval_ms`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-[10px] text-muted-foreground">
-                  <Trans>Max Interval (ms)</Trans>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className="h-7 text-xs font-mono"
-                    placeholder="Default: 3000"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-      </CardContent>
-    </Card>
-  </div>
-));
-HlsPlaylistSettings.displayName = 'HlsPlaylistSettings';
-
-const HlsSchedulerSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.scheduler_config.download_concurrency`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs font-semibold">
-              <Trans>Download Concurrency</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 5"
-              />
-            </FormControl>
-            <FormDescription className="text-[10px]">
-              <Trans>Maximum number of concurrent segment downloads.</Trans>
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        name={`${hlsPath}.scheduler_config.processed_segment_buffer_multiplier`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Processed Buffer Multiplier</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 4"
-              />
-            </FormControl>
-            <FormDescription className="text-[10px]">
-              <Trans>
-                Channel buffer size multiplier for processed segments.
-              </Trans>
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+        <FormField
+          name={`${hlsPath}.base.danger_accept_invalid_certs`}
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
+              <ConfigFieldLabel size="sm">
+                <Trans>Accept Invalid Certs (Default: Off)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Switch
+                  checked={field.value ?? false}
+                  onCheckedChange={field.onChange}
+                  className="scale-75 origin-right"
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.force_ipv4`}
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
+              <ConfigFieldLabel size="sm">
+                <Trans>Force IPv4 (Default: Off)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Switch
+                  checked={field.value ?? false}
+                  onCheckedChange={field.onChange}
+                  className="scale-75 origin-right"
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.base.force_ipv6`}
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
+              <ConfigFieldLabel size="sm">
+                <Trans>Force IPv6 (Default: Off)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Switch
+                  checked={field.value ?? false}
+                  onCheckedChange={field.onChange}
+                  className="scale-75 origin-right"
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+      </div>
     </div>
-  </div>
-));
-HlsSchedulerSettings.displayName = 'HlsSchedulerSettings';
+  );
+});
+HlsBaseSettings.displayName = 'HlsBaseSettings';
 
-const HlsFetcherSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.fetcher_config.segment_download_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Segment Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 10000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.max_segment_retries`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Max Segment Retries</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 3"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.segment_retry_delay_base_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Retry Delay Base (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 500"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.max_segment_retry_delay_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Max Retry Delay (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 10000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.key_download_timeout_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-[10px]">
-              <Trans>Key Timeout (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 5000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.max_key_retries`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-[10px]">
-              <Trans>Max Key Retries</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 3"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.key_retry_delay_base_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-[10px]">
-              <Trans>Key Retry Delay (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 200"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.fetcher_config.max_key_retry_delay_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-[10px]">
-              <Trans>Max Key Retry Delay (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 5000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-  </div>
-));
-HlsFetcherSettings.displayName = 'HlsFetcherSettings';
-
-const HlsProcessorSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <FormField
-      name={`${hlsPath}.processor_config.processed_segment_ttl_ms`}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel className="text-xs">
-            <Trans>Processed Segment TTL (ms)</Trans>
-          </FormLabel>
-          <FormControl>
-            <Input
-              type="number"
-              {...field}
-              className="h-8 text-xs font-mono"
-              placeholder="Default: 60000"
-            />
-          </FormControl>
-          <FormDescription className="text-[10px]">
-            <Trans>
-              How long to keep decrypted/processed segments in cache.
-            </Trans>
-          </FormDescription>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  </div>
-));
-HlsProcessorSettings.displayName = 'HlsProcessorSettings';
-
-const HlsDecryptionSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.decryption_config.key_cache_ttl_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Key Cache TTL (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 3600000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <DecryptionOffloadToggle
-        label={<Trans>Offload Decryption (Default: On)</Trans>}
-        description={
-          <Trans>
-            Runs decryption on a blocking thread pool to avoid stalling async
-            tasks.
-          </Trans>
-        }
-        path={`${hlsPath}.decryption_config.offload_decryption_to_cpu_pool`}
-        defaultChecked={true}
-      />
-    </div>
-  </div>
-));
-HlsDecryptionSettings.displayName = 'HlsDecryptionSettings';
-
-const HlsCacheSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-3">
-      <FormField
-        name={`${hlsPath}.cache_config.playlist_ttl_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Playlist TTL (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 60000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.cache_config.segment_ttl_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Segment TTL (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 120000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.cache_config.decryption_key_ttl_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Decryption Key TTL (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 3600000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-  </div>
-));
-HlsCacheSettings.displayName = 'HlsCacheSettings';
-
-const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField
-        name={`${hlsPath}.output_config.live_reorder_buffer_duration_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Reorder Duration (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 30000"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.output_config.live_reorder_buffer_max_segments`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Reorder Max Segments</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 10"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.output_config.gap_evaluation_interval_ms`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Gap Eval Interval (ms)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className="h-8 text-xs font-mono"
-                placeholder="Default: 200"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <TriStateNullableDurationMsField
-        label={<Trans>Max Stall Duration (ms)</Trans>}
-        description={
-          <Trans>
-            Default uses Mesio’s built-in live stall timeout. Disabled means
-            wait indefinitely.
-          </Trans>
-        }
-        path={`${hlsPath}.output_config.live_max_overall_stall_duration_ms`}
-        placeholder="60000"
-      />
-    </div>
-
-    <FormField
-      name={`${hlsPath}.output_config.max_pending_init_segments`}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel className="text-xs">
-            <Trans>Max Pending Init Segments</Trans>
-          </FormLabel>
-          <FormControl>
-            <Input
-              type="number"
-              {...field}
-              className="h-8 text-xs font-mono"
-              placeholder="Default: 8"
-            />
-          </FormControl>
-          <FormDescription className="text-[10px]">
-            <Trans>0 disables the limit.</Trans>
-          </FormDescription>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-
-    <div className="grid gap-4 sm:grid-cols-2">
-      <GapSkipStrategyField
-        label={<Trans>Live Gap Strategy</Trans>}
-        path={`${hlsPath}.output_config.live_gap_strategy`}
-      />
-      <GapSkipStrategyField
-        label={<Trans>VOD Gap Strategy</Trans>}
-        path={`${hlsPath}.output_config.vod_gap_strategy`}
-      />
-    </div>
-
-    <TriStateNullableDurationMsField
-      label={<Trans>VOD Segment Timeout (ms)</Trans>}
-      description={
-        <Trans>
-          When enabled, each VOD segment must complete within this timeout.
-        </Trans>
-      }
-      path={`${hlsPath}.output_config.vod_segment_timeout_ms`}
-      placeholder="30000"
-    />
-
-    <FormField
-      name={`${hlsPath}.output_config.metrics_enabled`}
-      render={({ field }) => (
-        <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-          <FormLabel className="text-[11px] font-normal">
-            <Trans>Enable Output Metrics (Default: On)</Trans>
-          </FormLabel>
-          <FormControl>
-            <Switch
-              checked={field.value ?? true}
-              onCheckedChange={field.onChange}
-              className="scale-75 origin-right"
-            />
-          </FormControl>
-        </FormItem>
-      )}
-    />
-
-    <div className="space-y-3">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-1">
-        <Trans>Buffer Limits</Trans>
-      </h4>
+const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField
-          name={`${hlsPath}.output_config.buffer_limits.max_segments`}
+          name={`${hlsPath}.playlist_config.initial_playlist_fetch_timeout_ms`}
           render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Max Segments</Trans>
-              </FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Initial Fetch Timeout (ms)</Trans>
+              </ConfigFieldLabel>
               <FormControl>
                 <Input
                   type="number"
                   {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 50"
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(15000)}
                 />
               </FormControl>
               <FormMessage />
@@ -1566,18 +953,350 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => (
           )}
         />
         <FormField
-          name={`${hlsPath}.output_config.buffer_limits.max_bytes`}
+          name={`${hlsPath}.playlist_config.live_refresh_interval_ms`}
           render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Max Bytes</Trans>
-              </FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Live Refresh Interval (ms)</Trans>
+              </ConfigFieldLabel>
               <FormControl>
                 <Input
                   type="number"
                   {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 104857600 (100 MiB)"
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(1000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.playlist_config.live_max_refresh_retries`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Max Refresh Retries</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(5)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.playlist_config.live_refresh_retry_delay_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Retry Delay (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(1000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <Card className="border-border/40 bg-muted/5">
+        <CardContent className="p-3 space-y-3">
+          <VariantSelectionPolicyField
+            label={<Trans>Variant Selection Policy</Trans>}
+            path={`${hlsPath}.playlist_config.variant_selection_policy`}
+          />
+
+          <FormField
+            name={`${hlsPath}.playlist_config.adaptive_refresh_enabled`}
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between">
+                <div className="space-y-0.5">
+                  <ConfigFieldLabel>
+                    <Trans>Adaptive Refresh (Default: On)</Trans>
+                  </ConfigFieldLabel>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
+                    <Trans>Adjust rate based on target duration</Trans>
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value ?? true}
+                    onCheckedChange={field.onChange}
+                    className="scale-75 origin-right"
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-border/40">
+            <FormField
+              name={`${hlsPath}.playlist_config.adaptive_refresh_min_interval_ms`}
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel size="sm">
+                    <Trans>Min Interval (ms)</Trans>
+                  </ConfigFieldLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      className="h-7 text-xs font-mono"
+                      placeholder={defaultPlaceholder(500)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              name={`${hlsPath}.playlist_config.adaptive_refresh_max_interval_ms`}
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel size="sm">
+                    <Trans>Max Interval (ms)</Trans>
+                  </ConfigFieldLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      className="h-7 text-xs font-mono"
+                      placeholder={defaultPlaceholder(3000)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+});
+HlsPlaylistSettings.displayName = 'HlsPlaylistSettings';
+
+const HlsSchedulerSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          name={`${hlsPath}.scheduler_config.download_concurrency`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Download Concurrency</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(5)}
+                />
+              </FormControl>
+              <FormDescription className={CONFIG_DESCRIPTION}>
+                <Trans>Maximum number of concurrent segment downloads.</Trans>
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          name={`${hlsPath}.scheduler_config.processed_segment_buffer_multiplier`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Processed Buffer Multiplier</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(4)}
+                />
+              </FormControl>
+              <FormDescription className={CONFIG_DESCRIPTION}>
+                <Trans>
+                  Channel buffer size multiplier for processed segments.
+                </Trans>
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+    </div>
+  );
+});
+HlsSchedulerSettings.displayName = 'HlsSchedulerSettings';
+
+const HlsFetcherSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          name={`${hlsPath}.fetcher_config.segment_download_timeout_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Segment Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(10000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.max_segment_retries`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Max Segment Retries</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(3)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.segment_retry_delay_base_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Retry Delay Base (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(500)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.max_segment_retry_delay_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Max Retry Delay (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(10000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.key_download_timeout_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel size="sm">
+                <Trans>Key Timeout (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(5000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.max_key_retries`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel size="sm">
+                <Trans>Max Key Retries</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(3)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.key_retry_delay_base_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel size="sm">
+                <Trans>Key Retry Delay (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(200)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.fetcher_config.max_key_retry_delay_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel size="sm">
+                <Trans>Max Key Retry Delay (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(5000)}
                 />
               </FormControl>
               <FormMessage />
@@ -1586,126 +1305,416 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => (
         />
       </div>
     </div>
-  </div>
-));
+  );
+});
+HlsFetcherSettings.displayName = 'HlsFetcherSettings';
+
+const HlsProcessorSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <FormField
+        name={`${hlsPath}.processor_config.processed_segment_ttl_ms`}
+        render={({ field }) => (
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
+              <Trans>Processed Segment TTL (ms)</Trans>
+            </ConfigFieldLabel>
+            <FormControl>
+              <Input
+                type="number"
+                {...field}
+                className={cn(CONFIG_INPUT, 'font-mono')}
+                placeholder={defaultPlaceholder(60000)}
+              />
+            </FormControl>
+            <FormDescription className={CONFIG_DESCRIPTION}>
+              <Trans>
+                How long to keep decrypted/processed segments in cache.
+              </Trans>
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+});
+HlsProcessorSettings.displayName = 'HlsProcessorSettings';
+
+const HlsDecryptionSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          name={`${hlsPath}.decryption_config.key_cache_ttl_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Key Cache TTL (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(3600000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <DecryptionOffloadToggle
+          label={<Trans>Offload Decryption (Default: On)</Trans>}
+          description={
+            <Trans>
+              Runs decryption on a blocking thread pool to avoid stalling async
+              tasks.
+            </Trans>
+          }
+          path={`${hlsPath}.decryption_config.offload_decryption_to_cpu_pool`}
+          defaultChecked={true}
+        />
+      </div>
+    </div>
+  );
+});
+HlsDecryptionSettings.displayName = 'HlsDecryptionSettings';
+
+const HlsCacheSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <FormField
+          name={`${hlsPath}.cache_config.playlist_ttl_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Playlist TTL (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(60000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.cache_config.segment_ttl_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Segment TTL (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(120000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.cache_config.decryption_key_ttl_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Decryption Key TTL (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(3600000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+    </div>
+  );
+});
+HlsCacheSettings.displayName = 'HlsCacheSettings';
+
+const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
+  const defaultPlaceholder = useDefaultPlaceholder();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          name={`${hlsPath}.output_config.live_reorder_buffer_duration_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Reorder Duration (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(30000)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.output_config.live_reorder_buffer_max_segments`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Reorder Max Segments</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(10)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${hlsPath}.output_config.gap_evaluation_interval_ms`}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Gap Eval Interval (ms)</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  {...field}
+                  className={cn(CONFIG_INPUT, 'font-mono')}
+                  placeholder={defaultPlaceholder(200)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <TriStateNullableDurationMsField
+          label={<Trans>Max Stall Duration (ms)</Trans>}
+          description={
+            <Trans>
+              Default uses Mesio’s built-in live stall timeout. Disabled means
+              wait indefinitely.
+            </Trans>
+          }
+          path={`${hlsPath}.output_config.live_max_overall_stall_duration_ms`}
+          placeholder="60000"
+        />
+      </div>
+
+      <FormField
+        name={`${hlsPath}.output_config.max_pending_init_segments`}
+        render={({ field }) => (
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
+              <Trans>Max Pending Init Segments</Trans>
+            </ConfigFieldLabel>
+            <FormControl>
+              <Input
+                type="number"
+                {...field}
+                className={cn(CONFIG_INPUT, 'font-mono')}
+                placeholder={defaultPlaceholder(8)}
+              />
+            </FormControl>
+            <FormDescription className={CONFIG_DESCRIPTION}>
+              <Trans>0 disables the limit.</Trans>
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <GapSkipStrategyField
+          label={<Trans>Live Gap Strategy</Trans>}
+          path={`${hlsPath}.output_config.live_gap_strategy`}
+        />
+        <GapSkipStrategyField
+          label={<Trans>VOD Gap Strategy</Trans>}
+          path={`${hlsPath}.output_config.vod_gap_strategy`}
+        />
+      </div>
+
+      <TriStateNullableDurationMsField
+        label={<Trans>VOD Segment Timeout (ms)</Trans>}
+        description={
+          <Trans>
+            When enabled, each VOD segment must complete within this timeout.
+          </Trans>
+        }
+        path={`${hlsPath}.output_config.vod_segment_timeout_ms`}
+        placeholder="30000"
+      />
+
+      <FormField
+        name={`${hlsPath}.output_config.metrics_enabled`}
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
+            <ConfigFieldLabel size="sm">
+              <Trans>Enable Output Metrics (Default: On)</Trans>
+            </ConfigFieldLabel>
+            <FormControl>
+              <Switch
+                checked={field.value ?? true}
+                onCheckedChange={field.onChange}
+                className="scale-75 origin-right"
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+
+      <div className="space-y-3">
+        <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-1">
+          <Trans>Buffer Limits</Trans>
+        </h4>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField
+            name={`${hlsPath}.output_config.buffer_limits.max_segments`}
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel size="sm">
+                  <Trans>Max Segments</Trans>
+                </ConfigFieldLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    {...field}
+                    className={cn(CONFIG_INPUT, 'font-mono')}
+                    placeholder={defaultPlaceholder(50)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            name={`${hlsPath}.output_config.buffer_limits.max_bytes`}
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel size="sm">
+                  <Trans>Max Bytes</Trans>
+                </ConfigFieldLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    {...field}
+                    className={cn(CONFIG_INPUT, 'font-mono')}
+                    placeholder={defaultPlaceholder('104857600 (100 MiB)')}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+      </div>
+    </div>
+  );
+});
 HlsOutputSettings.displayName = 'HlsOutputSettings';
 
 interface MesioHlsFormProps {
   basePath?: string;
 }
 
+/**
+ * The eight HLS setting groups.
+ *
+ * Driven from data rather than eight hand-written triggers, which had drifted to the point that
+ * three of them shared the same icon while the labels were hidden below `sm` — leaving a row of
+ * identical glyphs as the only navigation on small screens.
+ */
+const HLS_SECTIONS = [
+  { value: 'base', icon: Globe, label: msg`Base`, Section: HlsBaseSettings },
+  {
+    value: 'playlist',
+    icon: ListMusic,
+    label: msg`Playlist`,
+    Section: HlsPlaylistSettings,
+  },
+  {
+    value: 'scheduler',
+    icon: CalendarClock,
+    label: msg`Scheduler`,
+    Section: HlsSchedulerSettings,
+  },
+  {
+    value: 'fetcher',
+    icon: Bot,
+    label: msg`Fetcher`,
+    Section: HlsFetcherSettings,
+  },
+  {
+    value: 'processor',
+    icon: Cpu,
+    label: msg`Processor`,
+    Section: HlsProcessorSettings,
+  },
+  {
+    value: 'decryption',
+    icon: KeyRound,
+    label: msg`Decryption`,
+    Section: HlsDecryptionSettings,
+  },
+  {
+    value: 'cache',
+    icon: Database,
+    label: msg`Cache`,
+    Section: HlsCacheSettings,
+  },
+  {
+    value: 'output',
+    icon: Share2,
+    label: msg`Output`,
+    Section: HlsOutputSettings,
+  },
+];
+
 export function MesioHlsForm({ basePath = 'config' }: MesioHlsFormProps) {
+  const { i18n } = useLingui();
   const hlsPath = `${basePath}.hls`;
 
   return (
-    <Card className="border-border/40 bg-background/20 shadow-none overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
-      <CardContent className="p-3">
-        <Tabs defaultValue="base" className="w-full">
-          <TabsList className="flex w-full mb-4 bg-muted/30 p-1 py-1.5 h-auto overflow-x-auto no-scrollbar justify-start">
-            <TabsTrigger
-              value="base"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Globe className="w-3 h-3 text-sky-500" />
-              <span className="hidden sm:inline">
-                <Trans>Base</Trans>
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="playlist"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <ListMusic className="w-3 h-3 text-pink-500" />
-              <span className="hidden sm:inline">
-                <Trans>Playlist</Trans>
-              </span>
-            </TabsTrigger>
-
-            <TabsTrigger
-              value="scheduler"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Zap className="w-3 h-3 text-indigo-500" />
-              <span className="hidden sm:inline">
-                <Trans>Scheduler</Trans>
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="fetcher"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Bot className="w-3 h-3 text-purple-500" />
-              <span className="hidden sm:inline">
-                <Trans>Fetcher</Trans>
-              </span>
-            </TabsTrigger>
-
-            <TabsTrigger
-              value="processor"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Zap className="w-3 h-3 text-orange-500" />
-              <span className="hidden sm:inline">
-                <Trans>Processor</Trans>
-              </span>
-            </TabsTrigger>
-
-            <TabsTrigger
-              value="decryption"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Zap className="w-3 h-3 text-emerald-500" />
-              <span className="hidden sm:inline">
-                <Trans>Decryption</Trans>
-              </span>
-            </TabsTrigger>
-
-            <TabsTrigger
-              value="cache"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Zap className="w-3 h-3 text-sky-500" />
-              <span className="hidden sm:inline">
-                <Trans>Cache</Trans>
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="output"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Share2 className="w-3 h-3 text-emerald-500" />
-              <span className="hidden sm:inline">
-                <Trans>Output</Trans>
-              </span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="base" className="mt-0">
-            <HlsBaseSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="playlist" className="mt-0">
-            <HlsPlaylistSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="scheduler" className="mt-0">
-            <HlsSchedulerSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="fetcher" className="mt-0">
-            <HlsFetcherSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="processor" className="mt-0">
-            <HlsProcessorSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="decryption" className="mt-0">
-            <HlsDecryptionSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="cache" className="mt-0">
-            <HlsCacheSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="output" className="mt-0">
-            <HlsOutputSettings hlsPath={hlsPath} />
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+    <Accordion type="multiple" defaultValue={['base']} className="w-full">
+      {HLS_SECTIONS.map(({ value, icon: Icon, label, Section }) => (
+        <AccordionItem key={value} value={value} className="border-border/50">
+          <AccordionTrigger className="py-3 hover:no-underline">
+            <span className="flex items-center gap-2.5">
+              <Icon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{i18n._(label)}</span>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent className="pb-4 pt-1">
+            <Section hlsPath={hlsPath} />
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
   );
 }
