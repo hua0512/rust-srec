@@ -33,6 +33,17 @@ enum EventType {
   // Fast-path acquires never emit this — they didn't emit
   // DownloadQueued either.
   EVENT_TYPE_DOWNLOAD_DEQUEUED = 13;
+  // Upload job lifecycle, published by the pipeline job queue for
+  // upload-kind jobs (rclone). STARTED on dequeue, PROGRESS on each
+  // progress-aggregator flush (coalesced server-side, ~4/s max per job),
+  // TERMINAL on complete/fail/cancel. Frontend keys its uploads store by
+  // job_id: STARTED inserts, PROGRESS patches, TERMINAL removes.
+  //
+  // NOTE: enum values and WsMessage oneof field numbers have drifted
+  // (value 11 is a hole); pick each independently. Next free enum: 17.
+  EVENT_TYPE_UPLOAD_STARTED = 14;
+  EVENT_TYPE_UPLOAD_PROGRESS = 15;
+  EVENT_TYPE_UPLOAD_TERMINAL = 16;
 }
 
 // Server-to-client message envelope
@@ -51,6 +62,10 @@ message WsMessage {
     StreamerCheckRecorded streamer_check_recorded = 11;
     DownloadQueued download_queued = 12;
     DownloadDequeued download_dequeued = 13;
+    UploadStarted upload_started = 14;
+    UploadProgress upload_progress = 15;
+    UploadTerminal upload_terminal = 16;
+    // Next free oneof field: 17.
   }
 }
 
@@ -75,6 +90,11 @@ message DownloadSnapshot {
   // the concurrency queue. Lets a freshly-connecting WS client
   // restore the "queued" badge without waiting for the next event.
   repeated DownloadQueued queued = 2;
+  // Upload jobs currently PROCESSING. Lets a (re)connecting client
+  // restore upload indicators — the frontend clears its uploads store
+  // on disconnect, so without this slice an upload started before the
+  // connection would stay invisible until its next PROGRESS event.
+  repeated UploadState uploads = 3;
 }
 
 // A complete download state, split into metadata and metrics.
@@ -235,4 +255,60 @@ message DownloadDequeued {
   string streamer_id = 1;
   string session_id = 2;
   string streamer_name = 3;
+}
+
+// An upload job began processing. streamer_id/session_id may be empty
+// (proto3 scalar default = absent) for manually-created jobs without one.
+message UploadStarted {
+  string job_id = 1;
+  string streamer_id = 2;
+  string session_id = 3;
+  // Producing processor kind ("rclone"). Matches upload_records.uploader.
+  string uploader = 4;
+  uint32 files_total = 5;
+  int64 started_at_ms = 6;
+}
+
+// Coalesced live progress for one upload job. Numeric fields use proto3
+// `optional` because the source (JobProgressSnapshot) genuinely
+// distinguishes "unknown" from zero — e.g. bytes_total is unknown until
+// rclone reports its first stats line.
+message UploadProgress {
+  string job_id = 1;
+  string streamer_id = 2;
+  optional float percent = 3;
+  optional uint64 bytes_done = 4;
+  optional uint64 bytes_total = 5;
+  optional double speed_bytes_per_sec = 6;
+  optional double eta_secs = 7;
+  int64 updated_at_ms = 8;
+}
+
+enum UploadTerminalStatus {
+  UPLOAD_TERMINAL_STATUS_UNSPECIFIED = 0;
+  UPLOAD_TERMINAL_STATUS_COMPLETED = 1;
+  UPLOAD_TERMINAL_STATUS_FAILED = 2;
+  UPLOAD_TERMINAL_STATUS_CANCELLED = 3;
+}
+
+// An upload job reached a terminal state. The frontend removes the job
+// from its uploads store; durable per-file results are served by
+// GET /api/pipeline/jobs/{id}/uploads.
+message UploadTerminal {
+  string job_id = 1;
+  string streamer_id = 2;
+  UploadTerminalStatus status = 3;
+  uint32 files_succeeded = 4;
+  uint32 files_failed = 5;
+  uint32 files_skipped = 6;
+  // Empty when status != FAILED.
+  string error = 7;
+}
+
+// Snapshot slice: one in-flight upload job, optionally with its latest
+// progress. Mirrors what a client would have assembled from
+// UPLOAD_STARTED + the most recent UPLOAD_PROGRESS.
+message UploadState {
+  UploadStarted started = 1;
+  optional UploadProgress progress = 2;
 }

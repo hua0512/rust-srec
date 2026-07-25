@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { TdlProcessorConfigSchema } from '@/api/schemas/tdl';
 
 // --- Remux Processor ---
 export const VideoCodecSchema = z.enum([
@@ -203,6 +202,3 @@ export const AssBurninConfigSchema = z.object({
   delete_source_videos_on_success: z.boolean().default(false),
   delete_source_ass_on_success: z.boolean().default(false),
 });
-
-// --- TDL Processor ---
-export const TdlConfigSchema = TdlProcessorConfigSchema;

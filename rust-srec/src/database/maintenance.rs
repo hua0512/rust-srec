@@ -96,6 +96,7 @@ pub struct MaintenanceFailure {
 pub struct MaintenanceReport {
     pub jobs_deleted: u64,
     pub dags_deleted: u64,
+    pub upload_records_deleted: u64,
     pub refresh_tokens_deleted: u64,
     pub dead_letters_deleted: u64,
     pub delivered_outbox_deleted: u64,
@@ -130,6 +131,7 @@ impl MaintenanceReport {
             elapsed_ms = elapsed.as_millis(),
             jobs_deleted = self.jobs_deleted,
             dags_deleted = self.dags_deleted,
+            upload_records_deleted = self.upload_records_deleted,
             refresh_tokens_deleted = self.refresh_tokens_deleted,
             dead_letters_deleted = self.dead_letters_deleted,
             delivered_outbox_deleted = self.delivered_outbox_deleted,
@@ -285,6 +287,26 @@ impl MaintenanceRepository {
             tokio::task::yield_now().await;
         }
         Ok(total)
+    }
+
+    /// Bounds `upload_records`: rows outlive their job (`ON DELETE SET NULL`
+    /// on `upload_records.job_id`), so `prune_jobs_before` never touches
+    /// them. Shares the `job_history_retention_days` cutoff.
+    async fn prune_upload_records_before(
+        &self,
+        cutoff_ms: i64,
+        cancellation: &CancellationToken,
+    ) -> Result<u64> {
+        self.prune_simple(
+            "maintenance_prune_upload_records",
+            "DELETE FROM upload_records WHERE id IN (\
+                SELECT id FROM upload_records WHERE created_at < ? \
+                ORDER BY created_at ASC LIMIT ?\
+            )",
+            cutoff_ms,
+            cancellation,
+        )
+        .await
     }
 
     async fn prune_expired_refresh_tokens(
@@ -525,6 +547,14 @@ impl MaintenanceScheduler {
             {
                 Ok(deleted) => report.dags_deleted = deleted,
                 Err(error) => report.record_failure("prune_dags", error),
+            }
+            match self
+                .repository
+                .prune_upload_records_before(cutoff, cancellation)
+                .await
+            {
+                Ok(deleted) => report.upload_records_deleted = deleted,
+                Err(error) => report.record_failure("prune_upload_records", error),
             }
         }
 
@@ -829,10 +859,9 @@ mod tests {
     use super::*;
     use crate::database::models::{
         ChannelType, DagExecutionDbModel, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
-        JobExecutionLogDbModel, JobExecutionProgressDbModel, LiveSessionDbModel, MediaFileType,
-        MediaOutputDbModel, NotificationChannelDbModel, NotificationDeadLetterDbModel,
-        NotificationEventLogDbModel, RefreshTokenDbModel, SessionEventDbModel,
-        SessionSegmentDbModel, StreamerDbModel,
+        JobExecutionLogDbModel, LiveSessionDbModel, MediaFileType, MediaOutputDbModel,
+        NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
+        RefreshTokenDbModel, SessionEventDbModel, SessionSegmentDbModel, StreamerDbModel,
     };
     use crate::database::repositories::{
         ConfigRepository as _, DagRepository as _, JobRepository as _, NotificationRepository as _,
@@ -1162,16 +1191,17 @@ mod tests {
             .add_execution_log(&log)
             .await
             .expect("job log");
-        database
-            .job_repository
-            .upsert_job_execution_progress(&JobExecutionProgressDbModel {
-                job_id: "old-completed".to_string(),
-                kind: "percent".to_string(),
-                progress: "{}".to_string(),
-                updated_at: old,
-            })
-            .await
-            .expect("job progress");
+        // Raw insert: the repository's upsert refuses rows for non-PROCESSING
+        // jobs, but this fixture needs one on a COMPLETED job to prove the
+        // FK cascade removes it together with the pruned job row.
+        sqlx::query(
+            "INSERT INTO job_execution_progress (job_id, kind, progress, updated_at) \
+             VALUES ('old-completed', 'percent', '{}', ?)",
+        )
+        .bind(old)
+        .execute(&database.pool)
+        .await
+        .expect("job progress");
 
         let user_id = "default-admin-00000000-0000-0000-0000-000000000001";
         for (id, expires_at, revoked_at) in [

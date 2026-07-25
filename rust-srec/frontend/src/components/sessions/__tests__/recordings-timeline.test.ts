@@ -19,6 +19,7 @@ function output(
     duration_secs: 60,
     format,
     created_at: createdAt,
+    uploads: [],
   };
 }
 

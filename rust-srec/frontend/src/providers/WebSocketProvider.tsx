@@ -1,9 +1,19 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
+import { useUploadStore } from '@/store/uploads';
+import type { UploadProgressInput, UploadStartedInput } from '@/store/uploads';
+import type {
+  UploadProgress as WireUploadProgress,
+  UploadStarted as WireUploadStarted,
+} from '@/api/proto/gen/download_progress_pb.js';
 import {
   WsMessageSchema,
   ClientMessageSchema,
@@ -17,11 +27,21 @@ import {
   StreamerCheckHistoryEntrySchema,
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
-import type { QueryClient } from '@tanstack/react-query';
 
 // Reconnection constants
 const WS_RECONNECT_BASE_DELAY = 1000;
 const WS_RECONNECT_MAX_DELAY = 30000;
+
+export async function handleUploadTerminal(
+  queryClient: QueryClient,
+  jobId: string,
+  removeUpload: (jobId: string) => void,
+) {
+  removeUpload(jobId);
+  await queryClient.invalidateQueries({
+    queryKey: ['pipeline', 'job', jobId, 'uploads'],
+  });
+}
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -59,6 +79,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   );
   const connectionStatus = useDownloadStore((state) => state.connectionStatus);
   const clearAll = useDownloadStore((state) => state.clearAll);
+
+  // Upload store actions (separate store so upload progress ticks don't
+  // re-render download-store subscribers; see store/uploads.ts).
+  const setUploadSnapshot = useUploadStore((state) => state.setSnapshot);
+  const upsertUploadStarted = useUploadStore((state) => state.upsertStarted);
+  const upsertUploadProgress = useUploadStore((state) => state.upsertProgress);
+  const removeUpload = useUploadStore((state) => state.remove);
+  const clearAllUploads = useUploadStore((state) => state.clearAll);
 
   // Query cache used for the check-history strip's React Query state.
   // The component subscribes to ['streamer', streamerId, 'check-history', N];
@@ -120,6 +148,44 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
                 }));
 
               setSnapshot(downloads, queued);
+
+              // Uploads slice: in-flight upload jobs, so a (re)connecting
+              // client recovers indicators for uploads that started before
+              // this connection.
+              const uploadStarted: UploadStartedInput[] = [];
+              const uploadProgress: UploadProgressInput[] = [];
+              for (const u of message.payload.value.uploads) {
+                if (!u.started) continue;
+                uploadStarted.push(wireUploadStarted(u.started));
+                if (u.progress) {
+                  uploadProgress.push(wireUploadProgress(u.progress));
+                }
+              }
+              setUploadSnapshot(uploadStarted, uploadProgress);
+            }
+            break;
+
+          case EventType.UPLOAD_STARTED:
+            if (message.payload.case === 'uploadStarted') {
+              upsertUploadStarted(wireUploadStarted(message.payload.value));
+            }
+            break;
+
+          case EventType.UPLOAD_PROGRESS:
+            if (message.payload.case === 'uploadProgress') {
+              upsertUploadProgress(wireUploadProgress(message.payload.value));
+            }
+            break;
+
+          case EventType.UPLOAD_TERMINAL:
+            // The backend publishes this only after durable per-file results
+            // have been written, so it is the authoritative refetch point.
+            if (message.payload.case === 'uploadTerminal') {
+              void handleUploadTerminal(
+                queryClient,
+                message.payload.value.jobId,
+                removeUpload,
+              );
             }
             break;
 
@@ -260,6 +326,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       removeDownload,
       setQueued,
       clearQueuedByStreamer,
+      setUploadSnapshot,
+      upsertUploadStarted,
+      upsertUploadProgress,
+      removeUpload,
       queryClient,
     ],
   );
@@ -359,7 +429,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     isConnectingRef.current = false;
     clearAll();
-  }, [clearAll]);
+    // Uploads live in their own store; the reconnect snapshot repopulates it.
+    clearAllUploads();
+  }, [clearAll, clearAllUploads]);
 
   // Connection lifecycle
   useEffect(() => {
@@ -406,6 +478,34 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       {children}
     </WebSocketContext.Provider>
   );
+}
+
+/** Wire → store shape for UPLOAD_STARTED (proto3 empty string = absent is
+ *  preserved as-is; the store keys/filters on it directly). */
+function wireUploadStarted(wire: WireUploadStarted): UploadStartedInput {
+  return {
+    jobId: wire.jobId,
+    streamerId: wire.streamerId,
+    sessionId: wire.sessionId,
+    uploader: wire.uploader,
+    filesTotal: wire.filesTotal,
+    startedAtMs: wire.startedAtMs,
+  };
+}
+
+/** Wire → store shape for UPLOAD_PROGRESS. Numeric fields are proto3
+ *  `optional`, so absence survives the trip and the UI can distinguish
+ *  "unknown" from zero. */
+function wireUploadProgress(wire: WireUploadProgress): UploadProgressInput {
+  return {
+    jobId: wire.jobId,
+    streamerId: wire.streamerId,
+    percent: wire.percent,
+    bytesDone: wire.bytesDone,
+    bytesTotal: wire.bytesTotal,
+    speedBytesPerSec: wire.speedBytesPerSec,
+    etaSecs: wire.etaSecs,
+  };
 }
 
 /** Cap kept in sync with the backend's `KEEP_PER_STREAMER` repository

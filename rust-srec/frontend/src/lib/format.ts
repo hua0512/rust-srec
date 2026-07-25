@@ -104,6 +104,15 @@ export function formatSpeed(
 }
 
 /**
+ * Final path component of a file path, handling both `/` and `\` separators.
+ * Returns the input unchanged when it contains no separator.
+ */
+export function basename(path: string): string {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
+/**
  * Remove null and undefined values from an object or array recursively
  */
 export function removeEmpty(obj: any): any {

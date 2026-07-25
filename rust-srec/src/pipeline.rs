@@ -16,6 +16,7 @@ mod manager;
 mod processors;
 mod progress;
 mod throttle;
+mod upload_events;
 mod worker_pool;
 
 pub use crate::database::models::JobStatus;
@@ -25,8 +26,8 @@ pub use coordination::{
 };
 pub use dag_scheduler::{DagCreationResult, DagScheduler};
 pub use job_queue::{
-    Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, LogLevel,
-    QueueDepthStatus,
+    ActiveUploadInfo, Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult,
+    JobStats, LogLevel, QueueDepthStatus,
 };
 pub(crate) use manager::PipelineRuntimeDependencies;
 pub use manager::{
@@ -36,8 +37,12 @@ pub use processors::{
     AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, CopyMoveConfig, CopyMoveOperation,
     CopyMoveProcessor, DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor,
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
-    RemuxProcessor, ThumbnailProcessor,
+    RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem,
 };
 pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
+pub use upload_events::{
+    UploadBroadcastEnvelope, UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus,
+    UploadWsEncoder,
+};
 pub use worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};

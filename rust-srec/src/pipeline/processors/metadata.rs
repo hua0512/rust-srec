@@ -385,6 +385,7 @@ impl MetadataProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs,
         })
     }
@@ -520,6 +521,7 @@ impl Processor for MetadataProcessor {
                 failed_inputs: vec![],
                 succeeded_inputs,
                 skipped_inputs,
+                uploads: vec![],
                 logs,
             });
         }

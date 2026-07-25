@@ -276,6 +276,28 @@ impl ServiceContainer {
             pool.clone().into(),
             write_pool.clone().into(),
         ));
+
+        // Upload records: durable per-file upload results written by
+        // JobQueue::persist_upload_records at terminal job transitions.
+        let upload_record_repo: Arc<dyn crate::database::repositories::UploadRecordRepository> =
+            Arc::new(
+                crate::database::repositories::SqlxUploadRecordRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ),
+            );
+
+        // Live upload-status fan-out for the downloads WS route. Same
+        // encode-once layering as wire_check_history_pipeline: the encoder
+        // lives here so the pipeline module never depends on crate::api.
+        let upload_status_broadcaster = {
+            use prost::Message;
+            let encoder: crate::pipeline::UploadWsEncoder = Arc::new(|event| {
+                let msg = crate::api::routes::downloads::map_upload_event_to_protobuf(event);
+                bytes::Bytes::from(msg.encode_to_vec())
+            });
+            crate::pipeline::UploadStatusBroadcaster::new(encoder)
+        };
         let pipeline_repo_ms = pipeline_repo_start.elapsed().as_millis();
 
         // Create pipeline manager with job repository for database persistence.
@@ -304,6 +326,8 @@ impl ServiceContainer {
                 pipeline_preset_repository: pipeline_preset_repo,
                 config_service: config_service.clone(),
                 dag_repository: Arc::new(SqlxDagRepository::new(pool.clone(), write_pool.clone())),
+                upload_record_repository: upload_record_repo,
+                upload_broadcaster: upload_status_broadcaster.clone(),
             },
         ));
         let pipeline_manager_ms = pipeline_manager_start.elapsed().as_millis();
@@ -488,6 +512,7 @@ impl ServiceContainer {
             stream_monitor,
             credential_service,
             check_history_broadcaster,
+            upload_status_broadcaster,
             api_server_config: api_config,
             cancellation_token,
             task_supervisor,

@@ -749,6 +749,47 @@ pub struct MediaOutputResponse {
     pub duration_secs: Option<f64>,
     pub format: String,
     pub created_at: DateTime<Utc>,
+    /// Upload results whose `local_path` matches `file_path` — one entry
+    /// per uploader, newest record wins (DAG retries produce rows under
+    /// fresh job ids). Empty (and omitted from JSON) when the file was
+    /// never part of an upload job.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub uploads: Vec<MediaOutputUploadInfo>,
+}
+
+/// Upload annotation attached to a media output on the outputs page.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct MediaOutputUploadInfo {
+    /// Producing processor kind (`upload_records.uploader`, e.g. "rclone").
+    pub uploader: String,
+    pub remote_path: Option<String>,
+    /// `COMPLETED` | `FAILED` | `SKIPPED`.
+    pub status: String,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// One durable per-file upload result (`upload_records` row).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct UploadRecordResponse {
+    pub id: String,
+    pub job_id: Option<String>,
+    /// Producing processor kind (e.g. "rclone").
+    pub uploader: String,
+    pub local_path: String,
+    pub remote_path: Option<String>,
+    /// `COMPLETED` | `FAILED` | `SKIPPED`.
+    pub status: String,
+    pub size_bytes: Option<i64>,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Response for `GET /api/pipeline/jobs/{id}/uploads`.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct UploadRecordListResponse {
+    pub items: Vec<UploadRecordResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]

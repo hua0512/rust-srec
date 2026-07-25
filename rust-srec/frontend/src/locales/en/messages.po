@@ -23,7 +23,7 @@ msgstr " - Session: {0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:177
+#: src/components/config/engines/forms/streamlink-form.tsx:174
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -31,11 +31,11 @@ msgstr "--hls-live-edge 3"
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:185
+#: src/components/config/engines/forms/ffmpeg-form.tsx:181
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:155
+#: src/components/config/engines/forms/ffmpeg-form.tsx:151
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
@@ -60,13 +60,18 @@ msgstr "(Mirror source)"
 msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
+#. placeholder {0}: uploads.length
+#: src/components/streamers/card/upload-indicator.tsx:46
+msgid "{0, plural, one {# active upload} other {# active uploads}}"
+msgstr "{0, plural, one {# active upload} other {# active uploads}}"
+
 #. placeholder {0}: pipeline.completed_steps
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:276
 msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, one {# done} other {# done}}"
 
 #. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:644
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:687
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, one {# Error} other {# Errors}}"
 
@@ -75,8 +80,13 @@ msgstr "{0, plural, one {# Error} other {# Errors}}"
 msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, one {# failed} other {# failed}}"
 
+#. placeholder {0}: upload.filesTotal
+#: src/components/streamers/card/upload-indicator.tsx:61
+msgid "{0, plural, one {# file} other {# files}}"
+msgstr "{0, plural, one {# file} other {# files}}"
+
 #. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:664
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:707
 msgid "{0, plural, one {# Line} other {# Lines}}"
 msgstr "{0, plural, one {# Line} other {# Lines}}"
 
@@ -89,7 +99,7 @@ msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, one {# step} other {# steps}}"
 
 #. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:654
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:697
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 
@@ -146,7 +156,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:51
+#: src/components/config/engines/forms/ffmpeg-form.tsx:50
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg or ffmpeg"
 
@@ -222,11 +232,11 @@ msgstr "A unique ID used by other steps to reference this one."
 msgid "A unique name for this configuration template."
 msgstr "A unique name for this configuration template."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:56
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "Absolute path or 'ffmpeg' if in PATH"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:48
+#: src/components/config/engines/forms/streamlink-form.tsx:47
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
@@ -319,10 +329,6 @@ msgstr "Add Custom Tag"
 #: src/components/notifications/forms/email-form.tsx:158
 msgid "Add email and press Enter"
 msgstr "Add email and press Enter"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:129
-msgid "Add Environment Variable"
-msgstr "Add Environment Variable"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:268
 msgid "Add exclude regex pattern"
@@ -491,10 +497,6 @@ msgstr "Allow private stream proxy targets"
 msgid "Allow Private Stream Proxy Targets"
 msgstr "Allow Private Stream Proxy Targets"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:560
-msgid "Allowed Extensions"
-msgstr "Allowed Extensions"
-
 #: src/components/config/shared/output-settings-card.tsx:230
 msgid "Always use Streamlink"
 msgstr "Always use Streamlink"
@@ -503,7 +505,7 @@ msgstr "Always use Streamlink"
 msgid "An error occurred"
 msgstr "An error occurred"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:182
+#: src/components/config/engines/forms/streamlink-form.tsx:179
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
@@ -575,7 +577,7 @@ msgstr "Are you sure you want to delete {0} sessions? This action cannot be undo
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:333
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:366
 msgid "Are you sure you want to delete this job? This will permanently remove it from your list."
 msgstr "Are you sure you want to delete this job? This will permanently remove it from your list."
 
@@ -588,11 +590,11 @@ msgstr "Are you sure you want to delete this session? This action cannot be undo
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:160
+#: src/components/config/engines/forms/ffmpeg-form.tsx:156
 msgid "Args inserted before -i input_url"
 msgstr "Args inserted before -i input_url"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:190
+#: src/components/config/engines/forms/ffmpeg-form.tsx:186
 msgid "Args used for processing/encoding"
 msgstr "Args used for processing/encoding"
 
@@ -603,7 +605,7 @@ msgstr "Artist"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-templates.ts:89
-#: src/components/pipeline/presets/processors/registry.ts:116
+#: src/components/pipeline/presets/processors/registry.ts:112
 msgid "ASS Burn-in"
 msgstr "ASS Burn-in"
 
@@ -653,7 +655,7 @@ msgstr "Audio codec change"
 msgid "Audio Extract"
 msgstr "Audio Extract"
 
-#: src/components/pipeline/presets/processors/registry.ts:76
+#: src/components/pipeline/presets/processors/registry.ts:72
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
@@ -687,10 +689,6 @@ msgstr "Auth Type"
 msgid "Authentication"
 msgstr "Authentication"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:174
-msgid "Authentication & Setup"
-msgstr "Authentication & Setup"
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:775
 msgid "Auto"
 msgstr "Auto"
@@ -698,10 +696,6 @@ msgstr "Auto"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:780
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:210
-msgid "Auto (QR → Phone & Code → Desktop)"
-msgstr "Auto (QR → Phone & Code → Desktop)"
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:329
 msgid "Auto Layout"
@@ -766,7 +760,7 @@ msgstr "Awaiting first check"
 msgid "Back"
 msgstr "Back"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:233
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:266
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:143
 msgid "Back to Jobs"
 msgstr "Back to Jobs"
@@ -791,7 +785,7 @@ msgstr "Background"
 msgid "Background refresh enabled"
 msgstr "Background refresh enabled"
 
-#: src/components/config/engines/forms/mesio-form.tsx:205
+#: src/components/config/engines/forms/mesio-form.tsx:203
 msgid "Backjump Threshold"
 msgstr "Backjump Threshold"
 
@@ -867,11 +861,11 @@ msgstr "Batch URLs"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:65
+#: src/components/config/engines/forms/streamlink-form.tsx:63
 msgid "best"
 msgstr "best"
 
-#: src/components/config/engines/forms/mesio-form.tsx:158
+#: src/components/config/engines/forms/mesio-form.tsx:156
 msgid "BETA"
 msgstr "BETA"
 
@@ -879,8 +873,8 @@ msgstr "BETA"
 msgid "Bilibili QR Login"
 msgstr "Bilibili QR Login"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:46
-#: src/components/config/engines/forms/streamlink-form.tsx:38
+#: src/components/config/engines/forms/ffmpeg-form.tsx:45
+#: src/components/config/engines/forms/streamlink-form.tsx:37
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "Binary Path"
@@ -959,7 +953,7 @@ msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Mani
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
 msgstr "Burst capacity for TPS Limit (--tpslimit-burst)."
 
-#: src/components/config/engines/forms/mesio-form.tsx:324
+#: src/components/config/engines/forms/mesio-form.tsx:322
 msgid "bytes"
 msgstr "bytes"
 
@@ -997,7 +991,7 @@ msgstr "Cache"
 msgid "Cancel"
 msgstr "Cancel"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:322
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:355
 msgid "Cancel Execution"
 msgstr "Cancel Execution"
 
@@ -1103,7 +1097,7 @@ msgstr "Channel deleted"
 msgid "Channel updated"
 msgstr "Channel updated"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:145
+#: src/components/config/engines/forms/streamlink-form.tsx:142
 msgid "channel1,channel2"
 msgstr "channel1,channel2"
 
@@ -1139,10 +1133,6 @@ msgstr "Check failed"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:179
 msgid "Check if file exists after conversion"
 msgstr "Check if file exists after conversion"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:414
-msgid "Check Login"
-msgstr "Check Login"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:213
 msgid "Check size after copy"
@@ -1248,7 +1238,6 @@ msgstr "Cloning..."
 #: src/components/config/global/backup-restore-card.tsx:571
 #: src/components/notifications/browser-channel-dialog.tsx:203
 #: src/components/notifications/desktop-channel-dialog.tsx:236
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "Close"
 
@@ -1264,7 +1253,7 @@ msgstr "Collapsible"
 msgid "Coming soon"
 msgstr "Coming soon"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:150
+#: src/components/config/engines/forms/streamlink-form.tsx:147
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "Comma-separated list of channels to exclude from proxy"
 
@@ -1273,7 +1262,6 @@ msgid "Command"
 msgstr "Command"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:88
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:453
 msgid "Command Arguments"
 msgstr "Command Arguments"
 
@@ -1285,10 +1273,6 @@ msgstr "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders
 msgid "Comment"
 msgstr "Comment"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:357
-msgid "Complete the Telegram login process in this terminal."
-msgstr "Complete the Telegram login process in this terminal."
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:120
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
@@ -1296,7 +1280,7 @@ msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 #: src/components/pipeline/status-config.ts:106
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:288
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:581
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:624
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:352
 msgid "Completed"
@@ -1338,7 +1322,7 @@ msgstr "Compression"
 msgid "Compression (Zip)"
 msgstr "Compression (Zip)"
 
-#: src/components/pipeline/presets/processors/registry.ts:81
+#: src/components/pipeline/presets/processors/registry.ts:77
 msgid "Compression / Archive"
 msgstr "Compression / Archive"
 
@@ -1482,7 +1466,7 @@ msgstr "Connection Error"
 msgid "Connection Instability"
 msgstr "Connection Instability"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:79
+#: src/components/config/engines/forms/ffmpeg-form.tsx:77
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
@@ -1503,17 +1487,13 @@ msgstr "Consecutive Failures"
 msgid "Container"
 msgstr "Container"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:362
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:395
 msgid "Context"
 msgstr "Context"
 
 #: src/components/streamers/streamer-editor.tsx:250
 msgid "Continue"
 msgstr "Continue"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:536
-msgid "Continue on Error"
-msgstr "Continue on Error"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:219
 msgid "Control verbosity for each module. Lower levels include higher ones."
@@ -1535,7 +1515,7 @@ msgstr "Cookies Only"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/components/pipeline/outputs/output-card.tsx:139
+#: src/components/pipeline/outputs/output-card.tsx:189
 msgid "Copied!"
 msgstr "Copied!"
 
@@ -1558,13 +1538,13 @@ msgid "Copy (Stream Copy)"
 msgstr "Copy (Stream Copy)"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/components/pipeline/presets/processors/registry.ts:86
-#: src/components/pipeline/presets/processors/registry.ts:91
-#: src/components/pipeline/presets/processors/registry.ts:126
+#: src/components/pipeline/presets/processors/registry.ts:82
+#: src/components/pipeline/presets/processors/registry.ts:87
+#: src/components/pipeline/presets/processors/registry.ts:122
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
-#: src/components/pipeline/outputs/output-card.tsx:158
+#: src/components/pipeline/outputs/output-card.tsx:208
 msgid "Copy Directory"
 msgstr "Copy Directory"
 
@@ -1580,7 +1560,7 @@ msgstr "Copy Files"
 msgid "Copy JSON"
 msgstr "Copy JSON"
 
-#: src/components/pipeline/outputs/output-card.tsx:139
+#: src/components/pipeline/outputs/output-card.tsx:189
 msgid "Copy Path"
 msgstr "Copy Path"
 
@@ -1717,8 +1697,8 @@ msgid "Create your first workflow to define a sequence of processing steps for y
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
 #: src/components/config/global/backup-restore-card.tsx:178
-#: src/components/pipeline/outputs/output-card.tsx:189
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:567
+#: src/components/pipeline/outputs/output-card.tsx:239
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:610
 msgid "Created"
 msgstr "Created"
 
@@ -1854,7 +1834,7 @@ msgstr "Custom Headers"
 msgid "Custom imported theme is active."
 msgstr "Custom imported theme is active."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:129
+#: src/components/config/engines/forms/streamlink-form.tsx:126
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
@@ -1866,7 +1846,7 @@ msgstr "Custom rate"
 msgid "Custom Tags"
 msgstr "Custom Tags"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:129
+#: src/components/config/engines/forms/ffmpeg-form.tsx:125
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
@@ -1898,7 +1878,7 @@ msgstr "Danmaku"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
 #: src/components/pipeline/presets/preset-templates.ts:79
-#: src/components/pipeline/presets/processors/registry.ts:111
+#: src/components/pipeline/presets/processors/registry.ts:107
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
@@ -2103,7 +2083,7 @@ msgstr "Delete Channel?"
 msgid "Delete engine"
 msgstr "Delete engine"
 
-#: src/components/pipeline/presets/processors/registry.ts:96
+#: src/components/pipeline/presets/processors/registry.ts:92
 msgid "Delete File"
 msgstr "Delete File"
 
@@ -2111,7 +2091,7 @@ msgstr "Delete File"
 msgid "Delete filter"
 msgstr "Delete filter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:342
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:375
 msgid "Delete Job"
 msgstr "Delete Job"
 
@@ -2226,6 +2206,10 @@ msgstr "Desktop Notifications"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "Desktop notifications are shown by the operating system even when the app is minimized."
 
+#: src/components/pipeline/jobs/job-uploads-card.tsx:68
+msgid "Destination copied"
+msgstr "Destination copied"
+
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:101
 msgid "Destination Directory"
 msgstr "Destination Directory"
@@ -2262,7 +2246,7 @@ msgstr "Determined from the URL. Platform settings apply automatically."
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
-#: src/components/pipeline/outputs/output-card.tsx:154
+#: src/components/pipeline/outputs/output-card.tsx:204
 msgid "Directory path copied"
 msgstr "Directory path copied"
 
@@ -2400,10 +2384,6 @@ msgstr "Downloading..."
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:679
-msgid "Dry Run"
-msgstr "Dry Run"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Dual Format"
 msgstr "Dual Format"
@@ -2411,7 +2391,7 @@ msgstr "Dual Format"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:682
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:524
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:567
 msgid "Duration"
 msgstr "Duration"
 
@@ -2424,17 +2404,9 @@ msgstr "Duration (ms)"
 msgid "Duration limit"
 msgstr "Duration limit"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:417
-msgid "e.g. --namespace my_account"
-msgstr "e.g. --namespace my_account"
-
-#: src/components/config/engines/forms/streamlink-form.tsx:70
+#: src/components/config/engines/forms/streamlink-form.tsx:68
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:351
-msgid "e.g. /data/tdl"
-msgstr "e.g. /data/tdl"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:264
 msgid "e.g. /output/processed/"
@@ -2468,10 +2440,6 @@ msgstr "e.g. 250M"
 msgid "e.g. aliyun, akamaized"
 msgstr "e.g. aliyun, akamaized"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:384
-msgid "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
-msgstr "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
-
 #: src/components/streamers/config/stream-selection-input.tsx:133
 msgid "e.g. cdn-to-avoid"
 msgstr "e.g. cdn-to-avoid"
@@ -2493,7 +2461,6 @@ msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:290
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:566
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
@@ -2504,14 +2471,6 @@ msgstr "e.g. My Favorite Streamer"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:220
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:595
-msgid "e.g. tmp"
-msgstr "e.g. tmp"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:459
-msgid "e.g. up -c @channel -p {input}"
-msgstr "e.g. up -c @channel -p {input}"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:500
 msgid "e.g., process-video"
@@ -2572,11 +2531,11 @@ msgstr "Empty pattern"
 msgid "Enable"
 msgstr "Enable"
 
-#: src/components/config/engines/forms/mesio-form.tsx:349
+#: src/components/config/engines/forms/mesio-form.tsx:346
 msgid "Enable advanced FLV timestamp repairing"
 msgstr "Enable advanced FLV timestamp repairing"
 
-#: src/components/config/engines/forms/mesio-form.tsx:371
+#: src/components/config/engines/forms/mesio-form.tsx:367
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "Enable advanced HLS segment reconstruction"
 
@@ -2730,10 +2689,6 @@ msgstr "Enter your credentials to access your account"
 msgid "entries"
 msgstr "entries"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:433
-msgid "Environment Variables"
-msgstr "Environment Variables"
-
 #: src/components/streamers/card/use-streamer-status.tsx:48
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:37
@@ -2749,11 +2704,11 @@ msgstr "Error"
 
 #: src/components/streamers/card/use-streamer-status.tsx:195
 #: src/components/streamers/card/use-streamer-status.tsx:235
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:607
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:650
 msgid "Error Details"
 msgstr "Error Details"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:192
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:225
 msgid "Error Loading Job"
 msgstr "Error Loading Job"
 
@@ -2794,7 +2749,7 @@ msgstr "Error:"
 msgid "Error: Could not load preset details."
 msgstr "Error: Could not load preset details."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:553
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:596
 msgid "ETA"
 msgstr "ETA"
 
@@ -2847,17 +2802,13 @@ msgstr "Exclude Patterns"
 msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:589
-msgid "Excluded Extensions"
-msgstr "Excluded Extensions"
-
 #: src/components/config/global/concurrency-card.tsx:324
 msgid "Execute"
 msgstr "Execute"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:23
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
-#: src/components/pipeline/presets/processors/registry.ts:106
+#: src/components/pipeline/presets/processors/registry.ts:102
 msgid "Execute Command"
 msgstr "Execute Command"
 
@@ -2924,7 +2875,7 @@ msgstr "Export Configuration"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:165
+#: src/components/config/engines/forms/streamlink-form.tsx:162
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:812
 msgid "Extra Arguments"
@@ -2975,6 +2926,7 @@ msgctxt "Friday initial"
 msgid "F"
 msgstr "F"
 
+#: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:108
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
@@ -2995,7 +2947,7 @@ msgstr "Failed steps retry initiated"
 msgid "Failed to autofill name"
 msgstr "Failed to autofill name"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:151
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:184
 msgid "Failed to cancel job"
 msgstr "Failed to cancel job"
 
@@ -3007,11 +2959,6 @@ msgstr "Failed to cancel pipeline"
 #: src/routes/_authed/change-password.lazy.tsx:74
 msgid "Failed to change password"
 msgstr "Failed to change password"
-
-#. placeholder {0}: e.message
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:184
-msgid "Failed to check TDL status: {0}"
-msgstr "Failed to check TDL status: {0}"
 
 #: src/components/streamers/streamer-editor.tsx:140
 msgid "Failed to check this link. Please try again."
@@ -3030,6 +2977,10 @@ msgstr "Failed to clone template: {0}"
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:530
 msgid "Failed to copy"
 msgstr "Failed to copy"
+
+#: src/components/pipeline/jobs/job-uploads-card.tsx:70
+msgid "Failed to copy destination"
+msgstr "Failed to copy destination"
 
 #: src/components/notifications/channel-form.tsx:267
 msgid "Failed to create channel"
@@ -3074,7 +3025,7 @@ msgstr "Failed to delete engine"
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:161
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:194
 msgid "Failed to delete job"
 msgstr "Failed to delete job"
 
@@ -3205,7 +3156,7 @@ msgstr "Failed to refresh credentials"
 msgid "Failed to retry all failed pipelines"
 msgstr "Failed to retry all failed pipelines"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:140
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:173
 msgid "Failed to retry job"
 msgstr "Failed to retry job"
 
@@ -3213,19 +3164,9 @@ msgstr "Failed to retry job"
 msgid "Failed to retry steps"
 msgstr "Failed to retry steps"
 
-#. placeholder {0}: e.message
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:151
-msgid "Failed to send input: {0}"
-msgstr "Failed to send input: {0}"
-
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:299
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
-
-#. placeholder {0}: e.message
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:139
-msgid "Failed to start login: {0}"
-msgstr "Failed to start login: {0}"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:131
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:334
@@ -3417,7 +3358,7 @@ msgstr "Filter events below this priority"
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
-#: src/components/config/engines/forms/mesio-form.tsx:162
+#: src/components/config/engines/forms/mesio-form.tsx:160
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
 
@@ -3434,7 +3375,7 @@ msgstr "Filter Type"
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
-#: src/components/config/engines/forms/mesio-form.tsx:186
+#: src/components/config/engines/forms/mesio-form.tsx:184
 msgid "Filter Window Size"
 msgstr "Filter Window Size"
 
@@ -3446,10 +3387,6 @@ msgstr "Filtered"
 #: src/components/streamers/edit/status-check-history.tsx:265
 msgid "Filtered:"
 msgstr "Filtered:"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:499
-msgid "Filtering & Behavior"
-msgstr "Filtering & Behavior"
 
 #: src/components/config/shared-config-editor.tsx:157
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:570
@@ -3472,11 +3409,11 @@ msgstr "First output file path"
 msgid "Fix configuration errors before saving"
 msgstr "Fix configuration errors before saving"
 
-#: src/components/config/engines/forms/mesio-form.tsx:346
+#: src/components/config/engines/forms/mesio-form.tsx:343
 msgid "Fix FLV Streams"
 msgstr "Fix FLV Streams"
 
-#: src/components/config/engines/forms/mesio-form.tsx:368
+#: src/components/config/engines/forms/mesio-form.tsx:364
 msgid "Fix HLS Discontinuities"
 msgstr "Fix HLS Discontinuities"
 
@@ -3496,7 +3433,7 @@ msgstr "FLV parser"
 msgid "FLV stream fixing pipeline"
 msgstr "FLV stream fixing pipeline"
 
-#: src/components/config/engines/forms/mesio-form.tsx:275
+#: src/components/config/engines/forms/mesio-form.tsx:273
 msgid "FLV Tuning"
 msgstr "FLV Tuning"
 
@@ -3585,7 +3522,7 @@ msgstr "Gap Eval Interval (ms)"
 msgid "GB"
 msgstr "GB"
 
-#: src/components/config/engines/forms/mesio-form.tsx:267
+#: src/components/config/engines/forms/mesio-form.tsx:265
 #: src/components/config/platforms/platform-editor.tsx:190
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
 #: src/components/config/templates/template-editor.tsx:247
@@ -3643,11 +3580,11 @@ msgstr "Generating QR code..."
 msgid "Global"
 msgstr "Global"
 
-#: src/components/config/engines/forms/mesio-form.tsx:314
+#: src/components/config/engines/forms/mesio-form.tsx:312
 msgid "Global Buffer Size"
 msgstr "Global Buffer Size"
 
-#: src/components/config/engines/forms/mesio-form.tsx:305
+#: src/components/config/engines/forms/mesio-form.tsx:303
 msgid "Global Configuration"
 msgstr "Global Configuration"
 
@@ -3671,7 +3608,7 @@ msgid "Go back"
 msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:200
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:233
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:243
 msgid "Go Back"
 msgstr "Go Back"
@@ -3723,8 +3660,8 @@ msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, an
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:91
-#: src/components/config/engines/forms/streamlink-form.tsx:82
+#: src/components/config/engines/forms/ffmpeg-form.tsx:88
+#: src/components/config/engines/forms/streamlink-form.tsx:79
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
 
@@ -3861,7 +3798,7 @@ msgstr "HLS parser"
 msgid "HLS stream fixing pipeline"
 msgstr "HLS stream fixing pipeline"
 
-#: src/components/config/engines/forms/mesio-form.tsx:288
+#: src/components/config/engines/forms/mesio-form.tsx:286
 msgid "HLS Tuning"
 msgstr "HLS Tuning"
 
@@ -3971,7 +3908,7 @@ msgstr "https://discord.com/api/webhooks/..."
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:124
+#: src/components/config/engines/forms/streamlink-form.tsx:121
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -4015,10 +3952,6 @@ msgstr "If enabled, streams matching this pattern will be ignored."
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "If set, stream titles must contain at least one of these keywords."
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:241
-msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
-msgstr "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
-
 #: src/components/filters/FilterCard.tsx:171
 msgid "Ignore case"
 msgstr "Ignore case"
@@ -4030,10 +3963,6 @@ msgstr "Ignore streams above this bitrate."
 #: src/components/streamers/config/stream-selection-input.tsx:180
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:571
-msgid "Ignored when \"Upload All Files\" is enabled."
-msgstr "Ignored when \"Upload All Files\" is enabled."
 
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:327
 msgid "Immersive Mode"
@@ -4072,10 +4001,6 @@ msgstr "Inactive"
 #: src/components/filters/FilterCard.tsx:163
 msgid "Include"
 msgstr "Include"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:643
-msgid "Include Images"
-msgstr "Include Images"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:30
 msgid "Include Keywords"
@@ -4119,7 +4044,7 @@ msgstr "Inline: {stepName}"
 msgid "Input"
 msgstr "Input"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:143
+#: src/components/config/engines/forms/ffmpeg-form.tsx:139
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
@@ -4127,7 +4052,7 @@ msgstr "Input Arguments"
 msgid "Input Options (-i flags)"
 msgstr "Input Options (-i flags)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:437
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:470
 msgid "Input Path"
 msgstr "Input Path"
 
@@ -4152,10 +4077,6 @@ msgstr "Interact"
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:251
 msgid "Interactive 24-hour timeline selection."
 msgstr "Interactive 24-hour timeline selection."
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:457
-msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
-msgstr "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
 msgid "Internal"
@@ -4193,7 +4114,7 @@ msgstr "Isolation level for tracking identifiers. Global is usually best."
 msgid "Jitter"
 msgstr "Jitter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:146
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:179
 msgid "Job cancelled"
 msgstr "Job cancelled"
 
@@ -4213,15 +4134,15 @@ msgstr "Job creation time"
 msgid "Job creation time (default)"
 msgstr "Job creation time (default)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:157
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:190
 msgid "Job deleted"
 msgstr "Job deleted"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:262
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:295
 msgid "Job Details"
 msgstr "Job Details"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:195
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:228
 msgid "Job not found"
 msgstr "Job not found"
 
@@ -4229,7 +4150,7 @@ msgstr "Job not found"
 msgid "Job Presets"
 msgstr "Job Presets"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:135
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:168
 msgid "Job retry initiated"
 msgstr "Job retry initiated"
 
@@ -4276,14 +4197,9 @@ msgstr "Keep directory structure"
 msgid "Keep Running"
 msgstr "Keep Running"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:539
-msgid "Keep uploading other files if one fails"
-msgstr "Keep uploading other files if one fails"
-
 #: src/components/notifications/forms/webhook-form.tsx:415
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
 msgid "Key"
 msgstr "Key"
 
@@ -4374,10 +4290,6 @@ msgstr "Limits each individual file's transfer rate rather than the overall tota
 msgid "List"
 msgstr "List"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:573
-msgid "List of allowed file extensions (without dot)."
-msgstr "List of allowed file extensions (without dot)."
-
 #: src/components/streamers/card/use-streamer-status.tsx:39
 #: src/components/streamers/card/use-streamer-status.tsx:313
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
@@ -4430,7 +4342,7 @@ msgstr "Loading Danmu"
 msgid "Loading editor components..."
 msgstr "Loading editor components..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:683
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:726
 msgid "Loading logs..."
 msgstr "Loading logs..."
 
@@ -4439,7 +4351,7 @@ msgstr "Loading logs..."
 msgid "Loading more..."
 msgstr "Loading more..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:720
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:763
 msgid "Loading older logs..."
 msgstr "Loading older logs..."
 
@@ -4491,34 +4403,13 @@ msgstr "Logging configuration updated"
 msgid "Logging paused"
 msgstr "Logging paused"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:411
-msgid "Login Args"
-msgstr "Login Args"
-
 #: src/routes/_public/login.lazy.tsx:150
 msgid "Login failed"
 msgstr "Login failed"
 
-#. placeholder {0}: typeof status === 'object' && 'failed' in status ? status.failed.message : 'Unknown error'
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:602
-msgid "Login failed: {0}"
-msgstr "Login failed: {0}"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:596
-msgid "Login session cancelled"
-msgstr "Login session cancelled"
-
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:156
 msgid "Login successful!"
 msgstr "Login successful!"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:184
-msgid "Login to Telegram"
-msgstr "Login to Telegram"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:195
-msgid "Login Type"
-msgstr "Login Type"
 
 #: src/components/layout/site-header.tsx:33
 #: src/components/sidebar/navbar.tsx:27
@@ -4529,7 +4420,7 @@ msgstr "Logs"
 msgid "Logs downloaded successfully"
 msgstr "Logs downloaded successfully"
 
-#: src/components/config/engines/forms/mesio-form.tsx:153
+#: src/components/config/engines/forms/mesio-form.tsx:151
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
@@ -4702,7 +4593,6 @@ msgstr "Max Refresh Retries"
 #: src/components/config/shared/retry-policy-form.tsx:52
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:374
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:613
 msgid "Max Retries"
 msgstr "Max Retries"
 
@@ -4753,12 +4643,12 @@ msgstr "Maximum quality compression with HEVC, then upload to cloud storage."
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:103
 #: src/components/ui/input-with-unit.tsx:29
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:405
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:416
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:438
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:449
 msgid "MB"
 msgstr "MB"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:547
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:590
 msgid "MB/s"
 msgstr "MB/s"
 
@@ -4798,7 +4688,7 @@ msgstr "Messages"
 msgid "Metadata"
 msgstr "Metadata"
 
-#: src/components/pipeline/presets/processors/registry.ts:101
+#: src/components/pipeline/presets/processors/registry.ts:97
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
@@ -4914,7 +4804,7 @@ msgstr "Move Files"
 msgid "Move the file to another location. Removes the original file."
 msgstr "Move the file to another location. Removes the original file."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:124
+#: src/components/config/engines/forms/ffmpeg-form.tsx:120
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
@@ -4989,10 +4879,6 @@ msgstr "Name Z-A"
 msgid "name@example.com"
 msgstr "name@example.com"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:257
-msgid "Namespace"
-msgstr "Namespace"
-
 #: src/components/notifications/desktop-channel-dialog.tsx:109
 msgid "Native"
 msgstr "Native"
@@ -5018,7 +4904,7 @@ msgstr "Network & System"
 msgid "New"
 msgstr "New"
 
-#: src/components/config/engines/forms/mesio-form.tsx:100
+#: src/components/config/engines/forms/mesio-form.tsx:99
 msgid "NEW"
 msgstr "NEW"
 
@@ -5107,10 +4993,6 @@ msgstr "No detailed error message available"
 msgid "No engines found."
 msgstr "No engines found."
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:118
-msgid "No environment variables defined"
-msgstr "No environment variables defined"
-
 #. placeholder {0}: result.max_depth
 #: src/components/pipeline/workflows/workflow-editor.tsx:189
 msgid "No errors found. Max depth: {0}"
@@ -5120,15 +5002,11 @@ msgstr "No errors found. Max depth: {0}"
 msgid "No events found"
 msgstr "No events found"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:661
-msgid "No Extension"
-msgstr "No Extension"
-
 #: src/components/filters/FilterList.tsx:23
 msgid "No filters yet"
 msgstr "No filters yet"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:459
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:492
 msgid "No input paths"
 msgstr "No input paths"
 
@@ -5153,7 +5031,7 @@ msgstr "No limit"
 msgid "No log files found"
 msgstr "No log files found"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:732
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:775
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
@@ -5185,7 +5063,7 @@ msgstr "No modules configured"
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:494
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:527
 msgid "No output generated"
 msgstr "No output generated"
 
@@ -5332,7 +5210,6 @@ msgstr "None (Default)"
 msgid "None (Strip Audio)"
 msgstr "None (Strip Audio)"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:234
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:633
@@ -5420,7 +5297,6 @@ msgid "Nth output: {output0}, {output1}..."
 msgstr "Nth output: {output0}, {output1}..."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:385
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:628
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
@@ -5515,7 +5391,7 @@ msgstr "Offline Detection Count"
 msgid "Offload Decryption (Default: On)"
 msgstr "Offload Decryption (Default: On)"
 
-#: src/components/config/engines/forms/mesio-form.tsx:225
+#: src/components/config/engines/forms/mesio-form.tsx:223
 msgid "Offset Consistency Check"
 msgstr "Offset Consistency Check"
 
@@ -5567,7 +5443,7 @@ msgstr "Only supported for MP4/MOV/M4V"
 #: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:188
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:150
-#: src/components/pipeline/outputs/output-card.tsx:128
+#: src/components/pipeline/outputs/output-card.tsx:178
 #: src/components/pipeline/presets/preset-card.tsx:170
 #: src/components/pipeline/workflows/workflow-card.tsx:164
 msgid "Open menu"
@@ -5590,7 +5466,7 @@ msgstr "Operation Mode"
 msgid "Operation Type"
 msgstr "Operation Type"
 
-#: src/components/config/engines/forms/mesio-form.tsx:126
+#: src/components/config/engines/forms/mesio-form.tsx:125
 msgid "Optimize Stream Headers"
 msgstr "Optimize Stream Headers"
 
@@ -5603,10 +5479,6 @@ msgstr "Optional"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:289
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:421
-msgid "Optional extra arguments appended to `tdl login`."
-msgstr "Optional extra arguments appended to `tdl login`."
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:118
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:175
@@ -5646,7 +5518,7 @@ msgstr "Out of Space"
 msgid "Output"
 msgstr "Output"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:173
+#: src/components/config/engines/forms/ffmpeg-form.tsx:169
 msgid "Output Arguments"
 msgstr "Output Arguments"
 
@@ -5676,7 +5548,7 @@ msgstr "Output Format"
 msgid "Output Options"
 msgstr "Output Options"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:472
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:505
 msgid "Output Path"
 msgstr "Output Path"
 
@@ -5844,10 +5716,6 @@ msgstr "Passthrough Inputs"
 msgid "Password"
 msgstr "Password"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:491
-msgid "Password / 2FA blocked"
-msgstr "Password / 2FA blocked"
-
 #: src/lib/password-change-redirect.ts:39
 #: src/routes/_public/login.lazy.tsx:59
 msgid "Password change required"
@@ -5875,10 +5743,6 @@ msgstr "Paste a channel link. Everything else can wait."
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:72
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:526
-msgid "Path to Telegram Desktop (contains tdata)"
-msgstr "Path to Telegram Desktop (contains tdata)"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:73
 msgid "Path Variables"
@@ -5951,17 +5815,13 @@ msgstr "Per-Streamer"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:781
 #: src/components/sessions/overview-tab.tsx:195
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:517
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:560
 msgid "Performance"
 msgstr "Performance"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:331
 msgid "Permission required"
 msgstr "Permission required"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:216
-msgid "Phone & Code (2FA optional)"
-msgstr "Phone & Code (2FA optional)"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:159
 msgid "Pick a preset theme or import a custom one."
@@ -5971,7 +5831,7 @@ msgstr "Pick a preset theme or import a custom one."
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:380
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:413
 msgid "Pipeline"
 msgstr "Pipeline"
 
@@ -6074,10 +5934,6 @@ msgstr "Pipeline Timeouts"
 msgid "pipelines"
 msgstr "pipelines"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:465
-msgid "Placeholders"
-msgstr "Placeholders"
-
 #: src/components/streamers/config/streamer-identity-fields.tsx:167
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:504
 msgid "Platform"
@@ -6178,10 +6034,6 @@ msgstr "Please restart the system to ensure all configuration changes are fully 
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:539
-msgid "Please set Telegram Desktop Directory first"
-msgstr "Please set Telegram Desktop Directory first"
-
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
@@ -6213,10 +6065,6 @@ msgstr "Precision Schedule"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:199
 msgid "Prefer Manifest"
 msgstr "Prefer Manifest"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:224
-msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
-msgstr "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
 
 #: src/components/streamers/config/stream-selection-input.tsx:61
 msgid "Preferences"
@@ -6370,11 +6218,6 @@ msgstr "Priority low-high"
 msgid "Private Network Access"
 msgstr "Private Network Access"
 
-#. placeholder {0}: status.exited.code ?? 0
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
-msgid "Process exited with code {0}"
-msgstr "Process exited with code {0}"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
@@ -6456,11 +6299,6 @@ msgstr "Proxy Strategy"
 msgid "Proxy URL"
 msgstr "Proxy URL"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:213
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:508
-msgid "QR Code"
-msgstr "QR Code"
-
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:165
 msgid "QR code expired"
 msgstr "QR code expired"
@@ -6469,7 +6307,7 @@ msgstr "QR code expired"
 msgid "QR Login"
 msgstr "QR Login"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:60
+#: src/components/config/engines/forms/streamlink-form.tsx:58
 #: src/components/player/stream-info-card.tsx:171
 msgid "Quality"
 msgstr "Quality"
@@ -6494,7 +6332,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:532
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:575
 msgid "Queue"
 msgstr "Queue"
 
@@ -6562,8 +6400,8 @@ msgstr "rclone default: 8"
 msgid "Rclone Executable"
 msgstr "Rclone Executable"
 
-#: src/components/pipeline/presets/processors/registry.ts:66
-#: src/components/pipeline/presets/processors/registry.ts:121
+#: src/components/pipeline/presets/processors/registry.ts:62
+#: src/components/pipeline/presets/processors/registry.ts:117
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 
@@ -6621,7 +6459,7 @@ msgstr "Recently updated"
 msgid "Recommended"
 msgstr "Recommended"
 
-#: src/components/config/engines/forms/mesio-form.tsx:329
+#: src/components/config/engines/forms/mesio-form.tsx:327
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "Recommended: 8388608 (8 MiB)"
 
@@ -6728,7 +6566,7 @@ msgstr "Remux"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:60
 #: src/components/pipeline/presets/preset-templates.ts:5
-#: src/components/pipeline/presets/processors/registry.ts:61
+#: src/components/pipeline/presets/processors/registry.ts:57
 msgid "Remux / Transcode"
 msgstr "Remux / Transcode"
 
@@ -6832,7 +6670,7 @@ msgstr "Resolution change"
 msgid "Resource Limits"
 msgstr "Resource Limits"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:394
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:427
 msgid "Resources"
 msgstr "Resources"
 
@@ -6843,10 +6681,6 @@ msgstr "Restart Required"
 #: src/components/config/global/concurrency-card.tsx:358
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "Restart rust-srec after saving for the new timeouts to take effect."
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:552
-msgid "Restart with -d"
-msgstr "Restart with -d"
 
 #: src/components/config/global/backup-restore-card.tsx:262
 msgid "Restore from a backup file"
@@ -6902,7 +6736,7 @@ msgstr "Retry Delay (ms)"
 msgid "Retry Delay Base (ms)"
 msgstr "Retry Delay Base (ms)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:311
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:344
 msgid "Retry Job"
 msgstr "Retry Job"
 
@@ -7323,10 +7157,6 @@ msgstr "Select File"
 msgid "Select format"
 msgstr "Select format"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:204
-msgid "Select login type"
-msgstr "Select login type"
-
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:168
 msgid "Select operation"
@@ -7405,17 +7235,9 @@ msgstr "Selected"
 msgid "Selected stream"
 msgstr "Selected stream"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:662
-msgid "Send"
-msgstr "Send"
-
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
-msgid "Sensitive"
-msgstr "Sensitive"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:313
 msgid "Separate multiple paths with commas."
@@ -7432,7 +7254,7 @@ msgstr "Server URL"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
 #: src/components/config/shared-config-editor.tsx:497
-#: src/components/pipeline/outputs/output-card.tsx:201
+#: src/components/pipeline/outputs/output-card.tsx:251
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "Session"
@@ -7470,17 +7292,13 @@ msgid "SESSION ENDED"
 msgstr "SESSION ENDED"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:367
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:400
 msgid "Session ID"
 msgstr "Session ID"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:49
 msgid "Session ID is required"
 msgstr "Session ID is required"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:625
-msgid "Session is not running"
-msgstr "Session is not running"
 
 #: src/components/sessions/session-card.tsx:254
 msgid "Session Menu"
@@ -7508,10 +7326,6 @@ msgstr "Session thumbnail"
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:263
 msgid "Sessions"
 msgstr "Sessions"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:481
-msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
-msgstr "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
 
 #: src/components/config/shared/limits-card.tsx:41
 msgid "Set constraints on downloads."
@@ -7592,7 +7406,7 @@ msgstr "Since {0}"
 msgid "Single URL"
 msgstr "Single URL"
 
-#: src/components/pipeline/outputs/output-card.tsx:178
+#: src/components/pipeline/outputs/output-card.tsx:228
 #: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
 msgstr "Size"
@@ -7620,6 +7434,10 @@ msgstr "Skip after duration"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
+
+#: src/components/pipeline/jobs/job-uploads-card.tsx:54
+msgid "Skipped"
+msgstr "Skipped"
 
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
 msgid "Skipped {skippedCount} duplicate stream(s)"
@@ -7668,7 +7486,7 @@ msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
 #: src/components/streamers/edit/active-download-card.tsx:125
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:542
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:585
 msgid "Speed"
 msgstr "Speed"
 
@@ -7680,11 +7498,11 @@ msgstr "Split after duration."
 msgid "Split after size."
 msgstr "Split after size."
 
-#: src/components/config/engines/forms/mesio-form.tsx:83
+#: src/components/config/engines/forms/mesio-form.tsx:82
 msgid "Split on any raw header change. Safe but may cause extra files."
 msgstr "Split on any raw header change. Safe but may cause extra files."
 
-#: src/components/config/engines/forms/mesio-form.tsx:104
+#: src/components/config/engines/forms/mesio-form.tsx:103
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "Split only on codec configuration changes. Reduces false splits."
 
@@ -7708,21 +7526,9 @@ msgstr "Standard cron expression (sec min hour day mon dow)."
 msgid "Start"
 msgstr "Start"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:313
-msgid "Start Desktop Login"
-msgstr "Start Desktop Login"
-
 #: src/components/not-found.tsx:28
 msgid "Start Over"
 msgstr "Start Over"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:315
-msgid "Start Phone & Code Login"
-msgstr "Start Phone & Code Login"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:317
-msgid "Start QR Login"
-msgstr "Start QR Login"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:652
 msgid "Start Time"
@@ -7731,13 +7537,9 @@ msgstr "Start Time"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
 #: src/components/sessions/overview-tab.tsx:217
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:294
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:572
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:615
 msgid "Started"
 msgstr "Started"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:566
-msgid "Starting tdl process..."
-msgstr "Starting tdl process..."
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:681
 msgid "State"
@@ -7774,10 +7576,6 @@ msgstr "Steps List"
 #: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "Stop recording when danmu control signals stream closed."
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:288
-msgid "Storage"
-msgstr "Storage"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Stream Archive"
@@ -7827,7 +7625,7 @@ msgstr "Stream Password"
 msgid "Stream Player"
 msgstr "Stream Player"
 
-#: src/components/config/engines/forms/mesio-form.tsx:65
+#: src/components/config/engines/forms/mesio-form.tsx:64
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
 
@@ -7871,7 +7669,7 @@ msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:133
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:373
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:406
 msgid "Streamer ID"
 msgstr "Streamer ID"
 
@@ -7923,7 +7721,7 @@ msgstr "Streamers currently live will appear here."
 msgid "Streaming services"
 msgstr "Streaming services"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:43
+#: src/components/config/engines/forms/streamlink-form.tsx:42
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -7989,7 +7787,7 @@ msgstr "Supported Platforms"
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
-#: src/components/config/engines/forms/mesio-form.tsx:129
+#: src/components/config/engines/forms/mesio-form.tsx:128
 msgid "Suppress redundant headers to reduce player micro-stutter"
 msgstr "Suppress redundant headers to reduce player micro-stutter"
 
@@ -8050,7 +7848,7 @@ msgctxt "Tuesday initial"
 msgid "T"
 msgstr "T"
 
-#: src/components/config/engines/forms/mesio-form.tsx:193
+#: src/components/config/engines/forms/mesio-form.tsx:191
 msgid "Tags"
 msgstr "Tags"
 
@@ -8069,66 +7867,6 @@ msgstr "Target Configuration"
 #: src/components/ui/input-with-unit.tsx:31
 msgid "TB"
 msgstr "TB"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:272
-msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
-msgstr "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:478
-msgid "TDL binary not found"
-msgstr "TDL binary not found"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:321
-msgid "TDL Binary Path"
-msgstr "TDL Binary Path"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:354
-msgid "TDL Interactive Login"
-msgstr "TDL Interactive Login"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:174
-msgid "TDL is logged in{version}"
-msgstr "TDL is logged in{version}"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:178
-msgid "TDL is not logged in{version}"
-msgstr "TDL is not logged in{version}"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:136
-msgid "TDL login session started"
-msgstr "TDL login session started"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:170
-msgid "TDL not found"
-msgstr "TDL not found"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:468
-msgid "TDL Status"
-msgstr "TDL Status"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:181
-msgid "TDL status unknown{version}"
-msgstr "TDL status unknown{version}"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:238
-msgid "Telegram 2FA password is not supported"
-msgstr "Telegram 2FA password is not supported"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:376
-msgid "Telegram 2FA via web is unsupported"
-msgstr "Telegram 2FA via web is unsupported"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:219
-msgid "Telegram Desktop"
-msgstr "Telegram Desktop"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:519
-msgid "Telegram Desktop data required"
-msgstr "Telegram Desktop data required"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:378
-msgid "Telegram Desktop Directory"
-msgstr "Telegram Desktop Directory"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:175
@@ -8267,10 +8005,6 @@ msgstr "This filter's settings could not be read."
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:494
-msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
-msgstr "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
-
 #: src/components/config/global/pipeline-config-card.tsx:183
 #: src/components/config/shared-config-editor.tsx:431
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
@@ -8340,7 +8074,7 @@ msgstr "Throughput"
 msgid "Thumbnail"
 msgstr "Thumbnail"
 
-#: src/components/pipeline/presets/processors/registry.ts:71
+#: src/components/pipeline/presets/processors/registry.ts:67
 msgid "Thumbnail Generator"
 msgstr "Thumbnail Generator"
 
@@ -8364,8 +8098,8 @@ msgstr "Time Placeholders (Local Time)"
 msgid "Time Range"
 msgstr "Time Range"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:102
-#: src/components/config/engines/forms/streamlink-form.tsx:93
+#: src/components/config/engines/forms/ffmpeg-form.tsx:99
+#: src/components/config/engines/forms/streamlink-form.tsx:90
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 
@@ -8378,7 +8112,7 @@ msgstr "time-of-day timetable"
 msgid "Timeline"
 msgstr "Timeline"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:68
+#: src/components/config/engines/forms/ffmpeg-form.tsx:66
 msgid "Timeout"
 msgstr "Timeout"
 
@@ -8456,7 +8190,7 @@ msgstr "Top Words"
 msgid "total"
 msgstr "total"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:669
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:712
 msgid "Total"
 msgstr "Total"
 
@@ -8655,7 +8389,7 @@ msgstr "TTWID Management Mode"
 msgid "Tuesday"
 msgstr "Tuesday"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:110
+#: src/components/config/engines/forms/streamlink-form.tsx:107
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -8663,11 +8397,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "Twitch OAuth token for subscriber-only and high-quality streams."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:119
+#: src/components/config/engines/forms/streamlink-form.tsx:116
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch Proxy Playlist"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:140
+#: src/components/config/engines/forms/streamlink-form.tsx:137
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
@@ -8678,14 +8412,6 @@ msgstr "Type"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
 msgid "Type something..."
 msgstr "Type something..."
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:624
-msgid "Type your answer here..."
-msgstr "Type your answer here..."
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:293
-msgid "type=bolt,path=/data/tdl"
-msgstr "type=bolt,path=/data/tdl"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:32
 msgid "Ultra HD"
@@ -8734,7 +8460,7 @@ msgstr "Unknown engine type: {engineType}"
 msgid "Unknown error"
 msgstr "Unknown error"
 
-#: src/components/pipeline/outputs/output-card.tsx:77
+#: src/components/pipeline/outputs/output-card.tsx:76
 msgid "Unknown File"
 msgstr "Unknown File"
 
@@ -8775,6 +8501,10 @@ msgstr "Updated"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "Updates existing items and creates new ones. Nothing is deleted."
 
+#: src/components/streamers/card/upload-indicator.tsx:56
+msgid "upload"
+msgstr "upload"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:48
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:73
@@ -8789,21 +8519,14 @@ msgstr "upload : download (asymmetric)"
 msgid "Upload (Rclone)"
 msgstr "Upload (Rclone)"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:512
-msgid "Upload All Files"
-msgstr "Upload All Files"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:20
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:443
-msgid "Upload Arguments"
-msgstr "Upload Arguments"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:515
-msgid "Upload everything regardless of file type"
-msgstr "Upload everything regardless of file type"
+#. placeholder {0}: upload.uploader
+#: src/components/pipeline/outputs/output-card.tsx:140
+msgid "Upload failed via {0}"
+msgstr "Upload failed via {0}"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Upload file to cloud storage and delete local copy after successful upload."
@@ -8812,6 +8535,24 @@ msgstr "Upload file to cloud storage and delete local copy after successful uplo
 #: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "Upload file to cloud storage using rclone. Configure remote in rclone config."
+
+#. placeholder {0}: upload.uploader
+#: src/components/pipeline/outputs/output-card.tsx:143
+msgid "Upload skipped via {0}"
+msgstr "Upload skipped via {0}"
+
+#: src/components/pipeline/jobs/job-uploads-card.tsx:50
+msgid "Uploaded"
+msgstr "Uploaded"
+
+#. placeholder {0}: upload.uploader
+#: src/components/pipeline/outputs/output-card.tsx:137
+msgid "Uploaded via {0}"
+msgstr "Uploaded via {0}"
+
+#: src/components/pipeline/jobs/job-uploads-card.tsx:81
+msgid "Uploads"
+msgstr "Uploads"
 
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:160
 msgid "Uptime"
@@ -8839,14 +8580,6 @@ msgstr "Use danmu_inputs from job manifest"
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:425
-msgid "Use Phone & Code"
-msgstr "Use Phone & Code"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:436
-msgid "Use QR Login"
-msgstr "Use QR Login"
-
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:301
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
@@ -8863,11 +8596,7 @@ msgstr "Use System Proxy"
 msgid "Use TLS"
 msgstr "Use TLS"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:395
-msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
-msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
-
-#: src/components/config/engines/forms/ffmpeg-form.tsx:119
+#: src/components/config/engines/forms/ffmpeg-form.tsx:115
 #: src/components/config/engines/forms/mesio-hls-form.tsx:749
 msgid "User Agent"
 msgstr "User Agent"
@@ -8916,7 +8645,6 @@ msgstr "Validation service unavailable"
 #: src/components/notifications/forms/webhook-form.tsx:431
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1036
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
 msgstr "Value"
 
@@ -9112,14 +8840,6 @@ msgstr "When a recording has been waiting in the concurrency queue longer than t
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "When enabled, each VOD segment must complete within this timeout."
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:361
-msgid "Where TDL stores its session and configuration."
-msgstr "Where TDL stores its session and configuration."
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:303
-msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
-msgstr "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
-
 #: src/components/config/shared/output-settings-card.tsx:194
 msgid "Which tool downloads the stream once its URL is known."
 msgstr "Which tool downloads the stream once its URL is known."
@@ -9132,10 +8852,6 @@ msgstr "Width"
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:94
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:454
-msgid "Windows Console Error"
-msgstr "Windows Console Error"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
 msgid "workflow"
@@ -9172,10 +8888,6 @@ msgstr "workflows"
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:156
 msgid "Workflows"
 msgstr "Workflows"
-
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:346
-msgid "Working Directory"
-msgstr "Working Directory"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:717
 msgid "Write Timeout (ms)"

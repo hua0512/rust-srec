@@ -99,6 +99,13 @@ impl ServiceContainer {
                 ),
             ),
             check_history_broadcaster: self.check_history_broadcaster.clone(),
+            upload_status_broadcaster: self.upload_status_broadcaster.clone(),
+            upload_record_repository: Arc::new(
+                crate::database::repositories::SqlxUploadRecordRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ),
             filter_repository: Arc::new(SqlxFilterRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),

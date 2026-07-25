@@ -5,6 +5,7 @@ import {
   PipelineStatsSchema,
   MediaOutputSchema,
   JobProgressSnapshotSchema,
+  UploadRecordListSchema,
   DagExecutionSchema,
   DagGraphSchema,
   DagStatsSchema,
@@ -60,6 +61,13 @@ export const getPipelineJobProgress = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const json = await fetchBackend(`/pipeline/jobs/${data.id}/progress`);
     return JobProgressSnapshotSchema.parse(json);
+  });
+
+export const getPipelineJobUploads = createServerFn({ method: 'GET' })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    const json = await fetchBackend(`/pipeline/jobs/${data.id}/uploads`);
+    return UploadRecordListSchema.parse(json);
   });
 
 // DagSummary is used for list_pipelines results

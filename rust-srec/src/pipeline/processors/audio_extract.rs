@@ -466,6 +466,7 @@ impl AudioExtractProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs: command_output.logs,
         })
     }
@@ -579,6 +580,7 @@ impl Processor for AudioExtractProcessor {
                 failed_inputs: vec![],
                 succeeded_inputs,
                 skipped_inputs,
+                uploads: vec![],
                 logs,
             });
         }
@@ -793,6 +795,7 @@ impl Processor for AudioExtractProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.clone()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs: command_output.logs,
         })
     }

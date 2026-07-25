@@ -657,6 +657,9 @@ impl WorkerPool {
 
                             match result {
                                 None => {
+                                    // No upload_records synthesis here: the job's CANCELLED
+                                    // status is the durable truth, and cancel_job already
+                                    // broadcast the Terminal{Cancelled} upload event.
                                     info!(job_id = %job_id, "Job cancelled while processing");
                                 }
                                 Some(Ok(Ok(output))) => {
@@ -749,6 +752,7 @@ impl WorkerPool {
                                                 outputs: output.outputs,
                                                 duration_secs: output.duration_secs,
                                                 metadata: output.metadata,
+                                                uploads: output.uploads,
                                                 logs: output.logs,
                                             },
                                         )

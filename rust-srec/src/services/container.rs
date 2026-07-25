@@ -358,6 +358,9 @@ pub struct ServiceContainer {
     /// without polling. Same fan-out pattern as
     /// [`crate::downloader::DownloadManager::subscribe`].
     pub(crate) check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
+    /// Live broadcaster for upload status events (started/progress/terminal).
+    /// Published by `JobQueue`, consumed by the downloads WS route.
+    pub(crate) upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
