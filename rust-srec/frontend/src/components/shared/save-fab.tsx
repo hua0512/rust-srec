@@ -16,8 +16,6 @@ interface SaveFabProps {
   control?: Control<any>;
   /** Stay mounted while the form is clean, instead of appearing on first edit. */
   alwaysVisible?: boolean;
-  /** With `alwaysVisible`, disable until something changes. */
-  disabledWhenPristine?: boolean;
   /** Defaults to "Save changes". */
   label?: ReactNode;
 }
@@ -34,7 +32,6 @@ function Fab({
   onSubmit,
   control,
   alwaysVisible,
-  disabledWhenPristine,
   label,
 }: SaveFabProps & { control: Control<any> }) {
   const { isDirty } = useFormState({ control });
@@ -66,7 +63,7 @@ function Fab({
             type={formId ? 'submit' : 'button'}
             form={formId}
             onClick={formId ? undefined : onSubmit}
-            disabled={isSaving || (disabledWhenPristine && !isDirty)}
+            disabled={isSaving}
             className={cn(
               'rounded-full border border-white/15 px-6 py-6 text-base font-semibold',
               // The button floats over scrolling content with no container to seat it, so the

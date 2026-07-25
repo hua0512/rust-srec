@@ -19,7 +19,17 @@ export function EditStreamerSkeleton() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-4">
         <div className="space-y-6 lg:col-span-3">
-          <Skeleton className="h-11 w-72 rounded-full" />
+          {/* Same shape as `StreamerTabs`' `TabsList`, which stacks its triggers below `sm`
+              and only becomes an auto-width pill at `md`. A single fixed-width bar here would
+              be a third of the real height on a phone. */}
+          <div className="grid w-full gap-1 rounded-xl border bg-muted/30 p-1 sm:grid-cols-3 md:flex md:w-fit md:rounded-full">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton
+                key={i}
+                className="h-10 w-full rounded-lg md:w-32 md:rounded-full"
+              />
+            ))}
+          </div>
           <Skeleton className="h-[420px] w-full rounded-xl" />
         </div>
         <div className="space-y-6 lg:col-span-1">

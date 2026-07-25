@@ -240,12 +240,15 @@ function NotificationEventsPage() {
     [updateSearch],
   );
 
-  const handleViewDetails = useCallback((event: any) => {
-    setSelectedPayload({
-      title: `${event.event_type} (${priorityLabel(event.priority)})`,
-      payload: event.payload,
-    });
-  }, []);
+  const handleViewDetails = useCallback(
+    (event: any) => {
+      setSelectedPayload({
+        title: `${event.event_type} (${i18n._(priorityLabel(event.priority))})`,
+        payload: event.payload,
+      });
+    },
+    [i18n],
+  );
 
   const hasMore = (events?.length ?? 0) >= limit;
   const hasPrev = page > 1;

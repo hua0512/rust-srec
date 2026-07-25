@@ -11,7 +11,15 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useForm } from 'react-hook-form';
-import { useMemo, useCallback, lazy, Suspense, ComponentType } from 'react';
+import {
+  useMemo,
+  useCallback,
+  lazy,
+  Suspense,
+  ComponentType,
+  ReactNode,
+} from 'react';
+import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { cn } from '@/lib/utils';
 import { SaveFab } from '@/components/shared/save-fab';
@@ -47,24 +55,53 @@ const PipelineConfigCard = lazy(() =>
  *
  * Listed as data rather than five near-identical `Suspense`/`motion` blocks, which is what the
  * page previously carried — each differing only by an animation delay.
+ *
+ * `skeletonRows` describes each card's field rows per section at this page's two-column width,
+ * where the cards' `@md:grid-cols-2` grids put two fields on one row. Keep it in step with the
+ * card when fields are added, or the placeholder stops matching what replaces it.
  */
-const SECTIONS: { Card: ComponentType; wide?: boolean }[] = [
-  { Card: FileConfigCard },
-  { Card: ResourceLimitsCard },
-  { Card: ConcurrencyCard },
-  { Card: NetworkSystemCard },
-  { Card: PipelineConfigCard, wide: true },
+const SECTIONS: {
+  Card: ComponentType;
+  wide?: boolean;
+  skeletonRows: number[];
+  skeletonBody?: ReactNode;
+}[] = [
+  { Card: FileConfigCard, skeletonRows: [5] },
+  { Card: ResourceLimitsCard, skeletonRows: [3] },
+  { Card: ConcurrencyCard, skeletonRows: [3, 2, 1] },
+  { Card: NetworkSystemCard, skeletonRows: [2, 1, 2] },
+  {
+    Card: PipelineConfigCard,
+    wide: true,
+    skeletonRows: [],
+    // Not a field list: a three-tab bar over an alert and the DAG editor, which reserves
+    // `min-h-[500px]` of its own.
+    skeletonBody: (
+      <div className="space-y-6">
+        <Skeleton className="h-11 w-full rounded-xl" />
+        <Skeleton className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-[500px] w-full rounded-lg" />
+      </div>
+    ),
+  },
 ];
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/global')({
   component: GlobalConfigPage,
 });
 
-function CardSkeleton({ wide }: { wide?: boolean }) {
+/**
+ * The column span lives on the wrapper in both the loading and loaded paths, so the skeleton
+ * renders at the same width as the card it stands in for.
+ */
+function CardSkeleton({
+  skeletonRows,
+  skeletonBody,
+}: (typeof SECTIONS)[number]) {
   return (
-    <Skeleton
-      className={cn('h-96 rounded-xl', wide && 'h-[28rem] lg:col-span-2')}
-    />
+    <SettingsCardSkeleton sections={skeletonRows}>
+      {skeletonBody}
+    </SettingsCardSkeleton>
   );
 }
 
@@ -77,8 +114,13 @@ function GlobalConfigPage() {
   if (isLoading || !config) {
     return (
       <div className="grid gap-6 pb-32 lg:gap-8 lg:grid-cols-2">
-        {SECTIONS.map(({ wide }, i) => (
-          <CardSkeleton key={i} wide={wide} />
+        {SECTIONS.map((section, i) => (
+          <div
+            key={i}
+            className={cn('min-w-0', section.wide && 'lg:col-span-2')}
+          >
+            <CardSkeleton {...section} />
+          </div>
         ))}
       </div>
     );
@@ -161,25 +203,20 @@ function GlobalConfigForm({
           initial="hidden"
           animate="visible"
         >
-          {SECTIONS.map(({ Card, wide }, i) => (
+          {SECTIONS.map((section, i) => (
             <motion.div
               key={i}
               variants={itemVariants}
-              className={cn('min-w-0', wide && 'lg:col-span-2')}
+              className={cn('min-w-0', section.wide && 'lg:col-span-2')}
             >
-              <Suspense fallback={<CardSkeleton wide={wide} />}>
-                <Card />
+              <Suspense fallback={<CardSkeleton {...section} />}>
+                <section.Card />
               </Suspense>
             </motion.div>
           ))}
         </motion.div>
 
-        <SaveFab
-          isSaving={isPending}
-          formId="global-config-form"
-          alwaysVisible
-          disabledWhenPristine
-        />
+        <SaveFab isSaving={isPending} formId="global-config-form" />
       </form>
     </Form>
   );

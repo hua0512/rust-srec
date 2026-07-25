@@ -100,7 +100,7 @@ export function StreamerIdentityFields({
                   icon={User}
                   placeholder={i18n._(msg`e.g. My Favorite Streamer`)}
                   {...field}
-                  className={cn(CONFIG_INPUT, 'flex-1')}
+                  className={CONFIG_INPUT}
                 />
                 {onAutofillName && (
                   <TooltipProvider>

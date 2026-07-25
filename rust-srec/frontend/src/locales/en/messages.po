@@ -98,16 +98,6 @@ msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, one {file} other {files}}"
 
-#. placeholder {0}: day.full
-#. placeholder {0}: opt.label
-#. placeholder {0}: p.label
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:158
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:191
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:235
-#: src/components/notifications/forms/channel-delivery-fields.tsx:66
-msgid "{0}"
-msgstr "{0}"
-
 #. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
 #. placeholder {1}: i18n.date(new Date(entry.checked_at), { timeStyle: 'short' })
 #: src/components/streamers/edit/status-check-history.tsx:161
@@ -129,6 +119,12 @@ msgstr "{0} stream(s) added successfully"
 #: src/components/sessions/jobs-tab.tsx:82
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} steps"
+
+#. placeholder {0}: duration.hours
+#. placeholder {1}: duration.minutes
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:379
+msgid "{0}h {1}m"
+msgstr "{0}h {1}m"
 
 #: src/components/streamers/edit/status-check-history.tsx:475
 msgid "{hours}h"
@@ -256,7 +252,7 @@ msgstr "Actions"
 msgid "Active"
 msgstr "Active"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:130
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:171
 msgid "Active Days"
 msgstr "Active Days"
 
@@ -461,6 +457,11 @@ msgstr "Alerts when disk space is running low."
 msgid "All"
 msgstr "All"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:94
+msgctxt "day-of-week preset"
+msgid "All"
+msgstr "All"
+
 #: src/components/logging/log-viewer.tsx:432
 msgid "All Levels"
 msgstr "All Levels"
@@ -478,7 +479,7 @@ msgid "All Time"
 msgstr "All Time"
 
 #: src/components/danmu/danmu-viewer.tsx:193
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:346
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:349
 msgid "All Types"
 msgstr "All Types"
 
@@ -1114,7 +1115,7 @@ msgstr "channels"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:403
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:406
 msgid "Channels"
 msgstr "Channels"
 
@@ -1530,7 +1531,7 @@ msgstr "Cookies"
 msgid "Cookies Only"
 msgstr "Cookies Only"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:524
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:527
 msgid "Copied"
 msgstr "Copied"
 
@@ -1575,7 +1576,7 @@ msgstr "Copy File"
 msgid "Copy Files"
 msgstr "Copy Files"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:530
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:533
 msgid "Copy JSON"
 msgstr "Copy JSON"
 
@@ -1747,6 +1748,11 @@ msgid "CRF (Constant Rate Factor)"
 msgstr "CRF (Constant Rate Factor)"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:165
+msgid "Critical"
+msgstr "Critical"
+
+#: src/lib/priority.ts:24
+msgctxt "priority"
 msgid "Critical"
 msgstr "Critical"
 
@@ -2578,7 +2584,7 @@ msgstr "Enable selected"
 
 #: src/components/config/shared/record-danmu-card.tsx:99
 #: src/components/notifications/desktop-channel-dialog.tsx:102
-#: src/components/notifications/forms/channel-delivery-fields.tsx:92
+#: src/components/notifications/forms/channel-delivery-fields.tsx:94
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
@@ -2597,7 +2603,7 @@ msgstr "Encoding Preset"
 msgid "Encoding Settings"
 msgstr "Encoding Settings"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:352
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:393
 msgid "End"
 msgstr "End"
 
@@ -2736,7 +2742,7 @@ msgstr "Error Loading Job"
 msgid "Error Loading Pipeline"
 msgstr "Error Loading Pipeline"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:81
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:80
 msgid "Error loading platform"
 msgstr "Error loading platform"
 
@@ -2753,7 +2759,7 @@ msgstr "Error Loading Session"
 msgid "Error loading streamers: {0}"
 msgstr "Error loading streamers: {0}"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:74
 msgid "Error loading template"
 msgstr "Error loading template"
 
@@ -2777,7 +2783,7 @@ msgstr "ETA"
 msgid "Event Hooks"
 msgstr "Event Hooks"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:342
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:345
 msgid "Event Type"
 msgstr "Event Type"
 
@@ -2945,6 +2951,7 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/filters/FilterCard.tsx:43
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:70
 msgctxt "Friday initial"
 msgid "F"
 msgstr "F"
@@ -3001,7 +3008,7 @@ msgstr "Failed to clone preset: {0}"
 msgid "Failed to clone template: {0}"
 msgstr "Failed to clone template: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:526
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:529
 msgid "Failed to copy"
 msgstr "Failed to copy"
 
@@ -3125,7 +3132,7 @@ msgstr "Failed to load engine: {0}"
 msgid "Failed to load engines: {0}"
 msgstr "Failed to load engines: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:272
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:275
 msgid "Failed to load events"
 msgstr "Failed to load events"
 
@@ -3219,7 +3226,7 @@ msgid "Failed to update logging configuration"
 msgstr "Failed to update logging configuration"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:52
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:53
 msgid "Failed to update platform: {0}"
 msgstr "Failed to update platform: {0}"
 
@@ -3232,7 +3239,7 @@ msgstr "Failed to update preset: {0}"
 msgid "Failed to update priority"
 msgstr "Failed to update priority"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:126
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:168
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
@@ -3247,7 +3254,7 @@ msgid "Failed to update subscriptions"
 msgstr "Failed to update subscriptions"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:47
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:48
 msgid "Failed to update template: {0}"
 msgstr "Failed to update template: {0}"
 
@@ -3382,7 +3389,7 @@ msgstr "Filter created successfully"
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:73
+#: src/components/notifications/forms/channel-delivery-fields.tsx:75
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
@@ -3526,9 +3533,17 @@ msgstr "Format"
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
+msgid "Friday"
+msgstr "Friday"
+
 #: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "From Address"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:86
+msgid "Full Day"
+msgstr "Full Day"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:10
 msgid "Full HD Thumbnail"
@@ -3642,16 +3657,16 @@ msgid "Go Back"
 msgstr "Go Back"
 
 #: src/components/ui/pagination.tsx:99
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:902
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:905
 msgid "Go to next page"
 msgstr "Go to next page"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:888
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:891
 msgid "Go to page {p}"
 msgstr "Go to page {p}"
 
 #: src/components/ui/pagination.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:868
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:871
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
@@ -3755,6 +3770,11 @@ msgstr "Hide password"
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:232
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
+msgid "High"
+msgstr "High"
+
+#: src/lib/priority.ts:23
+msgctxt "priority"
 msgid "High"
 msgstr "High"
 
@@ -4101,11 +4121,11 @@ msgstr "Inset"
 msgid "Inspecting"
 msgstr "Inspecting"
 
-#: src/components/notifications/events/event-card.tsx:172
+#: src/components/notifications/events/event-card.tsx:174
 msgid "Interact"
 msgstr "Interact"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:210
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:251
 msgid "Interactive 24-hour timeline selection."
 msgstr "Interactive 24-hour timeline selection."
 
@@ -4499,6 +4519,11 @@ msgstr "Lossless Split"
 msgid "Low"
 msgstr "Low"
 
+#: src/lib/priority.ts:21
+msgctxt "priority"
+msgid "Low"
+msgstr "Low"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
@@ -4512,6 +4537,7 @@ msgid "Lowest bitrate"
 msgstr "Lowest bitrate"
 
 #: src/components/filters/FilterCard.tsx:36
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:50
 msgctxt "Monday initial"
 msgid "M"
 msgstr "M"
@@ -4560,7 +4586,7 @@ msgstr "Manifest (Pair by Order)"
 msgid "Manual update required"
 msgstr "Manual update required"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:377
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:380
 msgid "Mark Read"
 msgstr "Mark Read"
 
@@ -4786,7 +4812,7 @@ msgid "Min size to keep."
 msgstr "Min size to keep."
 
 #: src/components/notifications/desktop-channel-dialog.tsx:131
-#: src/components/notifications/forms/channel-delivery-fields.tsx:48
+#: src/components/notifications/forms/channel-delivery-fields.tsx:50
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
 
@@ -4809,6 +4835,10 @@ msgstr "Modify the parameters for this processing step."
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:216
 msgid "Module Log Levels"
 msgstr "Module Log Levels"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
+msgid "Monday"
+msgstr "Monday"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:295
 msgid "Monitor and manage processing jobs"
@@ -4839,6 +4869,10 @@ msgstr "More filters"
 #: src/components/ui/pagination.tsx:125
 msgid "More pages"
 msgstr "More pages"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
+msgid "Morning"
+msgstr "Morning"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:190
 msgid "Move"
@@ -4988,7 +5022,7 @@ msgstr "New recording filter"
 msgid "New Template Name"
 msgstr "New Template Name"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:489
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:492
 msgid "Next"
 msgstr "Next"
 
@@ -4996,6 +5030,10 @@ msgstr "Next"
 msgctxt "pagination"
 msgid "Next"
 msgstr "Next"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
+msgid "Night"
+msgstr "Night"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:451
 msgid "No active recordings"
@@ -5054,7 +5092,7 @@ msgstr "No environment variables defined"
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:440
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:443
 msgid "No events found"
 msgstr "No events found"
 
@@ -5277,6 +5315,11 @@ msgstr "None (Strip Audio)"
 msgid "Normal"
 msgstr "Normal"
 
+#: src/lib/priority.ts:22
+msgctxt "priority"
+msgid "Normal"
+msgstr "Normal"
+
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:52
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:177
@@ -5304,8 +5347,8 @@ msgstr "Not installed"
 msgid "Not supported in this browser"
 msgstr "Not supported in this browser"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:262
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:292
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:265
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:295
 msgid "Notification Events"
 msgstr "Notification Events"
 
@@ -5687,7 +5730,7 @@ msgstr "Overwrite Files"
 msgid "Overwrite Output"
 msgstr "Overwrite Output"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:478
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:481
 msgid "Page"
 msgstr "Page"
 
@@ -5980,7 +6023,7 @@ msgstr "Placeholders"
 msgid "Platform"
 msgstr "Platform"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:44
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:45
 msgid "Platform configuration updated successfully"
 msgstr "Platform configuration updated successfully"
 
@@ -5992,7 +6035,7 @@ msgstr "Platform configurations will appear here when available."
 msgid "Platform name"
 msgstr "Platform name"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:84
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
 msgid "Platform not found"
 msgstr "Platform not found"
 
@@ -6103,7 +6146,7 @@ msgstr "Position"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "Powered by <0>Rust-srec</0>."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:377
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:418
 msgid "Precision Schedule"
 msgstr "Precision Schedule"
 
@@ -6179,8 +6222,8 @@ msgstr "Preset updated successfully"
 msgid "presets"
 msgstr "presets"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:147
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:222
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:188
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:263
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -6208,7 +6251,7 @@ msgstr "Preview Thumbnail"
 msgid "Preview Unavailable"
 msgstr "Preview Unavailable"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:474
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:477
 msgid "Previous"
 msgstr "Previous"
 
@@ -6228,6 +6271,10 @@ msgstr "Primary"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:513
 msgid "Primary Action"
 msgstr "Primary Action"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
+msgid "Prime Time"
+msgstr "Prime Time"
 
 #: src/components/streamers/config/stream-selection-input.tsx:119
 msgid "Prioritize specific CDN providers. Press Enter to add."
@@ -6497,8 +6544,8 @@ msgstr "Receive a notification when a stream ends."
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:265
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:294
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:268
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:297
 msgid "Recent notification events persisted by the backend"
 msgstr "Recent notification events persisted by the backend"
 
@@ -6555,7 +6602,7 @@ msgid "Refine and sort streamers"
 msgstr "Refine and sort streamers"
 
 #: src/components/config/shared/network-settings-card.tsx:199
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:393
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:396
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:604
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:138
 msgid "Refresh"
@@ -6894,11 +6941,13 @@ msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
 #: src/components/filters/FilterCard.tsx:44
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:75
 msgctxt "Saturday initial"
 msgid "S"
 msgstr "S"
 
 #: src/components/filters/FilterCard.tsx:45
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:80
 msgctxt "Sunday initial"
 msgid "S"
 msgstr "S"
@@ -6915,9 +6964,13 @@ msgstr "Sanitized session title"
 msgid "Sanitized streamer name"
 msgstr "Sanitized streamer name"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
+msgid "Saturday"
+msgstr "Saturday"
+
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/notifications/channel-form.tsx:440
-#: src/components/shared/save-fab.tsx:92
+#: src/components/shared/save-fab.tsx:89
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
 msgstr "Save changes"
@@ -6941,7 +6994,7 @@ msgid "Save Workflow"
 msgstr "Save Workflow"
 
 #: src/components/filters/FilterDialog.tsx:275
-#: src/components/shared/save-fab.tsx:90
+#: src/components/shared/save-fab.tsx:87
 msgid "Saving"
 msgstr "Saving"
 
@@ -7042,7 +7095,7 @@ msgstr "Search presets..."
 msgid "Search sessions..."
 msgstr "Search sessions..."
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:301
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:304
 msgid "Search streamer..."
 msgstr "Search streamer..."
 
@@ -7222,7 +7275,7 @@ msgstr "Select streamers"
 msgid "Select template"
 msgstr "Select template"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:133
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:174
 msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
@@ -7393,7 +7446,7 @@ msgstr "Set up a new download tool configuration"
 msgid "Settings"
 msgstr "Settings"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:122
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:164
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
@@ -7558,7 +7611,7 @@ msgstr "Standard"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "Standard cron expression (sec min hour day mon dow)."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:318
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:357
 msgid "Start"
 msgstr "Start"
 
@@ -7738,7 +7791,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "Streamer Offline"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:862
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:865
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
@@ -7818,6 +7871,10 @@ msgstr "Successfully deleted {0} sessions"
 msgid "Successfully processed {0} streamers"
 msgstr "Successfully processed {0} streamers"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
+msgid "Sunday"
+msgstr "Sunday"
+
 #: src/components/config/shared/network-settings-card.tsx:290
 msgid "Supported"
 msgstr "Supported"
@@ -7855,7 +7912,7 @@ msgstr "Sync"
 msgid "System"
 msgstr "System"
 
-#: src/components/notifications/events/event-card.tsx:154
+#: src/components/notifications/events/event-card.tsx:156
 msgid "SYSTEM"
 msgstr "SYSTEM"
 
@@ -7873,11 +7930,13 @@ msgid "System-wide preferences"
 msgstr "System-wide preferences"
 
 #: src/components/filters/FilterCard.tsx:42
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:65
 msgctxt "Thursday initial"
 msgid "T"
 msgstr "T"
 
 #: src/components/filters/FilterCard.tsx:37
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:55
 msgctxt "Tuesday initial"
 msgid "T"
 msgstr "T"
@@ -7984,11 +8043,11 @@ msgstr "Template Information"
 msgid "Template Name"
 msgstr "Template Name"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:78
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
 msgid "Template not found"
 msgstr "Template not found"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:39
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:40
 msgid "Template updated successfully"
 msgstr "Template updated successfully"
 
@@ -8083,7 +8142,7 @@ msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete t
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:380
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:421
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 
@@ -8172,6 +8231,10 @@ msgstr "Thumbnail"
 msgid "Thumbnail Generator"
 msgstr "Thumbnail Generator"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
+msgid "Thursday"
+msgstr "Thursday"
+
 #: src/components/filters/filter-types.ts:36
 msgid "Time Based"
 msgstr "Time Based"
@@ -8184,7 +8247,7 @@ msgstr "Time offset to take screenshot from"
 msgid "Time Placeholders (Local Time)"
 msgstr "Time Placeholders (Local Time)"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:207
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:248
 msgid "Time Range"
 msgstr "Time Range"
 
@@ -8436,7 +8499,7 @@ msgstr "Trimming & Time"
 msgid "Try adjusting the date range"
 msgstr "Try adjusting the date range"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:443
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:446
 msgid "Try adjusting your filters or limit"
 msgstr "Try adjusting your filters or limit"
 
@@ -8466,7 +8529,7 @@ msgid "Try again"
 msgstr "Try again"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:280
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:283
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:80
 msgid "Try Again"
 msgstr "Try Again"
@@ -8474,6 +8537,10 @@ msgstr "Try Again"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
+msgid "Tuesday"
+msgstr "Tuesday"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:110
 msgid "Twitch (ttv-lol)"
@@ -8548,7 +8615,7 @@ msgstr "Unknown Engine ID: {engineId}"
 msgid "Unknown engine type: {engineType}"
 msgstr "Unknown engine type: {engineType}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:275
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:278
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
 msgid "Unknown error"
@@ -8828,6 +8895,7 @@ msgid "VOD Segment Timeout (ms)"
 msgstr "VOD Segment Timeout (ms)"
 
 #: src/components/filters/FilterCard.tsx:40
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:60
 msgctxt "Wednesday initial"
 msgid "W"
 msgstr "W"
@@ -8903,9 +8971,21 @@ msgstr "Web Push priority updated"
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
+msgid "Wednesday"
+msgstr "Wednesday"
+
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:178
 msgid "Week"
 msgstr "Week"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:97
+msgid "Weekdays"
+msgstr "Weekdays"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
+msgid "Weekends"
+msgstr "Weekends"
 
 #: src/routes/_public/login.lazy.tsx:110
 msgid "Welcome back"
@@ -9005,7 +9085,7 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/components/streamers/streamer-editor.tsx:107
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:138
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:180
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "You have unsaved changes. Leave without saving?"
 

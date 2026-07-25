@@ -18,9 +18,13 @@
 
 - **Clearer settings pages**
 
-  The global settings, notification, recording engine and recording filter pages have been reworked. Related settings sit under headings that say what the group is for, more fields explain themselves when you hover the question mark beside them, and boxes and dropdowns line up with each other. A few settings that were only described in a tooltip now say what they do on the page. None of the settings themselves have changed.
+  The global settings, notification, recording engine and recording filter pages have been reworked. Related settings sit under headings that say what the group is for, more fields explain themselves when you hover the question mark beside them, and boxes and dropdowns line up with each other. A few settings that were only described in a tooltip now say what they do on the page. The save button no longer sits there greyed out: it appears once you actually change something. None of the settings themselves have changed.
 
 ### Fixes
+
+- **Text that stayed in English when using another language**
+
+  In the recording filter editor, the day-of-week tooltips and the day and time preset menus were always shown in English. The priority labels on notification events and channels were too. They now follow the language you picked.
 
 - **Changing a streamer's link now switches it to the right site**
 

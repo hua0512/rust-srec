@@ -98,16 +98,6 @@ msgstr "{0, plural, other {# 个警告}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, other {个文件}}"
 
-#. placeholder {0}: day.full
-#. placeholder {0}: opt.label
-#. placeholder {0}: p.label
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:158
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:191
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:235
-#: src/components/notifications/forms/channel-delivery-fields.tsx:66
-msgid "{0}"
-msgstr "{0}"
-
 #. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
 #. placeholder {1}: i18n.date(new Date(entry.checked_at), { timeStyle: 'short' })
 #: src/components/streamers/edit/status-check-history.tsx:161
@@ -129,6 +119,12 @@ msgstr "成功添加 {0} 个流"
 #: src/components/sessions/jobs-tab.tsx:82
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} 步"
+
+#. placeholder {0}: duration.hours
+#. placeholder {1}: duration.minutes
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:379
+msgid "{0}h {1}m"
+msgstr "{0}小时{1}分"
 
 #: src/components/streamers/edit/status-check-history.tsx:475
 msgid "{hours}h"
@@ -256,7 +252,7 @@ msgstr "操作"
 msgid "Active"
 msgstr "启用"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:130
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:171
 msgid "Active Days"
 msgstr "生效日期"
 
@@ -461,6 +457,11 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:94
+msgctxt "day-of-week preset"
+msgid "All"
+msgstr "全部"
+
 #: src/components/logging/log-viewer.tsx:432
 msgid "All Levels"
 msgstr "所有级别"
@@ -478,7 +479,7 @@ msgid "All Time"
 msgstr "全部时间"
 
 #: src/components/danmu/danmu-viewer.tsx:193
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:346
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:349
 msgid "All Types"
 msgstr "所有类型"
 
@@ -1114,7 +1115,7 @@ msgstr "个渠道"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:403
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:406
 msgid "Channels"
 msgstr "声道"
 
@@ -1530,7 +1531,7 @@ msgstr "Cookie"
 msgid "Cookies Only"
 msgstr "仅 Cookie"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:524
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:527
 msgid "Copied"
 msgstr "已复制"
 
@@ -1575,7 +1576,7 @@ msgstr "复制文件"
 msgid "Copy Files"
 msgstr "复制文件"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:530
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:533
 msgid "Copy JSON"
 msgstr "复制 JSON"
 
@@ -1749,6 +1750,11 @@ msgstr "CRF（恒定码率因子）"
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:165
 msgid "Critical"
 msgstr "严重"
+
+#: src/lib/priority.ts:24
+msgctxt "priority"
+msgid "Critical"
+msgstr "紧急"
 
 #: src/components/notifications/subscription-manager.tsx:188
 msgid "Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail."
@@ -2578,7 +2584,7 @@ msgstr "启用所选"
 
 #: src/components/config/shared/record-danmu-card.tsx:99
 #: src/components/notifications/desktop-channel-dialog.tsx:102
-#: src/components/notifications/forms/channel-delivery-fields.tsx:92
+#: src/components/notifications/forms/channel-delivery-fields.tsx:94
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
@@ -2597,7 +2603,7 @@ msgstr "编码预设"
 msgid "Encoding Settings"
 msgstr "编码设置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:352
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:393
 msgid "End"
 msgstr "结束"
 
@@ -2736,7 +2742,7 @@ msgstr "加载处理任务失败"
 msgid "Error Loading Pipeline"
 msgstr "加载处理管道失败"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:81
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:80
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
@@ -2753,7 +2759,7 @@ msgstr "加载录制会话失败"
 msgid "Error loading streamers: {0}"
 msgstr "加载主播失败：{0}"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:74
 msgid "Error loading template"
 msgstr "加载模板失败"
 
@@ -2777,7 +2783,7 @@ msgstr "预计剩余时间"
 msgid "Event Hooks"
 msgstr "事件钩子"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:342
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:345
 msgid "Event Type"
 msgstr "事件类型"
 
@@ -2945,6 +2951,7 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/filters/FilterCard.tsx:43
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:70
 msgctxt "Friday initial"
 msgid "F"
 msgstr "五"
@@ -3001,7 +3008,7 @@ msgstr "克隆预设失败：{0}"
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:526
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:529
 msgid "Failed to copy"
 msgstr "复制失败"
 
@@ -3125,7 +3132,7 @@ msgstr "加载引擎失败：{0}"
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:272
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:275
 msgid "Failed to load events"
 msgstr "加载事件失败"
 
@@ -3219,7 +3226,7 @@ msgid "Failed to update logging configuration"
 msgstr "更新日志配置失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:52
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:53
 msgid "Failed to update platform: {0}"
 msgstr "更新平台失败：{0}"
 
@@ -3232,7 +3239,7 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:126
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:168
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
@@ -3247,7 +3254,7 @@ msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:47
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:48
 msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
@@ -3382,7 +3389,7 @@ msgstr "过滤器创建成功"
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:73
+#: src/components/notifications/forms/channel-delivery-fields.tsx:75
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
@@ -3526,9 +3533,17 @@ msgstr "格式"
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
+msgid "Friday"
+msgstr "星期五"
+
 #: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "发件人地址"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:86
+msgid "Full Day"
+msgstr "全天"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:10
 msgid "Full HD Thumbnail"
@@ -3642,16 +3657,16 @@ msgid "Go Back"
 msgstr "返回"
 
 #: src/components/ui/pagination.tsx:99
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:902
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:905
 msgid "Go to next page"
 msgstr "下一页"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:888
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:891
 msgid "Go to page {p}"
 msgstr "跳转到第 {p} 页"
 
 #: src/components/ui/pagination.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:868
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:871
 msgid "Go to previous page"
 msgstr "上一页"
 
@@ -3755,6 +3770,11 @@ msgstr "隐藏密码"
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:232
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
+msgid "High"
+msgstr "高"
+
+#: src/lib/priority.ts:23
+msgctxt "priority"
 msgid "High"
 msgstr "高"
 
@@ -4101,11 +4121,11 @@ msgstr "嵌入"
 msgid "Inspecting"
 msgstr "检查中"
 
-#: src/components/notifications/events/event-card.tsx:172
+#: src/components/notifications/events/event-card.tsx:174
 msgid "Interact"
 msgstr "查看详情"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:210
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:251
 msgid "Interactive 24-hour timeline selection."
 msgstr "24小时交互式时间线选择。"
 
@@ -4499,6 +4519,11 @@ msgstr "无损分割"
 msgid "Low"
 msgstr "低"
 
+#: src/lib/priority.ts:21
+msgctxt "priority"
+msgid "Low"
+msgstr "低"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
@@ -4512,6 +4537,7 @@ msgid "Lowest bitrate"
 msgstr "最低码率"
 
 #: src/components/filters/FilterCard.tsx:36
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:50
 msgctxt "Monday initial"
 msgid "M"
 msgstr "一"
@@ -4560,7 +4586,7 @@ msgstr "清单（按顺序配对）"
 msgid "Manual update required"
 msgstr "需要手动更新"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:377
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:380
 msgid "Mark Read"
 msgstr "标记已读"
 
@@ -4786,7 +4812,7 @@ msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:131
-#: src/components/notifications/forms/channel-delivery-fields.tsx:48
+#: src/components/notifications/forms/channel-delivery-fields.tsx:50
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
@@ -4809,6 +4835,10 @@ msgstr "修改此处理步骤的参数。"
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:216
 msgid "Module Log Levels"
 msgstr "模块日志级别"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
+msgid "Monday"
+msgstr "星期一"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:295
 msgid "Monitor and manage processing jobs"
@@ -4839,6 +4869,10 @@ msgstr "更多筛选"
 #: src/components/ui/pagination.tsx:125
 msgid "More pages"
 msgstr "更多页面"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
+msgid "Morning"
+msgstr "上午"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:190
 msgid "Move"
@@ -4988,7 +5022,7 @@ msgstr "新建录制过滤器"
 msgid "New Template Name"
 msgstr "新模板名称"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:489
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:492
 msgid "Next"
 msgstr "下一步"
 
@@ -4996,6 +5030,10 @@ msgstr "下一步"
 msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
+msgid "Night"
+msgstr "夜间"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:451
 msgid "No active recordings"
@@ -5054,7 +5092,7 @@ msgstr "未定义环境变量"
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:440
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:443
 msgid "No events found"
 msgstr "未找到事件"
 
@@ -5277,6 +5315,11 @@ msgstr "无（剥离音频）"
 msgid "Normal"
 msgstr "正常"
 
+#: src/lib/priority.ts:22
+msgctxt "priority"
+msgid "Normal"
+msgstr "普通"
+
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:52
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:177
@@ -5304,8 +5347,8 @@ msgstr "未安装"
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:262
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:292
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:265
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:295
 msgid "Notification Events"
 msgstr "通知事件"
 
@@ -5687,7 +5730,7 @@ msgstr "覆盖文件"
 msgid "Overwrite Output"
 msgstr "覆盖输出"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:478
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:481
 msgid "Page"
 msgstr "页码"
 
@@ -5980,7 +6023,7 @@ msgstr "占位符"
 msgid "Platform"
 msgstr "平台"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:44
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:45
 msgid "Platform configuration updated successfully"
 msgstr "平台配置更新成功"
 
@@ -5992,7 +6035,7 @@ msgstr "平台配置可用时将显示在此处。"
 msgid "Platform name"
 msgstr "平台名称"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:84
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
 msgid "Platform not found"
 msgstr "未找到平台"
 
@@ -6103,7 +6146,7 @@ msgstr "位置"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:377
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:418
 msgid "Precision Schedule"
 msgstr "精确时间表"
 
@@ -6179,8 +6222,8 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:147
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:222
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:188
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:263
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -6208,7 +6251,7 @@ msgstr "预览缩略图"
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:474
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:477
 msgid "Previous"
 msgstr "上一页"
 
@@ -6228,6 +6271,10 @@ msgstr "主要"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:513
 msgid "Primary Action"
 msgstr "主要操作"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
+msgid "Prime Time"
+msgstr "黄金时段"
 
 #: src/components/streamers/config/stream-selection-input.tsx:119
 msgid "Prioritize specific CDN providers. Press Enter to add."
@@ -6497,8 +6544,8 @@ msgstr "当直播结束时接收通知。"
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:265
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:294
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:268
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:297
 msgid "Recent notification events persisted by the backend"
 msgstr "后端持久化的最近通知事件"
 
@@ -6555,7 +6602,7 @@ msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
 #: src/components/config/shared/network-settings-card.tsx:199
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:393
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:396
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:604
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:138
 msgid "Refresh"
@@ -6894,11 +6941,13 @@ msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
 #: src/components/filters/FilterCard.tsx:44
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:75
 msgctxt "Saturday initial"
 msgid "S"
 msgstr "六"
 
 #: src/components/filters/FilterCard.tsx:45
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:80
 msgctxt "Sunday initial"
 msgid "S"
 msgstr "日"
@@ -6915,9 +6964,13 @@ msgstr "清理后的会话标题"
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
+msgid "Saturday"
+msgstr "星期六"
+
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/notifications/channel-form.tsx:440
-#: src/components/shared/save-fab.tsx:92
+#: src/components/shared/save-fab.tsx:89
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
 msgstr "保存更改"
@@ -6941,7 +6994,7 @@ msgid "Save Workflow"
 msgstr "保存工作流"
 
 #: src/components/filters/FilterDialog.tsx:275
-#: src/components/shared/save-fab.tsx:90
+#: src/components/shared/save-fab.tsx:87
 msgid "Saving"
 msgstr "保存中"
 
@@ -7042,7 +7095,7 @@ msgstr "搜索预设..."
 msgid "Search sessions..."
 msgstr "搜索录制会话..."
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:301
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:304
 msgid "Search streamer..."
 msgstr "搜索主播..."
 
@@ -7222,7 +7275,7 @@ msgstr "选择主播"
 msgid "Select template"
 msgstr "选择模板"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:133
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:174
 msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
@@ -7393,7 +7446,7 @@ msgstr "设置新的录制工具配置"
 msgid "Settings"
 msgstr "设置"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:122
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:164
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -7558,7 +7611,7 @@ msgstr "标准"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:318
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:357
 msgid "Start"
 msgstr "开始"
 
@@ -7738,7 +7791,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:862
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:865
 msgid "Streamer pagination"
 msgstr "主播分页"
 
@@ -7818,6 +7871,10 @@ msgstr "成功删除 {0} 个会话"
 msgid "Successfully processed {0} streamers"
 msgstr "成功处理 {0} 个主播"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
+msgid "Sunday"
+msgstr "星期日"
+
 #: src/components/config/shared/network-settings-card.tsx:290
 msgid "Supported"
 msgstr "支持"
@@ -7855,7 +7912,7 @@ msgstr "同步"
 msgid "System"
 msgstr "系统"
 
-#: src/components/notifications/events/event-card.tsx:154
+#: src/components/notifications/events/event-card.tsx:156
 msgid "SYSTEM"
 msgstr "系统"
 
@@ -7873,11 +7930,13 @@ msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
 #: src/components/filters/FilterCard.tsx:42
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:65
 msgctxt "Thursday initial"
 msgid "T"
 msgstr "四"
 
 #: src/components/filters/FilterCard.tsx:37
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:55
 msgctxt "Tuesday initial"
 msgid "T"
 msgstr "二"
@@ -7984,11 +8043,11 @@ msgstr "模板信息"
 msgid "Template Name"
 msgstr "模板名称"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:78
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
 msgid "Template not found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:39
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:40
 msgid "Template updated successfully"
 msgstr "模板更新成功"
 
@@ -8083,7 +8142,7 @@ msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:380
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:421
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果开始时间在结束时间之后，窗口将自动跨越午夜。"
 
@@ -8172,6 +8231,10 @@ msgstr "缩略图"
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
+msgid "Thursday"
+msgstr "星期四"
+
 #: src/components/filters/filter-types.ts:36
 msgid "Time Based"
 msgstr "基于时间"
@@ -8184,7 +8247,7 @@ msgstr "截图时间偏移"
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:207
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:248
 msgid "Time Range"
 msgstr "时间范围"
 
@@ -8436,7 +8499,7 @@ msgstr "裁剪与时间"
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:443
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:446
 msgid "Try adjusting your filters or limit"
 msgstr "尝试调整过滤器或限制"
 
@@ -8466,7 +8529,7 @@ msgid "Try again"
 msgstr "重试"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:280
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:283
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:80
 msgid "Try Again"
 msgstr "重试"
@@ -8474,6 +8537,10 @@ msgstr "重试"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
+msgid "Tuesday"
+msgstr "星期二"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:110
 msgid "Twitch (ttv-lol)"
@@ -8548,7 +8615,7 @@ msgstr "未知引擎 ID：{engineId}"
 msgid "Unknown engine type: {engineType}"
 msgstr "未知的引擎类型：{engineType}"
 
-#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:275
+#: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:278
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
 msgid "Unknown error"
@@ -8828,6 +8895,7 @@ msgid "VOD Segment Timeout (ms)"
 msgstr "点播分段超时（毫秒）"
 
 #: src/components/filters/FilterCard.tsx:40
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:60
 msgctxt "Wednesday initial"
 msgid "W"
 msgstr "三"
@@ -8903,9 +8971,21 @@ msgstr "Web 推送优先级已更新"
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
+msgid "Wednesday"
+msgstr "星期三"
+
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:178
 msgid "Week"
 msgstr "本周"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:97
+msgid "Weekdays"
+msgstr "工作日"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
+msgid "Weekends"
+msgstr "周末"
 
 #: src/routes/_public/login.lazy.tsx:110
 msgid "Welcome back"
@@ -9005,7 +9085,7 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/components/streamers/streamer-editor.tsx:107
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:138
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:180
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "有未保存的更改，确定要离开吗？"
 

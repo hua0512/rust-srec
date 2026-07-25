@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { SwitchCard } from '@/components/ui/switch-card';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { PRIORITY_NORMAL, priorityOptions } from '@/lib/priority';
 import {
   CONFIG_DESCRIPTION,
@@ -36,6 +37,7 @@ export function MinPriorityField({
 }: {
   description?: boolean;
 }) {
+  const { i18n } = useLingui();
   const form = useFormContext();
 
   return (
@@ -63,7 +65,7 @@ export function MinPriorityField({
             <SelectContent className={CONFIG_SELECT_CONTENT}>
               {priorityOptions().map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
-                  <Trans>{opt.label}</Trans>
+                  {i18n._(opt.label)}
                 </SelectItem>
               ))}
             </SelectContent>

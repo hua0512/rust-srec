@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listEvents } from '@/server/functions/notifications';
 import type { NotificationEventLog } from '@/api/schemas/notifications';
+import { useLingui } from '@lingui/react';
+import type { I18n } from '@lingui/core';
 import { priorityLabel } from '@/lib/priority';
 import {
   getBrowserNotificationsEnabled,
@@ -19,7 +21,14 @@ function safeParseJson(input: string): unknown {
   }
 }
 
-function formatBrowserNotification(log: NotificationEventLog): {
+/**
+ * Takes `i18n` rather than reading it from context: this runs from the polling effect below,
+ * outside any component render, so `useLingui` is not available at the call site.
+ */
+function formatBrowserNotification(
+  log: NotificationEventLog,
+  i18n: I18n,
+): {
   title: string;
   body?: string;
 } {
@@ -42,12 +51,14 @@ function formatBrowserNotification(log: NotificationEventLog): {
   const bodyParts: string[] = [];
   if (streamer) bodyParts.push(String(streamer));
   if (error) bodyParts.push(String(error));
-  if (bodyParts.length === 0) bodyParts.push(priorityLabel(log.priority));
+  if (bodyParts.length === 0)
+    bodyParts.push(i18n._(priorityLabel(log.priority)));
 
   return { title: baseTitle, body: bodyParts.join(' — ').slice(0, 200) };
 }
 
 export function BrowserNotificationListener() {
+  const { i18n } = useLingui();
   const isSupported = typeof window !== 'undefined' && 'Notification' in window;
 
   const [enabled, setEnabled] = useState(false);
@@ -101,7 +112,7 @@ export function BrowserNotificationListener() {
 
     let maxNotified = baseline;
     for (const { e, t } of candidates) {
-      const { title, body } = formatBrowserNotification(e);
+      const { title, body } = formatBrowserNotification(e, i18n);
       try {
         const n = new Notification(title, {
           body,
@@ -123,7 +134,7 @@ export function BrowserNotificationListener() {
     }
 
     setLastNotifiedCriticalMs(maxNotified);
-  }, [events, shouldPoll]);
+  }, [events, shouldPoll, i18n]);
 
   return null;
 }
