@@ -109,6 +109,23 @@ function JobDetailsPage() {
   });
   const uploadRecords = uploadsData?.items ?? [];
 
+  // The backend writes upload_records after flipping the job terminal, and
+  // turning refetchInterval off does not trigger a final fetch — so the last
+  // interval fetch predates the records. Refetch once on the terminal
+  // transition so the Uploads card appears without a remount.
+  const jobStatus = job?.status;
+  useEffect(() => {
+    if (
+      jobStatus === 'COMPLETED' ||
+      jobStatus === 'FAILED' ||
+      jobStatus === 'CANCELLED'
+    ) {
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'job', jobId, 'uploads'],
+      });
+    }
+  }, [jobStatus, jobId, queryClient]);
+
   // Fetch logs separately with infinite scroll
   const {
     data: logsData,

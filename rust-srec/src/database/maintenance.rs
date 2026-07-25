@@ -859,10 +859,9 @@ mod tests {
     use super::*;
     use crate::database::models::{
         ChannelType, DagExecutionDbModel, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
-        JobExecutionLogDbModel, JobExecutionProgressDbModel, LiveSessionDbModel, MediaFileType,
-        MediaOutputDbModel, NotificationChannelDbModel, NotificationDeadLetterDbModel,
-        NotificationEventLogDbModel, RefreshTokenDbModel, SessionEventDbModel,
-        SessionSegmentDbModel, StreamerDbModel,
+        JobExecutionLogDbModel, LiveSessionDbModel, MediaFileType, MediaOutputDbModel,
+        NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
+        RefreshTokenDbModel, SessionEventDbModel, SessionSegmentDbModel, StreamerDbModel,
     };
     use crate::database::repositories::{
         ConfigRepository as _, DagRepository as _, JobRepository as _, NotificationRepository as _,
@@ -1192,16 +1191,17 @@ mod tests {
             .add_execution_log(&log)
             .await
             .expect("job log");
-        database
-            .job_repository
-            .upsert_job_execution_progress(&JobExecutionProgressDbModel {
-                job_id: "old-completed".to_string(),
-                kind: "percent".to_string(),
-                progress: "{}".to_string(),
-                updated_at: old,
-            })
-            .await
-            .expect("job progress");
+        // Raw insert: the repository's upsert refuses rows for non-PROCESSING
+        // jobs, but this fixture needs one on a COMPLETED job to prove the
+        // FK cascade removes it together with the pruned job row.
+        sqlx::query(
+            "INSERT INTO job_execution_progress (job_id, kind, progress, updated_at) \
+             VALUES ('old-completed', 'percent', '{}', ?)",
+        )
+        .bind(old)
+        .execute(&database.pool)
+        .await
+        .expect("job progress");
 
         let user_id = "default-admin-00000000-0000-0000-0000-000000000001";
         for (id, expires_at, revoked_at) in [

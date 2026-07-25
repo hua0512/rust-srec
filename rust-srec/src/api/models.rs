@@ -753,7 +753,7 @@ pub struct MediaOutputResponse {
     /// per uploader, newest record wins (DAG retries produce rows under
     /// fresh job ids). Empty (and omitted from JSON) when the file was
     /// never part of an upload job.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub uploads: Vec<MediaOutputUploadInfo>,
 }
 
