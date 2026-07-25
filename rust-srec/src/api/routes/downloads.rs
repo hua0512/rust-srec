@@ -144,7 +144,16 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
 
     let (mut sender, mut receiver) = socket.split();
 
-    // 1. Send initial snapshot as protobuf binary
+    // 1. Subscribe to the broadcasts BEFORE building the snapshot: receivers
+    // buffer from subscription time, so events that fire while the snapshot
+    // is assembled are delivered afterwards instead of being lost in the
+    // snapshot/subscribe gap (the snapshot is the only recovery path for a
+    // missed UploadStarted).
+    let mut event_rx = download_manager.subscribe();
+    let mut check_history_rx = state.check_history_broadcaster.subscribe();
+    let mut upload_rx = state.upload_status_broadcaster.subscribe();
+
+    // 2. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
     let queued = download_manager.snapshot_pending();
     let uploads = snapshot_uploads(&state.pipeline_manager, &None).await;
@@ -159,12 +168,6 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
         debug!("Failed to send initial snapshot, client disconnected");
         return;
     }
-    // debug!("Sent initial snapshot with {} downloads", downloads.len());
-
-    // 2. Subscribe to broadcast
-    let mut event_rx = download_manager.subscribe();
-    let mut check_history_rx = state.check_history_broadcaster.subscribe();
-    let mut upload_rx = state.upload_status_broadcaster.subscribe();
 
     // 3. Track filter state and heartbeat
     let mut filter: Option<String> = None;
@@ -313,7 +316,7 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
             // Upload status events (started/progress/terminal), pre-encoded
             // once by the UploadStatusBroadcaster's encoder. Filtered against
             // the same per-connection streamer subscription as download
-            // events; uploads without a streamer pass any filter is None.
+            // events; streamer-less uploads pass only when no filter is set.
             envelope = upload_rx.recv() => {
                 match envelope {
                     Ok(envelope) => {

@@ -20,6 +20,8 @@ import type { UploadView } from '@/store/uploads';
 export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
   const { i18n } = useLingui();
 
+  if (uploads.length === 0) return null;
+
   // With several concurrent upload jobs, surface the one with the most
   // recent progress in the compact percent label.
   const latest = uploads.reduce((a, b) =>
@@ -73,10 +75,9 @@ export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
             {(upload.bytesDone != null || upload.speedBytesPerSec != null) && (
               <div className="flex items-center justify-between gap-4 font-mono opacity-60">
                 <span>
-                  {upload.bytesDone != null &&
-                    formatBytes(Number(upload.bytesDone))}
+                  {upload.bytesDone != null && formatBytes(upload.bytesDone)}
                   {upload.bytesTotal != null &&
-                    ` / ${formatBytes(Number(upload.bytesTotal))}`}
+                    ` / ${formatBytes(upload.bytesTotal)}`}
                 </span>
                 {upload.speedBytesPerSec != null && (
                   <span>{formatSpeed(upload.speedBytesPerSec)}</span>

@@ -115,6 +115,14 @@ impl UploadStatusBroadcaster {
         self.tx.subscribe()
     }
 
+    /// True when at least one WS connection is subscribed. `send` already
+    /// early-returns without one, but producers on hot paths (the progress
+    /// aggregator flush) check this first to skip building the event —
+    /// cloning a `JobProgressSnapshot` and its `raw` JSON tree — at all.
+    pub fn has_subscribers(&self) -> bool {
+        self.tx.receiver_count() > 0
+    }
+
     /// Encode once and fan out. No subscribers → no encode, no send; an
     /// idle or headless deployment pays nothing on the job hot path.
     pub fn send(&self, event: UploadStatusEvent) {

@@ -57,10 +57,11 @@ pub trait UploadRecordRepository: Send + Sync {
     /// All records for one job, ordered by local path.
     async fn list_by_job(&self, job_id: &str) -> Result<Vec<UploadRecordDbModel>>;
 
-    /// Records whose `local_path` is in `paths`, newest-updated first.
-    /// Callers dedupe per `(local_path, uploader)` if they need one row per
-    /// file (DAG retries create fresh job ids, so a file can have rows from
-    /// several jobs).
+    /// Records whose `local_path` is in `paths`, newest-updated first within
+    /// each chunk of up to `LOCAL_PATH_CHUNK` paths (a single path never
+    /// spans chunks, so per-path ordering always holds). Callers dedupe per
+    /// `(local_path, uploader)` if they need one row per file (DAG retries
+    /// create fresh job ids, so a file can have rows from several jobs).
     async fn list_by_local_paths(&self, paths: &[String]) -> Result<Vec<UploadRecordDbModel>>;
 }
 

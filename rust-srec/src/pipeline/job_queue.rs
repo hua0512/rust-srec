@@ -691,6 +691,24 @@ impl JobQueue {
         });
     }
 
+    /// Publish `Terminal { Cancelled }` when the job is an upload job.
+    /// Cancellation produces no per-file records (the job's CANCELLED status
+    /// is the durable truth), so the file counters are zero by construction.
+    fn emit_upload_cancelled(&self, job_id: &str, job_type: &str, streamer_id: &str) {
+        if upload_kind_for_job_type(job_type).is_none() {
+            return;
+        }
+        self.emit_upload_event(UploadStatusEvent::Terminal {
+            job_id: job_id.to_string(),
+            streamer_id: non_empty(streamer_id),
+            status: UploadTerminalStatus::Cancelled,
+            files_succeeded: 0,
+            files_failed: 0,
+            files_skipped: 0,
+            error: None,
+        });
+    }
+
     /// Persist per-file upload results to `upload_records`.
     ///
     /// Best-effort, same policy as `persist_thumbnail_output`: a bookkeeping
@@ -1309,10 +1327,14 @@ impl JobQueue {
 
         // Persist per-file upload results and broadcast the terminal event
         // for upload job types (persist_upload_records itself no-ops for
-        // everything else).
-        if let Some(job_type) = completed_job_type
-            .as_deref()
-            .filter(|jt| upload_kind_for_job_type(jt).is_some())
+        // everything else). Gated on `transitioned`, matching fail_internal
+        // and cancel_job: in the repository-less queue a complete() racing a
+        // cancel must not persist COMPLETED records or emit
+        // Terminal{Completed} after Terminal{Cancelled}.
+        if transitioned
+            && let Some(job_type) = completed_job_type
+                .as_deref()
+                .filter(|jt| upload_kind_for_job_type(jt).is_some())
         {
             self.persist_upload_records(
                 job_id,
@@ -1684,17 +1706,7 @@ impl JobQueue {
 
             // job was fetched before the transition, so its type/streamer
             // fields are intact even though the cache entry is gone now.
-            if upload_kind_for_job_type(&job.job_type).is_some() {
-                self.emit_upload_event(UploadStatusEvent::Terminal {
-                    job_id: id.to_string(),
-                    streamer_id: non_empty(&job.streamer_id),
-                    status: UploadTerminalStatus::Cancelled,
-                    files_succeeded: 0,
-                    files_failed: 0,
-                    files_skipped: 0,
-                    error: None,
-                });
-            }
+            self.emit_upload_cancelled(id, &job.job_type, &job.streamer_id);
         }
 
         info!("Job {} cancelled", id);
@@ -1851,17 +1863,7 @@ impl JobQueue {
         }
 
         for job in &cancelled_jobs {
-            if upload_kind_for_job_type(&job.job_type).is_some() {
-                self.emit_upload_event(UploadStatusEvent::Terminal {
-                    job_id: job.id.clone(),
-                    streamer_id: non_empty(&job.streamer_id),
-                    status: UploadTerminalStatus::Cancelled,
-                    files_succeeded: 0,
-                    files_failed: 0,
-                    files_skipped: 0,
-                    error: None,
-                });
-            }
+            self.emit_upload_cancelled(&job.id, &job.job_type, &job.streamer_id);
         }
 
         info!(
@@ -2381,12 +2383,14 @@ fn spawn_progress_aggregator(
                     for (job_id, snapshot) in pending.drain() {
                         // A job can reach a terminal state between receive and
                         // this flush tick. The terminal status transition fires
-                        // trg_job_terminal_clears_progress, so persisting now
-                        // would resurrect a row that stays orphaned until job
-                        // retention; likewise the terminal WS event has already
-                        // been broadcast. cancel_job cancels the token before
-                        // the worker finalizes, hence the is_cancelled check on
-                        // top of plain presence.
+                        // trg_job_terminal_clears_progress and broadcasts the
+                        // terminal WS event, so this snapshot must be dropped.
+                        // This check narrows the race; the DB write is closed
+                        // for good by upsert_job_execution_progress, which
+                        // inserts only while job.status is still PROCESSING.
+                        // cancel_job cancels the token before the worker
+                        // finalizes, hence the is_cancelled check on top of
+                        // plain presence.
                         let job_is_live = cancellation_tokens
                             .get(&job_id)
                             .is_some_and(|token| !token.is_cancelled());
@@ -2399,8 +2403,12 @@ fn spawn_progress_aggregator(
                         // snapshots double as live upload-status WS events.
                         // Publishing on the flush tick reuses this loop's
                         // coalescing instead of adding a second throttle.
+                        // has_subscribers first: without it the jobs_cache
+                        // lookup and snapshot clone (including its raw JSON
+                        // tree) would run on every flush of an idle deployment.
                         if matches!(snapshot.kind, ProgressKind::Rclone)
                             && let Some(broadcaster) = upload_broadcaster.get()
+                            && broadcaster.has_subscribers()
                         {
                             let streamer_id = jobs_cache
                                 .get(&job_id)
@@ -2956,6 +2964,11 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(progress_count(&pool, &completed_id).await, 0);
+
+        // A late aggregator flush cannot resurrect the row: the upsert
+        // inserts only while the job is still PROCESSING.
+        seed_progress(&job_repo, &completed_id).await;
         assert_eq!(progress_count(&pool, &completed_id).await, 0);
 
         // FAILED clears the row.

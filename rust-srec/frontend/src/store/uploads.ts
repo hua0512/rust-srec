@@ -59,6 +59,12 @@ function isFresh(view: UploadView, nowMs: number): boolean {
 
 interface UploadStoreState {
   uploadsByJobId: Map<string, UploadView>;
+  // Jobs that received UPLOAD_TERMINAL. Progress flows through the server's
+  // async coalescing channel, so a late UPLOAD_PROGRESS can arrive after the
+  // terminal event; without this guard it would resurrect the removed entry
+  // (same rationale as terminatedIds in store/downloads.ts). Cleared on
+  // snapshot/clearAll.
+  terminatedIds: Set<string>;
   // Bumps on any mutation; can be selected to force rerenders.
   version: number;
 
@@ -76,11 +82,13 @@ interface UploadStoreState {
 
 export const useUploadStore = create<UploadStoreState>((set, get) => ({
   uploadsByJobId: new Map(),
+  terminatedIds: new Set(),
   version: 0,
 
   setSnapshot: (uploads, progress) =>
     set((state) => {
       state.uploadsByJobId.clear();
+      state.terminatedIds.clear();
       const now = Date.now();
       for (const started of uploads) {
         state.uploadsByJobId.set(started.jobId, {
@@ -96,24 +104,31 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       }
       return {
         uploadsByJobId: state.uploadsByJobId,
+        terminatedIds: state.terminatedIds,
         version: state.version + 1,
       };
     }),
 
   upsertStarted: (started) =>
     set((state) => {
+      // A retried job reuses its job id, and STARTED is only ever emitted
+      // after the previous run's terminal event (same broadcast channel,
+      // FIFO per connection) — so STARTED authoritatively un-terminates.
+      state.terminatedIds.delete(started.jobId);
       state.uploadsByJobId.set(started.jobId, {
         ...started,
         lastEventAtMs: Date.now(),
       });
       return {
         uploadsByJobId: state.uploadsByJobId,
+        terminatedIds: state.terminatedIds,
         version: state.version + 1,
       };
     }),
 
   upsertProgress: (progress) =>
     set((state) => {
+      if (state.terminatedIds.has(progress.jobId)) return state;
       const existing = state.uploadsByJobId.get(progress.jobId);
       if (existing) {
         state.uploadsByJobId.set(progress.jobId, {
@@ -142,9 +157,11 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
 
   remove: (jobId) =>
     set((state) => {
+      state.terminatedIds.add(jobId);
       if (!state.uploadsByJobId.delete(jobId)) return state;
       return {
         uploadsByJobId: state.uploadsByJobId,
+        terminatedIds: state.terminatedIds,
         version: state.version + 1,
       };
     }),
@@ -152,8 +169,10 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
   clearAll: () =>
     set((state) => {
       state.uploadsByJobId.clear();
+      state.terminatedIds.clear();
       return {
         uploadsByJobId: state.uploadsByJobId,
+        terminatedIds: state.terminatedIds,
         version: state.version + 1,
       };
     }),
@@ -169,3 +188,28 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
     return result;
   },
 }));
+
+// Selectors only re-run on store mutations, so without a sweep an entry
+// whose terminal event was dropped by broadcast lag would keep its badge
+// (and its map slot) forever once events stop arriving. The sweep deletes
+// stale entries and bumps `version` so subscribers re-render. Interval is
+// coarse on purpose: STALE_AFTER_MS is minutes, cadence needn't be finer.
+const STALE_SWEEP_INTERVAL_MS = 30 * 1000;
+
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    const { uploadsByJobId, version } = useUploadStore.getState();
+    if (uploadsByJobId.size === 0) return;
+    const now = Date.now();
+    let removed = false;
+    for (const [jobId, view] of uploadsByJobId) {
+      if (!isFresh(view, now)) {
+        uploadsByJobId.delete(jobId);
+        removed = true;
+      }
+    }
+    if (removed) {
+      useUploadStore.setState({ uploadsByJobId, version: version + 1 });
+    }
+  }, STALE_SWEEP_INTERVAL_MS);
+}

@@ -332,10 +332,17 @@ impl JobRepository for SqlxJobRepository {
         progress: &JobExecutionProgressDbModel,
     ) -> Result<()> {
         retry_on_sqlite_busy("upsert_job_execution_progress", || async {
+            // Guarded on the job still being PROCESSING, atomically with the
+            // write: the progress aggregator flushes asynchronously, so a
+            // snapshot can arrive here after the job's terminal transition
+            // already fired trg_job_terminal_clears_progress — an
+            // unconditional upsert would re-insert the row it just deleted
+            // and orphan it until job retention.
             sqlx::query(
                 r#"
                 INSERT INTO job_execution_progress (job_id, kind, progress, updated_at)
-                VALUES (?, ?, ?, ?)
+                SELECT ?, ?, ?, ?
+                WHERE (SELECT status FROM job WHERE id = ?) = 'PROCESSING'
                 ON CONFLICT(job_id) DO UPDATE SET
                     kind = excluded.kind,
                     progress = excluded.progress,
@@ -346,6 +353,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(&progress.kind)
             .bind(&progress.progress)
             .bind(progress.updated_at)
+            .bind(&progress.job_id)
             .execute(&self.write_pool)
             .await?;
             Ok(())

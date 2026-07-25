@@ -7,9 +7,9 @@
 --
 -- A trigger (rather than per-call cleanup in JobQueue) covers every terminal
 -- path with one definition: complete, fail, cancel, bulk pipeline cancels,
--- and DAG fail-fast cancellations. The progress aggregator's flush-time
--- liveness check prevents an in-flight snapshot from re-inserting the row
--- after this fires.
+-- and DAG fail-fast cancellations. An in-flight snapshot cannot re-insert
+-- the row after this fires: upsert_job_execution_progress only inserts
+-- while job.status is still PROCESSING, atomically with the write.
 CREATE TRIGGER trg_job_terminal_clears_progress
 AFTER UPDATE OF status ON job
 WHEN NEW.status IN ('COMPLETED', 'FAILED', 'CANCELLED')

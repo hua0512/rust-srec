@@ -1,4 +1,3 @@
-import { useMutation } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -19,26 +18,29 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { formatBytes } from '@/lib/format';
+import { basename, formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { UploadRecord, UploadRecordStatus } from '@/api/schemas';
 
 const STATUS_STYLE: Record<
   UploadRecordStatus,
-  { icon: typeof CircleCheck; className: string }
+  { icon: typeof CircleCheck; badgeClassName: string; iconClassName: string }
 > = {
   COMPLETED: {
     icon: CircleCheck,
-    className:
+    badgeClassName:
       'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400',
+    iconClassName: 'text-emerald-500',
   },
   FAILED: {
     icon: CircleX,
-    className: 'bg-destructive/10 text-destructive border-destructive/20',
+    badgeClassName: 'bg-destructive/10 text-destructive border-destructive/20',
+    iconClassName: 'text-destructive',
   },
   SKIPPED: {
     icon: CircleMinus,
-    className: 'bg-muted/60 text-muted-foreground border-border/50',
+    badgeClassName: 'bg-muted/60 text-muted-foreground border-border/50',
+    iconClassName: 'text-muted-foreground',
   },
 };
 
@@ -53,11 +55,6 @@ function statusLabel(status: UploadRecordStatus) {
   }
 }
 
-function basename(path: string): string {
-  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  return idx >= 0 ? path.slice(idx + 1) : path;
-}
-
 /**
  * Per-file upload results for a job (durable `upload_records`). Rendered on
  * the job detail page only when the job produced at least one record.
@@ -65,11 +62,14 @@ function basename(path: string): string {
 export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
   const { i18n } = useLingui();
 
-  const copyMutation = useMutation({
-    mutationFn: (text: string) => navigator.clipboard.writeText(text),
-    onSuccess: () => toast.success(i18n._(msg`Destination copied`)),
-    onError: () => toast.error(i18n._(msg`Failed to copy destination`)),
-  });
+  const handleCopyDestination = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(i18n._(msg`Destination copied`));
+    } catch {
+      toast.error(i18n._(msg`Failed to copy destination`));
+    }
+  };
 
   if (records.length === 0) return null;
 
@@ -95,12 +95,7 @@ export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
                 className="flex items-center gap-3 p-3 rounded-xl bg-background/50 border border-border/50 hover:bg-background/80 transition-colors"
               >
                 <StatusIcon
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    record.status === 'COMPLETED' && 'text-emerald-500',
-                    record.status === 'FAILED' && 'text-destructive',
-                    record.status === 'SKIPPED' && 'text-muted-foreground',
-                  )}
+                  className={cn('h-4 w-4 shrink-0', style.iconClassName)}
                 />
                 <div className="flex-1 min-w-0">
                   <Tooltip>
@@ -138,7 +133,7 @@ export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
                 )}
                 <Badge
                   variant="outline"
-                  className={cn('shrink-0 text-[10px]', style.className)}
+                  className={cn('shrink-0 text-[10px]', style.badgeClassName)}
                 >
                   {statusLabel(record.status)}
                 </Badge>
@@ -147,7 +142,9 @@ export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                    onClick={() => copyMutation.mutate(record.remote_path!)}
+                    onClick={() =>
+                      void handleCopyDestination(record.remote_path!)
+                    }
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>

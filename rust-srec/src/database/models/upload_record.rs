@@ -30,7 +30,7 @@ pub struct UploadRecordDbModel {
     /// Expanded remote destination (e.g. `remote:bucket/streamer/file.mp4`).
     /// NULL when the destination could not be computed (failure synthesis).
     pub remote_path: Option<String>,
-    /// One of [`status::ALL`]; the table CHECK constraint enforces it.
+    /// One of [`upload_status::ALL`]; the table CHECK constraint enforces it.
     pub status: String,
     pub size_bytes: Option<i64>,
     pub error: Option<String>,
