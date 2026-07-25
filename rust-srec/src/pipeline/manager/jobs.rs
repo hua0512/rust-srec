@@ -107,6 +107,12 @@ where
         self.job_queue.get_job_progress(job_id).await
     }
 
+    /// In-flight upload jobs with their latest progress snapshots.
+    /// Feeds the WebSocket `DownloadSnapshot.uploads` slice.
+    pub async fn list_active_uploads(&self) -> Result<Vec<crate::pipeline::ActiveUploadInfo>> {
+        self.job_queue.list_active_uploads().await
+    }
+
     /// Get a job by ID.
     /// Retrieves job from repository.
     pub async fn get_job(&self, id: &str) -> Result<Option<Job>> {

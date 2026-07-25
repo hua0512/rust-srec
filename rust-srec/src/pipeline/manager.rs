@@ -20,10 +20,11 @@ use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthSta
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
     DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
-    Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor, ThumbnailProcessor,
+    Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
+use super::upload_events::UploadStatusBroadcaster;
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Error;
 use crate::Result;
@@ -40,6 +41,7 @@ use crate::database::repositories::config::{ConfigRepository, SqlxConfigReposito
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+    UploadRecordRepository,
 };
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::utils::filename::sanitize_filename;
@@ -254,6 +256,8 @@ pub(crate) struct PipelineRuntimeDependencies<
     pub(crate) pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
     pub(crate) config_service: Arc<ConfigService<CR, SR>>,
     pub(crate) dag_repository: Arc<dyn DagRepository>,
+    pub(crate) upload_record_repository: Arc<dyn UploadRecordRepository>,
+    pub(crate) upload_broadcaster: UploadStatusBroadcaster,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -324,7 +328,6 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -387,7 +390,6 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -443,6 +445,8 @@ where
             pipeline_preset_repository,
             config_service,
             dag_repository,
+            upload_record_repository,
+            upload_broadcaster,
         } = dependencies;
 
         Self::with_repository(config, job_repository)
@@ -452,6 +456,8 @@ where
             .with_pipeline_preset_repository(pipeline_preset_repository)
             .with_config_service(config_service)
             .with_dag_repository(dag_repository)
+            .with_upload_record_repository(upload_record_repository)
+            .with_upload_broadcaster(upload_broadcaster)
     }
 
     /// Set the session repository for persistence.
@@ -471,6 +477,21 @@ where
         self.job_queue
             .set_streamer_repo(streamer_repository.clone() as Arc<dyn StreamerRepository>);
         self.streamer_repo = Some(streamer_repository);
+        self
+    }
+
+    /// Set the upload record repository for persisting per-file upload results.
+    pub fn with_upload_record_repository(
+        self,
+        upload_record_repository: Arc<dyn UploadRecordRepository>,
+    ) -> Self {
+        self.job_queue.set_upload_repo(upload_record_repository);
+        self
+    }
+
+    /// Install the live upload-status broadcaster on the job queue.
+    pub fn with_upload_broadcaster(self, broadcaster: UploadStatusBroadcaster) -> Self {
+        self.job_queue.set_upload_broadcaster(broadcaster);
         self
     }
 

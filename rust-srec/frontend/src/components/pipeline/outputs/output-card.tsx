@@ -22,20 +22,20 @@ import {
   Copy,
   CheckCircle2,
   FolderOpen,
+  CloudUpload,
+  CloudAlert,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
-
-interface MediaOutput {
-  id: string;
-  session_id: string;
-  file_path: string;
-  file_size_bytes: number;
-  format: string;
-  created_at: string;
-}
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import type { MediaOutput } from '@/api/schemas';
 
 interface OutputCardProps {
   output: MediaOutput;
@@ -111,6 +111,56 @@ export function OutputCard({ output }: OutputCardProps) {
             </span>
           </div>
         </div>
+        {output.uploads.length > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className={cn(
+                  'p-1.5 rounded-lg border',
+                  output.uploads.some((u) => u.status === 'FAILED')
+                    ? 'bg-destructive/10 text-destructive border-destructive/20'
+                    : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400',
+                )}
+              >
+                {output.uploads.some((u) => u.status === 'FAILED') ? (
+                  <CloudAlert className="h-3.5 w-3.5" />
+                ) : (
+                  <CloudUpload className="h-3.5 w-3.5" />
+                )}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm space-y-1.5">
+              {output.uploads.map((upload, i) => (
+                <div key={i} className="text-xs space-y-0.5">
+                  <div className="font-medium">
+                    {upload.status === 'COMPLETED' && (
+                      <Trans>Uploaded via {upload.uploader}</Trans>
+                    )}
+                    {upload.status === 'FAILED' && (
+                      <Trans>Upload failed via {upload.uploader}</Trans>
+                    )}
+                    {upload.status === 'SKIPPED' && (
+                      <Trans>Upload skipped via {upload.uploader}</Trans>
+                    )}
+                  </div>
+                  {upload.remote_path && (
+                    <div className="font-mono break-all opacity-80">
+                      {upload.remote_path}
+                    </div>
+                  )}
+                  {upload.completed_at && (
+                    <div className="opacity-60">
+                      {i18n.date(upload.completed_at, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </TooltipContent>
+          </Tooltip>
+        )}
         <Badge
           className={`bg-gradient-to-br ${colorClass} border font-mono text-xs uppercase`}
         >

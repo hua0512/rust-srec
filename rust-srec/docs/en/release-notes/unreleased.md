@@ -26,6 +26,10 @@
 
   Browser and desktop notifications are not covered by this and still follow the server's language.
 
+- **See your uploads happen — and where the files went**
+
+  Uploads used to be a black box: once an upload step finished, nothing recorded where the files had gone, and while one was running there was no sign of it outside the job page. Now, while files are uploading, the streamer's card shows a small cloud badge with live progress — hover it for per-upload speed and size. When the upload finishes, the job's page lists every file with its destination, size and result, including which files failed and why, and the Media Outputs page marks uploaded files with a cloud badge that shows the remote destination on hover. These records are kept after the upload completes, survive restarts, and a retried upload updates them in place.
+
 ### Fixes
 
 - **Text that stayed in English when using another language**
@@ -84,4 +88,10 @@
 
 - **Cancelled or timed-out jobs no longer leave tools running in the background**
 
-  When a pipeline job was cancelled or ran past the job timeout, the external tool it had launched — an rclone transfer, ffmpeg processing such as remuxing, transcoding, subtitle burn-in or thumbnails, danmaku conversion, or a Telegram download — could keep running in the background even though the job was already marked failed. rclone's temporary file lists could also pile up in the recording folder. Stopping the job now also stops the tool and removes those temporary files.
+  When a pipeline job was cancelled or ran past the job timeout, the external tool it had launched — an rclone transfer, ffmpeg processing such as remuxing, transcoding, subtitle burn-in or thumbnails, or danmaku conversion — could keep running in the background even though the job was already marked failed. rclone's temporary file lists could also pile up in the recording folder. Stopping the job now also stops the tool and removes those temporary files.
+
+### Removed
+
+- **Telegram (tdl) upload step**
+
+  The experimental Telegram upload step has been removed. It was never available from the pipeline editor, and its login helper and settings have been removed along with it. Any saved presets that pointed at it are cleaned up on upgrade; uploads via rclone are unaffected.

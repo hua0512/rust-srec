@@ -10,10 +10,12 @@ import {
   getPipelineJob,
   getPipelineJobLogs,
   getPipelineJobProgress,
+  getPipelineJobUploads,
   retryPipelineJob,
   cancelActivePipelineJob,
   deletePipelineJob,
 } from '@/server/functions/pipeline';
+import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -92,6 +94,20 @@ function JobDetailsPage() {
     retry: false, // Don't retry on 404 when no progress is available
     throwOnError: false, // Silently handle errors - progress is optional
   });
+
+  // Durable per-file upload results. Records land when the job reaches a
+  // terminal state, so refetch while active and settle once terminal.
+  const { data: uploadsData } = useQuery({
+    queryKey: ['pipeline', 'job', jobId, 'uploads'],
+    queryFn: () => getPipelineJobUploads({ data: { id: jobId } }),
+    refetchInterval: () => {
+      const status = job?.status;
+      return status === 'PROCESSING' || status === 'PENDING' ? 2000 : false;
+    },
+    enabled: !!job,
+    throwOnError: false, // The card simply doesn't render without records
+  });
+  const uploadRecords = uploadsData?.items ?? [];
 
   // Fetch logs separately with infinite scroll
   const {
@@ -501,6 +517,16 @@ function JobDetailsPage() {
                 </Card>
               </div>
             </motion.div>
+
+            {uploadRecords.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.45 }}
+              >
+                <JobUploadsCard records={uploadRecords} />
+              </motion.div>
+            )}
           </div>
 
           {/* Right Column: Timing */}

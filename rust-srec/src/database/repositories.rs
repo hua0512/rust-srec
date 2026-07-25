@@ -19,6 +19,7 @@ pub mod session_tx;
 pub mod streamer;
 pub mod streamer_check_history;
 pub mod streamer_tx;
+pub mod upload_record;
 pub mod user;
 
 pub use config::*;
@@ -37,4 +38,5 @@ pub use session_tx::*;
 pub use streamer::*;
 pub use streamer_check_history::*;
 pub use streamer_tx::*;
+pub use upload_record::*;
 pub use user::*;

@@ -648,6 +648,7 @@ impl Processor for CopyMoveProcessor {
             failed_inputs,
             succeeded_inputs,
             skipped_inputs,
+            uploads: vec![],
             logs,
         })
     }

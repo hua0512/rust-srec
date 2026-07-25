@@ -9,15 +9,17 @@ use futures::future::join_all;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
     JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
-    JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, PageResponse, PaginatedResponse,
-    PaginationParams, PipelineStatsResponse, StepDurationInfo as ApiStepDurationInfo,
+    JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, MediaOutputUploadInfo,
+    PageResponse, PaginatedResponse, PaginationParams, PipelineStatsResponse,
+    StepDurationInfo as ApiStepDurationInfo, UploadRecordListResponse, UploadRecordResponse,
 };
 use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
+use crate::database::time::ms_to_datetime;
 use crate::pipeline::{Job, JobProgressSnapshot};
 
 use super::{
     CreatePipelineRequest, CreatePipelineResponse, OutputFilterParams, OutputRouteState,
-    PipelineRouteState,
+    PipelineRouteState, UploadRouteState,
 };
 
 /// List pipeline jobs with pagination and filtering.
@@ -226,6 +228,51 @@ pub async fn get_job_progress(
         .ok_or_else(|| ApiError::not_found(format!("No progress available for job {}", id)))?;
 
     Ok(Json(snapshot))
+}
+
+/// List durable per-file upload results for a job.
+///
+/// Returns an empty list (not 404) when the job has no records — the client
+/// renders the uploads card only when items are present, so distinguishing
+/// "no upload job" from "upload produced nothing yet" isn't needed.
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/jobs/{id}/uploads",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Per-file upload results", body = UploadRecordListResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_job_uploads(
+    State(state): State<UploadRouteState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<UploadRecordListResponse>> {
+    let records = state
+        .upload_record_repository
+        .list_by_job(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    let items = records
+        .into_iter()
+        .map(|r| UploadRecordResponse {
+            id: r.id,
+            job_id: r.job_id,
+            uploader: r.uploader,
+            local_path: r.local_path,
+            remote_path: r.remote_path,
+            status: r.status,
+            size_bytes: r.size_bytes,
+            error: r.error,
+            created_at: ms_to_datetime(r.created_at),
+            updated_at: ms_to_datetime(r.updated_at),
+            completed_at: r.completed_at.map(ms_to_datetime),
+        })
+        .collect();
+
+    Ok(Json(UploadRecordListResponse { items }))
 }
 
 /// Get a single job by ID.
@@ -548,6 +595,41 @@ pub async fn list_outputs(
         HashMap::new()
     };
 
+    // Annotate outputs with their upload results: one batched lookup for the
+    // whole page (≤100 paths), grouped per local_path. DAG retries create
+    // fresh job ids, so the same (path, uploader) pair can have several rows
+    // — keep only the newest (list_by_local_paths orders updated_at DESC).
+    let output_paths: Vec<String> = outputs.iter().map(|o| o.file_path.clone()).collect();
+    let mut uploads_by_path: HashMap<String, Vec<MediaOutputUploadInfo>> = HashMap::new();
+    match state
+        .upload_record_repository
+        .list_by_local_paths(&output_paths)
+        .await
+    {
+        Ok(records) => {
+            let mut seen: HashSet<(String, String)> = HashSet::new();
+            for record in records {
+                if !seen.insert((record.local_path.clone(), record.uploader.clone())) {
+                    continue;
+                }
+                uploads_by_path
+                    .entry(record.local_path)
+                    .or_default()
+                    .push(MediaOutputUploadInfo {
+                        uploader: record.uploader,
+                        remote_path: record.remote_path,
+                        status: record.status,
+                        completed_at: record.completed_at.map(ms_to_datetime),
+                    });
+            }
+        }
+        Err(e) => {
+            // Annotation is best-effort; the outputs list is still useful
+            // without upload badges.
+            tracing::warn!(error = %e, "Failed to load upload records for outputs page");
+        }
+    }
+
     // Convert outputs to API response format
     let output_responses: Vec<MediaOutputResponse> = outputs
         .iter()
@@ -571,6 +653,9 @@ pub async fn list_outputs(
                 duration_secs: None, // Not stored in current model
                 format: output.file_type.clone(),
                 created_at,
+                uploads: uploads_by_path
+                    .remove(&output.file_path)
+                    .unwrap_or_default(),
             }
         })
         .collect();

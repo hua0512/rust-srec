@@ -12,6 +12,7 @@ use tracing::{error, info, warn};
 
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
+    UploadItemStatus, UploadResultItem,
 };
 use super::utils::CommandOutput;
 use crate::Result;
@@ -315,14 +316,31 @@ impl RcloneProcessor {
         moved_inputs
     }
 
-    async fn input_size(inputs: &[String]) -> u64 {
-        let mut total = 0u64;
+    /// Per-file sizes captured before the transfer so `UploadResultItem`
+    /// sizes survive `move` operations that delete the local source.
+    /// Unreadable inputs are simply absent from the map.
+    async fn input_size_map(inputs: &[String]) -> std::collections::HashMap<String, u64> {
+        let mut sizes = std::collections::HashMap::with_capacity(inputs.len());
         for input in inputs {
             if let Ok(metadata) = tokio::fs::metadata(input).await {
-                total = total.saturating_add(metadata.len());
+                sizes.insert(input.clone(), metadata.len());
             }
         }
-        total
+        sizes
+    }
+
+    /// Remote path of one batch input: `remote_root` + the input's path
+    /// relative to `base_dir`, matching how rclone `--files-from` lays out
+    /// files under the destination. Always joined with `/` — rclone remote
+    /// paths are forward-slash regardless of the local OS separator.
+    fn batch_remote_path(base_dir: &Path, remote_root: &str, input: &str) -> Option<String> {
+        let relative = Path::new(input).strip_prefix(base_dir).ok()?;
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        Some(format!(
+            "{}/{}",
+            remote_root.trim_end_matches('/'),
+            relative
+        ))
     }
 
     /// Execute a single-file rclone operation.
@@ -372,6 +390,15 @@ impl RcloneProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
+            uploads: vec![UploadResultItem {
+                local_path: input_path.to_string(),
+                remote_path: Some(remote_destination.to_string()),
+                // Captured before the transfer, so it is present even after
+                // a move deleted the source (None on move-resume retries).
+                size_bytes: input_size_bytes,
+                status: UploadItemStatus::Completed,
+                error: None,
+            }],
             logs,
         };
 
@@ -512,7 +539,11 @@ impl RcloneProcessor {
             };
         let resumed_inputs = already_moved_inputs.len();
         let mut completed_inputs = resumed_inputs;
-        let total_input_size = Self::input_size(&pending_inputs).await;
+        // Sizes are captured before rclone runs so move'd sources still have
+        // one; inputs already consumed by an earlier attempt are absent and
+        // fall back to None (the upsert's COALESCE keeps any earlier value).
+        let file_sizes = Self::input_size_map(&pending_inputs).await;
+        let total_input_size = file_sizes.values().copied().sum::<u64>();
 
         let success_output = |logs, attempts| ProcessorOutput {
             outputs: match *operation {
@@ -536,6 +567,18 @@ impl RcloneProcessor {
             failed_inputs: vec![],
             succeeded_inputs: inputs.to_vec(),
             skipped_inputs: vec![],
+            // Every input (including ones resumed from an earlier attempt)
+            // is Completed here — batch success is all-or-nothing.
+            uploads: inputs
+                .iter()
+                .map(|input| UploadResultItem {
+                    local_path: input.clone(),
+                    remote_path: Self::batch_remote_path(&base_dir, remote_destination, input),
+                    size_bytes: file_sizes.get(input).copied(),
+                    status: UploadItemStatus::Completed,
+                    error: None,
+                })
+                .collect(),
             logs,
         };
 
@@ -1198,6 +1241,34 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("Input file does not exist"));
+    }
+
+    #[test]
+    fn test_batch_remote_path() {
+        let base = Path::new("/home/user/videos");
+        // Flat file directly under the base.
+        assert_eq!(
+            RcloneProcessor::batch_remote_path(
+                base,
+                "remote:bucket/dest",
+                "/home/user/videos/a.mp4"
+            ),
+            Some("remote:bucket/dest/a.mp4".to_string())
+        );
+        // Nested file keeps its base-relative subpath.
+        assert_eq!(
+            RcloneProcessor::batch_remote_path(
+                base,
+                "remote:bucket/dest/",
+                "/home/user/videos/2024/b.mp4"
+            ),
+            Some("remote:bucket/dest/2024/b.mp4".to_string())
+        );
+        // Input outside the base dir cannot be mapped.
+        assert_eq!(
+            RcloneProcessor::batch_remote_path(base, "remote:bucket", "/var/other/c.mp4"),
+            None
+        );
     }
 
     #[test]

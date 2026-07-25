@@ -110,6 +110,10 @@ pub struct ApiServices {
     pub streamer_check_history_repository: Arc<dyn StreamerCheckHistoryRepository>,
     /// Live broadcaster for committed check-history rows.
     pub check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
+    /// Live broadcaster for upload status events (started/progress/terminal).
+    pub upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
+    /// Durable per-file upload results for the uploads endpoints.
+    pub upload_record_repository: Arc<dyn crate::database::repositories::UploadRecordRepository>,
     /// Filter repository for streamer filters
     pub filter_repository: Arc<dyn FilterRepository>,
     /// Health checker for real health status

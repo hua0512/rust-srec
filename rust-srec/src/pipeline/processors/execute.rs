@@ -404,6 +404,7 @@ impl Processor for ExecuteCommandProcessor {
                 vec![input_path.to_string()]
             },
             skipped_inputs: vec![],
+            uploads: vec![],
             logs: command_output.logs,
         })
     }

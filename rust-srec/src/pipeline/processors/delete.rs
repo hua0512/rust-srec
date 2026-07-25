@@ -216,6 +216,7 @@ impl Processor for DeleteProcessor {
                     failed_inputs: vec![],
                     succeeded_inputs: vec![file_path.clone()],
                     skipped_inputs: vec![],
+                    uploads: vec![],
                     logs,
                 });
             }
@@ -254,6 +255,7 @@ impl Processor for DeleteProcessor {
                         failed_inputs: vec![],
                         succeeded_inputs: vec![file_path.clone()],
                         skipped_inputs: vec![],
+                        uploads: vec![],
                         logs,
                     })
                 }
@@ -337,6 +339,7 @@ impl Processor for DeleteProcessor {
                 failed_inputs: vec![],
                 succeeded_inputs: input.inputs.clone(),
                 skipped_inputs: vec![],
+                uploads: vec![],
                 logs,
             })
         } else {
