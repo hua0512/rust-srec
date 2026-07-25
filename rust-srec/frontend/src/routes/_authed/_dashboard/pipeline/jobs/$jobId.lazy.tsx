@@ -109,10 +109,12 @@ function JobDetailsPage() {
   });
   const uploadRecords = uploadsData?.items ?? [];
 
-  // The backend writes upload_records after flipping the job terminal, and
-  // turning refetchInterval off does not trigger a final fetch — so the last
-  // interval fetch predates the records. Refetch once on the terminal
-  // transition so the Uploads card appears without a remount.
+  // Refetch once when the job turns terminal: turning refetchInterval off
+  // does not trigger a final fetch. This is only a fallback for when the
+  // WebSocket is down — the job row flips terminal before upload_records
+  // are written, so this fetch can race the insert. The authoritative
+  // refetch comes from WebSocketProvider, which invalidates this query on
+  // UploadTerminal (broadcast only after the records are persisted).
   const jobStatus = job?.status;
   useEffect(() => {
     if (

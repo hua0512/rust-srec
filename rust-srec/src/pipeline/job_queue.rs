@@ -2215,11 +2215,18 @@ impl JobQueue {
         let mut transitioned = false;
 
         // Upload context must be read before the cache cleanup below evicts
-        // the job. (streamer_id, files_total) for the Terminal event; None
-        // for non-upload job types.
+        // the job: the FAILED-record synthesis and Terminal event need the
+        // job's type, streamer/session, and input paths. None for non-upload
+        // job types.
         let upload_ctx = self.jobs_cache.get(job_id).and_then(|job| {
-            upload_kind_for_job_type(&job.job_type)
-                .map(|_| (non_empty(&job.streamer_id), job.inputs.len() as u32))
+            upload_kind_for_job_type(&job.job_type).map(|_| {
+                (
+                    job.job_type.clone(),
+                    non_empty(&job.streamer_id),
+                    non_empty(&job.session_id),
+                    job.inputs.clone(),
+                )
+            })
         });
 
         // Update database if repository is available
@@ -2303,13 +2310,44 @@ impl JobQueue {
         if transitioned {
             self.decrement_depth(1);
 
-            if let Some((streamer_id, files_total)) = upload_ctx {
+            if let Some((job_type, streamer_id, session_id, inputs)) = upload_ctx {
+                // A failing processor returns Err with no ProcessorOutput, so
+                // the per-file results it computed are lost; every input is
+                // recorded FAILED instead. Deliberately pessimistic: a retry
+                // upserts over these rows via the (job_id, local_path)
+                // conflict key, and RcloneProcessor's move-resume flips
+                // already-transferred files back to COMPLETED.
+                //
+                // Runs only after mark_job_failed's CAS confirmed the FAILED
+                // transition — a cancel that wins the race takes the early
+                // return above, so a CANCELLED job never gets FAILED rows.
+                // Persisted before the Terminal event: the frontend refetches
+                // records on UploadTerminal and must see the final rows.
+                let items: Vec<UploadResultItem> = inputs
+                    .iter()
+                    .map(|path| UploadResultItem {
+                        local_path: path.clone(),
+                        remote_path: None,
+                        size_bytes: None,
+                        status: UploadItemStatus::Failed,
+                        error: Some(error.to_string()),
+                    })
+                    .collect();
+                self.persist_upload_records(
+                    job_id,
+                    &job_type,
+                    streamer_id.as_deref(),
+                    session_id.as_deref(),
+                    &items,
+                )
+                .await;
+
                 self.emit_upload_event(UploadStatusEvent::Terminal {
                     job_id: job_id.to_string(),
                     streamer_id,
                     status: UploadTerminalStatus::Failed,
                     files_succeeded: 0,
-                    files_failed: files_total,
+                    files_failed: items.len() as u32,
                     files_skipped: 0,
                     error: Some(error.to_string()),
                 });
@@ -2908,6 +2946,60 @@ mod tests {
             .await
             .unwrap();
         assert!(upload_repo.list_by_job(&remux_id).await.unwrap().is_empty());
+    }
+
+    /// `fail_internal` synthesizes FAILED records for upload jobs, but only
+    /// after `mark_job_failed`'s CAS confirms the transition — a job that was
+    /// cancelled first must never end up with FAILED rows.
+    #[tokio::test]
+    async fn test_fail_persists_failed_upload_records_only_on_transition() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let upload_repo = Arc::new(
+            crate::database::repositories::upload_record::SqlxUploadRecordRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo);
+        queue.set_upload_repo(upload_repo.clone());
+
+        // Failing a processing upload job records every input as FAILED.
+        let failed = Job::new(
+            "rclone",
+            vec!["/videos/a.mp4".to_string(), "/videos/b.mp4".to_string()],
+            vec![],
+            "",
+            "",
+        );
+        let failed_id = queue.enqueue(failed).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.fail(&failed_id, "network down").await.unwrap();
+        let rows = upload_repo.list_by_job(&failed_id).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.status == "FAILED"));
+        assert_eq!(rows[0].error.as_deref(), Some("network down"));
+
+        // A job cancelled before the fail attempt gets no rows: the FAILED
+        // CAS loses and fail_internal takes the early return.
+        let cancelled = Job::new("rclone", vec!["/videos/c.mp4".to_string()], vec![], "", "");
+        let cancelled_id = queue.enqueue(cancelled).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.cancel_job(&cancelled_id).await.unwrap();
+        queue.fail(&cancelled_id, "late failure").await.unwrap();
+        assert!(
+            upload_repo
+                .list_by_job(&cancelled_id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     /// Every terminal status transition must clear the job's persisted

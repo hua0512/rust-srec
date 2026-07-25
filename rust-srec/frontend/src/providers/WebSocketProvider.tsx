@@ -167,7 +167,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             // Terminal event - drop the live indicator. Durable per-file
             // results are served by the job uploads REST endpoint.
             if (message.payload.case === 'uploadTerminal') {
-              removeUpload(message.payload.value.jobId);
+              const jobId = message.payload.value.jobId;
+              removeUpload(jobId);
+              // The backend persists upload_records before broadcasting this
+              // event, so it is the reliable signal that the job's uploads
+              // endpoint now returns the final rows. The job detail page's
+              // status-driven invalidation can race the insert (the job row
+              // flips terminal first); this one cannot.
+              void queryClient.invalidateQueries({
+                queryKey: ['pipeline', 'job', jobId, 'uploads'],
+              });
             }
             break;
 

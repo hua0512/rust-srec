@@ -596,24 +596,36 @@ pub async fn list_outputs(
     };
 
     // Annotate outputs with their upload results: one batched lookup for the
-    // whole page (≤100 paths), grouped per local_path. DAG retries create
-    // fresh job ids, so the same (path, uploader) pair can have several rows
-    // — keep only the newest (list_by_local_paths orders updated_at DESC).
+    // whole page (≤100 paths), then grouped per (session_id, local_path) —
+    // media_outputs.file_path is not unique across sessions, so a path match
+    // alone could pin another session's upload onto this output. Records
+    // without a session (manually enqueued jobs) are skipped for the same
+    // reason. DAG retries create fresh job ids, so the same
+    // (session, path, uploader) triple can have several rows — keep only the
+    // newest (list_by_local_paths orders updated_at DESC per path).
     let output_paths: Vec<String> = outputs.iter().map(|o| o.file_path.clone()).collect();
-    let mut uploads_by_path: HashMap<String, Vec<MediaOutputUploadInfo>> = HashMap::new();
+    let mut uploads_by_session_path: HashMap<(String, String), Vec<MediaOutputUploadInfo>> =
+        HashMap::new();
     match state
         .upload_record_repository
         .list_by_local_paths(&output_paths)
         .await
     {
         Ok(records) => {
-            let mut seen: HashSet<(String, String)> = HashSet::new();
+            let mut seen: HashSet<(String, String, String)> = HashSet::new();
             for record in records {
-                if !seen.insert((record.local_path.clone(), record.uploader.clone())) {
+                let Some(session_id) = record.session_id else {
+                    continue;
+                };
+                if !seen.insert((
+                    session_id.clone(),
+                    record.local_path.clone(),
+                    record.uploader.clone(),
+                )) {
                     continue;
                 }
-                uploads_by_path
-                    .entry(record.local_path)
+                uploads_by_session_path
+                    .entry((session_id, record.local_path))
                     .or_default()
                     .push(MediaOutputUploadInfo {
                         uploader: record.uploader,
@@ -653,8 +665,11 @@ pub async fn list_outputs(
                 duration_secs: None, // Not stored in current model
                 format: output.file_type.clone(),
                 created_at,
-                uploads: uploads_by_path
-                    .remove(&output.file_path)
+                // get + clone rather than remove: duplicate rows for the same
+                // (session, path) must each carry the annotation.
+                uploads: uploads_by_session_path
+                    .get(&(output.session_id.clone(), output.file_path.clone()))
+                    .cloned()
                     .unwrap_or_default(),
             }
         })
