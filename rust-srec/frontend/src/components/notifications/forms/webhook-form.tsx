@@ -38,6 +38,7 @@ import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
 import {
   ChannelEnabledField,
   MinPriorityField,
+  ChannelLocaleField,
 } from './channel-delivery-fields';
 import {
   CONFIG_DESCRIPTION,
@@ -130,6 +131,7 @@ export const WebhookForm = memo(function WebhookForm() {
         />
         <CardContent className="grid items-start gap-4 md:grid-cols-2">
           <MinPriorityField />
+          <ChannelLocaleField />
           <FormField
             control={form.control}
             name="settings.timeout_secs"

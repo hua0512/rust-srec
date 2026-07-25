@@ -267,12 +267,18 @@ impl CredentialEvent {
         }
     }
 
-    /// Generate a human-readable message for notifications.
+    /// Generate a human-readable message for notifications, in the process-wide locale.
     pub fn to_message(&self) -> String {
+        self.to_message_in(&crate::i18n::current_locale())
+    }
+
+    /// Generate a human-readable message for notifications, in `locale`.
+    pub fn to_message_in(&self, locale: &str) -> String {
         match self {
             Self::Refreshed {
                 platform, scope, ..
-            } => crate::t_str!(
+            } => crate::t_str_in!(
+                locale,
                 "notification.credential.refreshed.message",
                 platform = platform.as_str(),
                 scope = scope.describe().as_str(),
@@ -290,7 +296,8 @@ impl CredentialEvent {
                 } else {
                     "notification.credential.refresh_failed.message.retrying"
                 };
-                crate::t_str!(
+                crate::t_str_in!(
+                    locale,
                     key,
                     platform = platform.as_str(),
                     scope = scope.describe().as_str(),
@@ -312,7 +319,8 @@ impl CredentialEvent {
                 let error_code = error_code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "N/A".to_string());
-                crate::t_str!(
+                crate::t_str_in!(
+                    locale,
                     "notification.credential.invalid.message",
                     platform = platform.as_str(),
                     scope = scope.describe().as_str(),
@@ -328,7 +336,8 @@ impl CredentialEvent {
                 ..
             } => {
                 let expires_at = expires_at.format("%Y-%m-%d").to_string();
-                crate::t_str!(
+                crate::t_str_in!(
+                    locale,
                     "notification.credential.expiring_soon.message",
                     platform = platform.as_str(),
                     scope = scope.describe().as_str(),

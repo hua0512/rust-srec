@@ -655,6 +655,8 @@ impl NotificationService {
             })
             .unwrap_or(NotificationPriority::Normal);
 
+        let locale = parse_channel_locale(&settings_json);
+
         let runtime_channel: Arc<dyn NotificationChannel> = match channel_type {
             ChannelType::Discord => {
                 let settings: DiscordChannelSettings =
@@ -667,6 +669,7 @@ impl NotificationService {
                     username: settings.username,
                     avatar_url: settings.avatar_url,
                     min_priority,
+                    locale: locale.clone(),
                 }))
             }
             ChannelType::Email => {
@@ -691,6 +694,7 @@ impl NotificationService {
                     from_address: settings.from_address,
                     to_addresses: settings.to_addresses,
                     min_priority,
+                    locale: locale.clone(),
                     batch_window_secs: settings_json
                         .get("batch_window_secs")
                         .and_then(|v| v.as_u64())
@@ -712,6 +716,7 @@ impl NotificationService {
                         .unwrap_or("HTML")
                         .to_string(),
                     min_priority,
+                    locale: locale.clone(),
                 }))
             }
             ChannelType::Webhook => {
@@ -750,6 +755,7 @@ impl NotificationService {
                     headers: headers_vec,
                     auth,
                     min_priority,
+                    locale: locale.clone(),
                     timeout_secs: settings.timeout_secs.unwrap_or(30),
                 }))
             }
@@ -763,6 +769,7 @@ impl NotificationService {
                     server_url: settings.server_url,
                     app_token: settings.app_token,
                     min_priority,
+                    locale: locale.clone(),
                     timeout_secs: settings.timeout_secs,
                 }))
             }
@@ -1506,6 +1513,20 @@ impl NotificationService {
     }
 }
 
+/// Read a channel's configured language out of its settings blob.
+///
+/// Rides in the same JSON as `min_priority`, so the channel has no column of its own. Blank and
+/// whitespace-only values mean "follow the locale `crate::i18n::set_locale` applied at startup"
+/// and become `None`, rather than reaching `rust_i18n` as a locale with no YAML behind it.
+fn parse_channel_locale(settings: &Value) -> Option<String> {
+    settings
+        .get("locale")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
 fn parse_notification_priority(value: &str) -> Option<NotificationPriority> {
     // Try parsing as integer first (new format).
     if let Ok(int_val) = value.trim().parse::<u8>() {
@@ -1563,6 +1584,32 @@ mod tests {
     use super::*;
     use crate::database::models::NotificationDeadLetterDbModel;
     use crate::notification::channels::DiscordConfig;
+
+    #[test]
+    fn parse_channel_locale_reads_the_settings_blob() {
+        assert_eq!(
+            parse_channel_locale(&serde_json::json!({ "locale": "zh-CN" })),
+            Some("zh-CN".to_string())
+        );
+        assert_eq!(
+            parse_channel_locale(&serde_json::json!({ "locale": "  zh-CN  " })),
+            Some("zh-CN".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_channel_locale_treats_blank_as_unset() {
+        // A select cleared back to "follow the server" posts an empty string rather than
+        // dropping the key, and that must not reach `t!` as a locale.
+        for settings in [
+            serde_json::json!({ "locale": "" }),
+            serde_json::json!({ "locale": "   " }),
+            serde_json::json!({ "locale": null }),
+            serde_json::json!({ "min_priority": 5 }),
+        ] {
+            assert_eq!(parse_channel_locale(&settings), None, "{settings}");
+        }
+    }
 
     #[test]
     fn test_notification_service_config_default() {

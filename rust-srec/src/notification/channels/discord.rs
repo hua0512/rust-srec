@@ -43,6 +43,10 @@ pub struct DiscordConfig {
     /// Minimum priority level to send (default: Normal).
     #[serde(default)]
     pub min_priority: NotificationPriority,
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 impl Default for DiscordConfig {
@@ -55,6 +59,7 @@ impl Default for DiscordConfig {
             username: Some("rust-srec".to_string()),
             avatar_url: None,
             min_priority: NotificationPriority::Normal,
+            locale: None,
         }
     }
 }
@@ -88,8 +93,8 @@ impl DiscordChannel {
     /// Build the webhook payload for an event.
     fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
         let embed = json!({
-            "title": event.title(),
-            "description": event.description(),
+            "title": event.title_for(self.config.locale.as_deref()),
+            "description": event.description_for(self.config.locale.as_deref()),
             "color": Self::get_color(event.priority()),
             "timestamp": event.timestamp().to_rfc3339(),
             "footer": {

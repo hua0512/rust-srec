@@ -38,12 +38,22 @@ export const ChannelTypeSchema = z.enum([
 ]);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
+/**
+ * Language a channel renders its notifications in. Empty means "follow the server", which is
+ * what the backend's `parse_channel_locale` normalizes to no override.
+ */
+export const NotificationLocaleSchema = z
+  .enum(['', 'en', 'zh-CN'])
+  .default('')
+  .catch('');
+
 // Settings schemas
 export const DiscordSettingsSchema = z.object({
   webhook_url: z.url(),
   username: z.string().optional(),
   avatar_url: z.url().optional(),
   min_priority: z.number().int().min(0).max(10).default(5),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
 });
 
@@ -56,6 +66,7 @@ export const EmailSettingsSchema = z.object({
   to_addresses: z.array(z.email()).min(1),
   use_tls: z.boolean().default(true),
   min_priority: z.number().int().min(0).max(10).default(8),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
 });
 
@@ -84,6 +95,7 @@ export const WebhookSettingsSchema = z.object({
   method: z.string().default('POST'),
   auth: WebhookAuthSchema.optional(),
   min_priority: z.number().int().min(0).max(10).default(2),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
   timeout_secs: z.number().int().positive().default(30),
 });
@@ -93,6 +105,7 @@ export const TelegramSettingsSchema = z.object({
   chat_id: z.string().min(1),
   parse_mode: z.enum(['HTML', 'Markdown', 'MarkdownV2']).default('HTML'),
   min_priority: z.number().int().min(0).max(10).default(5),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
 });
 
@@ -100,6 +113,7 @@ export const GotifySettingsSchema = z.object({
   server_url: z.string().url(),
   app_token: z.string().min(1),
   min_priority: z.number().int().min(0).max(10).default(5),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
   timeout_secs: z.number().int().positive().default(30),
 });

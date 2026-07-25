@@ -5,7 +5,11 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { Card } from '@/components/ui/card';
-import { dynamicActivate, Locale } from '@/integrations/lingui/i18n';
+import {
+  dynamicActivate,
+  Locale,
+  localeNativeNames,
+} from '@/integrations/lingui/i18n';
 import { updateLocale } from '@/server/functions/locale';
 import { useRouter } from '@tanstack/react-router';
 
@@ -29,14 +33,14 @@ function LanguageSettings() {
     {
       code: 'en',
       name: 'English',
-      nativeName: 'English',
+      nativeName: localeNativeNames.en,
       flag: '🇺🇸',
       description: 'English (International)',
     },
     {
       code: 'zh-CN',
       name: 'Chinese',
-      nativeName: '简体中文',
+      nativeName: localeNativeNames['zh-CN'],
       flag: '🇨🇳',
       description: 'Chinese Simplified',
     },
