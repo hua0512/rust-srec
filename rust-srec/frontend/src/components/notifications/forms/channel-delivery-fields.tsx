@@ -16,18 +16,29 @@ import {
 import { SwitchCard } from '@/components/ui/switch-card';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
 import { PRIORITY_NORMAL, priorityOptions } from '@/lib/priority';
+import { locales, localeNativeNames } from '@/integrations/lingui/i18n';
 
 /**
- * The locales the backend has YAML for, under `rust-srec/locales/`. Keep in step with the files
- * there: a value with no catalog behind it renders as English rather than failing.
+ * Derived from the interface locales rather than listed again here.
+ *
+ * The backend renders notifications from its own YAML under `rust-srec/locales/`, so the two
+ * sets have to stay in step. A locale offered here with no file there degrades to English rather
+ * than failing, which is why this can follow the interface list rather than fetch its own.
  */
-const NOTIFICATION_LOCALES = [
-  { value: '', label: msg`Same as server` },
-  { value: 'en', label: msg({ message: 'English', context: 'language' }) },
-  { value: 'zh-CN', label: msg({ message: '简体中文', context: 'language' }) },
-] as const;
+const NOTIFICATION_LOCALE_OPTIONS = locales.map((locale) => ({
+  value: locale,
+  label: localeNativeNames[locale],
+}));
+
+/**
+ * Stands in for "no override" inside the select.
+ *
+ * Radix rejects an empty `SelectItem` value, reserving it for "nothing selected", so the choice
+ * that means "follow the server" needs a value of its own. It is mapped back to the empty string
+ * the schema and backend expect on change.
+ */
+const FOLLOW_SERVER_LOCALE = '__server__';
 import {
   CONFIG_DESCRIPTION,
   CONFIG_SELECT_CONTENT,
@@ -105,7 +116,6 @@ export function ChannelLocaleField({
 }: {
   description?: boolean;
 }) {
-  const { i18n } = useLingui();
   const form = useFormContext();
 
   return (
@@ -117,16 +127,26 @@ export function ChannelLocaleField({
           <ConfigFieldLabel>
             <Trans>Notification language</Trans>
           </ConfigFieldLabel>
-          <Select onValueChange={field.onChange} value={field.value ?? ''}>
+          <Select
+            onValueChange={(value) =>
+              field.onChange(value === FOLLOW_SERVER_LOCALE ? '' : value)
+            }
+            value={field.value || FOLLOW_SERVER_LOCALE}
+          >
             <FormControl>
               <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                 <SelectValue />
               </SelectTrigger>
             </FormControl>
             <SelectContent className={CONFIG_SELECT_CONTENT}>
-              {NOTIFICATION_LOCALES.map((locale) => (
+              {/* Radix reserves the empty string for "no selection", so the follow-the-server
+                  choice needs a sentinel of its own; it is mapped back on change. */}
+              <SelectItem value={FOLLOW_SERVER_LOCALE}>
+                <Trans>Same as server</Trans>
+              </SelectItem>
+              {NOTIFICATION_LOCALE_OPTIONS.map((locale) => (
                 <SelectItem key={locale.value} value={locale.value}>
-                  {i18n._(locale.label)}
+                  {locale.label}
                 </SelectItem>
               ))}
             </SelectContent>

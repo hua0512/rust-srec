@@ -247,7 +247,7 @@ msgstr "Action"
 msgid "Actions"
 msgstr "Actions"
 
-#: src/routes/_authed/_dashboard/config/language.lazy.tsx:108
+#: src/routes/_authed/_dashboard/config/language.lazy.tsx:112
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:475
 msgid "Active"
 msgstr "Active"
@@ -2584,7 +2584,7 @@ msgstr "Enable selected"
 
 #: src/components/config/shared/record-danmu-card.tsx:99
 #: src/components/notifications/desktop-channel-dialog.tsx:102
-#: src/components/notifications/forms/channel-delivery-fields.tsx:158
+#: src/components/notifications/forms/channel-delivery-fields.tsx:178
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
@@ -2673,11 +2673,6 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
 msgid "Engines"
 msgstr "Engines"
-
-#: src/components/notifications/forms/channel-delivery-fields.tsx:28
-msgctxt "language"
-msgid "English"
-msgstr "English"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:239
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:488
@@ -3394,7 +3389,7 @@ msgstr "Filter created successfully"
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:86
+#: src/components/notifications/forms/channel-delivery-fields.tsx:97
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
@@ -4817,7 +4812,7 @@ msgid "Min size to keep."
 msgstr "Min size to keep."
 
 #: src/components/notifications/desktop-channel-dialog.tsx:131
-#: src/components/notifications/forms/channel-delivery-fields.tsx:61
+#: src/components/notifications/forms/channel-delivery-fields.tsx:72
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
 
@@ -5357,7 +5352,7 @@ msgstr "Not supported in this browser"
 msgid "Notification Events"
 msgstr "Notification Events"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:118
+#: src/components/notifications/forms/channel-delivery-fields.tsx:128
 msgid "Notification language"
 msgstr "Notification language"
 
@@ -6961,7 +6956,7 @@ msgctxt "Sunday initial"
 msgid "S"
 msgstr "S"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:27
+#: src/components/notifications/forms/channel-delivery-fields.tsx:145
 msgid "Same as server"
 msgstr "Same as server"
 
@@ -8111,7 +8106,7 @@ msgstr "The configuration matches existing data"
 msgid "The direct link to the channel or stream."
 msgstr "The direct link to the channel or stream."
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:136
+#: src/components/notifications/forms/channel-delivery-fields.tsx:156
 msgid "The language this channel's messages are written in, whoever reads them."
 msgstr "The language this channel's messages are written in, whoever reads them."
 
@@ -9117,8 +9112,3 @@ msgstr "YYYY-MM-DD"
 #: src/components/pipeline/presets/default-presets-i18n.ts:15
 msgid "ZIP Archive"
 msgstr "ZIP Archive"
-
-#: src/components/notifications/forms/channel-delivery-fields.tsx:29
-msgctxt "language"
-msgid "简体中文"
-msgstr "简体中文"

@@ -247,7 +247,7 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
-#: src/routes/_authed/_dashboard/config/language.lazy.tsx:108
+#: src/routes/_authed/_dashboard/config/language.lazy.tsx:112
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:475
 msgid "Active"
 msgstr "启用"
@@ -2584,7 +2584,7 @@ msgstr "启用所选"
 
 #: src/components/config/shared/record-danmu-card.tsx:99
 #: src/components/notifications/desktop-channel-dialog.tsx:102
-#: src/components/notifications/forms/channel-delivery-fields.tsx:158
+#: src/components/notifications/forms/channel-delivery-fields.tsx:178
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
@@ -2673,11 +2673,6 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
 msgid "Engines"
 msgstr "引擎列表"
-
-#: src/components/notifications/forms/channel-delivery-fields.tsx:28
-msgctxt "language"
-msgid "English"
-msgstr "English"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:239
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:488
@@ -3394,7 +3389,7 @@ msgstr "过滤器创建成功"
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:86
+#: src/components/notifications/forms/channel-delivery-fields.tsx:97
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
@@ -4817,7 +4812,7 @@ msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:131
-#: src/components/notifications/forms/channel-delivery-fields.tsx:61
+#: src/components/notifications/forms/channel-delivery-fields.tsx:72
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
@@ -5357,7 +5352,7 @@ msgstr "此浏览器不支持"
 msgid "Notification Events"
 msgstr "通知事件"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:118
+#: src/components/notifications/forms/channel-delivery-fields.tsx:128
 msgid "Notification language"
 msgstr "通知语言"
 
@@ -6961,7 +6956,7 @@ msgctxt "Sunday initial"
 msgid "S"
 msgstr "日"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:27
+#: src/components/notifications/forms/channel-delivery-fields.tsx:145
 msgid "Same as server"
 msgstr "与服务端一致"
 
@@ -8111,7 +8106,7 @@ msgstr "配置与现有数据一致"
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
-#: src/components/notifications/forms/channel-delivery-fields.tsx:136
+#: src/components/notifications/forms/channel-delivery-fields.tsx:156
 msgid "The language this channel's messages are written in, whoever reads them."
 msgstr "该渠道所发送消息使用的语言，与谁查看无关。"
 
@@ -9117,8 +9112,3 @@ msgstr "YYYY-MM-DD"
 #: src/components/pipeline/presets/default-presets-i18n.ts:15
 msgid "ZIP Archive"
 msgstr "ZIP 归档"
-
-#: src/components/notifications/forms/channel-delivery-fields.tsx:29
-msgctxt "language"
-msgid "简体中文"
-msgstr "简体中文"

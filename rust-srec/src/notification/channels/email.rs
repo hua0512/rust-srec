@@ -42,11 +42,8 @@ pub struct EmailConfig {
     /// Minimum priority level to send (default: High).
     #[serde(default = "default_email_priority")]
     pub min_priority: NotificationPriority,
-    /// Language for this channel's rendered title and body.
-    ///
-    /// `None` uses the locale `crate::i18n::set_locale` applied at startup. Configured per
-    /// channel because the people reading two different channels need not share a language,
-    /// which a single process-wide locale cannot express.
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
     #[serde(default)]
     pub locale: Option<String>,
     /// Batch emails within this window (seconds).
