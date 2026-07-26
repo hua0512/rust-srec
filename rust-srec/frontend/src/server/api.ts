@@ -128,6 +128,13 @@ export const fetchBackend = async <T = any>(
           );
         }
       } catch (refreshError) {
+        // A BackendApiError here was thrown by throwBackendError(retryResponse):
+        // the refresh succeeded but the retried request failed. Propagate its
+        // real status/body (e.g. 403 PASSWORD_CHANGE_REQUIRED, 422) instead of
+        // masking it with the original 401 below.
+        if (refreshError instanceof BackendApiError) {
+          throw refreshError;
+        }
         console.error(
           '[API] Token refresh failed during interceptor:',
           refreshError,

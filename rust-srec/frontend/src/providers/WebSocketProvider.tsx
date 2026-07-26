@@ -50,6 +50,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     undefined,
   );
   const isConnectingRef = useRef<boolean>(false);
+  // Set by disconnect() before ws.close() so the socket's onclose skips
+  // scheduleReconnect; connect() clears it when a new socket is created.
+  const intentionalCloseRef = useRef<boolean>(false);
 
   // Auth state
   const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
@@ -341,6 +344,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
+    // A pending reconnect timer is superseded by this call; cancel it so a
+    // later fire can't spawn a second socket.
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
+    }
+    intentionalCloseRef.current = false;
+
     isConnectingRef.current = true;
     setConnectionStatus('connecting');
 
@@ -368,6 +379,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ws.onmessage = handleMessage;
 
     ws.onclose = (event) => {
+      // A later connect() may have replaced wsRef.current with a newer
+      // socket; only the active socket's close drives status/reconnect.
+      if (wsRef.current !== ws) return;
+
       if (import.meta.env.DEV) {
         console.debug('[WS] Close', {
           code: event.code,
@@ -380,12 +395,20 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       setConnectionStatus('disconnected');
       wsRef.current = null;
 
-      if (sessionData?.token?.access_token) {
+      // Skip reconnect when disconnect() requested the close; otherwise
+      // reconnect only while an access token is still available.
+      if (
+        !intentionalCloseRef.current &&
+        sessionData?.token?.access_token
+      ) {
         scheduleReconnect();
       }
     };
 
     ws.onerror = (event) => {
+      // Ignore errors from a socket that is no longer the active one.
+      if (wsRef.current !== ws) return;
+
       if (import.meta.env.DEV) {
         console.error('[WS] Connection error', event);
       } else {
@@ -417,6 +440,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [connect]);
 
   const disconnect = useCallback(() => {
+    // Mark the close as intentional so the socket's onclose does not
+    // scheduleReconnect.
+    intentionalCloseRef.current = true;
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = undefined;

@@ -1,7 +1,7 @@
 /**
  * Real-time log viewer component that consumes the log streaming WebSocket.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
@@ -74,6 +74,22 @@ function getLogLevelName(level: LogLevel): string {
 
 interface DisplayLogEvent extends LogEvent {
   id: number;
+  /** Wall-clock time string precomputed from timestampMs when the entry is
+   * appended, so LogRow renders never re-run Intl date formatting. */
+  formattedTime: string;
+}
+
+/** Format a log entry's timestampMs into the fixed 'en-US' 24h clock string
+ * shown in the timestamp column. */
+function formatLogTime(timestampMs: bigint): string {
+  const date = new Date(Number(timestampMs));
+  return date.toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
 }
 
 /** Get log level icon component */
@@ -131,6 +147,42 @@ function getLevelBadgeColor(level: LogLevel): string {
   }
 }
 
+/** Single log line. Memoized on the immutable `log` entry (keyed by `log.id`
+ * in the list) so appending a new entry only mounts the new row instead of
+ * re-running the getLevel helpers and formatLogTime lookup for the whole
+ * viewport. */
+const LogRow = memo(function LogRow({ log }: { log: DisplayLogEvent }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.1 }}
+      className={cn(
+        'flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors',
+        getLevelBgColor(log.level),
+      )}
+    >
+      <span className="text-muted-foreground shrink-0 w-21.25">
+        {log.formattedTime}
+      </span>
+      <Badge
+        variant="outline"
+        className={cn(
+          'text-[9px] uppercase font-medium shrink-0 px-1.5 py-0',
+          getLevelBadgeColor(log.level),
+        )}
+      >
+        {getLevelIcon(log.level)}
+        <span className="ml-1">{getLogLevelName(log.level)}</span>
+      </Badge>
+      <span className="text-primary/80 shrink-0 max-w-37.5 truncate">
+        {log.target}
+      </span>
+      <span className="text-foreground/90 break-all flex-1">{log.message}</span>
+    </motion.div>
+  );
+});
+
 type FilterLevel = 'all' | 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
 export function LogViewer() {
@@ -138,6 +190,7 @@ export function LogViewer() {
   const [logs, setLogs] = useState<DisplayLogEvent[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [pausedCount, setPausedCount] = useState(0);
   const [filterLevel, setFilterLevel] = useState<FilterLevel>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -147,6 +200,9 @@ export function LogViewer() {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  // Set by disconnect() so a socket closed during cleanup does not schedule a
+  // reconnect after the effect has already torn the connection down.
+  const disposedRef = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logIdRef = useRef(0);
   const pausedLogsRef = useRef<DisplayLogEvent[]>([]);
@@ -175,6 +231,7 @@ export function LogViewer() {
           const logEvent: DisplayLogEvent = {
             ...message.payload.value,
             id: logIdRef.current++,
+            formattedTime: formatLogTime(message.payload.value.timestampMs),
           };
 
           if (isPaused) {
@@ -184,6 +241,9 @@ export function LogViewer() {
               pausedLogsRef.current =
                 pausedLogsRef.current.slice(-MAX_LOG_ENTRIES);
             }
+            // Mirror the buffer length into state so the "(+N paused)" counter
+            // re-renders; pausedLogsRef alone never triggers a render.
+            setPausedCount(pausedLogsRef.current.length);
           } else {
             setLogs((prev) => {
               const newLogs = [...prev, logEvent];
@@ -200,12 +260,23 @@ export function LogViewer() {
     [isPaused],
   );
 
+  // Route socket messages through the latest handleMessage without rebuilding
+  // the socket: connect() reads handleMessageRef, so a pause toggle (which
+  // changes handleMessage identity) never tears the connection down.
+  const handleMessageRef = useRef(handleMessage);
+  useEffect(() => {
+    handleMessageRef.current = handleMessage;
+  }, [handleMessage]);
+
   // Connect to WebSocket
   const connect = useCallback(() => {
     if (!accessToken) return;
     if (typeof window === 'undefined') return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
+
+    // A fresh intentional connect clears the disposed guard set by disconnect().
+    disposedRef.current = false;
 
     const wsUrl = buildWebSocketUrl(accessToken, '/logging/stream');
     if (import.meta.env.DEV) {
@@ -222,7 +293,7 @@ export function LogViewer() {
       reconnectAttemptRef.current = 0;
     };
 
-    ws.onmessage = handleMessage;
+    ws.onmessage = (event) => handleMessageRef.current(event);
 
     ws.onclose = (event) => {
       if (import.meta.env.DEV) {
@@ -235,8 +306,9 @@ export function LogViewer() {
       setIsConnected(false);
       wsRef.current = null;
 
-      // Reconnect if we have a token
-      if (accessToken) {
+      // Reconnect only for an unsolicited close; disconnect() sets disposedRef
+      // so a socket closed during teardown does not resurrect the connection.
+      if (!disposedRef.current && accessToken) {
         const delay = Math.min(
           WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
           WS_RECONNECT_MAX_DELAY,
@@ -254,10 +326,12 @@ export function LogViewer() {
     };
 
     wsRef.current = ws;
-  }, [accessToken, handleMessage]);
+  }, [accessToken]);
 
   // Disconnect
   const disconnect = useCallback(() => {
+    // Block onclose from scheduling a reconnect for this deliberate teardown.
+    disposedRef.current = true;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
@@ -293,6 +367,7 @@ export function LogViewer() {
           ? combined.slice(-MAX_LOG_ENTRIES)
           : combined;
       });
+      setPausedCount(0);
     }
     setIsPaused(!isPaused);
   }, [isPaused]);
@@ -301,6 +376,7 @@ export function LogViewer() {
   const clearLogs = useCallback(() => {
     setLogs([]);
     pausedLogsRef.current = [];
+    setPausedCount(0);
   }, []);
 
   // Filter logs - memoized to avoid recalculating on every render
@@ -331,18 +407,6 @@ export function LogViewer() {
       return true;
     });
   }, [logs, filterLevel, searchQuery]);
-
-  // Format timestamp - memoized function
-  const formatTime = useCallback((timestampMs: bigint) => {
-    const date = new Date(Number(timestampMs));
-    return date.toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      fractionalSecondDigits: 3,
-    });
-  }, []);
 
   return (
     <Card className="border-border/40 bg-linear-to-b from-card to-card/80 shadow-lg">
@@ -472,38 +536,7 @@ export function LogViewer() {
               )}
             </div>
           ) : (
-            filteredLogs.map((log) => (
-              <motion.div
-                key={log.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.1 }}
-                className={cn(
-                  'flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors',
-                  getLevelBgColor(log.level),
-                )}
-              >
-                <span className="text-muted-foreground shrink-0 w-21.25">
-                  {formatTime(log.timestampMs)}
-                </span>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'text-[9px] uppercase font-medium shrink-0 px-1.5 py-0',
-                    getLevelBadgeColor(log.level),
-                  )}
-                >
-                  {getLevelIcon(log.level)}
-                  <span className="ml-1">{getLogLevelName(log.level)}</span>
-                </Badge>
-                <span className="text-primary/80 shrink-0 max-w-37.5 truncate">
-                  {log.target}
-                </span>
-                <span className="text-foreground/90 break-all flex-1">
-                  {log.message}
-                </span>
-              </motion.div>
-            ))
+            filteredLogs.map((log) => <LogRow key={log.id} log={log} />)
           )}
         </div>
 
@@ -511,9 +544,9 @@ export function LogViewer() {
         <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
           <span>
             {filteredLogs.length} / {logs.length} <Trans>entries</Trans>
-            {isPaused && pausedLogsRef.current.length > 0 && (
+            {isPaused && pausedCount > 0 && (
               <span className="ml-2 text-amber-400">
-                (+{pausedLogsRef.current.length} <Trans>paused</Trans>)
+                (+{pausedCount} <Trans>paused</Trans>)
               </span>
             )}
           </span>

@@ -1,31 +1,16 @@
 import type { SessionData } from './session';
 import { isDesktopBuild } from '@/utils/desktop';
+import {
+  BROWSER_SESSION_STORAGE_KEY,
+  isBrowserRuntime,
+  parseStoredSession,
+} from './session-storage';
 
 type SessionLike<T> = {
   data: Partial<T>;
   update: (data: T) => Promise<void>;
   clear: () => Promise<void>;
 };
-
-const BROWSER_SESSION_STORAGE_KEY = 'rust_srec_session_v1';
-
-function isBrowserRuntime(): boolean {
-  return (
-    typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
-  );
-}
-
-function parseStoredSession(raw: string | null): Partial<SessionData> {
-  if (!raw) return {};
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null) return {};
-    return parsed as Partial<SessionData>;
-  } catch {
-    return {};
-  }
-}
 
 let browserSessionSingleton: SessionLike<SessionData> | null = null;
 
@@ -106,11 +91,23 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
     return process.env.NODE_ENV === 'production';
   };
 
+  // The built-in fallback exists only so `useSession` has a >=32-char key in
+  // local dev; a production deployment that boots without SESSION_SECRET must
+  // fail loudly rather than sign cookies with a publicly-known secret.
+  const resolveSessionSecret = (): string => {
+    const secret = process.env.SESSION_SECRET;
+    if (secret) return secret;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'SESSION_SECRET must be set in production; refusing to use the built-in development secret.',
+      );
+    }
+    return 'dev_secret_must_be_at_least_32_chars_long_and_random';
+  };
+
   const session = await useSession<SessionData>({
     name: 'srec_session',
-    password:
-      process.env.SESSION_SECRET ||
-      'dev_secret_must_be_at_least_32_chars_long_and_random',
+    password: resolveSessionSecret(),
     cookie: {
       secure: isSecureCookie(),
       sameSite: 'lax',

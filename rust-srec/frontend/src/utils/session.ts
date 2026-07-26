@@ -12,26 +12,11 @@ export type SessionData = {
 };
 
 import { isDesktopBuild } from '@/utils/desktop';
-
-const BROWSER_SESSION_STORAGE_KEY = 'rust_srec_session_v1';
-
-function isBrowserRuntime(): boolean {
-  return (
-    typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
-  );
-}
-
-function parseStoredSession(raw: string | null): Partial<SessionData> {
-  if (!raw) return {};
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null) return {};
-    return parsed as Partial<SessionData>;
-  } catch {
-    return {};
-  }
-}
+import {
+  BROWSER_SESSION_STORAGE_KEY,
+  isBrowserRuntime,
+  parseStoredSession,
+} from './session-storage';
 
 export function getDesktopAccessToken(): string | null {
   if (!isDesktopBuild()) return null;

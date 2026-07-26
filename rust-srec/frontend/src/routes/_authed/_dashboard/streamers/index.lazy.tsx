@@ -416,11 +416,33 @@ function StreamersPage() {
     [selectedIds, batchMutation],
   );
 
-  const handleDelete = (id: string) => {
-    if (confirm(i18n._(msg`Are you sure you want to delete this streamer?`))) {
-      deleteMutation.mutate(id);
-    }
-  };
+  // Depend on the stable `mutate` reference (React Query returns a fresh
+  // result object every render, so depending on the mutation object would
+  // recreate these callbacks each render and defeat StreamerCard's memo).
+  const deleteMutate = deleteMutation.mutate;
+  const toggleMutate = toggleMutation.mutate;
+  const checkMutate = checkMutation.mutate;
+
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (
+        confirm(i18n._(msg`Are you sure you want to delete this streamer?`))
+      ) {
+        deleteMutate(id);
+      }
+    },
+    [deleteMutate, i18n],
+  );
+
+  const handleToggle = useCallback(
+    (id: string, enabled: boolean) => toggleMutate({ id, enabled }),
+    [toggleMutate],
+  );
+
+  const handleCheck = useCallback(
+    (id: string) => checkMutate(id),
+    [checkMutate],
+  );
 
   if (isError) {
     return (
@@ -791,10 +813,8 @@ function StreamersPage() {
                     isSelected={selectedIds.has(streamer.id)}
                     onSelectionChange={handleSelectionChange}
                     onDelete={handleDelete}
-                    onToggle={(id, enabled) =>
-                      toggleMutation.mutate({ id, enabled })
-                    }
-                    onCheck={(id) => checkMutation.mutate(id)}
+                    onToggle={handleToggle}
+                    onCheck={handleCheck}
                   />
                 </motion.div>
               ))}

@@ -3,13 +3,11 @@ import { checkAuthFn } from '@/server/functions';
 
 export const sessionQueryOptions = queryOptions({
   queryKey: ['session'],
+  // Let checkAuthFn errors propagate so React Query keeps the last known
+  // session and applies retry/backoff on transient failures; only an
+  // explicit null (unauthenticated from ensureValidToken) clears the
+  // session state.
   queryFn: async () => {
-    try {
-      const result = await checkAuthFn();
-      return result;
-    } catch (e) {
-      console.error('Session check failed', e);
-      return null;
-    }
+    return await checkAuthFn();
   },
 });

@@ -77,13 +77,11 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   }, [url]);
 
   const filteredComments = useMemo(() => {
+    // Lowercase the query once per keystroke rather than twice per comment.
+    const query = searchQuery.toLowerCase();
     return comments.filter((c) => {
-      const contentMatch = c.content
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase());
-      const userMatch = c.username
-        ?.toLowerCase()
-        .includes(searchQuery.toLowerCase());
+      const contentMatch = c.content.toLowerCase().includes(query);
+      const userMatch = c.username?.toLowerCase().includes(query);
       const matchesSearch = contentMatch || userMatch;
       if (!matchesSearch) return false;
 

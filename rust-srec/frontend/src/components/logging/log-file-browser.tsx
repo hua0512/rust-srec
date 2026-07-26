@@ -41,16 +41,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatBytes } from '@/lib/format';
 import { BASE_URL } from '@/utils/env';
-
-/** Format bytes to human readable string */
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
 
 interface DownloadState {
   isDownloading: boolean;
@@ -111,73 +103,18 @@ export function LogFileBrowser() {
       if (fromDate) url.searchParams.set('from', fromDate);
       if (toDate) url.searchParams.set('to', toDate);
 
-      // Fetch with progress tracking
-      const response = await fetch(url.toString());
-
-      if (!response.ok) {
-        throw new Error(`Download failed: ${response.statusText}`);
-      }
-
-      const contentLength = response.headers.get('content-length');
-      const total = contentLength ? parseInt(contentLength, 10) : 0;
-
-      // Get filename from Content-Disposition header
-      const disposition = response.headers.get('content-disposition');
-      let filename = 'rust-srec-logs.zip';
-      if (disposition) {
-        const match = disposition.match(/filename="?([^";\n]+)"?/);
-        if (match) filename = match[1];
-      }
-
-      setDownloadState((prev) => ({ ...prev, filename }));
-
-      // Read the response body with progress
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to read response body');
-      }
-
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        chunks.push(value);
-        received += value.length;
-
-        if (total > 0) {
-          const progress = Math.round((received / total) * 100);
-          setDownloadState((prev) => ({ ...prev, progress }));
-        }
-      }
-
-      // Combine chunks into a single Uint8Array
-      const combined = new Uint8Array(received);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      // Create blob from combined array
-      const blob = new Blob([combined], { type: 'application/zip' });
-      const downloadUrl = window.URL.createObjectURL(blob);
-
-      // Trigger download
+      // Stream to disk via a token-authenticated anchor navigation, matching
+      // handleDownloadFile; the browser writes the zip response body directly
+      // instead of buffering the whole archive in the JS heap.
       const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = filename;
+      link.href = url.toString();
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
 
       setDownloadState({
         isDownloading: false,
         progress: 100,
-        filename,
         completed: true,
       });
 
@@ -461,7 +398,7 @@ export function LogFileBrowser() {
                   variant="ghost"
                   size="icon"
                   onClick={() => handleDownloadFile(file)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity h-9 w-9"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity h-9 w-9"
                   title={i18n._(msg`Download ${file.filename}`)}
                 >
                   <Download className="h-4 w-4" />
