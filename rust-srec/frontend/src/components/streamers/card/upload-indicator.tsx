@@ -1,6 +1,6 @@
 import { CloudUpload } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { plural } from '@lingui/core/macro';
+import { plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 
 import {
@@ -42,12 +42,9 @@ export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
       </TooltipTrigger>
       <TooltipContent className="space-y-1.5">
         <div className="text-xs font-medium">
-          {i18n._(
-            plural(uploads.length, {
-              one: '# active upload',
-              other: '# active uploads',
-            }),
-          )}
+          {t(
+            i18n,
+          )`${plural(uploads.length, { one: '# active upload', other: '# active uploads' })}`}
         </div>
         {uploads.map((upload) => (
           <div key={upload.jobId} className="text-xs space-y-0.5">
@@ -57,12 +54,9 @@ export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
                 {upload.filesTotal > 0 && (
                   <>
                     {' · '}
-                    {i18n._(
-                      plural(upload.filesTotal, {
-                        one: '# file',
-                        other: '# files',
-                      }),
-                    )}
+                    {t(
+                      i18n,
+                    )`${plural(upload.filesTotal, { one: '# file', other: '# files' })}`}
                   </>
                 )}
               </span>
