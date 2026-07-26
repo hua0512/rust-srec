@@ -31,7 +31,7 @@ export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-sky-600 dark:text-sky-400">
+        <div className="flex h-6 items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 text-sky-600 dark:text-sky-400">
           <CloudUpload className="h-3 w-3 animate-pulse" />
           {latest.percent != null && (
             <span className="font-mono text-[10px] font-semibold tabular-nums">
