@@ -122,9 +122,12 @@ interface DownloadStoreState {
   metaById: Map<string, DownloadMeta>;
   metricsById: Map<string, DownloadMetrics>;
   viewsById: Map<string, DownloadView>;
-  // Download IDs that have received a terminal event.
-  // Used to ignore out-of-order metrics/meta that arrive after termination.
-  terminatedIds: Set<string>;
+  // Download IDs that have received a terminal event, keyed to the
+  // wall-clock ms of that event. Used to ignore out-of-order metrics/meta
+  // that arrive after termination. Cleared on snapshot/clearAll; entries
+  // older than TERMINATED_TTL_MS are dropped by sweepTerminatedDownloads so
+  // the map stays bounded across a long-lived connection.
+  terminatedIds: Map<string, number>;
   // Streamers waiting for a download slot. Keyed by streamerId so the
   // card lookup is O(1). At most one entry per streamer (the queue
   // itself dedupes by session_id, and the streamer card only renders
@@ -154,7 +157,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
   metaById: new Map(),
   metricsById: new Map(),
   viewsById: new Map(),
-  terminatedIds: new Set(),
+  terminatedIds: new Map(),
   queuedByStreamer: new Map(),
   version: 0,
   connectionStatus: 'disconnected',
@@ -265,7 +268,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   removeDownload: (downloadId) =>
     set((state) => {
-      state.terminatedIds.add(downloadId);
+      state.terminatedIds.set(downloadId, Date.now());
       const had =
         state.metaById.delete(downloadId) ||
         state.metricsById.delete(downloadId);
@@ -344,3 +347,24 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   getQueuedForStreamer: (streamerId) => get().queuedByStreamer.get(streamerId),
 }));
+
+// A terminated marker only needs to outlive the server's event pipeline on
+// out-of-order meta/metrics after a terminal event; minutes later any such
+// update is long gone. Same retention/sweep pattern as store/uploads.ts.
+export const TERMINATED_TTL_MS = 2 * 60 * 1000;
+const TERMINATED_SWEEP_INTERVAL_MS = 30 * 1000;
+
+// Exported so tests can drive the sweep directly with a synthetic clock.
+// No version bump: nothing renders these ids.
+export function sweepTerminatedDownloads(nowMs = Date.now()): void {
+  const { terminatedIds } = useDownloadStore.getState();
+  for (const [downloadId, terminatedAtMs] of terminatedIds) {
+    if (nowMs - terminatedAtMs >= TERMINATED_TTL_MS) {
+      terminatedIds.delete(downloadId);
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  setInterval(() => sweepTerminatedDownloads(), TERMINATED_SWEEP_INTERVAL_MS);
+}

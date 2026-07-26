@@ -76,6 +76,14 @@ pub trait JobRepository: Send + Sync {
         job_id: &str,
         pagination: &Pagination,
     ) -> Result<(Vec<JobExecutionLogDbModel>, u64)>;
+    /// Delete the `excess` oldest execution-log rows for a job (by
+    /// `created_at`, insertion order as tiebreaker). `JobQueue`'s
+    /// `persist_logs_to_db` calls this to keep a run's rows at
+    /// `MAX_PERSISTED_LOG_ROWS_PER_JOB`, ring-buffer style. Default no-op so
+    /// test doubles that never persist logs need not implement it.
+    async fn trim_execution_logs(&self, _job_id: &str, _excess: usize) -> Result<()> {
+        Ok(())
+    }
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()>;
 
     // Filtering and pagination
@@ -728,6 +736,30 @@ impl JobRepository for SqlxJobRepository {
         .await?;
 
         Ok((full, total as u64))
+    }
+
+    async fn trim_execution_logs(&self, job_id: &str, excess: usize) -> Result<()> {
+        if excess == 0 {
+            return Ok(());
+        }
+
+        retry_on_sqlite_busy("trim_execution_logs", || async {
+            // `id` is a random UUID, so insertion order lives in `created_at`
+            // (entry timestamp) with rowid breaking same-millisecond ties;
+            // idx_job_execution_logs_job_id_created_at drives the subquery.
+            sqlx::query(
+                "DELETE FROM job_execution_logs WHERE rowid IN ( \
+                     SELECT rowid FROM job_execution_logs WHERE job_id = ? \
+                     ORDER BY created_at ASC, rowid ASC LIMIT ? \
+                 )",
+            )
+            .bind(job_id)
+            .bind(excess as i64)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()> {

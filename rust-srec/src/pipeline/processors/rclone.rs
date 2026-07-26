@@ -139,6 +139,22 @@ impl RcloneConfig {
     }
 }
 
+/// Drops `-P`/`--progress` from user-supplied extra args, returning the kept
+/// args and how many tokens were removed. `--progress` replaces rclone's
+/// line-delimited stderr logging with a control-code terminal display that
+/// `run_rclone_with_progress` cannot parse (and whose newline-free redraws
+/// its line reader would have to skip as overlong). Only these exact tokens
+/// are stripped; every other arg keeps the last-wins override contract.
+fn sanitize_extra_args(args: &[String]) -> (Vec<String>, usize) {
+    let kept: Vec<String> = args
+        .iter()
+        .filter(|arg| *arg != "-P" && *arg != "--progress")
+        .cloned()
+        .collect();
+    let stripped = args.len() - kept.len();
+    (kept, stripped)
+}
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
@@ -424,13 +440,21 @@ impl RcloneProcessor {
                 cmd.arg("--config").arg(cfg);
             }
 
+            // `run_rclone_with_progress` parses each stderr line as a
+            // `--use-json-log` object; entries carrying `stats` become
+            // progress snapshots. `--stats-log-level NOTICE` must not be
+            // filtered by the main `--log-level`, or the periodic stats
+            // never reach stderr. `--stats-one-line` only shrinks the human
+            // `msg` embedded in each stats object.
             cmd.args([
+                "--use-json-log",
                 "--log-level",
-                "ERROR",
+                "NOTICE",
+                "--stats-log-level",
+                "NOTICE",
                 "--stats",
                 "1s",
                 "--stats-one-line",
-                "--stats-one-line-date",
                 cmd_op,
                 input_path,
                 remote_destination,
@@ -633,13 +657,17 @@ impl RcloneProcessor {
                 cmd.arg("--config").arg(cfg);
             }
 
+            // Same stderr contract as `process_single`: JSON log lines with
+            // stats at NOTICE so `run_rclone_with_progress` receives them.
             cmd.args([
+                "--use-json-log",
                 "--log-level",
-                "ERROR",
+                "NOTICE",
+                "--stats-log-level",
+                "NOTICE",
                 "--stats",
                 "1s",
                 "--stats-one-line",
-                "--stats-one-line-date",
                 "--files-from",
                 &files_from_path_str,
                 cmd_op,
@@ -869,6 +897,15 @@ impl Processor for RcloneProcessor {
         // extra args win on duplicate flags (rclone applies last-wins).
         let throughput = config.throughput_args();
 
+        let (extra_args, stripped_progress_args) = sanitize_extra_args(&config.args);
+        if stripped_progress_args > 0 {
+            ctx.warn(format!(
+                "Removed {} unsupported --progress/-P argument(s) from rclone extra args; \
+                 transfer progress is reported from rclone's periodic stats instead",
+                stripped_progress_args
+            ));
+        }
+
         // Choose single or batch mode based on input count
         if input.inputs.len() == 1 {
             // Single file mode - append filename to destination
@@ -891,7 +928,7 @@ impl Processor for RcloneProcessor {
                     operation: config.operation,
                     config_path: config.config_path.as_deref(),
                     throughput: &throughput,
-                    extra_args: &config.args,
+                    extra_args: &extra_args,
                     context: ctx,
                 },
             )
@@ -907,7 +944,7 @@ impl Processor for RcloneProcessor {
                     operation: config.operation,
                     config_path: config.config_path.as_deref(),
                     throughput: &throughput,
-                    extra_args: &config.args,
+                    extra_args: &extra_args,
                     context: ctx,
                 },
             )
@@ -1241,6 +1278,150 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("Input file does not exist"));
+    }
+
+    /// The ordered flag block `process_single`/`process_batch` place before
+    /// the subcommand; `run_rclone_with_progress` parses stderr on the
+    /// assumption that every one of these is present.
+    const EXPECTED_STATS_FLAGS: [&str; 8] = [
+        "--use-json-log",
+        "--log-level",
+        "NOTICE",
+        "--stats-log-level",
+        "NOTICE",
+        "--stats",
+        "1s",
+        "--stats-one-line",
+    ];
+
+    fn stats_flag_window(args: &[String]) -> Vec<&str> {
+        let pos = args
+            .iter()
+            .position(|arg| arg == "--use-json-log")
+            .expect("argv contains --use-json-log");
+        args[pos..pos + EXPECTED_STATS_FLAGS.len()]
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn single_copy_passes_json_stats_flags() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"copy"}"#.to_string()),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("single-copy-flags"))
+            .await
+            .unwrap();
+
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 1);
+        let args = &commands[0];
+        assert_eq!(stats_flag_window(args), EXPECTED_STATS_FLAGS);
+        assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
+        assert!(args.iter().any(|arg| arg == "copyto"));
+    }
+
+    #[tokio::test]
+    async fn batch_copy_passes_json_stats_flags() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first = temp_dir.path().join("first.mp4");
+        let second = temp_dir.path().join("second.mp4");
+        tokio::fs::write(&first, b"a").await.unwrap();
+        tokio::fs::write(&second, b"b").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
+            ],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"copy"}"#.to_string()),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("batch-copy-flags"))
+            .await
+            .unwrap();
+
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 1);
+        let args = &commands[0];
+        assert_eq!(stats_flag_window(args), EXPECTED_STATS_FLAGS);
+        assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
+        assert!(args.iter().any(|arg| arg == "--files-from"));
+    }
+
+    #[tokio::test]
+    async fn progress_flags_are_stripped_from_extra_args() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(
+                r#"{"operation":"copy","args":["--progress","-P","--transfers","2"]}"#.to_string(),
+            ),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("strip-progress"))
+            .await
+            .unwrap();
+
+        let args = &runner.commands()[0];
+        assert!(!args.iter().any(|arg| arg == "--progress" || arg == "-P"));
+        // Surviving extra args still trail the built-in flag block so they
+        // keep last-wins override semantics.
+        let transfers_pos = args.iter().position(|arg| arg == "--transfers").unwrap();
+        let one_line_pos = args.iter().position(|arg| arg == "--stats-one-line").unwrap();
+        assert!(transfers_pos > one_line_pos);
+        assert_eq!(args[transfers_pos + 1], "2");
+    }
+
+    #[test]
+    fn sanitize_extra_args_strips_only_progress_tokens() {
+        let args = vec![
+            "--progress".to_string(),
+            "-P".to_string(),
+            "--transfers".to_string(),
+            "2".to_string(),
+        ];
+        let (kept, stripped) = sanitize_extra_args(&args);
+        assert_eq!(kept, vec!["--transfers".to_string(), "2".to_string()]);
+        assert_eq!(stripped, 2);
+
+        let (kept, stripped) = sanitize_extra_args(&[]);
+        assert!(kept.is_empty());
+        assert_eq!(stripped, 0);
     }
 
     #[test]
