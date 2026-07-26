@@ -19,9 +19,15 @@ pipeline-common = { path = "../pipeline-common" }
 zlib-rs = { workspace = true }
 time = { workspace = true, features = ["macros", "formatting", "parsing"] }
 tracing = { workspace = true }
-tracing-indicatif = { workspace = true }
+tracing-indicatif = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
+
+[features]
+default = ["progress"]
+# Decorate the WriterTask span with a tracing-indicatif progress bar. Off in
+# headless library builds so consumers do not pull the terminal-UI dependency.
+progress = ["dep:tracing-indicatif"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

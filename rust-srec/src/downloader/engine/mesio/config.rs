@@ -728,10 +728,6 @@ mod tests {
             flv_pipeline_config.duplicate_tag_filtering,
             default_config.duplicate_tag_filtering
         );
-        assert_eq!(
-            flv_pipeline_config.enable_low_latency,
-            default_config.enable_low_latency
-        );
         assert_eq!(flv_pipeline_config.pipe_mode, default_config.pipe_mode);
     }
 
@@ -790,7 +786,6 @@ mod tests {
         config.flv_pipeline_config = Some(
             FlvPipelineConfig::builder()
                 .duplicate_tag_filtering(false)
-                .enable_low_latency(false)
                 .pipe_mode(true)
                 .build(),
         );
@@ -798,7 +793,6 @@ mod tests {
         let flv_pipeline_config = build_flv_pipeline_config(&config);
 
         assert!(!flv_pipeline_config.duplicate_tag_filtering);
-        assert!(!flv_pipeline_config.enable_low_latency);
         assert!(flv_pipeline_config.pipe_mode);
     }
 

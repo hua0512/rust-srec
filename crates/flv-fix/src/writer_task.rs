@@ -18,7 +18,10 @@ use std::{
     time::Instant,
 };
 
-use tracing::{Span, info};
+use tracing::info;
+#[cfg(feature = "progress")]
+use tracing::Span;
+#[cfg(feature = "progress")]
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 const METADATA_PATCH_RESERVATION_BYTES: usize = 256;
@@ -40,8 +43,6 @@ pub enum FlvStrategyError {
 pub struct FlvWriterConfig {
     pub output_dir: PathBuf,
     pub base_name: String,
-    /// Retained for configuration compatibility; metadata patching is always layout-stable.
-    pub enable_low_latency: bool,
 }
 
 /// FLV-specific format strategy implementation
@@ -67,8 +68,14 @@ struct MetadataPatch {
     include_keyframes: bool,
 }
 
+impl Default for FlvFormatStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FlvFormatStrategy {
-    pub fn new(_enable_low_latency: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
@@ -114,15 +121,21 @@ impl FlvFormatStrategy {
     }
 
     fn update_status(&self, state: &WriterState) {
-        // Update the current span with progress information
-        let span = Span::current();
-        span.pb_set_position(state.bytes_written_current_file);
-        span.pb_set_message(&format!(
-            "{} | {} tags | {}s",
-            state.current_path.display(),
-            self.current_tag_count,
-            self.calculate_duration()
-        ));
+        // Decorate the current WriterTask span with a progress bar; compiled out
+        // when the `progress` feature is disabled (headless library builds).
+        #[cfg(feature = "progress")]
+        {
+            let span = Span::current();
+            span.pb_set_position(state.bytes_written_current_file);
+            span.pb_set_message(&format!(
+                "{} | {} tags | {}s",
+                state.current_path.display(),
+                self.current_tag_count,
+                self.calculate_duration()
+            ));
+        }
+        #[cfg(not(feature = "progress"))]
+        let _ = state;
     }
 
     fn prepare_metadata_patch(
@@ -298,9 +311,12 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
         info!(path = %path.display(), "Opening segment");
 
-        // Initialize the span's progress bar
-        let span = Span::current();
-        span.pb_set_message(&format!("Writing {}", path.display()));
+        // Initialize the span's progress bar (compiled out without `progress`).
+        #[cfg(feature = "progress")]
+        {
+            let span = Span::current();
+            span.pb_set_message(&format!("Writing {}", path.display()));
+        }
 
         self.last_header_received = false;
         Ok(0)
@@ -420,7 +436,6 @@ mod tests {
         let mut writer = RecordingWriter::new(FlvWriterConfig {
             output_dir: tempdir.path().to_path_buf(),
             base_name: "segment-%i".to_string(),
-            enable_low_latency: true,
         });
         let opened_path = Arc::new(Mutex::new(None));
         let callback_path = Arc::clone(&opened_path);
@@ -475,7 +490,6 @@ mod tests {
         let mut writer = RecordingWriter::new(FlvWriterConfig {
             output_dir: tempdir.path().to_path_buf(),
             base_name: "segment-%i".to_string(),
-            enable_low_latency: true,
         });
         let opened_path = Arc::new(Mutex::new(None));
         let callback_path = Arc::clone(&opened_path);
@@ -526,7 +540,6 @@ mod tests {
         let mut writer = RecordingWriter::new(FlvWriterConfig {
             output_dir: tempdir.path().to_path_buf(),
             base_name: "segment-%i".to_string(),
-            enable_low_latency: true,
         });
         let opened_path = Arc::new(Mutex::new(None));
         let callback_path = Arc::clone(&opened_path);

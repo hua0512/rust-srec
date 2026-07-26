@@ -15,7 +15,7 @@ impl FlvWriter {
     pub fn new(config: FlvWriterConfig) -> Self {
         let writer_config =
             WriterConfig::new(config.output_dir, config.base_name, "flv".to_string());
-        let strategy = FlvFormatStrategy::new(config.enable_low_latency);
+        let strategy = FlvFormatStrategy::new();
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }
     }

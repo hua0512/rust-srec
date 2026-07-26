@@ -69,9 +69,6 @@ pub struct FlvPipelineConfig {
     /// Configuration for keyframe index injection
     pub keyframe_index_config: Option<ScriptFillerConfig>,
 
-    /// Retained for configuration compatibility; metadata patching is always layout-stable.
-    pub enable_low_latency: bool,
-
     pub pipe_mode: bool,
 }
 
@@ -85,7 +82,6 @@ impl Default for FlvPipelineConfig {
             repair_strategy: RepairStrategy::Relaxed,
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
-            enable_low_latency: true,
             pipe_mode: false,
         }
     }
@@ -160,11 +156,6 @@ impl FlvPipelineConfigBuilder {
         keyframe_index_config: Option<ScriptFillerConfig>,
     ) -> Self {
         self.config.keyframe_index_config = keyframe_index_config;
-        self
-    }
-
-    pub fn enable_low_latency(mut self, enable_low_latency: bool) -> Self {
-        self.config.enable_low_latency = enable_low_latency;
         self
     }
 
@@ -430,7 +421,6 @@ mod test {
             let mut writer_task = FlvWriter::new(FlvWriterConfig {
                 output_dir,
                 base_name,
-                enable_low_latency: true,
             });
 
             let stats = writer_task.run(output_rx.into())?;

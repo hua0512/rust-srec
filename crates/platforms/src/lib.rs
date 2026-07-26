@@ -1,7 +1,9 @@
 pub mod danmaku;
 pub mod extractor;
-#[cfg(feature = "rquickjs")]
-pub mod js_engine;
+// Disabled with the `rquickjs` feature in Cargo.toml: no extractor currently
+// needs a JS runtime. The js_engine module source is retained for reference.
+// #[cfg(feature = "rquickjs")]
+// pub mod js_engine;
 pub mod media;
 
 /// Format a digest hash as a lowercase hex string.

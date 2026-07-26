@@ -32,7 +32,6 @@
 //! - hua0512
 //!
 use flv::data::FlvData;
-use flv::header::FlvHeader;
 use flv::tag::FlvTag;
 use pipeline_common::split_reason::{AudioCodecInfo, SplitReason, VideoCodecInfo};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
@@ -40,6 +39,7 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::crc32;
+use crate::operators::segment_reinject::SegmentInitCache;
 
 /// Controls how `SplitOperator` decides whether a sequence header "changed".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -60,10 +60,8 @@ pub enum SequenceHeaderChangeMode {
 
 // Store data wrapped in Arc for efficient cloning
 struct StreamState {
-    header: Option<FlvHeader>,
-    metadata: Option<FlvTag>,
-    audio_sequence_tag: Option<FlvTag>,
-    video_sequence_tag: Option<FlvTag>,
+    /// Cached header/metadata/sequence tags re-injected by `split_stream`.
+    cache: SegmentInitCache,
     /// Key for detecting changes in the last seen video sequence header.
     ///
     /// The exact meaning depends on `SequenceHeaderChangeMode`.
@@ -93,10 +91,7 @@ struct StreamState {
 impl StreamState {
     fn new() -> Self {
         Self {
-            header: None,
-            metadata: None,
-            audio_sequence_tag: None,
-            video_sequence_tag: None,
+            cache: SegmentInitCache::new(),
             video_sig: None,
             audio_sig: None,
             prev_video_codec_info: None,
@@ -110,10 +105,7 @@ impl StreamState {
     }
 
     fn reset(&mut self) {
-        self.header = None;
-        self.metadata = None;
-        self.audio_sequence_tag = None;
-        self.video_sequence_tag = None;
+        self.cache.clear();
         self.video_sig = None;
         self.audio_sig = None;
         self.prev_video_codec_info = None;
@@ -416,6 +408,7 @@ impl SplitOperator {
             let new_sig = self.state.video_sig.unwrap_or(0);
             let to = self
                 .state
+                .cache
                 .video_sequence_tag
                 .as_ref()
                 .map(|t| Self::extract_video_codec_info(t, new_sig))
@@ -435,6 +428,7 @@ impl SplitOperator {
             let new_sig = self.state.audio_sig.unwrap_or(0);
             let to = self
                 .state
+                .cache
                 .audio_sequence_tag
                 .as_ref()
                 .map(|t| Self::extract_audio_codec_info(t, new_sig))
@@ -447,24 +441,10 @@ impl SplitOperator {
             output(FlvData::Split(SplitReason::AudioCodecChange { from, to }))?;
         }
 
-        // Note on timestamp handling:
-        // When we split the stream, we re-inject the header and sequence information
-        // using the original timestamps from when they were first encountered.
-        // This maintains timestamp consistency within the stream segments
-        // but does not reset the timeline. Downstream components or players
-        // may need to handle potential timestamp discontinuities at split points.
-        if let Some(header) = &self.state.header {
-            output(FlvData::Header(header.clone()))?;
-        }
-        if let Some(metadata) = &self.state.metadata {
-            output(FlvData::Tag(metadata.clone()))?;
-        }
-        if let Some(video_seq) = &self.state.video_sequence_tag {
-            output(FlvData::Tag(video_seq.clone()))?;
-        }
-        if let Some(audio_seq) = &self.state.audio_sequence_tag {
-            output(FlvData::Tag(audio_seq.clone()))?;
-        }
+        // Re-inject the cached header/metadata/sequence tags with the timestamps they
+        // were stored with; the timeline is not reset, so downstream components may
+        // need to handle a timestamp discontinuity at the split point.
+        self.state.cache.reinject(output, None)?;
         self.state.changed = false;
         self.state.buffered_metadata = false;
         self.state.buffered_audio_sequence_tag = false;
@@ -485,17 +465,17 @@ impl SplitOperator {
         // We intentionally do NOT inject a new header here to avoid creating an empty segment (and
         // triggering writer rotation) when the stream ends before the next media tag arrives.
         if self.state.buffered_metadata
-            && let Some(metadata) = self.state.metadata.take()
+            && let Some(metadata) = self.state.cache.metadata.take()
         {
             output(FlvData::Tag(metadata))?;
         }
         if self.state.buffered_video_sequence_tag
-            && let Some(video_seq) = self.state.video_sequence_tag.take()
+            && let Some(video_seq) = self.state.cache.video_sequence_tag.take()
         {
             output(FlvData::Tag(video_seq))?;
         }
         if self.state.buffered_audio_sequence_tag
-            && let Some(audio_seq) = self.state.audio_sequence_tag.take()
+            && let Some(audio_seq) = self.state.cache.audio_sequence_tag.take()
         {
             output(FlvData::Tag(audio_seq))?;
         }
@@ -521,10 +501,10 @@ impl Processor<FlvData> for SplitOperator {
         match input {
             FlvData::Header(header) => {
                 // If we already have a header, this is a stream restart — emit a Split marker.
-                let is_restart = self.state.header.is_some();
+                let is_restart = self.state.cache.header.is_some();
                 // Reset state when a new header is encountered
                 self.state.reset();
-                self.state.header = Some(header.clone());
+                self.state.cache.header = Some(header.clone());
                 if is_restart {
                     output(FlvData::Split(SplitReason::HeaderReceived))?;
                 }
@@ -546,7 +526,7 @@ impl Processor<FlvData> for SplitOperator {
                             "{} Metadata detected while split pending",
                             self.context.name
                         );
-                        self.state.metadata = Some(tag);
+                        self.state.cache.metadata = Some(tag);
                         self.state.buffered_metadata = true;
                         return Ok(());
                     }
@@ -559,12 +539,12 @@ impl Processor<FlvData> for SplitOperator {
                         let new_sig = self.video_change_key(&tag);
                         if let Some(old_sig) = self.state.video_sig
                             && old_sig != new_sig
-                            && let Some(old_tag) = self.state.video_sequence_tag.as_ref()
+                            && let Some(old_tag) = self.state.cache.video_sequence_tag.as_ref()
                         {
                             self.state.prev_video_codec_info =
                                 Some(Self::extract_video_codec_info(old_tag, old_sig));
                         }
-                        self.state.video_sequence_tag = Some(tag);
+                        self.state.cache.store_video_sequence_tag(tag, false);
                         self.state.buffered_video_sequence_tag = true;
                         self.state.video_sig = Some(new_sig);
                         return Ok(());
@@ -578,12 +558,12 @@ impl Processor<FlvData> for SplitOperator {
                         let new_sig = self.audio_change_key(&tag);
                         if let Some(old_sig) = self.state.audio_sig
                             && old_sig != new_sig
-                            && let Some(old_tag) = self.state.audio_sequence_tag.as_ref()
+                            && let Some(old_tag) = self.state.cache.audio_sequence_tag.as_ref()
                         {
                             self.state.prev_audio_codec_info =
                                 Some(Self::extract_audio_codec_info(old_tag, old_sig));
                         }
-                        self.state.audio_sequence_tag = Some(tag);
+                        self.state.cache.store_audio_sequence_tag(tag, false);
                         self.state.buffered_audio_sequence_tag = true;
                         self.state.audio_sig = Some(new_sig);
                         return Ok(());
@@ -598,7 +578,7 @@ impl Processor<FlvData> for SplitOperator {
                 // Normal operation: track key tags and detect parameter changes.
                 if tag.is_script_tag() {
                     debug!("{} Metadata detected", self.context.name);
-                    self.state.metadata = Some(tag.clone());
+                    self.state.cache.metadata = Some(tag.clone());
                     return output(FlvData::Tag(tag));
                 }
 
@@ -613,7 +593,7 @@ impl Processor<FlvData> for SplitOperator {
                             "{} Dropping duplicate video sequence header (sig: {:x})",
                             self.context.name, sig
                         );
-                        self.state.video_sequence_tag = Some(tag);
+                        self.state.cache.store_video_sequence_tag(tag, false);
                         self.state.video_sig = Some(sig);
                         return Ok(());
                     }
@@ -631,7 +611,7 @@ impl Processor<FlvData> for SplitOperator {
                                 self.context.name, prev_sig, sig
                             );
                             // Eagerly extract codec info from the old tag before we overwrite it.
-                            if let Some(old_tag) = self.state.video_sequence_tag.as_ref() {
+                            if let Some(old_tag) = self.state.cache.video_sequence_tag.as_ref() {
                                 self.state.prev_video_codec_info =
                                     Some(Self::extract_video_codec_info(old_tag, prev_sig));
                             }
@@ -644,7 +624,7 @@ impl Processor<FlvData> for SplitOperator {
                             );
                         }
                     }
-                    self.state.video_sequence_tag = Some(tag.clone());
+                    self.state.cache.store_video_sequence_tag(tag.clone(), false);
                     self.state.video_sig = Some(sig);
 
                     // If we just detected a change, buffer the new header and wait for the next
@@ -667,7 +647,7 @@ impl Processor<FlvData> for SplitOperator {
                             "{} Dropping duplicate audio sequence header (sig: {:x})",
                             self.context.name, sig
                         );
-                        self.state.audio_sequence_tag = Some(tag);
+                        self.state.cache.store_audio_sequence_tag(tag, false);
                         self.state.audio_sig = Some(sig);
                         return Ok(());
                     }
@@ -681,7 +661,7 @@ impl Processor<FlvData> for SplitOperator {
                                 self.context.name, prev_sig, sig
                             );
                             // Eagerly extract codec info from the old tag before we overwrite it.
-                            if let Some(old_tag) = self.state.audio_sequence_tag.as_ref() {
+                            if let Some(old_tag) = self.state.cache.audio_sequence_tag.as_ref() {
                                 self.state.prev_audio_codec_info =
                                     Some(Self::extract_audio_codec_info(old_tag, prev_sig));
                             }
@@ -694,7 +674,7 @@ impl Processor<FlvData> for SplitOperator {
                             );
                         }
                     }
-                    self.state.audio_sequence_tag = Some(tag.clone());
+                    self.state.cache.store_audio_sequence_tag(tag.clone(), false);
                     self.state.audio_sig = Some(sig);
 
                     if self.state.changed {
