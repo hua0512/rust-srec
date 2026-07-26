@@ -6,7 +6,6 @@
 //! - Coordinating batch detection for batch-capable platforms
 //! - Managing actor lifecycle with crash recovery
 //! - Implementing graceful shutdown
-//! - Monitoring system resources (disk space)
 //!
 //! # Actor Model
 //!
@@ -17,8 +16,6 @@
 //! - Actors manage their own scheduling internally, eliminating periodic re-scheduling
 
 pub mod actor;
-mod batch;
-mod resource;
 mod service;
 
 // Actor model exports (primary API)
@@ -31,12 +28,6 @@ pub use actor::{
     StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, SupervisorStats,
     TaskCompletionAction,
 };
-
-// Batch coordination
-pub use batch::BatchGroup;
-
-// Resource monitoring
-pub use resource::{DiskInfo, DiskSpaceStatus, ResourceMonitor};
 
 // Scheduler service
 pub(crate) use service::SchedulerHandle;
