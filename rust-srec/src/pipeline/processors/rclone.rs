@@ -1407,6 +1407,70 @@ mod tests {
         assert_eq!(args[transfers_pos + 1], "2");
     }
 
+    /// End-to-end against a real rclone binary: runs the production flag
+    /// set on a bwlimit'd local copy and asserts progress snapshots stream
+    /// out of the JSON stats parsing while stats never leak into job logs.
+    /// Run manually: `cargo test -p rust-srec --lib live_rclone -- --ignored`.
+    #[tokio::test]
+    #[ignore = "requires an rclone binary on PATH"]
+    async fn live_rclone_copy_streams_progress_snapshots() {
+        use crate::pipeline::processors::traits::JobLogSink;
+        use std::sync::atomic::AtomicUsize;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src = temp_dir.path().join("src.bin");
+        let dest_dir = temp_dir.path().join("dest");
+        tokio::fs::create_dir(&dest_dir).await.unwrap();
+        let payload = vec![0u8; 300 * 1024];
+        tokio::fs::write(&src, &payload).await.unwrap();
+
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(64);
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(256);
+        let ctx = ProcessorContext::new(
+            "live-job",
+            crate::pipeline::ProgressReporter::new("live-job", progress_tx),
+            JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let processor = RcloneProcessor::new();
+        let dest = format!("{}/", dest_dir.to_string_lossy().replace('\\', "/"));
+        let input = ProcessorInput {
+            inputs: vec![src.to_string_lossy().into_owned()],
+            outputs: vec![dest],
+            // bwlimit throttles the copy across several 1s stats ticks.
+            config: Some(r#"{"operation":"copy","bwlimit":"100k"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.succeeded_inputs.len(), 1);
+        assert!(dest_dir.join("src.bin").exists(), "file copied");
+
+        drop(ctx);
+        let mut snapshots = Vec::new();
+        while let Ok(update) = progress_rx.try_recv() {
+            assert_eq!(update.job_id, "live-job");
+            snapshots.push(update.snapshot);
+        }
+        assert!(
+            !snapshots.is_empty(),
+            "no progress snapshots parsed from live rclone stderr"
+        );
+        let last = snapshots.last().unwrap();
+        assert_eq!(last.bytes_total, Some(payload.len() as u64));
+        assert!(last.percent.is_some(), "percent computed from stats");
+
+        // Stats lines must be consumed as progress, never surface as logs.
+        while let Ok(entry) = log_rx.try_recv() {
+            assert!(
+                !entry.message.contains("\"stats\""),
+                "raw stats JSON leaked into job logs: {}",
+                entry.message
+            );
+        }
+    }
+
     #[test]
     fn sanitize_extra_args_strips_only_progress_tokens() {
         let args = vec![

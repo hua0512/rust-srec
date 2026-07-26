@@ -2772,6 +2772,44 @@ impl Default for JobQueue {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn rclone_progress_reports_are_broadcast_as_upload_progress() {
+        let queue = JobQueue::new();
+        let broadcaster =
+            UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
+                bytes::Bytes::new()
+            }));
+        queue.set_upload_broadcaster(broadcaster.clone());
+        let mut rx = broadcaster.subscribe();
+
+        // The aggregator publishes only for live jobs; a processing job owns
+        // a cancellation token (created on dequeue), which is all the
+        // liveness check reads.
+        queue
+            .cancellation_tokens
+            .insert("job-1".to_string(), CancellationToken::new());
+
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
+        snapshot.percent = Some(42.0);
+        snapshot.bytes_done = Some(4200);
+        queue.progress_reporter("job-1").report(snapshot);
+
+        let envelope = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
+            .await
+            .expect("aggregator publishes within one flush interval")
+            .expect("broadcast channel stays open");
+        match envelope.event.as_ref() {
+            UploadStatusEvent::Progress {
+                job_id, snapshot, ..
+            } => {
+                assert_eq!(job_id, "job-1");
+                assert_eq!(snapshot.percent, Some(42.0));
+                assert_eq!(snapshot.bytes_done, Some(4200));
+            }
+            other => panic!("expected Progress event, got {other:?}"),
+        }
+    }
+
     #[test]
     fn excess_log_rows_trims_only_past_the_cap() {
         assert_eq!(excess_log_rows(0, 10, 100), 0);
