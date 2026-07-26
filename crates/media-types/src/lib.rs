@@ -1,3 +1,7 @@
+pub mod split_reason;
+
+pub use split_reason::{AudioCodecInfo, SplitReason, VideoCodecInfo};
+
 /// Video resolution information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Resolution {

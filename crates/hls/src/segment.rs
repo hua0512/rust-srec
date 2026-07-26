@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
-use pipeline_common::split_reason::SplitReason;
+use media_types::split_reason::SplitReason;
 use ts::StreamType;
 
 use crate::mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
