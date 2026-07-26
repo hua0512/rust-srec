@@ -114,6 +114,7 @@ cipher = "0.5.2"
 indicatif = "0.18"
 insta = "1.47"
 tracing-indicatif = "0.3"
+time = "0.3.46"
 
 [profile.dev]
 incremental = true
@@ -137,5 +138,16 @@ lto = true
 codegen-units = 1
 strip = true
 opt-level = 3
-panic = "abort"   # Removes panic unwinding code
+# Keep unwinding: the app relies on catch_unwind in task_supervisor and the
+# graceful-shutdown path (container shutdown_with_timeout -> download_manager.stop_all)
+# to finalize in-flight recordings on a panic. panic = "abort" is a workspace-global
+# profile setting and cannot be overridden per-package, so aborting here would also
+# defeat per-task panic isolation for the daemon. CLI binaries that want the size win
+# can build under [profile.release-cli].
 debug = false
+
+# Size-optimized profile for the standalone CLIs (mesio-cli / strev-cli), which do not
+# run the daemon's panic-recovery machinery. Opt in with `cargo build --profile release-cli`.
+[profile.release-cli]
+inherits = "release"
+panic = "abort"

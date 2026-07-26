@@ -43,7 +43,6 @@ regex = { workspace = true, default-features = false, features = [
 
  # Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
 tars-codec = { path = "../tars-codec"}
 rustc-hash = { workspace = true }
@@ -80,6 +79,8 @@ prost-types = { workspace = true }
 [build-dependencies]
 prost-build = { workspace = true }
 
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
 
 [features]
 default = ["rustls-tls"]

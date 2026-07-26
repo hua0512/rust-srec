@@ -17,7 +17,7 @@ flv = { path = "../flv" }
 amf0 = { path = "../amf0" }
 pipeline-common = { path = "../pipeline-common" }
 zlib-rs = { workspace = true }
-time = { version = "0.3.46", features = ["macros", "formatting", "parsing"] }
+time = { workspace = true, features = ["macros", "formatting", "parsing"] }
 tracing = { workspace = true }
 tracing-indicatif = { workspace = true }
 thiserror = { workspace = true }

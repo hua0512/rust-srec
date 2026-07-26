@@ -12,7 +12,7 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 tracing = { workspace = true }
-time = { version = "0.3.46", features = ["local-offset"] }
+time = { workspace = true, features = ["local-offset"] }
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 tokio-util = { workspace = true }
 
