@@ -575,8 +575,9 @@ impl RemuxProcessor {
         let input_path_string = make_absolute(input_path).await;
         let input_path = input_path_string.as_str();
 
-        // Check if input file exists
-        if !Path::new(input_path).exists() {
+        // Check if input file exists. Uses tokio::fs so a stat on a stale
+        // network mount cannot block a runtime worker thread.
+        if !tokio::fs::try_exists(input_path).await.unwrap_or(false) {
             return Err(crate::Error::PipelineError(format!(
                 "Input file does not exist: {}",
                 input_path
@@ -620,12 +621,74 @@ impl RemuxProcessor {
         let output_path_string = make_absolute(&output_string).await;
         let output_path = output_path_string.as_str();
 
+        // Preserve `overwrite = false` semantics before redirecting ffmpeg to a
+        // temp file: the final rename below would otherwise clobber an existing
+        // output regardless of the flag.
+        if !config.overwrite && tokio::fs::try_exists(output_path).await.unwrap_or(false) {
+            return Err(crate::Error::PipelineError(format!(
+                "Output file already exists and overwrite is disabled: {}",
+                output_path
+            )));
+        }
+
         ctx.info(format!(
             "Processing {} -> {} (video: {:?}, audio: {:?})",
             input_path, output_path, config.video_codec, config.audio_codec
         ));
 
-        let args = self.build_args(input_path, config, output_path);
+        // ffmpeg writes to a sibling temp path that is renamed onto `output_path`
+        // only after a successful run. A failed, timed-out, or cancelled run drops
+        // this future; `TmpFileGuard::drop` then removes the partial temp file, so
+        // no truncated file is ever left at `output_path`. The temp name keeps
+        // `output_path`'s extension so ffmpeg infers the same container when
+        // `build_args` emits no explicit `-f` flag.
+        let output_path_obj = Path::new(output_path);
+        let tmp_path = {
+            let mut file_name = output_path_obj
+                .file_stem()
+                .map(std::ffi::OsString::from)
+                .unwrap_or_default();
+            file_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
+            if let Some(ext) = output_path_obj.extension() {
+                file_name.push(".");
+                file_name.push(ext);
+            }
+            output_path_obj.with_file_name(file_name)
+        };
+        let tmp_path_str = tmp_path.to_string_lossy().to_string();
+
+        struct TmpFileGuard {
+            path: Option<std::path::PathBuf>,
+        }
+        impl TmpFileGuard {
+            fn commit(mut self) {
+                self.path.take();
+            }
+        }
+        impl Drop for TmpFileGuard {
+            fn drop(&mut self) {
+                if let Some(path) = self.path.take()
+                    && let Err(error) = std::fs::remove_file(&path)
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    warn!(
+                        %error,
+                        path = %path.display(),
+                        "Failed to remove partial remux output"
+                    );
+                }
+            }
+        }
+        let tmp_guard = TmpFileGuard {
+            path: Some(tmp_path.clone()),
+        };
+
+        // build_args appends the output file as the final argument; redirect it to
+        // the temp path while keeping `output_path` for faststart/extension logic.
+        let mut args = self.build_args(input_path, config, output_path);
+        if let Some(output_arg) = args.last_mut() {
+            *output_arg = tmp_path_str.clone();
+        }
         debug!("FFmpeg args: {:?}", args);
 
         // Build ffmpeg command
@@ -656,6 +719,30 @@ impl RemuxProcessor {
                 command_output.status.code().unwrap_or(-1),
                 error_msg
             )));
+        }
+
+        // Promote the completed temp file to the final path. On Unix rename
+        // replaces an existing target atomically; on Windows it fails when the
+        // target exists, so remove-then-rename covers the `overwrite` case.
+        match tokio::fs::rename(&tmp_path, output_path).await {
+            Ok(()) => tmp_guard.commit(),
+            Err(rename_err) => {
+                if config.overwrite && tokio::fs::try_exists(output_path).await.unwrap_or(false) {
+                    tokio::fs::remove_file(output_path)
+                        .await
+                        .map_err(|e| crate::Error::io_path("remove_file", Path::new(output_path), e))?;
+                    tokio::fs::rename(&tmp_path, output_path)
+                        .await
+                        .map_err(|e| crate::Error::io_path("rename", Path::new(output_path), e))?;
+                    tmp_guard.commit();
+                } else {
+                    return Err(crate::Error::io_path(
+                        "rename",
+                        Path::new(output_path),
+                        rename_err,
+                    ));
+                }
+            }
         }
 
         ctx.info(format!(

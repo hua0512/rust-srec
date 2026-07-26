@@ -187,7 +187,7 @@ impl Processor for DeleteProcessor {
             ));
 
             // Check if file exists
-            if !path.exists() {
+            if !tokio::fs::try_exists(path).await.unwrap_or(false) {
                 let msg = format!(
                     "File does not exist, marking job as completed: {}",
                     file_path
@@ -294,7 +294,7 @@ impl Processor for DeleteProcessor {
         for file_path in &input.inputs {
             let path = Path::new(file_path);
 
-            if !path.exists() {
+            if !tokio::fs::try_exists(path).await.unwrap_or(false) {
                 skipped_missing = skipped_missing.saturating_add(1);
                 let msg = format!("File does not exist, skipping: {}", file_path);
                 warn!("{}", msg);

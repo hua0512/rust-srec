@@ -230,14 +230,38 @@ impl ApiServer {
         router = router.layer(
             TraceLayer::new_for_http()
                 .make_span_with(|req: &Request| {
-                    if req.uri().path().starts_with("/api/health") {
-                        Span::none()
-                    } else {
-                        let mut make_span =
-                            tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO);
-                        use tower_http::trace::MakeSpan;
-                        make_span.make_span(req)
+                    let path = req.uri().path();
+                    if path.starts_with("/api/health") {
+                        return Span::none();
                     }
+                    // Routes that carry a JWT/access token or upstream auth
+                    // headers in the query string (stream_proxy/media/downloads
+                    // read `?token=`/`?headers=`). Record only method + path so
+                    // those secrets never enter the span's `uri` field and thus
+                    // never reach on_response/on_failure lines or the retained
+                    // rust-srec.log files. The `tower_http::trace::make_span`
+                    // target keeps the span under the `tower_http` filter so
+                    // DefaultOnResponse/DefaultOnFailure still attach to it.
+                    const TOKEN_QUERY_ROUTES: [&str; 4] = [
+                        "/api/stream-proxy",
+                        "/api/media",
+                        "/api/downloads",
+                        "/api/logging",
+                    ];
+                    if TOKEN_QUERY_ROUTES.iter().any(|prefix| path.starts_with(prefix)) {
+                        return tracing::span!(
+                            target: "tower_http::trace::make_span",
+                            tracing::Level::INFO,
+                            "request",
+                            method = %req.method(),
+                            uri = %path,
+                            version = ?req.version(),
+                        );
+                    }
+                    let mut make_span =
+                        tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO);
+                    use tower_http::trace::MakeSpan;
+                    make_span.make_span(req)
                 })
                 .on_request(|req: &Request, span: &Span| {
                     if span.is_disabled() || req.uri().path().starts_with("/api/health") {

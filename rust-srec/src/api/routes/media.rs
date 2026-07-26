@@ -98,7 +98,9 @@ pub async fn get_media_content(
         }
     }
 
-    if !path.exists() {
+    // Async stat so an unreachable SMB share (see the `\\?\UNC\` normalization
+    // above) parks a blocking pool thread rather than a tokio worker.
+    if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
         return Err(ApiError::not_found(format!("Media file not found: {}", id)));
     }
 

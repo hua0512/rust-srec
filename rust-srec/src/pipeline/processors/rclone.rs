@@ -288,31 +288,38 @@ impl RcloneProcessor {
     /// Source absence is what marks a move input as consumed, so an I/O
     /// error from `try_exists` (e.g. an unreadable or unmounted parent
     /// directory) must keep the input pending instead of reporting an
-    /// upload that never happened.
-    fn is_confirmed_absent(path: &Path) -> bool {
-        matches!(path.try_exists(), Ok(false))
+    /// upload that never happened. Uses `tokio::fs` so a stat on a stale
+    /// network mount cannot block a runtime worker thread.
+    async fn is_confirmed_absent(path: &Path) -> bool {
+        matches!(tokio::fs::try_exists(path).await, Ok(false))
     }
 
     /// Split move inputs into (pending, already moved by an earlier attempt).
-    fn partition_move_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
-        let (moved, pending) = inputs
-            .iter()
-            .cloned()
-            .partition(|input| Self::is_confirmed_absent(Path::new(input)));
+    async fn partition_move_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
+        let mut pending = Vec::new();
+        let mut moved = Vec::new();
+        for input in inputs {
+            if Self::is_confirmed_absent(Path::new(input)).await {
+                moved.push(input.clone());
+            } else {
+                pending.push(input.clone());
+            }
+        }
         (pending, moved)
     }
 
     /// Drain inputs whose sources rclone consumed during the last attempt.
-    fn take_moved_inputs(pending_inputs: &mut Vec<String>) -> Vec<String> {
+    async fn take_moved_inputs(pending_inputs: &mut Vec<String>) -> Vec<String> {
         let mut moved_inputs = Vec::new();
-        pending_inputs.retain(|input| {
-            if Self::is_confirmed_absent(Path::new(input)) {
-                moved_inputs.push(input.clone());
-                false
+        let mut still_pending = Vec::with_capacity(pending_inputs.len());
+        for input in pending_inputs.drain(..) {
+            if Self::is_confirmed_absent(Path::new(&input)).await {
+                moved_inputs.push(input);
             } else {
-                true
+                still_pending.push(input);
             }
-        });
+        }
+        *pending_inputs = still_pending;
         moved_inputs
     }
 
@@ -404,7 +411,7 @@ impl RcloneProcessor {
 
         for attempt in 0..self.max_retries {
             if matches!(*operation, RcloneOperation::Move)
-                && Self::is_confirmed_absent(Path::new(input_path))
+                && Self::is_confirmed_absent(Path::new(input_path)).await
             {
                 info!(
                     input = input_path,
@@ -446,7 +453,7 @@ impl RcloneProcessor {
                 Ok(output) => output,
                 Err(e) => {
                     if matches!(*operation, RcloneOperation::Move)
-                        && Self::is_confirmed_absent(Path::new(input_path))
+                        && Self::is_confirmed_absent(Path::new(input_path)).await
                     {
                         warn!(
                             input = input_path,
@@ -476,7 +483,7 @@ impl RcloneProcessor {
                 logs.extend(command_output.logs);
 
                 if matches!(*operation, RcloneOperation::Move)
-                    && Self::is_confirmed_absent(Path::new(input_path))
+                    && Self::is_confirmed_absent(Path::new(input_path)).await
                 {
                     warn!(
                         input = input_path,
@@ -533,7 +540,7 @@ impl RcloneProcessor {
         let base_dir_str = base_dir.to_string_lossy().to_string();
         let (mut pending_inputs, already_moved_inputs) =
             if matches!(*operation, RcloneOperation::Move) {
-                Self::partition_move_inputs(inputs)
+                Self::partition_move_inputs(inputs).await
             } else {
                 (inputs.to_vec(), Vec::new())
             };
@@ -663,7 +670,7 @@ impl RcloneProcessor {
             }
 
             if matches!(*operation, RcloneOperation::Move) {
-                let moved_inputs = Self::take_moved_inputs(&mut pending_inputs);
+                let moved_inputs = Self::take_moved_inputs(&mut pending_inputs).await;
                 completed_inputs = completed_inputs.saturating_add(moved_inputs.len());
                 if !moved_inputs.is_empty() {
                     info!(
@@ -843,7 +850,7 @@ impl Processor for RcloneProcessor {
         // A retried move may legitimately reference sources consumed by an earlier attempt.
         if !matches!(config.operation, RcloneOperation::Move) {
             for input_path in &input.inputs {
-                if !Path::new(input_path).exists() {
+                if !tokio::fs::try_exists(input_path).await.unwrap_or(false) {
                     return Err(crate::Error::Validation(format!(
                         "Input file does not exist: {}",
                         input_path
@@ -1182,15 +1189,15 @@ mod tests {
     /// instead of reporting absence; `partition_move_inputs` must keep such
     /// inputs pending rather than count them as already moved.
     #[cfg(unix)]
-    #[test]
-    fn partition_move_inputs_keeps_unverifiable_paths_pending() {
+    #[tokio::test]
+    async fn partition_move_inputs_keeps_unverifiable_paths_pending() {
         let temp_dir = tempfile::tempdir().unwrap();
         let not_a_dir = temp_dir.path().join("plain.txt");
         std::fs::write(&not_a_dir, b"file").unwrap();
         let unverifiable = not_a_dir.join("child.mp4").to_string_lossy().into_owned();
 
         let (pending, moved) =
-            RcloneProcessor::partition_move_inputs(std::slice::from_ref(&unverifiable));
+            RcloneProcessor::partition_move_inputs(std::slice::from_ref(&unverifiable)).await;
 
         assert_eq!(pending, vec![unverifiable]);
         assert!(moved.is_empty());

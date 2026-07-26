@@ -80,12 +80,11 @@ impl SessionCancelHandle {
 
 impl Drop for SessionCancelHandle {
     fn drop(&mut self) {
-        if let Some(entry) = self.registry.get(&self.session_id)
-            && entry.value().id == self.id
-        {
-            drop(entry);
-            self.registry.remove(&self.session_id);
-        }
+        // Compare-and-remove under a single map lock so a concurrent
+        // cancel()+register() that swaps in a fresh TokenEntry (with a new
+        // `id`) is not clobbered by this older handle's removal.
+        self.registry
+            .remove_if(&self.session_id, |_, entry| entry.id == self.id);
     }
 }
 

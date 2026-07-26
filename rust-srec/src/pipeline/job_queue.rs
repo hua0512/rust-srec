@@ -1081,8 +1081,11 @@ impl JobQueue {
 
         info!("Enqueued job {} of type {}", job_id, job_type);
 
-        // Notify waiting workers
-        self.notify.notify_one();
+        // Wake every parked worker: `notify` is shared across the CPU and IO
+        // pools, so `notify_one` could wake a worker whose `dequeue` filter
+        // rejects this job while an eligible worker stays asleep until its poll
+        // backoff fires.
+        self.notify.notify_waiters();
 
         Ok(job_id)
     }
@@ -1101,8 +1104,11 @@ impl JobQueue {
 
         info!("Enqueued existing job {} of type {}", job_id, job_type);
 
-        // Notify waiting workers
-        self.notify.notify_one();
+        // Wake every parked worker: `notify` is shared across the CPU and IO
+        // pools, so `notify_one` could wake a worker whose `dequeue` filter
+        // rejects this job while an eligible worker stays asleep until its poll
+        // backoff fires.
+        self.notify.notify_waiters();
 
         Ok(job_id)
     }
@@ -1610,7 +1616,9 @@ impl JobQueue {
             self.jobs_cache.remove(id);
 
             self.depth.fetch_add(1, Ordering::SeqCst);
-            self.notify.notify_one();
+            // See `enqueue`: wake all parked workers so a pool whose filter
+            // matches this job's type picks it up without waiting for backoff.
+            self.notify.notify_waiters();
 
             let updated_job = db_model_to_job(&repo.get_job(id).await?);
             info!("Job {} retried (attempt {})", id, updated_job.retry_count);
@@ -1638,7 +1646,9 @@ impl JobQueue {
         drop(cached_job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
-        self.notify.notify_one();
+        // See `enqueue`: wake all parked workers so a pool whose filter
+        // matches this job's type picks it up without waiting for backoff.
+        self.notify.notify_waiters();
 
         info!("Job {} retried (attempt {})", id, updated_job.retry_count);
         Ok(updated_job)
@@ -2008,8 +2018,27 @@ impl JobQueue {
                 split_job = split_job.with_session_start(session_start);
             }
 
-            let job_id = self.enqueue(split_job).await?;
-            created_job_ids.push(job_id);
+            match self.enqueue(split_job).await {
+                Ok(job_id) => created_job_ids.push(job_id),
+                Err(e) => {
+                    // Roll back the split jobs already enqueued. The caller
+                    // (worker_pool) fails the original job on this error, and a
+                    // later retry re-runs the split; leaving these behind would
+                    // enqueue duplicate work for the inputs processed here (e.g.
+                    // double uploads). Cancelled jobs are terminal and never
+                    // dequeued, so cancelling is sufficient to neutralize them.
+                    for created in &created_job_ids {
+                        if let Err(cleanup_err) = self.cancel_job(created).await {
+                            warn!(
+                                job_id = %created,
+                                error = %cleanup_err,
+                                "Failed to roll back split job after split enqueue failure"
+                            );
+                        }
+                    }
+                    return Err(e);
+                }
+            }
         }
 
         // Mark the original job as completed (it was split)

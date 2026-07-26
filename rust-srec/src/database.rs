@@ -252,29 +252,36 @@ pub async fn begin_immediate(pool: &WritePool) -> Result<ImmediateTransaction, s
 /// preventing deadlocks that occur with deferred transactions (default) when multiple readers
 /// try to upgrade to writers simultaneously.
 pub struct ImmediateTransaction {
-    conn: sqlx::pool::PoolConnection<Sqlite>,
+    /// `Some` while the transaction owns the connection; taken by `Drop` to roll back off-thread.
+    conn: Option<sqlx::pool::PoolConnection<Sqlite>>,
     finished: bool,
 }
 
 impl ImmediateTransaction {
     pub fn new(conn: sqlx::pool::PoolConnection<Sqlite>) -> Self {
         Self {
-            conn,
+            conn: Some(conn),
             finished: false,
         }
+    }
+
+    fn conn_mut(&mut self) -> &mut sqlx::SqliteConnection {
+        self.conn
+            .as_mut()
+            .expect("ImmediateTransaction connection already taken")
     }
 }
 
 impl ImmediateTransaction {
     /// Commit the transaction.
     pub async fn commit(mut self) -> Result<(), sqlx::Error> {
-        sqlx::query("COMMIT").execute(&mut *self.conn).await?;
+        sqlx::query("COMMIT").execute(self.conn_mut()).await?;
         self.finished = true;
         Ok(())
     }
 
     pub async fn rollback(mut self) -> Result<(), sqlx::Error> {
-        sqlx::query("ROLLBACK").execute(&mut *self.conn).await?;
+        sqlx::query("ROLLBACK").execute(self.conn_mut()).await?;
         self.finished = true;
         Ok(())
     }
@@ -284,20 +291,44 @@ impl std::ops::Deref for ImmediateTransaction {
     type Target = sqlx::SqliteConnection;
 
     fn deref(&self) -> &Self::Target {
-        &self.conn
+        self.conn
+            .as_ref()
+            .expect("ImmediateTransaction connection already taken")
     }
 }
 
 impl std::ops::DerefMut for ImmediateTransaction {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.conn
+        self.conn
+            .as_mut()
+            .expect("ImmediateTransaction connection already taken")
     }
 }
 
 impl Drop for ImmediateTransaction {
     fn drop(&mut self) {
-        if !self.finished {
-            self.conn.close_on_drop();
+        // A committed/rolled-back transaction leaves `conn` intact so it returns to the pool.
+        if self.finished {
+            return;
+        }
+        let Some(mut conn) = self.conn.take() else {
+            return;
+        };
+        // Uncommitted drop (an early `?` return): roll back and return the write pool's single
+        // connection instead of closing it, so the next `begin_immediate` avoids reconnect and
+        // re-running `apply_per_connection_pragmas`. Drop cannot await, so the ROLLBACK runs on a
+        // detached task that holds the connection until it finishes; `close_on_drop` aborts the
+        // transaction as a fallback when no runtime is available or the ROLLBACK errors.
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(async move {
+                    if let Err(e) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
+                        tracing::warn!("ROLLBACK on ImmediateTransaction drop failed: {e}");
+                        conn.close_on_drop();
+                    }
+                });
+            }
+            Err(_) => conn.close_on_drop(),
         }
     }
 }

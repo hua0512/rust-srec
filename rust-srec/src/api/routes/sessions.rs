@@ -226,61 +226,71 @@ pub async fn list_sessions(
     let streamer_map: std::collections::HashMap<_, _> =
         streamers.into_iter().map(|s| (s.id.clone(), s)).collect();
 
-    // Convert sessions to API response format
-    let mut session_responses: Vec<SessionResponse> = Vec::with_capacity(sessions.len());
+    // Convert sessions to API response format. Each row needs the session's
+    // media_outputs (both `output_count` and the first thumbnail come from one
+    // `get_media_outputs_for_session` call, so no separate `get_output_count`)
+    // and `get_danmu_statistics`; the two lookups run concurrently per session
+    // via `tokio::join!` and rows overlap via `join_all` instead of awaiting
+    // each session sequentially.
+    let session_responses: Vec<SessionResponse> =
+        futures::future::join_all(sessions.iter().map(|session| async {
+            use crate::database::models::MediaFileType;
 
-    for session in &sessions {
-        // Get output count for each session
-        let output_count = session_repository
-            .get_output_count(&session.id)
-            .await
-            .unwrap_or(0);
+            let (outputs, danmu_stats) = tokio::join!(
+                session_repository.get_media_outputs_for_session(&session.id),
+                session_repository.get_danmu_statistics(&session.id),
+            );
 
-        let start_time = crate::database::time::ms_to_datetime(session.start_time);
-        let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
+            let outputs = outputs.unwrap_or_default();
+            let output_count = outputs.len() as u32;
+            let thumbnail_url = outputs
+                .iter()
+                .find(|o| o.file_type == MediaFileType::Thumbnail.as_str())
+                .map(|o| format!("/api/media/{}/content", o.id));
 
-        // Calculate duration
-        let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
+            let danmu_count = danmu_stats
+                .ok()
+                .flatten()
+                .map(|stats| stats.total_danmus as u64);
 
-        // Parse titles JSON
-        let (titles, title) = parse_titles(&session.titles);
+            let start_time = crate::database::time::ms_to_datetime(session.start_time);
+            let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
 
-        // Get streamer details
-        let (streamer_name, streamer_avatar) =
-            if let Some(s) = streamer_map.get(&session.streamer_id) {
-                (s.name.clone(), s.avatar.clone())
-            } else {
-                (String::new(), None)
-            };
+            // Calculate duration
+            let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
 
-        let danmu_count = session_repository
-            .get_danmu_statistics(&session.id)
-            .await
-            .ok()
-            .flatten()
-            .map(|stats| stats.total_danmus as u64);
+            // Parse titles JSON
+            let (titles, title) = parse_titles(&session.titles);
 
-        session_responses.push(SessionResponse {
-            id: session.id.clone(),
-            streamer_id: session.streamer_id.clone(),
-            streamer_name,
-            title,
-            titles,
-            // Lifecycle audit log isn't loaded on the list endpoint — N+1
-            // queries on a paginated response. Frontend lists don't render
-            // it; the detail endpoint populates it.
-            events: Vec::new(),
-            start_time,
-            end_time,
-            is_live: end_time.is_none(),
-            duration_secs,
-            output_count,
-            total_size_bytes: session.total_size_bytes as u64,
-            danmu_count,
-            thumbnail_url: get_thumbnail_url(&session.id, session_repository.as_ref()).await,
-            streamer_avatar,
-        });
-    }
+            // Get streamer details
+            let (streamer_name, streamer_avatar) =
+                if let Some(s) = streamer_map.get(&session.streamer_id) {
+                    (s.name.clone(), s.avatar.clone())
+                } else {
+                    (String::new(), None)
+                };
+
+            SessionResponse {
+                id: session.id.clone(),
+                streamer_id: session.streamer_id.clone(),
+                streamer_name,
+                title,
+                titles,
+                // Lifecycle audit log isn't loaded on the list endpoint — the
+                // detail endpoint populates `events`; list rows don't render it.
+                events: Vec::new(),
+                start_time,
+                end_time,
+                is_live: end_time.is_none(),
+                duration_secs,
+                output_count,
+                total_size_bytes: session.total_size_bytes as u64,
+                danmu_count,
+                thumbnail_url,
+                streamer_avatar,
+            }
+        }))
+        .await;
 
     let response =
         PaginatedResponse::new(session_responses, total, effective_limit, pagination.offset);

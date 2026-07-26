@@ -310,12 +310,9 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>> {
-        let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers ORDER BY priority DESC, name",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(streamers)
+        // Same result set as `list_streamers`; kept as a distinct trait method for the
+        // `StreamerManager` and sessions API call sites that reference it by name.
+        self.list_streamers().await
     }
 
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()> {

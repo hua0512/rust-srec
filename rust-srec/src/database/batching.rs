@@ -27,6 +27,11 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio::time::interval;
 
+/// Upper bound, as a multiple of `max_buffer_size`, on items retained in the flush loop's
+/// buffer while `flush_fn` keeps failing. Beyond this the oldest items are dropped so a stuck
+/// flush cannot exhaust memory.
+const RETAINED_BATCH_MULTIPLIER: usize = 10;
+
 /// Configuration for the batch writer.
 #[derive(Debug, Clone)]
 pub struct BatchWriterConfig {
@@ -91,6 +96,10 @@ impl<T: Send + Clone + 'static> BatchWriter<T> {
         flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut backoff = Duration::ZERO;
         let mut next_flush_allowed = Instant::now();
+        // While flushes are backed off/failing, `receiver.recv()` keeps appending to `buffer`
+        // faster than it drains; cap retention so a stuck `flush_fn` cannot grow it without bound.
+        let max_retained = config.max_buffer_size.saturating_mul(RETAINED_BATCH_MULTIPLIER);
+        let mut overflow_warned = false;
 
         loop {
             tokio::select! {
@@ -121,6 +130,21 @@ impl<T: Send + Clone + 'static> BatchWriter<T> {
                                 if buffer.capacity() < config.max_buffer_size {
                                     buffer = Vec::with_capacity(config.max_buffer_size);
                                 }
+                            }
+
+                            // Drop the oldest overflow once retention exceeds `max_retained`.
+                            if buffer.len() > max_retained {
+                                let overflow = buffer.len() - max_retained;
+                                buffer.drain(0..overflow);
+                                if !overflow_warned {
+                                    tracing::warn!(
+                                        "Batch writer buffer exceeded {} items while flushes are failing; dropping oldest",
+                                        max_retained
+                                    );
+                                    overflow_warned = true;
+                                }
+                            } else if buffer.len() <= config.max_buffer_size {
+                                overflow_warned = false;
                             }
                         }
                         None => {

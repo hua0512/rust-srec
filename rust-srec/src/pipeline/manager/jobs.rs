@@ -187,6 +187,37 @@ where
             error: "Job cancelled".to_string(),
         });
 
+        // Cancelling a single DAG step job leaves the parent DAG in PROCESSING
+        // with no event to drive DagScheduler::on_job_completed, so the
+        // session-complete post-processing waiting on that DAG never fires.
+        // Tear the parent DAG down to a terminal state so cancel_dag emits its
+        // DagCompletionInfo, mirroring reset_dag_for_retry in retry_job.
+        if let Some(step_exec_id) = cancelled_job.dag_step_execution_id.as_deref()
+            && let Some(dag_scheduler) = &self.dag_scheduler
+        {
+            let dag_id = match cancelled_job.pipeline_id.as_deref() {
+                Some(existing_dag_id) => Some(existing_dag_id.to_string()),
+                None => dag_scheduler
+                    .get_step_execution(step_exec_id)
+                    .await
+                    .ok()
+                    .map(|step| step.dag_id),
+            };
+
+            if let Some(dag_id) = dag_id
+                && let Err(e) = self.cancel_dag(&dag_id).await
+            {
+                // The DAG may already be terminal (e.g. a sibling triggered
+                // fail-fast), in which case cancel_dag_with_completion returns a
+                // validation error and the completion was already delivered.
+                debug!(
+                    dag_id = %dag_id,
+                    error = %e,
+                    "cancel_dag after DAG step-job cancellation was a no-op or failed"
+                );
+            }
+        }
+
         Ok(())
     }
 

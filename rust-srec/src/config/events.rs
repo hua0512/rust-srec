@@ -226,17 +226,19 @@ impl PendingUpdates {
     }
 
     fn take(&mut self) -> Vec<ConfigUpdateEvent> {
-        let events: Vec<_> = if self.has_global {
-            // Global update supersedes all others
-            vec![ConfigUpdateEvent::GlobalUpdated]
-        } else {
-            self.events.drain().collect()
-        };
+        // Always drain `self.events` so `is_empty()` reports true after this call; when a
+        // GlobalUpdated is pending it supersedes every drained event and is the only one emitted.
+        let had_global = self.has_global;
+        let drained: Vec<_> = self.events.drain().collect();
 
         self.first_event_time = None;
         self.has_global = false;
 
-        events
+        if had_global {
+            vec![ConfigUpdateEvent::GlobalUpdated]
+        } else {
+            drained
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -441,6 +443,34 @@ mod tests {
         assert_eq!(received, ConfigUpdateEvent::GlobalUpdated);
 
         // No more events
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_coalescer_global_flush_does_not_leak_superseded_events() {
+        let broadcaster = ConfigEventBroadcaster::new();
+        let mut receiver = broadcaster.subscribe();
+        let coalescer = UpdateCoalescer::with_window(broadcaster, Duration::from_millis(50));
+
+        coalescer
+            .queue(ConfigUpdateEvent::StreamerMetadataUpdated {
+                streamer_id: "streamer-1".to_string(),
+            })
+            .await;
+        coalescer
+            .queue(ConfigUpdateEvent::PlatformUpdated {
+                platform_id: "twitch".to_string(),
+            })
+            .await;
+        coalescer.queue(ConfigUpdateEvent::GlobalUpdated).await;
+
+        // First flush emits only GlobalUpdated and must fully drain the pending set.
+        coalescer.flush().await;
+        assert_eq!(receiver.recv().await.unwrap(), ConfigUpdateEvent::GlobalUpdated);
+        assert_eq!(coalescer.pending_count().await, 0);
+
+        // A second flush with nothing queued must emit nothing (no superseded leftovers).
+        coalescer.flush().await;
         assert!(receiver.try_recv().is_err());
     }
 
