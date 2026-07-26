@@ -90,6 +90,14 @@
 
   When a pipeline job was cancelled or ran past the job timeout, the external tool it had launched — an rclone transfer, ffmpeg processing such as remuxing, transcoding, subtitle burn-in or thumbnails, or danmaku conversion — could keep running in the background even though the job was already marked failed. rclone's temporary file lists could also pile up in the recording folder. Stopping the job now also stops the tool and removes those temporary files.
 
+- **Rclone upload progress now actually updates**
+
+  While an rclone upload ran, the progress area on the job's page never showed anything — no percentage, speed, or time remaining — even though the transfer itself was fine. The statistics rclone was asked to report never actually arrived. Progress now updates once a second with the percentage, transferred size, speed, and time remaining, and the same live numbers drive the upload badge on the streamer's card. If you had added `--progress` (or `-P`) to an rclone step's extra arguments, it is now removed automatically — it would break this reporting — with a note in the job's log.
+
+- **A single job can no longer grow its execution log without limit**
+
+  A job that produced a lot of output — for example an rclone step with verbose logging flags in its extra arguments — could keep adding lines to its execution log indefinitely, growing the database until the time-based history cleanup caught up. Each job run now keeps its most recent 5000 log lines and discards the oldest beyond that. Normal runs stay far below the limit, so their logs are unaffected.
+
 ### Removed
 
 - **Telegram (tdl) upload step**
