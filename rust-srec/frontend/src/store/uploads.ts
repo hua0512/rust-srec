@@ -50,8 +50,9 @@ export interface UploadProgressInput {
 // A terminal event dropped by broadcast lag would leave a job stuck in the
 // store forever; entries older than this are skipped by the selectors.
 // Rclone reports stats every second while transferring, so a live upload
-// never comes close to this threshold.
-const STALE_AFTER_MS = 2 * 60 * 1000;
+// never comes close to this threshold. Also the retention window for
+// terminatedIds entries in sweepStaleUploads.
+export const STALE_AFTER_MS = 2 * 60 * 1000;
 
 function isFresh(view: UploadView, nowMs: number): boolean {
   return nowMs - view.lastEventAtMs < STALE_AFTER_MS;
@@ -59,12 +60,14 @@ function isFresh(view: UploadView, nowMs: number): boolean {
 
 interface UploadStoreState {
   uploadsByJobId: Map<string, UploadView>;
-  // Jobs that received UPLOAD_TERMINAL. Progress flows through the server's
-  // async coalescing channel, so a late UPLOAD_PROGRESS can arrive after the
-  // terminal event; without this guard it would resurrect the removed entry
-  // (same rationale as terminatedIds in store/downloads.ts). Cleared on
-  // snapshot/clearAll.
-  terminatedIds: Set<string>;
+  // Jobs that received UPLOAD_TERMINAL, keyed to the wall-clock ms of that
+  // event. Progress flows through the server's async coalescing channel, so
+  // a late UPLOAD_PROGRESS can arrive after the terminal event; without this
+  // guard it would resurrect the removed entry (same rationale as
+  // terminatedIds in store/downloads.ts). Cleared on snapshot/clearAll;
+  // entries older than STALE_AFTER_MS are dropped by sweepStaleUploads so
+  // the map stays bounded across a long-lived connection.
+  terminatedIds: Map<string, number>;
   // Bumps on any mutation; can be selected to force rerenders.
   version: number;
 
@@ -82,7 +85,7 @@ interface UploadStoreState {
 
 export const useUploadStore = create<UploadStoreState>((set, get) => ({
   uploadsByJobId: new Map(),
-  terminatedIds: new Set(),
+  terminatedIds: new Map(),
   version: 0,
 
   setSnapshot: (uploads, progress) =>
@@ -157,7 +160,7 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
 
   remove: (jobId) =>
     set((state) => {
-      state.terminatedIds.add(jobId);
+      state.terminatedIds.set(jobId, Date.now());
       if (!state.uploadsByJobId.delete(jobId)) return state;
       return {
         uploadsByJobId: state.uploadsByJobId,
@@ -196,20 +199,34 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
 // coarse on purpose: STALE_AFTER_MS is minutes, cadence needn't be finer.
 const STALE_SWEEP_INTERVAL_MS = 30 * 1000;
 
+// Exported so tests can drive the sweep directly with a synthetic clock.
+export function sweepStaleUploads(nowMs = Date.now()): void {
+  const { uploadsByJobId, terminatedIds, version } = useUploadStore.getState();
+  // Both maps need the sweep: terminatedIds keeps filling after every
+  // upload has left uploadsByJobId, so an uploads-only emptiness guard
+  // would stop pruning exactly when only terminated markers remain.
+  if (uploadsByJobId.size === 0 && terminatedIds.size === 0) return;
+  let removed = false;
+  for (const [jobId, view] of uploadsByJobId) {
+    if (!isFresh(view, nowMs)) {
+      uploadsByJobId.delete(jobId);
+      removed = true;
+    }
+  }
+  // A terminated marker only needs to outlive the server's coalescing
+  // delay on late UPLOAD_PROGRESS; after STALE_AFTER_MS any progress for
+  // that job would be discarded as stale anyway. No version bump —
+  // nothing renders these ids.
+  for (const [jobId, terminatedAtMs] of terminatedIds) {
+    if (nowMs - terminatedAtMs >= STALE_AFTER_MS) {
+      terminatedIds.delete(jobId);
+    }
+  }
+  if (removed) {
+    useUploadStore.setState({ uploadsByJobId, version: version + 1 });
+  }
+}
+
 if (typeof window !== 'undefined') {
-  setInterval(() => {
-    const { uploadsByJobId, version } = useUploadStore.getState();
-    if (uploadsByJobId.size === 0) return;
-    const now = Date.now();
-    let removed = false;
-    for (const [jobId, view] of uploadsByJobId) {
-      if (!isFresh(view, now)) {
-        uploadsByJobId.delete(jobId);
-        removed = true;
-      }
-    }
-    if (removed) {
-      useUploadStore.setState({ uploadsByJobId, version: version + 1 });
-    }
-  }, STALE_SWEEP_INTERVAL_MS);
+  setInterval(() => sweepStaleUploads(), STALE_SWEEP_INTERVAL_MS);
 }

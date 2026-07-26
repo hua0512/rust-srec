@@ -60,11 +60,26 @@ fn non_empty(value: &str) -> Option<String> {
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
 const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
+/// Ring-buffer bound on `job_execution_logs` rows per job run: once a run
+/// has this many rows, `persist_logs_to_db` trims the oldest via
+/// `JobRepository::trim_execution_logs` after each insert. Counted in
+/// `PersistedLogCursor::persisted_rows`, whose entry is removed on every
+/// terminal/retry path — so the cap bounds one run, and time-based
+/// retention (`database::maintenance`) remains the cross-run bound.
+const MAX_PERSISTED_LOG_ROWS_PER_JOB: usize = 5000;
 
 #[derive(Debug, Clone, Copy)]
 struct PersistedLogCursor {
     last_sig: u64,
     last_ts_ms: i64,
+    /// Rows this run has inserted into `job_execution_logs`, saturated at
+    /// `MAX_PERSISTED_LOG_ROWS_PER_JOB` once trimming keeps the table there.
+    persisted_rows: usize,
+}
+
+/// Oldest rows to delete so `already + incoming` stays within `cap`.
+fn excess_log_rows(already: usize, incoming: usize, cap: usize) -> usize {
+    already.saturating_add(incoming).saturating_sub(cap)
 }
 
 fn log_level_to_db(level: LogLevel) -> &'static str {
@@ -904,6 +919,8 @@ impl JobQueue {
             }
         }
 
+        let already_persisted = cursor.map(|c| c.persisted_rows).unwrap_or(0);
+
         let new_logs: Vec<JobLogEntry> = logs[start_index..].to_vec();
         if !new_logs.is_empty() {
             let db_logs: Vec<JobExecutionLogDbModel> = new_logs
@@ -926,6 +943,21 @@ impl JobQueue {
                 })
                 .collect();
             repo.add_execution_logs(&db_logs).await?;
+
+            // Insert first, trim after: the newest lines (a failing run's
+            // tail) always land, and the oldest rows leave once the run
+            // exceeds MAX_PERSISTED_LOG_ROWS_PER_JOB. Trim failure is
+            // logged, not propagated — the log write itself succeeded.
+            let excess = excess_log_rows(
+                already_persisted,
+                new_logs.len(),
+                MAX_PERSISTED_LOG_ROWS_PER_JOB,
+            );
+            if excess > 0
+                && let Err(error) = repo.trim_execution_logs(job_id, excess).await
+            {
+                warn!(job_id, %error, "Failed to trim oldest execution log rows");
+            }
         }
 
         if let Some(last) = logs.last() {
@@ -934,6 +966,9 @@ impl JobQueue {
                 PersistedLogCursor {
                     last_sig: log_signature(last),
                     last_ts_ms: last.timestamp.timestamp_millis(),
+                    persisted_rows: already_persisted
+                        .saturating_add(new_logs.len())
+                        .min(MAX_PERSISTED_LOG_ROWS_PER_JOB),
                 },
             );
         }
@@ -2736,6 +2771,56 @@ impl Default for JobQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn rclone_progress_reports_are_broadcast_as_upload_progress() {
+        let queue = JobQueue::new();
+        let broadcaster =
+            UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
+                bytes::Bytes::new()
+            }));
+        queue.set_upload_broadcaster(broadcaster.clone());
+        let mut rx = broadcaster.subscribe();
+
+        // The aggregator publishes only for live jobs; a processing job owns
+        // a cancellation token (created on dequeue), which is all the
+        // liveness check reads.
+        queue
+            .cancellation_tokens
+            .insert("job-1".to_string(), CancellationToken::new());
+
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
+        snapshot.percent = Some(42.0);
+        snapshot.bytes_done = Some(4200);
+        queue.progress_reporter("job-1").report(snapshot);
+
+        let envelope = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
+            .await
+            .expect("aggregator publishes within one flush interval")
+            .expect("broadcast channel stays open");
+        match envelope.event.as_ref() {
+            UploadStatusEvent::Progress {
+                job_id, snapshot, ..
+            } => {
+                assert_eq!(job_id, "job-1");
+                assert_eq!(snapshot.percent, Some(42.0));
+                assert_eq!(snapshot.bytes_done, Some(4200));
+            }
+            other => panic!("expected Progress event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn excess_log_rows_trims_only_past_the_cap() {
+        assert_eq!(excess_log_rows(0, 10, 100), 0);
+        assert_eq!(excess_log_rows(90, 10, 100), 0);
+        assert_eq!(excess_log_rows(95, 10, 100), 5);
+        // At-cap runs trim exactly what each new batch adds.
+        assert_eq!(excess_log_rows(100, 10, 100), 10);
+        assert_eq!(excess_log_rows(100, 0, 100), 0);
+        // A single oversized batch trims down to the cap.
+        assert_eq!(excess_log_rows(0, 150, 100), 50);
+    }
 
     #[test]
     fn test_job_queue_config_default() {
