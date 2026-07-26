@@ -29,7 +29,7 @@ pub struct TwitchDanmuProtocol;
 impl TwitchDanmuProtocol {
     /// Create a new TwitchDanmuProtocol instance (anonymous).
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     /// Generate random anonymous username
@@ -248,7 +248,7 @@ pub type TwitchDanmuProvider = WebSocketDanmuProvider<TwitchDanmuProtocol>;
 
 /// Creates a new Twitch danmu provider (anonymous).
 pub fn create_twitch_danmu_provider() -> TwitchDanmuProvider {
-    WebSocketDanmuProvider::with_factory(TwitchDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(TwitchDanmuProtocol, None)
 }
 
 #[cfg(test)]
@@ -280,7 +280,7 @@ mod tests {
 
     #[tokio::test]
     async fn ping_returns_pong_as_outbound_protocol_frame() {
-        let mut protocol = TwitchDanmuProtocol::default();
+        let mut protocol = TwitchDanmuProtocol;
         let output = protocol
             .decode_message(&Message::Text("PING :tmi.twitch.tv".into()), "channel")
             .await
