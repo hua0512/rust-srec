@@ -203,9 +203,6 @@ impl TikTok {
         streams.extend(hevc_streams);
 
         let is_live = !streams.is_empty();
-        if !is_live {
-            streams.clear();
-        }
 
         Ok(MediaInfo::builder(
             self.extractor.url.clone(),

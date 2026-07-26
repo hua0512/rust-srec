@@ -397,9 +397,12 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 
     pub fn new(config: WriterConfig, strategy: S) -> Self {
-        std::fs::create_dir_all(&config.base_path).unwrap_or_else(|e| {
-            eprintln!("Failed to create base path {:?}: {}", config.base_path, e);
-        });
+        // open_initial_writer recreates the parent per file, so a failure here
+        // is not fatal on its own; surface it through tracing (not stderr) so it
+        // is visible before the first process_item reports a strategy error.
+        if let Err(error) = std::fs::create_dir_all(&config.base_path) {
+            tracing::error!(path = ?config.base_path, %error, "Failed to create writer base path");
+        }
         Self {
             config,
             state: WriterState::default(),

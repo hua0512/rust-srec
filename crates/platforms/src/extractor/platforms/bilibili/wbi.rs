@@ -163,6 +163,17 @@ async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
         ))
     })?;
 
+    // `get_mixin_key` indexes `MIXIN_KEY_ENC_TAB` values up to 58 into the concatenated
+    // `img_key + sub_key`; reject shorter keys here so a malformed nav response can never be
+    // stored in `WBI_KEYS_WATCH` and panic every later `_encode_wbi` call.
+    if img_key.len() + sub_key.len() <= 58 {
+        return Err(ExtractorError::ValidationError(format!(
+            "WBI keys too short: img_key={}, sub_key={}",
+            img_key.len(),
+            sub_key.len()
+        )));
+    }
+
     Ok(WbiKeys::new(img_key, sub_key))
 }
 

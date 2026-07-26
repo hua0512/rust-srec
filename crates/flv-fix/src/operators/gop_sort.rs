@@ -206,8 +206,11 @@ impl Processor<FlvData> for GopSortOperator {
                 debug!("{} Reset GOP tags...", self.context.name);
             }
             FlvData::EndOfSequence(_) => {
+                // Flush the buffered GOP, then forward the marker so downstream close
+                // handlers (e.g. mesio-cli pipe_flv_strategy) see the segment boundary.
                 self.push_tags(output)?;
                 debug!("{} End of stream...", self.context.name);
+                output(input)?;
             }
             FlvData::Split(_) => {
                 self.push_tags(output)?;

@@ -202,8 +202,11 @@ impl Bilibili {
             return Err(ExtractorError::ValidationError(json.message));
         }
 
-        let data = json.data;
-        let playurl_info = data.playurl_info;
+        // `code == 0` with no `data`/`playurl_info` means the room went offline between
+        // `fetch_room_info` and here; surface it as an empty stream list rather than a decode error.
+        let Some(playurl_info) = json.data.and_then(|data| data.playurl_info) else {
+            return Ok(Vec::new());
+        };
 
         let mut quality_map = FxHashMap::default();
         quality_map.reserve(playurl_info.playurl.g_qn_desc.len());
@@ -335,6 +338,12 @@ impl PlatformExtractor for Bilibili {
     }
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
+        // Nothing to resolve when the URL is already populated; check before reading extras so a
+        // ready stream with missing/malformed extras is not rejected.
+        if !stream_info.url.is_empty() {
+            return Ok(());
+        }
+
         let extras = stream_info.extras.as_ref().ok_or_else(|| {
             ExtractorError::ValidationError("Stream extras not found".to_string())
         })?;
@@ -348,11 +357,6 @@ impl PlatformExtractor for Bilibili {
         })?;
 
         let cdn = extras.get("cdn").and_then(|c| c.as_str());
-
-        // skip extraction if url is already present
-        if !stream_info.url.is_empty() {
-            return Ok(());
-        }
 
         // 协议格式，0: http_stream(flv), 1: http_hls
         let protocol = match stream_info.stream_format {
@@ -388,7 +392,10 @@ impl PlatformExtractor for Bilibili {
             return Err(ExtractorError::ValidationError(json.message));
         }
 
-        let playurl_info = json.data.playurl_info;
+        let playurl_info = json
+            .data
+            .and_then(|data| data.playurl_info)
+            .ok_or(ExtractorError::NoStreamsFound)?;
         let stream = playurl_info
             .playurl
             .stream

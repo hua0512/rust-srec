@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use std::sync::LazyLock;
-use tracing::debug;
+use tracing::{debug, warn};
 use url::Url;
 
 use crate::{
@@ -41,6 +41,15 @@ impl Weibo {
         extractor.set_referer_static(Self::BASE_URL);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
+        } else {
+            // Without user cookies the request identity is the shared
+            // DEFAULT_COOKIES SUB/SUBP/WBPSESS tokens; once Weibo invalidates
+            // them the mymblog/live endpoints return login-gated payloads, so
+            // surface a code-local signal rather than degrading silently.
+            warn!(
+                "weibo: no user cookies configured; falling back to the shared hardcoded \
+                 SUB/WBPSESS session, which may be invalidated server-side"
+            );
         }
         Self {
             extractor,
@@ -143,19 +152,10 @@ impl Weibo {
 
         // debug!("response: {:?}", response);
 
-        if response.data.is_none() {
+        let Some(data) = response.data else {
             return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
                 .is_live(false)
                 .build());
-        }
-
-        let data = match response.data {
-            Some(v) => v,
-            None => {
-                return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
-                    .is_live(false)
-                    .build());
-            }
         };
         let user_info = data.user_info;
 

@@ -130,11 +130,15 @@ impl BigoDanmuProtocol {
 
     fn challenge_response(challenge: &str) -> Message {
         let ts = Self::now_sec().to_string();
-        let tail = if challenge.len() >= 8 {
-            &challenge[challenge.len() - 8..]
-        } else {
-            challenge
-        };
+        // Take the last 8 characters by char boundary; the challenge is
+        // server-provided, so byte indexing could split a multi-byte UTF-8
+        // sequence and panic inside the long-lived danmu task.
+        let tail_start = challenge
+            .char_indices()
+            .rev()
+            .nth(7)
+            .map_or(0, |(idx, _)| idx);
+        let tail = &challenge[tail_start..];
         let material = format!("60#4#5#{ts}#1#1#1#1#{tail}");
         let mut hasher = Md5::new();
         hasher.update(material.as_bytes());

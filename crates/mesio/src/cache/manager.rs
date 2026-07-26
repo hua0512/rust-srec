@@ -13,6 +13,7 @@ use crate::cache::providers::memory::MemoryCache;
 use crate::cache::providers::provider::CacheProvider;
 use crate::cache::types::{
     CacheConfig, CacheKey, CacheLookupResult, CacheMetadata, CacheResourceType, CacheResult,
+    CacheStatus,
 };
 
 /// Cache manager handling both memory and file caching
@@ -76,13 +77,24 @@ impl CacheManager {
             return Ok(None);
         }
 
-        // Check memory cache first
-        if let Some((data, metadata, status)) = self.memory_cache.get(key).await? {
+        // Check memory cache first. memory_cache.get already invalidates an
+        // entry whose metadata.expires_at has elapsed; treat that Expired
+        // report as a miss and fall through instead of serving stale bytes.
+        if let Some((data, metadata, status)) = self.memory_cache.get(key).await?
+            && status != CacheStatus::Expired
+        {
             return Ok(Some((data, metadata, status)));
         }
 
         // Try file cache if memory cache misses
         if let Some((data, metadata, status)) = self.file_cache.get(key).await? {
+            // file_cache.get schedules removal of an expired entry; do not
+            // re-promote it into memory_cache or serve it as a hit, so the TTL
+            // is enforced and the caller re-downloads.
+            if status == CacheStatus::Expired {
+                return Ok(None);
+            }
+
             // Store in memory cache for faster access next time
             if let Err(error) = self
                 .memory_cache

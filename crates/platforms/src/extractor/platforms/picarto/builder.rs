@@ -12,6 +12,7 @@ use crate::{
         hls_extractor::HlsExtractor,
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::picarto::models::PicartoResponse,
+        utils::capture_group_1_or_invalid_url,
     },
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
@@ -43,15 +44,8 @@ impl Picarto {
         Self { extractor }
     }
 
-    pub fn extract_room_id(&self) -> Result<String, ExtractorError> {
-        // Extract the room ID from the URL
-        let url = self.extractor.url.clone();
-        let room_id = url
-            .split('/')
-            .next_back()
-            .ok_or_else(|| ExtractorError::ValidationError("Room ID not found in URL".to_string()))?
-            .to_string();
-        Ok(room_id)
+    pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
+        capture_group_1_or_invalid_url(&URL_REGEX, &self.extractor.url)
     }
 
     pub async fn get_live_info(&self, rid: &str) -> Result<MediaInfo, ExtractorError> {
@@ -142,7 +136,7 @@ impl PlatformExtractor for Picarto {
         let room_id = self.extract_room_id()?;
         debug!("Extracted room ID: {}", room_id);
 
-        let media_info = self.get_live_info(&room_id).await?;
+        let media_info = self.get_live_info(room_id).await?;
         Ok(media_info)
     }
 }

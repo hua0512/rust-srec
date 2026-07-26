@@ -4,6 +4,7 @@
 //! 2. Fingerprint map (all strings, trunc 100) encrypted with OpenSSL-salted AES-256-CBC
 //! 3. JSONP GET `/v1/webjs/status?data=` → server-minted token
 
+use std::sync::LazyLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aes::Aes256;
@@ -372,6 +373,17 @@ pub async fn mint_token_with_options(
         )));
     }
     Ok(token.unwrap())
+}
+
+/// Process-wide token cache shared by the per-poll `Bigo` extractor instances
+/// the platform factory builds; each poll reuses the cached token via
+/// `TokenPool::get` instead of minting a fresh one.
+static SHARED_TOKEN_POOL: LazyLock<TokenPool> = LazyLock::new(TokenPool::default);
+
+/// Return an integrity token from `SHARED_TOKEN_POOL`, minting a fresh one only
+/// when the cached token has passed its TTL or exhausted `max_uses`.
+pub async fn pooled_token(client: &Client) -> Result<String, ExtractorError> {
+    SHARED_TOKEN_POOL.get(client).await
 }
 
 /// Process-local token cache (TTL + max uses) for multi-poll reuse.

@@ -432,7 +432,7 @@ impl<'a> DouyinRequest<'a> {
                 if let Some(ttwid) = &self.config.ttwid {
                     ttwid.clone()
                 } else {
-                    fetch_ttwid(&self.config.extractor.client).await
+                    fetch_ttwid(&self.config.extractor.client).await?
                 }
             }
         };
@@ -452,7 +452,8 @@ impl<'a> DouyinRequest<'a> {
 
     /// Ensures a valid `odin_ttid` is present.
     fn ensure_odin_ttid(&mut self) {
-        if self.params.contains_key("odin_ttid") {
+        // Guard on `self.cookies`, the map this writes to and that `request()` sends.
+        if self.cookies.contains_key("odin_ttid") {
             return;
         }
         let odin_ttid = generate_odin_ttid();
@@ -461,7 +462,8 @@ impl<'a> DouyinRequest<'a> {
 
     /// Ensures a valid `__ac_nonce` is present.
     fn ensure_nonce(&mut self) {
-        if self.params.contains_key("__ac_nonce") {
+        // Guard on `self.cookies`, the map this writes to and that `request()` sends.
+        if self.cookies.contains_key("__ac_nonce") {
             return;
         }
         let nonce = generate_nonce();
@@ -708,7 +710,16 @@ impl<'a> DouyinRequest<'a> {
             .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
         let streams = self.extract_streams(stream_url)?;
         let mut extras = FxHashMap::default();
-        extras.insert("id_str".to_string(), self.id_str.clone().unwrap());
+        // `self.id_str` is populated from `data.enter_room_id` in `parse_pc_response`;
+        // on the app-response path it may be None, so fall back to `DouyinPcData::id_str`
+        // and only insert the extra when a room id is actually available.
+        if let Some(id) = self
+            .id_str
+            .clone()
+            .or_else(|| (!data.id_str.is_empty()).then(|| data.id_str.to_string()))
+        {
+            extras.insert("id_str".to_string(), id);
+        }
 
         Ok(MediaInfo::new(
             self.config.extractor.url.clone(),

@@ -60,10 +60,6 @@ fn is_douyu_auth_failed(status: StatusCode, body: &str) -> bool {
     normalized.contains("鉴权失败")
 }
 
-fn is_douyu_room_unavailable_message(message: &str) -> bool {
-    message.contains("error -3") || message.contains("error -4") || message.contains("error -5")
-}
-
 pub struct Douyu {
     pub extractor: Extractor,
     pub cdn: String,
@@ -101,8 +97,11 @@ impl Douyu {
             .or_else(|| extras_get_bool(extras.as_ref(), "onlyAudio"))
             .unwrap_or(false);
 
+        // Clamp to at least 1 so the `for attempt in 0..self.request_retries` loop in
+        // `get_betard_room_info` runs; 0 would make every betard fetch return the generic
+        // "Failed to get betard room info" error and silently disable VIP detection.
         let request_retries = extras_get_u64(extras.as_ref(), "request_retries")
-            .map(|v| v as u32)
+            .map(|v| (v as u32).max(1))
             .unwrap_or(Self::DEFAULT_RETRIES);
 
         let mut extractor = Extractor::new("Douyu", url, client);
@@ -646,10 +645,14 @@ impl Douyu {
                 // Handle specific Douyu error codes
                 match resp.error {
                     -5..=-3 => {
-                        return Err(ExtractorError::ValidationError(format!(
-                            "Room is unavailable / streamer is not live (error {}): {}",
+                        // Codes -3/-4/-5 mean the room is unavailable / streamer is offline;
+                        // `parse_web_response` matches on `NoStreamsFound` to recover the
+                        // went-offline race without inspecting message text.
+                        debug!(
+                            "getH5PlayV1 reports room unavailable (error {}): {}",
                             resp.error, resp.msg
-                        )));
+                        );
+                        return Err(ExtractorError::NoStreamsFound);
                     }
                     -9 => {
                         // Timestamp mismatch — retryable since each attempt generates a fresh timestamp
@@ -918,11 +921,9 @@ impl Douyu {
         // streamer is live
         let streams = match self.get_streams_with_stable_auth(rid, is_vip).await {
             Ok(streams) => streams,
-            Err(ExtractorError::ValidationError(msg))
-                if is_douyu_room_unavailable_message(&msg) =>
-            {
+            Err(ExtractorError::NoStreamsFound) => {
                 // Room went offline between status check and stream fetch
-                debug!("Room went offline during stream fetch: {}", msg);
+                debug!("Room went offline during stream fetch (rid {})", rid);
                 return Ok(self.create_media_info(
                     &title,
                     &artist,
@@ -1220,14 +1221,6 @@ mod tests {
             Douyu::stream_url(&play_info, true, false),
             "https://example.com/live/stream.flv"
         );
-    }
-
-    #[test]
-    fn test_h5play_unavailable_error_message_matches_all_offline_codes() {
-        for code in -5..=-3 {
-            let message = format!("Room is unavailable / streamer is not live (error {code}): msg");
-            assert!(super::is_douyu_room_unavailable_message(&message));
-        }
     }
 
     #[test]

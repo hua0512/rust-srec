@@ -44,6 +44,14 @@ use tracing::{debug, info};
 /// Optional callback for when a stream split occurs
 pub type SplitCallback = Box<dyn Fn(SplitReason, u64, u32) + Send + Sync>;
 
+/// Bytes of the FLV PreviousTagSize field that follows every tag on disk.
+const PREVIOUS_TAG_SIZE_FIELD: u32 = 4;
+
+/// Multiplier applied to a configured limit before `LimitOperator::limits_hard_exceeded`
+/// forces a split on a non-keyframe. Gives a keyframe this much slack past the limit to
+/// appear before output is bounded for streams whose keyframes never classify.
+const HARD_SPLIT_MARGIN: u64 = 2;
+
 /// Configuration options for the limit operator
 pub struct LimitConfig {
     /// Maximum size in bytes before splitting (None = no limit)
@@ -82,7 +90,6 @@ struct StreamState {
     accumulated_size: u64,
     start_timestamp: u32,
     max_timestamp: u32,
-    last_keyframe_position: Option<(u64, u32)>, // (size, timestamp) at last keyframe
     split_count: u32,
     first_content_tag_seen: bool,
 }
@@ -97,7 +104,6 @@ impl StreamState {
             accumulated_size: 0,
             start_timestamp: 0,
             max_timestamp: 0,
-            last_keyframe_position: None,
             split_count: 0,
             first_content_tag_seen: false,
         }
@@ -106,7 +112,6 @@ impl StreamState {
     fn reset_counters(&mut self) {
         self.accumulated_size = 0;
         self.start_timestamp = self.max_timestamp;
-        self.last_keyframe_position = None;
         self.split_count += 1;
     }
 
@@ -180,6 +185,27 @@ impl LimitOperator {
         false
     }
 
+    /// True when the current segment has grown far enough past a configured limit that a
+    /// split must be forced even on a non-keyframe tag. Mirrors the intent of
+    /// GopSortOperator::MAX_GOP_TAGS: bound output when the preferred boundary never arrives.
+    fn limits_hard_exceeded(&self) -> bool {
+        if let Some(max_size) = self.config.max_size_bytes
+            && self.state.accumulated_size >= max_size.saturating_mul(HARD_SPLIT_MARGIN)
+        {
+            return true;
+        }
+
+        if let Some(max_duration) = self.config.max_duration_ms
+            && self.state.first_content_tag_seen
+            && self.state.current_duration() as u64
+                >= (max_duration as u64).saturating_mul(HARD_SPLIT_MARGIN)
+        {
+            return true;
+        }
+
+        false
+    }
+
     fn split_stream(
         &mut self,
         reason: SplitReason,
@@ -248,8 +274,9 @@ impl Processor<FlvData> for LimitOperator {
                 output(FlvData::Header(header))?;
             }
             FlvData::Tag(tag) => {
-                // Update size counter
-                let tag_size = tag.size() as u64;
+                // Account for the tag plus the 4-byte PreviousTagSize field that follows
+                // every tag on disk, so accumulated_size tracks true output file growth.
+                let tag_size = tag.size() as u64 + PREVIOUS_TAG_SIZE_FIELD as u64;
                 self.state.accumulated_size += tag_size;
 
                 // Track key metadata
@@ -282,21 +309,21 @@ impl Processor<FlvData> for LimitOperator {
                     }
                 }
 
-                // Track keyframes for optimal split points
-                if tag.is_key_frame_nalu() {
-                    self.state.last_keyframe_position =
-                        Some((self.state.accumulated_size, self.state.max_timestamp));
-                }
-
                 // Check if any limit is exceeded
                 let should_split = self.check_limits();
 
-                // Inside the process method where split decisions are made
+                // Decide whether this tag is an acceptable split boundary.
+                // `split_at_keyframes_only` restricts video splits to keyframes so the new
+                // segment opens on a decodable frame; when disabled we split on any tag.
+                // The `limits_hard_exceeded` fallback forces a split on a non-keyframe once
+                // the segment has grown well past the limit, bounding output for video whose
+                // keyframes never classify via FlvTag::is_key_frame_nalu (filtered/encrypted
+                // payloads, unrecognized codec IDs).
                 let has_video = self.state.header.as_ref().is_some_and(|h| h.has_video);
-                let can_split_on_tag = if has_video {
-                    tag.is_key_frame_nalu()
+                let can_split_on_tag = if has_video && self.config.split_at_keyframes_only {
+                    tag.is_key_frame_nalu() || self.limits_hard_exceeded()
                 } else {
-                    // For audio-only, we can split on any tag
+                    // Audio-only streams, or keyframe-only splitting disabled: any tag works.
                     true
                 };
 

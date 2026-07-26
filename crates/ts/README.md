@@ -40,47 +40,8 @@ ts = "0.1.0"
 bytes = "1.0" # Required for the zero-copy parser
 ```
 
-This crate provides two main parsers to suit different needs:
-- `OwnedTsParser`: A simple-to-use parser that owns and stores the parsed PAT/PMT data.
-- `TsParser`: A high-performance, zero-copy parser that uses callbacks to process data without allocations.
-
-### Owned Parser Example (`OwnedTsParser`)
-
-This parser is ideal when you want to parse a chunk of data and inspect the PAT/PMT information afterward.
-
-```rust
-use ts::{OwnedTsParser, StreamType};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut parser = OwnedTsParser::new();
-
-    // Read TS data from a file or network buffer
-    let ts_data = std::fs::read("example.ts")?;
-
-    // Parse the TS packets. The parser will store the PAT and PMTs internally.
-    parser.parse_packets(&ts_data)?;
-
-    // Access PAT information
-    if let Some(pat) = parser.pat() {
-        println!("Transport Stream ID: {}", pat.transport_stream_id);
-        for program in &pat.programs {
-            if program.program_number != 0 {
-                println!("  Program {}: PMT PID 0x{:04X}",
-                         program.program_number, program.pmt_pid);
-            }
-        }
-    }
-
-    // Access PMT information
-    for (program_num, pmt) in parser.pmts() {
-        println!("Program {} streams:", program_num);
-        for stream in &pmt.streams {
-            println!("  - PID: 0x{:04X}, Type: {:?}", stream.elementary_pid, stream.stream_type);
-        }
-    }
-
-    Ok(())
-}```
+This crate provides the zero-copy `TsParser`: a high-performance parser that uses
+callbacks to process PAT/PMT data without allocations.
 
 ### Zero-Copy Parser Example (`TsParser`)
 
@@ -146,21 +107,7 @@ if audio_type.is_audio() {
 
 ### Parsers
 
-- **`OwnedTsParser`**: An owned parser that copies and manages PAT/PMT data internally. Best for when you need to store the parsed tables for later access.
 - **`TsParser`**: A zero-copy, callback-based parser that processes TS data without allocations. Best for high-performance, low-latency applications.
-
-### `OwnedTsParser`
-
-The stateful parser that stores parsed tables.
-
-#### Methods
-
-- `new() -> OwnedTsParser`: Creates a new parser instance.
-- `parse_packets(&mut self, data: &[u8]) -> Result<()>`: Parses TS packets from a byte slice. PATs and PMTs are stored internally.
-- `pat(&self) -> Option<&Pat>`: Returns a reference to the parsed Program Association Table.
-- `pmts(&self) -> &HashMap<u16, Pmt>`: Returns a map of all parsed Program Map Tables, keyed by program number.
-- `pmt(&self, program_number: u16) -> Option<&Pmt>`: Returns a reference to a specific PMT for a given program number.
-- `reset(&mut self)`: Clears all internal state (PAT, PMTs, etc.).
 
 ### `TsParser` (Zero-Copy)
 
@@ -178,7 +125,7 @@ The high-performance, callback-based parser.
 
 The crate provides two sets of data structures for PAT/PMT information:
 
-- **Owned (`Pat`, `Pmt`)**: These structs hold owned data, copied from the input buffer. They are returned by the `OwnedTsParser`.
+- **Owned (`Pat`, `Pmt`)**: These structs hold owned data, copied from the input buffer. They are produced by the owned `Pat::parse`/`Pmt::parse` entry points.
 - **Zero-Copy (`PatRef`, `PmtRef`)**: These structs hold references to the input buffer (`Bytes`). They are passed to the callbacks in the zero-copy `TsParser`. They provide efficient iterators over programs and streams (e.g., `PatRef::programs()`, `PmtRef::streams()`).
 
 ### `StreamType`

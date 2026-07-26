@@ -11,7 +11,7 @@ pub struct SegmentLimiterOperator {
     max_size: Option<u64>,
     current_duration: Duration,
     current_size: u64,
-    // Store the first initialization segment we encounter
+    // Most recent initialization segment, re-emitted at the start of each new sequence.
     init_segment: Option<M4sInitSegmentData>,
     // Track if we've output an init segment recently
     init_segment_sent: bool,
@@ -125,10 +125,10 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             }
             SegmentType::M4sInit => {
                 if let HlsData::M4sData(M4sData::InitSegment(init_segment)) = input {
-                    // Store the init segment for later use if it's the first one we've seen
-                    if self.init_segment.is_none() {
-                        self.init_segment = Some(init_segment.clone());
-                    }
+                    // Track the most recent init segment so a later size/duration split re-emits
+                    // the codec configuration the following M4sMedia is encoded against, not a
+                    // stale one from before a SegmentSplitOperator init-CRC switch.
+                    self.init_segment = Some(init_segment.clone());
 
                     // Always output the init segment when we encounter it directly
                     output(HlsData::M4sData(M4sData::InitSegment(init_segment)))?;

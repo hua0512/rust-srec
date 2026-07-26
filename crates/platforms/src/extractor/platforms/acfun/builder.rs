@@ -70,19 +70,30 @@ impl PlatformExtractor for Acfun {
             .await?;
 
         if response.result != 0 {
+            let detail = response
+                .error_msg
+                .unwrap_or_else(|| response.result.to_string());
             return Err(ExtractorError::ValidationError(format!(
-                "Failed to login: {}",
-                response.result
+                "Failed to login: {detail}"
             )));
         }
+
+        let user_id = response.user_id.ok_or_else(|| {
+            ExtractorError::ValidationError("Visitor login response missing userId".to_string())
+        })?;
+        let visitor_st = response.visitor_st.ok_or_else(|| {
+            ExtractorError::ValidationError(
+                "Visitor login response missing acfun.api.visitor_st".to_string(),
+            )
+        })?;
 
         let params = [
             ("subBiz", "mainApp".to_string()),
             ("kpn", "ACFUN_APP".to_string()),
             ("kpf", "PC_WEB".to_string()),
-            ("userId", response.user_id.to_string()),
+            ("userId", user_id.to_string()),
             ("did", did),
-            ("acfun.api.visitor_st", response.visitor_st),
+            ("acfun.api.visitor_st", visitor_st),
         ];
         let start_play_response = self
             .extractor

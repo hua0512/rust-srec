@@ -10,7 +10,7 @@ use pipeline_common::{
     WriterError, WriterProgress, WriterState, WriterStats, WriterTask, expand_filename_template,
 };
 
-use tracing::{Span, debug, info};
+use tracing::{Span, debug, info, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
@@ -50,6 +50,16 @@ impl HlsFormatStrategy {
         Ok(())
     }
 
+    /// Feed an already-written segment to `HlsAnalyzer::analyze_segment` for stats.
+    /// Validation failures (e.g. AV1 sample checks) are logged and swallowed so a single
+    /// non-conformant segment never aborts `WriterTask::run_from_channel`; the bytes are
+    /// already on disk by the time this runs.
+    fn analyze_written_segment(&mut self, item: &HlsData) {
+        if let Err(err) = self.analyzer.analyze_segment(item) {
+            warn!(error = %err, "HLS segment analysis failed; segment written, continuing");
+        }
+    }
+
     fn update_status(&self, state: &WriterState) {
         // Update the current span with progress information
         let span = Span::current();
@@ -84,19 +94,14 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     ) -> Result<u64, Self::StrategyError> {
         match item {
             HlsData::TsData(ts) => {
-                self.analyzer
-                    .analyze_segment(item)
-                    .map_err(HlsStrategyError::Analyzer)?;
                 let bytes_written = ts.data().len() as u64;
                 writer.write_all(ts.data())?;
                 // Accumulate TS segment duration
                 self.target_duration += ts.segment.duration;
+                self.analyze_written_segment(item);
                 Ok(bytes_written)
             }
             HlsData::M4sData(m4s_data) => {
-                self.analyzer
-                    .analyze_segment(item)
-                    .map_err(HlsStrategyError::Analyzer)?;
                 let bytes_written = match m4s_data {
                     M4sData::InitSegment(init) => {
                         info!("Found init segment, offset: {:?}", self.current_offset);
@@ -112,6 +117,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                     }
                 };
                 self.current_offset += bytes_written;
+                self.analyze_written_segment(item);
 
                 Ok(bytes_written)
             }

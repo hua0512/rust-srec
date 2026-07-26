@@ -273,20 +273,11 @@ impl Decoder for FlvDecoder {
                 "Invalid tag type encountered: {}. Attempting resync.",
                 src[0]
             );
-            // Discard the single invalid byte and try resyncing
-            // src.advance(1);
-            // Now attempt resync on the rest
-            if !self.try_resync(src) {
-                // Resync advanced the buffer. Return None to signal progress
-                // but no complete frame yet from *this* specific call point.
-                // The next call to decode will attempt parsing from the new position.
-                return Ok(None);
-            } else {
-                // Resync cleared the buffer or couldn't find anything.
-                // Need more data. try_resync already reserved space.
-                trace!("Resync failed or cleared buffer, returning None for more data.");
-                return Ok(None);
-            }
+            // try_resync either advances the buffer to the next candidate tag start or
+            // clears it and reserves space for more data; both outcomes yield here so the
+            // next decode call re-parses from the updated position.
+            self.try_resync(src);
+            return Ok(None);
         }
 
         if data_size > MAX_TAG_DATA_SIZE {

@@ -679,7 +679,13 @@ async fn run_hls_source_failover(
 
         let started_at = Instant::now();
         let session = match downloader.start(attempt_request).await {
-            Ok(session) => session,
+            Ok(session) => {
+                // Feed the successful start into SourceManager health so scores
+                // recover; record_result resets consecutive_failures and clears
+                // any disabled_until circuit-breaker state for this URL.
+                manager.record_success(&selected.original_url, started_at.elapsed());
+                session
+            }
             Err(err) => {
                 manager.record_failure(&selected.original_url, &err, started_at.elapsed());
                 last_error = Some(err);
@@ -695,11 +701,22 @@ async fn run_hls_source_failover(
         let handle = session.handle;
         let mut terminal = DownloadTerminal::Cancelled;
         let mut failed = None;
+        let mut attempt_delivered = false;
 
         while let Some(item) = items.next().await {
             match item {
                 Ok(item) => {
                     if !item.is_end_marker() {
+                        if !attempt_delivered {
+                            attempt_delivered = true;
+                            // A source that delivers media resets the failover
+                            // sweep: keep only this URL in `attempted` so
+                            // select_source_attempt can revisit sources that
+                            // failed earlier in the session, while still failing
+                            // over off this URL if it later drops.
+                            attempted.clear();
+                            attempted.insert(selected.original_url.clone());
+                        }
                         delivered_media = true;
                     }
                     if item_tx.send(Ok(item)).await.is_err() {

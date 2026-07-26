@@ -14,6 +14,7 @@ use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
 use std::sync::LazyLock;
+use tracing::warn;
 use url::Url;
 
 // Constants
@@ -131,7 +132,10 @@ impl Twitcasting {
 
         for (url, quality) in stream_configs {
             if let Some(stream_url) = url {
-                let info = self
+                // A single stale variant playlist (e.g. a 404 on `low`) must not
+                // discard the higher-quality variants already collected, so log
+                // and skip rather than propagating the per-variant error.
+                match self
                     .extract_hls_stream(
                         &self.extractor.client,
                         None,
@@ -139,8 +143,13 @@ impl Twitcasting {
                         Some(quality),
                         None,
                     )
-                    .await?;
-                stream_info.extend(info);
+                    .await
+                {
+                    Ok(info) => stream_info.extend(info),
+                    Err(e) => {
+                        warn!(quality, error = %e, "twitcasting variant playlist fetch failed; skipping");
+                    }
+                }
             }
         }
 

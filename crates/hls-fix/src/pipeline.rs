@@ -44,6 +44,24 @@ impl HlsPipelineConfigBuilder {
         }
     }
 
+    /// Toggle the `DefragmentOperator` stage in `HlsPipeline::build_pipeline`.
+    pub fn defragment(mut self, enabled: bool) -> Self {
+        self.config.defragment = enabled;
+        self
+    }
+
+    /// Toggle the `SegmentSplitOperator` stage in `HlsPipeline::build_pipeline`.
+    pub fn split_segments(mut self, enabled: bool) -> Self {
+        self.config.split_segments = enabled;
+        self
+    }
+
+    /// Toggle the `SegmentLimiterOperator` stage in `HlsPipeline::build_pipeline`.
+    pub fn segment_limiter(mut self, enabled: bool) -> Self {
+        self.config.segment_limiter = enabled;
+        self
+    }
+
     pub fn build(self) -> HlsPipelineConfig {
         self.config
     }

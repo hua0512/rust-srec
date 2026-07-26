@@ -20,7 +20,6 @@ pub static URL_REGEX: LazyLock<Regex> =
 
 pub struct Twitch {
     extractor: Extractor,
-    skip_live_extraction: bool,
 }
 
 impl Twitch {
@@ -47,10 +46,7 @@ impl Twitch {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
-        Self {
-            extractor,
-            skip_live_extraction: false,
-        }
+        Self { extractor }
     }
 
     fn get_device_id() -> String {
@@ -200,7 +196,7 @@ impl Twitch {
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
-        if !is_live || self.skip_live_extraction {
+        if !is_live {
             return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
                 .category_opt(category)
                 .live_start_time_opt(live_start_time)

@@ -127,14 +127,26 @@ impl PandaTV {
 
         let live_info = self.get_live_info(&media.user_id, pwd).await?;
 
+        // get_live_info only returns Ok when result == true, so the success
+        // payload (media/PlayList/chat_server) is present; surface a clear
+        // ValidationError if the API ever diverges from that contract.
+        let live_media = live_info.media.ok_or(ExtractorError::ValidationError(
+            "Live media field is missing".to_string(),
+        ))?;
+        let play_list = live_info.play_list.ok_or(ExtractorError::ValidationError(
+            "PlayList field is missing".to_string(),
+        ))?;
+        let chat_server = live_info.chat_server.ok_or(ExtractorError::ValidationError(
+            "Chat server field is missing".to_string(),
+        ))?;
+
         let category =
-            (!live_info.media.category.is_empty()).then(|| vec![live_info.media.category.clone()]);
-        let live_start_time = live_info.media.start_time.parse::<i64>().ok();
+            (!live_media.category.is_empty()).then(|| vec![live_media.category.clone()]);
+        let live_start_time = live_media.start_time.parse::<i64>().ok();
 
         // debug!("Live info: {:?}", live_info);
 
-        let hls_url = live_info
-            .play_list
+        let hls_url = play_list
             .hls
             .first()
             .ok_or(ExtractorError::ValidationError(
@@ -147,8 +159,8 @@ impl PandaTV {
         // Keep the historical meaning of "token" (chat server token). The live token is still
         // available in the response model if needed.
         // extras.insert("chat_server".to_string(), live_info.chat_server.url);
-        extras.insert("t".to_string(), live_info.chat_server.t.to_string());
-        extras.insert("token".to_string(), live_info.chat_server.token);
+        extras.insert("t".to_string(), chat_server.t.to_string());
+        extras.insert("token".to_string(), chat_server.token);
         extras.insert("rid".to_string(), bj_info.id.to_string());
         // extras.extend(self.extractor.get_platform_headers_map());
 
@@ -196,7 +208,10 @@ impl PandaTV {
             .await?;
 
         if !response.result {
-            return Err(ExtractorError::ValidationError(response.message));
+            let msg = response
+                .message
+                .unwrap_or_else(|| "Unknown error".to_string());
+            return Err(ExtractorError::ValidationError(msg));
         }
 
         Ok(response)

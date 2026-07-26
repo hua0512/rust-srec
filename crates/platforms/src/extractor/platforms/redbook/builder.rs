@@ -17,6 +17,12 @@ pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:https?://)?xhslink\.com/m/[a-zA-Z0-9_-]+").unwrap());
 static SCRIPT_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<script>window.__INITIAL_STATE__=(.*?)</script>").unwrap());
+/// Matches a bare JavaScript `undefined` value only where a JSON value can
+/// appear — immediately after `:`, `,` or `[`. Anchoring on the preceding
+/// delimiter leaves `undefined` substrings inside string values (nicknames,
+/// titles like "xundefinedy") untouched.
+static UNDEFINED_VALUE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"([:,\[])undefined\b").unwrap());
 
 // Constants for common strings and values
 const DEFAULT_QUALITY: &str = "原画";
@@ -145,7 +151,11 @@ impl RedBook {
         SCRIPT_DATA_REGEX
             .captures(body)
             .and_then(|captures| captures.get(1))
-            .map(|m| m.as_str().replace("undefined", "null"))
+            .map(|m| {
+                UNDEFINED_VALUE_REGEX
+                    .replace_all(m.as_str(), "${1}null")
+                    .into_owned()
+            })
             .filter(|data| !data.is_empty())
             .ok_or_else(|| {
                 ExtractorError::ValidationError(
@@ -228,7 +238,16 @@ impl RedBook {
         let artist = &room_data.host_info.nick_name;
         let avatar_url = Some(room_data.host_info.avatar.to_string());
         let site_url = self.extractor.url.clone();
-        let title = format!("{artist} 的直播");
+        // Prefer the server-provided room_info.room_title; the 回放 replay marker
+        // only appears there, so the guard below must see it rather than the
+        // "{artist} 的直播" fallback synthesized when room_title is absent.
+        let title = room_data
+            .room_info
+            .room_title
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| format!("{artist} 的直播"));
         let is_live = live_stream.live_status == SUCCESS_STATUS;
 
         // Validate live status
@@ -295,13 +314,14 @@ impl RedBook {
             ));
         }
 
-        // Process H265 streams
+        // Process H265 streams; offset by the H264 streams already pushed so
+        // priority = offset + index stays unique across both codec batches.
         if let Some(h265) = &pull_config.h265 {
             streams.extend(Self::process_streams(
                 h265,
                 DEFAULT_CODEC_H265,
                 pull_config,
-                h265.len(),
+                streams.len(),
             ));
         }
 

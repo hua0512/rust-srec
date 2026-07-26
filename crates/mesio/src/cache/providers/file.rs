@@ -17,6 +17,10 @@ use super::CacheProvider;
 pub struct FileCache {
     cache_dir: PathBuf,
     initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Serializes ensure_initialized so `initialized` is only set once the
+    /// directories exist; a failed attempt drops this guard, leaving init
+    /// retryable rather than latching a false "ready" state.
+    init_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
     enabled: bool,
     /// Maximum disk cache size in bytes (0 = unlimited)
     max_size: u64,
@@ -36,6 +40,7 @@ impl FileCache {
         Self {
             cache_dir,
             initialized: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            init_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             enabled,
             max_size,
         }
@@ -46,7 +51,7 @@ impl FileCache {
         use std::sync::atomic::Ordering;
 
         // Fast path - already initialized
-        if self.initialized.load(Ordering::Relaxed) {
+        if self.initialized.load(Ordering::Acquire) {
             return Ok(());
         }
 
@@ -55,35 +60,31 @@ impl FileCache {
             return Ok(());
         }
 
-        // Use compare_exchange to ensure only one thread initializes
-        if self
-            .initialized
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-        {
-            // We won the race, do initialization
-            fs::create_dir_all(&self.cache_dir).await?;
-
-            // Create subdirectories for different resource types
-            for res_type in &[
-                crate::cache::types::CacheResourceType::Headers,
-                crate::cache::types::CacheResourceType::Content,
-                crate::cache::types::CacheResourceType::Response,
-                crate::cache::types::CacheResourceType::Playlist,
-                crate::cache::types::CacheResourceType::Segment,
-                crate::cache::types::CacheResourceType::Key,
-            ] {
-                fs::create_dir_all(self.cache_dir.join(format!("{res_type:?}"))).await?;
-            }
-
-            // Mark as fully initialized with release ordering
-            self.initialized.store(true, Ordering::Release);
-        } else {
-            // Another thread is initializing, wait for it to complete
-            while !self.initialized.load(Ordering::Acquire) {
-                tokio::task::yield_now().await;
-            }
+        // Serialize on init_lock so concurrent callers wait for the winner
+        // instead of racing create_dir_all; losers re-check `initialized` under
+        // the guard and return once the winner has finished.
+        let _guard = self.init_lock.lock().await;
+        if self.initialized.load(Ordering::Acquire) {
+            return Ok(());
         }
+
+        fs::create_dir_all(&self.cache_dir).await?;
+
+        // Create subdirectories for different resource types
+        for res_type in &[
+            crate::cache::types::CacheResourceType::Headers,
+            crate::cache::types::CacheResourceType::Content,
+            crate::cache::types::CacheResourceType::Response,
+            crate::cache::types::CacheResourceType::Playlist,
+            crate::cache::types::CacheResourceType::Segment,
+            crate::cache::types::CacheResourceType::Key,
+        ] {
+            fs::create_dir_all(self.cache_dir.join(format!("{res_type:?}"))).await?;
+        }
+
+        // Only mark ready after every directory exists; an early `?` above
+        // leaves the flag false so the next ensure_initialized retries.
+        self.initialized.store(true, Ordering::Release);
 
         Ok(())
     }

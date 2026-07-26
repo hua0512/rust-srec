@@ -721,7 +721,13 @@ impl Sps {
             * 16;
 
         self.frame_crop_info.as_ref().map_or(base_height, |crop| {
-            base_height - (crop.frame_crop_top_offset + crop.frame_crop_bottom_offset) * 2
+            // Crop offsets are unbounded exp-golomb values; clamp to 0 rather
+            // than underflowing when they exceed base_height.
+            base_height.saturating_sub(
+                crop.frame_crop_top_offset
+                    .saturating_add(crop.frame_crop_bottom_offset)
+                    .saturating_mul(2),
+            )
         })
     }
 
@@ -732,7 +738,13 @@ impl Sps {
         let base_width = (self.pic_width_in_mbs_minus1 + 1) * 16;
 
         self.frame_crop_info.as_ref().map_or(base_width, |crop| {
-            base_width - (crop.frame_crop_left_offset + crop.frame_crop_right_offset) * 2
+            // Crop offsets are unbounded exp-golomb values; clamp to 0 rather
+            // than underflowing when they exceed base_width.
+            base_width.saturating_sub(
+                crop.frame_crop_left_offset
+                    .saturating_add(crop.frame_crop_right_offset)
+                    .saturating_mul(2),
+            )
         })
     }
 

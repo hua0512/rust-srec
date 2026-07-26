@@ -340,7 +340,10 @@ impl BilibiliDanmuProtocol {
             let version = BigEndian::read_u16(&data[offset + 6..offset + 8]);
             let operation = BigEndian::read_u32(&data[offset + 8..offset + 12]);
 
-            if offset + packet_len > data.len() {
+            // Each frame carries a 16-byte header; a shorter `packet_len` (including 0) would
+            // make the `data[offset + 16..offset + packet_len]` slice below panic and, when 0,
+            // leave `offset += packet_len` non-advancing, looping forever.
+            if packet_len < 16 || offset + packet_len > data.len() {
                 break;
             }
 

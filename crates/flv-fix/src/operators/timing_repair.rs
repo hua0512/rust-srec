@@ -262,9 +262,10 @@ impl TimingState {
                 if last.is_audio_sequence_header() {
                     expected < last.timestamp_ms
                 } else {
-                    let min_expected = last.timestamp_ms;
-
-                    expected <= min_expected
+                    // Treat equal timestamps as valid: an audio tag sharing the previous
+                    // audio tag's timestamp is not a backwards jump, so only a strictly
+                    // smaller `expected` is a rebound.
+                    expected < last.timestamp_ms
                 }
             } else {
                 false
@@ -274,9 +275,10 @@ impl TimingState {
                 if last.is_video_sequence_header() {
                     expected < last.timestamp_ms
                 } else {
-                    let min_expected = last.timestamp_ms;
-
-                    expected <= min_expected
+                    // Treat equal timestamps as valid: an enhanced METADATA video packet
+                    // (tag type 9) legitimately shares its coded frame's timestamp, so only
+                    // a strictly smaller `expected` is a rebound.
+                    expected < last.timestamp_ms
                 }
             } else {
                 false
@@ -339,18 +341,21 @@ impl TimingState {
         let last_ts = self.last_tag.as_ref().map(|t| t.timestamp_ms).unwrap_or(0);
 
         if let Some(last_video) = self.last_video_tag.as_ref().filter(|_| tag.is_video_tag()) {
-            // Calculate ideal next frame timestamp
-            let ideal_next_ts = last_video.timestamp_ms + self.video_frame_interval;
+            // Calculate ideal next frame timestamp; saturating_add keeps the u32 timeline
+            // from wrapping near u32::MAX after ~49.7 days accumulated in one segment.
+            let ideal_next_ts = last_video.timestamp_ms.saturating_add(self.video_frame_interval);
 
             new_delta = ideal_next_ts as i64 - current as i64;
         } else if let Some(last_audio) = self.last_audio_tag.as_ref().filter(|_| tag.is_audio_tag())
         {
-            let ideal_next_ts = last_audio.timestamp_ms + self.audio_sample_interval;
+            let ideal_next_ts = last_audio
+                .timestamp_ms
+                .saturating_add(self.audio_sample_interval);
             new_delta = ideal_next_ts as i64 - current as i64;
         } else if let Some(last) = &self.last_tag {
             // No type-specific last tag, use generic last tag
             let interval = max(self.video_frame_interval, self.audio_sample_interval);
-            new_delta = (last.timestamp_ms + interval) as i64 - current as i64;
+            new_delta = last.timestamp_ms.saturating_add(interval) as i64 - current as i64;
         }
 
         let expected = Self::apply_delta(current, new_delta);
@@ -360,7 +365,7 @@ impl TimingState {
             // to avoid negative timestamps or rebounding
             // in those cases, we use the last timestamp as a reference to calculate the delta
             if tag.is_video_tag() {
-                let adjusted_ts = last_ts + self.video_frame_interval;
+                let adjusted_ts = last_ts.saturating_add(self.video_frame_interval);
                 new_delta = if adjusted_ts >= current {
                     (adjusted_ts - current) as i64
                 } else {
@@ -368,7 +373,7 @@ impl TimingState {
                 };
             } else if tag.is_audio_tag() {
                 // calculate ideal next audio timestamp
-                let adjusted_ts = last_ts + self.audio_sample_interval;
+                let adjusted_ts = last_ts.saturating_add(self.audio_sample_interval);
                 new_delta = if adjusted_ts >= current {
                     (adjusted_ts - current) as i64
                 } else {

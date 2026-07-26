@@ -35,6 +35,9 @@ impl<T> ChannelSpec<T> {
         }
     }
 
+    /// `budget` is a per-side byte budget: spawn_pipeline builds independent
+    /// input and output ByteLimiters from it, so peak in-flight bytes across the
+    /// channel are bounded at roughly `2 * budget`, not `budget`.
     pub fn bytes(budget: usize, item_size: fn(&T) -> usize) -> Self {
         let max_budget = Semaphore::MAX_PERMITS.min(u32::MAX as usize);
         Self {
@@ -262,6 +265,11 @@ where
 {
     let batch_items = spec.batch_items();
     let output_capacity = spec.capacity.div_ceil(batch_items).max(1);
+    // The input and output sides get independent ByteLimiters (separate
+    // semaphores): the blocking task acquires output permits via block_on inside
+    // send_output_batch, so a shared pool could deadlock when buffered input
+    // permits leave fewer than one output batch's worth free. Each side is
+    // bounded by ChannelSpec::bytes' budget, so total in-flight is ~2x budget.
     let input_limiter = spec.byte_limiter();
     let output_limiter = spec.byte_limiter();
     let runtime = Handle::current();

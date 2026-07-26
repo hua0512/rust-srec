@@ -24,22 +24,12 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 300;
 
 /// Twitch Danmu Protocol Implementation using WebSocket IRC
 #[derive(Clone, Default)]
-pub struct TwitchDanmuProtocol {
-    /// Optional OAuth token for authenticated sessions
-    oauth_token: Option<String>,
-}
+pub struct TwitchDanmuProtocol;
 
 impl TwitchDanmuProtocol {
     /// Create a new TwitchDanmuProtocol instance (anonymous).
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Create a new TwitchDanmuProtocol with OAuth token for authenticated access.
-    pub fn with_oauth(token: impl Into<String>) -> Self {
-        Self {
-            oauth_token: Some(token.into()),
-        }
     }
 
     /// Generate random anonymous username
@@ -170,26 +160,12 @@ impl DanmuProtocol for TwitchDanmuProtocol {
             "CAP REQ :twitch.tv/tags twitch.tv/commands".into(),
         ));
 
-        // Send PASS (OAuth token or empty for anonymous)
-        let pass = if let Some(ref token) = self.oauth_token {
-            if token.starts_with("oauth:") {
-                format!("PASS {}", token)
-            } else {
-                format!("PASS oauth:{}", token)
-            }
-        } else {
-            "PASS oauth:".to_string()
-        };
-        messages.push(Message::Text(pass.into()));
+        // Anonymous read-only login: Twitch IRC accepts an empty PASS paired with
+        // a justinfan* NICK from generate_anonymous_nick and rejects a real OAuth
+        // PASS whose NICK does not match the token owner.
+        messages.push(Message::Text("PASS oauth:".into()));
 
-        // Send NICK
-        let nick = if self.oauth_token.is_some() {
-            // For authenticated, the nick should match the token owner
-            // But for simplicity, we still use anonymous nick pattern
-            Self::generate_anonymous_nick()
-        } else {
-            Self::generate_anonymous_nick()
-        };
+        let nick = Self::generate_anonymous_nick();
         messages.push(Message::Text(format!("NICK {}", nick).into()));
 
         // Join channel

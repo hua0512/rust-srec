@@ -2,10 +2,12 @@ use rand::{RngExt, rng};
 use reqwest::Client;
 use serde_json::json;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::debug;
 
 use crate::extractor::platforms::douyin::URL_REGEX;
@@ -16,8 +18,37 @@ use crate::extractor::{
     utils::capture_group_1_owned,
 };
 
-pub static GLOBAL_TTWID: LazyLock<Arc<Mutex<Option<String>>>> =
+/// A fetched `ttwid` becomes unusable to Douyin's servers over time, so `GLOBAL_TTWID`
+/// entries older than this are treated as absent by `GlobalTtwidManager::get_global_ttwid`
+/// and refetched.
+const TTWID_CACHE_EXPIRATION: Duration = Duration::from_secs(2 * 60 * 60); // 2 hours
+
+/// A `ttwid` value paired with the `Instant` it was stored, used by `CachedTtwid::is_stale`.
+#[derive(Clone)]
+struct CachedTtwid {
+    value: String,
+    fetched_at: Instant,
+}
+
+impl CachedTtwid {
+    fn new(value: String) -> Self {
+        Self {
+            value,
+            fetched_at: Instant::now(),
+        }
+    }
+
+    fn is_stale(&self) -> bool {
+        self.fetched_at.elapsed() > TTWID_CACHE_EXPIRATION
+    }
+}
+
+static GLOBAL_TTWID: LazyLock<Arc<Mutex<Option<CachedTtwid>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
+
+/// Serializes the network fetch in `fetch_and_store_global_ttwid` so concurrent callers
+/// share a single round-trip instead of each hitting `UNION_REGISTER_URL`.
+static GLOBAL_TTWID_FETCH_LOCK: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
 
 pub(crate) fn extract_rid(url: &str) -> Result<String, ExtractorError> {
     capture_group_1_owned(&URL_REGEX, url).ok_or(ExtractorError::ValidationError(
@@ -93,8 +124,11 @@ pub(crate) const DEFAULT_TTWID: &str = "1%7Cu7ogdHsSmHtxbt4hjDCNvcLfVJz78CTM0TTW
 ///
 /// # Returns
 ///
-/// A `String` containing the extracted `ttwid`, or the `DEFAULT_TTWID` as a fallback.
-pub async fn fetch_ttwid(client: &Client) -> String {
+/// The freshly fetched `ttwid`, or an `ExtractorError` when the request fails or the response
+/// carries no `ttwid` cookie. The stale `DEFAULT_TTWID` is never returned here so a transient
+/// failure cannot be cached as a valid token by `GlobalTtwidManager::set_global_ttwid`; callers
+/// retry on the next extraction instead.
+pub async fn fetch_ttwid(client: &Client) -> Result<String, ExtractorError> {
     let json = json!({
         "region": "cn",
         "aid": 6383,
@@ -105,19 +139,13 @@ pub async fn fetch_ttwid(client: &Client) -> String {
     });
 
     // Fetch ttwid from Douyin's ttwid endpoint
-    let response = match client
+    let response = client
         .post(UNION_REGISTER_URL)
         .header(reqwest::header::USER_AGENT, DEFAULT_UA)
         .json(&json)
         .send()
         .await
-    {
-        Ok(resp) => resp,
-        Err(e) => {
-            debug!("Failed to fetch ttwid: {}", e);
-            return DEFAULT_TTWID.to_string();
-        }
-    };
+        .map_err(ExtractorError::HttpError)?;
 
     // Extract ttwid from response cookies
     response
@@ -140,9 +168,10 @@ pub async fn fetch_ttwid(client: &Client) -> String {
             })
         })
         .next()
-        .unwrap_or_else(|| {
-            debug!("Failed to extract ttwid from response, using default");
-            DEFAULT_TTWID.to_string()
+        .ok_or_else(|| {
+            ExtractorError::ValidationError(
+                "Failed to extract ttwid from Douyin register response".to_string(),
+            )
         })
 }
 
@@ -162,15 +191,20 @@ impl GlobalTtwidManager {
         Self
     }
 
-    /// Get the current global ttwid if it exists
+    /// Get the current global ttwid if it exists and has not passed `TTWID_CACHE_EXPIRATION`.
+    /// A stale entry is reported as absent so callers refetch a fresh token.
     pub fn get_global_ttwid() -> Option<String> {
-        GLOBAL_TTWID.lock().ok().and_then(|g| g.clone())
+        let guard = GLOBAL_TTWID.lock().ok()?;
+        guard
+            .as_ref()
+            .filter(|cached| !cached.is_stale())
+            .map(|cached| cached.value.clone())
     }
 
-    /// Set the global ttwid
+    /// Set the global ttwid, stamping it with the current `Instant` for staleness tracking.
     pub fn set_global_ttwid(ttwid: &str) {
         if let Ok(mut guard) = GLOBAL_TTWID.lock() {
-            *guard = Some(ttwid.to_string());
+            *guard = Some(CachedTtwid::new(ttwid.to_string()));
         }
     }
 
@@ -193,21 +227,30 @@ impl GlobalTtwidManager {
     ///
     /// # Returns
     ///
-    /// The ttwid value that was fetched and stored globally, or the default ttwid if the request failed.
+    /// The ttwid value that was fetched and stored globally, or an `ExtractorError` when the
+    /// fetch fails. A failed fetch leaves `GLOBAL_TTWID` untouched so the next call retries.
     pub async fn fetch_and_store_global_ttwid(client: &Client) -> Result<String, ExtractorError> {
-        // First check if we already have a global ttwid
+        // First check if we already have a fresh global ttwid
         if let Some(existing_ttwid) = Self::get_global_ttwid() {
             debug!("Using existing global ttwid: {}", existing_ttwid);
             return Ok(existing_ttwid);
         }
 
+        // Hold GLOBAL_TTWID_FETCH_LOCK across the fetch so concurrent callers share one
+        // round-trip; re-check the cache after acquiring it to consume any token another
+        // caller stored while we waited.
+        let _lock = GLOBAL_TTWID_FETCH_LOCK.lock().await;
+        if let Some(existing_ttwid) = Self::get_global_ttwid() {
+            return Ok(existing_ttwid);
+        }
+
         debug!("Fetching fresh ttwid from Douyin servers (global)");
 
-        let ttwid = fetch_ttwid(client).await;
+        let ttwid = fetch_ttwid(client).await?;
 
         debug!("Fetched global ttwid: {}", ttwid);
 
-        // Store the ttwid globally
+        // Store the ttwid globally only after a successful fetch.
         Self::set_global_ttwid(&ttwid);
 
         Ok(ttwid)

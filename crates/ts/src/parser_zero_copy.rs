@@ -863,8 +863,11 @@ impl TsParser {
 
             if let Ok(packet) = TsPacketRef::parse(chunk) {
                 // Check continuity counter if enabled
+                let mut is_duplicate = false;
                 if self.continuity_mode != ContinuityMode::Disabled {
                     let status = self.check_cc(&packet);
+                    is_duplicate =
+                        matches!(status, crate::packet::ContinuityStatus::Duplicate);
                     self.handle_continuity_status(packet.pid, status)?;
                 }
 
@@ -873,7 +876,11 @@ impl TsParser {
                     on_packet_cb(&packet)?;
                 }
 
-                if self.is_relevant_psi_pid(packet.pid)
+                // A duplicated packet (same continuity_counter, carries payload) repeats bytes
+                // already fed to append_psi_bytes; re-feeding them would double-append into
+                // psi_buffers and corrupt any PAT/PMT section spanning multiple packets.
+                if !is_duplicate
+                    && self.is_relevant_psi_pid(packet.pid)
                     && let Some(payload) = packet.payload()
                 {
                     self.process_packet_psi_payload(
@@ -942,7 +949,17 @@ impl TsParser {
                 self.append_psi_bytes(pid, &payload[pointer_end..], on_pat, on_pmt, on_scte35)?;
             }
         } else {
-            self.append_psi_bytes(pid, &payload, on_pat, on_pmt, on_scte35)?;
+            // Continuation payload (no payload_unit_start_indicator): only append when a
+            // section is already in progress for this PID. An empty psi_buffers entry means
+            // this segment began mid-section, so the bytes are continuation garbage that would
+            // desync the section-length state machine in append_psi_bytes.
+            let section_in_progress = self
+                .psi_buffers
+                .get(&pid)
+                .is_some_and(|buffer| !buffer.is_empty());
+            if section_in_progress {
+                self.append_psi_bytes(pid, &payload, on_pat, on_pmt, on_scte35)?;
+            }
         }
 
         Ok(())
