@@ -61,7 +61,7 @@ msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
 #. placeholder {0}: uploads.length
-#: src/components/streamers/card/upload-indicator.tsx:46
+#: src/components/streamers/card/upload-indicator.tsx:45
 msgid "{0, plural, one {# active upload} other {# active uploads}}"
 msgstr "{0, plural, one {# active upload} other {# active uploads}}"
 
@@ -81,7 +81,7 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, one {# failed} other {# failed}}"
 
 #. placeholder {0}: upload.filesTotal
-#: src/components/streamers/card/upload-indicator.tsx:61
+#: src/components/streamers/card/upload-indicator.tsx:57
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# file} other {# files}}"
 
@@ -270,7 +270,7 @@ msgstr "Active Days"
 msgid "Active Download"
 msgstr "Active Download"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:388
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
@@ -585,7 +585,7 @@ msgstr "Are you sure you want to delete this job? This will permanently remove i
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:148
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:146
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:420
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
@@ -1048,7 +1048,7 @@ msgstr "Case Insensitive"
 msgid "Categories"
 msgstr "Categories"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:239
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:242
 msgid "Category"
 msgstr "Category"
 
@@ -1142,7 +1142,7 @@ msgstr "Check size after copy"
 msgid "Check this streamer and record when it goes live."
 msgstr "Check this streamer and record when it goes live."
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:129
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:127
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:332
 msgid "Check triggered"
 msgstr "Check triggered"
@@ -1278,7 +1278,7 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
 #: src/components/pipeline/status-config.ts:106
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:325
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:288
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:624
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
@@ -1449,16 +1449,16 @@ msgstr "Confirmed via backstop timer."
 msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
-#: src/components/connection-status-indicator.tsx:24
+#: src/components/connection-status-indicator.tsx:23
 #: src/components/logging/log-viewer.tsx:368
 msgid "Connected"
 msgstr "Connected"
 
-#: src/components/connection-status-indicator.tsx:29
+#: src/components/connection-status-indicator.tsx:28
 msgid "Connecting..."
 msgstr "Connecting..."
 
-#: src/components/connection-status-indicator.tsx:39
+#: src/components/connection-status-indicator.tsx:38
 msgid "Connection Error"
 msgstr "Connection Error"
 
@@ -1934,7 +1934,7 @@ msgstr "Dark"
 msgid "Dashboard"
 msgstr "Dashboard"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:272
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:256
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:327
 msgid "Database"
 msgstr "Database"
@@ -2043,7 +2043,7 @@ msgid "Definitive Offline"
 msgstr "Definitive Offline"
 
 #: src/components/health/health-status-badge.tsx:48
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:629
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:580
 msgid "Degraded"
 msgstr "Degraded"
 
@@ -2180,12 +2180,12 @@ msgstr "Depends On (Ancestors)"
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:279
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:282
 #: src/components/pipeline/workflows/workflow-editor.tsx:333
 msgid "Description"
 msgstr "Description"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:288
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
@@ -2274,7 +2274,7 @@ msgstr "Disable selected"
 msgid "Disabled"
 msgstr "Disabled"
 
-#: src/components/connection-status-indicator.tsx:34
+#: src/components/connection-status-indicator.tsx:33
 #: src/components/logging/log-viewer.tsx:373
 msgid "Disconnected"
 msgstr "Disconnected"
@@ -2284,7 +2284,7 @@ msgstr "Disconnected"
 msgid "Discontinuity"
 msgstr "Discontinuity"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:288
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:272
 msgid "Disk"
 msgstr "Disk"
 
@@ -2358,7 +2358,7 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:280
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:264
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:328
 msgid "Download Manager"
 msgstr "Download Manager"
@@ -2468,7 +2468,7 @@ msgstr "e.g. mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "e.g. My Favorite Streamer"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:220
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:223
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
@@ -2928,7 +2928,7 @@ msgstr "F"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:108
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:336
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:359
 msgid "Failed"
@@ -3046,7 +3046,7 @@ msgstr "Failed to delete session"
 msgid "Failed to delete sessions"
 msgstr "Failed to delete sessions"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:123
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:121
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:327
 msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
@@ -3168,7 +3168,7 @@ msgstr "Failed to retry steps"
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:131
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:129
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:334
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
@@ -3203,7 +3203,7 @@ msgstr "Failed to update priority"
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:142
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:140
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:80
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:345
 msgid "Failed to update streamer"
@@ -3713,7 +3713,7 @@ msgid "Health"
 msgstr "Health"
 
 #: src/components/health/health-status-badge.tsx:35
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:627
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:578
 msgid "Healthy"
 msgstr "Healthy"
 
@@ -3924,7 +3924,7 @@ msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgid "Icon"
 msgstr "Icon"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:189
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:192
 msgid "ID"
 msgstr "ID"
 
@@ -4853,7 +4853,7 @@ msgid "My Template"
 msgstr "My Template"
 
 #: src/components/notifications/channel-form.tsx:369
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
 msgid "Name"
@@ -4945,7 +4945,7 @@ msgstr "Next"
 msgid "Night"
 msgstr "Night"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:451
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:403
 msgid "No active recordings"
 msgstr "No active recordings"
 
@@ -5228,7 +5228,7 @@ msgstr "Normal"
 msgid "Normal+"
 msgstr "Normal+"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:491
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:442
 msgid "Not available"
 msgstr "Not available"
 
@@ -5476,7 +5476,7 @@ msgstr "Optimize Stream Headers"
 msgid "Optional"
 msgstr "Optional"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:289
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:292
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
@@ -5576,7 +5576,7 @@ msgstr "Outputs"
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:229
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:213
 msgid "Overall Health"
 msgstr "Overall Health"
 
@@ -5774,7 +5774,7 @@ msgstr "PENDING CONFIRMATION"
 msgid "Pending Error Clears"
 msgstr "Pending Error Clears"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:334
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:303
 msgid "Pending Jobs"
 msgstr "Pending Jobs"
 
@@ -5917,7 +5917,7 @@ msgstr "Pipeline queue critical"
 msgid "Pipeline started"
 msgstr "Pipeline started"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:306
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:289
 msgid "Pipeline Statistics"
 msgstr "Pipeline Statistics"
 
@@ -6054,7 +6054,7 @@ msgstr "Port"
 msgid "Position"
 msgstr "Position"
 
-#: src/components/sidebar/footer.tsx:26
+#: src/components/sidebar/footer.tsx:25
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "Powered by <0>Rust-srec</0>."
 
@@ -6110,7 +6110,7 @@ msgstr "Preset created successfully"
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:124
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:127
 msgid "Preset Details"
 msgstr "Preset Details"
 
@@ -6241,7 +6241,7 @@ msgid "Processed Segment TTL (ms)"
 msgstr "Processed Segment TTL (ms)"
 
 #: src/components/pipeline/status-config.ts:104
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:345
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:314
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:98
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:343
 msgid "Processing"
@@ -6256,7 +6256,7 @@ msgid "Processing nodes"
 msgstr "Processing nodes"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1676
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Processor"
 msgstr "Processor"
 
@@ -7122,7 +7122,7 @@ msgstr "Select API Mode"
 msgid "Select behavior"
 msgstr "Select behavior"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:257
 msgid "Select category"
 msgstr "Select category"
 
@@ -7213,7 +7213,7 @@ msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:236
 #: src/components/notifications/channel-form.tsx:400
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:164
 msgid "Select type"
 msgstr "Select type"
 
@@ -7384,12 +7384,13 @@ msgstr "Shows notifications while the application tab is open by polling recent 
 msgid "Sidebar Layout"
 msgstr "Sidebar Layout"
 
+#: src/integrations/lingui/router-plugin.test.tsx:42
 #: src/routes/_public/login.lazy.tsx:241
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/sidebar/menu.tsx:145
-#: src/components/sidebar/menu.tsx:152
+#: src/components/sidebar/menu.tsx:133
+#: src/components/sidebar/menu.tsx:140
 msgid "Sign out"
 msgstr "Sign out"
 
@@ -7663,7 +7664,7 @@ msgstr "Streamer check history"
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:119
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:117
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:323
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
@@ -7694,7 +7695,7 @@ msgstr "Streamer Offline"
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:138
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:136
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:341
 msgid "Streamer updated"
 msgstr "Streamer updated"
@@ -7713,7 +7714,7 @@ msgstr "Streamer updated successfully"
 msgid "Streamers"
 msgstr "Streamers"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:454
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:406
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
@@ -7828,7 +7829,7 @@ msgstr "System shutting down"
 msgid "System started"
 msgstr "System started"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:189
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:187
 msgid "System Status"
 msgstr "System Status"
 
@@ -8001,7 +8002,7 @@ msgstr "This filter activates only during the window highlighted on the timeline
 msgid "This filter's settings could not be read."
 msgstr "This filter's settings could not be read."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:301
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
@@ -8426,7 +8427,7 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
 #: src/components/health/health-status-badge.tsx:61
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:631
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:582
 msgid "Unhealthy"
 msgstr "Unhealthy"
 
@@ -8442,7 +8443,7 @@ msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for 
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:633
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:584
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -8493,7 +8494,7 @@ msgid "UPDATE"
 msgstr "UPDATE"
 
 #: src/components/config/global/backup-restore-card.tsx:179
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:549
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:500
 msgid "Updated"
 msgstr "Updated"
 
@@ -8501,7 +8502,7 @@ msgstr "Updated"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "Updates existing items and creates new ones. Nothing is deleted."
 
-#: src/components/streamers/card/upload-indicator.tsx:56
+#: src/components/streamers/card/upload-indicator.tsx:53
 msgid "upload"
 msgstr "upload"
 
@@ -8705,7 +8706,7 @@ msgstr "Video Settings"
 msgid "View"
 msgstr "View"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:398
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:366
 msgid "View All"
 msgstr "View All"
 
@@ -8723,7 +8724,7 @@ msgstr "View Detailed Logs & Outputs"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:162
 #: src/components/sessions/session-card.tsx:269
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:198
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:196
 msgid "View Details"
 msgstr "View Details"
 

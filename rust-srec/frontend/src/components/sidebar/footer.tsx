@@ -9,15 +9,14 @@ const UI_BUILD =
     : 'dev';
 
 export function Footer() {
-  const { data: health } = useQuery({
-    queryKey: ['health', 'version'],
+  const { data: backendVersion } = useQuery({
+    queryKey: ['health'],
     queryFn: () => getSystemHealth(),
+    select: (health) => health.version,
     staleTime: 5 * 60 * 1000,
     retry: false,
     refetchOnWindowFocus: false,
   });
-
-  const backendVersion = health?.version ?? null;
 
   return (
     <div className="z-20 w-full bg-background/95 shadow backdrop-blur supports-[backdrop-filter]:bg-background/60">

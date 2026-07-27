@@ -17,7 +17,7 @@ import {
   type Node,
   type NodeChange,
 } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+import reactFlowStylesheet from '@xyflow/react/dist/style.css?url';
 
 import { GraphViewport } from '../../graph-shared';
 import { DagStepDefinition } from '@/api/schemas';
@@ -353,9 +353,12 @@ WorkflowFlowEditorInner.displayName = 'WorkflowFlowEditorInner';
 
 export const WorkflowFlowEditor = memo((props: WorkflowFlowEditorProps) => {
   return (
-    <ReactFlowProvider>
-      <WorkflowFlowEditorInner {...props} />
-    </ReactFlowProvider>
+    <>
+      <link rel="stylesheet" href={reactFlowStylesheet} precedence="default" />
+      <ReactFlowProvider>
+        <WorkflowFlowEditorInner {...props} />
+      </ReactFlowProvider>
+    </>
   );
 });
 

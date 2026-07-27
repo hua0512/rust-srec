@@ -9,10 +9,7 @@ import { type I18n } from '@lingui/core';
 import { useEffect, useState } from 'react';
 
 import appCss from '../styles.css?url';
-import '@fontsource/inter/latin-400.css';
-import '@fontsource/inter/latin-500.css';
-import '@fontsource/inter/latin-600.css';
-import '@fontsource/inter/latin-700.css';
+import interFont from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
 import { NotFound } from '@/components/not-found';
 import { QueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/providers/theme-provider';
@@ -107,7 +104,16 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'Rust-Srec' },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      {
+        rel: 'preload',
+        href: interFont,
+        as: 'font',
+        type: 'font/woff2',
+        crossOrigin: 'anonymous',
+      },
+    ],
     scripts: [
       {
         children: buildThemeScriptHTML(),
@@ -133,6 +139,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const serverMode = theme.mode === 'system' ? 'light' : theme.mode;
 
   useEffect(() => {
+    if (!isDesktop) return;
+
     let unlisten: (() => void) | null = null;
     let cancelled = false;
 
@@ -153,7 +161,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       cancelled = true;
       unlisten?.();
     };
-  }, []);
+  }, [isDesktop]);
 
   if (isDesktop) {
     return (
