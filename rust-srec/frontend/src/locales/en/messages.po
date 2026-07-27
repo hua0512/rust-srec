@@ -270,7 +270,7 @@ msgstr "Active Days"
 msgid "Active Download"
 msgstr "Active Download"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
@@ -585,7 +585,7 @@ msgstr "Are you sure you want to delete this job? This will permanently remove i
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:146
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:145
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:420
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
@@ -1142,7 +1142,7 @@ msgstr "Check size after copy"
 msgid "Check this streamer and record when it goes live."
 msgstr "Check this streamer and record when it goes live."
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:127
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:126
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:332
 msgid "Check triggered"
 msgstr "Check triggered"
@@ -1278,7 +1278,7 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
 #: src/components/pipeline/status-config.ts:106
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:325
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:336
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:288
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:624
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
@@ -1934,7 +1934,7 @@ msgstr "Dark"
 msgid "Dashboard"
 msgstr "Dashboard"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:256
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:267
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:327
 msgid "Database"
 msgstr "Database"
@@ -2043,7 +2043,7 @@ msgid "Definitive Offline"
 msgstr "Definitive Offline"
 
 #: src/components/health/health-status-badge.tsx:48
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:580
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:591
 msgid "Degraded"
 msgstr "Degraded"
 
@@ -2284,7 +2284,7 @@ msgstr "Disconnected"
 msgid "Discontinuity"
 msgstr "Discontinuity"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:272
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:283
 msgid "Disk"
 msgstr "Disk"
 
@@ -2358,7 +2358,7 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:264
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:275
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:328
 msgid "Download Manager"
 msgstr "Download Manager"
@@ -2928,7 +2928,7 @@ msgstr "F"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:108
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:336
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:347
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:359
 msgid "Failed"
@@ -3046,7 +3046,7 @@ msgstr "Failed to delete session"
 msgid "Failed to delete sessions"
 msgstr "Failed to delete sessions"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:121
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:120
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:327
 msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
@@ -3168,7 +3168,7 @@ msgstr "Failed to retry steps"
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:129
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:128
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:334
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
@@ -3203,7 +3203,7 @@ msgstr "Failed to update priority"
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:140
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:139
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:80
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:345
 msgid "Failed to update streamer"
@@ -3713,7 +3713,7 @@ msgid "Health"
 msgstr "Health"
 
 #: src/components/health/health-status-badge.tsx:35
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:578
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:589
 msgid "Healthy"
 msgstr "Healthy"
 
@@ -4945,7 +4945,7 @@ msgstr "Next"
 msgid "Night"
 msgstr "Night"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:403
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:414
 msgid "No active recordings"
 msgstr "No active recordings"
 
@@ -5228,7 +5228,7 @@ msgstr "Normal"
 msgid "Normal+"
 msgstr "Normal+"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:442
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:453
 msgid "Not available"
 msgstr "Not available"
 
@@ -5576,7 +5576,7 @@ msgstr "Outputs"
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:213
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:212
 msgid "Overall Health"
 msgstr "Overall Health"
 
@@ -5774,7 +5774,7 @@ msgstr "PENDING CONFIRMATION"
 msgid "Pending Error Clears"
 msgstr "Pending Error Clears"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:303
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:314
 msgid "Pending Jobs"
 msgstr "Pending Jobs"
 
@@ -5917,7 +5917,7 @@ msgstr "Pipeline queue critical"
 msgid "Pipeline started"
 msgstr "Pipeline started"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:289
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:300
 msgid "Pipeline Statistics"
 msgstr "Pipeline Statistics"
 
@@ -6241,7 +6241,7 @@ msgid "Processed Segment TTL (ms)"
 msgstr "Processed Segment TTL (ms)"
 
 #: src/components/pipeline/status-config.ts:104
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:314
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:325
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:98
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:343
 msgid "Processing"
@@ -7664,7 +7664,7 @@ msgstr "Streamer check history"
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:117
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:116
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:323
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
@@ -7695,7 +7695,7 @@ msgstr "Streamer Offline"
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:136
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:135
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:341
 msgid "Streamer updated"
 msgstr "Streamer updated"
@@ -7714,7 +7714,7 @@ msgstr "Streamer updated successfully"
 msgid "Streamers"
 msgstr "Streamers"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:406
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:417
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
@@ -7829,7 +7829,7 @@ msgstr "System shutting down"
 msgid "System started"
 msgstr "System started"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:187
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:186
 msgid "System Status"
 msgstr "System Status"
 
@@ -8427,7 +8427,7 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
 #: src/components/health/health-status-badge.tsx:61
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:582
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:593
 msgid "Unhealthy"
 msgstr "Unhealthy"
 
@@ -8443,7 +8443,7 @@ msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for 
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:584
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:595
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -8494,7 +8494,7 @@ msgid "UPDATE"
 msgstr "UPDATE"
 
 #: src/components/config/global/backup-restore-card.tsx:179
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:500
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:511
 msgid "Updated"
 msgstr "Updated"
 
@@ -8558,6 +8558,11 @@ msgstr "Uploads"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:160
 msgid "Uptime"
 msgstr "Uptime"
+
+#. placeholder {0}: formatLocalizedDuration( health.uptime_secs, i18n.locale, )
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:251
+msgid "Uptime <0>{0}</0>"
+msgstr "Uptime <0>{0}</0>"
 
 #: src/components/notifications/channel-card.tsx:144
 #: src/components/streamers/config/streamer-identity-fields.tsx:71
@@ -8706,7 +8711,7 @@ msgstr "Video Settings"
 msgid "View"
 msgstr "View"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:366
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:377
 msgid "View All"
 msgstr "View All"
 
@@ -8724,7 +8729,7 @@ msgstr "View Detailed Logs & Outputs"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:162
 #: src/components/sessions/session-card.tsx:269
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:196
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:195
 msgid "View Details"
 msgstr "View Details"
 

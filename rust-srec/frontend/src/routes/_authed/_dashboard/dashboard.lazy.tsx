@@ -27,8 +27,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { formatRelativeTime } from '@/lib/date-utils';
-import { formatDuration } from '@/lib/format';
+import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
 import { useCallback, useMemo, memo, useState, useEffect } from 'react';
 
 const SKELETON_COUNT = 4;
@@ -242,11 +241,23 @@ function Dashboard() {
                       </span>
                     </div>
                     <p className="text-xs font-medium text-muted-foreground/70 mt-3 flex items-center gap-2">
-                      <Activity className="w-3 h-3" />
-                      <span className="font-mono">
-                        {formatDuration(health.uptime_secs)}
-                      </span>{' '}
-                      uptime
+                      <Activity className="w-3 h-3 shrink-0" />
+                      {/* Single inline span keeps the flex gap out of the
+                          sentence; tabular-nums (not font-mono) keeps the
+                          refreshing digits fixed-width while sharing the
+                          label's font metrics, so nothing shifts off
+                          baseline. */}
+                      <span>
+                        <Trans>
+                          Uptime{' '}
+                          <span className="tabular-nums">
+                            {formatLocalizedDuration(
+                              health.uptime_secs,
+                              i18n.locale,
+                            )}
+                          </span>
+                        </Trans>
+                      </span>
                     </p>
                   </CardContent>
                 </DashboardCard>
