@@ -57,7 +57,7 @@ function SystemHealthPage() {
     isRefetching,
     error,
   } = useQuery({
-    queryKey: ['health', 'detailed'],
+    queryKey: ['health'],
     queryFn: () => getSystemHealth(),
     refetchInterval: 10000,
   });

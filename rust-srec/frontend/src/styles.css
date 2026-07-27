@@ -1,6 +1,15 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
 /* Tailwind v4: ensure desktop build (Vite root=frontend/desktop) still scans frontend sources. */
 @source './**/*.{ts,tsx,js,jsx}';
 
@@ -9,6 +18,7 @@
 body {
   @apply m-0;
   font-family:
+    'Inter Variable',
     'Inter',
     -apple-system,
     BlinkMacSystemFont,
@@ -223,6 +233,184 @@ html {
 
 .animation-delay-4000 {
   animation-delay: 4s;
+}
+
+@keyframes rs-connection-ping {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes rs-connection-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+
+  to {
+    opacity: 0.4;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes rs-connection-error-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.2;
+    transform: scale(1.3);
+  }
+}
+
+@keyframes rs-connection-dot-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rs-tooltip-status-dot-enter {
+  from {
+    transform: scale(0.8);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes rs-tooltip-status-label-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes rs-notification-ping {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes rs-dashboard-grid-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rs-dashboard-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rs-connection-ping {
+  animation: rs-connection-ping 1.5s ease-in-out infinite;
+}
+
+.rs-connection-glow {
+  animation: rs-connection-glow 300ms ease-out both;
+}
+
+.rs-connection-error-pulse {
+  animation: rs-connection-error-pulse 2s ease-in-out infinite;
+}
+
+.rs-connection-dot {
+  animation: rs-connection-dot-enter 200ms ease-out both;
+}
+
+.rs-tooltip-status-dot {
+  animation: rs-tooltip-status-dot-enter 200ms ease-out both;
+}
+
+.rs-tooltip-status-label {
+  animation: rs-tooltip-status-label-enter 200ms ease-out both;
+}
+
+.rs-notification-ping {
+  animation: rs-notification-ping 2s ease-in-out infinite;
+}
+
+.rs-dashboard-grid {
+  animation: rs-dashboard-grid-enter 300ms ease-out both;
+}
+
+.rs-dashboard-grid-item {
+  animation: rs-dashboard-item-enter 150ms ease-out both;
+}
+
+.rs-dashboard-grid-item:nth-child(1) {
+  animation-delay: 20ms;
+}
+
+.rs-dashboard-grid-item:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.rs-dashboard-grid-item:nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.rs-dashboard-grid-item:nth-child(4) {
+  animation-delay: 140ms;
+}
+
+.rs-dashboard-empty-enter {
+  animation: rs-dashboard-grid-enter 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rs-connection-ping,
+  .rs-connection-glow,
+  .rs-connection-error-pulse,
+  .rs-connection-dot,
+  .rs-tooltip-status-dot,
+  .rs-tooltip-status-label,
+  .rs-notification-ping,
+  .rs-dashboard-grid,
+  .rs-dashboard-grid-item,
+  .rs-dashboard-empty-enter {
+    animation: none;
+  }
 }
 
 /* Theme-mode circular reveal (use-circular-transition.ts).

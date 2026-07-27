@@ -17,7 +17,6 @@ import {
   TooltipContent,
   TooltipProvider,
 } from '@/components/ui/tooltip';
-import { motion } from 'motion/react';
 
 interface MenuProps {
   isOpen: boolean | undefined;
@@ -69,18 +68,7 @@ const MenuItem = React.memo(function MenuItem({
                 <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
                 {showDot && (
                   <div className="absolute -top-1 -right-1 flex items-center justify-center">
-                    <motion.div
-                      animate={{
-                        scale: [1, 1.8, 1],
-                        opacity: [0.5, 0, 0.5],
-                      }}
-                      transition={{
-                        duration: 2,
-                        repeat: Infinity,
-                        ease: 'easeInOut',
-                      }}
-                      className="absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]"
-                    />
+                    <div className="rs-notification-ping absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]" />
                     <div className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
                   </div>
                 )}

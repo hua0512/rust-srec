@@ -32,6 +32,10 @@
 
 ### Fixes
 
+- **The web interface loads faster**
+
+  The dashboard now downloads less startup code, uses a smaller font file, reuses health checks, and caches built assets for repeat visits. Translation data is also loaded as a reusable compressed file instead of being embedded in every page. These changes keep the existing appearance, animations, language support, and behavior unchanged.
+
 - **Text that stayed in English when using another language**
 
   In the recording filter editor, the day-of-week tooltips and the day and time preset menus were always shown in English. The priority labels on notification events and channels were too. They now follow the language you picked.

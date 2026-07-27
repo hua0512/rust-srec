@@ -25,13 +25,11 @@ import { type I18n } from '@lingui/core';
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime } from '@/lib/date-utils';
 import { formatDuration } from '@/lib/format';
 import { useCallback, useMemo, memo, useState, useEffect } from 'react';
-import { containerVariants, itemVariants } from '@/lib/animation';
 
 const SKELETON_COUNT = 4;
 const GRID_4 = 'grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-4';
@@ -200,100 +198,85 @@ function Dashboard() {
             </Button>
           </div>
 
-          <AnimatePresence mode="wait">
-            {isHealthLoading || !health ? (
-              <motion.div
-                key="health-skeleton"
-                className={GRID_4}
-                initial={false}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              >
-                {Array.from({ length: SKELETON_COUNT }, (_, i) => (
-                  <CardSkeleton key={i} />
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="health-content"
-                className={GRID_4}
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-              >
-                <motion.div variants={itemVariants}>
-                  <DashboardCard className="h-full">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                        <Trans>Overall Health</Trans>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-4">
-                        <div className="relative">
-                          <div
-                            className={cn(
-                              'h-4 w-4 rounded-full',
-                              health.status === 'healthy'
-                                ? 'bg-green-500'
-                                : health.status === 'degraded'
-                                  ? 'bg-yellow-500'
-                                  : 'bg-red-500',
-                            )}
-                          />
-                          <div
-                            className={cn(
-                              'absolute inset-0 rounded-full animate-ping opacity-75',
-                              health.status === 'healthy'
-                                ? 'bg-green-500'
-                                : health.status === 'degraded'
-                                  ? 'bg-yellow-500'
-                                  : 'bg-red-500',
-                            )}
-                          />
-                        </div>
-                        <span className="text-2xl font-bold capitalize bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                          {getStatusLabel(health.status, i18n)}
-                        </span>
+          {isHealthLoading || !health ? (
+            <div className={GRID_4}>
+              {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+                <CardSkeleton key={i} />
+              ))}
+            </div>
+          ) : (
+            <div className={`${GRID_4} rs-dashboard-grid`}>
+              <div className="rs-dashboard-grid-item">
+                <DashboardCard className="h-full">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                      <Trans>Overall Health</Trans>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <div
+                          className={cn(
+                            'h-4 w-4 rounded-full',
+                            health.status === 'healthy'
+                              ? 'bg-green-500'
+                              : health.status === 'degraded'
+                                ? 'bg-yellow-500'
+                                : 'bg-red-500',
+                          )}
+                        />
+                        <div
+                          className={cn(
+                            'absolute inset-0 rounded-full animate-ping opacity-75',
+                            health.status === 'healthy'
+                              ? 'bg-green-500'
+                              : health.status === 'degraded'
+                                ? 'bg-yellow-500'
+                                : 'bg-red-500',
+                          )}
+                        />
                       </div>
-                      <p className="text-xs font-medium text-muted-foreground/70 mt-3 flex items-center gap-2">
-                        <Activity className="w-3 h-3" />
-                        <span className="font-mono">
-                          {formatDuration(health.uptime_secs)}
-                        </span>{' '}
-                        uptime
-                      </p>
-                    </CardContent>
-                  </DashboardCard>
-                </motion.div>
-                <motion.div variants={itemVariants}>
-                  <ComponentStatusCard
-                    name={i18n._(msg`Database`)}
-                    component={dbComponent}
-                    icon={HardDrive}
-                    mounted={mounted}
-                  />
-                </motion.div>
-                <motion.div variants={itemVariants}>
-                  <ComponentStatusCard
-                    name={i18n._(msg`Download Manager`)}
-                    component={downloadMgrComponent}
-                    icon={Activity}
-                    mounted={mounted}
-                  />
-                </motion.div>
-                <motion.div variants={itemVariants}>
-                  <ComponentStatusCard
-                    name={i18n._(msg`Disk`)}
-                    component={diskComponent}
-                    icon={HardDrive}
-                    mounted={mounted}
-                  />
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                      <span className="text-2xl font-bold capitalize bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
+                        {getStatusLabel(health.status, i18n)}
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground/70 mt-3 flex items-center gap-2">
+                      <Activity className="w-3 h-3" />
+                      <span className="font-mono">
+                        {formatDuration(health.uptime_secs)}
+                      </span>{' '}
+                      uptime
+                    </p>
+                  </CardContent>
+                </DashboardCard>
+              </div>
+              <div className="rs-dashboard-grid-item">
+                <ComponentStatusCard
+                  name={i18n._(msg`Database`)}
+                  component={dbComponent}
+                  icon={HardDrive}
+                  mounted={mounted}
+                />
+              </div>
+              <div className="rs-dashboard-grid-item">
+                <ComponentStatusCard
+                  name={i18n._(msg`Download Manager`)}
+                  component={downloadMgrComponent}
+                  icon={Activity}
+                  mounted={mounted}
+                />
+              </div>
+              <div className="rs-dashboard-grid-item">
+                <ComponentStatusCard
+                  name={i18n._(msg`Disk`)}
+                  component={diskComponent}
+                  icon={HardDrive}
+                  mounted={mounted}
+                />
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Pipeline Stats Section */}
@@ -307,75 +290,60 @@ function Dashboard() {
             </h2>
           </div>
 
-          <AnimatePresence mode="wait">
-            {isStatsLoading ? (
-              <motion.div
-                key="stats-skeleton"
-                className={GRID_4}
-                initial={false}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              >
-                {Array.from({ length: SKELETON_COUNT }, (_, i) => (
-                  <CardSkeleton key={i} />
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="stats-content"
-                className={GRID_4}
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-              >
-                <motion.div variants={itemVariants}>
-                  <StatCard
-                    title={<Trans>Pending Jobs</Trans>}
-                    icon={Circle}
-                    value={stats?.pending_count}
-                    color="text-yellow-500"
-                    bg="bg-yellow-500/10"
-                    href="/pipeline/jobs"
-                    search={{ status: 'PENDING' }}
-                  />
-                </motion.div>
-                <motion.div variants={itemVariants}>
-                  <StatCard
-                    title={<Trans>Processing</Trans>}
-                    icon={Activity}
-                    value={stats?.processing_count}
-                    color="text-blue-500"
-                    bg="bg-blue-500/10"
-                    href="/pipeline/jobs"
-                    search={{ status: 'PROCESSING' }}
-                  />
-                </motion.div>
-                <motion.div variants={itemVariants}>
-                  <StatCard
-                    title={<Trans>Completed</Trans>}
-                    icon={CheckCircle}
-                    value={stats?.completed_count}
-                    color="text-green-500"
-                    bg="bg-green-500/10"
-                    href="/pipeline/jobs"
-                    search={{ status: 'COMPLETED' }}
-                  />
-                </motion.div>
-                <motion.div variants={itemVariants}>
-                  <StatCard
-                    title={<Trans>Failed</Trans>}
-                    icon={XCircle}
-                    value={stats?.failed_count}
-                    color="text-red-500"
-                    bg="bg-red-500/10"
-                    href="/pipeline/jobs"
-                    search={{ status: 'FAILED' }}
-                  />
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {isStatsLoading ? (
+            <div className={GRID_4}>
+              {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+                <CardSkeleton key={i} />
+              ))}
+            </div>
+          ) : (
+            <div className={`${GRID_4} rs-dashboard-grid`}>
+              <div className="rs-dashboard-grid-item">
+                <StatCard
+                  title={<Trans>Pending Jobs</Trans>}
+                  icon={Circle}
+                  value={stats?.pending_count}
+                  color="text-yellow-500"
+                  bg="bg-yellow-500/10"
+                  href="/pipeline/jobs"
+                  search={{ status: 'PENDING' }}
+                />
+              </div>
+              <div className="rs-dashboard-grid-item">
+                <StatCard
+                  title={<Trans>Processing</Trans>}
+                  icon={Activity}
+                  value={stats?.processing_count}
+                  color="text-blue-500"
+                  bg="bg-blue-500/10"
+                  href="/pipeline/jobs"
+                  search={{ status: 'PROCESSING' }}
+                />
+              </div>
+              <div className="rs-dashboard-grid-item">
+                <StatCard
+                  title={<Trans>Completed</Trans>}
+                  icon={CheckCircle}
+                  value={stats?.completed_count}
+                  color="text-green-500"
+                  bg="bg-green-500/10"
+                  href="/pipeline/jobs"
+                  search={{ status: 'COMPLETED' }}
+                />
+              </div>
+              <div className="rs-dashboard-grid-item">
+                <StatCard
+                  title={<Trans>Failed</Trans>}
+                  icon={XCircle}
+                  value={stats?.failed_count}
+                  color="text-red-500"
+                  bg="bg-red-500/10"
+                  href="/pipeline/jobs"
+                  search={{ status: 'FAILED' }}
+                />
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Active Recordings Section */}
@@ -401,63 +369,46 @@ function Dashboard() {
             )}
           </div>
 
-          <AnimatePresence mode="wait">
-            {isStreamersLoading ? (
-              <motion.div
-                key="streamers-skeleton"
-                className={GRID_STREAMERS}
-                initial={false}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              >
-                {Array.from({ length: SKELETON_COUNT }, (_, i) => (
-                  <StreamerCardSkeleton key={i} />
-                ))}
-              </motion.div>
-            ) : activeStreamers.length > 0 ? (
-              <motion.div
-                key="streamers-content"
-                className={GRID_STREAMERS}
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-              >
-                {activeStreamers.map((streamer) => (
-                  <motion.div key={streamer.id} variants={itemVariants}>
-                    <StreamerCard
-                      streamer={streamer}
-                      onDelete={handleDelete}
-                      onToggle={handleToggle}
-                      onCheck={handleCheck}
-                    />
-                  </motion.div>
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="streamers-empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.12 }}
-              >
-                <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 border border-dashed border-white/10 rounded-3xl bg-card/30 backdrop-blur-sm">
-                  <div className="p-4 rounded-full bg-muted/20">
-                    <Activity className="h-8 w-8 text-muted-foreground/50" />
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="font-medium text-muted-foreground">
-                      <Trans>No active recordings</Trans>
-                    </h3>
-                    <p className="text-sm text-muted-foreground/60">
-                      <Trans>Streamers currently live will appear here.</Trans>
-                    </p>
-                  </div>
+          {isStreamersLoading ? (
+            <div className={GRID_STREAMERS}>
+              {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+                <StreamerCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : activeStreamers.length > 0 ? (
+            <div className={`${GRID_STREAMERS} rs-dashboard-grid`}>
+              {activeStreamers.map((streamer, index) => (
+                <div
+                  key={streamer.id}
+                  className="rs-dashboard-grid-item"
+                  style={{ animationDelay: `${20 + index * 40}ms` }}
+                >
+                  <StreamerCard
+                    streamer={streamer}
+                    onDelete={handleDelete}
+                    onToggle={handleToggle}
+                    onCheck={handleCheck}
+                  />
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              ))}
+            </div>
+          ) : (
+            <div className="rs-dashboard-empty-enter">
+              <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 border border-dashed border-white/10 rounded-3xl bg-card/30 backdrop-blur-sm">
+                <div className="p-4 rounded-full bg-muted/20">
+                  <Activity className="h-8 w-8 text-muted-foreground/50" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-medium text-muted-foreground">
+                    <Trans>No active recordings</Trans>
+                  </h3>
+                  <p className="text-sm text-muted-foreground/60">
+                    <Trans>Streamers currently live will appear here.</Trans>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>
