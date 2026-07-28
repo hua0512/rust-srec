@@ -56,7 +56,7 @@ rust-srec 使用 **4 层配置层级** 实现灵活控制。详见 [配置层级
 |------|------|--------|
 | `streamer_check_interval` | 检查主播状态的间隔 | `60 Secs` |
 | `offline_check_interval` | 检查离线状态的间隔 | `20 Secs` |
-| `offline_detection_count` | 判定主播离线前的重试次数 | `3` |
+| `offline_detection_count` | 确认主播离线所需的连续检查次数。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
 | `retention_period` | 历史记录保留天数 | `30 Days` |
 | `enable_proxy` | 通过代理服务器路由流量 | `false` |
 

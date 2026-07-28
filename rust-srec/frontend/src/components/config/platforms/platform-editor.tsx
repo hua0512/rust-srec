@@ -61,6 +61,8 @@ export function PlatformEditor({
       pipeline: platform.pipeline,
       session_complete_pipeline: platform.session_complete_pipeline,
       paired_segment_pipeline: platform.paired_segment_pipeline,
+      offline_check_count: platform.offline_check_count,
+      offline_check_delay_ms: platform.offline_check_delay_ms,
     },
   });
   const { reset } = form;
@@ -87,6 +89,8 @@ export function PlatformEditor({
       pipeline: platform.pipeline,
       session_complete_pipeline: platform.session_complete_pipeline,
       paired_segment_pipeline: platform.paired_segment_pipeline,
+      offline_check_count: platform.offline_check_count,
+      offline_check_delay_ms: platform.offline_check_delay_ms,
     });
   }, [platform, reset]);
 

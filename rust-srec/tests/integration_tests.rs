@@ -1194,8 +1194,13 @@ mod streamer_manager_tests {
 
         let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::with_error_threshold(repo, broadcaster, 2);
+        let manager = StreamerManager::new(repo, broadcaster);
         manager.hydrate().await.expect("Failed to hydrate");
+        let metadata_store = manager.metadata_store();
+        metadata_store
+            .get_mut(&streamer_id)
+            .expect("Streamer not found")
+            .offline_check_count = 2;
 
         // Record errors until backoff triggers
         manager
@@ -1229,12 +1234,21 @@ mod streamer_manager_tests {
 
         let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::with_error_threshold(repo, broadcaster, 1);
+        let manager = StreamerManager::new(repo, broadcaster);
         manager.hydrate().await.expect("Failed to hydrate");
+        let metadata_store = manager.metadata_store();
+        metadata_store
+            .get_mut(&streamer_id)
+            .expect("Streamer not found")
+            .offline_check_count = 2;
 
         // Trigger backoff
         manager
-            .record_error(&streamer_id, "Error")
+            .record_error(&streamer_id, "Error 1")
+            .await
+            .expect("Failed to record error");
+        manager
+            .record_error(&streamer_id, "Error 2")
             .await
             .expect("Failed to record error");
         assert!(manager.is_disabled(&streamer_id));
@@ -1374,8 +1388,8 @@ mod end_to_end_tests {
             avatar_url: None,
             streamer_specific_config: None,
             last_error: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1713,11 +1727,13 @@ mod end_to_end_tests {
                 streamer_name,
                 error_message,
                 consecutive_errors,
+                backoff_threshold,
                 ..
             } => {
                 assert_eq!(streamer_name, "ErrorStreamer");
                 assert_eq!(error_message, "Network timeout");
                 assert_eq!(consecutive_errors, 1);
+                assert_eq!(backoff_threshold, 3);
             }
             _ => panic!("Expected TransientError event"),
         }

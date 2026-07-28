@@ -45,6 +45,29 @@ graph LR
 2. **列表/集合追加或覆盖**：根据具体字段设计。
 3. **认证信息 (Cookies)**：通常遵循“有则覆盖”原则。如果主播配置了专属 Cookie，则忽略平台或全局 Cookie。
 
+### 离线判定和下载失败恢复共用同一个次数
+
+`offline_check_count` 是连续离线信号的统一容忍次数。运行时会根据全局、平台、
+模板和主播配置合并出每个主播的最终值，并将其同时用于：
+
+- 确认主播离线前所需的连续离线状态检查次数
+- 连续下载失败后让主播进入临时冷却的失败次数
+
+默认值为 `3`。即使将 `offline_check_count` 设置为 `1`，下载失败阈值也最低为
+`2`，以避免一次临时 CDN 或网络错误立即触发冷却。达到阈值后，冷却从 60 秒开始，
+后续连续失败会让时间依次翻倍，最长为一小时。成功的状态检查或持续的下载进度会
+清除累计失败状态。
+
+`offline_check_delay_ms` 控制离线确认检查间隔及相关的会话迟滞窗口，不控制冷却时长。
+
+::: warning 已弃用的兼容格式
+序列化 `StreamerMetadata` 中的别名 `effective_offline_check_count` 和
+`effective_offline_check_delay_ms` 已弃用。未包含 `backoff_threshold` 的持久化
+`TransientError` 事件也已弃用。这些兼容格式将在未来版本中移除。新的集成必须使用
+`offline_check_count` 和 `offline_check_delay_ms`，并在每个序列化的瞬时错误事件中包含
+`backoff_threshold`。
+:::
+
 ## 动态配置与热重载 (Hot-Reloading)
 
 rust-srec 支持配置热重载。当您通过 Web UI 或 API 修改全局设置或主播配置时：

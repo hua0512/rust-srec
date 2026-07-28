@@ -279,8 +279,8 @@ pub async fn create_streamer(
                 Some(v.to_string())
             }
         }),
-        effective_offline_check_count: 3,
-        effective_offline_check_delay_ms: 20_000,
+        offline_check_count: 3,
+        offline_check_delay_ms: 20_000,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -960,8 +960,8 @@ mod tests {
             last_error: Some("test error".to_string()),
             last_live_time: Some(chrono::Utc::now()),
             streamer_specific_config: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -995,8 +995,8 @@ mod tests {
             last_error: None,
             last_live_time: None,
             streamer_specific_config: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };

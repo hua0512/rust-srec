@@ -134,9 +134,9 @@ pub struct SessionLifecycle {
 /// Wired at lifecycle construction (see
 /// [`SessionLifecycle::with_hysteresis_resolver`]) — typically captures an
 /// `Arc<StreamerManager>` and reads the per-streamer
-/// `effective_offline_check_count` / `effective_offline_check_delay_ms`
-/// values cached on `StreamerMetadata`. Returning `None` falls back to the
-/// lifecycle's default `HysteresisConfig`.
+/// resolved `offline_check_count` / `offline_check_delay_ms` values cached on
+/// `StreamerMetadata`. Returning `None` falls back to the lifecycle's default
+/// `HysteresisConfig`.
 pub type HysteresisWindowFn = Arc<dyn Fn(&str) -> Option<HysteresisConfig> + Send + Sync>;
 
 impl SessionLifecycle {
