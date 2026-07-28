@@ -70,6 +70,8 @@ export function TemplateEditor({
           pipeline: template.pipeline,
           session_complete_pipeline: template.session_complete_pipeline,
           paired_segment_pipeline: template.paired_segment_pipeline,
+          offline_check_count: template.offline_check_count,
+          offline_check_delay_ms: template.offline_check_delay_ms,
         }
       : {
           name: '',
@@ -92,6 +94,8 @@ export function TemplateEditor({
           pipeline: null,
           session_complete_pipeline: null,
           paired_segment_pipeline: null,
+          offline_check_count: null,
+          offline_check_delay_ms: null,
         },
   });
   const { reset } = form;
@@ -120,6 +124,8 @@ export function TemplateEditor({
         pipeline: template.pipeline,
         session_complete_pipeline: template.session_complete_pipeline,
         paired_segment_pipeline: template.paired_segment_pipeline,
+        offline_check_count: template.offline_check_count,
+        offline_check_delay_ms: template.offline_check_delay_ms,
       });
     }
   }, [template, reset]);
