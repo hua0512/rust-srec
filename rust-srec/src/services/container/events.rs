@@ -315,7 +315,7 @@ impl ConfigEventHandler {
                 // Ensure merged config cache is not stale after streamer/template/platform changes.
                 self.config_service.invalidate_streamer(&streamer_id);
 
-                // Refresh the cached effective offline_check_* on the
+                // Refresh the cached resolved offline_check_* on the
                 // streamer metadata so the actor's StreamerConfig and
                 // SessionLifecycle hysteresis backstop pick up any new
                 // per-streamer override.
@@ -357,7 +357,7 @@ impl ConfigEventHandler {
             }
             ConfigUpdateEvent::PlatformUpdated { platform_id } => {
                 debug!("Received platform config update event: {}", platform_id);
-                // Refresh effective offline_check_* on every streamer
+                // Refresh resolved offline_check_* on every streamer
                 // bound to this platform. The cache invalidation runs
                 // upstream; we just need to repopulate metadata.
                 let affected: Vec<String> = self
@@ -391,7 +391,7 @@ impl ConfigEventHandler {
             ConfigUpdateEvent::GlobalUpdated => {
                 debug!("Received global config update event");
 
-                // Refresh effective offline_check_* on every streamer
+                // Refresh resolved offline_check_* on every streamer
                 // since the global default may have changed (and any
                 // streamer not overriding this layer inherits from it).
                 let all_ids: Vec<String> = self

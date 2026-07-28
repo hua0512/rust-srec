@@ -24,7 +24,7 @@ use crate::database::repositories::{
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
-use crate::streamer::{StreamerManager, StreamerMetadata};
+use crate::streamer::{StreamerManager, StreamerMetadata, download_failure_threshold};
 use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
@@ -1196,10 +1196,11 @@ impl<
         let mut tx = self.begin_immediate().await?;
 
         let new_error_count = StreamerTxOps::increment_error(&mut tx, &streamer.id, error).await?;
+        let backoff_threshold = download_failure_threshold(streamer.offline_check_count);
 
         let disabled_until = self
             .streamer_manager
-            .disabled_until_for_error_count(new_error_count);
+            .disabled_until_for_error_count(new_error_count, streamer.offline_check_count);
 
         StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, disabled_until).await?;
 
@@ -1209,6 +1210,7 @@ impl<
                 streamer_name = %streamer.name,
                 until = %until,
                 consecutive_errors = new_error_count,
+                backoff_threshold,
                 "temporarily disabled (error backoff)"
             );
         }
@@ -1219,6 +1221,7 @@ impl<
             streamer_name: streamer.name.clone(),
             error_message: error.to_string(),
             consecutive_errors: new_error_count,
+            backoff_threshold,
             timestamp: now,
         };
         MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;

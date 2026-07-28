@@ -447,7 +447,7 @@ impl ServiceContainer {
 
         info!("Hydrated {} streamers", streamer_count);
 
-        // Populate effective_offline_check_* on the in-memory metadata cache
+        // Populate resolved offline_check_* on the in-memory metadata cache
         // for every hydrated streamer. Without this, freshly hydrated metadata
         // sits at default (3 / 20_000) and platform/template/streamer overrides
         // wouldn't take effect until each streamer's config was independently

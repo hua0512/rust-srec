@@ -59,12 +59,7 @@ use tracing::{debug, info};
 use crate::downloader::engine::EngineType;
 use crate::downloader::{DownloadFailureKind, DownloadProtocol};
 use crate::session::state::OfflineSignal;
-
-/// Floor for the classifier threshold. Operators who set
-/// `offline_check_count = 1` for very aggressive offline polling still get a
-/// safety margin against mid-stream RST reconnects, which the
-/// `note_successful_segment` reset covers but only after the segment lands.
-const MIN_CONSECUTIVE_FAILURE_THRESHOLD: usize = 2;
+use crate::streamer::download_failure_threshold;
 
 /// A classifier inspects an engine failure and decides whether it is a
 /// definitive offline signal worth bypassing the slower hysteresis path.
@@ -76,8 +71,7 @@ pub struct OfflineClassifier {
     /// Trailing window for the consecutive-failures rule.
     window: Duration,
     /// Number of failures inside [`Self::window`] that trips the
-    /// definitive-offline signal. Floored at
-    /// [`MIN_CONSECUTIVE_FAILURE_THRESHOLD`].
+    /// definitive-offline signal. Uses the shared download-failure floor.
     threshold: usize,
 }
 
@@ -102,7 +96,7 @@ impl OfflineClassifier {
         let count = offline_check_count.max(1);
         let interval = offline_check_interval_ms.max(1_000);
         let window = Duration::from_millis(count as u64 * interval);
-        let threshold = (count as usize).max(MIN_CONSECUTIVE_FAILURE_THRESHOLD);
+        let threshold = download_failure_threshold(count) as usize;
         Self {
             failure_log: DashMap::new(),
             window,
@@ -120,7 +114,7 @@ impl OfflineClassifier {
         Self {
             failure_log: DashMap::new(),
             window,
-            threshold: threshold.max(MIN_CONSECUTIVE_FAILURE_THRESHOLD),
+            threshold: threshold.max(download_failure_threshold(1) as usize),
         }
     }
 

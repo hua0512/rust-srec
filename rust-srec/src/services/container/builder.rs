@@ -171,8 +171,8 @@ impl ServiceContainer {
             std::sync::Arc::new(move |streamer_id: &str| {
                 sm_for_resolver.get_streamer(streamer_id).map(|m| {
                     crate::session::HysteresisConfig::from_scheduler(
-                        m.effective_offline_check_count,
-                        m.effective_offline_check_delay_ms,
+                        m.offline_check_count,
+                        m.offline_check_delay_ms,
                     )
                 })
             });

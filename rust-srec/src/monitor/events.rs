@@ -11,6 +11,11 @@ use tokio::sync::{broadcast, oneshot};
 
 use crate::domain::StreamerState;
 use crate::domain::streamer::FatalErrorType;
+use crate::streamer::{DEFAULT_OFFLINE_CHECK_COUNT, download_failure_threshold};
+
+fn default_backoff_threshold() -> i32 {
+    download_failure_threshold(DEFAULT_OFFLINE_CHECK_COUNT)
+}
 
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
@@ -60,6 +65,9 @@ pub enum MonitorEvent {
         streamer_name: String,
         error_message: String,
         consecutive_errors: i32,
+        /// Consecutive-error count that applies backoff for this streamer.
+        #[serde(default = "default_backoff_threshold")]
+        backoff_threshold: i32,
         timestamp: DateTime<Utc>,
     },
     /// Streamer state changed.
@@ -149,11 +157,10 @@ impl MonitorEvent {
             MonitorEvent::StreamerOffline { .. } => true,
             MonitorEvent::FatalError { .. } => true,
             MonitorEvent::TransientError {
-                consecutive_errors, ..
-            } => {
-                // Only notify after multiple consecutive errors
-                *consecutive_errors >= 3
-            }
+                consecutive_errors,
+                backoff_threshold,
+                ..
+            } => *consecutive_errors >= *backoff_threshold,
             MonitorEvent::StateChanged { .. } => false,
         }
     }
@@ -270,6 +277,7 @@ mod tests {
             streamer_name: "Test".to_string(),
             error_message: "Network error".to_string(),
             consecutive_errors: 2,
+            backoff_threshold: 3,
             timestamp: Utc::now(),
         };
         assert!(!transient_error.should_notify());
@@ -279,9 +287,50 @@ mod tests {
             streamer_name: "Test".to_string(),
             error_message: "Network error".to_string(),
             consecutive_errors: 3,
+            backoff_threshold: 3,
             timestamp: Utc::now(),
         };
         assert!(transient_error_many.should_notify());
+    }
+
+    #[test]
+    fn transient_error_notification_uses_event_backoff_threshold() {
+        let event = MonitorEvent::TransientError {
+            streamer_id: "123".to_string(),
+            streamer_name: "Test".to_string(),
+            error_message: "Network error".to_string(),
+            consecutive_errors: 3,
+            backoff_threshold: 5,
+            timestamp: Utc::now(),
+        };
+        assert!(!event.should_notify());
+    }
+
+    #[test]
+    fn transient_error_without_serialized_threshold_uses_legacy_default() {
+        let event = MonitorEvent::TransientError {
+            streamer_id: "123".to_string(),
+            streamer_name: "Test".to_string(),
+            error_message: "Network error".to_string(),
+            consecutive_errors: 3,
+            backoff_threshold: 5,
+            timestamp: Utc::now(),
+        };
+        let mut value = serde_json::to_value(event).unwrap();
+        value["TransientError"]
+            .as_object_mut()
+            .unwrap()
+            .remove("backoff_threshold");
+
+        let restored: MonitorEvent = serde_json::from_value(value).unwrap();
+        assert!(restored.should_notify());
+        assert!(matches!(
+            restored,
+            MonitorEvent::TransientError {
+                backoff_threshold: 3,
+                ..
+            }
+        ));
     }
 
     #[test]

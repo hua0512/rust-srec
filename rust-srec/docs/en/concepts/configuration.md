@@ -84,6 +84,23 @@ The builder is intentionally conservative: most fields are "override if present"
 
 For most string/number/bool fields, a higher layer replaces the value when it provides one.
 
+### Offline detection and download failure recovery share one count
+
+`offline_check_count` is the single inherited tolerance for consecutive offline signals. The
+runtime uses the resolved per-streamer value for both:
+
+- consecutive offline status checks before confirming that a streamer has gone offline
+- consecutive download failures before placing the streamer into temporary cooldown
+
+The default is `3`. Download failures apply a minimum threshold of `2`, even when
+`offline_check_count` is set to `1`, to avoid entering cooldown after one transient CDN or
+network failure. Once the threshold is reached, cooldown starts at 60 seconds and doubles after
+each additional consecutive failure, up to one hour. A successful status check or sustained
+download progress clears the accumulated failure state.
+
+`offline_check_delay_ms` controls the interval between offline confirmation checks and the
+related session hysteresis window. It does not control the cooldown duration.
+
 ### Cookies: "present wins" (including empty strings)
 
 Cookies are treated as a single optional string. If a higher layer provides `cookies`, it
@@ -172,7 +189,8 @@ Supported keys that affect `MergedConfig`:
 
 - `output_folder`, `output_filename_template`, `output_file_format`
 - `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- `record_danmu`, `cookies`, `download_engine`
+- `record_danmu`, `cookies`, `download_engine`, `offline_check_count`,
+  `offline_check_delay_ms`
 - `proxy_config` (JSON object)
 - `stream_selection_config` (JSON object)
 - `event_hooks` (JSON object)

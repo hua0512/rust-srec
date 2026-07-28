@@ -56,7 +56,7 @@ Access via **Settings** → **Global Config**. The settings are organized into s
 |---------|-------------|---------|
 | `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
 | `offline_check_interval` | Interval between checking offline status | `20 Secs` |
-| `offline_detection_count` | Retries before marking streamer as offline | `3` |
+| `offline_detection_count` | Consecutive offline checks before confirming the streamer is offline. The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
 | `retention_period` | Number of days to keep recordings in history | `30 Days` |
 | `enable_proxy` | Route traffic through an intermediate server | `false` |
 
