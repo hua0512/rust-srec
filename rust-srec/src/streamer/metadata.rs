@@ -294,17 +294,26 @@ mod tests {
         assert_eq!(download_failure_threshold(u32::MAX), i32::MAX);
     }
 
-    #[test]
-    fn deprecated_effective_offline_check_fields_deserialize_into_unified_names() {
-        let mut value = serde_json::to_value(create_test_metadata()).unwrap();
-        let object = value.as_object_mut().unwrap();
-        let count = object.remove("offline_check_count").unwrap();
-        let delay = object.remove("offline_check_delay_ms").unwrap();
-        object.insert("effective_offline_check_count".to_string(), count);
-        object.insert("effective_offline_check_delay_ms".to_string(), delay);
+    mod deprecated_compatibility {
+        #![allow(deprecated)]
 
-        let restored: StreamerMetadata = serde_json::from_value(value).unwrap();
-        assert_eq!(restored.offline_check_count, DEFAULT_OFFLINE_CHECK_COUNT);
-        assert_eq!(restored.offline_check_delay_ms, 20_000);
+        use super::*;
+
+        #[test]
+        #[deprecated(
+            note = "effective_offline_check_* aliases and this test will be removed in a future release"
+        )]
+        fn effective_offline_check_aliases_remove_in_future_release() {
+            let mut value = serde_json::to_value(create_test_metadata()).unwrap();
+            let object = value.as_object_mut().unwrap();
+            let count = object.remove("offline_check_count").unwrap();
+            let delay = object.remove("offline_check_delay_ms").unwrap();
+            object.insert("effective_offline_check_count".to_string(), count);
+            object.insert("effective_offline_check_delay_ms".to_string(), delay);
+
+            let restored: StreamerMetadata = serde_json::from_value(value).unwrap();
+            assert_eq!(restored.offline_check_count, DEFAULT_OFFLINE_CHECK_COUNT);
+            assert_eq!(restored.offline_check_delay_ms, 20_000);
+        }
     }
 }

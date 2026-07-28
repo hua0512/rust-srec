@@ -313,31 +313,40 @@ mod tests {
         assert!(!event.should_notify());
     }
 
-    #[test]
-    fn transient_error_without_serialized_threshold_uses_deprecated_default() {
-        let event = MonitorEvent::TransientError {
-            streamer_id: "123".to_string(),
-            streamer_name: "Test".to_string(),
-            error_message: "Network error".to_string(),
-            consecutive_errors: 3,
-            backoff_threshold: 5,
-            timestamp: Utc::now(),
-        };
-        let mut value = serde_json::to_value(event).unwrap();
-        value["TransientError"]
-            .as_object_mut()
-            .unwrap()
-            .remove("backoff_threshold");
+    mod deprecated_compatibility {
+        #![allow(deprecated)]
 
-        let restored: MonitorEvent = serde_json::from_value(value).unwrap();
-        assert!(restored.should_notify());
-        assert!(matches!(
-            restored,
-            MonitorEvent::TransientError {
-                backoff_threshold: 3,
-                ..
-            }
-        ));
+        use super::*;
+
+        #[test]
+        #[deprecated(
+            note = "missing backoff_threshold compatibility and this test will be removed in a future release"
+        )]
+        fn missing_backoff_threshold_remove_in_future_release() {
+            let event = MonitorEvent::TransientError {
+                streamer_id: "123".to_string(),
+                streamer_name: "Test".to_string(),
+                error_message: "Network error".to_string(),
+                consecutive_errors: 3,
+                backoff_threshold: 5,
+                timestamp: Utc::now(),
+            };
+            let mut value = serde_json::to_value(event).unwrap();
+            value["TransientError"]
+                .as_object_mut()
+                .unwrap()
+                .remove("backoff_threshold");
+
+            let restored: MonitorEvent = serde_json::from_value(value).unwrap();
+            assert!(restored.should_notify());
+            assert!(matches!(
+                restored,
+                MonitorEvent::TransientError {
+                    backoff_threshold: 3,
+                    ..
+                }
+            ));
+        }
     }
 
     #[test]
