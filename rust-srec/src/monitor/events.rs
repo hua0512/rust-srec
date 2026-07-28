@@ -13,7 +13,11 @@ use crate::domain::StreamerState;
 use crate::domain::streamer::FatalErrorType;
 use crate::streamer::{DEFAULT_OFFLINE_CHECK_COUNT, download_failure_threshold};
 
-fn default_backoff_threshold() -> i32 {
+/// Supplies the deprecated default for events serialized without a threshold.
+///
+/// Missing `backoff_threshold` support is retained for persisted legacy events
+/// and will be removed in a future version.
+fn deprecated_backoff_threshold_default() -> i32 {
     download_failure_threshold(DEFAULT_OFFLINE_CHECK_COUNT)
 }
 
@@ -66,7 +70,10 @@ pub enum MonitorEvent {
         error_message: String,
         consecutive_errors: i32,
         /// Consecutive-error count that applies backoff for this streamer.
-        #[serde(default = "default_backoff_threshold")]
+        ///
+        /// Omitting this field during deserialization is deprecated and will
+        /// be rejected in a future version.
+        #[serde(default = "deprecated_backoff_threshold_default")]
         backoff_threshold: i32,
         timestamp: DateTime<Utc>,
     },
@@ -307,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn transient_error_without_serialized_threshold_uses_legacy_default() {
+    fn transient_error_without_serialized_threshold_uses_deprecated_default() {
         let event = MonitorEvent::TransientError {
             streamer_id: "123".to_string(),
             streamer_name: "Test".to_string(),

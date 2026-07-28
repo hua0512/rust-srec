@@ -55,6 +55,9 @@ pub struct StreamerMetadata {
     pub streamer_specific_config: Option<String>,
     /// Offline-check count after merging the Global → Platform → Template →
     /// Streamer configuration hierarchy.
+    ///
+    /// The serialized alias `effective_offline_check_count` is deprecated and
+    /// will be removed in a future version.
     #[serde(
         default = "default_offline_check_count",
         alias = "effective_offline_check_count"
@@ -62,6 +65,9 @@ pub struct StreamerMetadata {
     pub offline_check_count: u32,
     /// Offline-check delay after applying the same configuration hierarchy as
     /// [`Self::offline_check_count`].
+    ///
+    /// The serialized alias `effective_offline_check_delay_ms` is deprecated
+    /// and will be removed in a future version.
     #[serde(
         default = "default_offline_check_delay_ms",
         alias = "effective_offline_check_delay_ms"
@@ -289,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_effective_offline_check_fields_deserialize_into_unified_names() {
+    fn deprecated_effective_offline_check_fields_deserialize_into_unified_names() {
         let mut value = serde_json::to_value(create_test_metadata()).unwrap();
         let object = value.as_object_mut().unwrap();
         let count = object.remove("offline_check_count").unwrap();

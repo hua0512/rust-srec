@@ -101,6 +101,14 @@ download progress clears the accumulated failure state.
 `offline_check_delay_ms` controls the interval between offline confirmation checks and the
 related session hysteresis window. It does not control the cooldown duration.
 
+::: warning Deprecated compatibility formats
+The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
+`effective_offline_check_delay_ms` are deprecated. Persisted `TransientError` events that omit
+`backoff_threshold` are also deprecated. These compatibility formats will be removed in a future
+version. New integrations must use `offline_check_count` and `offline_check_delay_ms`, and include
+`backoff_threshold` in every serialized transient-error event.
+:::
+
 ### Cookies: "present wins" (including empty strings)
 
 Cookies are treated as a single optional string. If a higher layer provides `cookies`, it

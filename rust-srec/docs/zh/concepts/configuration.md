@@ -60,6 +60,14 @@ graph LR
 
 `offline_check_delay_ms` 控制离线确认检查间隔及相关的会话迟滞窗口，不控制冷却时长。
 
+::: warning 已弃用的兼容格式
+序列化 `StreamerMetadata` 中的别名 `effective_offline_check_count` 和
+`effective_offline_check_delay_ms` 已弃用。未包含 `backoff_threshold` 的持久化
+`TransientError` 事件也已弃用。这些兼容格式将在未来版本中移除。新的集成必须使用
+`offline_check_count` 和 `offline_check_delay_ms`，并在每个序列化的瞬时错误事件中包含
+`backoff_threshold`。
+:::
+
 ## 动态配置与热重载 (Hot-Reloading)
 
 rust-srec 支持配置热重载。当您通过 Web UI 或 API 修改全局设置或主播配置时：
