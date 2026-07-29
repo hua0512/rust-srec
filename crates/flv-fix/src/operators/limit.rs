@@ -278,7 +278,9 @@ impl Processor<FlvData> for LimitOperator {
             }
             FlvData::Tag(tag) => {
                 // Account for the tag plus the 4-byte PreviousTagSize field that follows
-                // every tag on disk, so accumulated_size tracks true output file growth.
+                // every tag on disk. accumulated_size still excludes the file header and
+                // the tags split_stream re-injects, so it tracks slightly under the
+                // on-disk size.
                 let tag_size = tag.size() as u64 + PREVIOUS_TAG_SIZE_FIELD as u64;
                 self.state.accumulated_size += tag_size;
 
@@ -327,7 +329,9 @@ impl Processor<FlvData> for LimitOperator {
                 // The `limits_hard_exceeded` fallback forces a split on a non-keyframe once
                 // the segment has grown well past the limit, bounding output for video whose
                 // keyframes never classify via FlvTag::is_key_frame_nalu (filtered/encrypted
-                // payloads, unrecognized codec IDs).
+                // payloads, unrecognized codec IDs). It also fires for streams whose GOP
+                // span exceeds the margin, so such a segment opens mid-GOP and its video
+                // is undecodable until the next keyframe.
                 let has_video = self.state.header.as_ref().is_some_and(|h| h.has_video);
                 let can_split_on_tag = if has_video && self.config.split_at_keyframes_only {
                     tag.is_key_frame_nalu() || self.limits_hard_exceeded()
