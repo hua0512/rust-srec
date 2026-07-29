@@ -21,13 +21,48 @@ use crate::database::repositories::{config::ConfigRepository, streamer::Streamer
 use crate::domain::streamer::Streamer;
 use crate::utils::json::{self, JsonContext};
 
-use super::cache::ConfigCache;
+use super::cache::{ConfigCache, InFlightRequest};
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use super::{ConfigResolver, MergedConfig, ResolvedStreamerContext};
 
 /// Hard upper bound for a single streamer config resolution. This prevents `in_flight` entries
 /// from getting stuck forever if an upstream call hangs.
 const CONFIG_RESOLVE_HARD_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Fails the in-flight `ConfigCache` entry for `streamer_id` on drop unless it was disarmed.
+///
+/// The owner that created a new in-flight entry via `ConfigCache::get_or_create_in_flight` must
+/// eventually call `complete_in_flight` or `fail_in_flight`. If its task is cancelled mid-resolve
+/// (e.g. an axum client disconnect during `resolve_context_for_streamer`), this guard's drop runs
+/// `fail_in_flight` so the entry is removed and waiters wake; otherwise every later
+/// `get_context_for_streamer` for that streamer would block on a request that never completes.
+struct InFlightGuard<'a> {
+    cache: &'a ConfigCache,
+    streamer_id: &'a str,
+    cell: InFlightRequest,
+    armed: bool,
+}
+
+impl InFlightGuard<'_> {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.cache.fail_in_flight(
+                self.streamer_id,
+                &self.cell,
+                format!(
+                    "Config resolution for streamer {} was cancelled",
+                    self.streamer_id
+                ),
+            );
+        }
+    }
+}
 
 /// Configuration service providing cached access to all configuration data.
 ///
@@ -339,12 +374,25 @@ where
 
             trace!("Cache miss for streamer {}, resolving config", streamer_id);
 
+            // If this task is cancelled during resolution, the guard's drop runs
+            // `fail_in_flight` so `cell` is not left in `ConfigCache::in_flight` forever.
+            let mut guard = InFlightGuard {
+                cache: &self.cache,
+                streamer_id,
+                cell: cell.clone(),
+                armed: true,
+            };
+
             // Resolve the config
             let resolve = tokio::time::timeout(
                 CONFIG_RESOLVE_HARD_TIMEOUT,
                 self.resolve_context_for_streamer(streamer_id),
             )
             .await;
+
+            // Resolution completed without cancellation; the match arms below own the
+            // complete/fail transition, so the guard's drop-time fallback is not needed.
+            guard.disarm();
 
             return match resolve {
                 Ok(Ok(context)) => {
