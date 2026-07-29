@@ -52,6 +52,7 @@ jobs:
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p strev'
+      profile: 'release-cli'
       binaries: '["strev"]'
       need_protoc: true
 
