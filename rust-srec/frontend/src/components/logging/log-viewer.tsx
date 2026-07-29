@@ -138,6 +138,7 @@ export function LogViewer() {
   const [logs, setLogs] = useState<DisplayLogEvent[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [pausedCount, setPausedCount] = useState(0);
   const [filterLevel, setFilterLevel] = useState<FilterLevel>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -147,6 +148,7 @@ export function LogViewer() {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  const disposedRef = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logIdRef = useRef(0);
   const pausedLogsRef = useRef<DisplayLogEvent[]>([]);
@@ -184,6 +186,7 @@ export function LogViewer() {
               pausedLogsRef.current =
                 pausedLogsRef.current.slice(-MAX_LOG_ENTRIES);
             }
+            setPausedCount(pausedLogsRef.current.length);
           } else {
             setLogs((prev) => {
               const newLogs = [...prev, logEvent];
@@ -200,12 +203,23 @@ export function LogViewer() {
     [isPaused],
   );
 
+  const handleMessageRef = useRef(handleMessage);
+  useEffect(() => {
+    handleMessageRef.current = handleMessage;
+  }, [handleMessage]);
+
   // Connect to WebSocket
   const connect = useCallback(() => {
     if (!accessToken) return;
     if (typeof window === 'undefined') return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
+    }
+    disposedRef.current = false;
 
     const wsUrl = buildWebSocketUrl(accessToken, '/logging/stream');
     if (import.meta.env.DEV) {
@@ -215,6 +229,10 @@ export function LogViewer() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) {
+        ws.close();
+        return;
+      }
       if (import.meta.env.DEV) {
         console.debug('[LOG WS] Connected');
       }
@@ -222,9 +240,13 @@ export function LogViewer() {
       reconnectAttemptRef.current = 0;
     };
 
-    ws.onmessage = handleMessage;
+    ws.onmessage = (event) => {
+      if (wsRef.current === ws) handleMessageRef.current(event);
+    };
 
     ws.onclose = (event) => {
+      if (wsRef.current !== ws) return;
+
       if (import.meta.env.DEV) {
         console.debug('[LOG WS] Close', {
           code: event.code,
@@ -235,8 +257,7 @@ export function LogViewer() {
       setIsConnected(false);
       wsRef.current = null;
 
-      // Reconnect if we have a token
-      if (accessToken) {
+      if (!disposedRef.current && accessToken) {
         const delay = Math.min(
           WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
           WS_RECONNECT_MAX_DELAY,
@@ -247,6 +268,8 @@ export function LogViewer() {
     };
 
     ws.onerror = (event) => {
+      if (wsRef.current !== ws) return;
+
       if (import.meta.env.DEV) {
         console.error('[LOG WS] Connection error', event);
       }
@@ -254,17 +277,20 @@ export function LogViewer() {
     };
 
     wsRef.current = ws;
-  }, [accessToken, handleMessage]);
+  }, [accessToken]);
 
   // Disconnect
   const disconnect = useCallback(() => {
+    disposedRef.current = true;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
     }
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
+    setIsConnected(false);
   }, []);
 
   // Connection lifecycle
@@ -293,6 +319,7 @@ export function LogViewer() {
           ? combined.slice(-MAX_LOG_ENTRIES)
           : combined;
       });
+      setPausedCount(0);
     }
     setIsPaused(!isPaused);
   }, [isPaused]);
@@ -301,6 +328,7 @@ export function LogViewer() {
   const clearLogs = useCallback(() => {
     setLogs([]);
     pausedLogsRef.current = [];
+    setPausedCount(0);
   }, []);
 
   // Filter logs - memoized to avoid recalculating on every render
@@ -511,9 +539,9 @@ export function LogViewer() {
         <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
           <span>
             {filteredLogs.length} / {logs.length} <Trans>entries</Trans>
-            {isPaused && pausedLogsRef.current.length > 0 && (
+            {isPaused && pausedCount > 0 && (
               <span className="ml-2 text-amber-400">
-                (+{pausedLogsRef.current.length} <Trans>paused</Trans>)
+                (+{pausedCount} <Trans>paused</Trans>)
               </span>
             )}
           </span>
