@@ -179,6 +179,48 @@ where
     /// Returns error for Completed/Failed jobs.
     /// Delegates to JobQueue.
     pub async fn cancel_job(&self, id: &str) -> Result<()> {
+        let job_snapshot = self
+            .job_queue
+            .get_job(id)
+            .await?
+            .ok_or_else(|| Error::not_found("Job", id))?;
+
+        if matches!(
+            job_snapshot.status,
+            JobStatus::Completed | JobStatus::Failed
+        ) {
+            return Err(Error::InvalidStateTransition {
+                from: job_snapshot.status.as_str().to_string(),
+                to: JobStatus::Cancelled.as_str().to_string(),
+            });
+        }
+
+        let parent_dag = if let Some(step_exec_id) = job_snapshot.dag_step_execution_id.as_deref() {
+            let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
+                Error::Validation(
+                    "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+                )
+            })?;
+            let dag_id = match job_snapshot.pipeline_id {
+                Some(dag_id) => dag_id,
+                None => dag_scheduler.get_step_execution(step_exec_id).await?.dag_id,
+            };
+            Some((dag_scheduler, dag_id))
+        } else {
+            None
+        };
+
+        // Cancelling only a step job leaves its parent DAG processing forever. Cancel the DAG
+        // first so a repository failure cannot strand it after the job becomes terminal.
+        if let Some((dag_scheduler, dag_id)) = parent_dag
+            && let Err(cancel_error) = self.cancel_dag(&dag_id).await
+        {
+            let dag = dag_scheduler.get_dag_status(&dag_id).await?;
+            if !dag.get_status().is_some_and(|status| status.is_terminal()) {
+                return Err(cancel_error);
+            }
+        }
+
         let cancelled_job = self.job_queue.cancel_job(id).await?;
 
         let _ = self.event_tx.send(PipelineEvent::JobFailed {
