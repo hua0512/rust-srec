@@ -355,6 +355,10 @@ pub struct Sps {
 }
 
 impl Sps {
+    fn apply_crop(base: u64, first_offset: u64, second_offset: u64) -> u64 {
+        base.saturating_sub(first_offset.saturating_add(second_offset).saturating_mul(2))
+    }
+
     /// Parses an Sps from the input bytes.
     ///
     /// Returns an `Sps` struct.
@@ -721,7 +725,11 @@ impl Sps {
             * 16;
 
         self.frame_crop_info.as_ref().map_or(base_height, |crop| {
-            base_height - (crop.frame_crop_top_offset + crop.frame_crop_bottom_offset) * 2
+            Self::apply_crop(
+                base_height,
+                crop.frame_crop_top_offset,
+                crop.frame_crop_bottom_offset,
+            )
         })
     }
 
@@ -732,7 +740,11 @@ impl Sps {
         let base_width = (self.pic_width_in_mbs_minus1 + 1) * 16;
 
         self.frame_crop_info.as_ref().map_or(base_width, |crop| {
-            base_width - (crop.frame_crop_left_offset + crop.frame_crop_right_offset) * 2
+            Self::apply_crop(
+                base_width,
+                crop.frame_crop_left_offset,
+                crop.frame_crop_right_offset,
+            )
         })
     }
 
@@ -755,6 +767,12 @@ mod tests {
     use expgolomb::{BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb};
 
     use crate::sps::Sps;
+
+    #[test]
+    fn excessive_crop_offsets_saturate_to_zero() {
+        assert_eq!(Sps::apply_crop(16, 9, 0), 0);
+        assert_eq!(Sps::apply_crop(16, u64::MAX, 1), 0);
+    }
 
     #[test]
     fn test_parse_sps_set_forbidden_bit() {

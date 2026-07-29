@@ -6,10 +6,14 @@ use bytes::{Buf, Bytes};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
+/// Maximum container nesting depth accepted by the deserializer.
+const MAX_DEPTH: usize = 256;
+
 pub struct TarsDeserializer {
     buffer: Bytes,
     /// When true, strings are parsed as StringRef (zero-copy) instead of String
     pub zero_copy_strings: bool,
+    depth: usize,
 }
 
 impl TarsDeserializer {
@@ -17,6 +21,7 @@ impl TarsDeserializer {
         Self {
             buffer,
             zero_copy_strings: false, // Default to backward compatibility
+            depth: 0,
         }
     }
 
@@ -24,12 +29,66 @@ impl TarsDeserializer {
         Self {
             buffer,
             zero_copy_strings: true,
+            depth: 0,
         }
     }
 
     /// Reset the deserializer with new data for object pool reuse
     pub fn reset(&mut self, buffer: Bytes) {
         self.buffer = buffer;
+        self.depth = 0;
+    }
+
+    #[inline]
+    fn ensure_remaining(&self, count: usize) -> Result<(), TarsError> {
+        if self.buffer.remaining() < count {
+            return Err(TarsError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "unexpected EOF reading TARS value",
+            )));
+        }
+        Ok(())
+    }
+
+    fn read_count(&mut self) -> Result<usize, TarsError> {
+        let (_tag, value_type) = self.read_head()?;
+        let count = match value_type {
+            TarsType::Zero => 0_i64,
+            TarsType::Int1 => i64::from(self.read_i8()?),
+            TarsType::Int2 => i64::from(self.read_i16()?),
+            TarsType::Int4 => i64::from(self.read_i32()?),
+            _ => {
+                return Err(TarsError::TypeMismatch {
+                    expected: "integer count",
+                    actual: "Other",
+                });
+            }
+        };
+
+        usize::try_from(count).map_err(|_| {
+            TarsError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "negative TARS length",
+            ))
+        })
+    }
+
+    fn read_nested<T>(
+        &mut self,
+        read: impl FnOnce(&mut Self) -> Result<T, TarsError>,
+    ) -> Result<T, TarsError> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            self.depth -= 1;
+            return Err(TarsError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "maximum TARS nesting depth exceeded",
+            )));
+        }
+
+        let result = read(self);
+        self.depth -= 1;
+        result
     }
 
     pub fn read_message(&mut self) -> Result<TarsMessage, TarsError> {
@@ -123,34 +182,41 @@ impl TarsDeserializer {
     }
 
     pub fn read_bool(&mut self) -> Result<bool, TarsError> {
+        self.ensure_remaining(1)?;
         Ok(self.buffer.get_u8() != 0)
     }
 
     #[inline]
     pub fn read_i8(&mut self) -> Result<i8, TarsError> {
+        self.ensure_remaining(1)?;
         Ok(self.buffer.get_i8())
     }
 
     #[inline]
     pub fn read_i16(&mut self) -> Result<i16, TarsError> {
+        self.ensure_remaining(2)?;
         Ok(self.buffer.get_i16())
     }
 
     #[inline]
     pub fn read_i32(&mut self) -> Result<i32, TarsError> {
+        self.ensure_remaining(4)?;
         Ok(self.buffer.get_i32())
     }
 
     #[inline]
     pub fn read_i64(&mut self) -> Result<i64, TarsError> {
+        self.ensure_remaining(8)?;
         Ok(self.buffer.get_i64())
     }
 
     pub fn read_f32(&mut self) -> Result<f32, TarsError> {
+        self.ensure_remaining(4)?;
         Ok(self.buffer.get_f32())
     }
 
     pub fn read_f64(&mut self) -> Result<f64, TarsError> {
+        self.ensure_remaining(8)?;
         Ok(self.buffer.get_f64())
     }
 
@@ -158,6 +224,7 @@ impl TarsDeserializer {
         if len == 0 {
             return Ok(String::new());
         }
+        self.ensure_remaining(len)?;
 
         // Avoid temporary buffer allocation for small strings
         if len <= 256 {
@@ -181,6 +248,7 @@ impl TarsDeserializer {
         if len == 0 {
             return Ok(Bytes::new());
         }
+        self.ensure_remaining(len)?;
 
         let bytes = self.buffer.split_to(len);
         // println!("TarsDeserializer::read_string_ref: {:?}", bytes);
@@ -214,8 +282,7 @@ impl TarsDeserializer {
 
     pub fn read_map(&mut self) -> Result<FxHashMap<TarsValue, TarsValue>, TarsError> {
         let mut map = FxHashMap::default();
-        let (_len_tag, len_type) = self.read_head()?;
-        let len = self.read_value_by_type(len_type, 0)?.try_into_i32()? as usize;
+        let len = self.read_count()?;
         for _ in 0..len {
             let (k_tag, k_type) = self.read_head()?;
             let k = self.read_value_by_type(k_type, k_tag)?;
@@ -227,10 +294,10 @@ impl TarsDeserializer {
     }
 
     pub fn read_list(&mut self) -> Result<SmallVec<[Box<TarsValue>; 4]>, TarsError> {
-        let (_len_tag, len_type) = self.read_head()?;
-        let len = self.read_value_by_type(len_type, 0)?.try_into_i32()? as usize;
-        // Pre-allocate with known capacity
-        let mut vec = SmallVec::with_capacity(len);
+        let len = self.read_count()?;
+        // Each value needs at least a one-byte head, so remaining input bounds
+        // any useful eager allocation.
+        let mut vec = SmallVec::with_capacity(len.min(self.buffer.remaining()));
         for _ in 0..len {
             let (tag, type_id) = self.read_head()?;
             let value = self.read_value_by_type(type_id, tag)?;
@@ -241,8 +308,8 @@ impl TarsDeserializer {
 
     pub fn read_simple_list(&mut self) -> Result<Bytes, TarsError> {
         self.read_head()?; // Should be (0, Int1) type
-        let (_len_tag, len_type) = self.read_head()?;
-        let len = self.read_value_by_type(len_type, 0)?.try_into_i32()? as usize;
+        let len = self.read_count()?;
+        self.ensure_remaining(len)?;
         let bytes = self.buffer.split_to(len);
         Ok(bytes)
     }
@@ -270,6 +337,7 @@ impl TarsDeserializer {
             TarsType::Float => self.read_f32().map(TarsValue::Float),
             TarsType::Double => self.read_f64().map(TarsValue::Double),
             TarsType::String1 => {
+                self.ensure_remaining(1)?;
                 let len = self.buffer.get_u8() as usize;
                 if self.zero_copy_strings {
                     self.read_string_ref(len).map(TarsValue::StringRef)
@@ -278,6 +346,7 @@ impl TarsDeserializer {
                 }
             }
             TarsType::String4 => {
+                self.ensure_remaining(4)?;
                 let len = self.buffer.get_u32() as usize;
                 if self.zero_copy_strings {
                     self.read_string_ref(len).map(TarsValue::StringRef)
@@ -285,9 +354,9 @@ impl TarsDeserializer {
                     self.read_string(len).map(TarsValue::String)
                 }
             }
-            TarsType::StructBegin => self.read_struct().map(TarsValue::Struct),
-            TarsType::Map => self.read_map().map(TarsValue::Map),
-            TarsType::List => self.read_list().map(TarsValue::List),
+            TarsType::StructBegin => self.read_nested(Self::read_struct).map(TarsValue::Struct),
+            TarsType::Map => self.read_nested(Self::read_map).map(TarsValue::Map),
+            TarsType::List => self.read_nested(Self::read_list).map(TarsValue::List),
             TarsType::SimpleList => self.read_simple_list().map(TarsValue::SimpleList),
             TarsType::StructEnd => Ok(TarsValue::StructEnd),
         }
@@ -447,4 +516,77 @@ impl TarsDeserializable for TarsValue {
 pub fn from_bytes(buffer: Bytes) -> Result<TarsValue, TarsError> {
     let mut deserializer = TarsDeserializer::new(buffer);
     TarsValue::deserialize(&mut deserializer)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::*;
+
+    fn assert_io_error_kind(result: Result<TarsValue, TarsError>, expected: io::ErrorKind) {
+        assert!(matches!(
+            result,
+            Err(TarsError::Io(ref source)) if source.kind() == expected
+        ));
+    }
+
+    #[test]
+    fn truncated_values_return_unexpected_eof() {
+        let values = [
+            vec![TarsType::Int4 as u8, 0x01, 0x02],
+            vec![TarsType::String1 as u8, 0x03, b'a'],
+            vec![
+                TarsType::SimpleList as u8,
+                TarsType::Int1 as u8,
+                TarsType::Int1 as u8,
+                0x02,
+                b'a',
+            ],
+        ];
+
+        for value in values {
+            assert_io_error_kind(from_bytes(Bytes::from(value)), io::ErrorKind::UnexpectedEof);
+        }
+    }
+
+    #[test]
+    fn negative_container_counts_return_invalid_data() {
+        let counts = [
+            vec![TarsType::Int1 as u8, 0xff],
+            vec![TarsType::Int2 as u8, 0xff, 0xff],
+            vec![TarsType::Int4 as u8, 0xff, 0xff, 0xff, 0xff],
+        ];
+
+        for count in counts {
+            let mut value = vec![TarsType::List as u8];
+            value.extend(count);
+            assert_io_error_kind(from_bytes(Bytes::from(value)), io::ErrorKind::InvalidData);
+        }
+    }
+
+    #[test]
+    fn huge_list_count_does_not_trigger_unbounded_preallocation() {
+        let value = Bytes::from_static(&[
+            TarsType::List as u8,
+            TarsType::Int4 as u8,
+            0x7f,
+            0xff,
+            0xff,
+            0xff,
+        ]);
+
+        assert_io_error_kind(from_bytes(value), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn deeply_nested_lists_return_invalid_data() {
+        let mut value = Vec::with_capacity((MAX_DEPTH + 1) * 3 + 1);
+        for _ in 0..=MAX_DEPTH {
+            value.extend_from_slice(&[TarsType::List as u8, TarsType::Int1 as u8, 0x01]);
+        }
+        value.push(TarsType::Zero as u8);
+
+        assert_io_error_kind(from_bytes(Bytes::from(value)), io::ErrorKind::InvalidData);
+    }
 }

@@ -45,6 +45,7 @@ const MIXIN_KEY_ENC_TAB: [usize; 64] = [
     28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25,
     54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
+const MIN_MIXIN_KEY_LEN: usize = 59;
 
 #[derive(Deserialize)]
 struct WbiImg {
@@ -63,12 +64,19 @@ struct ResWbi {
 }
 
 // 对 imgKey 和 subKey 进行字符顺序打乱编码
-fn get_mixin_key(orig: &[u8]) -> String {
-    MIXIN_KEY_ENC_TAB
+fn get_mixin_key(orig: &[u8]) -> Result<String, ExtractorError> {
+    if orig.len() < MIN_MIXIN_KEY_LEN {
+        return Err(ExtractorError::ValidationError(format!(
+            "WBI key material is too short: expected at least {MIN_MIXIN_KEY_LEN} bytes, got {}",
+            orig.len()
+        )));
+    }
+
+    Ok(MIXIN_KEY_ENC_TAB
         .iter()
         .take(32)
         .map(|&i| orig[i] as char)
-        .collect::<String>()
+        .collect::<String>())
 }
 
 fn get_url_encoded(s: &str) -> String {
@@ -106,19 +114,15 @@ pub(super) fn encode_wbi(
             ));
         }
     };
-    Ok(_encode_wbi(
-        params,
-        (&keys.img_key, &keys.sub_key),
-        cur_time,
-    ))
+    _encode_wbi(params, (&keys.img_key, &keys.sub_key), cur_time)
 }
 
 fn _encode_wbi(
     mut params: Vec<(&str, String)>,
     (img_key, sub_key): (&str, &str),
     timestamp: u64,
-) -> String {
-    let mixin_key = get_mixin_key((img_key.to_owned() + sub_key).as_bytes());
+) -> Result<String, ExtractorError> {
+    let mixin_key = get_mixin_key((img_key.to_owned() + sub_key).as_bytes())?;
     // 添加当前时间戳
     params.push(("wts", timestamp.to_string()));
     // 重新排序
@@ -134,7 +138,7 @@ fn _encode_wbi(
     hasher.update(query.clone() + &mixin_key);
     let web_sign = crate::digest_to_hex(&hasher.finalize());
     // 返回最终的 query
-    query + &format!("&w_rid={web_sign}")
+    Ok(query + &format!("&w_rid={web_sign}"))
 }
 
 async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
@@ -162,6 +166,9 @@ async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
             wbi_img.sub_url
         ))
     })?;
+
+    // Reject malformed API responses before they enter the shared cache.
+    get_mixin_key((img_key.clone() + &sub_key).as_bytes())?;
 
     Ok(WbiKeys::new(img_key, sub_key))
 }
@@ -246,9 +253,15 @@ mod tests {
         let concat_key =
             "7cd084941338484aae1ad9425b84077c".to_string() + "4932caff0ff746eab6f01bf08b70ac45";
         assert_eq!(
-            get_mixin_key(concat_key.as_bytes()),
+            get_mixin_key(concat_key.as_bytes()).unwrap(),
             "ea1db124af3c7062474693fa704f4ff8"
         );
+    }
+
+    #[test]
+    fn test_get_mixin_key_rejects_short_input() {
+        let error = get_mixin_key(&[b'a'; MIN_MIXIN_KEY_LEN - 1]).unwrap_err();
+        assert!(matches!(error, ExtractorError::ValidationError(_)));
     }
 
     #[test]
@@ -263,7 +276,7 @@ mod tests {
             "4932caff0ff746eab6f01bf08b70ac45",
         );
         assert_eq!(
-            _encode_wbi(params, keys, 1702204169),
+            _encode_wbi(params, keys, 1702204169).unwrap(),
             "bar=514&foo=114&wts=1702204169&zab=1919810&w_rid=8f6f2b5b3d485fe1886cec6a0be8c5d4"
                 .to_string()
         )
