@@ -115,7 +115,7 @@ impl Default for StreamMonitorConfig {
     fn default() -> Self {
         Self {
             default_rate_limit: 1.0,
-            platform_rate_limits: vec![("twitch".to_string(), 2.0), ("youtube".to_string(), 1.0)],
+            platform_rate_limits: vec![("twitch".to_string(), 2.0)],
             request_timeout: Duration::ZERO,
             max_concurrent_requests: 10,
         }

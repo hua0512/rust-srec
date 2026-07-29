@@ -490,10 +490,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Check if a platform supports batch detection.
-    fn is_batch_capable_platform(&self, platform_id: &str) -> bool {
-        let platform = platform_id.strip_prefix("platform-").unwrap_or(platform_id);
-        // Platforms that support batch API detection
-        matches!(platform, "youtube")
+    ///
+    /// No platform has a batch API implementation
+    /// (`BatchDetector::check_batch_internal` errors unconditionally), so no
+    /// streamer routes checks through `PlatformMessage::RequestCheck`
+    /// delegation; every check runs individually via `perform_check`.
+    fn is_batch_capable_platform(&self, _platform_id: &str) -> bool {
+        false
     }
 
     /// Start the scheduler event loop.
@@ -629,10 +632,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
     /// Spawn initial actors for all active streamers.
     ///
-    /// Uses `get_all_active` rather than `get_ready_for_check` so streamers still
-    /// inside their `disabled_until` error backoff also get an actor; the actor's
-    /// `initiate_check` guard defers the first real check until the backoff expires,
-    /// which keeps them monitored once it does.
+    /// Uses `get_all_active` so streamers still inside their `disabled_until`
+    /// error backoff also get an actor; the actor's `initiate_check` guard
+    /// defers the first real check until the backoff expires, which keeps
+    /// them monitored once it does.
     async fn spawn_initial_actors(&mut self) -> Result<()> {
         let streamers = self.streamer_manager.get_all_active();
         info!("Spawning actors for {} streamers", streamers.len());
@@ -1264,15 +1267,6 @@ mod tests {
         assert_eq!(config.check_interval_ms, 60_000);
         assert_eq!(config.offline_check_interval_ms, 20_000);
         assert_eq!(config.offline_check_count, 3);
-    }
-
-    #[test]
-    fn test_is_batch_capable_platform() {
-        // We can't easily test this without a full Scheduler instance,
-        // but we can verify the logic is correct by checking the match arms
-        assert!(matches!("twitch", "twitch" | "youtube"));
-        assert!(matches!("youtube", "twitch" | "youtube"));
-        assert!(!matches!("bilibili", "twitch" | "youtube"));
     }
 
     #[test]

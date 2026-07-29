@@ -227,11 +227,11 @@ impl BatchDetector {
 
     /// Internal batch check implementation.
     ///
-    /// Platform-specific batch APIs are not implemented yet. This returns an error
-    /// instead of fabricating `LiveStatus::Offline` for every streamer, so that any
-    /// caller that wires `StreamerActor::uses_batch_detection` to this path fails the
-    /// check (leaving individual detection to recover) rather than silently ending
-    /// live sessions.
+    /// No platform has a batch API implementation, and
+    /// `Scheduler::is_batch_capable_platform` routes no streamer here. The
+    /// error is a guard for future batch wiring: a failed batch check must
+    /// count as a failed check for every streamer in it, because reporting
+    /// them as `LiveStatus::Offline` would end their live sessions.
     async fn check_batch_internal(
         &self,
         _platform_id: &str,
@@ -335,8 +335,8 @@ mod tests {
         ];
 
         // check_batch_internal has no platform implementation, so batch_check
-        // records every streamer as a failure rather than fabricating an Offline
-        // success for each (which would silently end their live sessions).
+        // must record every streamer as a failure; an Offline result here
+        // would end each streamer's live session.
         let result = detector
             .batch_check("twitch", streamers)
             .await
