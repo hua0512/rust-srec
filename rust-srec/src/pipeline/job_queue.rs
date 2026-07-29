@@ -1116,8 +1116,7 @@ impl JobQueue {
 
         info!("Enqueued job {} of type {}", job_id, job_type);
 
-        // CPU and I/O pools share this notifier but accept different job types.
-        self.notify.notify_waiters();
+        self.wake_workers();
 
         Ok(job_id)
     }
@@ -1136,8 +1135,7 @@ impl JobQueue {
 
         info!("Enqueued existing job {} of type {}", job_id, job_type);
 
-        // CPU and I/O pools share this notifier but accept different job types.
-        self.notify.notify_waiters();
+        self.wake_workers();
 
         Ok(job_id)
     }
@@ -1645,7 +1643,7 @@ impl JobQueue {
             self.jobs_cache.remove(id);
 
             self.depth.fetch_add(1, Ordering::SeqCst);
-            self.notify.notify_waiters();
+            self.wake_workers();
 
             let updated_job = db_model_to_job(&repo.get_job(id).await?);
             info!("Job {} retried (attempt {})", id, updated_job.retry_count);
@@ -1673,7 +1671,7 @@ impl JobQueue {
         drop(cached_job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
-        self.notify.notify_waiters();
+        self.wake_workers();
 
         info!("Job {} retried (attempt {})", id, updated_job.retry_count);
         Ok(updated_job)
@@ -2266,6 +2264,18 @@ impl JobQueue {
     /// Get a notifier for new jobs.
     pub fn notifier(&self) -> Arc<Notify> {
         self.notify.clone()
+    }
+
+    /// Wake workers after a job becomes runnable.
+    ///
+    /// `notify_waiters` wakes every currently parked worker, so both the CPU
+    /// and I/O pools (which share this notifier but accept different job
+    /// types) re-check the queue. It stores no permit, so `notify_one` also
+    /// runs for a worker that is mid-iteration and re-enters
+    /// `Notify::notified` only after this call.
+    fn wake_workers(&self) {
+        self.notify.notify_waiters();
+        self.notify.notify_one();
     }
 
     async fn fail_internal(
@@ -2965,6 +2975,67 @@ mod tests {
             state.get("session_start_ms").and_then(|v| v.as_i64()),
             Some(session_start_ms)
         );
+    }
+
+    /// A failed parent finalization must not leave runnable split jobs:
+    /// split_job_for_single_input rolls back already-created jobs through
+    /// cancel_job when marking the original job completed fails.
+    #[tokio::test]
+    async fn split_rollback_cancels_created_jobs_when_parent_finalization_fails() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("job_queue_split_rollback.db");
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        // Satisfy the live_sessions -> streamers -> platform_config FK chain.
+        sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES ('p1', 'test')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state) \
+             VALUES ('streamer-1', 'Streamer', 'https://example.com/s1', 'p1', 'NOT_LIVE')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO live_sessions (id, streamer_id, start_time) \
+             VALUES ('session-1', 'streamer-1', 1704152700000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
+
+        // The parent is never enqueued, so repo.get_job(&job.id) in the
+        // finalization step fails after both split jobs were created.
+        let job = Job::new(
+            "remux",
+            vec!["/input-a.flv".to_string(), "/input-b.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+
+        let result = queue.split_job_for_single_input(&job).await;
+        assert!(result.is_err());
+
+        let pending = job_repo
+            .list_jobs_by_status(JobStatus::Pending)
+            .await
+            .unwrap();
+        assert!(pending.is_empty(), "split jobs must not stay runnable");
+        let cancelled = job_repo
+            .list_jobs_by_status(JobStatus::Cancelled)
+            .await
+            .unwrap();
+        assert_eq!(cancelled.len(), 2);
     }
 
     #[test]
