@@ -51,6 +51,7 @@ jobs:
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p mesio'
+      profile: 'release-cli'
       binaries: '["mesio"]'
 
   release:
