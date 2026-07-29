@@ -17,6 +17,12 @@ pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:https?://)?xhslink\.com/m/[a-zA-Z0-9_-]+").unwrap());
 static SCRIPT_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<script>window.__INITIAL_STATE__=(.*?)</script>").unwrap());
+/// Matches a bare JavaScript `undefined` value only where a JSON value can
+/// appear — immediately after `:`, `,` or `[`. Anchoring on the preceding
+/// delimiter leaves `undefined` substrings inside string values (nicknames,
+/// titles like "xundefinedy") untouched.
+static UNDEFINED_VALUE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"([:,\[])undefined\b").unwrap());
 
 // Constants for common strings and values
 const DEFAULT_QUALITY: &str = "原画";
@@ -145,13 +151,27 @@ impl RedBook {
         SCRIPT_DATA_REGEX
             .captures(body)
             .and_then(|captures| captures.get(1))
-            .map(|m| m.as_str().replace("undefined", "null"))
+            .map(|m| {
+                UNDEFINED_VALUE_REGEX
+                    .replace_all(m.as_str(), "${1}null")
+                    .into_owned()
+            })
             .filter(|data| !data.is_empty())
             .ok_or_else(|| {
                 ExtractorError::ValidationError(
                     "Failed to extract script_data from the body".into(),
                 )
             })
+    }
+
+    /// Prefer the server-provided `room_info.room_title`: the 回放 replay
+    /// marker only appears there, and the replay guard in `get_live_info`
+    /// must see it rather than the synthesized "{artist} 的直播" fallback.
+    fn resolve_title(room_title: Option<&str>, artist: &str) -> String {
+        room_title
+            .filter(|t| !t.is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("{artist} 的直播"))
     }
 
     fn deeplink_param(deeplink: &str, key: &str) -> Option<String> {
@@ -228,7 +248,7 @@ impl RedBook {
         let artist = &room_data.host_info.nick_name;
         let avatar_url = Some(room_data.host_info.avatar.to_string());
         let site_url = self.extractor.url.clone();
-        let title = format!("{artist} 的直播");
+        let title = Self::resolve_title(room_data.room_info.room_title.as_deref(), artist);
         let is_live = live_stream.live_status == SUCCESS_STATUS;
 
         // Validate live status
@@ -351,6 +371,34 @@ mod tests {
         assert!(super::URL_REGEX.is_match("https://xhslink.com/m/844vKmW30jz"));
 
         assert!(!super::URL_REGEX.as_str().contains("xiaohongshu"));
+    }
+
+    #[test]
+    fn test_extract_script_data_replaces_only_bare_undefined_values() {
+        let body = r#"<script>window.__INITIAL_STATE__={"a":undefined,"name":"xundefinedy","list":[undefined,1],"b":2}</script>"#;
+        let data = super::RedBook::extract_script_data(body).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&data).unwrap();
+        assert!(value["a"].is_null());
+        assert_eq!(value["name"], "xundefinedy");
+        assert!(value["list"][0].is_null());
+        assert_eq!(value["list"][1], 1);
+        assert_eq!(value["b"], 2);
+    }
+
+    #[test]
+    fn test_resolve_title_prefers_room_title() {
+        assert_eq!(
+            super::RedBook::resolve_title(Some("小红书直播回放"), "artist"),
+            "小红书直播回放"
+        );
+        assert_eq!(
+            super::RedBook::resolve_title(Some(""), "artist"),
+            "artist 的直播"
+        );
+        assert_eq!(
+            super::RedBook::resolve_title(None, "artist"),
+            "artist 的直播"
+        );
     }
 
     #[test]

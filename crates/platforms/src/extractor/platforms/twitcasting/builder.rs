@@ -14,6 +14,7 @@ use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
 use std::sync::LazyLock;
+use tracing::warn;
 use url::Url;
 
 // Constants
@@ -121,6 +122,7 @@ impl Twitcasting {
     ) -> Result<Vec<StreamInfo>, ExtractorError> {
         let streams = &stream_container.streams;
         let mut stream_info = Vec::new();
+        let mut last_error = None;
 
         // Define stream qualities and their corresponding URLs
         let stream_configs = [
@@ -131,7 +133,10 @@ impl Twitcasting {
 
         for (url, quality) in stream_configs {
             if let Some(stream_url) = url {
-                let info = self
+                // A single stale variant playlist (e.g. a 404 on `low`) must not
+                // discard the higher-quality variants already collected, so log
+                // and skip rather than propagating the per-variant error.
+                match self
                     .extract_hls_stream(
                         &self.extractor.client,
                         None,
@@ -139,9 +144,25 @@ impl Twitcasting {
                         Some(quality),
                         None,
                     )
-                    .await?;
-                stream_info.extend(info);
+                    .await
+                {
+                    Ok(info) => stream_info.extend(info),
+                    Err(e) => {
+                        warn!(quality, error = %e, "twitcasting variant playlist fetch failed; skipping");
+                        last_error = Some(e);
+                    }
+                }
             }
+        }
+
+        // `fetch_live_data` already reported `movie.live == true`, so ending up
+        // with no streams because every variant fetch failed is a transient
+        // fetch failure, not an offline stream; propagate it so `get_live_info`
+        // callers retry instead of receiving a live MediaInfo with no streams.
+        if stream_info.is_empty()
+            && let Some(e) = last_error
+        {
+            return Err(e);
         }
 
         Ok(stream_info)
@@ -190,9 +211,86 @@ mod tests {
     use tracing::Level;
 
     use crate::extractor::{
-        default::default_client, platform_extractor::PlatformExtractor,
-        platforms::twitcasting::Twitcasting,
+        default::default_client,
+        platform_extractor::PlatformExtractor,
+        platforms::twitcasting::{Twitcasting, models::StreamContainer},
     };
+
+    fn test_extractor() -> Twitcasting {
+        Twitcasting::new(
+            "https://twitcasting.tv/nodasori2525".to_string(),
+            default_client(),
+            None,
+            None,
+        )
+    }
+
+    fn container(high: Option<&str>, medium: Option<&str>, low: Option<&str>) -> StreamContainer {
+        serde_json::from_value(serde_json::json!({
+            "streams": {
+                "high": high,
+                "medium": medium,
+                "low": low,
+            }
+        }))
+        .unwrap()
+    }
+
+    /// Serves one HTTP request with a minimal HLS media playlist, returning the URL to fetch.
+    async fn serve_media_playlist_once() -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let body =
+                    "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\nseg0.ts\n";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/vnd.apple.mpegurl\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len(),
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        format!("http://{addr}/playlist.m3u8")
+    }
+
+    #[tokio::test]
+    async fn test_extract_all_hls_streams_errors_when_every_variant_fails() {
+        let extractor = test_extractor();
+        // Invalid URLs make `extract_hls_stream` fail at `Url::parse` without network access.
+        let container = container(Some("not a url"), Some("also not a url"), None);
+
+        let result = extractor.extract_all_hls_streams(&container).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_extract_all_hls_streams_keeps_successful_variant_when_another_fails() {
+        let extractor = test_extractor();
+        let good_url = serve_media_playlist_once().await;
+        let container = container(Some("not a url"), Some(&good_url), None);
+
+        let streams = extractor.extract_all_hls_streams(&container).await.unwrap();
+
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].url, good_url);
+    }
+
+    #[tokio::test]
+    async fn test_extract_all_hls_streams_empty_when_no_variants_present() {
+        let extractor = test_extractor();
+        let container = container(None, None, None);
+
+        let streams = extractor.extract_all_hls_streams(&container).await.unwrap();
+
+        assert!(streams.is_empty());
+    }
 
     #[tokio::test]
     #[ignore]
