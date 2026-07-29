@@ -52,8 +52,8 @@ impl HlsFormatStrategy {
 
     /// Feed an already-written segment to `HlsAnalyzer::analyze_segment` for stats.
     /// Validation failures (e.g. AV1 sample checks) are logged and swallowed so a single
-    /// non-conformant segment never aborts `WriterTask::run_from_channel`; the bytes are
-    /// already on disk by the time this runs.
+    /// non-conformant segment never aborts `WriterTask::run_from_channel`; the bytes have
+    /// already been handed to the buffered file writer by the time this runs.
     fn analyze_written_segment(&mut self, item: &HlsData) {
         if let Err(err) = self.analyzer.analyze_segment(item) {
             warn!(error = %err, "HLS segment analysis failed; segment written, continuing");

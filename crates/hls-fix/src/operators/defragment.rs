@@ -100,10 +100,11 @@ impl DefragmentOperator {
 
     // Handle cases for FMP4s init segment.
     //
-    // Pre-init policy: media buffered while waiting for an init segment is orphaned once a
-    // real init arrives (it is encoded against an unknown configuration), so any such buffer
-    // is dropped here and gathering restarts from this init. handle_end_of_playlist still
-    // emits pre-init media if the stream ends before an init ever arrives.
+    // Any non-empty buffer is dropped when a new init arrives and gathering restarts
+    // from this init: pre-init media is encoded against an unknown configuration, and
+    // a still-gathering init+media group cut short by a config change loses its
+    // buffered items here too. handle_end_of_playlist still emits pre-init media if
+    // the stream ends before an init ever arrives.
     fn handle_new_header(&mut self, data: HlsData) {
         if !self.buffer.is_empty() {
             warn!(
@@ -270,8 +271,9 @@ impl DefragmentOperator {
             return Ok(());
         }
 
-        // Only fMP4 data reaches here (TS returned above), and gathering starts from
-        // handle_new_header, so an init segment is always present. Emit the init plus its
+        // Only fMP4 data reaches here (TS returned above). Gathering can also start
+        // pre-init with media-only buffers, so the has_init_segment conjunct below is
+        // what guarantees an emitted group opens with its init. Emit the init plus its
         // trailing media once MIN_TAGS_NUM items are buffered.
         if self.is_gathering && self.has_init_segment && self.buffer.len() >= Self::MIN_TAGS_NUM {
             debug!(
