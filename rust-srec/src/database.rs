@@ -241,66 +241,14 @@ pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
 }
 
 pub async fn begin_immediate(pool: &WritePool) -> Result<ImmediateTransaction, sqlx::Error> {
-    let mut conn = pool.acquire().await?;
-    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
-    Ok(ImmediateTransaction::new(conn))
+    pool.begin_with("BEGIN IMMEDIATE").await
 }
 
-/// Wrapper for a manual immediate transaction.
+/// An immediate SQLite transaction backed by SQLx's transaction lifecycle.
 ///
-/// This wrapper ensures that the transaction determines the write lock immediately (BEGIN IMMEDIATE),
-/// preventing deadlocks that occur with deferred transactions (default) when multiple readers
-/// try to upgrade to writers simultaneously.
-pub struct ImmediateTransaction {
-    conn: sqlx::pool::PoolConnection<Sqlite>,
-    finished: bool,
-}
-
-impl ImmediateTransaction {
-    pub fn new(conn: sqlx::pool::PoolConnection<Sqlite>) -> Self {
-        Self {
-            conn,
-            finished: false,
-        }
-    }
-}
-
-impl ImmediateTransaction {
-    /// Commit the transaction.
-    pub async fn commit(mut self) -> Result<(), sqlx::Error> {
-        sqlx::query("COMMIT").execute(&mut *self.conn).await?;
-        self.finished = true;
-        Ok(())
-    }
-
-    pub async fn rollback(mut self) -> Result<(), sqlx::Error> {
-        sqlx::query("ROLLBACK").execute(&mut *self.conn).await?;
-        self.finished = true;
-        Ok(())
-    }
-}
-
-impl std::ops::Deref for ImmediateTransaction {
-    type Target = sqlx::SqliteConnection;
-
-    fn deref(&self) -> &Self::Target {
-        &self.conn
-    }
-}
-
-impl std::ops::DerefMut for ImmediateTransaction {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.conn
-    }
-}
-
-impl Drop for ImmediateTransaction {
-    fn drop(&mut self) {
-        if !self.finished {
-            self.conn.close_on_drop();
-        }
-    }
-}
+/// `BEGIN IMMEDIATE` acquires the write reservation at transaction start, and
+/// SQLx queues a rollback before returning a dropped transaction to the pool.
+pub type ImmediateTransaction = sqlx::Transaction<'static, Sqlite>;
 
 #[cfg(test)]
 mod tests {
@@ -319,5 +267,38 @@ mod tests {
         // In-memory databases use "memory" journal mode, not WAL
         // For file-based databases, this would be "wal"
         assert!(result.0 == "memory" || result.0 == "wal");
+    }
+
+    #[tokio::test]
+    async fn dropped_immediate_transaction_rolls_back_on_the_same_connection() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE values_to_rollback (value INTEGER NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        {
+            let mut tx = begin_immediate(&pool).await.unwrap();
+            sqlx::query("INSERT INTO values_to_rollback (value) VALUES (1)")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+
+        let mut tx = tokio::time::timeout(Duration::from_secs(1), begin_immediate(&pool))
+            .await
+            .unwrap()
+            .unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM values_to_rollback")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+
+        assert_eq!(count, 0);
+        tx.commit().await.unwrap();
     }
 }
