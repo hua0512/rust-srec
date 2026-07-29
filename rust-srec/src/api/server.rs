@@ -235,8 +235,8 @@ impl ApiServer {
                         return Span::none();
                     }
                     // Routes that carry a JWT/access token or upstream auth
-                    // headers in the query string (stream_proxy/media/downloads
-                    // read `?token=`/`?headers=`). Record only method + path so
+                    // headers in the query string (stream_proxy/media/downloads/
+                    // logging read `?token=`/`?headers=`). Record only method + path so
                     // those secrets never enter the span's `uri` field and thus
                     // never reach on_response/on_failure lines or the retained
                     // rust-srec.log files. The `tower_http::trace::make_span`
