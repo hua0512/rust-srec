@@ -2,11 +2,16 @@
 //!
 //! This module implements a file-based persistent cache provider.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use bytes::Bytes;
-use tokio::fs;
-use tokio::io;
+use tokio::{fs, io, sync::Mutex};
 use tracing::{debug, warn};
 
 use crate::cache::types::{CacheKey, CacheLookupResult, CacheMetadata, CacheResult, CacheStatus};
@@ -16,7 +21,8 @@ use super::CacheProvider;
 #[derive(Debug, Clone)]
 pub struct FileCache {
     cache_dir: PathBuf,
-    initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    initialized: Arc<AtomicBool>,
+    init_lock: Arc<Mutex<()>>,
     enabled: bool,
     /// Maximum disk cache size in bytes (0 = unlimited)
     max_size: u64,
@@ -35,7 +41,8 @@ impl FileCache {
     pub fn new(cache_dir: PathBuf, enabled: bool, max_size: u64) -> Self {
         Self {
             cache_dir,
-            initialized: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            initialized: Arc::new(AtomicBool::new(false)),
+            init_lock: Arc::new(Mutex::new(())),
             enabled,
             max_size,
         }
@@ -43,10 +50,8 @@ impl FileCache {
 
     /// Initialize the cache directories
     pub(crate) async fn ensure_initialized(&self) -> io::Result<()> {
-        use std::sync::atomic::Ordering;
-
         // Fast path - already initialized
-        if self.initialized.load(Ordering::Relaxed) {
+        if self.initialized.load(Ordering::Acquire) {
             return Ok(());
         }
 
@@ -55,35 +60,26 @@ impl FileCache {
             return Ok(());
         }
 
-        // Use compare_exchange to ensure only one thread initializes
-        if self
-            .initialized
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-        {
-            // We won the race, do initialization
-            fs::create_dir_all(&self.cache_dir).await?;
-
-            // Create subdirectories for different resource types
-            for res_type in &[
-                crate::cache::types::CacheResourceType::Headers,
-                crate::cache::types::CacheResourceType::Content,
-                crate::cache::types::CacheResourceType::Response,
-                crate::cache::types::CacheResourceType::Playlist,
-                crate::cache::types::CacheResourceType::Segment,
-                crate::cache::types::CacheResourceType::Key,
-            ] {
-                fs::create_dir_all(self.cache_dir.join(format!("{res_type:?}"))).await?;
-            }
-
-            // Mark as fully initialized with release ordering
-            self.initialized.store(true, Ordering::Release);
-        } else {
-            // Another thread is initializing, wait for it to complete
-            while !self.initialized.load(Ordering::Acquire) {
-                tokio::task::yield_now().await;
-            }
+        let _guard = self.init_lock.lock().await;
+        if self.initialized.load(Ordering::Acquire) {
+            return Ok(());
         }
+
+        fs::create_dir_all(&self.cache_dir).await?;
+
+        for res_type in &[
+            crate::cache::types::CacheResourceType::Headers,
+            crate::cache::types::CacheResourceType::Content,
+            crate::cache::types::CacheResourceType::Response,
+            crate::cache::types::CacheResourceType::Playlist,
+            crate::cache::types::CacheResourceType::Segment,
+            crate::cache::types::CacheResourceType::Key,
+        ] {
+            fs::create_dir_all(self.cache_dir.join(format!("{res_type:?}"))).await?;
+        }
+
+        // Publish readiness only after every directory was created successfully.
+        self.initialized.store(true, Ordering::Release);
 
         Ok(())
     }
@@ -491,5 +487,27 @@ impl CacheProvider for FileCache {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn initialization_failure_can_be_retried() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+        fs::write(&cache_dir, b"not a directory").await.unwrap();
+        let cache = FileCache::new(cache_dir.clone(), true, 1024);
+
+        assert!(cache.ensure_initialized().await.is_err());
+        assert!(!cache.initialized.load(Ordering::Acquire));
+
+        fs::remove_file(&cache_dir).await.unwrap();
+        cache.ensure_initialized().await.unwrap();
+
+        assert!(cache.initialized.load(Ordering::Acquire));
+        assert!(fs::try_exists(cache_dir.join("Content")).await.unwrap());
     }
 }

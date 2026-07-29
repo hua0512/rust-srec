@@ -13,6 +13,7 @@ use crate::cache::providers::memory::MemoryCache;
 use crate::cache::providers::provider::CacheProvider;
 use crate::cache::types::{
     CacheConfig, CacheKey, CacheLookupResult, CacheMetadata, CacheResourceType, CacheResult,
+    CacheStatus,
 };
 
 /// Cache manager handling both memory and file caching
@@ -77,12 +78,18 @@ impl CacheManager {
         }
 
         // Check memory cache first
-        if let Some((data, metadata, status)) = self.memory_cache.get(key).await? {
+        if let Some((data, metadata, status)) = self.memory_cache.get(key).await?
+            && status != CacheStatus::Expired
+        {
             return Ok(Some((data, metadata, status)));
         }
 
         // Try file cache if memory cache misses
         if let Some((data, metadata, status)) = self.file_cache.get(key).await? {
+            if status == CacheStatus::Expired {
+                return Ok(None);
+            }
+
             // Store in memory cache for faster access next time
             if let Err(error) = self
                 .memory_cache
@@ -254,6 +261,8 @@ impl CacheManager {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+
     use super::*;
 
     #[test]
@@ -276,5 +285,29 @@ mod tests {
             Ok(_) => panic!("expected CacheManager::from_config to error inside Tokio runtime"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::Other),
         }
+    }
+
+    #[tokio::test]
+    async fn get_does_not_return_or_promote_expired_entries() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = CacheManager::new(CacheConfig {
+            disk_cache_path: Some(temp_dir.path().to_path_buf()),
+            max_disk_cache_size: 1024,
+            max_memory_cache_size: 1024,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let key = CacheKey::new(CacheResourceType::Content, "expired", None);
+        let data = Bytes::from_static(b"stale");
+        let mut metadata = CacheMetadata::new(data.len() as u64);
+        metadata.expires_at = Some(0);
+
+        manager.put(key.clone(), data, metadata).await.unwrap();
+
+        assert!(manager.get(&key).await.unwrap().is_none());
+        manager.memory_cache.sweep().await.unwrap();
+        assert!(!manager.memory_cache.contains(&key).await.unwrap());
+        assert!(manager.get(&key).await.unwrap().is_none());
     }
 }
