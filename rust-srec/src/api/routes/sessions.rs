@@ -24,7 +24,7 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::database::models::{
-    DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
+    DanmuRateEntry, MediaFileType, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
 };
 use crate::session::SessionEvent;
 
@@ -217,70 +217,88 @@ pub async fn list_sessions(
         .await
         .map_err(ApiError::from)?;
 
-    // Fetch all streamers for mapping details
-    let streamers = streamer_repository
-        .list_all_streamers()
-        .await
-        .map_err(ApiError::from)?;
+    let session_ids: Vec<String> = sessions.iter().map(|session| session.id.clone()).collect();
+    let streamer_ids: Vec<String> = sessions
+        .iter()
+        .map(|session| session.streamer_id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let (streamers, outputs, danmu_statistics) = tokio::try_join!(
+        streamer_repository.get_streamers_by_ids(&streamer_ids),
+        session_repository.get_media_outputs_for_sessions(&session_ids),
+        session_repository.get_danmu_statistics_for_sessions(&session_ids),
+    )
+    .map_err(ApiError::from)?;
 
     let streamer_map: std::collections::HashMap<_, _> =
         streamers.into_iter().map(|s| (s.id.clone(), s)).collect();
-
-    // Convert sessions to API response format
-    let mut session_responses: Vec<SessionResponse> = Vec::with_capacity(sessions.len());
-
-    for session in &sessions {
-        // Get output count for each session
-        let output_count = session_repository
-            .get_output_count(&session.id)
-            .await
-            .unwrap_or(0);
-
-        let start_time = crate::database::time::ms_to_datetime(session.start_time);
-        let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
-
-        // Calculate duration
-        let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
-
-        // Parse titles JSON
-        let (titles, title) = parse_titles(&session.titles);
-
-        // Get streamer details
-        let (streamer_name, streamer_avatar) =
-            if let Some(s) = streamer_map.get(&session.streamer_id) {
-                (s.name.clone(), s.avatar.clone())
-            } else {
-                (String::new(), None)
-            };
-
-        let danmu_count = session_repository
-            .get_danmu_statistics(&session.id)
-            .await
-            .ok()
-            .flatten()
-            .map(|stats| stats.total_danmus as u64);
-
-        session_responses.push(SessionResponse {
-            id: session.id.clone(),
-            streamer_id: session.streamer_id.clone(),
-            streamer_name,
-            title,
-            titles,
-            // Lifecycle audit log isn't loaded on the list endpoint — N+1
-            // queries on a paginated response. Frontend lists don't render
-            // it; the detail endpoint populates it.
-            events: Vec::new(),
-            start_time,
-            end_time,
-            is_live: end_time.is_none(),
-            duration_secs,
-            output_count,
-            total_size_bytes: session.total_size_bytes as u64,
-            danmu_count,
-            thumbnail_url: get_thumbnail_url(&session.id, session_repository.as_ref()).await,
-            streamer_avatar,
-        });
+    let mut output_counts = std::collections::HashMap::new();
+    let mut thumbnail_urls = std::collections::HashMap::new();
+    for output in outputs {
+        let count = output_counts
+            .entry(output.session_id.clone())
+            .or_insert(0_u32);
+        *count = count.saturating_add(1);
+        if output.file_type == MediaFileType::Thumbnail.as_str() {
+            thumbnail_urls
+                .entry(output.session_id)
+                .or_insert_with(|| format!("/api/media/{}/content", output.id));
+        }
     }
+    let danmu_counts: std::collections::HashMap<_, _> = danmu_statistics
+        .into_iter()
+        .map(|stats| {
+            (
+                stats.session_id,
+                u64::try_from(stats.total_danmus).unwrap_or(0),
+            )
+        })
+        .collect();
+
+    let session_responses = sessions
+        .iter()
+        .map(|session| {
+            let start_time = crate::database::time::ms_to_datetime(session.start_time);
+            let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
+
+            let duration_secs =
+                end_time.map(|end| u64::try_from((end - start_time).num_seconds()).unwrap_or(0));
+
+            // Parse titles JSON
+            let (titles, title) = parse_titles(&session.titles);
+
+            // Get streamer details
+            let (streamer_name, streamer_avatar) =
+                if let Some(s) = streamer_map.get(&session.streamer_id) {
+                    (s.name.clone(), s.avatar.clone())
+                } else {
+                    (String::new(), None)
+                };
+
+            SessionResponse {
+                id: session.id.clone(),
+                streamer_id: session.streamer_id.clone(),
+                streamer_name,
+                title,
+                titles,
+                // Lifecycle audit log isn't loaded on the list endpoint — N+1
+                // queries on a paginated response. Frontend lists don't render
+                // it; the detail endpoint populates it.
+                events: Vec::new(),
+                start_time,
+                end_time,
+                is_live: end_time.is_none(),
+                duration_secs,
+                output_count: output_counts.get(&session.id).copied().unwrap_or(0),
+                total_size_bytes: u64::try_from(session.total_size_bytes).unwrap_or(0),
+                danmu_count: danmu_counts.get(&session.id).copied(),
+                thumbnail_url: thumbnail_urls.get(&session.id).cloned(),
+                streamer_avatar,
+            }
+        })
+        .collect();
 
     let response =
         PaginatedResponse::new(session_responses, total, effective_limit, pagination.offset);

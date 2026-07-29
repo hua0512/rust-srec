@@ -47,6 +47,16 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Vec<MediaOutputDbModel>>;
+    async fn get_media_outputs_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<MediaOutputDbModel>> {
+        let mut outputs = Vec::new();
+        for session_id in session_ids {
+            outputs.extend(self.get_media_outputs_for_session(session_id).await?);
+        }
+        Ok(outputs)
+    }
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
@@ -80,6 +90,18 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Option<DanmuStatisticsDbModel>>;
+    async fn get_danmu_statistics_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<DanmuStatisticsDbModel>> {
+        let mut statistics = Vec::new();
+        for session_id in session_ids {
+            if let Some(session_statistics) = self.get_danmu_statistics(session_id).await? {
+                statistics.push(session_statistics);
+            }
+        }
+        Ok(statistics)
+    }
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
     async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
     async fn upsert_danmu_statistics(
@@ -258,6 +280,29 @@ impl SessionRepository for SqlxSessionRepository {
         .fetch_all(&self.pool)
         .await?;
         Ok(outputs)
+    }
+
+    async fn get_media_outputs_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<MediaOutputDbModel>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT * FROM media_outputs WHERE session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for session_id in session_ids {
+            separated.push_bind(session_id);
+        }
+        separated.push_unseparated(") ORDER BY session_id, created_at");
+
+        Ok(builder
+            .build_query_as::<MediaOutputDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
@@ -488,6 +533,29 @@ impl SessionRepository for SqlxSessionRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(stats)
+    }
+
+    async fn get_danmu_statistics_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<DanmuStatisticsDbModel>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT * FROM danmu_statistics WHERE session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for session_id in session_ids {
+            separated.push_bind(session_id);
+        }
+        separated.push_unseparated(") ORDER BY session_id");
+
+        Ok(builder
+            .build_query_as::<DanmuStatisticsDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
@@ -790,7 +858,9 @@ impl SessionRepository for SqlxSessionRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::{LiveSessionDbModel, Pagination, StreamerDbModel};
+    use crate::database::models::{
+        LiveSessionDbModel, MediaFileType, MediaOutputDbModel, Pagination, StreamerDbModel,
+    };
     use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
     use crate::database::{init_pool_with_size, run_migrations};
 
@@ -905,5 +975,56 @@ mod tests {
         let next = repo.next_session_segment_index("session-1").await.unwrap();
 
         assert_eq!(next, 4);
+    }
+
+    #[tokio::test]
+    async fn batch_session_metadata_queries_return_requested_rows() {
+        let repo = setup_test_repo().await;
+        let mut second_streamer = StreamerDbModel::new(
+            "Streamer Two",
+            "https://example.com/streamer-2",
+            "platform-twitch",
+        );
+        second_streamer.id = "streamer-2".to_string();
+        SqlxStreamerRepository::new(repo.pool.clone(), repo.write_pool.clone())
+            .create_streamer(&second_streamer)
+            .await
+            .unwrap();
+
+        let mut second_session = LiveSessionDbModel::new("streamer-2");
+        second_session.id = "session-2".to_string();
+        repo.create_session(&second_session).await.unwrap();
+
+        for output in [
+            MediaOutputDbModel::new("session-1", "/video.mp4", MediaFileType::Video, 10),
+            MediaOutputDbModel::new("session-1", "/thumbnail.jpg", MediaFileType::Thumbnail, 2),
+            MediaOutputDbModel::new("session-2", "/audio.m4a", MediaFileType::Audio, 3),
+        ] {
+            repo.create_media_output(&output).await.unwrap();
+        }
+
+        let mut statistics = DanmuStatisticsDbModel::new("session-1");
+        statistics.total_danmus = 42;
+        repo.create_danmu_statistics(&statistics).await.unwrap();
+
+        let session_ids = vec!["session-1".to_string(), "session-2".to_string()];
+        let outputs = repo
+            .get_media_outputs_for_sessions(&session_ids)
+            .await
+            .unwrap();
+        let statistics = repo
+            .get_danmu_statistics_for_sessions(&session_ids)
+            .await
+            .unwrap();
+
+        assert_eq!(outputs.len(), 3);
+        assert_eq!(statistics.len(), 1);
+        assert_eq!(statistics[0].total_danmus, 42);
+        assert!(
+            repo.get_media_outputs_for_sessions(&[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
