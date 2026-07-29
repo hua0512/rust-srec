@@ -3,13 +3,7 @@ import { checkAuthFn } from '@/server/functions';
 
 export const sessionQueryOptions = queryOptions({
   queryKey: ['session'],
-  queryFn: async () => {
-    try {
-      const result = await checkAuthFn();
-      return result;
-    } catch (e) {
-      console.error('Session check failed', e);
-      return null;
-    }
-  },
+  // Only an explicit null means unauthenticated; rejected checks must leave
+  // React Query's last known session intact for retry.
+  queryFn: () => checkAuthFn(),
 });
