@@ -183,7 +183,7 @@ impl CacheMetadata {
                 .unwrap_or_default()
                 .as_secs();
 
-            expires_at < now
+            expires_at <= now
         } else {
             false
         }
@@ -228,3 +228,22 @@ pub type CacheResult<T> = std::result::Result<T, std::io::Error>;
 
 /// A type representing the result of a cache lookup operation
 pub type CacheLookupResult = CacheResult<Option<(Bytes, CacheMetadata, CacheStatus)>>;
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    #[test]
+    fn expiration_includes_the_deadline() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut metadata = CacheMetadata::new(0);
+        metadata.expires_at = Some(now);
+
+        assert!(metadata.is_expired());
+    }
+}
