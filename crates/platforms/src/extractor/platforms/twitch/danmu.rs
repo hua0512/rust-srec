@@ -24,22 +24,12 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 300;
 
 /// Twitch Danmu Protocol Implementation using WebSocket IRC
 #[derive(Clone, Default)]
-pub struct TwitchDanmuProtocol {
-    /// Optional OAuth token for authenticated sessions
-    oauth_token: Option<String>,
-}
+pub struct TwitchDanmuProtocol;
 
 impl TwitchDanmuProtocol {
     /// Create a new TwitchDanmuProtocol instance (anonymous).
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create a new TwitchDanmuProtocol with OAuth token for authenticated access.
-    pub fn with_oauth(token: impl Into<String>) -> Self {
-        Self {
-            oauth_token: Some(token.into()),
-        }
+        Self
     }
 
     /// Generate random anonymous username
@@ -170,26 +160,8 @@ impl DanmuProtocol for TwitchDanmuProtocol {
             "CAP REQ :twitch.tv/tags twitch.tv/commands".into(),
         ));
 
-        // Send PASS (OAuth token or empty for anonymous)
-        let pass = if let Some(ref token) = self.oauth_token {
-            if token.starts_with("oauth:") {
-                format!("PASS {}", token)
-            } else {
-                format!("PASS oauth:{}", token)
-            }
-        } else {
-            "PASS oauth:".to_string()
-        };
-        messages.push(Message::Text(pass.into()));
-
-        // Send NICK
-        let nick = if self.oauth_token.is_some() {
-            // For authenticated, the nick should match the token owner
-            // But for simplicity, we still use anonymous nick pattern
-            Self::generate_anonymous_nick()
-        } else {
-            Self::generate_anonymous_nick()
-        };
+        messages.push(Message::Text("PASS oauth:".into()));
+        let nick = Self::generate_anonymous_nick();
         messages.push(Message::Text(format!("NICK {}", nick).into()));
 
         // Join channel
@@ -272,7 +244,7 @@ pub type TwitchDanmuProvider = WebSocketDanmuProvider<TwitchDanmuProtocol>;
 
 /// Creates a new Twitch danmu provider (anonymous).
 pub fn create_twitch_danmu_provider() -> TwitchDanmuProvider {
-    WebSocketDanmuProvider::with_factory(TwitchDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(TwitchDanmuProtocol, None)
 }
 
 #[cfg(test)]
@@ -304,7 +276,7 @@ mod tests {
 
     #[tokio::test]
     async fn ping_returns_pong_as_outbound_protocol_frame() {
-        let mut protocol = TwitchDanmuProtocol::default();
+        let mut protocol = TwitchDanmuProtocol;
         let output = protocol
             .decode_message(&Message::Text("PING :tmi.twitch.tv".into()), "channel")
             .await

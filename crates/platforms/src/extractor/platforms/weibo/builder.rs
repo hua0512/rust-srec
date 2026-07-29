@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
-use std::sync::LazyLock;
-use tracing::debug;
+use std::sync::{LazyLock, Once};
+use tracing::{debug, warn};
 use url::Url;
 
 use crate::{
@@ -17,6 +17,7 @@ use crate::{
 pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:https?://)?(?:www\.)?weibo\.com/(?:u/\d+|l/wblive/p/show/\d+:\d+)").unwrap()
 });
+static MISSING_COOKIE_WARNING: Once = Once::new();
 
 pub struct Weibo {
     extractor: Extractor,
@@ -41,6 +42,12 @@ impl Weibo {
         extractor.set_referer_static(Self::BASE_URL);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
+        } else {
+            MISSING_COOKIE_WARNING.call_once(|| {
+                warn!(
+                    "weibo: no user cookies configured; using the bundled session, which may expire"
+                );
+            });
         }
         Self {
             extractor,
@@ -143,19 +150,10 @@ impl Weibo {
 
         // debug!("response: {:?}", response);
 
-        if response.data.is_none() {
+        let Some(data) = response.data else {
             return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
                 .is_live(false)
                 .build());
-        }
-
-        let data = match response.data {
-            Some(v) => v,
-            None => {
-                return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
-                    .is_live(false)
-                    .build());
-            }
         };
         let user_info = data.user_info;
 

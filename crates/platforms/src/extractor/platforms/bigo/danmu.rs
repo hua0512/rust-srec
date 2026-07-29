@@ -130,11 +130,12 @@ impl BigoDanmuProtocol {
 
     fn challenge_response(challenge: &str) -> Message {
         let ts = Self::now_sec().to_string();
-        let tail = if challenge.len() >= 8 {
-            &challenge[challenge.len() - 8..]
-        } else {
-            challenge
-        };
+        let tail_start = challenge
+            .char_indices()
+            .rev()
+            .nth(7)
+            .map_or(0, |(index, _)| index);
+        let tail = &challenge[tail_start..];
         let material = format!("60#4#5#{ts}#1#1#1#1#{tail}");
         let mut hasher = Md5::new();
         hasher.update(material.as_bytes());
@@ -603,12 +604,14 @@ mod tests {
     #[test]
     fn challenge_sign_material() {
         // Just ensure packing challenge response produces text with sign field.
-        let msg = BigoDanmuProtocol::challenge_response("12345678abcdefgh");
-        if let Message::Text(t) = msg {
-            assert!(t.starts_with("79108{"));
-            assert!(t.contains("\"sign\":"));
-        } else {
-            panic!("expected text");
+        for challenge in ["12345678abcdefgh", "挑战令牌abcdefgh"] {
+            let msg = BigoDanmuProtocol::challenge_response(challenge);
+            if let Message::Text(t) = msg {
+                assert!(t.starts_with("79108{"));
+                assert!(t.contains("\"sign\":"));
+            } else {
+                panic!("expected text");
+            }
         }
     }
 

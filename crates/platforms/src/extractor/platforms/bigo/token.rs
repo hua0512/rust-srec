@@ -4,6 +4,7 @@
 //! 2. Fingerprint map (all strings, trunc 100) encrypted with OpenSSL-salted AES-256-CBC
 //! 3. JSONP GET `/v1/webjs/status?data=` → server-minted token
 
+use std::sync::LazyLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aes::Aes256;
@@ -14,6 +15,7 @@ use parking_lot::Mutex as ParkingMutex;
 use rand::{RngExt, rng};
 use reqwest::Client;
 use serde_json::{Map, Value};
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::debug;
 
 use crate::digest_to_hex;
@@ -374,9 +376,23 @@ pub async fn mint_token_with_options(
     Ok(token.unwrap())
 }
 
+static SHARED_TOKEN_POOL: LazyLock<TokenPool> = LazyLock::new(TokenPool::default);
+
+/// Return a process-wide cached integrity token, refreshing it when it expires
+/// or reaches its reuse limit.
+///
+/// # Errors
+///
+/// Returns an [`ExtractorError`] if Bigo's token endpoints cannot be reached,
+/// return an unsuccessful status, or omit a valid token.
+pub async fn pooled_token(client: &Client) -> Result<String, ExtractorError> {
+    SHARED_TOKEN_POOL.get(client).await
+}
+
 /// Process-local token cache (TTL + max uses) for multi-poll reuse.
 pub struct TokenPool {
     inner: ParkingMutex<TokenPoolState>,
+    refresh_lock: AsyncMutex<()>,
     ttl: Duration,
     max_uses: u32,
 }
@@ -401,22 +417,33 @@ impl TokenPool {
                 born: None,
                 uses: 0,
             }),
+            refresh_lock: AsyncMutex::new(()),
             ttl,
             max_uses,
         }
     }
 
-    pub async fn get(&self, client: &Client) -> Result<String, ExtractorError> {
+    fn cached_token(&self) -> Option<String> {
+        let mut state = self.inner.lock();
+        if let Some(born) = state.born
+            && born.elapsed() < self.ttl
+            && state.uses < self.max_uses
+            && let Some(token) = state.token.clone()
         {
-            let mut state = self.inner.lock();
-            if let Some(born) = state.born
-                && born.elapsed() < self.ttl
-                && state.uses < self.max_uses
-                && let Some(token) = state.token.clone()
-            {
-                state.uses = state.uses.saturating_add(1);
-                return Ok(token);
-            }
+            state.uses = state.uses.saturating_add(1);
+            return Some(token);
+        }
+        None
+    }
+
+    pub async fn get(&self, client: &Client) -> Result<String, ExtractorError> {
+        if let Some(token) = self.cached_token() {
+            return Ok(token);
+        }
+
+        let _refresh_guard = self.refresh_lock.lock().await;
+        if let Some(token) = self.cached_token() {
+            return Ok(token);
         }
 
         let token = mint_token(client).await?;
@@ -491,5 +518,31 @@ mod tests {
         for key in ["wc", "dz", "dr", "business", "at_time", "ver", "mq", "ni"] {
             assert!(fp.contains_key(key), "missing {key}");
         }
+    }
+
+    #[test]
+    fn token_pool_honors_its_reuse_limit() {
+        let pool = TokenPool::new(Duration::from_secs(60), 2);
+        {
+            let mut state = pool.inner.lock();
+            state.token = Some("cached-token".to_string());
+            state.born = Some(Instant::now());
+        }
+
+        assert_eq!(pool.cached_token().as_deref(), Some("cached-token"));
+        assert_eq!(pool.cached_token().as_deref(), Some("cached-token"));
+        assert_eq!(pool.cached_token(), None);
+    }
+
+    #[test]
+    fn token_pool_rejects_expired_tokens() {
+        let pool = TokenPool::new(Duration::from_secs(1), 50);
+        {
+            let mut state = pool.inner.lock();
+            state.token = Some("expired-token".to_string());
+            state.born = Some(Instant::now() - Duration::from_secs(2));
+        }
+
+        assert_eq!(pool.cached_token(), None);
     }
 }
