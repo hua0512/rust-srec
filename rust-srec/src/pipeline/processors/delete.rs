@@ -186,8 +186,10 @@ impl Processor for DeleteProcessor {
                 start_msg,
             ));
 
-            // Check if file exists
-            if !path.exists() {
+            let exists = fs::try_exists(path)
+                .await
+                .map_err(|error| crate::Error::io_path("try_exists", path, error))?;
+            if !exists {
                 let msg = format!(
                     "File does not exist, marking job as completed: {}",
                     file_path
@@ -294,7 +296,10 @@ impl Processor for DeleteProcessor {
         for file_path in &input.inputs {
             let path = Path::new(file_path);
 
-            if !path.exists() {
+            let exists = fs::try_exists(path)
+                .await
+                .map_err(|error| crate::Error::io_path("try_exists", path, error))?;
+            if !exists {
                 skipped_missing = skipped_missing.saturating_add(1);
                 let msg = format!("File does not exist, skipping: {}", file_path);
                 warn!("{}", msg);

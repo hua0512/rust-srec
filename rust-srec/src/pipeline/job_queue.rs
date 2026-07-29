@@ -1116,8 +1116,8 @@ impl JobQueue {
 
         info!("Enqueued job {} of type {}", job_id, job_type);
 
-        // Notify waiting workers
-        self.notify.notify_one();
+        // CPU and I/O pools share this notifier but accept different job types.
+        self.notify.notify_waiters();
 
         Ok(job_id)
     }
@@ -1136,8 +1136,8 @@ impl JobQueue {
 
         info!("Enqueued existing job {} of type {}", job_id, job_type);
 
-        // Notify waiting workers
-        self.notify.notify_one();
+        // CPU and I/O pools share this notifier but accept different job types.
+        self.notify.notify_waiters();
 
         Ok(job_id)
     }
@@ -1645,7 +1645,7 @@ impl JobQueue {
             self.jobs_cache.remove(id);
 
             self.depth.fetch_add(1, Ordering::SeqCst);
-            self.notify.notify_one();
+            self.notify.notify_waiters();
 
             let updated_job = db_model_to_job(&repo.get_job(id).await?);
             info!("Job {} retried (attempt {})", id, updated_job.retry_count);
@@ -1673,7 +1673,7 @@ impl JobQueue {
         drop(cached_job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
-        self.notify.notify_one();
+        self.notify.notify_waiters();
 
         info!("Job {} retried (attempt {})", id, updated_job.retry_count);
         Ok(updated_job)
@@ -2043,16 +2043,28 @@ impl JobQueue {
                 split_job = split_job.with_session_start(session_start);
             }
 
-            let job_id = self.enqueue(split_job).await?;
-            created_job_ids.push(job_id);
+            match self.enqueue(split_job).await {
+                Ok(job_id) => created_job_ids.push(job_id),
+                Err(error) => {
+                    self.rollback_split_jobs(&created_job_ids).await;
+                    return Err(error);
+                }
+            }
         }
 
         // Mark the original job as completed (it was split)
         if let Some(repo) = &self.job_repository {
-            let mut db_job = repo.get_job(&job.id).await?;
-            db_job.mark_completed();
-            db_job.set_outputs(&[]); // No outputs, job was split
-            repo.update_job(&db_job).await?;
+            let result = async {
+                let mut db_job = repo.get_job(&job.id).await?;
+                db_job.mark_completed();
+                db_job.set_outputs(&[]); // No outputs, job was split
+                repo.update_job(&db_job).await
+            }
+            .await;
+            if let Err(error) = result {
+                self.rollback_split_jobs(&created_job_ids).await;
+                return Err(error);
+            }
         }
 
         // Update cache for original job
@@ -2081,6 +2093,18 @@ impl JobQueue {
         );
 
         Ok(created_job_ids)
+    }
+
+    async fn rollback_split_jobs(&self, job_ids: &[String]) {
+        for job_id in job_ids {
+            if let Err(error) = self.cancel_job(job_id).await {
+                warn!(
+                    %job_id,
+                    %error,
+                    "Failed to cancel a split job after fan-out failed"
+                );
+            }
+        }
     }
 
     /// Track partial outputs for a job (used for cleanup on failure).

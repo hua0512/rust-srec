@@ -80,12 +80,8 @@ impl SessionCancelHandle {
 
 impl Drop for SessionCancelHandle {
     fn drop(&mut self) {
-        if let Some(entry) = self.registry.get(&self.session_id)
-            && entry.value().id == self.id
-        {
-            drop(entry);
-            self.registry.remove(&self.session_id);
-        }
+        self.registry
+            .remove_if(&self.session_id, |_, entry| entry.id == self.id);
     }
 }
 
