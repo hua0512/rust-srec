@@ -340,7 +340,9 @@ impl BilibiliDanmuProtocol {
             let version = BigEndian::read_u16(&data[offset + 6..offset + 8]);
             let operation = BigEndian::read_u32(&data[offset + 8..offset + 12]);
 
-            if offset + packet_len > data.len() {
+            // Every frame has a 16-byte header. Validate the relative length
+            // before slicing, and avoid overflowing `offset + packet_len`.
+            if packet_len < 16 || packet_len > data.len() - offset {
                 break;
             }
 
@@ -798,6 +800,24 @@ mod tests {
         assert_eq!(BigEndian::read_u32(&packet[8..12]), op::AUTH);
         assert_eq!(BigEndian::read_u32(&packet[12..16]), 1);
         assert_eq!(&packet[16..], body);
+    }
+
+    #[test]
+    fn decode_packets_rejects_lengths_shorter_than_the_header() {
+        for packet_len in [0_u32, 15] {
+            let mut packet = vec![0_u8; 16];
+            BigEndian::write_u32(&mut packet[0..4], packet_len);
+
+            assert!(BilibiliDanmuProtocol::decode_packets(&packet).is_empty());
+        }
+    }
+
+    #[test]
+    fn decode_packets_rejects_lengths_beyond_the_frame() {
+        let mut packet = vec![0_u8; 16];
+        BigEndian::write_u32(&mut packet[0..4], 17);
+
+        assert!(BilibiliDanmuProtocol::decode_packets(&packet).is_empty());
     }
 
     #[test]

@@ -862,9 +862,9 @@ impl TsParser {
             };
 
             if let Ok(packet) = TsPacketRef::parse(chunk) {
-                // Check continuity counter if enabled
+                let status = self.check_cc(&packet);
+                let is_duplicate = matches!(status, crate::packet::ContinuityStatus::Duplicate);
                 if self.continuity_mode != ContinuityMode::Disabled {
-                    let status = self.check_cc(&packet);
                     self.handle_continuity_status(packet.pid, status)?;
                 }
 
@@ -873,7 +873,8 @@ impl TsParser {
                     on_packet_cb(&packet)?;
                 }
 
-                if self.is_relevant_psi_pid(packet.pid)
+                if !is_duplicate
+                    && self.is_relevant_psi_pid(packet.pid)
                     && let Some(payload) = packet.payload()
                 {
                     self.process_packet_psi_payload(
@@ -929,7 +930,11 @@ impl TsParser {
                 return Ok(());
             }
 
-            if pointer_field > 0 {
+            let section_in_progress = self
+                .psi_buffers
+                .get(&pid)
+                .is_some_and(|buffer| !buffer.is_empty());
+            if pointer_field > 0 && section_in_progress {
                 self.append_psi_bytes(pid, &payload[1..pointer_end], on_pat, on_pmt, on_scte35)?;
             }
 
@@ -941,7 +946,11 @@ impl TsParser {
                 }
                 self.append_psi_bytes(pid, &payload[pointer_end..], on_pat, on_pmt, on_scte35)?;
             }
-        } else {
+        } else if self
+            .psi_buffers
+            .get(&pid)
+            .is_some_and(|buffer| !buffer.is_empty())
+        {
             self.append_psi_bytes(pid, &payload, on_pat, on_pmt, on_scte35)?;
         }
 
@@ -1387,6 +1396,82 @@ mod tests {
             .unwrap();
 
         assert_eq!(versions, vec![0, 1]);
+    }
+
+    #[test]
+    fn duplicate_packet_does_not_corrupt_partial_psi_section() {
+        let pat_section = build_pat_section(0, 50, 0x0100);
+        let split_at = 183;
+
+        let mut payload_1 = Vec::with_capacity(184);
+        payload_1.push(0x00);
+        payload_1.extend_from_slice(&pat_section[..split_at]);
+        let payload_2 = pat_section[split_at..].to_vec();
+
+        let packet_1 = build_ts_packet(0x0000, true, 0, &payload_1);
+        let duplicate = build_ts_packet(0x0000, true, 0, &payload_1);
+        let packet_2 = build_ts_packet(0x0000, false, 1, &payload_2);
+
+        let mut stream = Vec::new();
+        stream.extend_from_slice(&packet_1);
+        stream.extend_from_slice(&duplicate);
+        stream.extend_from_slice(&packet_2);
+
+        let mut parser = TsParser::new();
+        let mut pat_count = 0usize;
+        let mut programs = 0usize;
+        parser
+            .parse_packets(
+                Bytes::from(stream),
+                |pat| {
+                    pat_count += 1;
+                    programs = pat.programs().count();
+                    Ok(())
+                },
+                |_pmt| Ok(()),
+                None::<fn(&TsPacketRef) -> Result<()>>,
+            )
+            .unwrap();
+
+        assert_eq!(pat_count, 1);
+        assert_eq!(programs, 50);
+        assert_eq!(parser.continuity_issue_count(), 0);
+    }
+
+    #[test]
+    fn ignores_orphan_psi_continuation_and_pointer_bytes() {
+        let mut parser = TsParser::new();
+        let mut on_pat = |_pat| Ok(());
+        let mut on_pmt = |_pmt| Ok(());
+        let mut on_scte35 = None::<fn(crate::scte35::SpliceInfoSectionRef) -> Result<()>>;
+
+        parser
+            .process_packet_psi_payload(
+                0x0000,
+                Bytes::from_static(&[0x00, 0xb0, 0x10]),
+                false,
+                &mut on_pat,
+                &mut on_pmt,
+                &mut on_scte35,
+            )
+            .unwrap();
+        parser
+            .process_packet_psi_payload(
+                0x0000,
+                Bytes::from_static(&[0x02, 0x12, 0x34]),
+                true,
+                &mut on_pat,
+                &mut on_pmt,
+                &mut on_scte35,
+            )
+            .unwrap();
+
+        assert!(
+            parser
+                .psi_buffers
+                .get(&0x0000)
+                .is_none_or(BytesMut::is_empty)
+        );
     }
 
     #[test]

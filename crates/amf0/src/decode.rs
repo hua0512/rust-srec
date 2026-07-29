@@ -17,6 +17,9 @@ pub struct LossyDecodeResult<'a> {
     pub error: Option<Amf0ReadError>,
 }
 
+/// Maximum object/array nesting depth accepted by [`Amf0Decoder::decode`].
+const MAX_DEPTH: usize = 256;
+
 /// An AMF0 Decoder.
 ///
 /// This decoder takes a reference to a byte slice and reads the AMF0 data from
@@ -25,12 +28,17 @@ pub struct LossyDecodeResult<'a> {
 pub struct Amf0Decoder<'a> {
     data: &'a [u8],
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> Amf0Decoder<'a> {
     /// Create a new AMF0 decoder.
     pub const fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
+        Self {
+            data,
+            pos: 0,
+            depth: 0,
+        }
     }
 
     /// Check if the decoder has reached the end of the AMF0 data.
@@ -40,13 +48,16 @@ impl<'a> Amf0Decoder<'a> {
 
     /// Read `len` bytes from the buffer, advancing the position.
     fn read_bytes(&mut self, len: usize) -> Result<&'a [u8], Amf0ReadError> {
-        let end = self.pos + len;
-        if end > self.data.len() {
-            return Err(Amf0ReadError::Io(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "not enough data",
-            )));
-        }
+        let end = self
+            .pos
+            .checked_add(len)
+            .filter(|&end| end <= self.data.len())
+            .ok_or_else(|| {
+                Amf0ReadError::Io(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "not enough data",
+                ))
+            })?;
         let bytes = &self.data[self.pos..end];
         self.pos = end;
         Ok(bytes)
@@ -161,6 +172,21 @@ impl<'a> Amf0Decoder<'a> {
 
     /// Read the next encoded value from the decoder.
     pub fn decode(&mut self) -> Result<Amf0Value<'a>, Amf0ReadError> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            self.depth -= 1;
+            return Err(Amf0ReadError::Io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "maximum nesting depth exceeded",
+            )));
+        }
+
+        let result = self.decode_value();
+        self.depth -= 1;
+        result
+    }
+
+    fn decode_value(&mut self) -> Result<Amf0Value<'a>, Amf0ReadError> {
         let marker_byte = self.read_u8()?;
         let marker = Amf0Marker::try_from(marker_byte).map_err(Amf0ReadError::UnknownMarker)?;
 
@@ -282,7 +308,10 @@ impl<'a> Amf0Decoder<'a> {
     fn read_strict_array(&mut self) -> Result<Vec<Amf0Value<'a>>, Amf0ReadError> {
         let len = self.read_u32_be()?;
 
-        let mut values = Vec::with_capacity(len as usize);
+        // Every element needs at least a marker byte, so the remaining input is
+        // a safe upper bound for eager allocation.
+        let remaining = self.data.len() - self.pos;
+        let mut values = Vec::with_capacity((len as usize).min(remaining));
 
         for _ in 0..len {
             let val = self.decode()?;
@@ -431,6 +460,31 @@ mod tests {
         );
 
         assert_eq!(value, expected);
+    }
+
+    #[test]
+    fn strict_array_count_is_bounded_by_remaining_input() {
+        let data = [Amf0Marker::StrictArray as u8, 0xff, 0xff, 0xff, 0xff];
+        let mut decoder = Amf0Decoder::new(&data);
+
+        assert!(matches!(decoder.decode(), Err(Amf0ReadError::Io(_))));
+    }
+
+    #[test]
+    fn deeply_nested_arrays_return_an_error() {
+        let mut data = Vec::with_capacity((MAX_DEPTH + 1) * 5 + 1);
+        for _ in 0..=MAX_DEPTH {
+            data.push(Amf0Marker::StrictArray as u8);
+            data.extend_from_slice(&1_u32.to_be_bytes());
+        }
+        data.push(Amf0Marker::Null as u8);
+
+        let mut decoder = Amf0Decoder::new(&data);
+        let error = decoder.decode().unwrap_err();
+        assert!(matches!(
+            error,
+            Amf0ReadError::Io(ref source) if source.kind() == io::ErrorKind::InvalidData
+        ));
     }
 
     #[test]
