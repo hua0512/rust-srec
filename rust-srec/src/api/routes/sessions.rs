@@ -381,7 +381,8 @@ pub async fn get_session(
     let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
 
     // Calculate duration
-    let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
+    let duration_secs =
+        end_time.map(|end| u64::try_from((end - start_time).num_seconds()).unwrap_or(0));
 
     // Parse titles JSON
     let (titles, title) = parse_titles(&session.titles);
@@ -406,7 +407,7 @@ pub async fn get_session(
 
     // Fetch danmu stats by session id (danmu_statistics.session_id).
     let danmu_count = match session_repository.get_danmu_statistics(&session.id).await {
-        Ok(stats) => stats.map(|stats| stats.total_danmus as u64),
+        Ok(stats) => stats.map(|stats| u64::try_from(stats.total_danmus).unwrap_or(0)),
         Err(error) => {
             tracing::warn!(session_id = %id, %error, "Failed to load session danmu statistics");
             None
@@ -439,7 +440,7 @@ pub async fn get_session(
         is_live: end_time.is_none(),
         duration_secs,
         output_count,
-        total_size_bytes: session.total_size_bytes as u64,
+        total_size_bytes: u64::try_from(session.total_size_bytes).unwrap_or(0),
         danmu_count,
         thumbnail_url,
         streamer_avatar,
@@ -535,7 +536,7 @@ pub async fn get_session_danmu_statistics(
 
     let response = SessionDanmuStatisticsResponse {
         session_id: session.id,
-        total_danmus: stats.total_danmus as u64,
+        total_danmus: u64::try_from(stats.total_danmus).unwrap_or(0),
         danmu_rate_timeseries,
         top_talkers,
         word_frequency,

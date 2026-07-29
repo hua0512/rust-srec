@@ -995,10 +995,19 @@ mod tests {
         second_session.id = "session-2".to_string();
         repo.create_session(&second_session).await.unwrap();
 
+        // A session outside `session_ids`: its rows must be filtered out, so a
+        // batch query missing its `WHERE session_id IN (...)` fails the counts.
+        // Ended, because live_sessions allows one active session per streamer.
+        let mut excluded_session = LiveSessionDbModel::new("streamer-2");
+        excluded_session.id = "session-3".to_string();
+        excluded_session.end_time = Some(1_700_000_100_000);
+        repo.create_session(&excluded_session).await.unwrap();
+
         for output in [
             MediaOutputDbModel::new("session-1", "/video.mp4", MediaFileType::Video, 10),
             MediaOutputDbModel::new("session-1", "/thumbnail.jpg", MediaFileType::Thumbnail, 2),
             MediaOutputDbModel::new("session-2", "/audio.m4a", MediaFileType::Audio, 3),
+            MediaOutputDbModel::new("session-3", "/excluded.mp4", MediaFileType::Video, 4),
         ] {
             repo.create_media_output(&output).await.unwrap();
         }
@@ -1006,6 +1015,12 @@ mod tests {
         let mut statistics = DanmuStatisticsDbModel::new("session-1");
         statistics.total_danmus = 42;
         repo.create_danmu_statistics(&statistics).await.unwrap();
+
+        let mut excluded_statistics = DanmuStatisticsDbModel::new("session-3");
+        excluded_statistics.total_danmus = 7;
+        repo.create_danmu_statistics(&excluded_statistics)
+            .await
+            .unwrap();
 
         let session_ids = vec!["session-1".to_string(), "session-2".to_string()];
         let outputs = repo
@@ -1018,6 +1033,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(outputs.len(), 3);
+        assert!(outputs.iter().all(|output| output.session_id != "session-3"));
         assert_eq!(statistics.len(), 1);
         assert_eq!(statistics[0].total_danmus, 42);
         assert!(
