@@ -340,8 +340,9 @@ where
         &self,
         streamer_id: &str,
     ) -> Result<Arc<ResolvedStreamerContext>> {
-        // One retry is enough to handle "cache invalidated" races without creating
-        // unbounded loops if the config is being updated repeatedly.
+        // One retry is enough to handle "cache invalidated" races and a
+        // cancelled owner (InFlightGuard's drop runs fail_in_flight) without
+        // creating unbounded loops if the config is being updated repeatedly.
         for attempt in 0..2 {
             // Check cache first
             if let Some(context) = self.cache.get(streamer_id) {
@@ -360,10 +361,12 @@ where
                     Err(message)
                         if attempt == 0
                             && (message.contains("Configuration invalidated")
-                                || message.contains("Configuration cache invalidated")) =>
+                                || message.contains("Configuration cache invalidated")
+                                || message.contains("was cancelled")) =>
                     {
                         trace!(
-                            "In-flight config was invalidated for streamer {}, retrying",
+                            "In-flight config was invalidated or its owner was cancelled \
+                             for streamer {}, retrying",
                             streamer_id
                         );
                         continue;
