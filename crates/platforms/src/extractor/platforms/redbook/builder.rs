@@ -19,8 +19,10 @@ static SCRIPT_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<script>window.__INITIAL_STATE__=(.*?)</script>").unwrap());
 /// Matches a bare JavaScript `undefined` value only where a JSON value can
 /// appear — immediately after `:`, `,` or `[`. Anchoring on the preceding
-/// delimiter leaves `undefined` substrings inside string values (nicknames,
-/// titles like "xundefinedy") untouched.
+/// delimiter leaves most `undefined` substrings inside string values
+/// (nicknames, titles like "xundefinedy") untouched; a quoted value that
+/// itself contains a delimiter directly before `undefined` (e.g. "a,undefined!")
+/// is still rewritten, since the regex cannot see string boundaries.
 static UNDEFINED_VALUE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"([:,\[])undefined\b").unwrap());
 

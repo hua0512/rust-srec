@@ -254,10 +254,12 @@ impl PlatformExtractor for Huya {
     }
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
-        // `get_anticode_url` re-signs via getCdnTokenInfo using the `flv_url`/`ua` extras that only
-        // `parse_living_info_streams` (WUP mode) emits. `parse_streams` for Web/MP already produce a
-        // fully signed `stream_info.url`, so when the `flv_url` extra is absent leave that URL as-is
-        // rather than calling getCdnTokenInfoEx with an empty `flv_url` and failing on the token.
+        // `get_anticode_url` re-signs via getCdnTokenInfo using the `flv_url`/`ua` extras that
+        // only `parse_living_info_streams` (WUP mode) emits; without them there is nothing to
+        // feed the token call, so the URL from `parse_streams` is used as-is. Known limitation:
+        // when `force_origin_quality` strips `-imgplus` from the stream name, that URL's
+        // anti-code still signs the original name; covering that path needs a local re-sign
+        // via `build_stream_query`.
         let Some(extras) = stream_info.extras.as_ref() else {
             return Ok(());
         };

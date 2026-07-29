@@ -8,7 +8,6 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct VisitorLoginResponse {
     pub result: i32,
-    #[serde(rename = "error_msg")]
     pub error_msg: Option<String>,
     // Present only when result == 0; error payloads omit these, so they must be
     // Option for deserialization to reach the result check in Acfun::extract.
