@@ -604,7 +604,9 @@ mod tests {
     #[test]
     fn challenge_sign_material() {
         // Just ensure packing challenge response produces text with sign field.
-        for challenge in ["12345678abcdefgh", "挑战令牌abcdefgh"] {
+        // The last input's byte length minus 8 lands inside a multi-byte char,
+        // so byte-based tail slicing in challenge_response would panic on it.
+        for challenge in ["12345678abcdefgh", "挑战令牌abcdefgh", "挑战令牌abcdefg"] {
             let msg = BigoDanmuProtocol::challenge_response(challenge);
             if let Message::Text(t) = msg {
                 assert!(t.starts_with("79108{"));

@@ -216,7 +216,8 @@ impl GlobalTtwidManager {
     /// Fetch a fresh ttwid from Douyin's servers and store it globally.
     /// Concurrent callers share one network fetch.
     ///
-    /// Returns the fetched token without caching failed fallback values.
+    /// On failure nothing is stored in `GLOBAL_TTWID`, so the next caller
+    /// retries the fetch.
     ///
     /// # Errors
     ///
@@ -288,9 +289,14 @@ mod tests {
         let fresh = CachedTtwid::new("fresh".to_string());
         assert!(!fresh.is_stale());
 
+        // checked_sub: subtracting the 2h expiration underflows Instant on
+        // hosts whose monotonic clock started less than 2h ago (fresh VMs).
+        let Some(expired_fetch) = Instant::now().checked_sub(TTWID_CACHE_EXPIRATION) else {
+            return;
+        };
         let stale = CachedTtwid {
             value: "stale".to_string(),
-            fetched_at: Instant::now() - TTWID_CACHE_EXPIRATION,
+            fetched_at: expired_fetch,
         };
         assert!(stale.is_stale());
     }
