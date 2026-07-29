@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
@@ -30,6 +30,71 @@ async fn make_absolute(path: &str) -> String {
     }
 
     path.to_string()
+}
+
+struct TempOutputGuard {
+    path: PathBuf,
+}
+
+impl TempOutputGuard {
+    fn new(output_path: &Path) -> Self {
+        let mut file_name = output_path
+            .file_stem()
+            .map(std::ffi::OsString::from)
+            .unwrap_or_default();
+        file_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
+        if let Some(extension) = output_path.extension() {
+            file_name.push(".");
+            file_name.push(extension);
+        }
+
+        Self {
+            path: output_path.with_file_name(file_name),
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempOutputGuard {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_file(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!(
+                %error,
+                path = %self.path.display(),
+                "Failed to remove temporary remux output"
+            );
+        }
+    }
+}
+
+async fn promote_remux_output(
+    temp_output: TempOutputGuard,
+    output_path: &Path,
+    overwrite: bool,
+) -> Result<()> {
+    if !overwrite {
+        return tokio::fs::hard_link(temp_output.path(), output_path)
+            .await
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    crate::Error::PipelineError(format!(
+                        "Output file already exists and overwrite is disabled: {}",
+                        output_path.display()
+                    ))
+                } else {
+                    crate::Error::io_path("hard_link", output_path, error)
+                }
+            });
+    }
+
+    tokio::fs::rename(temp_output.path(), output_path)
+        .await
+        .map_err(|error| crate::Error::io_path("rename", output_path, error))
 }
 
 /// Video codec options.
@@ -620,12 +685,28 @@ impl RemuxProcessor {
         let output_path_string = make_absolute(&output_string).await;
         let output_path = output_path_string.as_str();
 
+        if !config.overwrite
+            && Path::new(output_path).try_exists().map_err(|error| {
+                crate::Error::io_path("try_exists", Path::new(output_path), error)
+            })?
+        {
+            return Err(crate::Error::PipelineError(format!(
+                "Output file already exists and overwrite is disabled: {}",
+                output_path
+            )));
+        }
+
         ctx.info(format!(
             "Processing {} -> {} (video: {:?}, audio: {:?})",
             input_path, output_path, config.video_codec, config.audio_codec
         ));
 
-        let args = self.build_args(input_path, config, output_path);
+        let temp_output = TempOutputGuard::new(Path::new(output_path));
+        let mut args = self.build_args(input_path, config, output_path);
+        let output_arg = args.last_mut().ok_or_else(|| {
+            crate::Error::PipelineError("FFmpeg command has no output path".to_string())
+        })?;
+        *output_arg = temp_output.path().to_string_lossy().into_owned();
         debug!("FFmpeg args: {:?}", args);
 
         // Build ffmpeg command
@@ -657,6 +738,8 @@ impl RemuxProcessor {
                 error_msg
             )));
         }
+
+        promote_remux_output(temp_output, Path::new(output_path), config.overwrite).await?;
 
         ctx.info(format!(
             "Processing completed in {:.2}s: {}",
@@ -1179,6 +1262,97 @@ mod tests {
         assert_eq!(output.outputs.len(), 2);
         assert!(a.exists());
         assert!(b.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remux_promotion_without_overwrite_preserves_existing_output() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("output.mp4");
+        fs::write(&output_path, "existing").unwrap();
+
+        let temp_output = TempOutputGuard::new(&output_path);
+        let temp_path = temp_output.path().to_path_buf();
+        fs::write(&temp_path, "replacement").unwrap();
+
+        let error = promote_remux_output(temp_output, &output_path, false)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("overwrite is disabled"));
+        assert_eq!(fs::read_to_string(&output_path).unwrap(), "existing");
+        assert!(!temp_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remux_promotion_without_overwrite_creates_output() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("output.mp4");
+        let temp_output = TempOutputGuard::new(&output_path);
+        let temp_path = temp_output.path().to_path_buf();
+        fs::write(&temp_path, "completed").unwrap();
+
+        promote_remux_output(temp_output, &output_path, false)
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read_to_string(&output_path).unwrap(), "completed");
+        assert!(!temp_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_remux_promotions_without_overwrite_have_one_winner() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("output.mp4");
+        let first_temp = TempOutputGuard::new(&output_path);
+        let first_path = first_temp.path().to_path_buf();
+        fs::write(&first_path, "first").unwrap();
+        let second_temp = TempOutputGuard::new(&output_path);
+        let second_path = second_temp.path().to_path_buf();
+        fs::write(&second_path, "second").unwrap();
+
+        let (first_result, second_result) = tokio::join!(
+            promote_remux_output(first_temp, &output_path, false),
+            promote_remux_output(second_temp, &output_path, false),
+        );
+
+        assert_ne!(first_result.is_ok(), second_result.is_ok());
+        assert!(matches!(
+            fs::read_to_string(&output_path).unwrap().as_str(),
+            "first" | "second"
+        ));
+        assert!(!first_path.exists());
+        assert!(!second_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remux_promotion_with_overwrite_replaces_output() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("output.mp4");
+        fs::write(&output_path, "existing").unwrap();
+
+        let temp_output = TempOutputGuard::new(&output_path);
+        let temp_path = temp_output.path().to_path_buf();
+        fs::write(&temp_path, "replacement").unwrap();
+
+        promote_remux_output(temp_output, &output_path, true)
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read_to_string(&output_path).unwrap(), "replacement");
+        assert!(!temp_path.exists());
+    }
+
+    #[test]
+    fn test_remux_temp_output_guard_preserves_extension_and_cleans_up() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("output.mp4");
+        let temp_output = TempOutputGuard::new(&output_path);
+        let temp_path = temp_output.path().to_path_buf();
+        fs::write(&temp_path, "partial").unwrap();
+
+        assert_eq!(temp_path.extension(), Some(std::ffi::OsStr::new("mp4")));
+        drop(temp_output);
+        assert!(!temp_path.exists());
     }
 
     #[tokio::test]
