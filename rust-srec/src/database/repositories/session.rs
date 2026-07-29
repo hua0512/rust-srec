@@ -2,8 +2,7 @@
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
-use tracing::warn;
-
+use crate::database::begin_immediate;
 use crate::database::models::{
     DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
     SessionFilters, SessionSegmentDbModel,
@@ -262,118 +261,76 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_media_output", || async {
-            let mut conn = self.write_pool.acquire().await?;
-            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
 
-            let result: Result<()> = async {
-                sqlx::query(
-                    r#"
-                    INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&output.id)
-                .bind(&output.session_id)
-                .bind(&output.parent_media_output_id)
-                .bind(&output.file_path)
-                .bind(&output.file_type)
-                .bind(output.size_bytes)
-                .bind(output.created_at)
-                .execute(&mut *conn)
-                .await?;
+            sqlx::query(
+                r#"
+                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&output.id)
+            .bind(&output.session_id)
+            .bind(&output.parent_media_output_id)
+            .bind(&output.file_path)
+            .bind(&output.file_type)
+            .bind(output.size_bytes)
+            .bind(output.created_at)
+            .execute(&mut *tx)
+            .await?;
 
-                // Update session total size
-                sqlx::query(
-                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
-                )
-                .bind(output.size_bytes)
-                .bind(&output.session_id)
-                .execute(&mut *conn)
-                .await?;
+            // Update session total size
+            sqlx::query(
+                "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
+            )
+            .bind(output.size_bytes)
+            .bind(&output.session_id)
+            .execute(&mut *tx)
+            .await?;
 
-                Ok(())
-            }
-            .await;
-
-            match result {
-                Ok(()) => {
-                    sqlx::query("COMMIT").execute(&mut *conn).await?;
-                    Ok(())
-                }
-                Err(err) => {
-                    if let Err(rollback_error) =
-                        sqlx::query("ROLLBACK").execute(&mut *conn).await
-                    {
-                        warn!(
-                            error = %rollback_error,
-                            original_error = %err,
-                            "Failed to roll back media output transaction"
-                        );
-                    }
-                    Err(err)
-                }
-            }
+            tx.commit().await?;
+            Ok(())
         })
         .await
     }
 
     async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_session_segment", || async {
-            let mut conn = self.write_pool.acquire().await?;
-            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
 
-            let result: Result<()> = async {
-                sqlx::query(
-                    r#"
-                    INSERT INTO session_segments (
-                        id,
-                        session_id,
-                        segment_index,
-                        file_path,
-                        duration_secs,
-                        size_bytes,
-                        split_reason_code,
-                        split_reason_details_json,
-                        created_at,
-                        completed_at,
-                        persisted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&segment.id)
-                .bind(&segment.session_id)
-                .bind(segment.segment_index)
-                .bind(&segment.file_path)
-                .bind(segment.duration_secs)
-                .bind(segment.size_bytes)
-                .bind(&segment.split_reason_code)
-                .bind(&segment.split_reason_details_json)
-                .bind(segment.created_at)
-                .bind(segment.completed_at)
-                .bind(segment.persisted_at)
-                .execute(&mut *conn)
-                .await?;
+            sqlx::query(
+                r#"
+                INSERT INTO session_segments (
+                    id,
+                    session_id,
+                    segment_index,
+                    file_path,
+                    duration_secs,
+                    size_bytes,
+                    split_reason_code,
+                    split_reason_details_json,
+                    created_at,
+                    completed_at,
+                    persisted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&segment.id)
+            .bind(&segment.session_id)
+            .bind(segment.segment_index)
+            .bind(&segment.file_path)
+            .bind(segment.duration_secs)
+            .bind(segment.size_bytes)
+            .bind(&segment.split_reason_code)
+            .bind(&segment.split_reason_details_json)
+            .bind(segment.created_at)
+            .bind(segment.completed_at)
+            .bind(segment.persisted_at)
+            .execute(&mut *tx)
+            .await?;
 
-                Ok(())
-            }
-            .await;
-
-            match result {
-                Ok(()) => {
-                    sqlx::query("COMMIT").execute(&mut *conn).await?;
-                    Ok(())
-                }
-                Err(err) => {
-                    if let Err(rollback_error) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
-                        warn!(
-                            error = %rollback_error,
-                            original_error = %err,
-                            "Failed to roll back session segment transaction"
-                        );
-                    }
-                    Err(err)
-                }
-            }
+            tx.commit().await?;
+            Ok(())
         })
         .await
     }
@@ -435,44 +392,24 @@ impl SessionRepository for SqlxSessionRepository {
         let output = self.get_media_output(id).await?;
 
         retry_on_sqlite_busy("delete_media_output", || async {
-            let mut conn = self.write_pool.acquire().await?;
-            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
 
-            let result: Result<()> = async {
-                sqlx::query("DELETE FROM media_outputs WHERE id = ?")
-                    .bind(id)
-                    .execute(&mut *conn)
-                    .await?;
-
-                // Update session total size
-                sqlx::query(
-                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
-                )
-                .bind(output.size_bytes)
-                .bind(&output.session_id)
-                .execute(&mut *conn)
+            sqlx::query("DELETE FROM media_outputs WHERE id = ?")
+                .bind(id)
+                .execute(&mut *tx)
                 .await?;
 
-                Ok(())
-            }
-            .await;
+            // Update session total size
+            sqlx::query(
+                "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
+            )
+            .bind(output.size_bytes)
+            .bind(&output.session_id)
+            .execute(&mut *tx)
+            .await?;
 
-            match result {
-                Ok(()) => {
-                    sqlx::query("COMMIT").execute(&mut *conn).await?;
-                    Ok(())
-                }
-                Err(err) => {
-                    if let Err(rollback_error) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
-                        warn!(
-                            error = %rollback_error,
-                            original_error = %err,
-                            "Failed to roll back danmu output transaction"
-                        );
-                    }
-                    Err(err)
-                }
-            }
+            tx.commit().await?;
+            Ok(())
         })
         .await
     }
