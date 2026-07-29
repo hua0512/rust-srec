@@ -444,10 +444,7 @@ pub async fn get_channel(
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
     let repo = &state.notification_repository;
 
-    let channel = repo
-        .get_channel(&id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let channel = repo.get_channel(&id).await.map_err(ApiError::from)?;
     Ok(Json(channel))
 }
 
@@ -507,10 +504,7 @@ pub async fn update_channel(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    let mut channel = repo
-        .get_channel(&id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let mut channel = repo.get_channel(&id).await.map_err(ApiError::from)?;
 
     channel.name = req.name;
     channel.settings = serde_json::to_string(&req.settings)
@@ -546,9 +540,7 @@ pub async fn delete_channel(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    repo.delete_channel(&id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    repo.delete_channel(&id).await.map_err(ApiError::from)?;
 
     // Reload service
     if let Err(e) = service.reload_from_db().await {
@@ -577,7 +569,7 @@ pub async fn get_subscriptions(
     let subs = repo
         .get_subscriptions_for_channel(&id)
         .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+        .map_err(ApiError::from)?;
     Ok(Json(subs))
 }
 
@@ -601,9 +593,7 @@ pub async fn update_subscriptions(
     let service = &state.notification_service;
 
     // Verify channel exists
-    repo.get_channel(&id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    repo.get_channel(&id).await.map_err(ApiError::from)?;
 
     // Get existing
     let existing = repo

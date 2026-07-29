@@ -98,7 +98,10 @@ pub async fn get_media_content(
         }
     }
 
-    if !path.exists() {
+    let exists = tokio::fs::try_exists(&path)
+        .await
+        .map_err(|error| ApiError::from(crate::Error::io_path("try_exists", &path, error)))?;
+    if !exists {
         return Err(ApiError::not_found(format!("Media file not found: {}", id)));
     }
 

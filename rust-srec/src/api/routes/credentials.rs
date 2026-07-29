@@ -593,6 +593,13 @@ pub async fn refresh_template_credentials(
     }
 }
 
+fn bilibili_qr_manager() -> Result<BilibiliCredentialManager, ApiError> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(reqwest::Client::new).clone();
+    BilibiliCredentialManager::new(client)
+        .map_err(|error| ApiError::internal(format!("Failed to create manager: {error}")))
+}
+
 #[utoipa::path(
     post,
     path = "/api/credentials/bilibili/qr/generate",
@@ -604,9 +611,7 @@ pub async fn refresh_template_credentials(
     security(("bearer_auth" = []))
 )]
 pub async fn bilibili_qr_generate() -> ApiResult<Json<QrGenerateApiResponse>> {
-    let client = reqwest::Client::new();
-    let manager = BilibiliCredentialManager::new(client)
-        .map_err(|e| ApiError::internal(format!("Failed to create manager: {}", e)))?;
+    let manager = bilibili_qr_manager()?;
 
     let result = manager
         .generate_qr()
@@ -634,9 +639,7 @@ pub async fn bilibili_qr_poll(
     State(state): State<CredentialRouteState>,
     Json(body): Json<QrPollRequest>,
 ) -> ApiResult<Json<QrPollApiResponse>> {
-    let client = reqwest::Client::new();
-    let manager = BilibiliCredentialManager::new(client)
-        .map_err(|e| ApiError::internal(format!("Failed to create manager: {}", e)))?;
+    let manager = bilibili_qr_manager()?;
 
     let result = manager
         .poll_qr(&body.auth_code)

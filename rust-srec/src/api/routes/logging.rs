@@ -20,7 +20,6 @@ use prost::Message as ProstMessage;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io::{BufRead, BufReader};
-use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 use utoipa::ToSchema;
@@ -413,10 +412,7 @@ fn build_archive_zip(files: &[LogFileInternal]) -> Result<Vec<u8>, ApiError> {
 
         let mut file = std::fs::File::open(&f.path)
             .map_err(|e| ApiError::internal(format!("Failed to open log file: {e}")))?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)
-            .map_err(|e| ApiError::internal(format!("Failed to read log file: {e}")))?;
-        zip.write_all(&buf)
+        std::io::copy(&mut file, &mut zip)
             .map_err(|e| ApiError::internal(format!("Failed to write zip entry: {e}")))?;
     }
 
