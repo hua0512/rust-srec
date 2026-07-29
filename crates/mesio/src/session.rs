@@ -695,11 +695,18 @@ async fn run_hls_source_failover(
         let handle = session.handle;
         let mut terminal = DownloadTerminal::Cancelled;
         let mut failed = None;
+        let mut attempt_delivered = false;
 
         while let Some(item) = items.next().await {
             match item {
                 Ok(item) => {
                     if !item.is_end_marker() {
+                        if !attempt_delivered {
+                            attempt_delivered = true;
+                            manager.record_success(&selected.original_url, started_at.elapsed());
+                            attempted.clear();
+                            attempted.insert(selected.original_url.clone());
+                        }
                         delivered_media = true;
                     }
                     if item_tx.send(Ok(item)).await.is_err() {

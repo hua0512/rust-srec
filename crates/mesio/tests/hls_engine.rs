@@ -42,6 +42,7 @@ struct OriginState {
     playlists: Vec<String>,
     playlist_idx: usize,
     playlist_serves: u32,
+    playlist_failures_remaining: u32,
     /// After this many successful playlist serves, refreshes fail with 500.
     playlist_fail_after: Option<u32>,
     files: HashMap<String, FileEntry>,
@@ -86,6 +87,10 @@ impl Origin {
         self.0.lock().unwrap().playlist_fail_after = Some(successful_serves);
     }
 
+    fn fail_playlist_times(&self, failures: u32) {
+        self.0.lock().unwrap().playlist_failures_remaining = failures;
+    }
+
     fn hits(&self, path: &str) -> u64 {
         self.0.lock().unwrap().hits.get(path).copied().unwrap_or(0)
     }
@@ -116,6 +121,10 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     };
 
     if path == "live.m3u8" {
+        if state.playlist_failures_remaining > 0 {
+            state.playlist_failures_remaining -= 1;
+            return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+        }
         if let Some(after) = state.playlist_fail_after
             && state.playlist_serves >= after
         {
@@ -881,6 +890,80 @@ async fn mesio_downloader_hls_sources_fail_over_with_discontinuity() {
         vec![
             (format!("{first_base}/live.m3u8"), 1),
             (format!("{second_base}/live.m3u8"), 2),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_hls_retries_sources_after_media_recovery() {
+    use futures::StreamExt;
+
+    let first_origin = Origin::new();
+    first_origin.push_playlist(playlist(0, &["recovered.ts"], true));
+    first_origin.add_file("recovered.ts", b"recovered".to_vec());
+    first_origin.fail_playlist_times(1);
+    let first_base = first_origin.clone().serve().await;
+
+    let second_origin = Origin::new();
+    second_origin.push_playlist(playlist(0, &["second0.ts"], false));
+    second_origin.add_file("second0.ts", b"second".to_vec());
+    second_origin.fail_playlist_after(1);
+    let second_base = second_origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        hls: fast_config(),
+        ..Default::default()
+    });
+    let request = DownloadRequest::from_url(&format!("{first_base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .add_source(ContentSource::new(format!("{first_base}/live.m3u8"), 0))
+        .add_source(ContentSource::new(format!("{second_base}/live.m3u8"), 1));
+    let session = downloader
+        .start_hls(request)
+        .await
+        .expect("source session starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    let mut item_types = Vec::new();
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        let data = item.expect("no stream error");
+        item_types.push(data.segment_type());
+        if matches!(
+            data,
+            hls::HlsData::EndMarker(Some(hls::SplitReason::EndOfStream))
+        ) {
+            break;
+        }
+    }
+
+    let mut selected = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        if let DownloadEvent::SourceSelected { url, attempt, .. } = event {
+            selected.push((url.to_string(), attempt));
+        }
+    }
+
+    assert_eq!(
+        item_types,
+        vec![
+            hls::SegmentType::Ts,
+            hls::SegmentType::EndMarker,
+            hls::SegmentType::Ts,
+            hls::SegmentType::EndMarker,
+        ]
+    );
+    assert_eq!(
+        selected,
+        vec![
+            (format!("{first_base}/live.m3u8"), 1),
+            (format!("{second_base}/live.m3u8"), 2),
+            (format!("{first_base}/live.m3u8"), 3),
         ]
     );
 }
