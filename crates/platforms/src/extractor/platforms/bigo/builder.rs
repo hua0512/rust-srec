@@ -211,7 +211,7 @@ impl PlatformExtractor for Bigo {
         let password = self.resolve_password();
 
         let integrity_token = if self.mint_token {
-            match token::mint_token(&self.extractor.client).await {
+            match token::pooled_token(&self.extractor.client).await {
                 Ok(t) => {
                     debug!("bigo integrity token minted");
                     Some(t)
