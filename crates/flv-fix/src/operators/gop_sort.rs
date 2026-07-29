@@ -206,8 +206,11 @@ impl Processor<FlvData> for GopSortOperator {
                 debug!("{} Reset GOP tags...", self.context.name);
             }
             FlvData::EndOfSequence(_) => {
+                // Flush the buffered GOP, then forward the marker so downstream close
+                // handlers (e.g. mesio-cli pipe_flv_strategy) see the segment boundary.
                 self.push_tags(output)?;
                 debug!("{} End of stream...", self.context.name);
+                output(input)?;
             }
             FlvData::Split(_) => {
                 self.push_tags(output)?;
@@ -280,6 +283,44 @@ mod tests {
         }
 
         assert_eq!(output_items.len(), GopSortOperator::MAX_GOP_TAGS + 1);
+    }
+
+    #[test]
+    fn end_of_sequence_is_forwarded_after_flushing_gop() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(Arc::clone(&context));
+        let mut output_items = Vec::new();
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, create_test_header(), &mut output_fn)
+            .unwrap();
+        // Non-keyframe tags stay buffered in gop_tags until a flush point.
+        for timestamp in [0, 33, 66] {
+            operator
+                .process(&context, create_video_tag(timestamp, false), &mut output_fn)
+                .unwrap();
+        }
+        operator
+            .process(
+                &context,
+                FlvData::EndOfSequence(bytes::Bytes::new()),
+                &mut output_fn,
+            )
+            .unwrap();
+
+        let tag_count = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Tag(_)))
+            .count();
+        assert_eq!(tag_count, 3, "buffered GOP must be flushed");
+        assert!(
+            matches!(output_items.last(), Some(FlvData::EndOfSequence(_))),
+            "EndOfSequence must be forwarded downstream after the flushed tags"
+        );
     }
 
     #[test]
