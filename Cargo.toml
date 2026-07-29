@@ -137,5 +137,12 @@ lto = true
 codegen-units = 1
 strip = true
 opt-level = 3
-panic = "abort"   # Removes panic unwinding code
+# The daemon isolates panicking tasks and finalizes active recordings during
+# graceful shutdown, both of which require unwinding.
 debug = false
+
+# Standalone CLIs can opt back into aborting panics for smaller binaries, for
+# example: `cargo build -p strev --profile release-cli`.
+[profile.release-cli]
+inherits = "release"
+panic = "abort"
