@@ -34,26 +34,9 @@ const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
 });
 
 export const updateGlobalConfig = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof GlobalConfigWriteSchema>) => {
-    console.log(
-      'updateGlobalConfig inputValidator - raw data.pipeline:',
-      typeof data.pipeline,
-      data.pipeline,
-    );
-    return data;
-  })
+  .inputValidator((data: z.infer<typeof GlobalConfigWriteSchema>) => data)
   .handler(async ({ data }) => {
-    console.log(
-      'updateGlobalConfig handler - data.pipeline before parse:',
-      typeof data.pipeline,
-      data.pipeline,
-    );
     const payload = GlobalConfigUpdateSchema.parse(data);
-    console.log(
-      'updateGlobalConfig handler - payload.pipeline after parse:',
-      typeof payload.pipeline,
-      payload.pipeline,
-    );
     await fetchBackend('/config/global', {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -104,9 +87,7 @@ export const updatePlatformConfig = createServerFn({ method: 'POST' })
       d,
   )
   .handler(async ({ data: { id, data } }) => {
-    console.log('updatePlatformConfig input:', data);
     const payload = PlatformConfigWriteSchema.parse(data);
-    console.log('updatePlatformConfig serialized:', payload);
     const json = await fetchBackend(`/config/platforms/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
@@ -160,13 +141,11 @@ export const createTemplate = createServerFn({ method: 'POST' })
     TemplateWriteSchema.parse(data),
   )
   .handler(async ({ data }) => {
-    console.log('Creating template:', data);
     const payload = data;
     const json = await fetchBackend('/templates', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    console.log('Template created:', json);
     return TemplateSchema.parse(json);
   });
 
@@ -178,13 +157,11 @@ export const updateTemplate = createServerFn({ method: 'POST' })
     }),
   )
   .handler(async ({ data: { id, data } }) => {
-    console.log('Updating template:', id, data);
     const payload = data;
     const json = await fetchBackend(`/templates/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
-    console.log('Template updated:', json);
     return TemplateSchema.parse(json);
   });
 

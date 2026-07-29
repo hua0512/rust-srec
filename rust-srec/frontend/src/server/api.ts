@@ -128,6 +128,9 @@ export const fetchBackend = async <T = any>(
           );
         }
       } catch (refreshError) {
+        if (refreshError instanceof BackendApiError) {
+          throw refreshError;
+        }
         console.error(
           '[API] Token refresh failed during interceptor:',
           refreshError,
