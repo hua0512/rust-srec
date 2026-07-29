@@ -640,8 +640,11 @@ impl RemuxProcessor {
         let input_path_string = make_absolute(input_path).await;
         let input_path = input_path_string.as_str();
 
-        // Check if input file exists
-        if !Path::new(input_path).exists() {
+        let input_path_obj = Path::new(input_path);
+        let input_exists = tokio::fs::try_exists(input_path_obj)
+            .await
+            .map_err(|error| crate::Error::io_path("try_exists", input_path_obj, error))?;
+        if !input_exists {
             return Err(crate::Error::PipelineError(format!(
                 "Input file does not exist: {}",
                 input_path
@@ -685,11 +688,11 @@ impl RemuxProcessor {
         let output_path_string = make_absolute(&output_string).await;
         let output_path = output_path_string.as_str();
 
-        if !config.overwrite
-            && Path::new(output_path).try_exists().map_err(|error| {
-                crate::Error::io_path("try_exists", Path::new(output_path), error)
-            })?
-        {
+        let output_path_obj = Path::new(output_path);
+        let output_exists = tokio::fs::try_exists(output_path_obj)
+            .await
+            .map_err(|error| crate::Error::io_path("try_exists", output_path_obj, error))?;
+        if !config.overwrite && output_exists {
             return Err(crate::Error::PipelineError(format!(
                 "Output file already exists and overwrite is disabled: {}",
                 output_path
