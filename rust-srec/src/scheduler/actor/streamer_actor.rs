@@ -105,6 +105,13 @@ pub struct StreamerActor {
     platform_actor: Option<mpsc::Sender<PlatformMessage>>,
     /// Current actor state (runtime scheduling state only).
     state: StreamerActorState,
+    /// Floor for the next Live watchdog wake after a failed watchdog check.
+    ///
+    /// `perform_check` sets this when `is_live_watchdog` is true and the check
+    /// errors; the Live scheduling branch of `run` clamps its computed wake up
+    /// to this instant so a failing check does not busy-retry against the stall
+    /// timer. Cleared on the next successful check.
+    live_watchdog_backoff_until: Option<Instant>,
     /// Shared metadata store for fetching fresh streamer data.
     metadata_store: Arc<DashMap<String, StreamerMetadata>>,
     /// Configuration.
@@ -159,6 +166,7 @@ impl StreamerActor {
             self_handle: tx,
             platform_actor: None,
             state,
+            live_watchdog_backoff_until: None,
             metadata_store,
             config,
             cancellation_token,
@@ -208,6 +216,7 @@ impl StreamerActor {
             self_handle: tx,
             platform_actor: None,
             state,
+            live_watchdog_backoff_until: None,
             metadata_store,
             config,
             cancellation_token,
@@ -343,6 +352,15 @@ impl StreamerActor {
                     }
                 }
 
+                // Hold off the watchdog after a failed check: overrides the stall/hint
+                // ZERO wake so an unreachable download does not drive a tight retry loop.
+                if let Some(backoff_until) = self.live_watchdog_backoff_until {
+                    next = std::cmp::max(
+                        next,
+                        backoff_until.saturating_duration_since(Instant::now()),
+                    );
+                }
+
                 sleep_duration = Some(next);
             }
             let check_timer = Self::create_check_timer(sleep_duration);
@@ -464,6 +482,12 @@ impl StreamerActor {
         // If we stop seeing download heartbeats while Live, consider the download "stalled"
         // and verify status sooner than the 2h watchdog.
         Duration::from_secs(5 * 60)
+    }
+
+    fn live_watchdog_error_backoff(&self) -> Duration {
+        // Minimum spacing between Live watchdog re-checks after one failed while the
+        // download is unreachable; caps the stall-timer-driven retry cadence.
+        Duration::from_secs(60)
     }
 
     fn time_until_live_stall_watchdog(&self) -> Duration {
@@ -631,6 +655,11 @@ impl StreamerActor {
             // Wait for acknowledgment (not the result - that comes via BatchResult message)
             match tokio::time::timeout(Duration::from_secs(5), reply_rx).await {
                 Ok(Ok(())) => {
+                    // The result arrives asynchronously via handle_batch_result; park
+                    // next_check so the run loop does not re-fire this timer and issue a
+                    // duplicate RequestCheck before that result lands.
+                    self.state
+                        .schedule_next_check(&self.config, self.get_error_count());
                     debug!("StreamerActor {} check delegated to platform", self.id);
                     Ok(())
                 }
@@ -660,6 +689,10 @@ impl StreamerActor {
         // Perform the actual status check using the status checker
         match self.status_checker.check_status(&metadata).await {
             Ok((result, status)) => {
+                // A successful check clears any watchdog re-check floor set by a prior
+                // failed Live watchdog check.
+                self.live_watchdog_backoff_until = None;
+
                 let previous_runtime_state = self.state.clone();
                 let next_state = result.state;
                 let error_count = self.get_error_count();
@@ -727,6 +760,10 @@ impl StreamerActor {
                     // Do not call status_checker.handle_error() and do not record an Error state:
                     // this would increment consecutive error counts, potentially set disabled_until,
                     // and would also switch scheduling away from the Live watchdog cadence.
+                    // Arm a re-check floor so the Live scheduling branch of `run` does not
+                    // busy-retry against the stall timer while the download is unreachable.
+                    self.live_watchdog_backoff_until =
+                        Some(Instant::now() + self.live_watchdog_error_backoff());
                     return Err(ActorError::recoverable(format!(
                         "Live watchdog status check failed (ignored while download active): {}",
                         e.message

@@ -227,26 +227,19 @@ impl BatchDetector {
 
     /// Internal batch check implementation.
     ///
-    /// This is a placeholder that will be replaced with actual platform integration.
+    /// Platform-specific batch APIs are not implemented yet. This returns an error
+    /// instead of fabricating `LiveStatus::Offline` for every streamer, so that any
+    /// caller that wires `StreamerActor::uses_batch_detection` to this path fails the
+    /// check (leaving individual detection to recover) rather than silently ending
+    /// live sessions.
     async fn check_batch_internal(
         &self,
         _platform_id: &str,
-        streamers: &[StreamerMetadata],
+        _streamers: &[StreamerMetadata],
     ) -> Result<BatchResult> {
-        // Placeholder implementation
-        // In the real implementation, this would:
-        // 1. Build the batch API request for the platform
-        // 2. Send the request
-        // 3. Parse the response and map to LiveStatus
-
-        let mut result = BatchResult::new();
-
-        for streamer in streamers {
-            // For now, return offline for all
-            result.add_result(streamer.id.clone(), LiveStatus::Offline);
-        }
-
-        Ok(result)
+        Err(crate::Error::Monitor(
+            "batch detection is not implemented for this platform".to_string(),
+        ))
     }
 
     /// Calculate backoff delay with exponential increase and jitter.
@@ -341,10 +334,16 @@ mod tests {
             create_test_streamer("3"),
         ];
 
-        let result = detector.batch_check("twitch", streamers).await.unwrap();
+        // check_batch_internal has no platform implementation, so batch_check
+        // records every streamer as a failure rather than fabricating an Offline
+        // success for each (which would silently end their live sessions).
+        let result = detector
+            .batch_check("twitch", streamers)
+            .await
+            .expect("batch_check maps per-streamer errors into the result");
 
-        assert_eq!(result.success_count(), 3);
-        assert_eq!(result.failure_count(), 0);
+        assert_eq!(result.success_count(), 0);
+        assert_eq!(result.failure_count(), 3);
     }
 
     #[test]

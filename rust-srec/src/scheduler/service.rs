@@ -628,8 +628,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Spawn initial actors for all active streamers.
+    ///
+    /// Uses `get_all_active` rather than `get_ready_for_check` so streamers still
+    /// inside their `disabled_until` error backoff also get an actor; the actor's
+    /// `initiate_check` guard defers the first real check until the backoff expires,
+    /// which keeps them monitored once it does.
     async fn spawn_initial_actors(&mut self) -> Result<()> {
-        let streamers = self.streamer_manager.get_ready_for_check();
+        let streamers = self.streamer_manager.get_all_active();
         info!("Spawning actors for {} streamers", streamers.len());
 
         // First, spawn platform actors for batch-capable platforms
