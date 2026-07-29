@@ -254,20 +254,22 @@ impl PlatformExtractor for Huya {
     }
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
-        // `get_anticode_url` re-signs via getCdnTokenInfo using the `flv_url`/`ua` extras that
-        // only `parse_living_info_streams` (WUP mode) emits; without them there is nothing to
-        // feed the token call, so the URL from `parse_streams` is used as-is. Known limitation:
-        // when `force_origin_quality` strips `-imgplus` from the stream name, that URL's
-        // anti-code still signs the original name; covering that path needs a local re-sign
-        // via `build_stream_query`.
+        // MP api-mode URLs are CDN-usable as parsed. Every other path — WUP, Web,
+        // and MP with force_origin_quality — must re-sign through
+        // `get_anticode_url`/getCdnTokenInfo (the `flv_url`/`ua` extras it reads
+        // are empty outside WUP mode, which the token call accepts): the web
+        // page's anti-code is rejected by Huya's CDN as-is.
+        if self.api_mode == HuyaApiMode::Mp && !self.force_origin_quality {
+            return Ok(());
+        }
+
+        // Without extras there is nothing to feed getCdnTokenInfo; keep the
+        // parsed URL instead of failing the candidate.
         let Some(extras) = stream_info.extras.as_ref() else {
             return Ok(());
         };
 
         let flv_url = Self::extract_flv_url_from_extras(extras);
-        if flv_url.is_empty() {
-            return Ok(());
-        }
 
         debug!("Getting WUP URL for stream: {}", stream_info.url);
 
@@ -317,12 +319,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_url_keeps_signed_url_when_flv_url_extra_missing() {
+    async fn test_get_url_keeps_mp_url_without_force_origin() {
         let extractor = Huya::new(
             "https://www.huya.com/660000".to_string(),
             default_client(),
             None,
-            None,
+            Some(serde_json::json!({ "api_mode": "MP" })),
         );
         let signed_url = "https://al.flv.huya.com/src/stream.flv?wsSecret=abc&wsTime=123";
         let mut stream_info =
