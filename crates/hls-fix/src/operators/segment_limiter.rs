@@ -11,7 +11,7 @@ pub struct SegmentLimiterOperator {
     max_size: Option<u64>,
     current_duration: Duration,
     current_size: u64,
-    // Store the first initialization segment we encounter
+    // Most recent initialization segment, re-emitted at the start of each new sequence.
     init_segment: Option<M4sInitSegmentData>,
     // Track if we've output an init segment recently
     init_segment_sent: bool,
@@ -125,10 +125,10 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             }
             SegmentType::M4sInit => {
                 if let HlsData::M4sData(M4sData::InitSegment(init_segment)) = input {
-                    // Store the init segment for later use if it's the first one we've seen
-                    if self.init_segment.is_none() {
-                        self.init_segment = Some(init_segment.clone());
-                    }
+                    // Track the most recent init segment so a later size/duration split re-emits
+                    // the codec configuration the following M4sMedia is encoded against, not a
+                    // stale one from before a SegmentSplitOperator init-CRC switch.
+                    self.init_segment = Some(init_segment.clone());
 
                     // Always output the init segment when we encounter it directly
                     output(HlsData::M4sData(M4sData::InitSegment(init_segment)))?;
@@ -249,5 +249,68 @@ mod tests {
         operator.process(&context, seg, &mut output).unwrap();
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], HlsData::TsData(_)));
+    }
+
+    #[test]
+    fn reemits_latest_init_after_split() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentLimiterOperator::new(None, Some(10));
+
+        let mut out = Vec::new();
+        let mut output = |item: HlsData| -> Result<(), PipelineError> {
+            out.push(item);
+            Ok(())
+        };
+
+        let media = |bytes: &'static [u8]| {
+            HlsData::mp4_segment(
+                MediaSegment {
+                    duration: 1.0,
+                    ..MediaSegment::empty()
+                },
+                Bytes::from_static(bytes),
+            )
+        };
+
+        operator
+            .process(
+                &context,
+                HlsData::mp4_init(MediaSegment::empty(), Bytes::from_static(b"AAAA")),
+                &mut output,
+            )
+            .unwrap();
+        operator
+            .process(&context, media(b"11111111"), &mut output)
+            .unwrap();
+        // Codec change mid-sequence: a new init segment replaces the tracked one.
+        operator
+            .process(
+                &context,
+                HlsData::mp4_init(MediaSegment::empty(), Bytes::from_static(b"BBBB")),
+                &mut output,
+            )
+            .unwrap();
+        // 8 more bytes exceed max_size=10, forcing a split; the new sequence must
+        // restart with the latest init segment, which this media is encoded against.
+        operator
+            .process(&context, media(b"22222222"), &mut output)
+            .unwrap();
+
+        assert_eq!(out.len(), 6);
+        assert!(matches!(
+            out[3],
+            HlsData::EndMarker(Some(SplitReason::SizeLimit))
+        ));
+        match &out[4] {
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                assert_eq!(init.data.as_ref(), b"BBBB");
+            }
+            other => panic!("expected re-emitted init segment, got {other:?}"),
+        }
+        assert!(matches!(
+            out[5],
+            HlsData::M4sData(M4sData::Segment(_))
+        ));
     }
 }
