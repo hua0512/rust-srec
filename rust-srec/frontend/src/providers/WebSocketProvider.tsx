@@ -50,6 +50,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     undefined,
   );
   const isConnectingRef = useRef<boolean>(false);
+  const intentionalCloseRef = useRef<boolean>(false);
 
   // Auth state
   const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
@@ -341,6 +342,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
+    }
+    intentionalCloseRef.current = false;
     isConnectingRef.current = true;
     setConnectionStatus('connecting');
 
@@ -352,6 +358,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) {
+        ws.close();
+        return;
+      }
       console.debug('[WS] Connected');
       isConnectingRef.current = false;
       setConnectionStatus('connected');
@@ -365,9 +375,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.send(toBinary(ClientMessageSchema, clientMessage));
     };
 
-    ws.onmessage = handleMessage;
+    ws.onmessage = (event) => {
+      if (wsRef.current === ws) handleMessage(event);
+    };
 
     ws.onclose = (event) => {
+      if (wsRef.current !== ws) return;
+
       if (import.meta.env.DEV) {
         console.debug('[WS] Close', {
           code: event.code,
@@ -380,12 +394,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       setConnectionStatus('disconnected');
       wsRef.current = null;
 
-      if (sessionData?.token?.access_token) {
+      if (!intentionalCloseRef.current && sessionData?.token?.access_token) {
         scheduleReconnect();
       }
     };
 
     ws.onerror = (event) => {
+      if (wsRef.current !== ws) return;
+
       if (import.meta.env.DEV) {
         console.error('[WS] Connection error', event);
       } else {
@@ -417,6 +433,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [connect]);
 
   const disconnect = useCallback(() => {
+    intentionalCloseRef.current = true;
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = undefined;
