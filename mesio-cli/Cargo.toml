@@ -31,9 +31,9 @@ tracing-indicatif = { workspace = true }
 # Workspace crates
 pipeline-common = { path = "../crates/pipeline-common" }
 flv = { path = "../crates/flv" }
-flv-fix = { path = "../crates/flv-fix" }
+flv-fix = { path = "../crates/flv-fix", features = ["progress"] }
 hls = { path = "../crates/hls" }
-hls-fix = { path = "../crates/hls-fix" }
+hls-fix = { path = "../crates/hls-fix", features = ["progress"] }
 mesio-engine = { path = "../crates/mesio", features = ["clap"] }
 indicatif = { workspace = true }
 thiserror = { workspace = true }
