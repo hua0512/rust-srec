@@ -1,5 +1,5 @@
 use bytes::Bytes;
-pub use pipeline_common::split_reason::SplitReason;
+pub use media_types::split_reason::SplitReason;
 
 use crate::{header::FlvHeader, tag::FlvTag};
 
