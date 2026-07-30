@@ -344,6 +344,24 @@ impl AuthService {
             .is_ok())
     }
 
+    /// Run `verify_password` on a blocking thread so the Argon2id work
+    /// (m=19456, t=2) never occupies a tokio async worker.
+    async fn verify_password_blocking(password: &str, hash: &str) -> Result<bool, AuthError> {
+        let password = password.to_owned();
+        let hash = hash.to_owned();
+        tokio::task::spawn_blocking(move || Self::verify_password(&password, &hash))
+            .await
+            .map_err(|e| AuthError::Internal(format!("Password verification task failed: {}", e)))?
+    }
+
+    /// Run `hash_password` on a blocking thread; see `verify_password_blocking`.
+    async fn hash_password_blocking(password: &str) -> Result<String, AuthError> {
+        let password = password.to_owned();
+        tokio::task::spawn_blocking(move || Self::hash_password(&password))
+            .await
+            .map_err(|e| AuthError::Internal(format!("Password hashing task failed: {}", e)))?
+    }
+
     /// Generate a cryptographically secure refresh token (256 bits).
     fn generate_refresh_token() -> String {
         use rand::RngExt;
@@ -421,7 +439,7 @@ impl AuthService {
         }
 
         // Verify password
-        if !Self::verify_password(password, &user.password_hash)? {
+        if !Self::verify_password_blocking(password, &user.password_hash).await? {
             warn!(user_id = %user.id, username = %username, "Login failed: invalid credentials");
             return Err(AuthError::InvalidCredentials);
         }
@@ -661,7 +679,7 @@ impl AuthService {
             .ok_or(AuthError::UserNotFound)?;
 
         // Verify current password
-        if !Self::verify_password(current_password, &user.password_hash)? {
+        if !Self::verify_password_blocking(current_password, &user.password_hash).await? {
             warn!(user_id = %user_id, "Password change failed: incorrect current password");
             return Err(AuthError::IncorrectCurrentPassword);
         }
@@ -677,7 +695,7 @@ impl AuthService {
         self.validate_password_strength(new_password)?;
 
         // Hash new password
-        let new_hash = Self::hash_password(new_password)?;
+        let new_hash = Self::hash_password_blocking(new_password).await?;
 
         // Update password and clear must_change_password flag
         self.user_repo
