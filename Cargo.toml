@@ -96,7 +96,7 @@ tracing-appender = "0.2"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.0"
 md-5 = "0.11.0"
-base64 = "0.22.1"
+base64 = "0.23.0"
 byteorder = "1.5"
 brotli = "8.0"
 openssl = { version = "0.10", features = ["vendored"] }
