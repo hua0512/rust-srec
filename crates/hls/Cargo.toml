@@ -19,27 +19,3 @@ h265 = { path = "../h265" }
 media-types = { path = "../media-types" }
 tracing = { workspace = true }
 memchr = { workspace = true }
-
-[[example]]
-name = "ts_analysis"
-path = "examples/ts_analysis.rs"
-
-[[example]]
-name = "simple_ts_test"
-path = "examples/simple_ts_test.rs"
-
-[[example]]
-name = "debug_ts"
-path = "examples/debug_ts.rs"
-
-[[example]]
-name = "debug_hls_ts"
-path = "examples/debug_hls_ts.rs"
-
-[[example]]
-name = "memory_efficient_analysis"
-path = "examples/memory_efficient_analysis.rs"
-
-[[example]]
-name = "optimized_segment_analysis"
-path = "examples/optimized_segment_analysis.rs"

@@ -10,6 +10,5 @@ pub use media_types::Resolution;
 pub use media_types::split_reason::SplitReason;
 pub use mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
 pub use profile::{SegmentType, StreamProfile, StreamProfileOptions};
-pub use resolution::ResolutionDetector;
 pub use segment::HlsData;
 pub use ts::{ProgramInfo, StreamEntry, TsAnalysis, TsSegmentData, TsStreamInfo};
