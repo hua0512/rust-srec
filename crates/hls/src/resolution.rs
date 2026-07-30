@@ -4,7 +4,8 @@ use bytes::BytesMut;
 use memchr::memchr;
 use ts::{PesHeader, StreamType, TsPacketRef};
 
-/// Resolution detector for HLS segments
+/// SPS-based resolution extraction helpers shared by
+/// `StreamingResolutionDetector` and `VideoProbe`.
 ///
 /// Extracts video resolution from H.264/H.265 SPS (Sequence Parameter Set) NAL units
 /// found in MPEG-TS packets. Uses multiple detection strategies:
@@ -19,7 +20,7 @@ use ts::{PesHeader, StreamType, TsPacketRef};
 /// - Single-pass iteration over packets where possible
 /// - Early exit on first successful SPS parse
 /// - Minimal allocations with capacity hints
-pub struct ResolutionDetector;
+pub(crate) struct ResolutionDetector;
 
 pub(crate) struct StreamingResolutionDetector {
     probes: Vec<VideoProbe>,
