@@ -33,13 +33,13 @@
 //!
 
 use flv::data::FlvData;
-use flv::header::FlvHeader;
-use flv::tag::FlvTag;
 use pipeline_common::split_reason::SplitReason;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
+
+use crate::operators::segment_reinject::SegmentInitCache;
 
 /// Optional callback for when a stream split occurs
 pub type SplitCallback = Box<dyn Fn(SplitReason, u64, u32) + Send + Sync>;
@@ -83,14 +83,11 @@ impl Default for LimitConfig {
 
 // Store stream state for re-emission after splits
 struct StreamState {
-    header: Option<FlvHeader>,
-    metadata: Option<FlvTag>,
-    audio_sequence_tag: Option<FlvTag>,
-    video_sequence_tag: Option<FlvTag>,
+    /// Cached header/metadata/sequence tags re-injected by `split_stream`.
+    cache: SegmentInitCache,
     accumulated_size: u64,
     start_timestamp: u32,
     max_timestamp: u32,
-    last_keyframe_position: Option<(u64, u32)>, // (size, timestamp) at last keyframe
     split_count: u32,
     first_content_tag_seen: bool,
 }
@@ -98,14 +95,10 @@ struct StreamState {
 impl StreamState {
     fn new() -> Self {
         Self {
-            header: None,
-            metadata: None,
-            audio_sequence_tag: None,
-            video_sequence_tag: None,
+            cache: SegmentInitCache::new(),
             accumulated_size: 0,
             start_timestamp: 0,
             max_timestamp: 0,
-            last_keyframe_position: None,
             split_count: 0,
             first_content_tag_seen: false,
         }
@@ -114,7 +107,6 @@ impl StreamState {
     fn reset_counters(&mut self) {
         self.accumulated_size = 0;
         self.start_timestamp = self.max_timestamp;
-        self.last_keyframe_position = None;
         self.split_count += 1;
     }
 
@@ -225,29 +217,9 @@ impl LimitOperator {
         // Emit the Split marker before re-injecting the header.
         output(FlvData::Split(reason))?;
 
-        // Send each item with Arc cloning instead of full data cloning
-        if let Some(header) = &self.state.header {
-            output(FlvData::Header(header.clone()))?;
-            debug!("{} {}", self.context.name, "re-emit header after split");
-        }
-        if let Some(metadata) = &self.state.metadata {
-            output(FlvData::Tag(metadata.clone()))?;
-            debug!("{} {}", self.context.name, "re-emit metadata after split");
-        }
-        if let Some(video_seq) = &self.state.video_sequence_tag {
-            output(FlvData::Tag(video_seq.clone()))?;
-            debug!(
-                "{} {}",
-                self.context.name, "re-emit video sequence tag after split"
-            );
-        }
-        if let Some(audio_seq) = &self.state.audio_sequence_tag {
-            output(FlvData::Tag(audio_seq.clone()))?;
-            debug!(
-                "{} {}",
-                self.context.name, "re-emit audio sequence tag after split"
-            );
-        }
+        self.state
+            .cache
+            .reinject(output, Some(&self.context.name))?;
 
         // Reset accumulated counters for the new segment
         self.state.reset_counters();
@@ -270,7 +242,7 @@ impl Processor<FlvData> for LimitOperator {
             FlvData::Header(header) => {
                 // Reset state for a new stream
                 self.state = StreamState::new();
-                self.state.header = Some(header.clone());
+                self.state.cache.header = Some(header.clone());
                 self.last_split_time = Instant::now();
 
                 // Forward the header
@@ -284,17 +256,15 @@ impl Processor<FlvData> for LimitOperator {
                 let tag_size = tag.size() as u64 + PREVIOUS_TAG_SIZE_FIELD as u64;
                 self.state.accumulated_size += tag_size;
 
-                // Track key metadata
+                // Track key metadata. Sequence headers are cached with timestamp_ms
+                // zeroed so the tags re-injected by split_stream open the new segment
+                // at timestamp 0.
                 if tag.is_script_tag() {
-                    self.state.metadata = Some(tag.clone());
+                    self.state.cache.metadata = Some(tag.clone());
                 } else if tag.is_video_sequence_header() {
-                    let mut tag = tag.clone();
-                    tag.timestamp_ms = 0; // Reset timestamp for video sequence header
-                    self.state.video_sequence_tag = Some(tag);
+                    self.state.cache.store_video_sequence_tag(tag.clone(), true);
                 } else if tag.is_audio_sequence_header() {
-                    let mut tag = tag.clone();
-                    tag.timestamp_ms = 0; // Reset timestamp for audio sequence header
-                    self.state.audio_sequence_tag = Some(tag);
+                    self.state.cache.store_audio_sequence_tag(tag.clone(), true);
                 } else {
                     // This is actual content (not sequence header or metadata)
                     // Update timestamp tracking only for content tags
@@ -314,12 +284,6 @@ impl Processor<FlvData> for LimitOperator {
                     }
                 }
 
-                // Track keyframes for optimal split points
-                if tag.is_key_frame_nalu() {
-                    self.state.last_keyframe_position =
-                        Some((self.state.accumulated_size, self.state.max_timestamp));
-                }
-
                 // Check if any limit is exceeded
                 let should_split = self.check_limits();
 
@@ -332,7 +296,12 @@ impl Processor<FlvData> for LimitOperator {
                 // payloads, unrecognized codec IDs). It also fires for streams whose GOP
                 // span exceeds the margin, so such a segment opens mid-GOP and its video
                 // is undecodable until the next keyframe.
-                let has_video = self.state.header.as_ref().is_some_and(|h| h.has_video);
+                let has_video = self
+                    .state
+                    .cache
+                    .header
+                    .as_ref()
+                    .is_some_and(|h| h.has_video);
                 let can_split_on_tag = if has_video && self.config.split_at_keyframes_only {
                     tag.is_key_frame_nalu() || self.limits_hard_exceeded()
                 } else {
@@ -387,6 +356,7 @@ mod tests {
     use super::*;
     use crate::test_utils::{self, create_script_tag};
     use bytes::Bytes;
+    use flv::header::FlvHeader;
     use flv::tag::{FlvTag, FlvTagType};
     use pipeline_common::{CancellationToken, StreamerContext};
     use std::sync::atomic::{AtomicUsize, Ordering};

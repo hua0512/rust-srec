@@ -11,6 +11,7 @@ mod header_check;
 mod limit;
 mod script_filler;
 mod script_filter;
+mod segment_reinject;
 mod split;
 mod time_consistency;
 mod timing_repair;
