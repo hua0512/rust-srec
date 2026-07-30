@@ -18,9 +18,16 @@ ts = { path = "../ts" }
 mp4 = { path = "../mp4" }
 zlib-rs = { workspace = true }
 tracing = { workspace = true }
-tracing-indicatif = { workspace = true }
+tracing-indicatif = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+
+[features]
+default = ["progress"]
+# Decorate the HlsFormatStrategy writer span with a tracing-indicatif progress
+# bar. Disable (default-features = false) in headless library builds so
+# consumers do not pull in the terminal-UI dependency.
+progress = ["dep:tracing-indicatif"]
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
