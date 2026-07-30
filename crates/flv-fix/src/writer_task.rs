@@ -18,7 +18,10 @@ use std::{
     time::Instant,
 };
 
-use tracing::{Span, info};
+#[cfg(feature = "progress")]
+use tracing::Span;
+use tracing::info;
+#[cfg(feature = "progress")]
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 const METADATA_PATCH_RESERVATION_BYTES: usize = 256;
@@ -114,15 +117,21 @@ impl FlvFormatStrategy {
     }
 
     fn update_status(&self, state: &WriterState) {
-        // Update the current span with progress information
-        let span = Span::current();
-        span.pb_set_position(state.bytes_written_current_file);
-        span.pb_set_message(&format!(
-            "{} | {} tags | {}s",
-            state.current_path.display(),
-            self.current_tag_count,
-            self.calculate_duration()
-        ));
+        // Decorate the current writer span with a progress bar; compiled out
+        // when the `progress` feature is disabled (headless library builds).
+        #[cfg(feature = "progress")]
+        {
+            let span = Span::current();
+            span.pb_set_position(state.bytes_written_current_file);
+            span.pb_set_message(&format!(
+                "{} | {} tags | {}s",
+                state.current_path.display(),
+                self.current_tag_count,
+                self.calculate_duration()
+            ));
+        }
+        #[cfg(not(feature = "progress"))]
+        let _ = state;
     }
 
     fn prepare_metadata_patch(
@@ -298,9 +307,12 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
         info!(path = %path.display(), "Opening segment");
 
-        // Initialize the span's progress bar
-        let span = Span::current();
-        span.pb_set_message(&format!("Writing {}", path.display()));
+        // Initialize the span's progress bar (compiled out without `progress`).
+        #[cfg(feature = "progress")]
+        {
+            let span = Span::current();
+            span.pb_set_message(&format!("Writing {}", path.display()));
+        }
 
         self.last_header_received = false;
         Ok(0)

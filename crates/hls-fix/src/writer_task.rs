@@ -10,7 +10,10 @@ use pipeline_common::{
     WriterError, WriterProgress, WriterState, WriterStats, WriterTask, expand_filename_template,
 };
 
-use tracing::{Span, debug, info, warn};
+#[cfg(feature = "progress")]
+use tracing::Span;
+use tracing::{debug, info, warn};
+#[cfg(feature = "progress")]
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
@@ -61,15 +64,21 @@ impl HlsFormatStrategy {
     }
 
     fn update_status(&self, state: &WriterState) {
-        // Update the current span with progress information
-        let span = Span::current();
-        span.pb_set_position(state.bytes_written_current_file);
-        span.pb_set_message(&format!(
-            "{} | {} segments | {:.1}s",
-            state.current_path.display(),
-            state.items_written_current_file,
-            self.target_duration
-        ));
+        // Decorate the current writer span with a progress bar; compiled out
+        // when the `progress` feature is disabled (headless library builds).
+        #[cfg(feature = "progress")]
+        {
+            let span = Span::current();
+            span.pb_set_position(state.bytes_written_current_file);
+            span.pb_set_message(&format!(
+                "{} | {} segments | {:.1}s",
+                state.current_path.display(),
+                state.items_written_current_file,
+                self.target_duration
+            ));
+        }
+        #[cfg(not(feature = "progress"))]
+        let _ = state;
     }
 }
 
@@ -162,13 +171,16 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
 
         info!(path = %path.display(), "Opening segment");
 
-        // Initialize the span's progress bar
-        let span = Span::current();
-        span.pb_set_message(&format!("Writing {}", path.display()));
+        // Initialize the span's progress bar (compiled out without `progress`).
+        #[cfg(feature = "progress")]
+        {
+            let span = Span::current();
+            span.pb_set_message(&format!("Writing {}", path.display()));
 
-        // Set progress bar length from max_file_size if available
-        if let Some(max_size) = self.max_file_size {
-            span.pb_set_length(max_size);
+            // Set progress bar length from max_file_size if available
+            if let Some(max_size) = self.max_file_size {
+                span.pb_set_length(max_size);
+            }
         }
 
         Ok(0)
