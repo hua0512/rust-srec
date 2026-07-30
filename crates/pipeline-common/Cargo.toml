@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+media-types = { path = "../media-types" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 time = { version = "0.3.46", features = ["local-offset"] }
