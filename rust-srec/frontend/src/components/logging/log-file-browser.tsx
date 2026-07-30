@@ -85,9 +85,12 @@ export function LogFileBrowser() {
 
       // Stream to disk via a token-authenticated anchor navigation, matching
       // handleDownloadFile; the browser writes the zip response body directly
-      // instead of buffering the whole archive in the JS heap.
+      // instead of buffering the whole archive in the JS heap. The download
+      // attribute keeps an error response as a file download instead of
+      // navigating the app to the raw error body.
       const link = document.createElement('a');
       link.href = url.toString();
+      link.download = '';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -122,6 +125,7 @@ export function LogFileBrowser() {
 
         const link = document.createElement('a');
         link.href = url.toString();
+        link.download = '';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
