@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -27,7 +27,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import {
   FileText,
@@ -37,37 +36,16 @@ import {
   Archive,
   X,
   Loader2,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatBytes } from '@/lib/format';
 import { BASE_URL } from '@/utils/env';
-
-/** Format bytes to human readable string */
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-interface DownloadState {
-  isDownloading: boolean;
-  progress: number;
-  filename?: string;
-  error?: string;
-  completed?: boolean;
-}
 
 export function LogFileBrowser() {
   const { i18n } = useLingui();
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [downloadState, setDownloadState] = useState<DownloadState>({
-    isDownloading: false,
-    progress: 0,
-  });
+  const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
 
   // Format dates for API (YYYY-MM-DD)
   const fromDate = dateRange?.from
@@ -91,15 +69,9 @@ export function LogFileBrowser() {
     setDateRange(undefined);
   }, []);
 
-  // Download all logs as archive with progress tracking
+  // Download all logs as an archive
   const handleDownloadArchive = useCallback(async () => {
-    setDownloadState({
-      isDownloading: true,
-      progress: 0,
-      filename: undefined,
-      error: undefined,
-      completed: false,
-    });
+    setIsDownloadingArchive(true);
 
     try {
       // Get download token
@@ -111,92 +83,30 @@ export function LogFileBrowser() {
       if (fromDate) url.searchParams.set('from', fromDate);
       if (toDate) url.searchParams.set('to', toDate);
 
-      // Fetch with progress tracking
-      const response = await fetch(url.toString());
-
-      if (!response.ok) {
-        throw new Error(`Download failed: ${response.statusText}`);
-      }
-
-      const contentLength = response.headers.get('content-length');
-      const total = contentLength ? parseInt(contentLength, 10) : 0;
-
-      // Get filename from Content-Disposition header
-      const disposition = response.headers.get('content-disposition');
-      let filename = 'rust-srec-logs.zip';
-      if (disposition) {
-        const match = disposition.match(/filename="?([^";\n]+)"?/);
-        if (match) filename = match[1];
-      }
-
-      setDownloadState((prev) => ({ ...prev, filename }));
-
-      // Read the response body with progress
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to read response body');
-      }
-
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        chunks.push(value);
-        received += value.length;
-
-        if (total > 0) {
-          const progress = Math.round((received / total) * 100);
-          setDownloadState((prev) => ({ ...prev, progress }));
-        }
-      }
-
-      // Combine chunks into a single Uint8Array
-      const combined = new Uint8Array(received);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      // Create blob from combined array
-      const blob = new Blob([combined], { type: 'application/zip' });
-      const downloadUrl = window.URL.createObjectURL(blob);
-
-      // Trigger download
+      // Stream to disk via a token-authenticated anchor navigation, matching
+      // handleDownloadFile; the browser writes the zip response body directly
+      // instead of buffering the whole archive in the JS heap. The download
+      // attribute keeps an error response as a file download instead of
+      // navigating the app to the raw error body.
       const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = filename;
+      link.href = url.toString();
+      link.download = '';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
 
-      setDownloadState({
-        isDownloading: false,
-        progress: 100,
-        filename,
-        completed: true,
-      });
-
-      toast.success(i18n._(msg`Logs downloaded successfully`));
-
-      // Reset state after a delay
-      setTimeout(() => {
-        setDownloadState({ isDownloading: false, progress: 0 });
-      }, 3000);
+      // Anchor downloads do not expose response or completion status. The
+      // browser download UI owns progress after navigation is dispatched.
+      toast.info(i18n._(msg`Downloading...`));
     } catch (error: unknown) {
       console.error('Download failed:', error);
       const errorMessage =
-        error instanceof Error ? error.message : 'Download failed';
-      setDownloadState({
-        isDownloading: false,
-        progress: 0,
-        error: errorMessage,
-      });
-      toast.error(errorMessage || i18n._(msg`Failed to download logs`));
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to download logs`);
+      toast.error(errorMessage);
+    } finally {
+      setIsDownloadingArchive(false);
     }
   }, [fromDate, toDate, i18n]);
 
@@ -215,6 +125,7 @@ export function LogFileBrowser() {
 
         const link = document.createElement('a');
         link.href = url.toString();
+        link.download = '';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -314,10 +225,10 @@ export function LogFileBrowser() {
               {/* Download All Button */}
               <Button
                 onClick={handleDownloadArchive}
-                disabled={downloadState.isDownloading || !data?.items?.length}
+                disabled={isDownloadingArchive || !data?.items?.length}
                 className="gap-2"
               >
-                {downloadState.isDownloading ? (
+                {isDownloadingArchive ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="h-4 w-4" />
@@ -326,50 +237,6 @@ export function LogFileBrowser() {
               </Button>
             </div>
           </div>
-
-          {/* Download Progress */}
-          <AnimatePresence>
-            {(downloadState.isDownloading || downloadState.completed) && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="p-4 rounded-lg bg-muted/30 border border-border/40 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      {downloadState.completed ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      ) : downloadState.error ? (
-                        <AlertCircle className="h-4 w-4 text-destructive" />
-                      ) : (
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      )}
-                      <span className="font-medium">
-                        {downloadState.completed ? (
-                          <Trans>Download complete</Trans>
-                        ) : downloadState.error ? (
-                          downloadState.error
-                        ) : (
-                          <Trans>Downloading...</Trans>
-                        )}
-                      </span>
-                    </div>
-                    {downloadState.filename && (
-                      <span className="text-muted-foreground text-xs">
-                        {downloadState.filename}
-                      </span>
-                    )}
-                  </div>
-                  <Progress value={downloadState.progress} className="h-2" />
-                  <div className="text-xs text-muted-foreground text-right">
-                    {downloadState.progress}%
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </CardHeader>
 
@@ -461,7 +328,7 @@ export function LogFileBrowser() {
                   variant="ghost"
                   size="icon"
                   onClick={() => handleDownloadFile(file)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity h-9 w-9"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity h-9 w-9"
                   title={i18n._(msg`Download ${file.filename}`)}
                 >
                   <Download className="h-4 w-4" />
