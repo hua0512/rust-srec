@@ -192,7 +192,6 @@ impl CollectionRunner {
     }
 
     /// Sleep until `deadline`, or wait forever when no idle back-off is pending.
-    /// Mirrors the `Option`-guarded timer idiom so a disabled back-off never fires.
     async fn wait_until(deadline: Option<tokio::time::Instant>) {
         match deadline {
             Some(instant) => tokio::time::sleep_until(instant).await,
@@ -332,8 +331,8 @@ impl CollectionRunner {
 
     /// Handle the result of receiving a message from the provider.
     ///
-    /// `Ok(None)` maps to `ReceiveOutcome::Idle` so the caller arms the idle
-    /// back-off instead of blocking the run loop with an inline sleep.
+    /// `Ok(None)` maps to `ReceiveOutcome::Idle`; the caller owns the idle
+    /// back-off, so this function never sleeps.
     async fn handle_receive_result(
         &mut self,
         result: platforms_parser::danmaku::error::Result<Option<DanmuItem>>,
