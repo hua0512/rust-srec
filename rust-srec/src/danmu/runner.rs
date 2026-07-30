@@ -28,6 +28,8 @@ mod config {
     pub const BUFFER_FLUSH_INTERVAL_MS: u64 = 500;
     /// Maximum number of messages to buffer before forcing a flush.
     pub const MAX_BUFFER_SIZE: usize = 100;
+    /// Delay before re-polling `DanmuProvider::receive` after it yields `Ok(None)`.
+    pub const IDLE_POLL_INTERVAL_MS: u64 = 100;
 }
 
 /// Result of command handling - indicates whether to continue or stop.
@@ -36,6 +38,18 @@ pub(crate) enum CommandResult {
     /// Continue running the collection loop.
     Continue,
     /// Stop the collection loop.
+    Stop,
+}
+
+/// Outcome of a single `DanmuProvider::receive` poll, driving the run loop's
+/// idle throttle so `command_rx`/`cancel_token` stay preemptible while idle.
+#[derive(Debug, PartialEq)]
+enum ReceiveOutcome {
+    /// A message was handled; poll `receive` again immediately.
+    Continue,
+    /// Provider yielded `Ok(None)`; back off before polling `receive` again.
+    Idle,
+    /// A terminal control event was handled; stop the loop.
     Stop,
 }
 
@@ -123,6 +137,11 @@ impl CollectionRunner {
         ));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        // When `provider.receive` yields `Ok(None)`, the receive branch is disabled
+        // until this deadline elapses so the idle wait does not block command,
+        // cancellation, or flush handling.
+        let mut idle_deadline: Option<tokio::time::Instant> = None;
+
         loop {
             tokio::select! {
                 biased;
@@ -146,17 +165,39 @@ impl CollectionRunner {
                     self.flush_buffer_if_needed().await?;
                 }
 
+                // Idle back-off expiry - re-enable the receive branch below.
+                _ = Self::wait_until(idle_deadline) => {
+                    idle_deadline = None;
+                }
+
                 // Receive danmu messages
-                result = self.provider.receive(&self.connection) => {
+                result = self.provider.receive(&self.connection), if idle_deadline.is_none() => {
                     match self.handle_receive_result(result).await? {
-                        CommandResult::Continue => {}
-                        CommandResult::Stop => break,
+                        ReceiveOutcome::Continue => {}
+                        ReceiveOutcome::Idle => {
+                            idle_deadline = Some(
+                                tokio::time::Instant::now()
+                                    + tokio::time::Duration::from_millis(
+                                        config::IDLE_POLL_INTERVAL_MS,
+                                    ),
+                            );
+                        }
+                        ReceiveOutcome::Stop => break,
                     }
                 }
             }
         }
 
         Ok(self.stats.current_stats())
+    }
+
+    /// Sleep until `deadline`, or wait forever when no idle back-off is pending.
+    /// Mirrors the `Option`-guarded timer idiom so a disabled back-off never fires.
+    async fn wait_until(deadline: Option<tokio::time::Instant>) {
+        match deadline {
+            Some(instant) => tokio::time::sleep_until(instant).await,
+            None => std::future::pending().await,
+        }
     }
 
     /// Handle a command from the channel.
@@ -290,16 +331,19 @@ impl CollectionRunner {
     }
 
     /// Handle the result of receiving a message from the provider.
+    ///
+    /// `Ok(None)` maps to `ReceiveOutcome::Idle` so the caller arms the idle
+    /// back-off instead of blocking the run loop with an inline sleep.
     async fn handle_receive_result(
         &mut self,
         result: platforms_parser::danmaku::error::Result<Option<DanmuItem>>,
-    ) -> Result<CommandResult> {
+    ) -> Result<ReceiveOutcome> {
         match result {
-            Ok(Some(item)) => return self.handle_item(item).await,
-            Ok(None) => {
-                // No message available, wait a bit
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            }
+            Ok(Some(item)) => match self.handle_item(item).await? {
+                CommandResult::Continue => Ok(ReceiveOutcome::Continue),
+                CommandResult::Stop => Ok(ReceiveOutcome::Stop),
+            },
+            Ok(None) => Ok(ReceiveOutcome::Idle),
             Err(e) => {
                 // Log the error - reconnection is handled by the transport layer
                 let _ = self.event_tx.send(DanmuEvent::Error {
@@ -307,10 +351,9 @@ impl CollectionRunner {
                     error: e.to_string(),
                 });
                 // Propagate the error to stop collection if transport layer can't recover
-                return Err(Error::DanmakuError(e));
+                Err(Error::DanmakuError(e))
             }
         }
-        Ok(CommandResult::Continue)
     }
 
     async fn handle_item(&mut self, item: DanmuItem) -> Result<CommandResult> {
