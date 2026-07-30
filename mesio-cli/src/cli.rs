@@ -92,16 +92,6 @@ pub struct CliArgs {
     )]
     pub enable_fix: bool,
 
-    /// Legacy compatibility switch for FLV metadata modification
-    #[arg(
-        long,
-        action = clap::ArgAction::Set,
-        default_value = "true",
-        help = "Legacy compatibility option. FLV metadata updates are always fixed-size and in-place.",
-        requires = "enable_fix",
-    )]
-    pub low_latency_fix: bool,
-
     /// Channel size for processing channels
     #[arg(
         short = 'b',
