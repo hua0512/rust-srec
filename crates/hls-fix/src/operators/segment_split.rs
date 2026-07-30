@@ -144,6 +144,18 @@ impl SegmentSplitOperator {
             return Ok(None);
         }
 
+        // has_psi is set by a PAT alone; an empty programs list means the PMT was absent,
+        // cut across the segment boundary, or failed CRC. Comparing an empty layout against
+        // last_ts_stream_info would emit a spurious StreamStructureChange, so treat it like the
+        // no-PSI case and leave last_ts_stream_info untouched.
+        if analysis.stream_info.programs.is_empty() {
+            debug!(
+                "{} TS segment has PAT but no parsed PMT, skipping structural comparison",
+                self.context.name
+            );
+            return Ok(None);
+        }
+
         let current_stream_info = analysis.stream_info.clone();
         let mut profile = analysis.stream_profile();
         if self.last_resolution.is_some() && !analysis.has_random_access {
@@ -954,5 +966,47 @@ mod tests {
 
         assert_eq!(output_items.len(), 3);
         assert!(matches!(&output_items[1], HlsData::EndMarker(_)));
+    }
+
+    #[test]
+    fn pat_without_pmt_does_not_split() {
+        init_test_tracing!();
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentSplitOperator::new(context.clone());
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        let seg = |data: Vec<u8>| {
+            HlsData::TsData(
+                hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(data))
+                    .with_continuity_mode(ts::ContinuityMode::Warn),
+            )
+        };
+
+        // Full PSI: PAT + PMT describing one program.
+        let full = create_ts_data_with_codecs(0x1B, 0x0F, 1);
+        // PAT packet alone: has_psi is true but no program layout gets parsed.
+        let pat_only = full[..188].to_vec();
+
+        operator
+            .process(&context, seg(full.clone()), &mut output_fn)
+            .unwrap();
+        operator
+            .process(&context, seg(pat_only), &mut output_fn)
+            .unwrap();
+        operator.process(&context, seg(full), &mut output_fn).unwrap();
+
+        // Neither the PMT-less segment nor the following full-PSI segment may split.
+        assert_eq!(output_items.len(), 3);
+        assert!(
+            output_items
+                .iter()
+                .all(|i| !matches!(i, HlsData::EndMarker(_)))
+        );
     }
 }
