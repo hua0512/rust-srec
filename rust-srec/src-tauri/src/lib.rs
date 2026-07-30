@@ -631,15 +631,8 @@ async fn run_desktop_backend_init(
         });
     }
 
-    // Spawn minimize-to-tray watcher (hides window when user clicks minimize button).
-    #[cfg(desktop)]
-    {
-        let app_handle = app_handle.clone();
-        let cancellation = container.cancellation_token();
-        tauri::async_runtime::spawn(async move {
-            run_minimize_to_tray_watcher(app_handle, cancellation).await;
-        });
-    }
+    // Hiding the window on minimize is handled event-driven in the app.run
+    // RunEvent::WindowEvent(Resized) branch, so no polling watcher is spawned.
 }
 
 /// Run the desktop notification listener loop.
@@ -687,62 +680,6 @@ async fn run_desktop_notification_listener(
                     }
                 }
             }
-        }
-    }
-}
-
-/// Watch for minimize events and hide window to tray.
-/// Uses smart polling: fast when visible (80ms), slow backoff when hidden (5000ms).
-async fn run_minimize_to_tray_watcher(
-    app_handle: tauri::AppHandle,
-    cancellation: tokio_util::sync::CancellationToken,
-) {
-    let visible_poll = Duration::from_millis(80);
-    let hidden_poll = Duration::from_millis(5000);
-
-    // Edge-trigger so we don't spam hide() if minimized stays true.
-    let mut last_seen_minimized = false;
-
-    loop {
-        let sleep_for = {
-            match app_handle.get_webview_window("main") {
-                Some(window) => match window.is_visible() {
-                    Ok(true) => visible_poll,
-                    _ => hidden_poll,
-                },
-                None => hidden_poll,
-            }
-        };
-
-        tokio::select! {
-            _ = cancellation.cancelled() => {
-                log::debug!("Minimize-to-tray watcher shutting down");
-                break;
-            }
-            _ = tokio::time::sleep(sleep_for) => {}
-        }
-
-        let Some(window) = app_handle.get_webview_window("main") else {
-            continue;
-        };
-
-        let is_visible = window.is_visible().unwrap_or(false);
-        if !is_visible {
-            last_seen_minimized = false;
-            continue;
-        }
-
-        let minimized = window.is_minimized().unwrap_or(false);
-
-        // If it just became minimized, hide it to tray.
-        if minimized && !last_seen_minimized {
-            let _ = window.hide();
-            last_seen_minimized = true;
-            continue;
-        }
-
-        if !minimized {
-            last_seen_minimized = false;
         }
     }
 }
@@ -1007,6 +944,22 @@ pub fn run() {
         {
             api.prevent_close();
             hide_main_window(app_handle);
+            return;
+        }
+
+        // Minimize button hides the main window to the tray. Resized fires when
+        // the window enters the minimized state; is_minimized() gates the hide
+        // so ordinary resize/maximize events pass through untouched.
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Resized(_),
+            ..
+        } = &event
+            && label == "main"
+            && let Some(window) = app_handle.get_webview_window("main")
+            && window.is_minimized().unwrap_or(false)
+        {
+            let _ = window.hide();
             return;
         }
 
