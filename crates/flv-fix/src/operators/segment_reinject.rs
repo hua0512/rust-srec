@@ -18,18 +18,18 @@ use tracing::debug;
 /// cached tags outside of a full reinjection.
 #[derive(Default)]
 pub(crate) struct SegmentInitCache {
-    pub header: Option<FlvHeader>,
-    pub metadata: Option<FlvTag>,
-    pub audio_sequence_tag: Option<FlvTag>,
-    pub video_sequence_tag: Option<FlvTag>,
+    pub(crate) header: Option<FlvHeader>,
+    pub(crate) metadata: Option<FlvTag>,
+    pub(crate) audio_sequence_tag: Option<FlvTag>,
+    pub(crate) video_sequence_tag: Option<FlvTag>,
 }
 
 impl SegmentInitCache {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         *self = Self::default();
     }
 
@@ -37,7 +37,7 @@ impl SegmentInitCache {
     /// is set, `tag.timestamp_ms` is rebased to 0 so a later `reinject` opens
     /// the new segment with the sequence header at timestamp 0; when unset the
     /// tag keeps the timestamp it carried in the stream.
-    pub fn store_video_sequence_tag(&mut self, mut tag: FlvTag, zero_timestamp: bool) {
+    pub(crate) fn store_video_sequence_tag(&mut self, mut tag: FlvTag, zero_timestamp: bool) {
         if zero_timestamp {
             tag.timestamp_ms = 0;
         }
@@ -46,7 +46,7 @@ impl SegmentInitCache {
 
     /// Stores `tag` as the current audio sequence header; see
     /// `store_video_sequence_tag` for the `zero_timestamp` semantics.
-    pub fn store_audio_sequence_tag(&mut self, mut tag: FlvTag, zero_timestamp: bool) {
+    pub(crate) fn store_audio_sequence_tag(&mut self, mut tag: FlvTag, zero_timestamp: bool) {
         if zero_timestamp {
             tag.timestamp_ms = 0;
         }
@@ -63,7 +63,7 @@ impl SegmentInitCache {
     ///
     /// When `debug_name` is provided, each re-emitted item is logged at debug
     /// level with that name as prefix.
-    pub fn reinject(
+    pub(crate) fn reinject(
         &self,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
         debug_name: Option<&str>,
