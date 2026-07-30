@@ -79,8 +79,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     };
 
-    // Parse the data, triggering the callbacks as PAT/PMT sections are found
-    parser.parse_packets(ts_data, on_pat, on_pmt)?;
+    // Parse the data, triggering the callbacks as PAT/PMT sections are found.
+    // The last argument is an optional per-packet callback; None skips it.
+    parser.parse_packets(ts_data, on_pat, on_pmt, None::<fn(&TsPacketRef) -> Result<()>>)?;
 
     Ok(())
 }
@@ -116,9 +117,10 @@ The high-performance, callback-based parser.
 #### Methods
 
 - `new() -> TsParser`: Creates a new parser instance.
-- `parse_packets<F, G>(&mut self, data: Bytes, on_pat: F, on_pmt: G) -> Result<()>`: Parses TS packets from a `Bytes` buffer and invokes callbacks when PAT or PMT sections are found.
+- `parse_packets<F, G, H>(&mut self, data: Bytes, on_pat: F, on_pmt: G, on_packet: Option<H>) -> Result<()>`: Parses TS packets from a `Bytes` buffer and invokes callbacks when PAT or PMT sections are found.
   - `on_pat: FnMut(PatRef) -> Result<()>`: A callback invoked when a PAT is parsed.
   - `on_pmt: FnMut(PmtRef) -> Result<()>`: A callback invoked when a PMT is parsed.
+  - `on_packet: Option<FnMut(&TsPacketRef) -> Result<()>>`: An optional callback invoked for every parsed packet; pass `None` to skip it.
 - `reset(&mut self)`: Clears the parser's internal state.
 
 ### Data Structures
@@ -146,13 +148,6 @@ The crate provides detailed error types through `TsError`:
 - `InsufficientData` - Not enough data to parse
 - `InvalidTableId` - Wrong table ID for PAT/PMT
 - `ParseError` - General parsing errors
-
-## Running the Example
-
-```bash
-cd crates/ts
-cargo run --example zero_copy_demo
-```
 
 ## Testing
 
