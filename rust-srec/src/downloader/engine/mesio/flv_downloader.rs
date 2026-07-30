@@ -172,7 +172,6 @@ impl FlvDownloader {
         let mut writer = FlvWriter::new(FlvWriterConfig {
             output_dir,
             base_name,
-            enable_low_latency: true,
         });
 
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
@@ -252,7 +251,6 @@ impl FlvDownloader {
         let mut writer = FlvWriter::new(FlvWriterConfig {
             output_dir,
             base_name,
-            enable_low_latency: true,
         });
 
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);

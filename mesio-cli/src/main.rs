@@ -196,7 +196,6 @@ async fn bootstrap() -> Result<(), AppError> {
         } else {
             None
         })
-        .enable_low_latency(args.low_latency_fix)
         .pipe_mode(is_pipe_mode)
         .build();
 

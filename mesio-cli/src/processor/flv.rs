@@ -32,7 +32,6 @@ async fn process_raw_stream(
     let mut writer = FlvWriter::new(FlvWriterConfig {
         output_dir: output_dir.to_path_buf(),
         base_name: base_name.to_string(),
-        enable_low_latency: false,
     });
 
     // Capture the current span to propagate to the blocking task
@@ -159,7 +158,6 @@ pub async fn process_file(
                 FlvWriter::new(FlvWriterConfig {
                     output_dir: output_dir.to_path_buf(),
                     base_name: base_name.to_string(),
-                    enable_low_latency: config.flv_pipeline_config.enable_low_latency,
                 })
             },
             token.clone(),
@@ -300,7 +298,6 @@ pub async fn process_flv_stream(
                 FlvWriter::new(FlvWriterConfig {
                     output_dir: output_dir.to_path_buf(),
                     base_name: base_name.clone(),
-                    enable_low_latency: config.flv_pipeline_config.enable_low_latency,
                 })
             },
             token.clone(),

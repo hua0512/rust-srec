@@ -40,8 +40,6 @@ pub enum FlvStrategyError {
 pub struct FlvWriterConfig {
     pub output_dir: PathBuf,
     pub base_name: String,
-    /// Retained for configuration compatibility; metadata patching is always layout-stable.
-    pub enable_low_latency: bool,
 }
 
 /// FLV-specific format strategy implementation
@@ -67,8 +65,14 @@ struct MetadataPatch {
     include_keyframes: bool,
 }
 
+impl Default for FlvFormatStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FlvFormatStrategy {
-    pub fn new(_enable_low_latency: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
@@ -420,7 +424,6 @@ mod tests {
         let mut writer = RecordingWriter::new(FlvWriterConfig {
             output_dir: tempdir.path().to_path_buf(),
             base_name: "segment-%i".to_string(),
-            enable_low_latency: true,
         });
         let opened_path = Arc::new(Mutex::new(None));
         let callback_path = Arc::clone(&opened_path);
@@ -475,7 +478,6 @@ mod tests {
         let mut writer = RecordingWriter::new(FlvWriterConfig {
             output_dir: tempdir.path().to_path_buf(),
             base_name: "segment-%i".to_string(),
-            enable_low_latency: true,
         });
         let opened_path = Arc::new(Mutex::new(None));
         let callback_path = Arc::clone(&opened_path);
@@ -526,7 +528,6 @@ mod tests {
         let mut writer = RecordingWriter::new(FlvWriterConfig {
             output_dir: tempdir.path().to_path_buf(),
             base_name: "segment-%i".to_string(),
-            enable_low_latency: true,
         });
         let opened_path = Arc::new(Mutex::new(None));
         let callback_path = Arc::clone(&opened_path);

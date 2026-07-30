@@ -95,7 +95,6 @@ OPTIONS:
 
 ```text
   -k, --keyframe-index                Inject keyframe index in metadata for better seeking [default: true]
-      --low-latency-fix <BOOLEAN>     Legacy compatibility option. FLV metadata updates are always fixed-size and in-place. Requires --fix flag to be enabled [default: true]
 ```
 
 ### HLS Options
