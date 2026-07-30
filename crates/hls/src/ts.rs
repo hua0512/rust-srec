@@ -436,25 +436,6 @@ impl TsSegmentData {
         self.parse_stream_info_only()
     }
 
-    /// Get all elementary streams from this TS segment
-    pub fn get_all_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
-        let stream_info = self.parse_psi_tables()?;
-        let mut all_streams = Vec::new();
-
-        for program in stream_info.programs {
-            for stream in program
-                .video_streams
-                .into_iter()
-                .chain(program.audio_streams)
-                .chain(program.other_streams)
-            {
-                all_streams.push((stream.pid, stream.stream_type));
-            }
-        }
-
-        Ok(all_streams)
-    }
-
     /// Check if this segment contains PAT/PMT tables
     pub fn has_psi_tables(&self) -> bool {
         self.analysis(StreamProfileOptions {

@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
 use media_types::split_reason::SplitReason;
-use ts::StreamType;
 
 use crate::mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
 use crate::profile::{SegmentType, StreamProfile, StreamProfileOptions};
@@ -204,14 +203,6 @@ impl HlsData {
     pub fn parse_ts_psi_tables(&self) -> Option<Result<TsStreamInfo, ts::TsError>> {
         match self {
             HlsData::TsData(ts) => Some(ts.parse_psi_tables()),
-            _ => None,
-        }
-    }
-
-    /// Get all elementary streams from TS segments (only for TS data)
-    pub fn get_ts_all_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
-        match self {
-            HlsData::TsData(ts) => Some(ts.get_all_streams()),
             _ => None,
         }
     }
