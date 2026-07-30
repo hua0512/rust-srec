@@ -564,17 +564,6 @@ where
             .collect()
     }
 
-    /// Get streamers ready for live checking.
-    ///
-    /// Returns active streamers that are not currently disabled.
-    pub fn get_ready_for_check(&self) -> Vec<StreamerMetadata> {
-        self.metadata
-            .iter()
-            .filter(|entry| entry.is_ready_for_check())
-            .map(|entry| entry.value().clone())
-            .collect()
-    }
-
     /// Get streamers sorted by priority (High first, then Normal, then Low).
     pub fn get_all_sorted_by_priority(&self) -> Vec<StreamerMetadata> {
         let mut streamers: Vec<_> = self.get_all();

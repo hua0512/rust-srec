@@ -277,6 +277,10 @@ impl Supervisor {
         self.streamer_configs.remove(id);
         self.platform_senders.remove(id);
         self.restart_tracker.remove(id);
+        // Drop any queued restart so process_pending_restarts does not resurrect
+        // an actor for a streamer that has been removed.
+        self.pending_restarts
+            .retain(|r| !(r.actor_type == "streamer" && r.actor_id == id));
         self.registry.remove_streamer(id).is_some()
     }
 
@@ -284,6 +288,10 @@ impl Supervisor {
     pub fn remove_platform(&mut self, platform_id: &str) -> bool {
         self.platform_configs.remove(platform_id);
         self.restart_tracker.remove(platform_id);
+        // Drop any queued restart so process_pending_restarts does not resurrect
+        // an actor for a platform that has been removed.
+        self.pending_restarts
+            .retain(|r| !(r.actor_type == "platform" && r.actor_id == platform_id));
         self.registry.remove_platform(platform_id).is_some()
     }
 

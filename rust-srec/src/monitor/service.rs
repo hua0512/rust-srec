@@ -115,7 +115,7 @@ impl Default for StreamMonitorConfig {
     fn default() -> Self {
         Self {
             default_rate_limit: 1.0,
-            platform_rate_limits: vec![("twitch".to_string(), 2.0), ("youtube".to_string(), 1.0)],
+            platform_rate_limits: vec![("twitch".to_string(), 2.0)],
             request_timeout: Duration::ZERO,
             max_concurrent_requests: 10,
         }
@@ -482,11 +482,13 @@ impl<
             return Ok(LiveStatus::Offline);
         }
 
-        let hard_timeout = if self.config.request_timeout > Duration::ZERO {
-            self.config.request_timeout
-        } else {
-            STREAM_CHECK_HARD_TIMEOUT
-        };
+        // Outer bound for the whole check pipeline (filter load, config resolution,
+        // credential check_and_refresh_source, and platform extraction). request_timeout
+        // is a per-HTTP-request budget applied by the HTTP client, so the pipeline — which
+        // issues several sequential requests — must never be capped below
+        // STREAM_CHECK_HARD_TIMEOUT; only a request_timeout deliberately set larger than it
+        // raises the ceiling.
+        let hard_timeout = std::cmp::max(STREAM_CHECK_HARD_TIMEOUT, self.config.request_timeout);
 
         // Get or create the deduplication cell for this streamer
         let cell = self
