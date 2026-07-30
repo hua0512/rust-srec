@@ -436,135 +436,6 @@ impl TsSegmentData {
         self.parse_stream_info_only()
     }
 
-    /// Parse TS segments returning both stream info and raw packets
-    #[deprecated(note = "use TsSegmentData::analysis to avoid packet materialization")]
-    pub fn parse_stream_and_packets(
-        &self,
-    ) -> Result<(TsStreamInfo, Vec<TsPacketRef>), ts::TsError> {
-        let mut parser = self.make_parser();
-        let mut stream_info = TsStreamInfo::default();
-        let mut transport_stream_id = 0u16;
-        let mut program_count = 0usize;
-        let mut programs: Vec<ProgramInfo> = Vec::new();
-        let mut scte35_events: Vec<SpliceInfoSection> = Vec::new();
-        let mut packets = Vec::new();
-        let pcr_pids = RefCell::new(HashSet::new());
-        let stream_pids = RefCell::new(HashSet::new());
-        let mut first_pts_by_pid = HashMap::new();
-
-        parser.parse_packets_with_scte35(
-            self.data.clone(),
-            |pat: PatRef| {
-                transport_stream_id = pat.transport_stream_id;
-                program_count = pat.program_count();
-                Ok(())
-            },
-            |pmt: PmtRef| {
-                let mut program_info = ProgramInfo {
-                    program_number: pmt.program_number,
-                    pcr_pid: pmt.pcr_pid,
-                    video_streams: Vec::new(),
-                    audio_streams: Vec::new(),
-                    other_streams: Vec::new(),
-                    scte35_pids: Vec::new(),
-                };
-                Self::fill_program_streams(&mut program_info, pmt);
-
-                pcr_pids.borrow_mut().insert(program_info.pcr_pid);
-
-                for stream in program_info
-                    .video_streams
-                    .iter()
-                    .chain(program_info.audio_streams.iter())
-                    .chain(program_info.other_streams.iter())
-                {
-                    stream_pids.borrow_mut().insert(stream.pid);
-                }
-
-                programs.push(program_info);
-                Ok(())
-            },
-            Some(|packet: &TsPacketRef| {
-                if pcr_pids.borrow().contains(&packet.pid)
-                    && let Some(af) = packet.parse_adaptation_field()
-                    && let Some(pcr) = af.pcr()
-                {
-                    let seconds = pcr.as_seconds();
-                    if stream_info.first_pcr.is_none() {
-                        stream_info.first_pcr = Some(seconds);
-                    }
-                    stream_info.last_pcr = Some(seconds);
-                }
-
-                if packet.payload_unit_start_indicator
-                    && stream_pids.borrow().contains(&packet.pid)
-                    && !first_pts_by_pid.contains_key(&packet.pid)
-                    && let Some(payload) = packet.payload()
-                    && let Ok(pes) = PesHeader::parse(&payload)
-                    && let Some(pts) = pes.pts
-                {
-                    first_pts_by_pid.insert(packet.pid, pts);
-                }
-
-                packets.push(packet.clone());
-                Ok(())
-            }),
-            |scte35_ref| {
-                scte35_events.push(scte35_ref.inner.clone());
-                Ok(())
-            },
-        )?;
-
-        stream_info.transport_stream_id = transport_stream_id;
-        stream_info.program_count = program_count;
-        stream_info.programs = programs;
-        stream_info.scte35_events = scte35_events;
-
-        self.report_continuity_warnings(&parser);
-
-        // Fill in first_pts on stream entries
-        for program in &mut stream_info.programs {
-            for stream in program
-                .video_streams
-                .iter_mut()
-                .chain(program.audio_streams.iter_mut())
-                .chain(program.other_streams.iter_mut())
-            {
-                stream.first_pts = first_pts_by_pid.get(&stream.pid).copied();
-            }
-        }
-
-        Ok((stream_info, packets))
-    }
-
-    /// Get video streams from this TS segment
-    pub fn get_video_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
-        let stream_info = self.parse_psi_tables()?;
-        let mut video_streams = Vec::new();
-
-        for program in stream_info.programs {
-            for stream in program.video_streams {
-                video_streams.push((stream.pid, stream.stream_type));
-            }
-        }
-
-        Ok(video_streams)
-    }
-
-    /// Get audio streams from this TS segment
-    pub fn get_audio_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
-        let stream_info = self.parse_psi_tables()?;
-        let mut audio_streams = Vec::new();
-
-        for program in stream_info.programs {
-            for stream in program.audio_streams {
-                audio_streams.push((stream.pid, stream.stream_type));
-            }
-        }
-
-        Ok(audio_streams)
-    }
-
     /// Get all elementary streams from this TS segment
     pub fn get_all_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let stream_info = self.parse_psi_tables()?;
@@ -582,44 +453,6 @@ impl TsSegmentData {
         }
 
         Ok(all_streams)
-    }
-
-    /// Check if this TS segment contains specific stream types
-    pub fn contains_stream_type(&self, stream_type: StreamType) -> bool {
-        match self.get_all_streams() {
-            Ok(streams) => streams.iter().any(|(_, st)| *st == stream_type),
-            Err(_) => false,
-        }
-    }
-
-    /// Get stream summary
-    pub fn get_stream_summary(&self) -> Option<String> {
-        match self.parse_psi_tables() {
-            Ok(stream_info) => {
-                let mut video_count = 0;
-                let mut audio_count = 0;
-
-                for program in &stream_info.programs {
-                    video_count += program.video_streams.len();
-                    audio_count += program.audio_streams.len();
-                }
-
-                let mut summary = Vec::new();
-                if video_count > 0 {
-                    summary.push(format!("{video_count} video stream(s)"));
-                }
-                if audio_count > 0 {
-                    summary.push(format!("{audio_count} audio stream(s)"));
-                }
-
-                if summary.is_empty() {
-                    Some("No recognized streams".to_string())
-                } else {
-                    Some(summary.join(", "))
-                }
-            }
-            Err(_) => Some("Failed to parse streams".to_string()),
-        }
     }
 
     /// Check if this segment contains PAT/PMT tables
@@ -720,16 +553,6 @@ mod tests {
         )
         .with_continuity_mode(ts::ContinuityMode::Disabled);
         assert!(!segment.has_psi_tables());
-    }
-
-    #[test]
-    fn test_get_video_streams_empty() {
-        let segment = TsSegmentData::new(make_media_segment(), Bytes::new())
-            .with_continuity_mode(ts::ContinuityMode::Disabled);
-        // An error is also acceptable for empty data.
-        if let Ok(streams) = segment.get_video_streams() {
-            assert!(streams.is_empty());
-        }
     }
 
     #[test]

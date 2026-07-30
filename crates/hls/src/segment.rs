@@ -208,82 +208,12 @@ impl HlsData {
         }
     }
 
-    /// Get video streams from TS segments (only for TS data)
-    pub fn get_ts_video_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
-        match self {
-            HlsData::TsData(ts) => Some(ts.get_video_streams()),
-            _ => None,
-        }
-    }
-
-    /// Get audio streams from TS segments (only for TS data)
-    pub fn get_ts_audio_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
-        match self {
-            HlsData::TsData(ts) => Some(ts.get_audio_streams()),
-            _ => None,
-        }
-    }
-
     /// Get all elementary streams from TS segments (only for TS data)
     pub fn get_ts_all_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
         match self {
             HlsData::TsData(ts) => Some(ts.get_all_streams()),
             _ => None,
         }
-    }
-
-    /// Check if TS segment contains specific stream type (only for TS data)
-    pub fn ts_contains_stream_type(&self, stream_type: StreamType) -> bool {
-        match self {
-            HlsData::TsData(ts) => ts.contains_stream_type(stream_type),
-            _ => false,
-        }
-    }
-
-    /// Get a summary of streams (works for TS segments)
-    pub fn get_stream_summary(&self) -> Option<String> {
-        match self {
-            HlsData::TsData(ts) => ts.get_stream_summary(),
-            _ => None,
-        }
-    }
-
-    /// Quick check if this TS segment contains video streams
-    pub fn has_video_streams(&self) -> bool {
-        match self.get_ts_video_streams() {
-            Some(Ok(streams)) => !streams.is_empty(),
-            _ => false,
-        }
-    }
-
-    /// Quick check if this TS segment contains audio streams
-    pub fn has_audio_streams(&self) -> bool {
-        match self.get_ts_audio_streams() {
-            Some(Ok(streams)) => !streams.is_empty(),
-            _ => false,
-        }
-    }
-
-    /// Quick check if this TS segment contains H.264 video
-    pub fn has_h264_video(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::H264)
-    }
-
-    /// Quick check if this TS segment contains H.265 video
-    pub fn has_h265_video(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::H265)
-    }
-
-    /// Quick check if this TS segment contains AAC audio
-    pub fn has_aac_audio(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::AdtsAac)
-            || self.ts_contains_stream_type(StreamType::LatmAac)
-    }
-
-    /// Quick check if this TS segment contains AC-3 audio
-    pub fn has_ac3_audio(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::Ac3)
-            || self.ts_contains_stream_type(StreamType::EAc3)
     }
 
     /// Get a compact stream profile for this segment

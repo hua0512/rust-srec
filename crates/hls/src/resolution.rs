@@ -2,7 +2,6 @@ pub use media_types::Resolution;
 
 use bytes::BytesMut;
 use memchr::memchr;
-use tracing::debug;
 use ts::{PesHeader, StreamType, TsPacketRef};
 
 /// Resolution detector for HLS segments
@@ -152,55 +151,6 @@ impl VideoProbe {
 }
 
 impl ResolutionDetector {
-    /// Extract resolution from pre-parsed TS packets
-    ///
-    /// Attempts multiple detection strategies in order of efficiency:
-    /// 1. Simple scanning of individual packet payloads (zero allocation)
-    /// 2. Full PES reassembly for fragmented SPS
-    ///
-    /// Returns `None` if no SPS can be found or parsed, which is normal for
-    /// segments that don't contain parameter sets.
-    pub fn extract_from_ts_packets<'a>(
-        packets: impl Iterator<Item = &'a TsPacketRef> + Clone,
-        video_streams: &[(u16, StreamType)],
-    ) -> Option<Resolution> {
-        if video_streams.is_empty() {
-            return None;
-        }
-
-        for (pid, stream_type) in video_streams {
-            // First pass: try simple scanning without collecting (fastest path)
-            let video_packets = packets.clone().filter(|packet| packet.pid == *pid);
-
-            for packet in video_packets {
-                if let Some(payload) = packet.payload()
-                    && let Some(resolution) = Self::scan_payload_for_sps(&payload, *stream_type)
-                {
-                    debug!(
-                        "Found resolution {}x{} via simple scanning for PID 0x{:04X} {:?}",
-                        resolution.width, resolution.height, pid, stream_type
-                    );
-                    return Some(resolution);
-                }
-            }
-
-            // Second pass: PES reassembly for fragmented SPS
-            // Only collect packets if simple scanning failed
-            if let Some(resolution) = Self::try_pes_reassembly_streaming(
-                packets.clone().filter(|packet| packet.pid == *pid),
-                *stream_type,
-            ) {
-                debug!(
-                    "Found resolution {}x{} via PES reassembly for PID 0x{:04X} {:?}",
-                    resolution.width, resolution.height, pid, stream_type
-                );
-                return Some(resolution);
-            }
-        }
-
-        None
-    }
-
     /// Scan a single TS packet payload for SPS NAL units
     #[inline]
     fn scan_payload_for_sps(payload: &[u8], stream_type: StreamType) -> Option<Resolution> {
@@ -348,44 +298,6 @@ impl ResolutionDetector {
             }
 
             pos = zero_pos + 1;
-        }
-
-        None
-    }
-
-    /// Streaming PES reassembly - processes packets one at a time
-    /// and parses SPS as soon as a complete PES packet is available
-    fn try_pes_reassembly_streaming<'a>(
-        packets: impl Iterator<Item = &'a TsPacketRef>,
-        stream_type: StreamType,
-    ) -> Option<Resolution> {
-        // Pre-allocate with typical PES packet size (reduces reallocations)
-        let mut current_pes = BytesMut::with_capacity(4096);
-        let mut in_pes_packet = false;
-
-        for packet in packets {
-            if let Some(payload) = packet.payload() {
-                if packet.payload_unit_start_indicator {
-                    // New PES packet starting - try to parse the previous one
-                    if in_pes_packet
-                        && current_pes.len() >= 9
-                        && let Some(resolution) = Self::try_parse_pes(&current_pes, stream_type)
-                    {
-                        return Some(resolution);
-                    }
-
-                    in_pes_packet = true;
-                    current_pes.clear();
-                    current_pes.extend_from_slice(&payload);
-                } else if in_pes_packet {
-                    current_pes.extend_from_slice(&payload);
-                }
-            }
-        }
-
-        // Try the last PES packet
-        if in_pes_packet && current_pes.len() >= 9 {
-            return Self::try_parse_pes(&current_pes, stream_type);
         }
 
         None
