@@ -631,8 +631,16 @@ async fn run_desktop_backend_init(
         });
     }
 
-    // Hiding the window on minimize is handled event-driven in the app.run
-    // RunEvent::WindowEvent(Resized) branch, so no polling watcher is spawned.
+    // Tao exposes a reliable resize event for minimization on Windows. Other
+    // desktop targets retain the watcher until Tao exposes a minimize event.
+    #[cfg(all(desktop, not(target_os = "windows")))]
+    {
+        let app_handle = app_handle.clone();
+        let cancellation = container.cancellation_token();
+        tauri::async_runtime::spawn(async move {
+            run_minimize_to_tray_watcher(app_handle, cancellation).await;
+        });
+    }
 }
 
 /// Run the desktop notification listener loop.
@@ -680,6 +688,54 @@ async fn run_desktop_notification_listener(
                     }
                 }
             }
+        }
+    }
+}
+
+/// Watch for minimize events on desktop targets where Tao does not expose one.
+#[cfg(all(desktop, not(target_os = "windows")))]
+async fn run_minimize_to_tray_watcher(
+    app_handle: tauri::AppHandle,
+    cancellation: tokio_util::sync::CancellationToken,
+) {
+    let visible_poll = Duration::from_millis(80);
+    let hidden_poll = Duration::from_millis(5000);
+    let mut last_seen_minimized = false;
+
+    loop {
+        let sleep_for = match app_handle.get_webview_window("main") {
+            Some(window) => match window.is_visible() {
+                Ok(true) => visible_poll,
+                _ => hidden_poll,
+            },
+            None => hidden_poll,
+        };
+
+        tokio::select! {
+            _ = cancellation.cancelled() => {
+                log::debug!("Minimize-to-tray watcher shutting down");
+                break;
+            }
+            _ = tokio::time::sleep(sleep_for) => {}
+        }
+
+        let Some(window) = app_handle.get_webview_window("main") else {
+            continue;
+        };
+
+        if !window.is_visible().unwrap_or(false) {
+            last_seen_minimized = false;
+            continue;
+        }
+
+        let minimized = window.is_minimized().unwrap_or(false);
+        if minimized && !last_seen_minimized {
+            if let Err(error) = window.hide() {
+                log::warn!("Failed to hide minimized window: {}", error);
+            }
+            last_seen_minimized = true;
+        } else if !minimized {
+            last_seen_minimized = false;
         }
     }
 }
@@ -947,20 +1003,24 @@ pub fn run() {
             return;
         }
 
-        // Minimize button hides the main window to the tray. Resized fires when
-        // the window enters the minimized state; is_minimized() gates the hide
-        // so ordinary resize/maximize events pass through untouched.
-        if let tauri::RunEvent::WindowEvent {
-            label,
-            event: tauri::WindowEvent::Resized(_),
-            ..
-        } = &event
-            && label == "main"
-            && let Some(window) = app_handle.get_webview_window("main")
-            && window.is_minimized().unwrap_or(false)
+        #[cfg(target_os = "windows")]
         {
-            let _ = window.hide();
-            return;
+            // On Windows, WM_SIZE follows the minimize command after Tao has
+            // updated its minimized state, so this path can remain event-driven.
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Resized(_),
+                ..
+            } = &event
+                && label == "main"
+                && let Some(window) = app_handle.get_webview_window("main")
+                && window.is_minimized().unwrap_or(false)
+            {
+                if let Err(error) = window.hide() {
+                    log::warn!("Failed to hide minimized window: {}", error);
+                }
+                return;
+            }
         }
 
         if let tauri::RunEvent::ExitRequested { api, .. } = event {

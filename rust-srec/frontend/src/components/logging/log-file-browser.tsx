@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -27,7 +27,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import {
   FileText,
@@ -37,29 +36,16 @@ import {
   Archive,
   X,
   Loader2,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBytes } from '@/lib/format';
 import { BASE_URL } from '@/utils/env';
 
-interface DownloadState {
-  isDownloading: boolean;
-  progress: number;
-  filename?: string;
-  error?: string;
-  completed?: boolean;
-}
-
 export function LogFileBrowser() {
   const { i18n } = useLingui();
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [downloadState, setDownloadState] = useState<DownloadState>({
-    isDownloading: false,
-    progress: 0,
-  });
+  const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
 
   // Format dates for API (YYYY-MM-DD)
   const fromDate = dateRange?.from
@@ -85,13 +71,7 @@ export function LogFileBrowser() {
 
   // Download all logs as an archive
   const handleDownloadArchive = useCallback(async () => {
-    setDownloadState({
-      isDownloading: true,
-      progress: 0,
-      filename: undefined,
-      error: undefined,
-      completed: false,
-    });
+    setIsDownloadingArchive(true);
 
     try {
       // Get download token
@@ -112,28 +92,18 @@ export function LogFileBrowser() {
       link.click();
       document.body.removeChild(link);
 
-      setDownloadState({
-        isDownloading: false,
-        progress: 100,
-        completed: true,
-      });
-
-      toast.success(i18n._(msg`Logs downloaded successfully`));
-
-      // Reset state after a delay
-      setTimeout(() => {
-        setDownloadState({ isDownloading: false, progress: 0 });
-      }, 3000);
+      // Anchor downloads do not expose response or completion status. The
+      // browser download UI owns progress after navigation is dispatched.
+      toast.info(i18n._(msg`Downloading...`));
     } catch (error: unknown) {
       console.error('Download failed:', error);
       const errorMessage =
-        error instanceof Error ? error.message : 'Download failed';
-      setDownloadState({
-        isDownloading: false,
-        progress: 0,
-        error: errorMessage,
-      });
-      toast.error(errorMessage || i18n._(msg`Failed to download logs`));
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to download logs`);
+      toast.error(errorMessage);
+    } finally {
+      setIsDownloadingArchive(false);
     }
   }, [fromDate, toDate, i18n]);
 
@@ -251,10 +221,10 @@ export function LogFileBrowser() {
               {/* Download All Button */}
               <Button
                 onClick={handleDownloadArchive}
-                disabled={downloadState.isDownloading || !data?.items?.length}
+                disabled={isDownloadingArchive || !data?.items?.length}
                 className="gap-2"
               >
-                {downloadState.isDownloading ? (
+                {isDownloadingArchive ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="h-4 w-4" />
@@ -263,50 +233,6 @@ export function LogFileBrowser() {
               </Button>
             </div>
           </div>
-
-          {/* Download Progress */}
-          <AnimatePresence>
-            {(downloadState.isDownloading || downloadState.completed) && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="p-4 rounded-lg bg-muted/30 border border-border/40 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      {downloadState.completed ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      ) : downloadState.error ? (
-                        <AlertCircle className="h-4 w-4 text-destructive" />
-                      ) : (
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      )}
-                      <span className="font-medium">
-                        {downloadState.completed ? (
-                          <Trans>Download complete</Trans>
-                        ) : downloadState.error ? (
-                          downloadState.error
-                        ) : (
-                          <Trans>Downloading...</Trans>
-                        )}
-                      </span>
-                    </div>
-                    {downloadState.filename && (
-                      <span className="text-muted-foreground text-xs">
-                        {downloadState.filename}
-                      </span>
-                    )}
-                  </div>
-                  <Progress value={downloadState.progress} className="h-2" />
-                  <div className="text-xs text-muted-foreground text-right">
-                    {downloadState.progress}%
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </CardHeader>
 
