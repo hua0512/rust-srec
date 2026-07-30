@@ -46,3 +46,4 @@ desktop.ini
 *.db
 *.db-wal
 *.db-shm
+mesio.log*

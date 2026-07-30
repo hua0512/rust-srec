@@ -10,6 +10,96 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
+/// Build the `WHERE ...` clause (empty string when no filter is set) shared by
+/// `list_jobs_filtered` and `list_jobs_page_filtered`. The placeholder order here must match the
+/// bind order in `bind_job_filters!` exactly.
+fn job_filter_where_clause(filters: &JobFilters) -> String {
+    let mut conditions: Vec<String> = Vec::new();
+
+    if filters.status.is_some() {
+        conditions.push("status = ?".to_string());
+    }
+    if filters.streamer_id.is_some() {
+        conditions.push("streamer_id = ?".to_string());
+    }
+    if filters.session_id.is_some() {
+        conditions.push("session_id = ?".to_string());
+    }
+    if filters.pipeline_id.is_some() {
+        conditions.push("pipeline_id = ?".to_string());
+    }
+    if filters.from_date.is_some() {
+        conditions.push("created_at >= ?".to_string());
+    }
+    if filters.to_date.is_some() {
+        conditions.push("created_at <= ?".to_string());
+    }
+    if filters.job_type.is_some() {
+        conditions.push("job_type = ?".to_string());
+    }
+    if let Some(job_types) = &filters.job_types
+        && !job_types.is_empty()
+    {
+        let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        conditions.push(format!("job_type IN ({})", placeholders));
+    }
+    if filters.search.is_some() {
+        conditions.push(
+            "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)".to_string(),
+        );
+    }
+
+    if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    }
+}
+
+/// Apply the `JobFilters` binds to a query builder in the exact order the placeholders appear in
+/// `job_filter_where_clause`. A macro (rather than a function) is used so it works for both
+/// `query_scalar` (count) and `query_as` (data) builders without a shared trait bound.
+macro_rules! bind_job_filters {
+    ($query:expr, $filters:expr) => {{
+        let mut query = $query;
+        if let Some(status) = &$filters.status {
+            query = query.bind(status.as_str());
+        }
+        if let Some(streamer_id) = &$filters.streamer_id {
+            query = query.bind(streamer_id);
+        }
+        if let Some(session_id) = &$filters.session_id {
+            query = query.bind(session_id);
+        }
+        if let Some(pipeline_id) = &$filters.pipeline_id {
+            query = query.bind(pipeline_id);
+        }
+        if let Some(from_date) = &$filters.from_date {
+            query = query.bind(from_date.timestamp_millis());
+        }
+        if let Some(to_date) = &$filters.to_date {
+            query = query.bind(to_date.timestamp_millis());
+        }
+        if let Some(job_type) = &$filters.job_type {
+            query = query.bind(job_type);
+        }
+        if let Some(job_types) = &$filters.job_types {
+            for jt in job_types {
+                query = query.bind(jt);
+            }
+        }
+        if let Some(search) = &$filters.search {
+            let pattern = format!("%{}%", search);
+            query = query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
+        query
+    }};
+}
+
 /// Job repository trait.
 #[async_trait]
 pub trait JobRepository: Send + Sync {
@@ -778,49 +868,7 @@ impl JobRepository for SqlxJobRepository {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<JobDbModel>, u64)> {
-        // Build dynamic WHERE clause
-        let mut conditions: Vec<String> = Vec::new();
-
-        if filters.status.is_some() {
-            conditions.push("status = ?".to_string());
-        }
-        if filters.streamer_id.is_some() {
-            conditions.push("streamer_id = ?".to_string());
-        }
-        if filters.session_id.is_some() {
-            conditions.push("session_id = ?".to_string());
-        }
-        if filters.pipeline_id.is_some() {
-            conditions.push("pipeline_id = ?".to_string());
-        }
-        if filters.from_date.is_some() {
-            conditions.push("created_at >= ?".to_string());
-        }
-        if filters.to_date.is_some() {
-            conditions.push("created_at <= ?".to_string());
-        }
-        if filters.job_type.is_some() {
-            conditions.push("job_type = ?".to_string());
-        }
-        if let Some(job_types) = &filters.job_types
-            && !job_types.is_empty()
-        {
-            let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            conditions.push(format!("job_type IN ({})", placeholders));
-        }
-
-        if filters.search.is_some() {
-            conditions.push(
-                "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
-                    .to_string(),
-            );
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
+        let where_clause = job_filter_where_clause(filters);
 
         // Count query
         let count_sql = format!("SELECT COUNT(*) as count FROM job {}", where_clause);
@@ -832,86 +880,13 @@ impl JobRepository for SqlxJobRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-
-        // Bind parameters for count query
-        if let Some(status) = &filters.status {
-            count_query = count_query.bind(status.as_str());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            count_query = count_query.bind(streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            count_query = count_query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &filters.pipeline_id {
-            count_query = count_query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            count_query = count_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            count_query = count_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &filters.job_type {
-            count_query = count_query.bind(job_type);
-        }
-        if let Some(job_types) = &filters.job_types {
-            for jt in job_types {
-                count_query = count_query.bind(jt);
-            }
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            count_query = count_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
+        let count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
+        let count_query = bind_job_filters!(count_query, filters);
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
-
-        // Bind parameters for data query
-        if let Some(status) = &filters.status {
-            data_query = data_query.bind(status.as_str());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            data_query = data_query.bind(streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            data_query = data_query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &filters.pipeline_id {
-            data_query = data_query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &filters.job_type {
-            data_query = data_query.bind(job_type);
-        }
-        if let Some(job_types) = &filters.job_types {
-            for jt in job_types {
-                data_query = data_query.bind(jt);
-            }
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            data_query = data_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
-        // Bind pagination parameters
+        let data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
+        let mut data_query = bind_job_filters!(data_query, filters);
         data_query = data_query.bind(pagination.limit as i64);
         data_query = data_query.bind(pagination.offset as i64);
 
@@ -925,92 +900,16 @@ impl JobRepository for SqlxJobRepository {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<Vec<JobDbModel>> {
-        // Build dynamic WHERE clause (matches list_jobs_filtered).
-        let mut conditions: Vec<String> = Vec::new();
-
-        if filters.status.is_some() {
-            conditions.push("status = ?".to_string());
-        }
-        if filters.streamer_id.is_some() {
-            conditions.push("streamer_id = ?".to_string());
-        }
-        if filters.session_id.is_some() {
-            conditions.push("session_id = ?".to_string());
-        }
-        if filters.pipeline_id.is_some() {
-            conditions.push("pipeline_id = ?".to_string());
-        }
-        if filters.from_date.is_some() {
-            conditions.push("created_at >= ?".to_string());
-        }
-        if filters.to_date.is_some() {
-            conditions.push("created_at <= ?".to_string());
-        }
-        if filters.job_type.is_some() {
-            conditions.push("job_type = ?".to_string());
-        }
-        if let Some(job_types) = &filters.job_types
-            && !job_types.is_empty()
-        {
-            let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            conditions.push(format!("job_type IN ({})", placeholders));
-        }
-
-        if filters.search.is_some() {
-            conditions.push(
-                "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
-                    .to_string(),
-            );
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
+        // Shares the clause/bind construction with list_jobs_filtered's data query.
+        let where_clause = job_filter_where_clause(filters);
 
         let data_sql = format!(
             "SELECT * FROM job {} ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?",
             where_clause
         );
 
-        let mut data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
-
-        if let Some(status) = &filters.status {
-            data_query = data_query.bind(status.as_str());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            data_query = data_query.bind(streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            data_query = data_query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &filters.pipeline_id {
-            data_query = data_query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &filters.job_type {
-            data_query = data_query.bind(job_type);
-        }
-        if let Some(job_types) = &filters.job_types {
-            for jt in job_types {
-                data_query = data_query.bind(jt);
-            }
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            data_query = data_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
+        let data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
+        let mut data_query = bind_job_filters!(data_query, filters);
         data_query = data_query.bind(pagination.limit as i64);
         data_query = data_query.bind(pagination.offset as i64);
 
