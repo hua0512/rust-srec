@@ -54,7 +54,6 @@ Each pipeline step is executed by a specialized processor:
 | `compression` | Transcodes video | Codec and quality settings |
 | `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
 | `copy_move` | Copies or moves local files | Destination and operation settings |
-| `tdl` | Telegram upload through tdl | `args` |
 | `metadata` | Writes metadata (nfo, json) | - |
 | `delete` | Automatically cleans up files | - |
 | `execute` | Runs a custom Shell command/script | `command`, `scan_output_dir`, `scan_extension` |

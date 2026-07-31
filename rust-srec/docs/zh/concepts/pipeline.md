@@ -54,7 +54,6 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 | `compression` | 视频转码 | 编解码器与质量设置 |
 | `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `args` |
 | `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
-| `tdl` | 通过 tdl 上传到 Telegram | `args` |
 | `metadata` | 写入元数据（nfo, json） | - |
 | `delete` | 自动清理中间文件 | - |
 | `execute` | 执行自定义 Shell 脚本 | `command`, `scan_output_dir`, `scan_extension` |

@@ -4,7 +4,7 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — no changes staged yet for the next release
+- [`unreleased`](./unreleased.md) — rebuilt add/edit streamer pages with the site derived from the link, per-streamer platform options and Streamlink stream lookup, visible uploads with a record of where files went, working email notifications, per-channel notification language, plus a broad reliability pass over recording, monitoring, pipelines, the database and the web interface
 
 ## Latest release
 
