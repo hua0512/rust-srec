@@ -1,5 +1,5 @@
 use flv::{
-    audio::{AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
+    audio::{AudioCodec, AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
     header::FlvHeader,
     resolution::Resolution,
     tag::FlvTag,
@@ -90,7 +90,7 @@ pub struct FlvStats {
     pub has_video: bool,
     pub has_audio: bool,
     pub video_stats: Option<VideoStats>,
-    pub audio_codec: Option<SoundFormat>,
+    pub audio_codec: Option<AudioCodec>,
 
     pub tag_count: u32,
     pub audio_tag_count: u32,
@@ -285,7 +285,8 @@ impl FlvStats {
             writeln!(
                 f,
                 "    Audio codec: {:?}",
-                self.audio_codec.unwrap_or(SoundFormat::Aac)
+                self.audio_codec
+                    .unwrap_or(AudioCodec::Legacy(SoundFormat::Aac))
             )?;
             writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
             writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
@@ -474,7 +475,6 @@ impl FlvAnalyzer {
                     audio_tag_utils.sound_size(),
                     audio_tag_utils.sound_type()
                 );
-                let sound_format = audio_tag_utils.sound_format().unwrap_or(SoundFormat::Aac);
                 let sample_rate = audio_tag_utils
                     .sound_rate()
                     .map(|s| match s {
@@ -501,7 +501,10 @@ impl FlvAnalyzer {
                 self.stats.audio_sample_rate = sample_rate;
                 self.stats.audio_sample_size = sample_size;
                 self.stats.audio_stereo = stereo;
-                self.stats.audio_codec = Some(sound_format);
+                // `get_audio_codec` resolves enhanced (ExHeader) tags to their
+                // FourCC; `AudioTagUtils::sound_format` alone would record the
+                // `SoundFormat::ExHeader` marker instead of the codec.
+                self.stats.audio_codec = tag.get_audio_codec();
             }
         }
 
@@ -685,6 +688,31 @@ mod tests {
                 .as_ref()
                 .and_then(|stats| stats.video_codec),
             Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn detects_enhanced_opus_codec() {
+        use flv::audio::AudioFourCC;
+
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(true, false))
+            .unwrap();
+        // ExHeader + SequenceStart with the Opus FourCC.
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Audio,
+            false,
+            Bytes::from_static(b"\x90Opus\x01"),
+        );
+
+        analyzer.analyze_tag(&tag).unwrap();
+
+        assert_eq!(
+            analyzer.build_stats().unwrap().audio_codec,
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
         );
     }
 

@@ -2,7 +2,7 @@ use crate::amf::model::{AmfScriptData, KeyframeData};
 use crate::analyzer::FlvStats;
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError};
 use byteorder::{BigEndian, WriteBytesExt};
-use flv::{audio::SoundFormat, video::VideoCodec};
+use flv::{audio::AudioCodec, video::VideoCodec};
 use std::borrow::Cow;
 use tracing::debug;
 
@@ -147,9 +147,9 @@ impl OnMetaDataBuilder {
         self
     }
 
-    /// Sets the audio codec ID.
-    pub fn with_audio_codec(mut self, codec: SoundFormat) -> Self {
-        self.data.audiocodecid = Some(codec);
+    /// Sets the legacy or enhanced audio codec identifier.
+    pub fn with_audio_codec(mut self, codec: impl Into<AudioCodec>) -> Self {
+        self.data.audiocodecid = Some(codec.into());
         self
     }
 
@@ -469,7 +469,7 @@ impl OnMetaDataBuilder {
             "audiocodecid" => self
                 .data
                 .audiocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .map(|codec| Amf0Value::Number(codec.as_u32() as f64))
                 .or(Some(Amf0Value::Number(0.0))),
             "audiodatarate" => self
                 .data
@@ -708,6 +708,7 @@ mod tests {
     use super::*;
     use crate::analyzer::VideoStats;
     use amf0::Amf0Decoder;
+    use flv::audio::AudioFourCC;
     use flv::script::ScriptData;
     use flv::video::{VideoCodec, VideoCodecId, VideoFourCC};
 
@@ -740,6 +741,38 @@ mod tests {
         assert_eq!(
             codec,
             Some(&Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64))
+        );
+    }
+
+    #[test]
+    fn preserves_numeric_opus_fourcc_metadata() {
+        let properties = [(
+            Cow::Borrowed("audiocodecid"),
+            Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64),
+        )];
+        let model = AmfScriptData::from_amf_object_ref(&properties).unwrap();
+
+        assert_eq!(
+            model.audiocodecid,
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "audiocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(
+            codec,
+            Some(&Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64))
         );
     }
 

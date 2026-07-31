@@ -5,7 +5,7 @@ use bytes::{Buf, Bytes};
 use bytes_util::BytesCursorExt;
 use tracing::{debug, trace};
 
-use crate::audio::{AudioFourCC, AudioPacketType, SoundFormat};
+use crate::audio::{AudioCodec, AudioFourCC, AudioPacketType, SoundFormat};
 use crate::resolution::Resolution;
 use crate::video::{EnhancedPacketType, VideoCodec, VideoCodecId, VideoFourCC, VideoFrameType};
 use crate::{framing, framing::ParsedTagHeader};
@@ -574,6 +574,32 @@ impl FlvTag {
         video_codec_from_payload(&self.data)
     }
 
+    /// Returns the codec identifier carried by this audio tag.
+    ///
+    /// Legacy tags return [`AudioCodec::Legacy`] with their [`SoundFormat`],
+    /// while enhanced (ExHeader) tags return [`AudioCodec::Enhanced`] with
+    /// their FourCC value.
+    pub fn get_audio_codec(&self) -> Option<AudioCodec> {
+        if self.tag_type != FlvTagType::Audio || self.is_filtered {
+            return None;
+        }
+
+        let first_byte = *self.data.first()?;
+        let sound_format = SoundFormat::try_from(first_byte >> 4).ok()?;
+        if sound_format != SoundFormat::ExHeader {
+            return Some(AudioCodec::Legacy(sound_format));
+        }
+
+        parse_ex_packet_header(
+            &self.data,
+            AudioPacketType::Multitrack as u8,
+            AudioPacketType::ModEx as u8,
+        )?
+        .four_cc_bytes
+        .and_then(|bytes| AudioFourCC::from_u32(u32::from_be_bytes(bytes)).ok())
+        .map(AudioCodec::Enhanced)
+    }
+
     pub fn get_audio_codec_id(&self) -> Option<SoundFormat> {
         if self.tag_type != FlvTagType::Audio {
             return None;
@@ -831,6 +857,27 @@ mod tests {
     }
 
     #[test]
+    fn returns_legacy_and_enhanced_audio_codecs() {
+        let legacy = audio_tag(&[0xAF, 0x00]);
+        assert_eq!(
+            legacy.get_audio_codec(),
+            Some(AudioCodec::Legacy(SoundFormat::Aac))
+        );
+
+        let enhanced = audio_tag(&[0x91, b'O', b'p', b'u', b's', 0xAA]);
+        assert_eq!(
+            enhanced.get_audio_codec(),
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+
+        let multitrack = audio_tag(&[0x95, 0x00, b'm', b'p', b'4', b'a', 0x00, 0x12, 0x10]);
+        assert_eq!(
+            multitrack.get_audio_codec(),
+            Some(AudioCodec::Enhanced(AudioFourCC::Aac))
+        );
+    }
+
+    #[test]
     fn filtered_payload_has_no_classification() {
         let tag = FlvTag::new(
             0,
@@ -1061,6 +1108,7 @@ mod tests {
         let audio = audio_tag(&[]);
         assert!(!audio.is_audio_sequence_header());
         assert_eq!(audio.get_audio_codec_id(), None);
+        assert_eq!(audio.get_audio_codec(), None);
 
         // One-byte legacy AVC tag: too short to carry an AVCPacketType.
         let short = video_tag(&[0x17]);

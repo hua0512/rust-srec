@@ -382,6 +382,21 @@ impl AudioFourCC {
         })
     }
 
+    /// Returns the canonical 32-bit big-endian value of the FourCC.
+    ///
+    /// Matches `as_bytes`; `from_u32` additionally accepts the alternate
+    /// spellings ("eac-", "aac\0") as input.
+    pub const fn as_u32(&self) -> u32 {
+        match self {
+            AudioFourCC::Ac3 => 0x61632D33,  // "ac-3"
+            AudioFourCC::Eac3 => 0x65616333, // "eac3"
+            AudioFourCC::Opus => 0x4F707573, // "Opus"
+            AudioFourCC::Mp3 => 0x2E6D7033,  // ".mp3"
+            AudioFourCC::Flac => 0x664C6143, // "fLaC"
+            AudioFourCC::Aac => 0x6D703461,  // "mp4a"
+        }
+    }
+
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
             AudioFourCC::Ac3 => b"ac-3", // Use consistent representation
@@ -391,6 +406,62 @@ impl AudioFourCC {
             AudioFourCC::Flac => b"fLaC", // Match spec example
             AudioFourCC::Aac => b"mp4a",  // Common FourCC
         }
+    }
+}
+
+/// Audio codec identifier used by legacy and enhanced FLV tags.
+///
+/// Legacy FLV stores a numeric [`SoundFormat`], while enhanced FLV stores an
+/// [`AudioFourCC`]. Keeping both representations prevents enhanced codecs such
+/// as Opus from being flattened into the [`SoundFormat::ExHeader`] marker.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AudioCodec {
+    Legacy(SoundFormat),
+    Enhanced(AudioFourCC),
+}
+
+impl AudioCodec {
+    /// Returns the numeric representation used by FLV `onMetaData`.
+    ///
+    /// Legacy codecs use their numeric sound format. Enhanced codecs use the
+    /// big-endian numeric value of their FourCC, as required by Enhanced RTMP.
+    pub const fn as_u32(&self) -> u32 {
+        match self {
+            Self::Legacy(sound_format) => *sound_format as u8 as u32,
+            Self::Enhanced(four_cc) => four_cc.as_u32(),
+        }
+    }
+}
+
+impl From<SoundFormat> for AudioCodec {
+    fn from(codec: SoundFormat) -> Self {
+        Self::Legacy(codec)
+    }
+}
+
+impl From<AudioFourCC> for AudioCodec {
+    fn from(codec: AudioFourCC) -> Self {
+        Self::Enhanced(codec)
+    }
+}
+
+impl TryFrom<u32> for AudioCodec {
+    type Error = io::Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if let Ok(value) = u8::try_from(value)
+            && let Ok(sound_format) = SoundFormat::try_from(value)
+        {
+            return Ok(Self::Legacy(sound_format));
+        }
+
+        AudioFourCC::from_u32(value).map(Self::Enhanced)
+    }
+}
+
+impl From<AudioCodec> for u32 {
+    fn from(codec: AudioCodec) -> Self {
+        codec.as_u32()
     }
 }
 
@@ -459,110 +530,50 @@ impl AudioData {
         let audio_packet = match sound_format {
             // New in E-RTMP v2, new header
             SoundFormat::ExHeader => {
-                // Switch to the new fourcc mode
-                let audio_packet_type = AudioPacketType::try_from(sound_format_byte & 0x0F)
-                    .map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidData, "Invalid audio packet type")
-                    })?;
+                let mut packet_type = AudioPacketType::try_from(sound_format_byte & 0x0F)?;
 
-                match audio_packet_type {
-                    AudioPacketType::ModEx => {
-                        // Process ModEx packets in a loop until we get a non-ModEx packet type
-                        let mut _final_audio_packet_type = audio_packet_type;
-                        let mut _audio_timestamp_nano_offset = 0u32;
-
-                        // Determine the size of the packet ModEx data (ranging from 1 to 256 bytes)
-                        let mod_ex_data_size = (reader.read_u8()? as usize) + 1;
-
-                        // If maximum 8-bit size is not sufficient, use a 16-bit value
-                        let mod_ex_data_size = if mod_ex_data_size == 256 {
-                            (reader.read_u16::<BigEndian>()? as usize) + 1
-                        } else {
-                            mod_ex_data_size
-                        };
-
-                        // Fetch the packet ModEx data based on its determined size
-                        let mod_ex_data = reader.extract_bytes(mod_ex_data_size)?;
-
-                        // Check the length of mod_ex_data once before entering the loop
-                        if mod_ex_data.len() >= 3 {
-                            _audio_timestamp_nano_offset = ((mod_ex_data[0] as u32) << 16)
-                                | ((mod_ex_data[1] as u32) << 8)
-                                | (mod_ex_data[2] as u32);
-                            // Note: The audio_timestamp_nano_offset could be stored in the AudioData struct
-                            // and used for precise timing calculations
-                        }
-
-                        loop {
-                            // Fetch the AudioPacketModExType
-                            let next_byte = reader.read_u8()?;
-                            let _audio_packet_mod_ex_type =
-                                AudioPacketModExType::try_from(next_byte >> 4)?;
-                            let next_audio_packet_type =
-                                AudioPacketType::try_from(next_byte & 0x0F)?;
-
-                            // Break the loop if the next packet type is not ModEx
-                            if next_audio_packet_type != AudioPacketType::ModEx {
-                                _final_audio_packet_type = next_audio_packet_type;
-                                break;
-                            }
-                        }
-
-                        // Continue with the final non-ModEx audio packet type
-                        let mut _is_audio_multitrack = false;
-                        let mut _audio_multitrack_type = AvMultitrackType::OneTrack;
-                        let mut _audio_four_cc = None;
-
-                        if _final_audio_packet_type == AudioPacketType::Multitrack {
-                            _is_audio_multitrack = true;
-
-                            // Read the multitrack type
-                            let multitrack_type_byte = reader.read_u8()?;
-                            _audio_multitrack_type =
-                                AvMultitrackType::try_from(multitrack_type_byte & 0x0F)?;
-
-                            // Fetch AudioPacketType for all audio tracks in the audio message
-                            let packet_type_byte = reader.read_u8()?;
-                            let new_packet_type =
-                                AudioPacketType::try_from(packet_type_byte & 0x0F)?;
-
-                            // Make sure it's not multitrack again
-                            if new_packet_type == AudioPacketType::Multitrack {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    "Nested multitrack is not allowed",
-                                ));
-                            }
-
-                            _final_audio_packet_type = new_packet_type;
-
-                            if _audio_multitrack_type != AvMultitrackType::ManyTracksManyCodecs {
-                                // The tracks are encoded with the same codec, read the FOURCC for them
-                                let four_cc = reader.read_u32::<BigEndian>()?;
-                                _audio_four_cc = match AudioFourCC::from_u32(four_cc) {
-                                    Ok(four_cc) => Some(four_cc),
-                                    Err(e) => {
-                                        return Err(io::Error::new(
-                                            io::ErrorKind::InvalidData,
-                                            format!("Invalid FOURCC value: {e}"),
-                                        ));
-                                    }
-                                };
-                            }
-                        } else {
-                            // Not multitrack, read the FOURCC
-                            let four_cc = reader.read_u32::<BigEndian>()?;
-                            _audio_four_cc = Some(AudioFourCC::from_u32(four_cc)?);
-                        }
-
-                        // Now we're ready to process the audio body based on final_audio_packet_type
-                        // For now, we'll just return a placeholder
-
-                        AudioPacket::AudioPacketType(_final_audio_packet_type)
-                    }
-                    // Other audio packet types, not implemented yet
-                    other => AudioPacket::AudioPacketType(other),
+                // ModEx records carry side-band data (e.g. an
+                // `AudioPacketModExType::TimestampOffsetNano` payload) ahead of
+                // the real packet type; skip each `[size][data]` record and
+                // take the packet type from the low nibble of its trailing
+                // byte.
+                while packet_type == AudioPacketType::ModEx {
+                    // modExDataSize is UI8 + 1, escaping to UI16 + 1 when the
+                    // UI8 is 255.
+                    let mod_ex_data_size = (reader.read_u8()? as usize) + 1;
+                    let mod_ex_data_size = if mod_ex_data_size == 256 {
+                        (reader.read_u16::<BigEndian>()? as usize) + 1
+                    } else {
+                        mod_ex_data_size
+                    };
+                    reader.extract_bytes(mod_ex_data_size)?;
+                    packet_type = AudioPacketType::try_from(reader.read_u8()? & 0x0F)?;
                 }
+
+                if packet_type == AudioPacketType::Multitrack {
+                    // One byte: `AvMultitrackType` nibble + per-track packet
+                    // type nibble.
+                    let multitrack_byte = reader.read_u8()?;
+                    let multitrack_type = AvMultitrackType::try_from(multitrack_byte >> 4)?;
+                    packet_type = AudioPacketType::try_from(multitrack_byte & 0x0F)?;
+                    if packet_type == AudioPacketType::Multitrack {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "nested multitrack is not allowed",
+                        ));
+                    }
+
+                    // OneTrack/ManyTracks share one FourCC ahead of the track
+                    // entries; ManyTracksManyCodecs repeats it per track, so
+                    // its track entries stay in the body.
+                    if multitrack_type != AvMultitrackType::ManyTracksManyCodecs {
+                        AudioFourCC::from_u32(reader.read_u32::<BigEndian>()?)?;
+                    }
+                } else {
+                    AudioFourCC::from_u32(reader.read_u32::<BigEndian>()?)?;
+                }
+
+                AudioPacket::AudioPacketType(packet_type)
             }
             // Legacy audio packet
             _ => AudioPacket::Legacy(AudioLegacyPacket::from_byte(sound_format_byte)?),
@@ -939,5 +950,98 @@ mod tests {
         assert_eq!(result[1], 0x02);
         assert_eq!(result[2], 0x03);
         assert_eq!(cursor.position(), 3);
+    }
+
+    #[test]
+    fn test_audio_codec_numeric_representation() {
+        let cases = [
+            (AudioCodec::Legacy(SoundFormat::Aac), 10),
+            (AudioCodec::Legacy(SoundFormat::Mp3), 2),
+            (AudioCodec::Enhanced(AudioFourCC::Ac3), 0x6163_2D33),
+            (AudioCodec::Enhanced(AudioFourCC::Eac3), 0x6561_6333),
+            (AudioCodec::Enhanced(AudioFourCC::Opus), 0x4F70_7573),
+            (AudioCodec::Enhanced(AudioFourCC::Mp3), 0x2E6D_7033),
+            (AudioCodec::Enhanced(AudioFourCC::Flac), 0x664C_6143),
+            (AudioCodec::Enhanced(AudioFourCC::Aac), 0x6D70_3461),
+        ];
+
+        for (codec, value) in cases {
+            assert_eq!(codec.as_u32(), value);
+            assert_eq!(AudioCodec::try_from(value).unwrap(), codec);
+        }
+        // 12 and 13 are unassigned sound formats and no FourCC.
+        assert!(AudioCodec::try_from(12).is_err());
+    }
+
+    #[test]
+    fn test_enhanced_demux_consumes_four_cc() {
+        // ExHeader + SequenceStart, "mp4a", then an AudioSpecificConfig.
+        let mut reader = Cursor::new(Bytes::from_static(&[
+            0x90, b'm', b'p', b'4', b'a', 0x12, 0x10,
+        ]));
+        let audio_data = AudioData::demux(&mut reader, None).unwrap();
+
+        assert_eq!(audio_data.header.sound_format, SoundFormat::ExHeader);
+        assert_eq!(
+            audio_data.header.packet,
+            AudioPacket::AudioPacketType(AudioPacketType::SequenceStart)
+        );
+        assert_eq!(
+            audio_data.body,
+            AudioDataBody::Unknown {
+                data: Bytes::from_static(&[0x12, 0x10]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_enhanced_demux_skips_mod_ex_records() {
+        // ModEx record = size byte 0x02 (3 bytes of data), the data, then
+        // TimestampOffsetNano + CodedFrames; "Opus" FourCC and the payload
+        // follow.
+        let mut reader = Cursor::new(Bytes::from_static(&[
+            0x97, 0x02, 0x00, 0x00, 0x01, 0x01, b'O', b'p', b'u', b's', 0xAA, 0xBB,
+        ]));
+        let audio_data = AudioData::demux(&mut reader, None).unwrap();
+
+        assert_eq!(
+            audio_data.header.packet,
+            AudioPacket::AudioPacketType(AudioPacketType::CodecFrames)
+        );
+        assert_eq!(
+            audio_data.body,
+            AudioDataBody::Unknown {
+                data: Bytes::from_static(&[0xAA, 0xBB]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_enhanced_demux_multitrack_without_mod_ex() {
+        // ExHeader + Multitrack, then ManyTracks + SequenceStart in one byte,
+        // the shared FourCC, and the track entries as raw body.
+        let mut reader = Cursor::new(Bytes::from_static(&[
+            0x95, 0x10, b'm', b'p', b'4', b'a', 0x00, 0x00, 0x00, 0x02, 0x12, 0x10,
+        ]));
+        let audio_data = AudioData::demux(&mut reader, None).unwrap();
+
+        assert_eq!(
+            audio_data.header.packet,
+            AudioPacket::AudioPacketType(AudioPacketType::SequenceStart)
+        );
+        assert_eq!(
+            audio_data.body,
+            AudioDataBody::Unknown {
+                data: Bytes::from_static(&[0x00, 0x00, 0x00, 0x02, 0x12, 0x10]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_enhanced_demux_rejects_nested_multitrack() {
+        // Multitrack whose per-track packet type is Multitrack again.
+        let mut reader = Cursor::new(Bytes::from_static(&[0x95, 0x05, b'm', b'p', b'4', b'a']));
+
+        assert!(AudioData::demux(&mut reader, None).is_err());
     }
 }

@@ -352,10 +352,16 @@ impl SplitOperator {
     /// For AAC, parses AudioSpecificConfig to extract sample rate and channels.
     /// For other codecs, returns the codec name only.
     fn extract_audio_codec_info(tag: &FlvTag, signature: u32) -> AudioCodecInfo {
-        let codec_name = tag
-            .get_audio_codec_id()
-            .map(|sf| format!("{sf:?}"))
-            .unwrap_or_else(|| "unknown".to_string());
+        use flv::audio::AudioCodec;
+
+        // `AudioFourCC`'s Debug names line up with `SoundFormat`'s (e.g.
+        // "Aac", "Mp3"), so an enhanced tag reports the same codec string a
+        // legacy tag with the equivalent format would, instead of "ExHeader".
+        let codec_name = match tag.get_audio_codec() {
+            Some(AudioCodec::Legacy(sound_format)) => format!("{sound_format:?}"),
+            Some(AudioCodec::Enhanced(four_cc)) => format!("{four_cc:?}"),
+            None => "unknown".to_string(),
+        };
 
         let data = tag.data().as_ref();
 

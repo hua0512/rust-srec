@@ -1,6 +1,6 @@
 use amf0::{Amf0Value, Amf0WriteError};
 use flv::{
-    audio::SoundFormat,
+    audio::{AudioCodec, AudioFourCC},
     video::{VideoCodec, VideoFourCC},
 };
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ pub struct AmfScriptData {
     pub videodatarate: Option<f64>,
 
     // Audio Properties
-    pub audiocodecid: Option<SoundFormat>,
+    pub audiocodecid: Option<AudioCodec>,
     pub audiodatarate: Option<f64>,
     pub audiosamplerate: Option<f64>,
     pub audiosamplesize: Option<f64>,
@@ -100,6 +100,22 @@ fn parse_video_codec(value: &Amf0Value<'_>) -> Option<VideoCodec> {
     VideoFourCC::try_from(bytes).ok().map(VideoCodec::Enhanced)
 }
 
+fn parse_audio_codec(value: &Amf0Value<'_>) -> Option<AudioCodec> {
+    if let Some(value) = value.as_number()
+        && value.is_finite()
+        && value.fract() == 0.0
+        && (0.0..=u32::MAX as f64).contains(&value)
+    {
+        return AudioCodec::try_from(value as u32).ok();
+    }
+
+    // Some origins emit a FourCC string despite Enhanced RTMP requiring a number.
+    let bytes = <[u8; 4]>::try_from(value.as_str()?.as_bytes()).ok()?;
+    AudioFourCC::from_u32(u32::from_be_bytes(bytes))
+        .ok()
+        .map(AudioCodec::Enhanced)
+}
+
 impl AmfScriptData {
     pub fn from_amf_object_ref(
         obj: &[(impl AsRef<str>, Amf0Value<'_>)],
@@ -115,11 +131,7 @@ impl AmfScriptData {
                 "framerate" => data.framerate = value.as_number(),
                 "videocodecid" => data.videocodecid = parse_video_codec(value),
                 "videodatarate" => data.videodatarate = value.as_number(),
-                "audiocodecid" => {
-                    data.audiocodecid = value
-                        .as_number()
-                        .and_then(|v| SoundFormat::try_from(v as u8).ok())
-                }
+                "audiocodecid" => data.audiocodecid = parse_audio_codec(value),
                 "audiodatarate" => data.audiodatarate = value.as_number(),
                 "audiosamplerate" => data.audiosamplerate = value.as_number(),
                 "audiosamplesize" => data.audiosamplesize = value.as_number(),
@@ -203,6 +215,31 @@ mod tests {
     fn rejects_invalid_numeric_video_codecs_without_lossy_casts() {
         for value in [-1.0, 7.5, u32::MAX as f64 + 1.0, f64::NAN, f64::INFINITY] {
             assert_eq!(parse_video_codec(&Amf0Value::Number(value)), None);
+        }
+    }
+
+    #[test]
+    fn parses_legacy_and_fourcc_audio_codecs() {
+        use flv::audio::SoundFormat;
+
+        assert_eq!(
+            parse_audio_codec(&Amf0Value::Number(10.0)),
+            Some(AudioCodec::Legacy(SoundFormat::Aac))
+        );
+        assert_eq!(
+            parse_audio_codec(&Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64)),
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+        assert_eq!(
+            parse_audio_codec(&Amf0Value::String("Opus".into())),
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_numeric_audio_codecs_without_lossy_casts() {
+        for value in [-1.0, 10.5, u32::MAX as f64 + 1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(parse_audio_codec(&Amf0Value::Number(value)), None);
         }
     }
 }

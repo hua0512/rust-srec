@@ -428,6 +428,7 @@ mod tests {
     use bytes::Bytes;
     use flv::{
         FlvTag, FlvTagType,
+        audio::AudioFourCC,
         parser::FlvParser,
         script::ScriptData,
         video::{VideoCodecId, VideoFourCC},
@@ -611,6 +612,52 @@ mod tests {
         assert_eq!(
             metadata_property(&properties, "videocodecid"),
             &Amf0Value::Number(VideoCodecId::SorensonH263 as u8 as f64)
+        );
+    }
+
+    #[test]
+    fn writer_preserves_opus_fourcc_when_patching_metadata() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (mut writer, opened_path) = recording_writer(tempdir.path());
+        let (payload, _) = OnMetaDataBuilder::new()
+            .with_audio_codec(AudioFourCC::Opus)
+            .build_bytes(0, false)
+            .unwrap();
+
+        run_writer(
+            &mut writer,
+            [
+                FlvData::Header(FlvHeader::new(true, false)),
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    Bytes::from(payload),
+                )),
+                // ExHeader + SequenceStart with the Opus FourCC, so
+                // `analyze_audio_tag` records the enhanced codec.
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::Audio,
+                    false,
+                    Bytes::from_static(b"\x90Opus\x01"),
+                )),
+                FlvData::Tag(FlvTag::new(
+                    2_000,
+                    0,
+                    FlvTagType::Audio,
+                    false,
+                    Bytes::from_static(b"\x91Opus\xAA"),
+                )),
+            ],
+        );
+
+        let properties = read_metadata_properties(&opened_path);
+        assert_eq!(
+            metadata_property(&properties, "audiocodecid"),
+            &Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64)
         );
     }
 
