@@ -426,7 +426,12 @@ mod tests {
 
     use amf0::Amf0Value;
     use bytes::Bytes;
-    use flv::{FlvTag, FlvTagType, parser::FlvParser, script::ScriptData, video::VideoFourCC};
+    use flv::{
+        FlvTag, FlvTagType,
+        parser::FlvParser,
+        script::ScriptData,
+        video::{VideoCodecId, VideoFourCC},
+    };
     use pipeline_common::{PipelineError, ProtocolWriter};
 
     use super::*;
@@ -560,6 +565,52 @@ mod tests {
         assert_eq!(
             metadata_property(&properties, "videocodecid"),
             &Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64)
+        );
+    }
+
+    #[test]
+    fn writer_preserves_legacy_h263_codec_when_patching_metadata() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (mut writer, opened_path) = recording_writer(tempdir.path());
+        let (payload, _) = OnMetaDataBuilder::new()
+            .with_video_codec(VideoCodecId::SorensonH263)
+            .build_bytes(0, false)
+            .unwrap();
+
+        run_writer(
+            &mut writer,
+            [
+                FlvData::Header(FlvHeader::new(false, true)),
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    Bytes::from(payload),
+                )),
+                // 0x12 = KeyFrame + SorensonH263: legacy codecs never emit a
+                // sequence header, so `analyze_video_tag` records no codec.
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::Video,
+                    false,
+                    Bytes::from_static(&[0x12, 0x00, 0x00, 0x84]),
+                )),
+                FlvData::Tag(FlvTag::new(
+                    2_000,
+                    0,
+                    FlvTagType::Video,
+                    false,
+                    Bytes::from_static(&[0x12, 0x00, 0x00, 0x84]),
+                )),
+            ],
+        );
+
+        let properties = read_metadata_properties(&opened_path);
+        assert_eq!(
+            metadata_property(&properties, "videocodecid"),
+            &Amf0Value::Number(VideoCodecId::SorensonH263 as u8 as f64)
         );
     }
 
