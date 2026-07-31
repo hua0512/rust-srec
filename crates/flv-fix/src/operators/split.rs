@@ -233,6 +233,35 @@ impl SplitOperator {
         state
     }
 
+    /// Codec info carrying only a name, for tags `VideoData::demux` cannot
+    /// deep-parse (`EnhancedPacket::Unknown`, multitrack/ModEx wrappers) or
+    /// cannot parse at all. `FlvTag::get_video_codec` covers both legacy codec
+    /// IDs and enhanced FourCCs; enhanced names must match the strings the
+    /// deep-parse arms in `extract_video_codec_info` produce ("AVC", "HEVC",
+    /// "AV1") because `VideoCodecInfo::codec` pairs `from`/`to` values in
+    /// `SplitReason::VideoCodecChange`.
+    fn fallback_video_codec_info(tag: &FlvTag, signature: u32) -> VideoCodecInfo {
+        use flv::video::{VideoCodec, VideoFourCC};
+
+        let codec = match tag.get_video_codec() {
+            Some(VideoCodec::Legacy(id)) => format!("{id:?}"),
+            Some(VideoCodec::Enhanced(VideoFourCC::Avc1)) => "AVC".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Hvc1)) => "HEVC".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01)) => "AV1".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Vp08)) => "VP8".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Vp09)) => "VP9".to_string(),
+            None => "unknown".to_string(),
+        };
+        VideoCodecInfo {
+            codec,
+            profile: None,
+            level: None,
+            width: None,
+            height: None,
+            signature,
+        }
+    }
+
     /// Extract video codec configuration info from a sequence header tag.
     ///
     /// Does best-effort deep parsing to extract codec name, profile, level,
@@ -241,7 +270,7 @@ impl SplitOperator {
         use flv::av1::Av1Packet;
         use flv::avc::AvcPacket;
         use flv::hevc::HevcPacket;
-        use flv::video::{EnhancedPacket, VideoCodec, VideoData, VideoFourCC, VideoTagBody};
+        use flv::video::{EnhancedPacket, VideoData, VideoTagBody};
 
         let data = tag.data().clone();
         let mut cursor = std::io::Cursor::new(data);
@@ -308,42 +337,9 @@ impl SplitOperator {
                         signature,
                     }
                 }
-                _ => {
-                    // Fallback for bodies without a parsed decoder config (e.g.
-                    // `EnhancedPacket::Unknown` for VP8/VP9): report the codec
-                    // identifier alone. `FlvTag::get_video_codec` covers both legacy
-                    // codec IDs and enhanced FourCCs (`get_video_codec_id` is
-                    // legacy-only and returns `None` for enhanced tags). Enhanced
-                    // names must match the strings the deep-parse arms above produce
-                    // ("AVC", "HEVC", "AV1") because `VideoCodecInfo::codec` pairs
-                    // `from`/`to` values in `SplitReason::VideoCodecChange`.
-                    let codec = match tag.get_video_codec() {
-                        Some(VideoCodec::Legacy(id)) => format!("{id:?}"),
-                        Some(VideoCodec::Enhanced(VideoFourCC::Avc1)) => "AVC".to_string(),
-                        Some(VideoCodec::Enhanced(VideoFourCC::Hvc1)) => "HEVC".to_string(),
-                        Some(VideoCodec::Enhanced(VideoFourCC::Av01)) => "AV1".to_string(),
-                        Some(VideoCodec::Enhanced(VideoFourCC::Vp08)) => "VP8".to_string(),
-                        Some(VideoCodec::Enhanced(VideoFourCC::Vp09)) => "VP9".to_string(),
-                        None => "unknown".to_string(),
-                    };
-                    VideoCodecInfo {
-                        codec,
-                        profile: None,
-                        level: None,
-                        width: None,
-                        height: None,
-                        signature,
-                    }
-                }
+                _ => Self::fallback_video_codec_info(tag, signature),
             },
-            Err(_) => VideoCodecInfo {
-                codec: "unknown".to_string(),
-                profile: None,
-                level: None,
-                width: None,
-                height: None,
-                signature,
-            },
+            Err(_) => Self::fallback_video_codec_info(tag, signature),
         }
     }
 
@@ -818,6 +814,28 @@ mod tests {
         assert_eq!(info.level, None);
         assert_eq!(info.width, None);
         assert_eq!(info.height, None);
+    }
+
+    #[test]
+    fn test_extract_video_codec_info_names_multitrack_av1() {
+        // OneTrack + SequenceStart multitrack wrapper: `VideoData::demux` has
+        // no multitrack support and errors out, so the name comes from
+        // `fallback_video_codec_info` via `FlvTag::get_video_codec`.
+        let tag = FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![
+                0x96, 0x00, b'a', b'v', b'0', b'1', 0x00, 0x81, 0x0D, 0x0C, 0x00,
+            ]),
+        );
+
+        let info = SplitOperator::extract_video_codec_info(&tag, 0);
+
+        assert_eq!(info.codec, "AV1");
+        assert_eq!(info.profile, None);
+        assert_eq!(info.level, None);
     }
 
     #[test]

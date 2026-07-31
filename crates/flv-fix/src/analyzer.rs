@@ -687,4 +687,33 @@ mod tests {
             Some(VideoCodec::Enhanced(VideoFourCC::Av01))
         );
     }
+
+    #[test]
+    fn detects_multitrack_av1_codec() {
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(false, true))
+            .unwrap();
+        // Multitrack wrapper: 0x96 = ExHeader + KeyFrame + Multitrack, then
+        // OneTrack + SequenceStart, the FourCC, track id, and the av1C record.
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(b"\x96\0av01\0\x81\r\x0c\0"),
+        );
+
+        analyzer.analyze_tag(&tag).unwrap();
+
+        assert_eq!(
+            analyzer
+                .build_stats()
+                .unwrap()
+                .video_stats
+                .as_ref()
+                .and_then(|stats| stats.video_codec),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
 }

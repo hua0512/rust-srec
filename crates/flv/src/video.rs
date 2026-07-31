@@ -465,6 +465,12 @@ impl EnhancedPacketType {
     pub const METADATA: Self = Self(4);
     /// MPEG-2 Sequence Start
     pub const MPEG2_SEQUENCE_START: Self = Self(5);
+    /// Multitrack (E-RTMP v2): the byte after the tag header carries the
+    /// `AvMultitrackType` nibble and the per-track packet type nibble.
+    pub const MULTITRACK: Self = Self(6);
+    /// ModEx (E-RTMP v2): sized side-band records precede the real packet
+    /// type, which is carried in the low nibble of the byte after each record.
+    pub const MOD_EX: Self = Self(7);
 }
 
 impl From<u8> for EnhancedPacketType {
@@ -482,6 +488,8 @@ impl std::fmt::Display for EnhancedPacketType {
             3 => write!(f, "CodedFramesX"),
             4 => write!(f, "Metadata"),
             5 => write!(f, "Mpeg2SequenceStart"),
+            6 => write!(f, "Multitrack"),
+            7 => write!(f, "ModEx"),
             _ => write!(f, "Unknown({})", self.0),
         }
     }
@@ -799,8 +807,9 @@ mod tests {
                 5,
                 "Mpeg2SequenceStart",
             ),
-            (EnhancedPacketType(6), 6, "Unknown(6)"),
-            (EnhancedPacketType(7), 7, "Unknown(7)"),
+            (EnhancedPacketType::MULTITRACK, 6, "Multitrack"),
+            (EnhancedPacketType::MOD_EX, 7, "ModEx"),
+            (EnhancedPacketType(8), 8, "Unknown(8)"),
         ];
 
         for (expected, value, name) in cases {

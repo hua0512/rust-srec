@@ -72,6 +72,72 @@ pub struct TagClass {
     pub codec: Option<CodecKind>,
 }
 
+/// Enhanced video tag header fields with ModEx records skipped and the
+/// Multitrack wrapper descended into.
+struct EnhancedVideoHeader {
+    /// The effective packet type: the low nibble of the first byte, replaced
+    /// by the value carried after any ModEx records, then by the per-track
+    /// packet type when the tag is a Multitrack wrapper.
+    packet_type: EnhancedPacketType,
+    /// The recognized codec FourCC; `None` when the four bytes are absent or
+    /// name a codec outside [`VideoFourCC`].
+    four_cc: Option<VideoFourCC>,
+    /// Whether the payload carried four FourCC bytes at all, recognized or
+    /// not. `TagClass::keyframe_media` uses this as its payload-present check.
+    has_four_cc_bytes: bool,
+}
+
+/// Parses the E-RTMP header of an enhanced video payload (first byte has the
+/// IsExHeader bit set).
+///
+/// ModEx packets (`EnhancedPacketType::MOD_EX`) are `[size][data]` records
+/// whose trailing byte carries the ModEx data type in the high nibble and the
+/// next packet type in the low nibble. Multitrack packets
+/// (`EnhancedPacketType::MULTITRACK`) carry the `AvMultitrackType` nibble and
+/// the per-track packet type in the following byte; in every multitrack
+/// layout the next four bytes are a FourCC (shared for OneTrack/ManyTracks,
+/// the first track's for ManyTracksManyCodecs). Returns `None` when the bytes
+/// needed to resolve the packet type are missing, or on a nested Multitrack
+/// wrapper, which E-RTMP forbids.
+fn parse_enhanced_video_header(data: &[u8]) -> Option<EnhancedVideoHeader> {
+    let first_byte = *data.first()?;
+    let mut packet_type = EnhancedPacketType::from(first_byte & 0x0F);
+    let mut pos = 1_usize;
+
+    while packet_type == EnhancedPacketType::MOD_EX {
+        // modExDataSize is UI8 + 1, escaping to UI16 + 1 when the UI8 is 255.
+        let mut size = *data.get(pos)? as usize + 1;
+        pos += 1;
+        if size == 256 {
+            let bytes = <[u8; 2]>::try_from(data.get(pos..pos + 2)?).ok()?;
+            size = u16::from_be_bytes(bytes) as usize + 1;
+            pos += 2;
+        }
+        pos = pos.checked_add(size)?;
+        packet_type = EnhancedPacketType::from(*data.get(pos)? & 0x0F);
+        pos += 1;
+    }
+
+    if packet_type == EnhancedPacketType::MULTITRACK {
+        // High nibble is AvMultitrackType; the FourCC read below lands on the
+        // same offset for all of its values, so the nibble needs no decoding.
+        packet_type = EnhancedPacketType::from(*data.get(pos)? & 0x0F);
+        pos += 1;
+        if packet_type == EnhancedPacketType::MULTITRACK {
+            return None;
+        }
+    }
+
+    let four_cc_bytes = data
+        .get(pos..pos + 4)
+        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok());
+    Some(EnhancedVideoHeader {
+        packet_type,
+        four_cc: four_cc_bytes.and_then(|bytes| VideoFourCC::try_from(bytes).ok()),
+        has_four_cc_bytes: four_cc_bytes.is_some(),
+    })
+}
+
 fn video_codec_from_payload(data: &[u8]) -> Option<VideoCodec> {
     let first_byte = *data.first()?;
     let frame_type = (first_byte >> 4) & 0x07;
@@ -80,8 +146,9 @@ fn video_codec_from_payload(data: &[u8]) -> Option<VideoCodec> {
     }
 
     if first_byte & 0x80 != 0 {
-        let bytes = <[u8; 4]>::try_from(data.get(1..5)?).ok()?;
-        return VideoFourCC::try_from(bytes).ok().map(VideoCodec::Enhanced);
+        return parse_enhanced_video_header(data)?
+            .four_cc
+            .map(VideoCodec::Enhanced);
     }
 
     VideoCodecId::try_from(first_byte & 0x0F)
@@ -139,16 +206,27 @@ impl TagClass {
         }
 
         if enhanced {
-            let packet_type = EnhancedPacketType::from(first_byte & 0x0F);
-            let codec = video_codec_from_payload(data).and_then(codec_kind_from_video_codec);
-            let coded_frames = packet_type == EnhancedPacketType::CODED_FRAMES
-                || packet_type == EnhancedPacketType::CODED_FRAMES_X;
+            // A truncated or nested-multitrack header cannot be classified
+            // beyond the frame type; report no packet flags rather than guess.
+            let Some(header) = parse_enhanced_video_header(data) else {
+                return Self {
+                    keyframe,
+                    enhanced: true,
+                    ..Self::default()
+                };
+            };
+            let codec = header
+                .four_cc
+                .map(VideoCodec::Enhanced)
+                .and_then(codec_kind_from_video_codec);
+            let coded_frames = header.packet_type == EnhancedPacketType::CODED_FRAMES
+                || header.packet_type == EnhancedPacketType::CODED_FRAMES_X;
 
             return Self {
                 keyframe,
-                keyframe_media: keyframe && coded_frames && data.len() >= 5,
-                sequence_header: packet_type == EnhancedPacketType::SEQUENCE_START,
-                end_of_sequence: packet_type == EnhancedPacketType::SEQUENCE_END,
+                keyframe_media: keyframe && coded_frames && header.has_four_cc_bytes,
+                sequence_header: header.packet_type == EnhancedPacketType::SEQUENCE_START,
+                end_of_sequence: header.packet_type == EnhancedPacketType::SEQUENCE_END,
                 enhanced: true,
                 codec,
             };
@@ -724,6 +802,139 @@ mod tests {
         assert!(tag.classification().enhanced);
         assert!(!tag.is_video_sequence_header());
         assert_eq!(tag.classification().codec, None);
+        assert_eq!(tag.get_video_codec(), None);
+    }
+
+    // Multitrack byte layout: [AvMultitrackType:4][VideoPacketType:4].
+    // 0x00 = OneTrack + SequenceStart, 0x13 = ManyTracks + CodedFramesX,
+    // 0x21 = ManyTracksManyCodecs + CodedFrames.
+
+    #[test]
+    fn multitrack_one_track_sequence_start_classifies_codec() {
+        // 0x96 = ExHeader + KeyFrame + Multitrack; then the shared FourCC,
+        // track id, and an av1C configuration record.
+        let tag = video_tag(&[
+            0x96, 0x00, b'a', b'v', b'0', b'1', 0x00, 0x81, 0x0D, 0x0C, 0x00,
+        ]);
+        let class = tag.classification();
+
+        assert!(class.enhanced);
+        assert!(class.sequence_header);
+        assert!(!class.end_of_sequence);
+        assert!(!class.keyframe_media);
+        assert_eq!(class.codec, Some(CodecKind::Av1));
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn multitrack_many_tracks_coded_frames_is_keyframe_media() {
+        // Shared FourCC, then per track: track id + UI24 track size + payload.
+        let tag = video_tag(&[
+            0x96, 0x13, b'h', b'v', b'c', b'1', 0x00, 0x00, 0x00, 0x02, 0xAA, 0xBB,
+        ]);
+        let class = tag.classification();
+
+        assert!(class.keyframe);
+        assert!(class.keyframe_media);
+        assert!(!class.sequence_header);
+        assert_eq!(class.codec, Some(CodecKind::Hevc));
+    }
+
+    #[test]
+    fn multitrack_many_codecs_uses_first_track_four_cc() {
+        // ManyTracksManyCodecs puts each track's FourCC ahead of its track id.
+        let tag = video_tag(&[
+            0x96, 0x21, b'a', b'v', b'0', b'1', 0x01, 0x00, 0x00, 0x01, 0xCC,
+        ]);
+
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+        assert!(tag.classification().keyframe_media);
+        assert_eq!(tag.classification().codec, Some(CodecKind::Av1));
+    }
+
+    #[test]
+    fn mod_ex_record_resolves_real_packet_type() {
+        // 0x97 = ExHeader + KeyFrame + ModEx; record = size byte 0x02 (3 bytes
+        // of data), the data, then 0x01 = TimestampOffsetNano + CodedFrames.
+        let tag = video_tag(&[
+            0x97, 0x02, 0x00, 0x00, 0x01, 0x01, b'a', b'v', b'0', b'1', 0xDE, 0xAD,
+        ]);
+        let class = tag.classification();
+
+        assert!(class.keyframe_media);
+        assert!(!class.sequence_header);
+        assert_eq!(class.codec, Some(CodecKind::Av1));
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn mod_ex_ui16_size_escape_is_honored() {
+        // Size byte 0xFF escapes to a UI16 size; 0x0000 + 1 = one data byte.
+        let tag = video_tag(&[
+            0x97, 0xFF, 0x00, 0x00, 0x42, 0x00, b'a', b'v', b'0', b'1', 0x81, 0x0D, 0x0C, 0x00,
+        ]);
+
+        assert!(tag.is_video_sequence_header());
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn mod_ex_record_chains_into_multitrack() {
+        // ModEx record (one data byte) resolving to Multitrack, then
+        // ManyTracks + CodedFramesX with the shared FourCC.
+        let tag = video_tag(&[
+            0x97, 0x00, 0x42, 0x06, 0x13, b'h', b'v', b'c', b'1', 0x00, 0x00, 0x00, 0x02, 0xAA,
+            0xBB,
+        ]);
+        let class = tag.classification();
+
+        assert!(class.keyframe_media);
+        assert_eq!(class.codec, Some(CodecKind::Hevc));
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Hvc1))
+        );
+    }
+
+    #[test]
+    fn truncated_multitrack_and_mod_ex_headers_classify_nothing() {
+        // Missing the multitrack byte / ModEx record: only the frame type and
+        // the ExHeader bit are trustworthy.
+        for payload in [&[0x96][..], &[0x97][..], &[0x97, 0x02, 0x00][..]] {
+            let tag = video_tag(payload);
+            let class = tag.classification();
+
+            assert!(class.enhanced);
+            assert!(class.keyframe);
+            assert!(!class.sequence_header);
+            assert!(!class.keyframe_media);
+            assert_eq!(class.codec, None);
+            assert_eq!(tag.get_video_codec(), None);
+        }
+    }
+
+    #[test]
+    fn nested_multitrack_is_rejected() {
+        // A Multitrack per-track packet type of Multitrack is forbidden by
+        // E-RTMP; refuse to classify instead of misreading the FourCC.
+        let tag = video_tag(&[0x96, 0x16, b'a', b'v', b'0', b'1', 0x00]);
+        let class = tag.classification();
+
+        assert!(class.enhanced);
+        assert!(!class.sequence_header);
+        assert_eq!(class.codec, None);
         assert_eq!(tag.get_video_codec(), None);
     }
 
