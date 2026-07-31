@@ -1412,7 +1412,10 @@ mod tests {
         // Surviving extra args still trail the built-in flag block so they
         // keep last-wins override semantics.
         let transfers_pos = args.iter().position(|arg| arg == "--transfers").unwrap();
-        let one_line_pos = args.iter().position(|arg| arg == "--stats-one-line").unwrap();
+        let one_line_pos = args
+            .iter()
+            .position(|arg| arg == "--stats-one-line")
+            .unwrap();
         assert!(transfers_pos > one_line_pos);
         assert_eq!(args[transfers_pos + 1], "2");
     }

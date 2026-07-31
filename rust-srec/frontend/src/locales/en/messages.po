@@ -126,7 +126,7 @@ msgstr "{0} stream(s) added successfully"
 
 #. placeholder {0}: dag.completed_steps
 #. placeholder {1}: dag.total_steps
-#: src/components/sessions/jobs-tab.tsx:82
+#: src/components/sessions/jobs-tab.tsx:83
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} steps"
 
@@ -388,7 +388,7 @@ msgstr "Add Step"
 msgid "Add Stream"
 msgstr "Add Stream"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:828
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:848
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
@@ -468,15 +468,15 @@ msgctxt "day-of-week preset"
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:432
+#: src/components/logging/log-viewer.tsx:460
 msgid "All Levels"
 msgstr "All Levels"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:510
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:532
 msgid "All Platforms"
 msgstr "All Platforms"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:543
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:565
 msgid "All Templates"
 msgstr "All Templates"
 
@@ -484,7 +484,7 @@ msgstr "All Templates"
 msgid "All Time"
 msgstr "All Time"
 
-#: src/components/danmu/danmu-viewer.tsx:193
+#: src/components/danmu/danmu-viewer.tsx:192
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:350
 msgid "All Types"
 msgstr "All Types"
@@ -509,7 +509,7 @@ msgstr "An error occurred"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:627
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:649
 msgid "Any priority"
 msgstr "Any priority"
 
@@ -586,7 +586,7 @@ msgid "Are you sure you want to delete this session? This action cannot be undon
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:145
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:420
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:429
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
@@ -709,11 +709,11 @@ msgstr "Auto Thumbnail"
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:448
+#: src/components/logging/log-viewer.tsx:476
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:447
+#: src/components/logging/log-viewer.tsx:475
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -754,9 +754,9 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:141
-#: src/components/config/templates/template-editor.tsx:188
-#: src/components/config/templates/template-editor.tsx:191
+#: src/components/config/platforms/platform-editor.tsx:145
+#: src/components/config/templates/template-editor.tsx:194
+#: src/components/config/templates/template-editor.tsx:197
 msgid "Back"
 msgstr "Back"
 
@@ -912,7 +912,7 @@ msgstr "Bot Token"
 msgid "both directions at 10 MiB/s"
 msgstr "both directions at 10 MiB/s"
 
-#: src/components/danmu/danmu-viewer.tsx:211
+#: src/components/danmu/danmu-viewer.tsx:210
 msgid "Bottom Fixed"
 msgstr "Bottom Fixed"
 
@@ -924,7 +924,7 @@ msgstr "Brand Colors"
 msgid "Break"
 msgstr "Break"
 
-#: src/components/logging/log-file-browser.tsx:251
+#: src/components/logging/log-file-browser.tsx:162
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "Browse and download application log files. Filter by date range or download all."
 
@@ -1191,10 +1191,10 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:407
+#: src/components/logging/log-viewer.tsx:435
 #: src/components/notifications/desktop-channel-dialog.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:600
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:622
 msgid "Clear"
 msgstr "Clear"
 
@@ -1450,7 +1450,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:368
+#: src/components/logging/log-viewer.tsx:396
 msgid "Connected"
 msgstr "Connected"
 
@@ -1606,7 +1606,7 @@ msgstr "CPU Usage"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
-#: src/components/config/templates/template-editor.tsx:210
+#: src/components/config/templates/template-editor.tsx:216
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1679,7 +1679,7 @@ msgstr "Create Preset"
 msgid "Create streamer"
 msgstr "Create streamer"
 
-#: src/components/config/templates/template-editor.tsx:162
+#: src/components/config/templates/template-editor.tsx:168
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "Create Template"
@@ -1952,7 +1952,7 @@ msgstr "Date"
 msgid "Date placeholder anchor"
 msgstr "Date placeholder anchor"
 
-#: src/components/logging/log-file-browser.tsx:391
+#: src/components/logging/log-file-browser.tsx:258
 msgid "Date range:"
 msgstr "Date range:"
 
@@ -1985,7 +1985,7 @@ msgstr "default"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:309
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:663
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:685
 msgid "Default"
 msgstr "Default"
 
@@ -2275,7 +2275,7 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:373
+#: src/components/logging/log-viewer.tsx:401
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -2322,7 +2322,7 @@ msgid "Download"
 msgstr "Download"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:465
+#: src/components/logging/log-file-browser.tsx:332
 msgid "Download {0}"
 msgstr "Download {0}"
 
@@ -2330,17 +2330,13 @@ msgstr "Download {0}"
 msgid "Download activity looks healthy"
 msgstr "Download activity looks healthy"
 
-#: src/components/logging/log-file-browser.tsx:325
+#: src/components/logging/log-file-browser.tsx:236
 msgid "Download All"
 msgstr "Download All"
 
 #: src/components/config/global/backup-restore-card.tsx:247
 msgid "Download Backup"
 msgstr "Download Backup"
-
-#: src/components/logging/log-file-browser.tsx:351
-msgid "Download complete"
-msgstr "Download complete"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1101
 msgid "Download Concurrency"
@@ -2372,11 +2368,11 @@ msgid "Downloading"
 msgstr "Downloading"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:222
+#: src/components/logging/log-file-browser.tsx:133
 msgid "Downloading {0}"
 msgstr "Downloading {0}"
 
-#: src/components/logging/log-file-browser.tsx:355
+#: src/components/logging/log-file-browser.tsx:100
 msgid "Downloading..."
 msgstr "Downloading..."
 
@@ -2645,7 +2641,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:257
+#: src/components/config/templates/template-editor.tsx:263
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
@@ -2685,7 +2681,7 @@ msgstr "Enter keywords to include..."
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/logging/log-viewer.tsx:513
+#: src/components/logging/log-viewer.tsx:541
 msgid "entries"
 msgstr "entries"
 
@@ -2729,7 +2725,7 @@ msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:429
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:451
 msgid "Error loading streamers: {0}"
 msgstr "Error loading streamers: {0}"
 
@@ -2775,7 +2771,7 @@ msgstr "Events"
 msgid "Examples:"
 msgstr "Examples:"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:690
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:712
 msgid "Exceptional states"
 msgstr "Exceptional states"
 
@@ -3060,11 +3056,11 @@ msgstr "Failed to delete workflow: {0}"
 msgid "Failed to disable Web Push"
 msgstr "Failed to disable Web Push"
 
-#: src/components/logging/log-file-browser.tsx:226
+#: src/components/logging/log-file-browser.tsx:137
 msgid "Failed to download file"
 msgstr "Failed to download file"
 
-#: src/components/logging/log-file-browser.tsx:199
+#: src/components/logging/log-file-browser.tsx:106
 msgid "Failed to download logs"
 msgstr "Failed to download logs"
 
@@ -3084,7 +3080,7 @@ msgstr "Failed to extract name from URL"
 msgid "Failed to import configuration"
 msgstr "Failed to import configuration"
 
-#: src/components/danmu/danmu-viewer.tsx:236
+#: src/components/danmu/danmu-viewer.tsx:235
 msgid "Failed to load content"
 msgstr "Failed to load content"
 
@@ -3325,7 +3321,7 @@ msgstr "Filename pattern (e.g., thumb.jpg)"
 msgid "Filename Template"
 msgstr "Filename Template"
 
-#: src/components/logging/log-file-browser.tsx:246
+#: src/components/logging/log-file-browser.tsx:157
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:175
 msgid "files"
 msgstr "files"
@@ -3389,7 +3385,7 @@ msgid "Filtered:"
 msgstr "Filtered:"
 
 #: src/components/config/shared-config-editor.tsx:157
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:570
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
 msgid "Filters"
 msgstr "Filters"
 
@@ -3523,9 +3519,9 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:190
+#: src/components/config/platforms/platform-editor.tsx:194
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
-#: src/components/config/templates/template-editor.tsx:247
+#: src/components/config/templates/template-editor.tsx:253
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
@@ -3614,16 +3610,16 @@ msgid "Go Back"
 msgstr "Go Back"
 
 #: src/components/ui/pagination.tsx:99
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:904
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:924
 msgid "Go to next page"
 msgstr "Go to next page"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:890
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:910
 msgid "Go to page {p}"
 msgstr "Go to page {p}"
 
 #: src/components/ui/pagination.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:870
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:890
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
@@ -3730,7 +3726,7 @@ msgstr "Hide password"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:232
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:652
 msgid "High"
 msgstr "High"
 
@@ -4334,7 +4330,7 @@ msgstr "Live Refresh Interval (ms)"
 msgid "Loaded template: {0}"
 msgstr "Loaded template: {0}"
 
-#: src/components/danmu/danmu-viewer.tsx:226
+#: src/components/danmu/danmu-viewer.tsx:225
 msgid "Loading Danmu"
 msgstr "Loading Danmu"
 
@@ -4379,7 +4375,7 @@ msgstr "Loading…"
 msgid "Local Archive"
 msgstr "Local Archive"
 
-#: src/components/logging/log-file-browser.tsx:243
+#: src/components/logging/log-file-browser.tsx:154
 msgid "Log Files"
 msgstr "Log Files"
 
@@ -4399,7 +4395,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:522
+#: src/components/logging/log-viewer.tsx:550
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -4416,10 +4412,6 @@ msgstr "Login successful!"
 msgid "Logs"
 msgstr "Logs"
 
-#: src/components/logging/log-file-browser.tsx:184
-msgid "Logs downloaded successfully"
-msgstr "Logs downloaded successfully"
-
 #: src/components/config/engines/forms/mesio-form.tsx:151
 msgid "Loop Protection"
 msgstr "Loop Protection"
@@ -4430,7 +4422,7 @@ msgstr "Lossless Split"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:236
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:636
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:658
 msgid "Low"
 msgstr "Low"
 
@@ -4489,7 +4481,7 @@ msgstr "Manage where system notifications are sent"
 msgid "Manage your application configuration."
 msgstr "Manage your application configuration."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:441
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:463
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
@@ -4775,8 +4767,8 @@ msgstr "Month"
 msgid "Month (01-12)"
 msgstr "Month (01-12)"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:561
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:586
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:583
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
 msgid "More filters"
 msgstr "More filters"
 
@@ -4859,7 +4851,7 @@ msgstr "My Template"
 msgid "Name"
 msgstr "Name"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:669
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:691
 msgid "Name A-Z"
 msgstr "Name A-Z"
 
@@ -4871,7 +4863,7 @@ msgstr "Name autofilled successfully"
 msgid "Name is required"
 msgstr "Name is required"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:672
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:694
 msgid "Name Z-A"
 msgstr "Name Z-A"
 
@@ -5027,7 +5019,7 @@ msgstr "No keywords set"
 msgid "No limit"
 msgstr "No limit"
 
-#: src/components/logging/log-file-browser.tsx:425
+#: src/components/logging/log-file-browser.tsx:292
 msgid "No log files found"
 msgstr "No log files found"
 
@@ -5035,7 +5027,7 @@ msgstr "No log files found"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:466
+#: src/components/logging/log-viewer.tsx:494
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -5079,7 +5071,7 @@ msgstr "No overrides configured"
 msgid "No parameters configured."
 msgstr "No parameters configured."
 
-#: src/components/sessions/jobs-tab.tsx:45
+#: src/components/sessions/jobs-tab.tsx:46
 msgid "No pipeline DAGs found."
 msgstr "No pipeline DAGs found."
 
@@ -5137,7 +5129,7 @@ msgstr "No recent sessions found."
 msgid "No refresh needed or not supported"
 msgstr "No refresh needed or not supported"
 
-#: src/components/danmu/danmu-viewer.tsx:264
+#: src/components/danmu/danmu-viewer.tsx:263
 msgid "No results found"
 msgstr "No results found"
 
@@ -5153,7 +5145,7 @@ msgstr "No Steps Added"
 msgid "No steps defined"
 msgstr "No steps defined"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:814
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:834
 msgid "No streamers found"
 msgstr "No streamers found"
 
@@ -5162,7 +5154,7 @@ msgid "No talker data"
 msgstr "No talker data"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:188
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:546
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:568
 msgid "No template assigned"
 msgstr "No template assigned"
 
@@ -5212,7 +5204,7 @@ msgstr "None (Strip Audio)"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:234
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:633
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:655
 msgid "Normal"
 msgstr "Normal"
 
@@ -5748,11 +5740,11 @@ msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PA
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:401
+#: src/components/logging/log-viewer.tsx:429
 msgid "Pause"
 msgstr "Pause"
 
-#: src/components/logging/log-viewer.tsx:516
+#: src/components/logging/log-viewer.tsx:544
 msgid "paused"
 msgstr "paused"
 
@@ -5884,7 +5876,7 @@ msgstr "Pipeline is valid"
 msgid "Pipeline job created successfully"
 msgstr "Pipeline job created successfully"
 
-#: src/components/sessions/jobs-tab.tsx:33
+#: src/components/sessions/jobs-tab.tsx:34
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:293
 msgid "Pipeline Jobs"
 msgstr "Pipeline Jobs"
@@ -5935,7 +5927,7 @@ msgid "pipelines"
 msgstr "pipelines"
 
 #: src/components/streamers/config/streamer-identity-fields.tsx:167
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:504
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:526
 msgid "Platform"
 msgstr "Platform"
 
@@ -5980,7 +5972,7 @@ msgid "platforms"
 msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:267
+#: src/components/config/templates/template-editor.tsx:273
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:48
@@ -6198,7 +6190,7 @@ msgstr "Prioritize specific streaming protocols. Press Enter to add."
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:97
 #: src/components/streamers/streamer-batch-action-bar.tsx:218
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
 msgid "Priority"
 msgstr "Priority"
 
@@ -6206,11 +6198,11 @@ msgstr "Priority"
 msgid "Priority Filter"
 msgstr "Priority Filter"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:675
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:697
 msgid "Priority high-low"
 msgstr "Priority high-low"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:700
 msgid "Priority low-high"
 msgstr "Priority low-high"
 
@@ -6422,7 +6414,7 @@ msgstr "Ready to Watch"
 msgid "Real-time"
 msgstr "Real-time"
 
-#: src/components/logging/log-viewer.tsx:355
+#: src/components/logging/log-viewer.tsx:383
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -6451,7 +6443,7 @@ msgstr "Recent notification events persisted by the backend"
 msgid "Recent Sessions"
 msgstr "Recent Sessions"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:666
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:688
 msgid "Recently updated"
 msgstr "Recently updated"
 
@@ -6512,7 +6504,7 @@ msgstr "Recordings"
 msgid "Recovering"
 msgstr "Recovering"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:589
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:611
 msgid "Refine and sort streamers"
 msgstr "Refine and sort streamers"
 
@@ -6690,7 +6682,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:396
+#: src/components/logging/log-viewer.tsx:424
 msgid "Resume"
 msgstr "Resume"
 
@@ -6769,7 +6761,7 @@ msgstr "Right"
 msgid "Route traffic through an intermediate server"
 msgstr "Route traffic through an intermediate server"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:839
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:859
 msgid "Rows per page"
 msgstr "Rows per page"
 
@@ -6891,8 +6883,8 @@ msgstr "Saturday"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:159
-#: src/components/config/templates/template-editor.tsx:212
+#: src/components/config/platforms/platform-editor.tsx:163
+#: src/components/config/templates/template-editor.tsx:218
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:612
@@ -6913,8 +6905,8 @@ msgstr "Save Workflow"
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:157
-#: src/components/config/templates/template-editor.tsx:208
+#: src/components/config/platforms/platform-editor.tsx:161
+#: src/components/config/templates/template-editor.tsx:214
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -6958,7 +6950,7 @@ msgstr "Scheduler"
 msgid "Script"
 msgstr "Script"
 
-#: src/components/danmu/danmu-viewer.tsx:199
+#: src/components/danmu/danmu-viewer.tsx:198
 msgid "Scrolling"
 msgstr "Scrolling"
 
@@ -6970,7 +6962,7 @@ msgstr "SD / Low"
 msgid "Search by name or description..."
 msgstr "Search by name or description..."
 
-#: src/components/danmu/danmu-viewer.tsx:165
+#: src/components/danmu/danmu-viewer.tsx:164
 msgid "Search comments..."
 msgstr "Search comments..."
 
@@ -6986,7 +6978,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:417
+#: src/components/logging/log-viewer.tsx:445
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -7014,7 +7006,7 @@ msgstr "Search sessions..."
 msgid "Search streamer..."
 msgstr "Search streamer..."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:449
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:471
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
@@ -7073,7 +7065,7 @@ msgstr "Segment TTL (ms)"
 msgid "Segments"
 msgstr "Segments"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:743
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:765
 msgid "Select"
 msgstr "Select"
 
@@ -7145,7 +7137,7 @@ msgstr "Select current page"
 msgid "Select date anchor"
 msgstr "Select date anchor"
 
-#: src/components/logging/log-file-browser.tsx:280
+#: src/components/logging/log-file-browser.tsx:191
 msgid "Select date range"
 msgstr "Select date range"
 
@@ -7186,7 +7178,7 @@ msgstr "Select quality"
 msgid "Select strategy"
 msgstr "Select strategy"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:734
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:756
 msgid "Select streamers"
 msgstr "Select streamers"
 
@@ -7461,7 +7453,7 @@ msgstr "Something went wrong!"
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:644
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:666
 msgid "Sort by"
 msgstr "Sort by"
 
@@ -7473,7 +7465,7 @@ msgstr "Source"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:200
+#: src/components/config/platforms/platform-editor.tsx:204
 #: src/components/config/templates/tabs/platform-override-card.tsx:70
 msgid "Specific"
 msgstr "Specific"
@@ -7542,7 +7534,7 @@ msgstr "Start Time"
 msgid "Started"
 msgstr "Started"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:681
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:703
 msgid "State"
 msgstr "State"
 
@@ -7691,7 +7683,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "Streamer Offline"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:864
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:884
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
@@ -7710,7 +7702,7 @@ msgstr "Streamer updated successfully"
 #: src/components/layout/site-header.tsx:31
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:58
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:440
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:462
 msgid "Streamers"
 msgstr "Streamers"
 
@@ -7871,7 +7863,7 @@ msgstr "TB"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:175
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:537
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:559
 msgid "Template"
 msgstr "Template"
 
@@ -8174,7 +8166,7 @@ msgstr "Today"
 msgid "Token"
 msgstr "Token"
 
-#: src/components/danmu/danmu-viewer.tsx:205
+#: src/components/danmu/danmu-viewer.tsx:204
 msgid "Top Fixed"
 msgstr "Top Fixed"
 
@@ -8187,7 +8179,7 @@ msgstr "Top Talkers"
 msgid "Top Words"
 msgstr "Top Words"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:457
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:479
 msgid "total"
 msgstr "total"
 
@@ -8203,7 +8195,7 @@ msgstr "Total Danmu"
 msgid "Total Size"
 msgstr "Total Size"
 
-#: src/components/logging/log-file-browser.tsx:383
+#: src/components/logging/log-file-browser.tsx:250
 msgid "Total size:"
 msgstr "Total size:"
 
@@ -8343,7 +8335,7 @@ msgstr "Triggered when video and danmu are available"
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
-#: src/components/logging/log-file-browser.tsx:429
+#: src/components/logging/log-file-browser.tsx:296
 msgid "Try adjusting the date range"
 msgstr "Try adjusting the date range"
 
@@ -8356,7 +8348,7 @@ msgstr "Try adjusting your filters or limit"
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:817
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:837
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 
@@ -8715,7 +8707,7 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:379
+#: src/components/logging/log-viewer.tsx:407
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
@@ -8759,7 +8751,7 @@ msgstr "Wait indefinitely"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:470
+#: src/components/logging/log-viewer.tsx:498
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 

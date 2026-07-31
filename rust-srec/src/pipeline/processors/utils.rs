@@ -952,8 +952,7 @@ mod tests {
 
     #[test]
     fn parse_rclone_line_json_stats_becomes_progress() {
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(RCLONE_JSON_STATS_LINE)
-        else {
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(RCLONE_JSON_STATS_LINE) else {
             panic!("stats JSON line should parse as progress");
         };
 

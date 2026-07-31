@@ -1,7 +1,5 @@
 //! Session repository.
 
-use async_trait::async_trait;
-use sqlx::SqlitePool;
 use crate::database::begin_immediate;
 use crate::database::models::{
     DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
@@ -9,6 +7,8 @@ use crate::database::models::{
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
+use async_trait::async_trait;
+use sqlx::SqlitePool;
 
 /// Session repository trait.
 #[async_trait]
@@ -970,7 +970,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(outputs.len(), 3);
-        assert!(outputs.iter().all(|output| output.session_id != "session-3"));
+        assert!(
+            outputs
+                .iter()
+                .all(|output| output.session_id != "session-3")
+        );
         assert_eq!(statistics.len(), 1);
         assert_eq!(statistics[0].total_danmus, 42);
         assert!(

@@ -126,7 +126,7 @@ msgstr "成功添加 {0} 个流"
 
 #. placeholder {0}: dag.completed_steps
 #. placeholder {1}: dag.total_steps
-#: src/components/sessions/jobs-tab.tsx:82
+#: src/components/sessions/jobs-tab.tsx:83
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} 步"
 
@@ -388,7 +388,7 @@ msgstr "添加步骤"
 msgid "Add Stream"
 msgstr "添加流"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:828
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:848
 msgid "Add Streamer"
 msgstr "添加主播"
 
@@ -468,15 +468,15 @@ msgctxt "day-of-week preset"
 msgid "All"
 msgstr "全部"
 
-#: src/components/logging/log-viewer.tsx:432
+#: src/components/logging/log-viewer.tsx:460
 msgid "All Levels"
 msgstr "所有级别"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:510
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:532
 msgid "All Platforms"
 msgstr "所有平台"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:543
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:565
 msgid "All Templates"
 msgstr "所有模板"
 
@@ -484,7 +484,7 @@ msgstr "所有模板"
 msgid "All Time"
 msgstr "全部时间"
 
-#: src/components/danmu/danmu-viewer.tsx:193
+#: src/components/danmu/danmu-viewer.tsx:192
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:350
 msgid "All Types"
 msgstr "所有类型"
@@ -509,7 +509,7 @@ msgstr "发生错误"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:627
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:649
 msgid "Any priority"
 msgstr "任意优先级"
 
@@ -586,7 +586,7 @@ msgid "Are you sure you want to delete this session? This action cannot be undon
 msgstr "确定要删除此会话吗？此操作无法撤销。"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:145
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:420
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:429
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
@@ -709,11 +709,11 @@ msgstr "自动封面"
 msgid "Auto-Refresh"
 msgstr "自动刷新"
 
-#: src/components/logging/log-viewer.tsx:448
+#: src/components/logging/log-viewer.tsx:476
 msgid "Auto-scroll disabled"
 msgstr "已关闭自动滚动"
 
-#: src/components/logging/log-viewer.tsx:447
+#: src/components/logging/log-viewer.tsx:475
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
@@ -754,9 +754,9 @@ msgstr "平均时长"
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
-#: src/components/config/platforms/platform-editor.tsx:141
-#: src/components/config/templates/template-editor.tsx:188
-#: src/components/config/templates/template-editor.tsx:191
+#: src/components/config/platforms/platform-editor.tsx:145
+#: src/components/config/templates/template-editor.tsx:194
+#: src/components/config/templates/template-editor.tsx:197
 msgid "Back"
 msgstr "返回"
 
@@ -912,7 +912,7 @@ msgstr "机器人令牌"
 msgid "both directions at 10 MiB/s"
 msgstr "双向均为 10 MiB/s"
 
-#: src/components/danmu/danmu-viewer.tsx:211
+#: src/components/danmu/danmu-viewer.tsx:210
 msgid "Bottom Fixed"
 msgstr "底部固定"
 
@@ -924,7 +924,7 @@ msgstr "品牌颜色"
 msgid "Break"
 msgstr "中断"
 
-#: src/components/logging/log-file-browser.tsx:251
+#: src/components/logging/log-file-browser.tsx:162
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
 
@@ -1191,10 +1191,10 @@ msgstr "选择你的显示语言"
 msgid "Cleanup"
 msgstr "清理"
 
-#: src/components/logging/log-viewer.tsx:407
+#: src/components/logging/log-viewer.tsx:435
 #: src/components/notifications/desktop-channel-dialog.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:600
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:622
 msgid "Clear"
 msgstr "清空"
 
@@ -1450,7 +1450,7 @@ msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
 #: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:368
+#: src/components/logging/log-viewer.tsx:396
 msgid "Connected"
 msgstr "已连接"
 
@@ -1606,7 +1606,7 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:210
+#: src/components/config/templates/template-editor.tsx:216
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1679,7 +1679,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:162
+#: src/components/config/templates/template-editor.tsx:168
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "创建模板"
@@ -1952,7 +1952,7 @@ msgstr "日期"
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
 
-#: src/components/logging/log-file-browser.tsx:391
+#: src/components/logging/log-file-browser.tsx:258
 msgid "Date range:"
 msgstr "日期范围："
 
@@ -1985,7 +1985,7 @@ msgstr "默认"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:309
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:663
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:685
 msgid "Default"
 msgstr "默认"
 
@@ -2275,7 +2275,7 @@ msgid "Disabled"
 msgstr "已禁用"
 
 #: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:373
+#: src/components/logging/log-viewer.tsx:401
 msgid "Disconnected"
 msgstr "已断开"
 
@@ -2322,7 +2322,7 @@ msgid "Download"
 msgstr "下载"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:465
+#: src/components/logging/log-file-browser.tsx:332
 msgid "Download {0}"
 msgstr "下载 {0}"
 
@@ -2330,17 +2330,13 @@ msgstr "下载 {0}"
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
-#: src/components/logging/log-file-browser.tsx:325
+#: src/components/logging/log-file-browser.tsx:236
 msgid "Download All"
 msgstr "下载全部"
 
 #: src/components/config/global/backup-restore-card.tsx:247
 msgid "Download Backup"
 msgstr "下载备份"
-
-#: src/components/logging/log-file-browser.tsx:351
-msgid "Download complete"
-msgstr "下载完成"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1101
 msgid "Download Concurrency"
@@ -2372,11 +2368,11 @@ msgid "Downloading"
 msgstr "下载中"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:222
+#: src/components/logging/log-file-browser.tsx:133
 msgid "Downloading {0}"
 msgstr "正在下载 {0}"
 
-#: src/components/logging/log-file-browser.tsx:355
+#: src/components/logging/log-file-browser.tsx:100
 msgid "Downloading..."
 msgstr "下载中..."
 
@@ -2645,7 +2641,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:257
+#: src/components/config/templates/template-editor.tsx:263
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
@@ -2685,7 +2681,7 @@ msgstr "输入要包含的关键词..."
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
-#: src/components/logging/log-viewer.tsx:513
+#: src/components/logging/log-viewer.tsx:541
 msgid "entries"
 msgstr "条"
 
@@ -2729,7 +2725,7 @@ msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:429
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:451
 msgid "Error loading streamers: {0}"
 msgstr "加载主播失败：{0}"
 
@@ -2775,7 +2771,7 @@ msgstr "事件"
 msgid "Examples:"
 msgstr "示例："
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:690
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:712
 msgid "Exceptional states"
 msgstr "异常状态"
 
@@ -3060,11 +3056,11 @@ msgstr "删除工作流失败：{0}"
 msgid "Failed to disable Web Push"
 msgstr "禁用 Web 推送失败"
 
-#: src/components/logging/log-file-browser.tsx:226
+#: src/components/logging/log-file-browser.tsx:137
 msgid "Failed to download file"
 msgstr "下载文件失败"
 
-#: src/components/logging/log-file-browser.tsx:199
+#: src/components/logging/log-file-browser.tsx:106
 msgid "Failed to download logs"
 msgstr "下载日志失败"
 
@@ -3084,7 +3080,7 @@ msgstr "从 URL 提取名称失败"
 msgid "Failed to import configuration"
 msgstr "导入配置失败"
 
-#: src/components/danmu/danmu-viewer.tsx:236
+#: src/components/danmu/danmu-viewer.tsx:235
 msgid "Failed to load content"
 msgstr "内容加载失败"
 
@@ -3325,7 +3321,7 @@ msgstr "文件名模式（例如 thumb.jpg）"
 msgid "Filename Template"
 msgstr "文件名模板"
 
-#: src/components/logging/log-file-browser.tsx:246
+#: src/components/logging/log-file-browser.tsx:157
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:175
 msgid "files"
 msgstr "文件"
@@ -3389,7 +3385,7 @@ msgid "Filtered:"
 msgstr "过滤原因："
 
 #: src/components/config/shared-config-editor.tsx:157
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:570
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
 msgid "Filters"
 msgstr "过滤器"
 
@@ -3523,9 +3519,9 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:190
+#: src/components/config/platforms/platform-editor.tsx:194
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
-#: src/components/config/templates/template-editor.tsx:247
+#: src/components/config/templates/template-editor.tsx:253
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
@@ -3614,16 +3610,16 @@ msgid "Go Back"
 msgstr "返回"
 
 #: src/components/ui/pagination.tsx:99
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:904
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:924
 msgid "Go to next page"
 msgstr "下一页"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:890
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:910
 msgid "Go to page {p}"
 msgstr "跳转到第 {p} 页"
 
 #: src/components/ui/pagination.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:870
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:890
 msgid "Go to previous page"
 msgstr "上一页"
 
@@ -3730,7 +3726,7 @@ msgstr "隐藏密码"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:232
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:652
 msgid "High"
 msgstr "高"
 
@@ -4334,7 +4330,7 @@ msgstr "直播刷新间隔 (ms)"
 msgid "Loaded template: {0}"
 msgstr "已加载模板：{0}"
 
-#: src/components/danmu/danmu-viewer.tsx:226
+#: src/components/danmu/danmu-viewer.tsx:225
 msgid "Loading Danmu"
 msgstr "正在加载弹幕"
 
@@ -4379,7 +4375,7 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
-#: src/components/logging/log-file-browser.tsx:243
+#: src/components/logging/log-file-browser.tsx:154
 msgid "Log Files"
 msgstr "日志文件"
 
@@ -4399,7 +4395,7 @@ msgstr "日志"
 msgid "Logging configuration updated"
 msgstr "日志配置已更新"
 
-#: src/components/logging/log-viewer.tsx:522
+#: src/components/logging/log-viewer.tsx:550
 msgid "Logging paused"
 msgstr "日志已暂停"
 
@@ -4416,10 +4412,6 @@ msgstr "登录成功！"
 msgid "Logs"
 msgstr "日志"
 
-#: src/components/logging/log-file-browser.tsx:184
-msgid "Logs downloaded successfully"
-msgstr "日志下载成功"
-
 #: src/components/config/engines/forms/mesio-form.tsx:151
 msgid "Loop Protection"
 msgstr "循环保护"
@@ -4430,7 +4422,7 @@ msgstr "无损分割"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:236
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:636
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:658
 msgid "Low"
 msgstr "低"
 
@@ -4489,7 +4481,7 @@ msgstr "管理系统通知发送到哪里"
 msgid "Manage your application configuration."
 msgstr "管理应用配置。"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:441
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:463
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
@@ -4775,8 +4767,8 @@ msgstr "本月"
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:561
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:586
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:583
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
 msgid "More filters"
 msgstr "更多筛选"
 
@@ -4859,7 +4851,7 @@ msgstr "我的模板"
 msgid "Name"
 msgstr "名称"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:669
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:691
 msgid "Name A-Z"
 msgstr "名称 A-Z"
 
@@ -4871,7 +4863,7 @@ msgstr "名称自动填充成功"
 msgid "Name is required"
 msgstr "必须填写名称"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:672
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:694
 msgid "Name Z-A"
 msgstr "名称 Z-A"
 
@@ -5027,7 +5019,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/components/logging/log-file-browser.tsx:425
+#: src/components/logging/log-file-browser.tsx:292
 msgid "No log files found"
 msgstr "未找到日志文件"
 
@@ -5035,7 +5027,7 @@ msgstr "未找到日志文件"
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
-#: src/components/logging/log-viewer.tsx:466
+#: src/components/logging/log-viewer.tsx:494
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
@@ -5079,7 +5071,7 @@ msgstr "未配置覆盖项"
 msgid "No parameters configured."
 msgstr "未配置任何参数。"
 
-#: src/components/sessions/jobs-tab.tsx:45
+#: src/components/sessions/jobs-tab.tsx:46
 msgid "No pipeline DAGs found."
 msgstr "未发现处理管道 DAG。"
 
@@ -5137,7 +5129,7 @@ msgstr "未找到最近的录制会话。"
 msgid "No refresh needed or not supported"
 msgstr "无需刷新或不支持"
 
-#: src/components/danmu/danmu-viewer.tsx:264
+#: src/components/danmu/danmu-viewer.tsx:263
 msgid "No results found"
 msgstr "没有找到结果"
 
@@ -5153,7 +5145,7 @@ msgstr "未添加步骤"
 msgid "No steps defined"
 msgstr "未定义步骤"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:814
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:834
 msgid "No streamers found"
 msgstr "未找到主播"
 
@@ -5162,7 +5154,7 @@ msgid "No talker data"
 msgstr "暂无发言用户数据"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:188
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:546
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:568
 msgid "No template assigned"
 msgstr "未分配模板"
 
@@ -5212,7 +5204,7 @@ msgstr "无（剥离音频）"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:234
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:633
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:655
 msgid "Normal"
 msgstr "正常"
 
@@ -5748,11 +5740,11 @@ msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变
 msgid "Path Variables"
 msgstr "路径变量"
 
-#: src/components/logging/log-viewer.tsx:401
+#: src/components/logging/log-viewer.tsx:429
 msgid "Pause"
 msgstr "暂停"
 
-#: src/components/logging/log-viewer.tsx:516
+#: src/components/logging/log-viewer.tsx:544
 msgid "paused"
 msgstr "条已暂停"
 
@@ -5884,7 +5876,7 @@ msgstr "处理管道有效"
 msgid "Pipeline job created successfully"
 msgstr "处理任务创建成功"
 
-#: src/components/sessions/jobs-tab.tsx:33
+#: src/components/sessions/jobs-tab.tsx:34
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:293
 msgid "Pipeline Jobs"
 msgstr "处理任务"
@@ -5935,7 +5927,7 @@ msgid "pipelines"
 msgstr "处理管道"
 
 #: src/components/streamers/config/streamer-identity-fields.tsx:167
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:504
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:526
 msgid "Platform"
 msgstr "平台"
 
@@ -5980,7 +5972,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:267
+#: src/components/config/templates/template-editor.tsx:273
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:48
@@ -6198,7 +6190,7 @@ msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:97
 #: src/components/streamers/streamer-batch-action-bar.tsx:218
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
 msgid "Priority"
 msgstr "优先级"
 
@@ -6206,11 +6198,11 @@ msgstr "优先级"
 msgid "Priority Filter"
 msgstr "优先级过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:675
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:697
 msgid "Priority high-low"
 msgstr "优先级从高到低"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:700
 msgid "Priority low-high"
 msgstr "优先级从低到高"
 
@@ -6422,7 +6414,7 @@ msgstr "准备观看"
 msgid "Real-time"
 msgstr "实时"
 
-#: src/components/logging/log-viewer.tsx:355
+#: src/components/logging/log-viewer.tsx:383
 msgid "Real-Time Logs"
 msgstr "实时日志"
 
@@ -6451,7 +6443,7 @@ msgstr "后端持久化的最近通知事件"
 msgid "Recent Sessions"
 msgstr "最近录制会话"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:666
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:688
 msgid "Recently updated"
 msgstr "最近更新"
 
@@ -6512,7 +6504,7 @@ msgstr "录制内容"
 msgid "Recovering"
 msgstr "恢复中"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:589
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:611
 msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
@@ -6690,7 +6682,7 @@ msgstr "从备份文件恢复"
 msgid "Restore password"
 msgstr "重置密码"
 
-#: src/components/logging/log-viewer.tsx:396
+#: src/components/logging/log-viewer.tsx:424
 msgid "Resume"
 msgstr "继续"
 
@@ -6769,7 +6761,7 @@ msgstr "右侧"
 msgid "Route traffic through an intermediate server"
 msgstr "通过中间服务器转发流量"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:839
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:859
 msgid "Rows per page"
 msgstr "每页行数"
 
@@ -6891,8 +6883,8 @@ msgstr "星期六"
 msgid "Save changes"
 msgstr "保存更改"
 
-#: src/components/config/platforms/platform-editor.tsx:159
-#: src/components/config/templates/template-editor.tsx:212
+#: src/components/config/platforms/platform-editor.tsx:163
+#: src/components/config/templates/template-editor.tsx:218
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:612
@@ -6913,8 +6905,8 @@ msgstr "保存工作流"
 msgid "Saving"
 msgstr "保存中"
 
-#: src/components/config/platforms/platform-editor.tsx:157
-#: src/components/config/templates/template-editor.tsx:208
+#: src/components/config/platforms/platform-editor.tsx:161
+#: src/components/config/templates/template-editor.tsx:214
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -6958,7 +6950,7 @@ msgstr "调度器"
 msgid "Script"
 msgstr "脚本"
 
-#: src/components/danmu/danmu-viewer.tsx:199
+#: src/components/danmu/danmu-viewer.tsx:198
 msgid "Scrolling"
 msgstr "滚动弹幕"
 
@@ -6970,7 +6962,7 @@ msgstr "标清 / 低清"
 msgid "Search by name or description..."
 msgstr "按名称或描述搜索..."
 
-#: src/components/danmu/danmu-viewer.tsx:165
+#: src/components/danmu/danmu-viewer.tsx:164
 msgid "Search comments..."
 msgstr "搜索弹幕…"
 
@@ -6986,7 +6978,7 @@ msgstr "搜索事件..."
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
-#: src/components/logging/log-viewer.tsx:417
+#: src/components/logging/log-viewer.tsx:445
 msgid "Search logs..."
 msgstr "搜索日志..."
 
@@ -7014,7 +7006,7 @@ msgstr "搜索录制会话..."
 msgid "Search streamer..."
 msgstr "搜索主播..."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:449
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:471
 msgid "Search streamers..."
 msgstr "搜索主播..."
 
@@ -7073,7 +7065,7 @@ msgstr "分段 TTL（毫秒）"
 msgid "Segments"
 msgstr "分段"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:743
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:765
 msgid "Select"
 msgstr "选择"
 
@@ -7145,7 +7137,7 @@ msgstr "选择当前页"
 msgid "Select date anchor"
 msgstr "选择日期锚点"
 
-#: src/components/logging/log-file-browser.tsx:280
+#: src/components/logging/log-file-browser.tsx:191
 msgid "Select date range"
 msgstr "选择日期范围"
 
@@ -7186,7 +7178,7 @@ msgstr "选择画质"
 msgid "Select strategy"
 msgstr "选择策略"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:734
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:756
 msgid "Select streamers"
 msgstr "选择主播"
 
@@ -7461,7 +7453,7 @@ msgstr "发生错误！"
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:644
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:666
 msgid "Sort by"
 msgstr "排序方式"
 
@@ -7473,7 +7465,7 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:200
+#: src/components/config/platforms/platform-editor.tsx:204
 #: src/components/config/templates/tabs/platform-override-card.tsx:70
 msgid "Specific"
 msgstr "特定"
@@ -7542,7 +7534,7 @@ msgstr "开始时间"
 msgid "Started"
 msgstr "已开始"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:681
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:703
 msgid "State"
 msgstr "状态"
 
@@ -7691,7 +7683,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:864
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:884
 msgid "Streamer pagination"
 msgstr "主播分页"
 
@@ -7710,7 +7702,7 @@ msgstr "主播更新成功"
 #: src/components/layout/site-header.tsx:31
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:58
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:440
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:462
 msgid "Streamers"
 msgstr "主播"
 
@@ -7871,7 +7863,7 @@ msgstr "TB"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:175
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:537
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:559
 msgid "Template"
 msgstr "模板"
 
@@ -8174,7 +8166,7 @@ msgstr "今天"
 msgid "Token"
 msgstr "令牌"
 
-#: src/components/danmu/danmu-viewer.tsx:205
+#: src/components/danmu/danmu-viewer.tsx:204
 msgid "Top Fixed"
 msgstr "顶部固定"
 
@@ -8187,7 +8179,7 @@ msgstr "活跃发言用户"
 msgid "Top Words"
 msgstr "高频词"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:457
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:479
 msgid "total"
 msgstr "总计"
 
@@ -8203,7 +8195,7 @@ msgstr "总弹幕数"
 msgid "Total Size"
 msgstr "总大小"
 
-#: src/components/logging/log-file-browser.tsx:383
+#: src/components/logging/log-file-browser.tsx:250
 msgid "Total size:"
 msgstr "总大小："
 
@@ -8343,7 +8335,7 @@ msgstr "当视频和弹幕可用时触发"
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
-#: src/components/logging/log-file-browser.tsx:429
+#: src/components/logging/log-file-browser.tsx:296
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
@@ -8356,7 +8348,7 @@ msgstr "尝试调整过滤器或限制"
 msgid "Try adjusting your search or filters"
 msgstr "尝试调整搜索或过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:817
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:837
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
@@ -8715,7 +8707,7 @@ msgstr "查看"
 msgid "View All"
 msgstr "查看全部"
 
-#: src/components/logging/log-viewer.tsx:379
+#: src/components/logging/log-viewer.tsx:407
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "实时查看应用日志。日志仅保留最近 {MAX_LOG_ENTRIES} 条。"
 
@@ -8759,7 +8751,7 @@ msgstr "无限等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/logging/log-viewer.tsx:470
+#: src/components/logging/log-viewer.tsx:498
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 

@@ -308,9 +308,6 @@ mod tests {
             }
             other => panic!("expected re-emitted init segment, got {other:?}"),
         }
-        assert!(matches!(
-            out[5],
-            HlsData::M4sData(M4sData::Segment(_))
-        ));
+        assert!(matches!(out[5], HlsData::M4sData(M4sData::Segment(_))));
     }
 }

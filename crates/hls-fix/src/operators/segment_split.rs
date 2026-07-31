@@ -999,7 +999,9 @@ mod tests {
         operator
             .process(&context, seg(pat_only), &mut output_fn)
             .unwrap();
-        operator.process(&context, seg(full), &mut output_fn).unwrap();
+        operator
+            .process(&context, seg(full), &mut output_fn)
+            .unwrap();
 
         // Neither the PMT-less segment nor the following full-PSI segment may split.
         assert_eq!(output_items.len(), 3);
