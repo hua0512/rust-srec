@@ -1,5 +1,8 @@
 use amf0::{Amf0Value, Amf0WriteError};
-use flv::{audio::SoundFormat, video::VideoCodecId};
+use flv::{
+    audio::SoundFormat,
+    video::{VideoCodec, VideoFourCC},
+};
 use std::collections::HashMap;
 use time::OffsetDateTime;
 
@@ -11,7 +14,7 @@ pub struct AmfScriptData {
     pub width: Option<f64>,
     pub height: Option<f64>,
     pub framerate: Option<f64>,
-    pub videocodecid: Option<VideoCodecId>,
+    pub videocodecid: Option<VideoCodec>,
     pub videodatarate: Option<f64>,
 
     // Audio Properties
@@ -83,6 +86,20 @@ fn extract_u64_array(value: &Amf0Value<'_>) -> Option<Vec<u64>> {
     )
 }
 
+fn parse_video_codec(value: &Amf0Value<'_>) -> Option<VideoCodec> {
+    if let Some(value) = value.as_number()
+        && value.is_finite()
+        && value.fract() == 0.0
+        && (0.0..=u32::MAX as f64).contains(&value)
+    {
+        return VideoCodec::try_from(value as u32).ok();
+    }
+
+    // Some origins emit a FourCC string despite Enhanced RTMP requiring a number.
+    let bytes = <[u8; 4]>::try_from(value.as_str()?.as_bytes()).ok()?;
+    VideoFourCC::try_from(bytes).ok().map(VideoCodec::Enhanced)
+}
+
 impl AmfScriptData {
     pub fn from_amf_object_ref(
         obj: &[(impl AsRef<str>, Amf0Value<'_>)],
@@ -96,11 +113,7 @@ impl AmfScriptData {
                 "width" => data.width = value.as_number(),
                 "height" => data.height = value.as_number(),
                 "framerate" => data.framerate = value.as_number(),
-                "videocodecid" => {
-                    data.videocodecid = value
-                        .as_number()
-                        .and_then(|v| VideoCodecId::try_from(v as u8).ok())
-                }
+                "videocodecid" => data.videocodecid = parse_video_codec(value),
                 "videodatarate" => data.videodatarate = value.as_number(),
                 "audiocodecid" => {
                     data.audiocodecid = value
@@ -171,5 +184,25 @@ impl AmfScriptData {
 
         data.custom_properties = custom_properties;
         Ok(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_nonstandard_string_video_fourcc() {
+        assert_eq!(
+            parse_video_codec(&Amf0Value::String("av01".into())),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_numeric_video_codecs_without_lossy_casts() {
+        for value in [-1.0, 7.5, u32::MAX as f64 + 1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(parse_video_codec(&Amf0Value::Number(value)), None);
+        }
     }
 }

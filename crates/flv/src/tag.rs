@@ -7,7 +7,7 @@ use tracing::{debug, trace};
 
 use crate::audio::{AudioFourCC, SoundFormat};
 use crate::resolution::Resolution;
-use crate::video::{EnhancedPacketType, VideoCodecId, VideoFourCC, VideoFrameType};
+use crate::video::{EnhancedPacketType, VideoCodec, VideoCodecId, VideoFourCC, VideoFrameType};
 use crate::{framing, framing::ParsedTagHeader};
 
 use super::audio::AudioData;
@@ -72,6 +72,43 @@ pub struct TagClass {
     pub codec: Option<CodecKind>,
 }
 
+fn video_codec_from_payload(data: &[u8]) -> Option<VideoCodec> {
+    let first_byte = *data.first()?;
+    let frame_type = (first_byte >> 4) & 0x07;
+    if frame_type == VideoFrameType::VideoInfoFrame as u8 {
+        return None;
+    }
+
+    if first_byte & 0x80 != 0 {
+        let bytes = <[u8; 4]>::try_from(data.get(1..5)?).ok()?;
+        return VideoFourCC::try_from(bytes).ok().map(VideoCodec::Enhanced);
+    }
+
+    VideoCodecId::try_from(first_byte & 0x0F)
+        .ok()
+        .filter(|codec_id| *codec_id != VideoCodecId::ExHeader)
+        .map(VideoCodec::Legacy)
+}
+
+fn codec_kind_from_video_codec(codec: VideoCodec) -> Option<CodecKind> {
+    Some(match codec {
+        VideoCodec::Legacy(VideoCodecId::SorensonH263) => CodecKind::SorensonH263,
+        VideoCodec::Legacy(VideoCodecId::ScreenVideo) => CodecKind::ScreenVideo,
+        VideoCodec::Legacy(VideoCodecId::On2VP6) => CodecKind::On2Vp6,
+        VideoCodec::Legacy(VideoCodecId::On2VP6Alpha) => CodecKind::On2Vp6Alpha,
+        VideoCodec::Legacy(VideoCodecId::Avc) | VideoCodec::Enhanced(VideoFourCC::Avc1) => {
+            CodecKind::Avc
+        }
+        VideoCodec::Legacy(VideoCodecId::LegacyHevc) | VideoCodec::Enhanced(VideoFourCC::Hvc1) => {
+            CodecKind::Hevc
+        }
+        VideoCodec::Enhanced(VideoFourCC::Vp08) => CodecKind::Vp8,
+        VideoCodec::Enhanced(VideoFourCC::Vp09) => CodecKind::Vp9,
+        VideoCodec::Enhanced(VideoFourCC::Av01) => CodecKind::Av1,
+        VideoCodec::Legacy(VideoCodecId::ExHeader) => return None,
+    })
+}
+
 impl TagClass {
     fn from_payload(tag_type: FlvTagType, is_filtered: bool, data: &[u8]) -> Self {
         if is_filtered {
@@ -91,21 +128,19 @@ impl TagClass {
         };
 
         let enhanced = first_byte & 0x80 != 0;
-        let keyframe = ((first_byte >> 4) & 0x07) == VideoFrameType::KeyFrame as u8;
+        let frame_type = (first_byte >> 4) & 0x07;
+        let keyframe = frame_type == VideoFrameType::KeyFrame as u8;
+
+        if frame_type == VideoFrameType::VideoInfoFrame as u8 {
+            return Self {
+                enhanced,
+                ..Self::default()
+            };
+        }
 
         if enhanced {
             let packet_type = EnhancedPacketType::from(first_byte & 0x0F);
-            let codec = data
-                .get(1..5)
-                .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
-                .and_then(|bytes| VideoFourCC::try_from(bytes).ok())
-                .map(|codec| match codec {
-                    VideoFourCC::Avc1 => CodecKind::Avc,
-                    VideoFourCC::Hvc1 => CodecKind::Hevc,
-                    VideoFourCC::Vp08 => CodecKind::Vp8,
-                    VideoFourCC::Vp09 => CodecKind::Vp9,
-                    VideoFourCC::Av01 => CodecKind::Av1,
-                });
+            let codec = video_codec_from_payload(data).and_then(codec_kind_from_video_codec);
             let coded_frames = packet_type == EnhancedPacketType::CODED_FRAMES
                 || packet_type == EnhancedPacketType::CODED_FRAMES_X;
 
@@ -119,16 +154,12 @@ impl TagClass {
             };
         }
 
-        let codec_id = VideoCodecId::try_from(first_byte & 0x0F).ok();
-        let codec = codec_id.and_then(|codec| match codec {
-            VideoCodecId::SorensonH263 => Some(CodecKind::SorensonH263),
-            VideoCodecId::ScreenVideo => Some(CodecKind::ScreenVideo),
-            VideoCodecId::On2VP6 => Some(CodecKind::On2Vp6),
-            VideoCodecId::On2VP6Alpha => Some(CodecKind::On2Vp6Alpha),
-            VideoCodecId::Avc => Some(CodecKind::Avc),
-            VideoCodecId::LegacyHevc => Some(CodecKind::Hevc),
-            VideoCodecId::ExHeader => None,
-        });
+        let video_codec = video_codec_from_payload(data);
+        let codec_id = match video_codec {
+            Some(VideoCodec::Legacy(codec_id)) => Some(codec_id),
+            _ => None,
+        };
+        let codec = video_codec.and_then(codec_kind_from_video_codec);
         let packet_type = data.get(1).copied();
         let packetized = matches!(codec_id, Some(VideoCodecId::Avc | VideoCodecId::LegacyHevc));
 
@@ -428,19 +459,22 @@ impl FlvTag {
     }
 
     pub fn get_video_codec_id(&self) -> Option<VideoCodecId> {
-        if self.tag_type != FlvTagType::Video || self.class.enhanced {
+        match self.get_video_codec()? {
+            VideoCodec::Legacy(codec_id) => Some(codec_id),
+            VideoCodec::Enhanced(_) => None,
+        }
+    }
+
+    /// Returns the codec identifier carried by this video tag.
+    ///
+    /// Legacy tags return [`VideoCodec::Legacy`], while enhanced tags return
+    /// [`VideoCodec::Enhanced`] with their FourCC value.
+    pub fn get_video_codec(&self) -> Option<VideoCodec> {
+        if self.tag_type != FlvTagType::Video || self.is_filtered {
             return None;
         }
 
-        match self.class.codec? {
-            CodecKind::SorensonH263 => Some(VideoCodecId::SorensonH263),
-            CodecKind::ScreenVideo => Some(VideoCodecId::ScreenVideo),
-            CodecKind::On2Vp6 => Some(VideoCodecId::On2VP6),
-            CodecKind::On2Vp6Alpha => Some(VideoCodecId::On2VP6Alpha),
-            CodecKind::Avc => Some(VideoCodecId::Avc),
-            CodecKind::Hevc => Some(VideoCodecId::LegacyHevc),
-            _ => None,
-        }
+        video_codec_from_payload(&self.data)
     }
 
     pub fn get_audio_codec_id(&self) -> Option<SoundFormat> {
@@ -606,6 +640,20 @@ mod tests {
         assert!(class.end_of_sequence);
         assert!(class.enhanced);
         assert_eq!(class.codec, Some(CodecKind::Av1));
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn returns_legacy_video_codec() {
+        let tag = video_tag(&[0x17, 0, 0, 0, 0]);
+
+        assert_eq!(
+            tag.get_video_codec(),
+            Some(VideoCodec::Legacy(VideoCodecId::Avc))
+        );
     }
 
     #[test]
@@ -629,6 +677,7 @@ mod tests {
         );
 
         assert_eq!(tag.classification(), TagClass::default());
+        assert_eq!(tag.get_video_codec(), None);
     }
 
     #[test]
@@ -669,6 +718,16 @@ mod tests {
     }
 
     #[test]
+    fn enhanced_command_does_not_expose_a_codec_or_packet_classification() {
+        let tag = video_tag(&[0xD0, 0x00]);
+
+        assert!(tag.classification().enhanced);
+        assert!(!tag.is_video_sequence_header());
+        assert_eq!(tag.classification().codec, None);
+        assert_eq!(tag.get_video_codec(), None);
+    }
+
+    #[test]
     fn legacy_avc_packet_types() {
         // 0x17 = KeyFrame + AVC; byte 1 is AVCPacketType.
         let seq_header = video_tag(&[0x17, 0x00, 0, 0, 0]);
@@ -700,6 +759,7 @@ mod tests {
         assert!(!video.is_key_frame_nalu());
         assert!(!video.is_video_sequence_header());
         assert_eq!(video.get_video_codec_id(), None);
+        assert_eq!(video.get_video_codec(), None);
 
         let audio = audio_tag(&[]);
         assert!(!audio.is_audio_sequence_header());

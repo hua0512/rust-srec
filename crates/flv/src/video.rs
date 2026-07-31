@@ -229,9 +229,65 @@ pub enum VideoFourCC {
     Av01,
 }
 
+/// Video codec identifier used by legacy and enhanced FLV tags.
+///
+/// Legacy FLV stores a numeric [`VideoCodecId`], while enhanced FLV stores a
+/// [`VideoFourCC`]. Keeping both representations prevents enhanced codecs such
+/// as AV1 from being flattened into an unknown legacy codec ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoCodec {
+    Legacy(VideoCodecId),
+    Enhanced(VideoFourCC),
+}
+
+impl VideoCodec {
+    /// Returns the numeric representation used by FLV `onMetaData`.
+    ///
+    /// Legacy codecs use their numeric codec ID. Enhanced codecs use the
+    /// big-endian numeric value of their FourCC, as required by Enhanced RTMP.
+    pub const fn as_u32(&self) -> u32 {
+        match self {
+            Self::Legacy(codec_id) => *codec_id as u8 as u32,
+            Self::Enhanced(four_cc) => four_cc.as_u32(),
+        }
+    }
+}
+
+impl From<VideoCodecId> for VideoCodec {
+    fn from(codec: VideoCodecId) -> Self {
+        Self::Legacy(codec)
+    }
+}
+
+impl From<VideoFourCC> for VideoCodec {
+    fn from(codec: VideoFourCC) -> Self {
+        Self::Enhanced(codec)
+    }
+}
+
+impl TryFrom<u32> for VideoCodec {
+    type Error = io::Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if let Ok(value) = u8::try_from(value)
+            && let Ok(codec_id) = VideoCodecId::try_from(value)
+        {
+            return Ok(Self::Legacy(codec_id));
+        }
+
+        VideoFourCC::try_from(value).map(Self::Enhanced)
+    }
+}
+
+impl From<VideoCodec> for u32 {
+    fn from(codec: VideoCodec) -> Self {
+        codec.as_u32()
+    }
+}
+
 impl VideoFourCC {
     /// Returns the 32-bit integer representation of the FourCC
-    pub fn as_u32(&self) -> u32 {
+    pub const fn as_u32(&self) -> u32 {
         match self {
             Self::Avc1 => 0x61766331, // "avc1"
             Self::Hvc1 => 0x68766331, // "hvc1"
@@ -697,6 +753,7 @@ mod tests {
     fn test_video_fourcc() {
         let cases = [
             (VideoFourCC::Av01, *b"av01", "Av01"),
+            (VideoFourCC::Vp08, *b"vp08", "Vp08"),
             (VideoFourCC::Vp09, *b"vp09", "Vp09"),
             (VideoFourCC::Hvc1, *b"hvc1", "Hvc1"),
             (VideoFourCC::Avc1, *b"avc1", "Avc1"),
@@ -709,6 +766,24 @@ mod tests {
 
         // Unknown FourCC should error
         assert!(VideoFourCC::try_from(*b"xxxx").is_err());
+    }
+
+    #[test]
+    fn test_video_codec_numeric_representation() {
+        let cases = [
+            (VideoCodec::Legacy(VideoCodecId::Avc), 7),
+            (VideoCodec::Enhanced(VideoFourCC::Avc1), 0x6176_6331),
+            (VideoCodec::Enhanced(VideoFourCC::Hvc1), 0x6876_6331),
+            (VideoCodec::Enhanced(VideoFourCC::Vp08), 0x7670_3038),
+            (VideoCodec::Enhanced(VideoFourCC::Vp09), 0x7670_3039),
+            (VideoCodec::Enhanced(VideoFourCC::Av01), 0x6176_3031),
+        ];
+
+        for (codec, value) in cases {
+            assert_eq!(codec.as_u32(), value);
+            assert_eq!(VideoCodec::try_from(value).unwrap(), codec);
+        }
+        assert!(VideoCodec::try_from(0).is_err());
     }
 
     #[test]

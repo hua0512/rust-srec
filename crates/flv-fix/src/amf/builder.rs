@@ -2,7 +2,7 @@ use crate::amf::model::{AmfScriptData, KeyframeData};
 use crate::analyzer::FlvStats;
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError};
 use byteorder::{BigEndian, WriteBytesExt};
-use flv::{audio::SoundFormat, video::VideoCodecId};
+use flv::{audio::SoundFormat, video::VideoCodec};
 use std::borrow::Cow;
 use tracing::debug;
 
@@ -129,9 +129,9 @@ impl OnMetaDataBuilder {
         self
     }
 
-    /// Sets the video codec ID.
-    pub fn with_video_codec(mut self, codec: VideoCodecId) -> Self {
-        self.data.videocodecid = Some(codec);
+    /// Sets the legacy or enhanced video codec identifier.
+    pub fn with_video_codec(mut self, codec: impl Into<VideoCodec>) -> Self {
+        self.data.videocodecid = Some(codec.into());
         self
     }
 
@@ -447,7 +447,7 @@ impl OnMetaDataBuilder {
             "videocodecid" => self
                 .data
                 .videocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .map(|codec| Amf0Value::Number(codec.as_u32() as f64))
                 .or(Some(Amf0Value::Number(0.0))),
             "videodatarate" => self
                 .data
@@ -696,6 +696,39 @@ mod tests {
     use super::*;
     use amf0::Amf0Decoder;
     use flv::script::ScriptData;
+    use flv::video::{VideoCodec, VideoFourCC};
+
+    #[test]
+    fn preserves_numeric_av1_fourcc_metadata() {
+        let properties = [(
+            Cow::Borrowed("videocodecid"),
+            Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64),
+        )];
+        let model = AmfScriptData::from_amf_object_ref(&properties).unwrap();
+
+        assert_eq!(
+            model.videocodecid,
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "videocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(
+            codec,
+            Some(&Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64))
+        );
+    }
 
     #[test]
     fn test_on_meta_data_builder_final_keyframes() {

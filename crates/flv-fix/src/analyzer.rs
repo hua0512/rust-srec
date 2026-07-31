@@ -3,7 +3,7 @@ use flv::{
     header::FlvHeader,
     resolution::Resolution,
     tag::FlvTag,
-    video::VideoCodecId,
+    video::{VideoCodec, VideoCodecId},
 };
 
 use std::fmt;
@@ -38,7 +38,7 @@ pub struct Keyframe {
 
 #[derive(Debug, Clone, Default)]
 pub struct VideoStats {
-    pub video_codec: Option<VideoCodecId>,
+    pub video_codec: Option<VideoCodec>,
     pub video_tag_count: u32,
     pub video_tags_size: u64,
     pub video_data_size: u64,
@@ -261,7 +261,9 @@ impl FlvStats {
             writeln!(
                 f,
                 "    Video codec: {:?}",
-                video_stats.video_codec.unwrap_or(VideoCodecId::Avc)
+                video_stats
+                    .video_codec
+                    .unwrap_or(VideoCodec::Legacy(VideoCodecId::Avc))
             )?;
             if let Some(resolution) = &video_stats.resolution {
                 writeln!(
@@ -544,9 +546,8 @@ impl FlvAnalyzer {
             }
 
             if video_stats.video_codec.is_none() {
-                // parse the codec id
-                if let Some(codec_id) = tag.get_video_codec_id() {
-                    video_stats.video_codec = Some(codec_id);
+                if let Some(codec) = tag.get_video_codec() {
+                    video_stats.video_codec = Some(codec);
                 } else {
                     debug!(
                         ts_ms = tag.timestamp_ms,
@@ -647,7 +648,10 @@ impl FlvAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
     use flv::header::FlvHeader;
+    use flv::tag::FlvTagType;
+    use flv::video::VideoFourCC;
 
     #[test]
     fn test_analyze_header() {
@@ -655,5 +659,32 @@ mod tests {
         let header = FlvHeader::new(true, true);
         assert!(analyzer.analyze_header(&header).is_ok());
         assert_eq!(analyzer.stats.file_size, 13); // 9 bytes for header + 4 bytes for previous tag size
+    }
+
+    #[test]
+    fn detects_enhanced_av1_codec() {
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(false, true))
+            .unwrap();
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(b"\x90av01\x81\r\x0c\0"),
+        );
+
+        analyzer.analyze_tag(&tag).unwrap();
+
+        assert_eq!(
+            analyzer
+                .build_stats()
+                .unwrap()
+                .video_stats
+                .as_ref()
+                .and_then(|stats| stats.video_codec),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
     }
 }
