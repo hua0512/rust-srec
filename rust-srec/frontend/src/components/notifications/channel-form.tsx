@@ -68,7 +68,7 @@ type FormData = ChannelFormData;
  * The form holds one `settings` object shared by every type, so switching type has to re-seed it;
  * otherwise the previous type's keys linger and the new type's own fields come up empty.
  */
-const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
+export const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
   Webhook: {
     url: '',
     method: 'POST',
@@ -94,6 +94,21 @@ const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
     locale: '',
     enabled: true,
     timeout_secs: 30,
+  },
+  Email: {
+    smtp_host: '',
+    smtp_port: 587,
+    // Empty strings rather than omitted keys: `EmailChannelSettings` declares
+    // `username`/`password` as plain `String`, so a missing key fails deserialization.
+    // `service.rs` maps the empty string to `None` for an unauthenticated relay.
+    username: '',
+    password: '',
+    from_address: '',
+    to_addresses: [],
+    use_tls: true,
+    min_priority: 8,
+    locale: '',
+    enabled: true,
   },
 };
 
@@ -405,13 +420,12 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                             <SelectItem value="Webhook">Webhook</SelectItem>
                             <SelectItem value="Telegram">Telegram</SelectItem>
                             <SelectItem value="Gotify">Gotify</SelectItem>
-                            {/* Disabled rather than selectable-then-rejected: the previous
-                              version accepted the click and answered with a warning toast. */}
+                            <SelectItem value="Email">Email</SelectItem>
+                            {/* Disabled rather than selectable-then-rejected: selecting a type
+                              with no `DEFAULT_SETTINGS` entry leaves the previous type's keys in
+                              `settings`, so its own inputs come up blank. */}
                             <SelectItem value="Discord" disabled>
                               Discord <ComingSoon />
-                            </SelectItem>
-                            <SelectItem value="Email" disabled>
-                              Email <ComingSoon />
                             </SelectItem>
                           </SelectContent>
                         </Select>

@@ -974,7 +974,7 @@ msgstr "缓存"
 #: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:264
 #: src/components/notifications/channel-card.tsx:226
-#: src/components/notifications/channel-form.tsx:443
+#: src/components/notifications/channel-form.tsx:457
 #: src/components/notifications/subscription-manager.tsx:460
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
@@ -1077,7 +1077,7 @@ msgstr "需要修改密码"
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/notifications/channel-form.tsx:360
+#: src/components/notifications/channel-form.tsx:375
 msgid "Channel"
 msgstr "渠道"
 
@@ -1085,7 +1085,7 @@ msgstr "渠道"
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "已处理分段的通道缓冲倍数。"
 
-#: src/components/notifications/channel-form.tsx:260
+#: src/components/notifications/channel-form.tsx:275
 msgid "Channel created"
 msgstr "渠道已创建"
 
@@ -1093,7 +1093,7 @@ msgstr "渠道已创建"
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:274
+#: src/components/notifications/channel-form.tsx:289
 msgid "Channel updated"
 msgstr "渠道已更新"
 
@@ -1249,7 +1249,7 @@ msgstr "最接近目标码率"
 msgid "Collapsible"
 msgstr "折叠方式"
 
-#: src/components/notifications/channel-form.tsx:465
+#: src/components/notifications/channel-form.tsx:479
 msgid "Coming soon"
 msgstr "即将推出"
 
@@ -1360,7 +1360,7 @@ msgstr "配置"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:427
+#: src/components/notifications/channel-form.tsx:441
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:395
 #: src/components/pipeline/workflows/workflow-editor.tsx:303
@@ -1421,7 +1421,7 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:344
+#: src/components/notifications/channel-form.tsx:359
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
@@ -1631,7 +1631,7 @@ msgstr "创建模板以定义可复用的录制配置。"
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
-#: src/components/notifications/channel-form.tsx:450
+#: src/components/notifications/channel-form.tsx:464
 msgid "Create channel"
 msgstr "创建渠道"
 
@@ -2487,7 +2487,7 @@ msgstr "例如：标准处理"
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/notifications/channel-form.tsx:338
+#: src/components/notifications/channel-form.tsx:353
 msgid "Edit channel"
 msgstr "编辑渠道"
 
@@ -2978,7 +2978,7 @@ msgstr "复制失败"
 msgid "Failed to copy destination"
 msgstr "复制目标路径失败"
 
-#: src/components/notifications/channel-form.tsx:267
+#: src/components/notifications/channel-form.tsx:282
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
@@ -3169,7 +3169,7 @@ msgstr "发送测试通知失败"
 msgid "Failed to trigger check"
 msgstr "触发检查失败"
 
-#: src/components/notifications/channel-form.tsx:281
+#: src/components/notifications/channel-form.tsx:296
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
@@ -4836,7 +4836,7 @@ msgstr "指数退避的倍率。"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:374
+#: src/components/notifications/channel-form.tsx:389
 msgid "My Channel"
 msgstr "我的渠道"
 
@@ -4844,7 +4844,7 @@ msgstr "我的渠道"
 msgid "My Template"
 msgstr "我的模板"
 
-#: src/components/notifications/channel-form.tsx:369
+#: src/components/notifications/channel-form.tsx:384
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
@@ -4900,7 +4900,7 @@ msgstr "新建"
 msgid "NEW"
 msgstr "新"
 
-#: src/components/notifications/channel-form.tsx:340
+#: src/components/notifications/channel-form.tsx:355
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
@@ -6877,7 +6877,7 @@ msgstr "星期六"
 
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:278
-#: src/components/notifications/channel-form.tsx:448
+#: src/components/notifications/channel-form.tsx:462
 #: src/components/shared/save-fab.tsx:99
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
@@ -7204,7 +7204,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:236
-#: src/components/notifications/channel-form.tsx:400
+#: src/components/notifications/channel-form.tsx:415
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:164
 msgid "Select type"
 msgstr "选择类型"
@@ -8398,7 +8398,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:390
+#: src/components/notifications/channel-form.tsx:405
 msgid "Type"
 msgstr "类型"
 

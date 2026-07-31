@@ -974,7 +974,7 @@ msgstr "Cache"
 #: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:264
 #: src/components/notifications/channel-card.tsx:226
-#: src/components/notifications/channel-form.tsx:443
+#: src/components/notifications/channel-form.tsx:457
 #: src/components/notifications/subscription-manager.tsx:460
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
@@ -1077,7 +1077,7 @@ msgstr "Change Password Required"
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
-#: src/components/notifications/channel-form.tsx:360
+#: src/components/notifications/channel-form.tsx:375
 msgid "Channel"
 msgstr "Channel"
 
@@ -1085,7 +1085,7 @@ msgstr "Channel"
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "Channel buffer size multiplier for processed segments."
 
-#: src/components/notifications/channel-form.tsx:260
+#: src/components/notifications/channel-form.tsx:275
 msgid "Channel created"
 msgstr "Channel created"
 
@@ -1093,7 +1093,7 @@ msgstr "Channel created"
 msgid "Channel deleted"
 msgstr "Channel deleted"
 
-#: src/components/notifications/channel-form.tsx:274
+#: src/components/notifications/channel-form.tsx:289
 msgid "Channel updated"
 msgstr "Channel updated"
 
@@ -1249,7 +1249,7 @@ msgstr "Closest to bitrate"
 msgid "Collapsible"
 msgstr "Collapsible"
 
-#: src/components/notifications/channel-form.tsx:465
+#: src/components/notifications/channel-form.tsx:479
 msgid "Coming soon"
 msgstr "Coming soon"
 
@@ -1360,7 +1360,7 @@ msgstr "Config"
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
-#: src/components/notifications/channel-form.tsx:427
+#: src/components/notifications/channel-form.tsx:441
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:395
 #: src/components/pipeline/workflows/workflow-editor.tsx:303
@@ -1421,7 +1421,7 @@ msgstr "Configure Settings"
 msgid "Configure Step"
 msgstr "Configure Step"
 
-#: src/components/notifications/channel-form.tsx:344
+#: src/components/notifications/channel-form.tsx:359
 msgid "Configure where and how you receive notifications."
 msgstr "Configure where and how you receive notifications."
 
@@ -1631,7 +1631,7 @@ msgstr "Create a template to define reusable download configurations."
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
-#: src/components/notifications/channel-form.tsx:450
+#: src/components/notifications/channel-form.tsx:464
 msgid "Create channel"
 msgstr "Create channel"
 
@@ -2487,7 +2487,7 @@ msgstr "e.g., Standard Processing"
 msgid "Edit"
 msgstr "Edit"
 
-#: src/components/notifications/channel-form.tsx:338
+#: src/components/notifications/channel-form.tsx:353
 msgid "Edit channel"
 msgstr "Edit channel"
 
@@ -2978,7 +2978,7 @@ msgstr "Failed to copy"
 msgid "Failed to copy destination"
 msgstr "Failed to copy destination"
 
-#: src/components/notifications/channel-form.tsx:267
+#: src/components/notifications/channel-form.tsx:282
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
@@ -3169,7 +3169,7 @@ msgstr "Failed to send test notification"
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
 
-#: src/components/notifications/channel-form.tsx:281
+#: src/components/notifications/channel-form.tsx:296
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
@@ -4836,7 +4836,7 @@ msgstr "Multiplier for exponential backoff."
 msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
-#: src/components/notifications/channel-form.tsx:374
+#: src/components/notifications/channel-form.tsx:389
 msgid "My Channel"
 msgstr "My Channel"
 
@@ -4844,7 +4844,7 @@ msgstr "My Channel"
 msgid "My Template"
 msgstr "My Template"
 
-#: src/components/notifications/channel-form.tsx:369
+#: src/components/notifications/channel-form.tsx:384
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
@@ -4900,7 +4900,7 @@ msgstr "New"
 msgid "NEW"
 msgstr "NEW"
 
-#: src/components/notifications/channel-form.tsx:340
+#: src/components/notifications/channel-form.tsx:355
 msgid "New notification channel"
 msgstr "New notification channel"
 
@@ -6877,7 +6877,7 @@ msgstr "Saturday"
 
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:278
-#: src/components/notifications/channel-form.tsx:448
+#: src/components/notifications/channel-form.tsx:462
 #: src/components/shared/save-fab.tsx:99
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
@@ -7204,7 +7204,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:236
-#: src/components/notifications/channel-form.tsx:400
+#: src/components/notifications/channel-form.tsx:415
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:164
 msgid "Select type"
 msgstr "Select type"
@@ -8398,7 +8398,7 @@ msgstr "Twitch Proxy Playlist"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
-#: src/components/notifications/channel-form.tsx:390
+#: src/components/notifications/channel-form.tsx:405
 msgid "Type"
 msgstr "Type"
 

@@ -57,18 +57,33 @@ export const DiscordSettingsSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const EmailSettingsSchema = z.object({
-  smtp_host: z.string().min(1),
-  smtp_port: z.number().int().positive(),
-  username: z.string().min(1),
-  password: z.string().min(1),
-  from_address: z.email(),
-  to_addresses: z.array(z.email()).min(1),
-  use_tls: z.boolean().default(true),
-  min_priority: z.number().int().min(0).max(10).default(8),
-  locale: NotificationLocaleSchema,
-  enabled: z.boolean().default(true),
-});
+export const EmailSettingsSchema = z
+  .object({
+    smtp_host: z.string().min(1),
+    smtp_port: z.number().int().positive().max(65535),
+    // Always sent, empty when the relay needs no credentials: `EmailChannelSettings` declares
+    // both as plain `String`, and `NotificationService::build_channel` maps "" to `None`.
+    username: z.string(),
+    password: z.string(),
+    from_address: z.email(),
+    to_addresses: z.array(z.email()).min(1),
+    use_tls: z.boolean().default(true),
+    min_priority: z.number().int().min(0).max(10).default(8),
+    locale: NotificationLocaleSchema,
+    enabled: z.boolean().default(true),
+  })
+  // `EmailChannel::build_transport` rejects a half-configured credential pair, so catch it here
+  // instead of letting the channel fail at delivery time.
+  .superRefine((data, ctx) => {
+    const hasUsername = data.username.trim().length > 0;
+    const hasPassword = data.password.length > 0;
+    if (hasUsername === hasPassword) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: [hasUsername ? 'password' : 'username'],
+      message: 'Set both a username and a password, or leave both empty',
+    });
+  });
 
 export const WebhookAuthTypeSchema = z.enum([
   'None',
