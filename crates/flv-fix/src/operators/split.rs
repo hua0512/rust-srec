@@ -241,7 +241,7 @@ impl SplitOperator {
         use flv::av1::Av1Packet;
         use flv::avc::AvcPacket;
         use flv::hevc::HevcPacket;
-        use flv::video::{EnhancedPacket, VideoData, VideoTagBody};
+        use flv::video::{EnhancedPacket, VideoCodec, VideoData, VideoFourCC, VideoTagBody};
 
         let data = tag.data().clone();
         let mut cursor = std::io::Cursor::new(data);
@@ -309,11 +309,23 @@ impl SplitOperator {
                     }
                 }
                 _ => {
-                    // Fallback: use codec ID from tag
-                    let codec = tag
-                        .get_video_codec_id()
-                        .map(|id| format!("{id:?}"))
-                        .unwrap_or_else(|| "unknown".to_string());
+                    // Fallback for bodies without a parsed decoder config (e.g.
+                    // `EnhancedPacket::Unknown` for VP8/VP9): report the codec
+                    // identifier alone. `FlvTag::get_video_codec` covers both legacy
+                    // codec IDs and enhanced FourCCs (`get_video_codec_id` is
+                    // legacy-only and returns `None` for enhanced tags). Enhanced
+                    // names must match the strings the deep-parse arms above produce
+                    // ("AVC", "HEVC", "AV1") because `VideoCodecInfo::codec` pairs
+                    // `from`/`to` values in `SplitReason::VideoCodecChange`.
+                    let codec = match tag.get_video_codec() {
+                        Some(VideoCodec::Legacy(id)) => format!("{id:?}"),
+                        Some(VideoCodec::Enhanced(VideoFourCC::Avc1)) => "AVC".to_string(),
+                        Some(VideoCodec::Enhanced(VideoFourCC::Hvc1)) => "HEVC".to_string(),
+                        Some(VideoCodec::Enhanced(VideoFourCC::Av01)) => "AV1".to_string(),
+                        Some(VideoCodec::Enhanced(VideoFourCC::Vp08)) => "VP8".to_string(),
+                        Some(VideoCodec::Enhanced(VideoFourCC::Vp09)) => "VP9".to_string(),
+                        None => "unknown".to_string(),
+                    };
                     VideoCodecInfo {
                         codec,
                         profile: None,
@@ -784,6 +796,28 @@ mod tests {
             header_count, 2,
             "Should detect video codec change and inject new header"
         );
+    }
+
+    #[test]
+    fn test_extract_video_codec_info_fallback_enhanced_vp9() {
+        // Enhanced keyframe + SEQUENCE_START with the VP9 FourCC: `VideoData::demux`
+        // yields `EnhancedPacket::Unknown` (no VP9 config parser), so
+        // `extract_video_codec_info` takes its `get_video_codec` fallback arm.
+        let tag = FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![0x90, b'v', b'p', b'0', b'9', 0x01, 0x02]),
+        );
+
+        let info = SplitOperator::extract_video_codec_info(&tag, 0);
+
+        assert_eq!(info.codec, "VP9");
+        assert_eq!(info.profile, None);
+        assert_eq!(info.level, None);
+        assert_eq!(info.width, None);
+        assert_eq!(info.height, None);
     }
 
     #[test]
