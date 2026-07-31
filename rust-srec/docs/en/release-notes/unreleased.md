@@ -102,6 +102,10 @@
 
   A job that produced a lot of output — for example an rclone step with verbose logging flags in its extra arguments — could keep adding lines to its execution log indefinitely, growing the database until the time-based history cleanup caught up. Each job run now keeps its most recent 5000 log lines and discards the oldest beyond that. Normal runs stay far below the limit, so their logs are unaffected.
 
+- **Recordings of AV1 and other newer-codec streams keep their codec information**
+
+  When an FLV recording finished, the recorder patched the file's metadata but only understood the original FLV codec numbering. Streams using newer codecs — AV1 video, or Opus audio, for example — had the codec field in the finished file overwritten with a meaningless number, so players and tools that read it reported the wrong codec. The correct codec is now written for both video and audio, older and newer formats alike, and when the recorder can't determine the codec from the stream it keeps what the stream's own metadata declared instead of overwriting it. Streams that carry several video tracks in one feed are recognized as well.
+
 ### Removed
 
 - **Telegram (tdl) upload step**

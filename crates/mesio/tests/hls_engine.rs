@@ -189,6 +189,24 @@ fn minimal_flv_bytes() -> Vec<u8> {
     bytes
 }
 
+fn av1_flv_bytes() -> Vec<u8> {
+    let mut bytes = vec![
+        b'F', b'L', b'V', 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00,
+    ];
+    bytes.extend_from_slice(&[
+        0x09, // video tag
+        0x00, 0x00, 0x09, // data size
+        0x00, 0x00, 0x00, // timestamp
+        0x00, // timestamp extended
+        0x00, 0x00, 0x00, // stream id
+        0x90, // enhanced keyframe + sequence start
+        b'a', b'v', b'0', b'1', // AV1 FourCC
+        0x81, 0x0D, 0x0C, 0x00, // minimal av1C configuration record
+        0x00, 0x00, 0x00, 0x14, // previous tag size
+    ]);
+    bytes
+}
+
 fn fast_config() -> HlsConfig {
     let mut config = HlsConfig::default();
     config.playlist_config.live_refresh_interval = Duration::from_millis(20);
@@ -1049,6 +1067,43 @@ async fn mesio_downloader_flv_source_selection_emits_event() {
     }
 
     assert_eq!(selected, Some((format!("{base}/stream.flv"), 7, 1)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_downloader_streams_enhanced_av1_tags() {
+    use flv::video::{VideoCodec, VideoFourCC};
+    use futures::StreamExt;
+    use mesio_engine::flv::FlvDownloader;
+
+    let origin = Origin::new();
+    origin.add_file("stream.flv", av1_flv_bytes());
+    let base = origin.clone().serve().await;
+
+    let downloader = FlvDownloader::new().expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/stream.flv"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(Default::default()));
+    let mut items = downloader
+        .start_session(request)
+        .await
+        .expect("download starts")
+        .items;
+
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(1), items.next())
+        .await
+        .expect("stream item")
+    {
+        if let FlvData::Tag(tag) = item.expect("no stream error") {
+            assert!(tag.is_video_sequence_header());
+            assert_eq!(
+                tag.get_video_codec(),
+                Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+            );
+            return;
+        }
+    }
+
+    panic!("expected an AV1 video tag");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -2,7 +2,7 @@ use crate::amf::model::{AmfScriptData, KeyframeData};
 use crate::analyzer::FlvStats;
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError};
 use byteorder::{BigEndian, WriteBytesExt};
-use flv::{audio::SoundFormat, video::VideoCodecId};
+use flv::{audio::AudioCodec, video::VideoCodec};
 use std::borrow::Cow;
 use tracing::debug;
 
@@ -87,7 +87,14 @@ impl OnMetaDataBuilder {
                 self.data.height = Some(res.height as f64);
             }
             self.data.framerate = Some(video_stats.video_frame_rate as f64);
-            self.data.videocodecid = video_stats.video_codec;
+            // `FlvAnalyzer::analyze_video_tag` only records `video_codec` from
+            // sequence-header tags, so keep the `videocodecid` that
+            // `from_script_data` parsed from the source `onMetaData` when the
+            // analyzer saw none; `get_amf_value_for_key` would otherwise emit
+            // its 0.0 fallback.
+            if video_stats.video_codec.is_some() {
+                self.data.videocodecid = video_stats.video_codec;
+            }
             self.data.videosize = Some(video_stats.video_data_size);
             self.data.lastkeyframetimestamp = Some(video_stats.last_keyframe_timestamp);
             self.data.lastkeyframelocation = Some(video_stats.last_keyframe_position);
@@ -95,7 +102,12 @@ impl OnMetaDataBuilder {
             self.data.can_seek_to_end =
                 Some(video_stats.last_keyframe_timestamp == stats.last_timestamp);
         }
-        self.data.audiocodecid = stats.audio_codec;
+        // Same as `videocodecid`: `FlvAnalyzer::analyze_audio_tag` only records
+        // `audio_codec` from sequence-header tags, so preserve the value parsed
+        // from the source metadata when the analyzer saw none.
+        if stats.audio_codec.is_some() {
+            self.data.audiocodecid = stats.audio_codec;
+        }
         self.data.filesize = Some(stats.file_size);
         self.data.audiosize = Some(stats.audio_data_size);
         self.data.lasttimestamp = Some(stats.last_timestamp);
@@ -129,15 +141,15 @@ impl OnMetaDataBuilder {
         self
     }
 
-    /// Sets the video codec ID.
-    pub fn with_video_codec(mut self, codec: VideoCodecId) -> Self {
-        self.data.videocodecid = Some(codec);
+    /// Sets the legacy or enhanced video codec identifier.
+    pub fn with_video_codec(mut self, codec: impl Into<VideoCodec>) -> Self {
+        self.data.videocodecid = Some(codec.into());
         self
     }
 
-    /// Sets the audio codec ID.
-    pub fn with_audio_codec(mut self, codec: SoundFormat) -> Self {
-        self.data.audiocodecid = Some(codec);
+    /// Sets the legacy or enhanced audio codec identifier.
+    pub fn with_audio_codec(mut self, codec: impl Into<AudioCodec>) -> Self {
+        self.data.audiocodecid = Some(codec.into());
         self
     }
 
@@ -447,7 +459,7 @@ impl OnMetaDataBuilder {
             "videocodecid" => self
                 .data
                 .videocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .map(|codec| Amf0Value::Number(codec.as_u32() as f64))
                 .or(Some(Amf0Value::Number(0.0))),
             "videodatarate" => self
                 .data
@@ -457,7 +469,7 @@ impl OnMetaDataBuilder {
             "audiocodecid" => self
                 .data
                 .audiocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .map(|codec| Amf0Value::Number(codec.as_u32() as f64))
                 .or(Some(Amf0Value::Number(0.0))),
             "audiodatarate" => self
                 .data
@@ -694,8 +706,105 @@ impl OnMetaDataBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::VideoStats;
     use amf0::Amf0Decoder;
+    use flv::audio::AudioFourCC;
     use flv::script::ScriptData;
+    use flv::video::{VideoCodec, VideoCodecId, VideoFourCC};
+
+    #[test]
+    fn preserves_numeric_av1_fourcc_metadata() {
+        let properties = [(
+            Cow::Borrowed("videocodecid"),
+            Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64),
+        )];
+        let model = AmfScriptData::from_amf_object_ref(&properties).unwrap();
+
+        assert_eq!(
+            model.videocodecid,
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "videocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(
+            codec,
+            Some(&Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64))
+        );
+    }
+
+    #[test]
+    fn preserves_numeric_opus_fourcc_metadata() {
+        let properties = [(
+            Cow::Borrowed("audiocodecid"),
+            Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64),
+        )];
+        let model = AmfScriptData::from_amf_object_ref(&properties).unwrap();
+
+        assert_eq!(
+            model.audiocodecid,
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "audiocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(
+            codec,
+            Some(&Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64))
+        );
+    }
+
+    #[test]
+    fn with_stats_keeps_source_video_codec_when_analyzer_recorded_none() {
+        let model = AmfScriptData {
+            videocodecid: Some(VideoCodec::Legacy(VideoCodecId::SorensonH263)),
+            ..AmfScriptData::default()
+        };
+        // VideoStats::default() leaves video_codec as None, matching a stream
+        // whose codec never emits sequence headers.
+        let stats = FlvStats {
+            video_stats: Some(VideoStats::default()),
+            ..FlvStats::default()
+        };
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .with_stats(&stats)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "videocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(codec, Some(&Amf0Value::Number(2.0)));
+    }
 
     #[test]
     fn test_on_meta_data_builder_final_keyframes() {

@@ -233,6 +233,35 @@ impl SplitOperator {
         state
     }
 
+    /// Codec info carrying only a name, for tags `VideoData::demux` cannot
+    /// deep-parse (`EnhancedPacket::Unknown`, multitrack/ModEx wrappers) or
+    /// cannot parse at all. `FlvTag::get_video_codec` covers both legacy codec
+    /// IDs and enhanced FourCCs; enhanced names must match the strings the
+    /// deep-parse arms in `extract_video_codec_info` produce ("AVC", "HEVC",
+    /// "AV1") because `VideoCodecInfo::codec` pairs `from`/`to` values in
+    /// `SplitReason::VideoCodecChange`.
+    fn fallback_video_codec_info(tag: &FlvTag, signature: u32) -> VideoCodecInfo {
+        use flv::video::{VideoCodec, VideoFourCC};
+
+        let codec = match tag.get_video_codec() {
+            Some(VideoCodec::Legacy(id)) => format!("{id:?}"),
+            Some(VideoCodec::Enhanced(VideoFourCC::Avc1)) => "AVC".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Hvc1)) => "HEVC".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01)) => "AV1".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Vp08)) => "VP8".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Vp09)) => "VP9".to_string(),
+            None => "unknown".to_string(),
+        };
+        VideoCodecInfo {
+            codec,
+            profile: None,
+            level: None,
+            width: None,
+            height: None,
+            signature,
+        }
+    }
+
     /// Extract video codec configuration info from a sequence header tag.
     ///
     /// Does best-effort deep parsing to extract codec name, profile, level,
@@ -246,92 +275,75 @@ impl SplitOperator {
         let data = tag.data().clone();
         let mut cursor = std::io::Cursor::new(data);
 
-        match VideoData::demux(&mut cursor) {
+        // A multitrack tag reports its first track, matching
+        // `FlvTag::get_video_codec`, which reads the first track's FourCC.
+        let body = match VideoData::demux(&mut cursor) {
             Ok(video) => match video.body {
-                VideoTagBody::Avc(AvcPacket::SequenceHeader(config)) => {
-                    let resolution =
-                        AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "AVC".to_string(),
-                        profile: Some(config.profile_indication),
-                        level: Some(config.level_indication),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
+                VideoTagBody::Multitrack(mut tracks) if !tracks.is_empty() => {
+                    VideoTagBody::Enhanced(tracks.remove(0).body)
                 }
-                VideoTagBody::Hevc(HevcPacket::SequenceStart(config)) => {
-                    let resolution =
-                        HevcPacket::SequenceStart(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "HEVC".to_string(),
-                        profile: Some(config.general_profile_idc),
-                        level: Some(config.general_level_idc),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(config))) => {
-                    let resolution =
-                        Av1Packet::SequenceStart(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "AV1".to_string(),
-                        profile: Some(config.seq_profile),
-                        level: Some(config.seq_level_idx_0),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::SequenceHeader(config))) => {
-                    let resolution =
-                        AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "AVC".to_string(),
-                        profile: Some(config.profile_indication),
-                        level: Some(config.level_indication),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(config))) => {
-                    let resolution =
-                        HevcPacket::SequenceStart(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "HEVC".to_string(),
-                        profile: Some(config.general_profile_idc),
-                        level: Some(config.general_level_idc),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                _ => {
-                    // Fallback: use codec ID from tag
-                    let codec = tag
-                        .get_video_codec_id()
-                        .map(|id| format!("{id:?}"))
-                        .unwrap_or_else(|| "unknown".to_string());
-                    VideoCodecInfo {
-                        codec,
-                        profile: None,
-                        level: None,
-                        width: None,
-                        height: None,
-                        signature,
-                    }
-                }
+                body => body,
             },
-            Err(_) => VideoCodecInfo {
-                codec: "unknown".to_string(),
-                profile: None,
-                level: None,
-                width: None,
-                height: None,
-                signature,
-            },
+            Err(_) => return Self::fallback_video_codec_info(tag, signature),
+        };
+
+        match body {
+            VideoTagBody::Avc(AvcPacket::SequenceHeader(config)) => {
+                let resolution = AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "AVC".to_string(),
+                    profile: Some(config.profile_indication),
+                    level: Some(config.level_indication),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Hevc(HevcPacket::SequenceStart(config)) => {
+                let resolution = HevcPacket::SequenceStart(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "HEVC".to_string(),
+                    profile: Some(config.general_profile_idc),
+                    level: Some(config.general_level_idc),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(config))) => {
+                let resolution = Av1Packet::SequenceStart(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "AV1".to_string(),
+                    profile: Some(config.seq_profile),
+                    level: Some(config.seq_level_idx_0),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::SequenceHeader(config))) => {
+                let resolution = AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "AVC".to_string(),
+                    profile: Some(config.profile_indication),
+                    level: Some(config.level_indication),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(config))) => {
+                let resolution = HevcPacket::SequenceStart(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "HEVC".to_string(),
+                    profile: Some(config.general_profile_idc),
+                    level: Some(config.general_level_idc),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            _ => Self::fallback_video_codec_info(tag, signature),
         }
     }
 
@@ -340,10 +352,16 @@ impl SplitOperator {
     /// For AAC, parses AudioSpecificConfig to extract sample rate and channels.
     /// For other codecs, returns the codec name only.
     fn extract_audio_codec_info(tag: &FlvTag, signature: u32) -> AudioCodecInfo {
-        let codec_name = tag
-            .get_audio_codec_id()
-            .map(|sf| format!("{sf:?}"))
-            .unwrap_or_else(|| "unknown".to_string());
+        use flv::audio::AudioCodec;
+
+        // `AudioFourCC`'s Debug names line up with `SoundFormat`'s (e.g.
+        // "Aac", "Mp3"), so an enhanced tag reports the same codec string a
+        // legacy tag with the equivalent format would, instead of "ExHeader".
+        let codec_name = match tag.get_audio_codec() {
+            Some(AudioCodec::Legacy(sound_format)) => format!("{sound_format:?}"),
+            Some(AudioCodec::Enhanced(four_cc)) => format!("{four_cc:?}"),
+            None => "unknown".to_string(),
+        };
 
         let data = tag.data().as_ref();
 
@@ -784,6 +802,50 @@ mod tests {
             header_count, 2,
             "Should detect video codec change and inject new header"
         );
+    }
+
+    #[test]
+    fn test_extract_video_codec_info_fallback_enhanced_vp9() {
+        // Enhanced keyframe + SEQUENCE_START with the VP9 FourCC: `VideoData::demux`
+        // yields `EnhancedPacket::Unknown` (no VP9 config parser), so
+        // `extract_video_codec_info` takes its `get_video_codec` fallback arm.
+        let tag = FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![0x90, b'v', b'p', b'0', b'9', 0x01, 0x02]),
+        );
+
+        let info = SplitOperator::extract_video_codec_info(&tag, 0);
+
+        assert_eq!(info.codec, "VP9");
+        assert_eq!(info.profile, None);
+        assert_eq!(info.level, None);
+        assert_eq!(info.width, None);
+        assert_eq!(info.height, None);
+    }
+
+    #[test]
+    fn test_extract_video_codec_info_deep_parses_multitrack_av1() {
+        // OneTrack + SequenceStart multitrack wrapper: the first track's
+        // `EnhancedPacket::Av1` sequence start supplies codec, profile, and
+        // level, matching the single-track AV1 arm.
+        let tag = FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![
+                0x96, 0x00, b'a', b'v', b'0', b'1', 0x00, 0x81, 0x0D, 0x0C, 0x00,
+            ]),
+        );
+
+        let info = SplitOperator::extract_video_codec_info(&tag, 0);
+
+        assert_eq!(info.codec, "AV1");
+        assert_eq!(info.profile, Some(0));
+        assert_eq!(info.level, Some(13));
     }
 
     #[test]
