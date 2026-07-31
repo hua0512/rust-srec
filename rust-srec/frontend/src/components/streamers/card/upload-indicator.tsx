@@ -22,22 +22,22 @@ export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
 
   if (uploads.length === 0) return null;
 
-  // With several concurrent upload jobs, surface the one with the most
-  // recent progress in the compact percent label.
-  const latest = uploads.reduce((a, b) =>
-    b.lastEventAtMs > a.lastEventAtMs ? b : a,
-  );
+  const singleUpload = uploads.length === 1 ? uploads[0] : undefined;
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex h-6 items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 text-sky-600 dark:text-sky-400">
           <CloudUpload className="h-3 w-3 animate-pulse" />
-          {latest.percent != null && (
+          {singleUpload?.percent != null ? (
             <span className="font-mono text-[10px] font-semibold tabular-nums">
-              {Math.min(latest.percent, 100).toFixed(0)}%
+              {Math.min(singleUpload.percent, 100).toFixed(0)}%
             </span>
-          )}
+          ) : uploads.length > 1 ? (
+            <span className="font-mono text-[10px] font-semibold tabular-nums">
+              {uploads.length}
+            </span>
+          ) : null}
         </div>
       </TooltipTrigger>
       <TooltipContent className="space-y-1.5">
