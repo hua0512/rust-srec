@@ -4,13 +4,15 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — rebuilt add/edit streamer pages with the site derived from the link, per-streamer platform options and Streamlink stream lookup, visible uploads with a record of where files went, working email notifications, per-channel notification language, plus a broad reliability pass over recording, monitoring, pipelines, the database and the web interface
+- [`unreleased`](./unreleased.md) — no changes staged yet for the next release
 
 ## Latest release
 
-- [`v0.4.0`](./v0.4.0.md) — two new platforms (SOOP and Bigo Live), a rebuilt Mesio HLS recording engine, streamer bulk actions and list filters, automatic database cleanup, and a flash-free theme system, plus recorded-playback and pipeline-editor fixes
+- [`v0.5.0`](./v0.5.0.md) — rebuilt add/edit streamer pages with the site derived from the link, per-streamer platform options and Streamlink stream lookup, visible uploads that record where files went, working email notifications, per-channel notification language, plus a broad reliability pass over recording, monitoring, pipelines, the database and the web interface
 
 ## Archive
+
+- [`v0.4.0`](./v0.4.0.md) — two new platforms (SOOP and Bigo Live), a rebuilt Mesio HLS recording engine, streamer bulk actions and list filters, automatic database cleanup, and a flash-free theme system, plus recorded-playback and pipeline-editor fixes
 
 - [`v0.3.2`](./v0.3.2.md) — pipeline & recording reliability: end-of-session and paired post-processing wait for the files they need, resumed recordings keep consistent segment numbering, **Delete Source** no longer removes a converted video, and a temporary CDN failure no longer flips a live streamer offline
 
