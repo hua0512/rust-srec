@@ -80,7 +80,7 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: "v0.13.0"
       - uses: ./.github/actions/setup-rust
