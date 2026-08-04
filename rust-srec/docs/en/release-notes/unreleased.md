@@ -2,18 +2,4 @@
 
 ## `unreleased`
 
-## Before you upgrade
-
-- **Event hooks have been removed**
-
-  The **Hooks** tab — on a site, a template, a template's per-site override and a streamer — is gone, along with the six shell commands it held. Those commands were stored and merged through the configuration layers but were never run, so nothing you were relying on stops working. Saved commands are deleted from the database on upgrade and no longer appear in an exported backup; copy anything you want to keep before upgrading. To act on these moments, subscribe a notification channel — webhook, Telegram, Gotify, Discord or email — under **Notifications**. See [Notification System](../concepts/notifications.md).
-
-## Streamers and sites
-
-- **Bigo streamers are picked up as soon as they go live**
-
-  Bigo checks shared one access token, but Bigo grants such a token a single use — every later check got a reply without the stream's address and read it as "not live". Each check now takes its own token, and a missing address is reported as a failed check rather than an offline room.
-
-- **Turning a streamer off clears its error history**
-
-  Switching a streamer off now wipes its recorded error, its consecutive-error count and any retry backoff still counting down. Switching it back on starts checking right away instead of sitting out the rest of the wait, and the card no longer carries the stale error message from before you turned it off.
+No staged changes yet for the next release.
