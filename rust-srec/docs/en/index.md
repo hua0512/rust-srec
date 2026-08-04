@@ -3,15 +3,15 @@ layout: home
 
 hero:
   name: Rust-srec
-  text: Professional Online Streaming Recorder
-  tagline: A blazingly fast, multi-platform recording engine powered by Rust. Stable, efficient, and fully automated.
+  text: Automated Multi-Platform Stream Recorder
+  tagline: Monitor live channels, record video and chat, and run repeatable post-processing workflows from one self-hosted service.
   actions:
     - theme: brand
       text: Get Started
       link: /en/getting-started/
     - theme: alt
-      text: Release Notes
-      link: /en/release-notes/
+      text: Production Guide
+      link: /en/operations/production
     - theme: alt
       text: View on GitHub
       link: https://github.com/hua0512/rust-srec
@@ -27,8 +27,8 @@ features:
     title: Multi-Platform Support
     details: Support for Bilibili, Douyin, Douyu, Huya, Twitch, TikTok, and more
   - icon: ⚡
-    title: High Performance
-    details: Built with Rust for maximum efficiency and minimal resource usage
+    title: Controlled Resource Use
+    details: Set task and download concurrency limits to match the capacity of your host
   - icon: 🔄
     title: DAG Pipeline
     details: Powerful post-processing with directed acyclic graph workflows
@@ -40,7 +40,7 @@ features:
     details: Capture live chat/danmaku alongside video streams
   - icon: 🐳
     title: Container Ready
-    details: Lightweight Docker images for easy deployment and scaling
+    details: Persistent volumes, health checks, and log rotation for single-node deployments
   - icon: 📅
     title: Customizable Recording Schedules
     details: Schedule recording times and automatically manage file names for easy organization

@@ -3,15 +3,15 @@ layout: home
 
 hero:
   name: Rust-srec
-  text: 专业级在线直播录制系统
-  tagline: 基于 Rust 构建，极速、稳定且全自动的多平台直播录制引擎。专业、高效、触手可及。
+  text: 多平台自动直播录制系统
+  tagline: 在一个自托管服务中监控直播间、录制视频与弹幕，并运行可重复的后处理工作流。
   actions:
     - theme: brand
       text: 快速开始
       link: /zh/getting-started/
     - theme: alt
-      text: 更新日志
-      link: /zh/release-notes/
+      text: 生产部署
+      link: /zh/operations/production
     - theme: alt
       text: GitHub
       link: https://github.com/hua0512/rust-srec
@@ -27,8 +27,8 @@ features:
     title: 多平台支持
     details: 支持 Bilibili、抖音、斗鱼、虎牙、Twitch、TikTok 等平台
   - icon: ⚡
-    title: 高性能
-    details: Rust 构建，高效且资源占用低
+    title: 资源可控
+    details: 可按主机容量限制任务与下载并发数
   - icon: 🔄
     title: DAG 管道
     details: 强大的后处理工作流（有向无环图）
@@ -40,7 +40,7 @@ features:
     details: 同步录制弹幕
   - icon: 🐳
     title: 容器化部署
-    details: 支持 Docker 和 docker-compose 快速部署
+    details: 为单机部署提供持久化卷、健康检查与日志轮转
   - icon: 📅
     title: 自定义录制计划
     details: 定时录制，自动管理文件名，便于组织归档

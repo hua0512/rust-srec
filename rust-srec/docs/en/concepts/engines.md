@@ -5,7 +5,7 @@ Downloaders are the core of the application. They are responsible for downloadin
 > [!TIP]
 > For **Mesio** users, it is **highly recommended** to enable both **FLV Consistency Fix** and **HLS Consistency Fix**. These pipelines correct or isolate timestamp and stream-structure changes so one bad transition is less likely to make the rest of a recording undecodable. Media that the source never delivered cannot be recovered.
 
-The `FFMPEG` downloader is the default downloader and is the most stable and reliable. It is written in C and is capable of downloading FLV and HLS streams. It provides excellent compatibility for various streaming scenarios, including support for non-standard HEVC in FLV/RTMP containers, and generally has low CPU and memory usage. However, it does not support multithreading for HLS downloads.
+The `FFMPEG` downloader is the compatibility-focused external engine. It is written in C and can download FLV and HLS streams, including non-standard HEVC in FLV/RTMP containers. It does not support multithreaded HLS downloads. Fresh installations select the built-in Mesio engine instance by default; choose FFmpeg explicitly when its container or codec compatibility is required.
 
 > [!NOTE]
 > The FFMPEG version provided in our Docker images is a specialized build from [yt-dlp/FFmpeg-Builds](https://github.com/yt-dlp/FFmpeg-Builds/). This build is optimized for streaming and includes (or has upstreamed) critical patches for smooth integration with `yt-dlp`, such as fixing AAC HLS truncation, supporting long paths on Windows, and decoding non-standard HEVC in FLV containers.

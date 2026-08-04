@@ -326,7 +326,7 @@ Key properties:
 - **Recovery hook.** On `Degraded → Healthy` transition the gate clears `consecutive_error_count`, `disabled_until`, and `last_error` for every streamer whose backoff was caused by the gate (filtered by the `"output-root blocked:"` prefix). The whole affected fleet cascades out of backoff on the same tick.
 - **One notification per transition.** The `Healthy → Degraded` CAS is also what decides which caller emits the critical `output_path_inaccessible` notification, so users see exactly one alert per incident regardless of how many concurrent streamers are affected.
 
-Exposed in `/health` as a single aggregated `output-root` component listing each Degraded root with its classified `io::ErrorKind`, rejected count, and staleness. See the [notifications doc](./notifications.md#critical-infrastructure-events) for the event shape and the [Docker troubleshooting guide](../getting-started/docker.md#freeing-up-disk-space-when-using-bind-mounts) for the stale-mount failure mode.
+Exposed in `/api/health` as a single aggregated `output-root` component listing each Degraded root with its classified `io::ErrorKind`, rejected count, and staleness. See the [notifications doc](./notifications.md#critical-storage-events) for the event shape and the [Docker troubleshooting guide](../getting-started/docker.md#storage-cleanup) for the stale-mount failure mode.
 
 ## Observability, health, and shutdown
 

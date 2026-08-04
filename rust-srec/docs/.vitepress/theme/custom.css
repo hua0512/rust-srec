@@ -13,14 +13,12 @@
   --vp-home-hero-name-background: linear-gradient(135deg, #e44d26 0%, #f16529 50%, #ffbb33 100%);
 }
 
-/* Premium Animated Background */
 body {
   background:
     radial-gradient(circle at 10% 20%, rgba(228, 77, 38, 0.04) 0%, transparent 40%),
     radial-gradient(circle at 90% 80%, rgba(71, 161, 255, 0.04) 0%, transparent 40%),
     #ffffff;
   background-attachment: fixed;
-  animation: bg-shift 20s ease infinite alternate;
 }
 
 .dark body {
@@ -29,16 +27,6 @@ body {
     radial-gradient(circle at 90% 80%, rgba(71, 161, 255, 0.06) 0%, transparent 40%),
     #1b1b1f;
   background-attachment: fixed;
-}
-
-@keyframes bg-shift {
-  0% {
-    background-position: 0% 0%;
-  }
-
-  100% {
-    background-position: 10% 10%;
-  }
 }
 
 /* Glassmorphism for Navbar */
@@ -99,7 +87,7 @@ body {
 
 /* Typography Improvements */
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -110,10 +98,20 @@ h3,
 h4,
 h5,
 h6 {
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 /* Smooth Scrolling */
 html {
   scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .VPFeature {
+    transition: none !important;
+  }
 }

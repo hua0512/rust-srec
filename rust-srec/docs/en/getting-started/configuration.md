@@ -17,9 +17,11 @@ Rust-Srec uses a **4-layer configuration hierarchy** for flexible control. See [
 3. Navigate to **Streamers** → **Add Streamer**
 4. Enter:
    - **Name**: Display name
-   - **URL**: Stream URL (e.g., `https://www.bilibili.com/xxxx`)
+   - **URL**: Direct channel URL (e.g., `https://live.bilibili.com/<room-id>`)
    - **Platform**: Auto-detected from URL
-5. Click **Save**
+5. Keep **Enable monitoring** on and click **Create streamer**
+
+For a complete success check, follow [Make Your First Recording](./first-recording.md).
 
 ### Global Settings
 

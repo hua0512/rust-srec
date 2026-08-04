@@ -1,6 +1,6 @@
 # 支持的平台
 
-rust-srec 支持 13 个直播平台，自动检测并录制直播流。
+rust-srec 支持 14 个直播平台，可自动检测并录制直播流。
 
 ## 平台列表
 
@@ -12,9 +12,9 @@ rust-srec 支持 13 个直播平台，自动检测并录制直播流。
 | [虎牙](./huya.md) | `huya.com/{room_id}` | FLV/HLS | ✅ |
 | [Bigo Live](./bigo.md) | `bigo.tv/{id}` | HLS | ✅ |
 | [AcFun](./others.md#acfun) | `acfun.cn/live/{room_id}` | HLS | ❌ |
-| [PandaTV](./others.md#pandatv) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
-| [小红书](./others.md#redbook-小红书) | `xhslink.com/m/{id}` | HLS | ❌ |
-| [微博](./others.md#weibo) | `weibo.com/u/{uid} or weibo.com/l/wblive/p/show/{id}` | HLS | ❌ |
+| [PandaTV](./others.md#熊猫直播) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
+| [小红书](./others.md#小红书) | `xhslink.com/m/{id}` | HLS | ❌ |
+| [微博](./others.md#微博) | `weibo.com/u/{uid} or weibo.com/l/wblive/p/show/{id}` | HLS | ❌ |
 | [Twitch](./twitch.md) | `twitch.tv/{channel}` | HLS | ✅ |
 | [TikTok](./others.md#tiktok) | `tiktok.com/@{user}/live` | HLS | ❌ |
 | [Twitcasting](./others.md#twitcasting) | `twitcasting.tv/{user}` | HLS | ✅ |

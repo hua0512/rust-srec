@@ -320,7 +320,7 @@ Healthy ◄───────────────────────
 - **恢复钩子**。在 `Degraded → Healthy` 的切换时，写入门会清除所有因它而退避的主播的 `consecutive_error_count`、`disabled_until` 和 `last_error`（通过 `"output-root blocked:"` 前缀过滤）。受影响的主播整队会在同一次监视周期内恢复。
 - **每次状态切换只发出一条通知**。`Healthy → Degraded` 的 CAS 同时也是决定"哪个调用方负责发出 critical 级 `output_path_inaccessible` 通知"的位置——无论有多少并发主播受影响，用户只会看到一条告警。
 
-写入门在 `/health` 中以一个聚合的 `output-root` 组件暴露，列出所有 Degraded 根及其分类后的 `io::ErrorKind`、被拒绝次数和上次尝试的时间。参见[通知系统文档](./notifications.md#基础设施关键事件)了解事件形态，以及 [Docker 故障排查](../getting-started/docker.md#使用绑定挂载时如何释放磁盘空间)了解挂载失效的失败模式。
+写入门在 `/api/health` 中以一个聚合的 `output-root` 组件暴露，列出所有 Degraded 根及其分类后的 `io::ErrorKind`、被拒绝次数和上次尝试的时间。参见[通知系统文档](./notifications.md#存储严重事件)了解事件形态，以及 [Docker 故障排查](../getting-started/docker.md#清理存储)了解挂载失效的失败模式。
 
 ## 可观测性、健康检查与优雅退出
 

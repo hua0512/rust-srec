@@ -1,6 +1,6 @@
 # Introduction
 
-**Rust-Srec** is an automatic online streaming recorder built with Rust. It supports 12 platforms and provides a comprehensive set of features for recording, processing, and managing live streams.
+**Rust-Srec** is a self-hosted automatic livestream recorder built with Rust. It supports 14 platforms and provides recording, chat capture, post-processing, and task management from a web interface and REST API.
 
 ## Key Features
 
@@ -15,12 +15,13 @@
 
 ## Quick Links
 
+- [Make Your First Recording](./first-recording.md)
 - [Installation Guide](./installation.md)
 - [Docker Deployment](./docker.md)
 - [Configuration](./configuration.md)
 
 ## System Requirements
 
-- **Rust**: 2024 edition (for building from source)
+- **Rust**: 1.95 or newer (only when building from source)
 - **Database**: SQLite (bundled)
 - **OS**: Linux, macOS, Windows

@@ -4,320 +4,132 @@ import { withBase } from 'vitepress'
 
 # Docker Deployment
 
-Docker is the easiest and recommended way to deploy Rust-Srec.
+The standard deployment runs a backend and frontend on one Docker host with persistent bind mounts.
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+- [Docker Engine or Docker Desktop](https://docs.docker.com/get-docker/)
+- [Docker Compose v2](https://docs.docker.com/compose/install/), invoked as `docker compose`
+- Persistent storage sized for recordings
 
-## Quick Start
+## Installer
 
-### One-Line Install (Linux/macOS)
-
-Run this command to automatically set up Rust-Srec:
+Linux and macOS:
 
 ```bash
-curl -fsSL https://docs.srec.rs/docker-install.sh | bash
+curl -fsSL https://docs.srec.rs/install.sh | bash
 ```
 
-### One-Line Install (Windows PowerShell)
+Windows PowerShell:
 
 ```powershell
 irm https://docs.srec.rs/install.ps1 | iex
 ```
 
-The scripts will:
-- Download configuration files
-- Generate secure secrets automatically
-- Optionally start the application
+The installer downloads Compose and environment files, generates unique secrets, detects optional NVIDIA support, and offers to start the services. Both entry points pick a localized installer from `SREC_LANG` or the system locale; set `SREC_LANG` explicitly to override it.
 
-::: tip Customizing Installation
-The script auto-detects your system language. You can also customize the installation using environment variables:
+::: warning Review Remote Scripts
+Piping a remote script to a shell executes the current network response. Environments with change control should download the script, verify its contents and checksum, then run the reviewed local copy or use the manual setup below.
+:::
 
-**Linux/macOS:**
-```bash
-# Install dev version to custom directory
-RUST_SREC_DIR=/opt/rust-srec VERSION=dev curl -fsSL https://docs.srec.rs/docker-install.sh | bash
-```
+Installer settings:
 
-**Windows PowerShell:**
-```powershell
-# Install dev version to custom directory
-$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
-```
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SREC_LANG` | Language (`zh` or `en`) | Auto-detect |
+| Variable | Purpose | Default |
+|---|---|---|
+| `SREC_LANG` | `en` or `zh` | Detected from locale |
 | `RUST_SREC_DIR` | Installation directory | `./rust-srec` |
-| `VERSION` | Docker image tag (`latest` or `dev`) | `latest` |
-:::
+| `VERSION` | Image tag | `latest` |
 
-### Manual Setup
+For a reviewed release, set an explicit version. Example for Linux/macOS:
 
-1. Create a project directory:
-   ```bash
-   mkdir rust-srec && cd rust-srec
-   ```
+```bash
+curl -fsSL https://docs.srec.rs/install.sh | RUST_SREC_DIR=/opt/rust-srec VERSION=v0.5.1 bash
+```
 
-2. Download the example configuration files:
+## Manual Setup
+
+1. Create a directory and download both files:
+
    - <a :href="withBase('/docker-compose.example.yml')" download>docker-compose.example.yml</a>
-   - <a :href="withBase('/env.example')" download=".env.example">.env.example</a>
+   - <a :href="withBase('/env.example')" download>.env.example</a>
 
-3. Rename the files:
-   ```bash
-   # On Linux/macOS
-   mv docker-compose.example.yml docker-compose.yml
-   mv .env.example .env
-
-   # On Windows
-   rename docker-compose.example.yml docker-compose.yml
-   rename .env.example .env
-   ```
-
-4. **Edit `.env`**: Make sure to set a secure `JWT_SECRET` and `SESSION_SECRET` (at least 32 characters).
-
-::: tip Security Note
-You can generate a secure random string using:
-- **Linux/macOS**: `openssl rand -hex 32`
-- **Windows (PowerShell)**: `$bytes = New-Object Byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); -join ($bytes | ForEach-Object { "{0:x2}" -f $_ })`
-:::
-
-5. Start the application:
-   ```bash
-   docker-compose up -d
-   ```
-
-::: warning Data Persistence
-Ensure your `DATA_DIR` and `OUTPUT_DIR` are on a drive with sufficient space. Streaming recordings can consume disk space very quickly.
-:::
-
-## Configuration
-
-The <a :href="withBase('/env.example')" download=".env.example">.env</a> file contains all the necessary environment variables.
-
-| Variable | Description |
-|----------|-------------|
-| `JWT_SECRET` | Secret key for JWT signing (**Required**) |
-| `SESSION_SECRET` | Secret for frontend session encryption (**Required**) |
-
-### Browser Notifications (Web Push)
-
-To enable browser push notifications, generate VAPID keys and set them in `.env`:
+2. Rename them to `docker-compose.yml` and `.env`.
+3. Generate two different secrets and set `JWT_SECRET` and `SESSION_SECRET` in `.env`. Empty values intentionally make Compose refuse to start.
+4. Review paths, timezone, ports, and `VERSION`.
+5. Start and verify:
 
 ```bash
-docker run --rm ghcr.io/hua0512/rust-srec:latest /app/rust-srec-vapid
-# or: npx --yes web-push generate-vapid-keys
+docker compose up -d
+docker compose ps
+curl http://localhost:12555/api/health/live
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID public key (base64url, unpadded) |
-| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID private key (base64url, unpadded) |
-| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject (e.g. `mailto:admin@localhost`) |
+Generate a secret with `openssl rand -hex 32`. Where openssl is unavailable, use `python3 -c 'import secrets; print(secrets.token_hex(32))'`. On PowerShell:
 
-::: tip Note
-Web Push requires HTTPS (or localhost).
-:::
-
-::: tip Full Reference
-For a complete list of all available environment variables and their descriptions, see the [Environment Variables Reference](./configuration.md#environment-variables).
-:::
-
-### docker-compose.yml
-
-Our <a :href="withBase('/docker-compose.example.yml')" download>standard example</a> includes:
-- **Automatic Restart**: `unless-stopped`
-- **Healthchecks**: Ensures the frontend only starts after the backend is ready
-- **Resource Limits**: Configurable CPU and memory limits
-- **Log Rotation**: Prevents logs from filling up your disk
-
-## Proxy Configuration
-
-If you are behind a corporate proxy or in a region with restricted access, you can configure proxy settings for both the application and the download engines.
-
-### 1. Configure Environment Variables
-
-Add `HTTP_PROXY` and `HTTPS_PROXY` to your `.env` file:
-
-```bash
-# .env
-HTTP_PROXY=http://your-proxy-host:port
-HTTPS_PROXY=http://your-proxy-host:port
-NO_PROXY=localhost,127.0.0.1,rust-srec
+```powershell
+$bytes = New-Object Byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+-join ($bytes | ForEach-Object { "{0:x2}" -f $_ })
 ```
 
-### 2. Update docker-compose.yml
+## Default Layout
 
-Ensure these variables are passed to the `rust-srec` service:
+| Host | Container | Purpose |
+|---|---|---|
+| `./data` | `/app/data` | SQLite and application data |
+| `./config` | `/app/config` | Platform configuration |
+| `./output` | `/app/output` | Recordings and pipeline output |
+| `./logs` | `/app/logs` | Application logs |
+| `12555` | Backend `8080` | API and Swagger |
+| `15275` | Frontend `80` | Web interface |
 
-```yaml
-services:
-  rust-srec:
-    # ...
-    environment:
-      - HTTP_PROXY=${HTTP_PROXY:-}
-      - HTTPS_PROXY=${HTTPS_PROXY:-}
-      - NO_PROXY=${NO_PROXY:-}
-    # ...
-```
+Use absolute host paths for a long-running deployment. The example enables `unless-stopped`, backend health checks, frontend startup ordering, and container log rotation.
 
-### 3. Enable in Application Settings
+## Access and First Login
 
-After starting the application, go to **Global Settings** > **Downloader** > **Proxy**:
-1. Enable **Proxy**.
-2. Check **Use System Proxy**.
-3. Save settings.
+- Web interface: `http://localhost:15275`
+- Swagger UI: `http://localhost:12555/api/docs`
+- Initial account: `admin` / `admin123!`
 
-This will instruct the application and its engines (FFmpeg, Streamlink, Mesio) to respect the environment variables you configured.
+The first login requires a password change. Continue with [Make Your First Recording](./first-recording.md).
 
-## GPU Hardware Acceleration (NVIDIA)
+## Optional Configuration
 
-If you have an NVIDIA GPU, you can enable hardware-accelerated video transcoding (NVENC/NVDEC) to dramatically reduce CPU usage and speed up remuxing/transcoding.
+### Proxy
 
-### Prerequisites
+Set `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` in `.env`; the example already passes them to the backend. Then enable **Global Settings > Downloader > Proxy > Use System Proxy**. Include `localhost,127.0.0.1,rust-srec` in `NO_PROXY`.
 
-1. **NVIDIA GPU drivers** installed on the host machine
-2. **NVIDIA Container Toolkit** installed on the host — this allows Docker containers to access the GPU:
-   - [Installation Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-   - Quick install (Ubuntu/Debian):
-     ```bash
-     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-     curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-       sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-       sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-     sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-     sudo nvidia-ctk runtime configure --runtime=docker
-     sudo systemctl restart docker
-     ```
+### Browser Push
 
-### Enable GPU in docker-compose
+Generate VAPID keys, place them in `.env`, and restart the backend. Web Push requires HTTPS outside localhost. See [Notification System](../concepts/notifications.md#web-push).
 
-Download the GPU compose override file alongside your `docker-compose.yml`:
+### NVIDIA GPU
 
-- <a :href="withBase('/docker-compose.gpu.yml')" download>docker-compose.gpu.yml</a>
-
-Then start with both files:
+Install the host driver and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then download <a :href="withBase('/docker-compose.gpu.yml')" download>docker-compose.gpu.yml</a> and start with:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
-```
-
-Or set `COMPOSE_FILE` in your `.env` so `docker compose up -d` picks it up automatically:
-
-```bash
-echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
-```
-
-The override file adds the NVIDIA device reservation:
-
-```yaml
-services:
-  rust-srec:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu, video]
-```
-
-::: tip Automatic Setup
-If you use our [one-line install script](#one-line-install-linux-macos), it will automatically detect your NVIDIA GPU and offer to enable this for you.
-:::
-
-### Verify GPU Access
-
-After starting the container, verify the GPU is accessible:
-
-```bash
 docker exec rust-srec nvidia-smi
 ```
 
-You should see your GPU model and driver version. If you get an error, the NVIDIA Container Toolkit is not properly configured.
+GPU access only enables compatible processors; select an NVENC processor in the pipeline and monitor the GPU component on **System Health**.
 
-### Enable in Application
+## Storage Cleanup
 
-Once the GPU is accessible to the container, go to your recording preset settings and enable **Hardware Acceleration** with the `cuda` device to use NVENC for encoding.
+Delete files inside the mounted output directory; do not rename, replace, or move the host directory that is itself bind-mounted while the container is running. File managers that implement deletion by moving the root to trash can leave the active container attached to an orphaned directory.
 
-### Troubleshooting
+If System Health reports output-root `not_found`, verify the host directory and restart the container to recreate the mount namespace. For `storage_full`, free capacity without replacing the directory; the gate can recover on a later probe. See [Storage and Capacity](../operations/storage.md) and the [FAQ](./faq.md#i-freed-disk-space-but-recording-did-not-resume).
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `Cannot load libnvcuvid.so.1` in ffmpeg logs | Container cannot access GPU drivers | Install NVIDIA Container Toolkit and restart Docker |
-| `nvidia-smi` not found inside container | Container Toolkit not configured | Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
-| High CPU usage despite GPU enabled | Wrong encoder selected | Ensure the preset uses `h264_nvenc` or `hevc_nvenc`, not software encoders |
-| `Failed to initialize NVML: Unknown Error` after the container has been running for a while (and `cu->cuInit(0) failed -> CUDA_ERROR_NO_DEVICE` in pipeline logs) | Host `systemd` reloaded the device cgroup and silently dropped the container's GPU access — a known NVIDIA Container Toolkit issue on cgroup-v2 hosts. Often triggered by a Docker daemon reload, a package upgrade that touches systemd units, or `nvidia-ctk` reconfiguration. | Set `no-cgroups = true` in `/etc/nvidia-container-runtime/config.toml` and restart Docker, **or** switch Docker's cgroup driver to `cgroupfs`. As a quick recovery, `docker restart rust-srec` restores access. The `gpu` row on **System Health** turns red and you'll get a notification the moment the GPU becomes unavailable, so you don't need to find out from a failed remux job. |
+## Stop, Update, and Remove
 
-## Freeing up disk space when using bind mounts
-
-::: danger Read this before using BaoTa, cPanel, or any other host-side file manager to clean up recordings.
-Cleaning up recordings **through the host filesystem** on a directory that is bind-mounted into the rust-srec container can leave the container unable to write recordings until it is restarted — even though the host shows free space. This is a Linux VFS behavior, not a rust-srec bug. The workaround is simple once you know about it.
-:::
-
-### Safe cleanup paths (recommended)
-
-In order of preference:
-
-1. **Delete recordings through the rust-srec web UI.** The app deletes files from inside the container via its own filesystem view — always safe, always correct.
-2. **`docker exec -it <container> rm -rf /rec/<path>`** — operates inside the container's mount namespace, always safe.
-3. **`docker exec -it <container> sh`** and clean up interactively.
-4. **Expand the underlying host volume** (any method — cloud-disk resize, LVM extend, adding a new disk). Always safe.
-
-### Dangerous cleanup paths (causes "recordings don't resume after disk was cleared")
-
-These are the patterns that trigger issue [#508](https://github.com/hua0512/rust-srec/issues/508) and similar reports:
-
-1. Host-side **`mv /host/rec /host/rec_backup`** or any rename of the mount source directory.
-2. Host-side **`rm -rf /host/rec`** followed by **`mkdir /host/rec`** to recreate it. The new directory is a different inode that the existing bind mount does NOT point at.
-3. Using **BaoTa (宝塔) panel's file manager** default delete action on a directory that backs a Docker bind mount. BaoTa's "delete" is implemented as "move to trash", which is the same as pattern 1.
-4. Any GUI or CLI tool that implements "safe delete" by moving the target to a trash/backup directory.
-
-### Why it happens (short version)
-
-Docker bind mounts are bound to an **inode**, not a path. When you rename or recreate the host directory, the inode underneath the container's `/rec` mount stays the same — but on most Linux filesystems (ext4, xfs), the kernel refuses to add new entries to a directory with `nlink == 0` (which is what a "deleted but still-referenced" inode is). So `create_dir_all` returns `ENOENT` forever, even though the disk has plenty of free space. Only destroying and recreating the container's mount namespace (`docker restart`) fixes it.
-
-### How rust-srec detects and reports it
-
-The **output-root write gate** catches this failure mode within one monitor tick and:
-
-- Flips `output-root` in `/health` to `Degraded` with `error_kind: not_found` and the path of the affected mount.
-- Emits exactly one critical `output_path_inaccessible` notification through every enabled channel (Discord, Email, Telegram, Gotify, Webhook, Web Push). The text branches on the error kind — the `not_found` variant includes the "restart the container" recovery instruction, translated if you set `RUST_SREC_LOCALE=zh-CN`.
-- Short-circuits subsequent download attempts at the filesystem boundary so the logs don't fill up with cascading retries and the DB outbox doesn't get churned.
-- Transitions every affected streamer to the `OUT_OF_SPACE` state, visible in the streamer list.
-
-After you `docker restart` the container, the gate reinitializes on boot (via a bounded 5-second startup probe). If the host path is fixed, the gate returns to `Healthy` and recordings resume on the next monitor tick.
-
-### If the error is actually disk-full (not stale mount)
-
-If `output-root` in `/health` shows `Degraded` with `error_kind: storage_full`, **no restart is needed**. Free space via any of the safe cleanup paths above, and the gate will auto-recover within 30 seconds of the next attempted download — the recovery hook clears every affected streamer's backoff so the whole fleet resumes on the same monitor tick.
-
-### Multi-mount deployments: `RUST_SREC_OUTPUT_ROOTS`
-
-The startup probe automatically discovers mount roots from every configuration layer — **global**, **platform**, **template**, and **per-streamer** `output_folder` settings. It merges the effective config for each streamer in parallel using the same caching path the runtime uses, deduplicates the resolved roots, and probes them concurrently at container boot. For the typical setup (one mount like `/rec`) this just works, and for heterogeneous layouts every mount any streamer could actually write to is preflighted from second zero.
-
-You only need to set `RUST_SREC_OUTPUT_ROOTS` explicitly when:
-
-- you want to probe mounts that aren't yet referenced by any streamer config (e.g. a new volume you plan to migrate to), or
-- you want to override the resolution heuristic — for example, forcing a single `/rec` gate key on a `/rec/{platform}/...` layout to consolidate all platforms under one gate entry.
-
-```env
-RUST_SREC_OUTPUT_ROOTS=/rec,/mnt/backup-slow
-```
-
-Values are comma-separated absolute paths. See the [configuration guide](./configuration.md#backend-service) for details.
-
-## Accessing the Application
-
-- **Web Interface**: `http://localhost:[FRONTEND_PORT]` (Default: http://localhost:15275)
-- **API reference**: `http://localhost:[API_PORT]/api/docs` (Default: http://localhost:12555/api/docs)
-
-## Updating
-
-To update to the latest version:
 ```bash
-docker-compose pull
-docker-compose up -d
+# Stop while keeping data
+docker compose stop
+
+# Start again
+docker compose up -d
 ```
+
+Use [Upgrade and Rollback](../operations/upgrading.md) before changing `VERSION`. `docker compose down` removes containers and the network but leaves bind-mounted host data; verify exact paths before deleting any host directory.
+
+For an Internet-facing host, complete [Production Deployment](../operations/production.md) instead of publishing the example ports directly.

@@ -1,6 +1,6 @@
 # 介绍
 
-**rust-srec** 是一个基于 Rust 构建的自动直播录制器。支持 12 个平台，提供全面的录制、处理和管理功能。
+**rust-srec** 是一个基于 Rust 构建的自托管自动直播录制器。它支持 14 个平台，可通过 Web 界面和 REST API 完成录制、弹幕采集、后处理和任务管理。
 
 ## 核心功能
 
@@ -15,12 +15,13 @@
 
 ## 快速链接
 
+- [完成第一次录制](./first-recording.md)
 - [安装指南](./installation.md)
 - [Docker 部署](./docker.md)
 - [配置说明](./configuration.md)
 
 ## 系统要求
 
-- **Rust**：2024 edition（源码编译）
+- **Rust**：1.95 或更高版本（仅从源码构建时需要）
 - **数据库**：SQLite（内置）
 - **操作系统**：Linux、macOS、Windows

@@ -1,87 +1,84 @@
 # Notification System
 
-rust-srec features a flexible and robust notification system for real-time alerts on streaming status, system errors, and task progress.
-
-## System Architecture
-
-The notification system follows an event-driven pattern. When significant changes occur within the system, components publish an event. The `NotificationService` subscribes to these events and forwards them to various configured channels.
+Rust-Srec records notification events and can deliver selected events to external channels. Channel delivery is configured independently from the interface language and from browser-only notifications.
 
 ```mermaid
 flowchart LR
-    E1[MonitorEvent] --> NS[NotificationService]
-    E2[DownloadEvent] --> NS
-    E3[PipelineEvent] --> NS
-    
-    NS --> C1[Discord Channel]
-    NS --> C2[Email Channel]
-    NS --> C3[Webhook Channel]
-    
-    subgraph NS_Inner["Internal Logic"]
-        NS --> Filter[Priority Filter]
-        Filter --> Retry[Exp Backoff Retry]
-        Retry --> CB[Circuit Breaker]
-    end
+  E[Stream, download, pipeline, system, credential events] --> L[Notification event log]
+  E --> S[Per-channel subscriptions]
+  S --> P[Priority filter]
+  P --> R[Retry and circuit breaker]
+  R --> C[External channel]
+  E --> B[Browser or desktop notification]
 ```
 
-## Notification Channels
+## Available Destinations
 
-The following channels are currently supported:
+| Destination | v0.5 web interface | Requirements |
+|---|---|---|
+| Webhook | Create, edit, test | HTTPS endpoint; optional headers or auth |
+| Telegram | Create, edit, test | Bot token and chat ID |
+| Gotify | Create, edit, test | Server URL and application token |
+| Email | Create, edit, test | SMTP host, sender, recipients; credentials optional only when the relay permits it |
+| Discord | Existing channels can be represented; new selection is disabled in the v0.5 form | Backend/API supports Discord webhook settings |
+| Web Push | Configure per browser | VAPID keys and HTTPS, or localhost |
+| Live polling | Configure per browser | The application tab must remain open |
+| Desktop notification | Desktop build only | Operating-system notification permission |
 
-| Channel | Description | Common Configuration |
-|---------|-------------|----------------------|
-| **Discord** | Formatted messages via Discord Webhook. | Webhook URL, Username, Avatar |
-| **Email** | Email notifications via SMTP. | SMTP Server, Port, Login/Password |
-| **Webhook** | Custom JSON POST requests to an endpoint. | Target URL, Custom Headers |
+Discord is therefore a backend capability with a web-interface limitation, not a generally selectable v0.5 UI channel.
 
-## Critical Infrastructure Events
+## Configure an External Channel
 
-Two events are emitted when the recording filesystem itself is in trouble:
+1. Open **Notifications** and select **Add Channel**.
+2. Choose Webhook, Telegram, Gotify, or Email and enter a recognizable channel name.
+3. Set **Minimum Priority**, message language, and **Enabled**.
+4. Save the channel, then use its test action. A saved channel is not proven until the receiver gets the test.
+5. Open the subscription manager and select the event types that should be sent to that channel.
 
-| Event | Fires when | Can auto-recover? |
-|-------|------------|-------------------|
-| `out_of_space` | Proactive: the configured disk usage threshold is crossed while recordings are still running. | N/A (advisory) |
-| `output_path_inaccessible` | **The [output-root write gate](./architecture.md#output-root-write-gate) has actually blocked recordings** because `create_dir_all` or a mid-stream write failed with ENOENT / ENOSPC / EACCES / EROFS / timeout on a tracked output root. Emitted **exactly once per `Healthy → Degraded` transition** — not once per failed attempt. | Genuine ENOSPC: yes, automatically within ~30 seconds of the disk being freed. Stale Docker bind mount: **no**, container must be restarted. See the [Docker troubleshooting guide](../getting-started/docker.md#freeing-up-disk-space-when-using-bind-mounts). |
+Channel settings and subscriptions are separate. Creating a destination without subscribing it to events does not make it receive every event automatically.
 
-Every notification event is locale-aware when the `RUST_SREC_LOCALE` environment variable is set — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, and credential events — and the text is delivered through external channels (Telegram, Gotify, Discord, webhook, email, web push) in the configured locale. Supported locales: `en`, `zh-CN`. The `output_path_inaccessible` description additionally branches on the underlying `io::ErrorKind` so a `NotFound` (stale mount) gets different recovery instructions than a `StorageFull` (genuine ENOSPC).
+## Priority
 
-## Priority & Filtering
+Priorities use a 0-10 numeric scale in the API and UI settings:
 
-Not every event requires immediate attention. The system uses `NotificationPriority` for classification:
+| Level | Value | Examples |
+|---|---:|---|
+| Low | 2 | Stream offline, segment progress, pipeline start/completion |
+| Normal | 5 | Stream online, download completion, system startup/shutdown |
+| High | 8 | Download error/rejection, pipeline failure, credential refresh failure |
+| Critical | 10 | Fatal error, output path inaccessible, out of space, invalid credential |
 
-- **Critical**: System-wide failures that block recording (`output_path_inaccessible`, `fatal_error`, `pipeline_queue_critical`).
-- **High**: Significant warnings that may still allow recording to continue (`out_of_space`, `download_rejected`).
-- **Normal**: Live/offline events, pipeline lifecycle, system startup/shutdown.
-- **Low**: Minor state changes, segment-level progress (typically filtered out).
+A channel filters events below its minimum. The API also accepts the legacy labels `low`, `normal`, `high`, and `critical` where documented; `info` is not a valid priority.
 
-You can set a `min_priority` in your configuration to only receive notifications above that level.
+## Language
 
-## Reliability Guarantees
+Each external channel can follow the server language or override it with `en` or `zh-CN`. `RUST_SREC_LOCALE` sets the default for backend-rendered messages. This is independent of the language selected by a user in the web interface.
 
-To ensure delivery even during network flakiness, the system includes:
+## Web Push
 
-1. **Retry Mechanism**: Failed notifications enter a retry queue with an Exponential Backoff algorithm.
-2. **Circuit Breaker**: If a channel fails consistently (e.g., an invalid Webhook URL), the system "trips" and stops attempting until it's reset, preserving system resources.
-3. **Dead Letter Queue (DLQ)**: Notifications that fail after all retries are moved to a DLQ for manual inspection via the API.
+Generate a VAPID key pair and set all three variables before starting the backend:
 
-## Configuration Example
-
-Enable notifications in your global or platform configuration:
-
-```json
-{
-  "notifications": {
-    "enabled": true,
-    "min_priority": "info",
-    "channels": [
-      {
-        "type": "discord",
-        "webhook_url": "https://discord.com/api/webhooks/..."
-      }
-    ]
-  }
-}
+```bash
+docker run --rm ghcr.io/hua0512/rust-srec-vapid:v0.5.1
 ```
 
-::: tip Hint
-You can set different notification policies per streamer. For example, use a dedicated high-priority channel for your favorite streamers.
-:::
+```dotenv
+WEB_PUSH_VAPID_PUBLIC_KEY=...
+WEB_PUSH_VAPID_PRIVATE_KEY=...
+WEB_PUSH_VAPID_SUBJECT=mailto:operations@example.com
+```
+
+Then open **Notifications**, enable Web Push for the current browser, grant browser permission, choose priority, and send a test. Browsers require a secure context; use HTTPS outside localhost.
+
+## Delivery Behavior
+
+External channel delivery retries transient failures with backoff and uses a circuit breaker for repeatedly failing channels. Exhausted deliveries are dead-lettered and notification events remain available in the event history according to the configured retention period.
+
+These mechanisms reduce transient loss but do not create an end-to-end delivery guarantee. Monitor the receiving service, use the channel test after configuration changes, and configure a second destination for critical events.
+
+## Critical Storage Events
+
+- `out_of_space` indicates that the disk threshold has been crossed.
+- `output_path_inaccessible` means the [output-root write gate](./architecture.md#output-root-write-gate) has blocked new recording work because a tracked root cannot be written.
+
+Freeing genuine disk exhaustion can recover automatically after the next probe. A stale Docker bind mount may require a container restart; see [Storage and Capacity](../operations/storage.md).

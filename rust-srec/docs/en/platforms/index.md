@@ -1,6 +1,6 @@
 # Supported Platforms
 
-rust-srec supports 13 streaming platforms with automatic stream detection and recording.
+rust-srec supports 14 streaming platforms with automatic stream detection and recording.
 
 ## Platform List
 

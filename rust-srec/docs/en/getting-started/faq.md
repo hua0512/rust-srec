@@ -1,42 +1,53 @@
-# FAQ
+# Frequently Asked Questions
 
-## Why are `ffmpeg` or other tools not bundled?
+## Which address should I open?
 
-One of the common questions is why `rust-srec` does not come bundled with `ffmpeg`, `streamlink`, `yt-dlp`, or other similar tools. There are several reasons for this:
+For the Docker files downloaded from this documentation, open `http://localhost:15275`; the API is at `http://localhost:12555/api`. A source development checkout using the example `.env` files uses frontend port `15275` and API port `8080`. See the [installation matrix](./installation.md#choose-a-deployment-method).
 
-### 1. Licensing and Legal Compliance
+## What is the initial account?
 
-`ffmpeg` and many other multimedia tools are often licensed under the GPL (GNU General Public License). Bundling these binaries directly within our distribution could impose certain licensing obligations on `rust-srec` itself or complicate the legal aspects of redistribution. By requiring users to provide their own binaries, we avoid these complexities and respect the licensing of these external projects.
+Use `admin` / `admin123!`. You will be redirected to change the password, and other protected actions remain blocked until you do. Never expose an installation that still uses the default password.
 
-### 2. Binary Size
+## Why did adding a streamer not immediately create a file?
 
-Tools like `ffmpeg` and `yt-dlp` are quite large. Bundling them would increase the download size of `rust-srec` by tens or even hundreds of megabytes. We prefer to keep our application lightweight and let you manage your own installations of these tools.
+Automatic recording begins only when the channel is live, monitoring is enabled, its schedule permits recording, and a download slot is available. Follow [Make Your First Recording](./first-recording.md) to distinguish an offline channel from a failed installation.
 
-### 3. Update Frequency and Independence
+## Which channel URL should I use?
 
-External tools, especially `yt-dlp` and `streamlink`, receive frequent updates to maintain compatibility with various streaming platforms. If we bundled them, you would have to wait for a new release of `rust-srec` just to get the latest fixes for your favorite platform. Keeping them separate allows you to update them independently as soon as new versions are available.
+Use the direct channel or room URL, not a profile, recorded video, search result, or platform home page. The create form identifies the platform from the URL. See [Supported Platforms](../platforms/) for accepted forms and cookie requirements.
 
-### 4. Platform-Specific Customization
+## Do I need FFmpeg or Streamlink?
 
-Different platforms and hardware configurations may benefit from different builds of `ffmpeg`. For example, some users might need specific hardware acceleration support (like NVENC, QSV, or VAAPI). By having you install your own `ffmpeg`, you can choose the build that best fits your specific needs and environment.
+The built-in Mesio engine does not need either tool. The standard Docker image contains the runtime tools supported by that image. For a binary or source installation, provide `ffmpeg` on `PATH` when selecting FFmpeg features, and provide `streamlink` when selecting Streamlink lookup or download behavior. See [External Tools](./installation.md#external-tools).
 
-### 5. Separation of Concerns
+## Where are recordings stored?
 
-`rust-srec` is designed to be an orchestrator and manager for stream recording. We focus on providing a robust scheduling and pipeline system, while leveraging well-established, specialized tools for the actual media handling when the built-in Rust engine is not used.
+The standard Docker configuration maps host `./output` to container `/app/output`. Global, platform, template, and streamer settings can override the output path, so the resolved path shown by the application is authoritative. See [Storage and Capacity](../operations/storage.md).
 
-## How do I install these tools?
+## I freed disk space, but recording did not resume
 
-Please refer to our [Installation Guide](./installation) for instructions on how to install the necessary dependencies for your platform.
+Open **System Health** and inspect the output-root component:
 
-## I ran out of disk space. I cleared files, but recordings don't resume. What do I do?
+- `storage_full`: free enough capacity and wait for the next probe; a restart is normally unnecessary.
+- `not_found`: a host-side rename or replacement may have broken the bind mount; restart the container after verifying the mount source.
+- `permission_denied`: correct ownership and mode on the host path.
+- `read_only`: restore the filesystem to read-write operation.
+- `timed_out`: investigate a stalled network mount or block device.
 
-Check the `/health` endpoint or the system health page in the UI. Look at the `output-root` component:
+Do not rename or replace the bind-mounted root while the container is running. Delete files inside the existing directory, use `docker exec`, or stop the service before changing the mount. See [Docker bind-mount troubleshooting](./docker.md#storage-cleanup).
 
-- **Status `Degraded`, `error_kind: not_found`** — you most likely cleared files via a host-side operation (BaoTa file manager, `mv` on the mount source directory, etc.) that broke the Docker bind mount. The container is holding an orphaned inode and needs to be restarted. See the [Docker troubleshooting guide](./docker.md#freeing-up-disk-space-when-using-bind-mounts) for safe cleanup paths.
-- **Status `Degraded`, `error_kind: storage_full`** — the disk is genuinely full but the filesystem mount is healthy. Free space via any of the safe cleanup paths in the Docker guide (rust-srec UI, `docker exec`, volume expansion). **No restart needed.** The gate auto-recovers within ~30 seconds of the next attempted download, and every affected streamer cascades out of backoff on the same monitor tick.
-- **Status `Degraded`, `error_kind: permission_denied`** — check ownership and mode of the target directory inside the container.
-- **Status `Degraded`, `error_kind: read_only`** — the filesystem was remounted read-only. You'll need to remount it read-write.
-- **Status `Degraded`, `error_kind: timed_out`** — the filesystem is hung (stale NFS handle, broken bind mount, dead block device). Investigate the underlying storage.
-- **Status `Healthy` but recordings still don't resume** — the filesystem is fine from the app's perspective. Check the individual streamer's state in the UI; they may be in backoff from an unrelated error (CDN issues, rate limits). See the logs for the specific `last_error`.
+## A previously working platform stopped recording
 
-One critical `output_path_inaccessible` notification is also emitted when the gate transitions to `Degraded`, and it contains the same `error_kind` plus a localized recovery hint. See the [notifications doc](../concepts/notifications.md#critical-infrastructure-events).
+Platforms change without notice. Confirm the channel is live, inspect the streamer's check history and logs, refresh required credentials, and test whether the problem affects one channel or the whole platform. Search [GitHub issues](https://github.com/hua0512/rust-srec/issues) before filing a redacted report. Streamlink lookup can be a fallback where the platform page documents it.
+
+## Can I expose Rust-Srec to the Internet?
+
+Only after adding HTTPS, secure cookies, network restrictions, unique secrets, backups, monitoring, and an immediate default-password change. Start with [Production Deployment](../operations/production.md) and [Security](../operations/security.md). Do not publish the backend or Swagger merely because the example Compose file maps a host port.
+
+## How should I upgrade?
+
+Pin the same version for backend and frontend, read intervening release notes, take a consistent backup, and restore that snapshot if rollback is required. See [Upgrade and Rollback](../operations/upgrading.md).
+
+## Is commercial support or an SLA included?
+
+No commercial SLA, guaranteed response time, LTS branch, or end-of-life calendar is published. See [Support and Versions](../operations/support.md) for community channels and the diagnostic information to include.
