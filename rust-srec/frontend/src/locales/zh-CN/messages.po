@@ -754,9 +754,9 @@ msgstr "平均时长"
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
-#: src/components/config/platforms/platform-editor.tsx:145
+#: src/components/config/platforms/platform-editor.tsx:143
+#: src/components/config/templates/template-editor.tsx:191
 #: src/components/config/templates/template-editor.tsx:194
-#: src/components/config/templates/template-editor.tsx:197
 msgid "Back"
 msgstr "返回"
 
@@ -1606,7 +1606,7 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:216
+#: src/components/config/templates/template-editor.tsx:213
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1679,7 +1679,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:168
+#: src/components/config/templates/template-editor.tsx:165
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "创建模板"
@@ -1890,7 +1890,7 @@ msgstr "弹幕转 ASS 字幕"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:212
+#: src/components/config/shared-config-editor.tsx:196
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -2641,7 +2641,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:263
+#: src/components/config/templates/template-editor.tsx:259
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
@@ -2749,10 +2749,6 @@ msgstr "错误：无法加载预设详情。"
 msgid "ETA"
 msgstr "预计剩余时间"
 
-#: src/components/config/shared/event-hooks-form.tsx:118
-msgid "Event Hooks"
-msgstr "事件钩子"
-
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:346
 msgid "Event Type"
 msgstr "事件类型"
@@ -2807,10 +2803,6 @@ msgstr "执行"
 #: src/components/pipeline/presets/processors/registry.ts:102
 msgid "Execute Command"
 msgstr "执行命令"
-
-#: src/components/config/shared/event-hooks-form.tsx:121
-msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
-msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中运行。"
 
 #: src/components/config/global/concurrency-card.tsx:327
 msgid "Execute Timeout"
@@ -3384,7 +3376,7 @@ msgstr "已过滤"
 msgid "Filtered:"
 msgstr "过滤原因："
 
-#: src/components/config/shared-config-editor.tsx:157
+#: src/components/config/shared-config-editor.tsx:152
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
 msgid "Filters"
 msgstr "过滤器"
@@ -3519,9 +3511,9 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:194
-#: src/components/config/templates/tabs/platform-override-card.tsx:64
-#: src/components/config/templates/template-editor.tsx:253
+#: src/components/config/platforms/platform-editor.tsx:191
+#: src/components/config/templates/tabs/platform-override-card.tsx:63
+#: src/components/config/templates/template-editor.tsx:249
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
@@ -3803,10 +3795,6 @@ msgstr "HLS 调优"
 #: src/components/sidebar/navbar.tsx:61
 msgid "Home"
 msgstr "主页"
-
-#: src/components/config/shared-config-editor.tsx:201
-msgid "Hooks"
-msgstr "钩子"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:197
 msgid "Hour (00-23)"
@@ -4879,7 +4867,7 @@ msgstr "原生"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/config/shared-config-editor.tsx:179
+#: src/components/config/shared-config-editor.tsx:174
 msgid "Network"
 msgstr "网络"
 
@@ -5391,30 +5379,6 @@ msgstr "偏移一致性检查"
 msgid "OK"
 msgstr "正常"
 
-#: src/components/config/shared/event-hooks-form.tsx:150
-msgid "On Download Complete"
-msgstr "录制完成时"
-
-#: src/components/config/shared/event-hooks-form.tsx:156
-msgid "On Download Error"
-msgstr "录制出错时"
-
-#: src/components/config/shared/event-hooks-form.tsx:144
-msgid "On Download Start"
-msgstr "录制开始时"
-
-#: src/components/config/shared/event-hooks-form.tsx:138
-msgid "On Offline"
-msgstr "离线时"
-
-#: src/components/config/shared/event-hooks-form.tsx:132
-msgid "On Online"
-msgstr "上线时"
-
-#: src/components/config/shared/event-hooks-form.tsx:162
-msgid "On Pipeline Complete"
-msgstr "处理管道完成时"
-
 #: src/components/sessions/session-card.tsx:97
 msgid "Ongoing"
 msgstr "进行中"
@@ -5504,7 +5468,7 @@ msgstr "空间不足"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:168
+#: src/components/config/shared-config-editor.tsx:163
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -5639,23 +5603,23 @@ msgid "pagination"
 msgstr "分页"
 
 #: src/components/config/global/pipeline-config-card.tsx:206
-#: src/components/config/shared-config-editor.tsx:454
+#: src/components/config/shared-config-editor.tsx:418
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared-config-editor.tsx:595
+#: src/components/config/shared-config-editor.tsx:559
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
 #: src/components/config/global/pipeline-config-card.tsx:203
-#: src/components/config/shared-config-editor.tsx:451
+#: src/components/config/shared-config-editor.tsx:415
 msgid "Paired Segment"
 msgstr "配对分段"
 
 #: src/components/config/global/pipeline-config-card.tsx:214
 #: src/components/config/global/pipeline-config-card.tsx:295
-#: src/components/config/shared-config-editor.tsx:462
-#: src/components/config/shared-config-editor.tsx:565
+#: src/components/config/shared-config-editor.tsx:426
+#: src/components/config/shared-config-editor.tsx:529
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -5790,14 +5754,14 @@ msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; com
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
 #: src/components/config/global/pipeline-config-card.tsx:166
-#: src/components/config/shared-config-editor.tsx:412
+#: src/components/config/shared-config-editor.tsx:376
 msgid "Per-segment"
 msgstr "逐段"
 
 #: src/components/config/global/pipeline-config-card.tsx:177
 #: src/components/config/global/pipeline-config-card.tsx:279
-#: src/components/config/shared-config-editor.tsx:423
-#: src/components/config/shared-config-editor.tsx:534
+#: src/components/config/shared-config-editor.tsx:387
+#: src/components/config/shared-config-editor.tsx:498
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
@@ -5819,7 +5783,7 @@ msgstr "需要权限"
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
-#: src/components/config/shared-config-editor.tsx:223
+#: src/components/config/shared-config-editor.tsx:207
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -5947,11 +5911,11 @@ msgstr "平台名称"
 msgid "Platform not found"
 msgstr "未找到平台"
 
-#: src/components/streamers/config/streamer-configuration.tsx:52
+#: src/components/streamers/config/streamer-configuration.tsx:51
 msgid "Platform options"
 msgstr "平台选项"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:120
+#: src/components/config/templates/tabs/platform-override-card.tsx:119
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
@@ -5972,7 +5936,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:273
+#: src/components/config/templates/template-editor.tsx:269
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:48
@@ -6274,7 +6238,7 @@ msgid "Protocol Settings"
 msgstr "协议设置"
 
 #: src/components/config/global/network-system-card.tsx:236
-#: src/components/config/shared-config-editor.tsx:190
+#: src/components/config/shared-config-editor.tsx:185
 msgid "Proxy"
 msgstr "代理"
 
@@ -6640,8 +6604,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
 #: src/components/config/global/pipeline-config-card.tsx:229
-#: src/components/config/shared-config-editor.tsx:477
-#: src/components/config/shared-config-editor.tsx:575
+#: src/components/config/shared-config-editor.tsx:441
+#: src/components/config/shared-config-editor.tsx:539
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -6782,56 +6746,32 @@ msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
 #: src/components/config/global/pipeline-config-card.tsx:281
-#: src/components/config/shared-config-editor.tsx:537
+#: src/components/config/shared-config-editor.tsx:501
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:313
-#: src/components/config/shared-config-editor.tsx:614
+#: src/components/config/shared-config-editor.tsx:578
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
 #: src/components/config/global/pipeline-config-card.tsx:261
-#: src/components/config/shared-config-editor.tsx:513
+#: src/components/config/shared-config-editor.tsx:477
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
-#: src/components/config/shared/event-hooks-form.tsx:146
-msgid "Runs when a download begins."
-msgstr "录制开始时运行。"
-
-#: src/components/config/shared/event-hooks-form.tsx:152
-msgid "Runs when a download completes successfully."
-msgstr "录制成功完成时运行。"
-
-#: src/components/config/shared/event-hooks-form.tsx:158
-msgid "Runs when a download encounters an error."
-msgstr "录制发生错误时运行。"
-
 #: src/components/config/global/pipeline-config-card.tsx:223
-#: src/components/config/shared-config-editor.tsx:471
+#: src/components/config/shared-config-editor.tsx:435
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared-config-editor.tsx:569
+#: src/components/config/shared-config-editor.tsx:533
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:297
 msgid "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
 msgstr "当视频和弹幕分段都可用时运行。需要启用“录制弹幕”。"
-
-#: src/components/config/shared/event-hooks-form.tsx:164
-msgid "Runs when the post-processing pipeline completes."
-msgstr "后处理管道完成时运行。"
-
-#: src/components/config/shared/event-hooks-form.tsx:140
-msgid "Runs when the streamer goes offline."
-msgstr "主播离线时运行。"
-
-#: src/components/config/shared/event-hooks-form.tsx:134
-msgid "Runs when the streamer goes online."
-msgstr "主播上线时运行。"
 
 #: src/components/filters/forms/RegexFilterForm.tsx:42
 msgid "Rust regex syntax supported."
@@ -6883,8 +6823,8 @@ msgstr "星期六"
 msgid "Save changes"
 msgstr "保存更改"
 
-#: src/components/config/platforms/platform-editor.tsx:163
-#: src/components/config/templates/template-editor.tsx:218
+#: src/components/config/platforms/platform-editor.tsx:161
+#: src/components/config/templates/template-editor.tsx:215
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:612
@@ -6905,8 +6845,8 @@ msgstr "保存工作流"
 msgid "Saving"
 msgstr "保存中"
 
-#: src/components/config/platforms/platform-editor.tsx:161
-#: src/components/config/templates/template-editor.tsx:214
+#: src/components/config/platforms/platform-editor.tsx:159
+#: src/components/config/templates/template-editor.tsx:211
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7040,7 +6980,7 @@ msgid "Security & Identity"
 msgstr "安全与身份"
 
 #: src/components/config/global/pipeline-config-card.tsx:169
-#: src/components/config/shared-config-editor.tsx:415
+#: src/components/config/shared-config-editor.tsx:379
 msgid "Segment"
 msgstr "分段"
 
@@ -7245,25 +7185,25 @@ msgid "Server URL"
 msgstr "服务器地址"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
-#: src/components/config/shared-config-editor.tsx:497
+#: src/components/config/shared-config-editor.tsx:461
 #: src/components/pipeline/outputs/output-card.tsx:251
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "会话"
 
 #: src/components/config/global/pipeline-config-card.tsx:244
-#: src/components/config/shared-config-editor.tsx:494
+#: src/components/config/shared-config-editor.tsx:458
 msgid "Session Complete"
 msgstr "会话完成"
 
 #: src/components/config/global/pipeline-config-card.tsx:255
 #: src/components/config/global/pipeline-config-card.tsx:311
-#: src/components/config/shared-config-editor.tsx:505
-#: src/components/config/shared-config-editor.tsx:611
+#: src/components/config/shared-config-editor.tsx:469
+#: src/components/config/shared-config-editor.tsx:575
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared-config-editor.tsx:634
+#: src/components/config/shared-config-editor.tsx:598
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -7465,8 +7405,8 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:204
-#: src/components/config/templates/tabs/platform-override-card.tsx:70
+#: src/components/config/platforms/platform-editor.tsx:201
+#: src/components/config/templates/tabs/platform-override-card.tsx:69
 msgid "Specific"
 msgstr "特定"
 
@@ -7999,7 +7939,7 @@ msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
 #: src/components/config/global/pipeline-config-card.tsx:183
-#: src/components/config/shared-config-editor.tsx:431
+#: src/components/config/shared-config-editor.tsx:395
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -8261,12 +8201,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:425
+#: src/components/config/shared-config-editor.tsx:389
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
 #: src/components/config/global/pipeline-config-card.tsx:257
-#: src/components/config/shared-config-editor.tsx:507
+#: src/components/config/shared-config-editor.tsx:471
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -8327,7 +8267,7 @@ msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:464
+#: src/components/config/shared-config-editor.tsx:428
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 

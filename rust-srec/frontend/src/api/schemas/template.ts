@@ -5,7 +5,6 @@ import {
   DownloadRetryPolicyObjectSchema,
   DanmuSamplingConfigObjectSchema,
   ProxyConfigObjectSchema,
-  EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { EngineConfigOverrideSchema } from './engine';
@@ -86,12 +85,6 @@ export const TemplateSchema = z.object({
     .pipe(ProxyConfigObjectSchema.nullable().optional())
     .nullable()
     .optional(),
-  event_hooks: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(EventHooksSchema.nullable().optional())
-    .nullable()
-    .optional(),
   pipeline: z
     .string()
     .transform((str) => {
@@ -158,7 +151,6 @@ export const CreateTemplateRequestSchema = z.object({
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
-  event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

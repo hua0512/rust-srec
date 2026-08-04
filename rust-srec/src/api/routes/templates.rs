@@ -93,7 +93,6 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         download_retry_policy: model.download_retry_policy.clone(),
         danmu_sampling_config: model.danmu_sampling_config.clone(),
         proxy_config: model.proxy_config.clone(),
-        event_hooks: model.event_hooks.clone(),
         pipeline: model.pipeline.clone(),
         session_complete_pipeline: model.session_complete_pipeline.clone(),
         paired_segment_pipeline: model.paired_segment_pipeline.clone(),
@@ -181,7 +180,6 @@ pub async fn create_template(
     template.download_retry_policy = request.download_retry_policy;
     template.danmu_sampling_config = request.danmu_sampling_config;
     template.proxy_config = request.proxy_config;
-    template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
@@ -352,7 +350,6 @@ pub async fn update_template(
     template.download_retry_policy = request.download_retry_policy;
     template.danmu_sampling_config = request.danmu_sampling_config;
     template.proxy_config = request.proxy_config;
-    template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
@@ -491,7 +488,6 @@ pub async fn clone_template(
     cloned.download_retry_policy = existing.download_retry_policy;
     cloned.danmu_sampling_config = existing.danmu_sampling_config;
     cloned.proxy_config = existing.proxy_config;
-    cloned.event_hooks = existing.event_hooks;
     cloned.pipeline = existing.pipeline;
     cloned.session_complete_pipeline = existing.session_complete_pipeline;
     cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
@@ -537,7 +533,6 @@ mod tests {
             download_retry_policy: None,
             danmu_sampling_config: None,
             proxy_config: None,
-            event_hooks: None,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,

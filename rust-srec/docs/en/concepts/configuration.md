@@ -129,11 +129,6 @@ Stream selection is merged with special semantics:
 
 This allows a template to specify only the parts it cares about without losing platform defaults.
 
-### Event hooks: merged key-by-key
-
-`event_hooks` is merged per field (e.g. `on_online`, `on_offline`, ...). A higher layer overrides
-only the hooks it sets; unset hooks fall back to lower layers.
-
 ### Pipelines: higher layer replaces the whole pipeline
 
 Pipelines are parsed from JSON into a `DagPipelineDefinition`. When a layer provides a pipeline,
@@ -201,7 +196,6 @@ Supported keys that affect `MergedConfig`:
   `offline_check_delay_ms`
 - `proxy_config` (JSON object)
 - `stream_selection_config` (JSON object)
-- `event_hooks` (JSON object)
 - `download_retry_policy` (JSON object)
 - `danmu_sampling_config` (JSON object)
 - `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline` (JSON objects)

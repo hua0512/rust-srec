@@ -1036,7 +1036,6 @@ fn template_model(
     model.download_engine = source.download_engine.clone();
     model.engines_override = source.engines_override.clone().map(db_json);
     model.proxy_config = source.proxy_config.clone().map(db_json);
-    model.event_hooks = source.event_hooks.clone().map(db_json);
     model.stream_selection_config = source.stream_selection_config.clone().map(db_json);
     model.pipeline = source.pipeline.clone().map(db_json);
     model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
@@ -1067,7 +1066,6 @@ fn platform_model(
     model.max_download_duration_secs = source.max_download_duration_secs;
     model.max_part_size_bytes = source.max_part_size_bytes;
     model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
-    model.event_hooks = source.event_hooks.clone().map(db_json);
     model.pipeline = source.pipeline.clone().map(db_json);
     model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
     model.paired_segment_pipeline = source.paired_segment_pipeline.clone().map(db_json);
@@ -1449,11 +1447,11 @@ async fn persist_template(
             id, name, output_folder, output_filename_template, cookies, output_file_format,
             min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
             record_danmu, platform_overrides, download_retry_policy, danmu_sampling_config,
-            download_engine, engines_override, proxy_config, event_hooks,
+            download_engine, engines_override, proxy_config,
             stream_selection_config, pipeline, session_complete_pipeline,
             paired_segment_pipeline, offline_check_count, offline_check_delay_ms,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             output_folder = excluded.output_folder,
@@ -1470,7 +1468,6 @@ async fn persist_template(
             download_engine = excluded.download_engine,
             engines_override = excluded.engines_override,
             proxy_config = excluded.proxy_config,
-            event_hooks = excluded.event_hooks,
             stream_selection_config = excluded.stream_selection_config,
             pipeline = excluded.pipeline,
             session_complete_pipeline = excluded.session_complete_pipeline,
@@ -1496,7 +1493,6 @@ async fn persist_template(
     .bind(&model.download_engine)
     .bind(&model.engines_override)
     .bind(&model.proxy_config)
-    .bind(&model.event_hooks)
     .bind(&model.stream_selection_config)
     .bind(&model.pipeline)
     .bind(&model.session_complete_pipeline)
@@ -1521,7 +1517,7 @@ async fn persist_platform(
             platform_specific_config = ?, proxy_config = ?, record_danmu = ?, output_folder = ?,
             output_filename_template = ?, download_engine = ?, stream_selection_config = ?,
             output_file_format = ?, min_segment_size_bytes = ?, max_download_duration_secs = ?,
-            max_part_size_bytes = ?, download_retry_policy = ?, event_hooks = ?, pipeline = ?,
+            max_part_size_bytes = ?, download_retry_policy = ?, pipeline = ?,
             session_complete_pipeline = ?, paired_segment_pipeline = ?, offline_check_count = ?,
             offline_check_delay_ms = ?
         WHERE id = ?
@@ -1543,7 +1539,6 @@ async fn persist_platform(
     .bind(model.max_download_duration_secs)
     .bind(model.max_part_size_bytes)
     .bind(&model.download_retry_policy)
-    .bind(&model.event_hooks)
     .bind(&model.pipeline)
     .bind(&model.session_complete_pipeline)
     .bind(&model.paired_segment_pipeline)

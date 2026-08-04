@@ -52,7 +52,6 @@ export function PlatformOverrideCard({
     output: basePath, // Output settings are flat on the config object (output_folder, etc.)
     limits: basePath, // Limits are flat
     danmu: basePath, // record_danmu is flat
-    hooks: `${basePath}.event_hooks`,
     pipeline: `${basePath}.pipeline`,
     sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
     pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,

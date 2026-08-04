@@ -65,7 +65,6 @@ export function TemplateEditor({
           download_engine: template.download_engine,
           engines_override: template.engines_override ?? undefined,
           proxy_config: template.proxy_config,
-          event_hooks: template.event_hooks,
           stream_selection_config: template.stream_selection_config,
           pipeline: template.pipeline,
           session_complete_pipeline: template.session_complete_pipeline,
@@ -89,7 +88,6 @@ export function TemplateEditor({
           download_engine: null,
           engines_override: undefined,
           proxy_config: null,
-          event_hooks: null,
           stream_selection_config: null,
           pipeline: null,
           session_complete_pipeline: null,
@@ -119,7 +117,6 @@ export function TemplateEditor({
         download_engine: template.download_engine,
         engines_override: template.engines_override ?? undefined,
         proxy_config: template.proxy_config,
-        event_hooks: template.event_hooks,
         stream_selection_config: template.stream_selection_config,
         pipeline: template.pipeline,
         session_complete_pipeline: template.session_complete_pipeline,
@@ -232,7 +229,6 @@ export function TemplateEditor({
               limits: '',
               danmu: '',
               danmuSampling: 'danmu_sampling_config',
-              hooks: 'event_hooks',
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
@@ -285,7 +281,6 @@ export function TemplateEditor({
               'proxy',
               'danmu',
               'pipeline',
-              'hooks',
             ]}
           />
         </motion.div>

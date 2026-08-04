@@ -14,7 +14,7 @@ use crate::credentials::{
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
-use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
+use crate::domain::{DanmuSamplingConfig, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
@@ -186,16 +186,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             },
             "Invalid JSON config; ignoring",
         );
-        let platform_event_hooks: Option<EventHooks> = json::parse_optional(
-            platform_config.event_hooks.as_deref(),
-            JsonContext::StreamerConfig {
-                streamer_id: &streamer.id,
-                scope: "platform",
-                scope_id: Some(&streamer.platform_config_id),
-                field: "event_hooks",
-            },
-            "Invalid JSON config; ignoring",
-        );
         let platform_specific: Option<serde_json::Value> = json::parse_optional(
             platform_config.platform_specific_config.as_deref(),
             JsonContext::StreamerConfig {
@@ -266,7 +256,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             max_download_duration_secs: platform_config.max_download_duration_secs,
             max_part_size_bytes: platform_config.max_part_size_bytes,
             download_retry_policy: platform_download_retry_policy,
-            event_hooks: platform_event_hooks,
             pipeline: platform_pipeline,
             session_complete_pipeline: platform_session_complete_pipeline,
             paired_segment_pipeline: platform_paired_segment_pipeline,
@@ -333,17 +322,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; ignoring",
             );
-            let template_hooks: Option<EventHooks> = json::parse_optional(
-                template_config.event_hooks.as_deref(),
-                JsonContext::StreamerConfig {
-                    streamer_id: &streamer.id,
-                    scope: "template",
-                    scope_id: Some(template_id),
-                    field: "event_hooks",
-                },
-                "Invalid JSON config; ignoring",
-            );
-
             let template_stream_selection: Option<StreamSelectionConfig> = json::parse_optional(
                 template_config.stream_selection_config.as_deref(),
                 JsonContext::StreamerConfig {
@@ -471,7 +449,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 extractor: parse_extractor(template_config.extractor.as_deref(), "template"),
                 download_retry_policy: template_retry,
                 danmu_sampling_config: template_danmu,
-                event_hooks: template_hooks,
                 stream_selection: template_stream_selection,
                 engines_override: template_engines_override,
                 pipeline: template_pipeline,

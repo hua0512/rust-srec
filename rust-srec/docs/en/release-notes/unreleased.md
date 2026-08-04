@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Before you upgrade
+
+- **Event hooks have been removed**
+
+  The **Hooks** tab — on a site, a template, a template's per-site override and a streamer — is gone, along with the six shell commands it held. Those commands were stored and merged through the configuration layers but were never run, so nothing you were relying on stops working. Saved commands are deleted from the database on upgrade and no longer appear in an exported backup; copy anything you want to keep before upgrading. To act on these moments, subscribe a notification channel — webhook, Telegram, Gotify, Discord or email — under **Notifications**. See [Notification System](../concepts/notifications.md).
+
 ## Streamers and sites
 
 - **Bigo streamers are picked up as soon as they go live**
