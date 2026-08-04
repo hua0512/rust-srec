@@ -222,8 +222,6 @@ pub struct PlatformConfigDbModel {
     pub max_part_size_bytes: Option<i64>,
     /// JSON serialized RetryPolicy
     pub download_retry_policy: Option<String>,
-    /// JSON serialized EventHooks
-    pub event_hooks: Option<String>,
     /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
@@ -262,8 +260,6 @@ pub struct TemplateConfigDbModel {
     pub engines_override: Option<String>,
     /// JSON serialized ProxyConfig
     pub proxy_config: Option<String>,
-    /// JSON serialized EventHooks
-    pub event_hooks: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
     /// JSON serialized `Vec<PipelineStep>`
@@ -298,7 +294,6 @@ impl TemplateConfigDbModel {
             extractor: None,
             engines_override: None,
             proxy_config: None,
-            event_hooks: None,
             stream_selection_config: None,
             pipeline: None,
             session_complete_pipeline: None,

@@ -57,7 +57,6 @@ export function PlatformEditor({
       max_download_duration_secs: platform.max_download_duration_secs,
       max_part_size_bytes: platform.max_part_size_bytes,
       download_retry_policy: platform.download_retry_policy,
-      event_hooks: platform.event_hooks,
       pipeline: platform.pipeline,
       session_complete_pipeline: platform.session_complete_pipeline,
       paired_segment_pipeline: platform.paired_segment_pipeline,
@@ -85,7 +84,6 @@ export function PlatformEditor({
       max_download_duration_secs: platform.max_download_duration_secs,
       max_part_size_bytes: platform.max_part_size_bytes,
       download_retry_policy: platform.download_retry_policy,
-      event_hooks: platform.event_hooks,
       pipeline: platform.pipeline,
       session_complete_pipeline: platform.session_complete_pipeline,
       paired_segment_pipeline: platform.paired_segment_pipeline,
@@ -177,7 +175,6 @@ export function PlatformEditor({
               output: '',
               limits: '',
               danmu: '',
-              hooks: 'event_hooks',
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
@@ -223,7 +220,6 @@ export function PlatformEditor({
               'proxy',
               'danmu',
               'pipeline',
-              'hooks',
             ]}
           />
         </motion.div>

@@ -40,7 +40,6 @@ export function StreamerConfiguration({
         limits: basePath, // limits are in structure
         danmu: basePath, // record_danmu is in structure
         danmuSampling: `${basePath}.danmu_sampling_config`,
-        hooks: `${basePath}.event_hooks`,
         pipeline: `${basePath}.pipeline`,
         sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
         pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,

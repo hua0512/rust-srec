@@ -2,7 +2,7 @@
 
 use crate::credentials::extractor_platform_extras;
 use crate::database::models::job::DagPipelineDefinition;
-use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
+use crate::domain::{DanmuSamplingConfig, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use platforms_parser::extractor::factory::ExtractorSelection;
 use platforms_parser::extractor::platform_configs::merge_platform_extras;
@@ -39,9 +39,6 @@ pub struct MergedConfig {
     /// decides how the resolved URL is pulled.
     pub extractor: ExtractorSelection,
     pub download_retry_policy: RetryPolicy,
-
-    // Event hooks
-    pub event_hooks: EventHooks,
 
     // Platform-specific
     pub fetch_delay_ms: i64,
@@ -93,7 +90,6 @@ pub struct MergedConfigBuilder {
     download_engine: Option<String>,
     extractor: Option<ExtractorSelection>,
     download_retry_policy: Option<RetryPolicy>,
-    event_hooks: Option<EventHooks>,
     fetch_delay_ms: Option<i64>,
     download_delay_ms: Option<i64>,
     stream_selection: Option<StreamSelectionConfig>,
@@ -146,7 +142,6 @@ pub struct PlatformConfigLayer {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<RetryPolicy>,
-    pub event_hooks: Option<EventHooks>,
     pub pipeline: Option<DagPipelineDefinition>,
     pub session_complete_pipeline: Option<DagPipelineDefinition>,
     pub paired_segment_pipeline: Option<DagPipelineDefinition>,
@@ -170,7 +165,6 @@ pub struct TemplateConfigLayer {
     pub extractor: Option<ExtractorSelection>,
     pub download_retry_policy: Option<RetryPolicy>,
     pub danmu_sampling_config: Option<DanmuSamplingConfig>,
-    pub event_hooks: Option<EventHooks>,
     pub stream_selection: Option<StreamSelectionConfig>,
     pub engines_override: Option<serde_json::Value>,
     pub pipeline: Option<DagPipelineDefinition>,
@@ -225,7 +219,6 @@ impl MergedConfigBuilder {
         }
         self.danmu_sampling_config = Some(DanmuSamplingConfig::default());
         self.download_retry_policy = Some(RetryPolicy::default());
-        self.event_hooks = Some(EventHooks::default());
         self.pipeline = pipeline;
         self.session_complete_pipeline = session_complete_pipeline;
         self.paired_segment_pipeline = paired_segment_pipeline;
@@ -254,7 +247,6 @@ impl MergedConfigBuilder {
             max_download_duration_secs,
             max_part_size_bytes,
             download_retry_policy,
-            event_hooks,
             pipeline,
             session_complete_pipeline,
             paired_segment_pipeline,
@@ -352,15 +344,6 @@ impl MergedConfigBuilder {
             debug!("Platform override: download_retry_policy");
             self.download_retry_policy = Some(v);
         }
-        if let Some(v) = event_hooks {
-            if let Some(existing) = &self.event_hooks {
-                debug!("Platform override: merging event_hooks");
-                self.event_hooks = Some(existing.merge(&v));
-            } else {
-                debug!("Platform override: event_hooks");
-                self.event_hooks = Some(v);
-            }
-        }
         if let Some(v) = offline_check_count {
             debug!("Platform override: offline_check_count = {}", v);
             self.offline_check_count = Some(v.max(1) as u32);
@@ -389,7 +372,6 @@ impl MergedConfigBuilder {
             extractor,
             download_retry_policy,
             danmu_sampling_config,
-            event_hooks,
             stream_selection,
             engines_override,
             pipeline,
@@ -461,16 +443,6 @@ impl MergedConfigBuilder {
         if let Some(v) = danmu_sampling_config {
             debug!("Template override: danmu_sampling_config");
             self.danmu_sampling_config = Some(v);
-        }
-        if let Some(v) = event_hooks {
-            // Merge event hooks
-            if let Some(existing) = &self.event_hooks {
-                debug!("Template override: merging event_hooks");
-                self.event_hooks = Some(existing.merge(&v));
-            } else {
-                debug!("Template override: event_hooks");
-                self.event_hooks = Some(v);
-            }
         }
         if let Some(v) = stream_selection {
             // Merge stream selection config
@@ -602,19 +574,6 @@ impl MergedConfigBuilder {
                 } else {
                     debug!("Streamer config override: stream_selection");
                     self.stream_selection = Some(v);
-                }
-            }
-
-            // Parse event hooks from streamer-specific config
-            if let Some(hooks_val) = config.get("event_hooks")
-                && let Ok(v) = serde_json::from_value::<EventHooks>(hooks_val.clone())
-            {
-                if let Some(existing) = &self.event_hooks {
-                    debug!("Streamer config override: merging event_hooks");
-                    self.event_hooks = Some(existing.merge(&v));
-                } else {
-                    debug!("Streamer config override: event_hooks");
-                    self.event_hooks = Some(v);
                 }
             }
 
@@ -753,7 +712,6 @@ impl MergedConfigBuilder {
             download_engine,
             extractor,
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),
-            event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
             stream_selection,

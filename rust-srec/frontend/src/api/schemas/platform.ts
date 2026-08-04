@@ -3,7 +3,6 @@ import {
   StreamSelectionConfigObjectSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
-  EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import {
@@ -64,13 +63,6 @@ export const PlatformConfigSchema = z.object({
     .nullable()
     .optional(),
 
-  event_hooks: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(EventHooksSchema.nullable().optional())
-    .nullable()
-    .optional(),
-
   pipeline: z
     .string()
     .transform((str) => JSON.parse(str))
@@ -105,7 +97,6 @@ export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
     StreamSelectionConfigObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
-  event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

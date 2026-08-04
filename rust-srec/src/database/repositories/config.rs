@@ -256,9 +256,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies, platform_specific_config, proxy_config, record_danmu,
                 output_folder, output_filename_template, download_engine, extractor, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                download_retry_policy, event_hooks, pipeline, session_complete_pipeline, paired_segment_pipeline,
+                download_retry_policy, pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -279,7 +279,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(&config.download_retry_policy)
-        .bind(&config.event_hooks)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
@@ -311,7 +310,6 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 download_retry_policy = ?,
-                event_hooks = ?,
                 pipeline = ?,
                 session_complete_pipeline = ?,
                 paired_segment_pipeline = ?,
@@ -337,7 +335,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(&config.download_retry_policy)
-        .bind(&config.event_hooks)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
@@ -390,11 +387,11 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies, output_file_format, min_segment_size_bytes,
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
                 platform_overrides, download_retry_policy, danmu_sampling_config,
-                download_engine, extractor, engines_override, proxy_config, event_hooks, stream_selection_config,
+                download_engine, extractor, engines_override, proxy_config, stream_selection_config,
                 pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -415,7 +412,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.extractor)
         .bind(&config.engines_override)
         .bind(&config.proxy_config)
-        .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
@@ -449,7 +445,6 @@ impl ConfigRepository for SqlxConfigRepository {
                 extractor = ?,
                 engines_override = ?,
                 proxy_config = ?,
-                event_hooks = ?,
                 stream_selection_config = ?,
                 pipeline = ?,
                 session_complete_pipeline = ?,
@@ -476,7 +471,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.extractor)
         .bind(&config.engines_override)
         .bind(&config.proxy_config)
-        .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)

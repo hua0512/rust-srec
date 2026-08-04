@@ -47,17 +47,6 @@ export const ProxyConfigObjectSchema = z.object({
   use_system_proxy: z.boolean().default(false).optional(),
 });
 
-// Event hooks for streamer lifecycle events
-export const EventHooksSchema = z.object({
-  on_online: z.string().optional(),
-  on_offline: z.string().optional(),
-  on_download_start: z.string().optional(),
-  on_download_complete: z.string().optional(),
-  on_download_error: z.string().optional(),
-  on_pipeline_complete: z.string().optional(),
-});
-export type EventHooks = z.infer<typeof EventHooksSchema>;
-
 // --- Pipeline Step Schemas ---
 // Preset step: references a job preset by name
 export const PresetPipelineStepSchema = z.object({

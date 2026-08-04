@@ -42,7 +42,6 @@ async fn create_test_platform(pool: &DbPool, prefix: &str) -> String {
         max_download_duration_secs: None,
         max_part_size_bytes: None,
         download_retry_policy: None,
-        event_hooks: None,
         pipeline: None,
         session_complete_pipeline: None,
         paired_segment_pipeline: None,
@@ -316,6 +315,139 @@ mod database_tests {
         assert_eq!(row.4, 111);
         assert_eq!(row.5, 444);
         assert!(!row.6);
+    }
+
+    /// `run_migrations` in `setup_test_db` only ever sees an empty database, so it cannot
+    /// catch that `platform_config` and `template_config` are the targets of
+    /// `streamers.platform_config_id` and `streamers.template_config_id`. `init_pool` opens
+    /// connections with `PRAGMA foreign_keys = ON`, so any rewrite of those two tables has to
+    /// survive with child rows present. Reinstate the dropped columns, populate the full
+    /// foreign key graph, and replay the migration inside a transaction the way sqlx's migrator
+    /// runs it.
+    #[tokio::test]
+    async fn test_remove_event_hooks_migration_keeps_referencing_streamers() {
+        let pool = init_pool("sqlite::memory:")
+            .await
+            .expect("Failed to create test pool");
+
+        run_migrations(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        sqlx::raw_sql(
+            r#"
+            ALTER TABLE platform_config ADD COLUMN event_hooks TEXT;
+            ALTER TABLE template_config ADD COLUMN event_hooks TEXT;
+
+            INSERT INTO platform_config (id, platform_name, event_hooks)
+            VALUES ('platform-1', 'hooked_platform', '{"on_online":"notify-send online"}');
+
+            INSERT INTO template_config (id, name, cookies, platform_overrides, event_hooks)
+            VALUES (
+                'template-1',
+                'hooked_template',
+                'session=abc',
+                '{"douyin":{"cookies":"c","event_hooks":{"on_offline":"echo off"}},"huya":{"record_danmu":true},"broken":null}',
+                '{"on_download_error":"echo boom"}'
+            );
+
+            INSERT INTO streamers (id, name, url, platform_config_id, template_config_id, state, streamer_specific_config)
+            VALUES (
+                'streamer-1',
+                'Hooked Streamer',
+                'https://example.com/hooked',
+                'platform-1',
+                'template-1',
+                'NOT_LIVE',
+                '{"record_danmu":true,"event_hooks":{"on_download_start":"echo start"}}'
+            );
+
+            INSERT INTO streamers (id, name, url, platform_config_id, state, streamer_specific_config)
+            VALUES (
+                'streamer-2',
+                'Unparseable Config',
+                'https://example.com/unparseable',
+                'platform-1',
+                'NOT_LIVE',
+                'not json'
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to seed pre-migration event_hooks state");
+
+        let mut tx = pool.begin().await.expect("Failed to begin transaction");
+        sqlx::raw_sql(include_str!(
+            "../migrations/20260804000000_remove_event_hooks.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .expect("Failed to run event_hooks removal migration");
+        tx.commit().await.expect("Failed to commit migration");
+
+        let platform_columns: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('platform_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect migrated platform_config");
+        assert!(!platform_columns.iter().any(|name| name == "event_hooks"));
+
+        let template_columns: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('template_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect migrated template_config");
+        assert!(!template_columns.iter().any(|name| name == "event_hooks"));
+
+        let violations: Vec<(String,)> =
+            sqlx::query_as("SELECT \"table\" FROM pragma_foreign_key_check")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to run foreign key check");
+        assert!(
+            violations.is_empty(),
+            "migration orphaned rows: {violations:?}"
+        );
+
+        let (streamer_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM streamers")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to count streamers");
+        assert_eq!(
+            streamer_count, 2,
+            "streamer rows must survive the migration"
+        );
+
+        // The scrub strips only `$.event_hooks`; sibling keys and rows whose blob is not JSON
+        // are left untouched.
+        let (streamer_config,): (String,) = sqlx::query_as(
+            "SELECT streamer_specific_config FROM streamers WHERE id = 'streamer-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to read migrated streamer config");
+        assert_eq!(streamer_config, r#"{"record_danmu":true}"#);
+
+        let (unparseable,): (String,) = sqlx::query_as(
+            "SELECT streamer_specific_config FROM streamers WHERE id = 'streamer-2'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to read unparseable streamer config");
+        assert_eq!(unparseable, "not json");
+
+        let (overrides, cookies): (String, String) = sqlx::query_as(
+            "SELECT platform_overrides, cookies FROM template_config WHERE id = 'template-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to read migrated template");
+        assert_eq!(
+            overrides,
+            r#"{"douyin":{"cookies":"c"},"huya":{"record_danmu":true},"broken":null}"#
+        );
+        assert_eq!(cookies, "session=abc");
     }
 
     #[tokio::test]
