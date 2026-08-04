@@ -128,6 +128,20 @@ impl StreamerMetadata {
         self.offline_check_delay_ms = merged.offline_check_delay_ms;
     }
 
+    /// Reset the error bookkeeping accumulated by `StreamerManager::record_error`:
+    /// `consecutive_error_count`, `disabled_until` and `last_error`.
+    ///
+    /// `state` is left untouched — callers that also need a state change set it
+    /// themselves. Clearing `disabled_until` is what makes
+    /// [`Self::is_ready_for_check`] pass again; zeroing `consecutive_error_count`
+    /// restarts the exponential backoff in `StreamerManager::calculate_backoff`
+    /// from its base delay rather than resuming mid-curve.
+    pub fn clear_error_tracking(&mut self) {
+        self.consecutive_error_count = 0;
+        self.disabled_until = None;
+        self.last_error = None;
+    }
+
     /// Check if the streamer is currently disabled (in backoff).
     pub fn is_disabled(&self) -> bool {
         self.disabled_until
