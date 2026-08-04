@@ -13,3 +13,7 @@
 - **Bigo streamers are picked up as soon as they go live**
 
   Bigo checks shared one access token, but Bigo grants such a token a single use — every later check got a reply without the stream's address and read it as "not live". Each check now takes its own token, and a missing address is reported as a failed check rather than an offline room.
+
+- **Turning a streamer off clears its error history**
+
+  Switching a streamer off now wipes its recorded error, its consecutive-error count and any retry backoff still counting down. Switching it back on starts checking right away instead of sitting out the rest of the wait, and the card no longer carries the stale error message from before you turned it off.

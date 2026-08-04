@@ -393,6 +393,10 @@ where
     /// Only updates the fields that are provided (Some values).
     /// Persists to database first, then updates in-memory cache.
     ///
+    /// A `state` of [`StreamerState::Disabled`] additionally resets
+    /// `consecutive_error_count`, `disabled_until`, and `last_error` in the same write,
+    /// so a re-enable starts from a clean error history.
+    ///
     /// # Events
     /// Always emits `ConfigUpdateEvent::StreamerMetadataUpdated`, including when the update changes
     /// the streamer's state (e.g., user disables a streamer). `StreamerStateSyncedFromDb` is reserved
@@ -444,6 +448,18 @@ where
         }
         if let Some(new_state) = state {
             metadata.state = new_state;
+
+            // A user-initiated disable retires the error bookkeeping accumulated by
+            // `record_error`. Leaving `disabled_until` set would make
+            // `StreamerMetadata::is_ready_for_check` suppress checks after the user
+            // re-enables the streamer, and a non-zero `consecutive_error_count` would
+            // resume the exponential backoff from where it left off (see
+            // `calculate_backoff`) instead of from a clean slate.
+            if new_state == StreamerState::Disabled {
+                metadata.consecutive_error_count = 0;
+                metadata.disabled_until = None;
+                metadata.last_error = None;
+            }
         }
         if let Some(new_config) = streamer_specific_config {
             metadata.streamer_specific_config = new_config;
@@ -1464,5 +1480,95 @@ mod tests {
             .unwrap();
 
         assert_eq!(updated.platform_config_id, "platform-douyin");
+    }
+
+    /// Disabling a streamer through the API must retire the backoff written by
+    /// `record_error`, otherwise `is_ready_for_check` keeps suppressing checks
+    /// once the user re-enables it.
+    #[tokio::test]
+    async fn test_partial_update_to_disabled_clears_error_backoff() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        // Drive the streamer into backoff: the threshold derives from
+        // `offline_check_count` (3 by default).
+        for _ in 0..3 {
+            manager.record_error("s1", "boom").await.unwrap();
+        }
+        let errored = manager.get_streamer("s1").unwrap();
+        assert!(errored.disabled_until.is_some());
+        assert!(errored.is_disabled());
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: Some(StreamerState::Disabled),
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.state, StreamerState::Disabled);
+        assert_eq!(updated.consecutive_error_count, 0);
+        assert_eq!(updated.disabled_until, None);
+        assert_eq!(updated.last_error, None);
+
+        // Re-enabling must land on a streamer that is immediately checkable.
+        let reenabled = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: Some(StreamerState::NotLive),
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert!(reenabled.is_ready_for_check());
+    }
+
+    /// Only a transition to `Disabled` clears the error history; other partial
+    /// updates (rename, priority, template) must leave the backoff intact.
+    #[tokio::test]
+    async fn test_partial_update_preserves_error_backoff_for_other_states() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        for _ in 0..3 {
+            manager.record_error("s1", "boom").await.unwrap();
+        }
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: Some("New Name".to_string()),
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: Some(Priority::High),
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.consecutive_error_count, 3);
+        assert!(updated.disabled_until.is_some());
+        assert_eq!(updated.last_error.as_deref(), Some("boom"));
     }
 }
