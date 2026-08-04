@@ -125,9 +125,10 @@ impl Bigo {
         let artist = data.artist();
         let cover = data.snapshot.clone().filter(|s| !s.is_empty());
         let artist_url = data.avatar.clone().filter(|s| !s.is_empty());
+        let pass_room = data.pass_room.unwrap_or(false);
 
-        if !data.is_online() {
-            if data.pass_room.unwrap_or(false) {
+        if !data.is_room_live() {
+            if pass_room {
                 return Err(ExtractorError::PrivateContent);
             }
 
@@ -146,6 +147,20 @@ impl Bigo {
                 .build());
         }
 
+        // The room is broadcasting but the response carried no playlist. Either
+        // `verify` did not unlock it, or `getInternalStudioInfo` withheld the
+        // source because `token` had already been spent — a minted token is
+        // accepted once. Neither is an offline room, so surface an error the
+        // caller can retry instead of a `is_live(false)` MediaInfo.
+        if !data.has_playable_source() {
+            if pass_room {
+                return Err(ExtractorError::PrivateContent);
+            }
+            return Err(ExtractorError::ValidationError(format!(
+                "bigo studio response for live room {site_id} omitted hls_src"
+            )));
+        }
+
         let hls_src = data
             .hls_src
             .clone()
@@ -160,7 +175,7 @@ impl Bigo {
                 ExtractorError::ValidationError("bigo online room missing roomId".to_string())
             })?;
 
-        if data.pass_room.unwrap_or(false) && self.resolve_password().is_none() {
+        if pass_room && self.resolve_password().is_none() {
             return Err(ExtractorError::PrivateContent);
         }
 
@@ -211,7 +226,7 @@ impl PlatformExtractor for Bigo {
         let password = self.resolve_password();
 
         let integrity_token = if self.mint_token {
-            match token::pooled_token(&self.extractor.client).await {
+            match token::mint_token(&self.extractor.client).await {
                 Ok(t) => {
                     debug!("bigo integrity token minted");
                     Some(t)
@@ -348,6 +363,54 @@ mod tests {
             .expect("public offline room should remain a normal offline result");
 
         assert!(!media.is_live);
+    }
+
+    /// A spent integrity token leaves `alive`/`roomId` live and blanks
+    /// `hls_src`; that must not read back as an offline room.
+    #[test]
+    fn live_room_without_hls_is_an_error() {
+        let bigo = Bigo::new(
+            "https://www.bigo.tv/1".to_string(),
+            crate::extractor::default::default_client(),
+            None,
+            None,
+        );
+        assert!(matches!(
+            bigo.media_from_data(
+                StudioData {
+                    alive: Some(1),
+                    pass_room: Some(false),
+                    room_id: Some("7631598258675132407".to_string()),
+                    hls_src: Some(String::new()),
+                    ..StudioData::default()
+                },
+                "1",
+            ),
+            Err(ExtractorError::ValidationError(_))
+        ));
+    }
+
+    #[test]
+    fn live_locked_room_without_hls_is_private() {
+        let bigo = Bigo::new(
+            "https://www.bigo.tv/1".to_string(),
+            crate::extractor::default::default_client(),
+            None,
+            None,
+        );
+        assert!(matches!(
+            bigo.media_from_data(
+                StudioData {
+                    alive: Some(1),
+                    pass_room: Some(true),
+                    room_id: Some("7631598258675132407".to_string()),
+                    hls_src: Some(String::new()),
+                    ..StudioData::default()
+                },
+                "1",
+            ),
+            Err(ExtractorError::PrivateContent)
+        ));
     }
 
     /// Live integration: mint token + studio API + HLS URL.

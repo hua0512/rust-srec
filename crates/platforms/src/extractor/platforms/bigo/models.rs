@@ -70,15 +70,21 @@ pub struct StudioData {
 }
 
 impl StudioData {
-    pub fn is_online(&self) -> bool {
+    /// Whether the room is broadcasting, judged from `alive` and `roomId` alone.
+    ///
+    /// Deliberately ignores `hls_src`: `getInternalStudioInfo` answers a
+    /// replayed `token` with a live `alive`/`roomId` pair but a blank
+    /// `hls_src`, so folding the source into the liveness test would report a
+    /// rejected token as an offline room.
+    pub fn is_room_live(&self) -> bool {
         let alive = self.alive.unwrap_or(0) != 0;
-        let hls = self
-            .hls_src
-            .as_ref()
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
         let room_id = self.room_id.as_deref().unwrap_or("");
-        alive && hls && !room_id.is_empty() && room_id != "0"
+        alive && !room_id.is_empty() && room_id != "0"
+    }
+
+    /// Whether the response carried a playlist URL to hand to the downloader.
+    pub fn has_playable_source(&self) -> bool {
+        self.hls_src.as_deref().is_some_and(|s| !s.is_empty())
     }
 
     pub fn display_title(&self) -> String {
@@ -194,10 +200,31 @@ mod tests {
         let resp: StudioResponse = serde_json::from_str(json).unwrap();
         assert!(resp.is_success());
         let data = resp.data.unwrap();
-        assert!(data.is_online());
+        assert!(data.is_room_live());
+        assert!(data.has_playable_source());
         assert_eq!(data.room_id.as_deref(), Some("6576287577575737440"));
         assert_eq!(data.display_title(), "Hello");
         assert_eq!(data.artist(), "Streamer");
+    }
+
+    /// The shape `getInternalStudioInfo` returns for a replayed `token`.
+    #[test]
+    fn live_room_without_source_stays_live() {
+        let json = r#"{
+          "code": 0,
+          "msg": "success",
+          "data": {
+            "alive": 1,
+            "roomId": "7631598258675132407",
+            "hls_src": "",
+            "nick_name": "Streamer",
+            "siteId": "1118452367"
+          }
+        }"#;
+        let resp: StudioResponse = serde_json::from_str(json).unwrap();
+        let data = resp.data.unwrap();
+        assert!(data.is_room_live());
+        assert!(!data.has_playable_source());
     }
 
     #[test]
@@ -215,7 +242,7 @@ mod tests {
         }"#;
         let resp: StudioResponse = serde_json::from_str(json).unwrap();
         let data = resp.data.unwrap();
-        assert!(!data.is_online());
+        assert!(!data.is_room_live());
         assert_eq!(data.artist(), "OfflineBJ");
     }
 
@@ -225,7 +252,8 @@ mod tests {
         let resp: StudioResponse = serde_json::from_str(json).unwrap();
         assert!(resp.is_success());
         let data = resp.data.unwrap();
-        assert!(data.is_online());
+        assert!(data.is_room_live());
+        assert!(data.has_playable_source());
         assert_eq!(data.room_id.as_deref(), Some("7482488749430738201"));
     }
 }
