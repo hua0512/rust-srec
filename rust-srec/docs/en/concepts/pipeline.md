@@ -53,10 +53,20 @@ Each pipeline step is executed by a specialized processor:
 | `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
 | `compression` | Transcodes video | Codec and quality settings |
 | `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
+| `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | Copies or moves local files | Destination and operation settings |
 | `metadata` | Writes metadata (nfo, json) | - |
 | `delete` | Automatically cleans up files | - |
 | `execute` | Runs a custom Shell command/script | `command`, `scan_output_dir`, `scan_extension` |
+
+### Baidu Netdisk (`baidupcs`)
+
+The `baidupcs` processor uploads recordings to Baidu Netdisk through the external [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) CLI (bundled in the Docker image; install it separately for bare-metal setups and point `BAIDUPCS_PATH` at it if it is not on `PATH`).
+
+- **Login**: open any `baidupcs` preset in the web UI and use the account card to log in with a pasted cookie string (recommended) or BDUSS + STOKEN. Credentials are handed to BaiduPCS-Go and the session persists in its config directory (`BAIDUPCS_GO_CONFIG_DIR`); the same card shows the active account and quota. Enable **Remember for automatic re-login** to also store the credentials server-side (plaintext, like platform cookies): upload jobs then log in again by themselves when the session turns out to be expired — checked before the first attempt and once more before a retry. When a replayed login is rejected (typically because the stored session token was invalidated by a password change), a high-priority `baidupcs_relogin_failed` notification fires and further attempts pause for an hour, so dead credentials produce one alert instead of a failed Baidu call per job. Logging out forgets the stored credentials.
+- **Destination**: `destination_root` supports the usual `{streamer}`/`{title}`/time placeholders and always resolves to an absolute Netdisk path. Missing folders are created during upload.
+- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap.
+- **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
 
 ## Presets System
 
@@ -81,6 +91,7 @@ Processor outputs are also significant:
 - Transform processors such as `remux` and `compression` output the transformed file.
 - Derivative processors such as `thumbnail` and `audio_extract` output only the generated derivative, not their source file.
 - `rclone` `copy` and `sync` pass their local input paths through; `rclone` `move` produces no local outputs because it consumes the local files.
+- `baidupcs` passes its local input paths through, unless **Delete local files after upload** is enabled, in which case the consumed files are dropped from its outputs.
 - `delete` produces no outputs.
 
 Therefore, a linear `remux -> thumbnail -> rclone` graph sends only the thumbnail to `rclone`. To upload both the remuxed video and its thumbnail, route both producers directly to `rclone`:

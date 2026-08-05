@@ -100,6 +100,7 @@ pnpm dev
 
 - 非 Docker 环境使用 FFmpeg 处理器或基于 FFmpeg 的工作流时，安装 `ffmpeg` 并加入 `PATH`。
 - 选择 Streamlink 下载引擎时，安装 `streamlink` 并加入 `PATH`。
+- 使用 `baidupcs` 百度网盘上传处理器时，安装 [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) 并加入 `PATH`（或通过 `BAIDUPCS_PATH` 指定路径）。
 - Docker 镜像已经包含其支持的运行时工具，标准 Docker 部署不需要在宿主机重复安装。
 
 ## 下一步

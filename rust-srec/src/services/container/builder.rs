@@ -367,6 +367,21 @@ impl ServiceContainer {
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
         credential_service.set_notification_service(Arc::clone(&notification_service));
+
+        // Stored Baidu Netdisk login material, installed process-wide so the
+        // /api/tools/baidupcs routes and BaiduPcsProcessor's automatic
+        // re-login share one store (crate::baidupcs::authenticator).
+        // Placed after NotificationService exists so rejected re-logins can
+        // emit `baidupcs_relogin_failed` events.
+        crate::baidupcs::set_authenticator(Arc::new(
+            crate::baidupcs::StoredLoginAuthenticator::new(Arc::new(
+                crate::database::repositories::SqlxToolCredentialRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ),
+            ))
+            .with_notification_service(Arc::downgrade(&notification_service)),
+        ));
         let notification_service_ms = notification_service_start.elapsed().as_millis();
         let web_push_enabled = web_push_service.is_some();
 

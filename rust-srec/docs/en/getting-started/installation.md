@@ -100,6 +100,7 @@ The built-in Mesio download engine does not require Streamlink. Install external
 
 - Install `ffmpeg` and make it available on `PATH` when using FFmpeg processors or an FFmpeg-based workflow outside the Docker image.
 - Install `streamlink` and make it available on `PATH` when selecting the Streamlink download engine.
+- Install [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) and make it available on `PATH` (or set `BAIDUPCS_PATH`) when using the `baidupcs` Baidu Netdisk upload processor.
 - The Docker image contains its supported runtime tools; do not install them on the host for a standard Docker deployment.
 
 ## Next Step

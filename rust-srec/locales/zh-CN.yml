@@ -165,3 +165,9 @@ notification:
         ⏰ %{platform} 凭据将在 %{days_remaining} 天后过期(%{expires_at})
         范围:%{scope}
         建议:尽快刷新
+  # ============ External tool events ============
+  baidupcs_relogin_failed:
+    title: "🔐 百度网盘自动重新登录失败(%{config_dir})"
+    description: |-
+      保存的凭据已被拒绝, 在 baidupcs 预设中重新登录之前, 上传会持续失败。
+      输出: %{message}

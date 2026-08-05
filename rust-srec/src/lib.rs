@@ -16,6 +16,8 @@ mod services;
 // Internal modules kept `pub` only so the integration tests in `tests/` can
 // import them; `backend` is the supported public surface.
 #[doc(hidden)]
+pub mod baidupcs;
+#[doc(hidden)]
 pub mod config;
 #[doc(hidden)]
 pub mod credentials;

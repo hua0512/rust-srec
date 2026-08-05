@@ -149,6 +149,7 @@ export type JobPreset = z.infer<typeof JobPresetSchema>;
 export const VALID_PROCESSORS = [
   'remux',
   'rclone',
+  'baidupcs',
   'thumbnail',
   'execute',
   'audio_extract',

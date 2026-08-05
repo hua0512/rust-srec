@@ -45,7 +45,7 @@ Priorities use a 0-10 numeric scale in the API and UI settings:
 |---|---:|---|
 | Low | 2 | Stream offline, segment progress, pipeline start/completion |
 | Normal | 5 | Stream online, download completion, system startup/shutdown |
-| High | 8 | Download error/rejection, pipeline failure, credential refresh failure |
+| High | 8 | Download error/rejection, pipeline failure, credential refresh failure, Baidu Netdisk re-login failure |
 | Critical | 10 | Fatal error, output path inaccessible, out of space, invalid credential |
 
 A channel filters events below its minimum. The API also accepts the legacy labels `low`, `normal`, `high`, and `critical` where documented; `info` is not a valid priority.

@@ -3,6 +3,7 @@ import { lazy, ComponentType } from 'react';
 import {
   RemuxConfigSchema,
   RcloneConfigSchema,
+  BaiduPcsConfigSchema,
   ThumbnailConfigSchema,
   AudioExtractConfigSchema,
   CompressionConfigSchema,
@@ -20,6 +21,11 @@ const RemuxConfigForm = lazy(() =>
 );
 const RcloneConfigForm = lazy(() =>
   import('./rclone-config-form').then((m) => ({ default: m.RcloneConfigForm })),
+);
+const BaiduPcsConfigForm = lazy(() =>
+  import('./baidupcs-config-form').then((m) => ({
+    default: m.BaiduPcsConfigForm,
+  })),
 );
 const DanmakuFactoryConfigForm = lazy(() =>
   import('./danmaku-factory-config-form').then((m) => ({
@@ -60,6 +66,11 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     schema: RcloneConfigSchema,
     component: RcloneConfigForm,
     label: msg`Rclone Transfer`,
+  },
+  baidupcs: {
+    schema: BaiduPcsConfigSchema,
+    component: BaiduPcsConfigForm,
+    label: msg`Baidu Netdisk Upload`,
   },
   thumbnail: {
     schema: ThumbnailConfigSchema,

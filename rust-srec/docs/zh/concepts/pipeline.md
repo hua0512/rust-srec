@@ -53,10 +53,20 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 | `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate` |
 | `compression` | 视频转码 | 编解码器与质量设置 |
 | `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `args` |
+| `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
 | `metadata` | 写入元数据（nfo, json） | - |
 | `delete` | 自动清理中间文件 | - |
 | `execute` | 执行自定义 Shell 脚本 | `command`, `scan_output_dir`, `scan_extension` |
+
+### 百度网盘（`baidupcs`）
+
+`baidupcs` 处理器通过外部 [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) 命令行工具将录像上传到百度网盘（Docker 镜像已内置；裸机部署需自行安装，若不在 `PATH` 中可通过 `BAIDUPCS_PATH` 指定路径）。
+
+- **登录**：在网页端打开任意 `baidupcs` 预设，通过账号卡片粘贴 Cookie 字符串（推荐）或 BDUSS + STOKEN 登录。凭据交给 BaiduPCS-Go 处理，登录会话保存在它的配置目录（`BAIDUPCS_GO_CONFIG_DIR`）中；卡片同时显示当前账号和网盘容量。勾选**记住凭据以便自动重新登录**后，凭据也会保存在服务器上（明文，与平台 Cookie 相同）：登录会话过期时，上传任务会在首次尝试前检查登录状态、并在重试前再补一次登录，无需人工干预。如果重放的登录被拒绝（通常是修改密码导致会话令牌失效），会发出高优先级的 `baidupcs_relogin_failed` 通知，并在一小时内暂停后续尝试——失效凭据只产生一条提醒，而不是每个任务都白白请求一次百度。退出登录会一并清除保存的凭据。
+- **目标路径**：`destination_root` 支持 `{streamer}`、`{title}` 及时间占位符，始终解析为网盘的绝对路径。不存在的文件夹会在上传时自动创建。
+- **重试**：BaiduPCS-Go 的退出码无法反映上传结果，rust-srec 会解析其逐文件输出来判定成败。无论是运行内重试还是手动重试任务，都只会重新上传尚未确认结果的文件；配合默认的 `skip` 策略和秒传检测，部分失败后的重试开销很小。
+- **限制**：单文件超过 128 GB 会被百度拒绝；传输中断后只能从头重传（BaiduPCS-Go v4 已不支持断点续传）。由于该工具的本地状态存储不支持并发写入，上传任务同一时间只运行一个 BaiduPCS-Go 进程；任务运行期间也请勿手动对同一配置目录执行 BaiduPCS-Go 命令。
 
 ## 预设系统 (Presets)
 
@@ -81,6 +91,7 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 - `remux`、`compression` 等转换处理器输出转换后的文件。
 - `thumbnail`、`audio_extract` 等衍生文件处理器只输出新生成的衍生文件，不会透传源文件。
 - `rclone` 的 `copy` 和 `sync` 会透传本地输入路径；`rclone` 的 `move` 会消耗本地文件，因此没有本地输出。
+- `baidupcs` 会透传本地输入路径；若开启了“上传后删除本地文件”，被删除的文件不会出现在输出中。
 - `delete` 没有输出。
 
 因此，线性的 `remux -> thumbnail -> rclone` 图只会把缩略图发送给 `rclone`。若要同时上传转封装后的视频及其缩略图，需要把两个产出步骤都直接连接到 `rclone`：
