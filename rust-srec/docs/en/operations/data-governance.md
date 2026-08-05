@@ -17,7 +17,7 @@ Rust-Srec is a recording tool, not a source of rights to record or process a bro
 
 - Document the lawful basis and permission for each channel, including private, subscriber-only, or password-protected content.
 - Define retention separately for media, chat, session history, job history, notifications, and logs.
-- Identify every external destination used by webhooks, email, Telegram, Gotify, Discord, rclone, or custom pipeline commands.
+- Identify every external destination used by webhooks, email, Telegram, Gotify, Discord, rclone, Baidu Netdisk (BaiduPCS-Go), or custom pipeline commands.
 - Limit access to people with a defined operational or editorial need.
 - Define how deletion, legal hold, subject requests, and incident response apply to source files, derived files, backups, and remote copies.
 

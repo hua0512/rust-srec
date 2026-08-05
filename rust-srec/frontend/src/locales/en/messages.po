@@ -119,6 +119,12 @@ msgstr "{0} at {1}"
 msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
+#. placeholder {0}: formatBytes(status.quota_used_bytes)
+#. placeholder {1}: formatBytes(status.quota_total_bytes)
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:247
+msgid "{0} of {1} used"
+msgstr "{0} of {1} used"
+
 #. placeholder {0}: newPlayers.length
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:180
 msgid "{0} stream(s) added successfully"
@@ -318,6 +324,10 @@ msgstr "Add argument template"
 msgid "Add at least one step"
 msgstr "Add at least one step"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:660
+msgid "Add BaiduPCS-Go argument"
+msgstr "Add BaiduPCS-Go argument"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:406
 msgid "Add Channel"
 msgstr "Add Channel"
@@ -413,6 +423,7 @@ msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:334
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:239
 #: src/components/streamers/streamer-editor.tsx:169
@@ -603,9 +614,9 @@ msgstr "Args used for processing/encoding"
 msgid "Artist"
 msgstr "Artist"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
-#: src/components/pipeline/presets/preset-templates.ts:89
-#: src/components/pipeline/presets/processors/registry.ts:112
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
+#: src/components/pipeline/presets/preset-templates.ts:98
+#: src/components/pipeline/presets/processors/registry.ts:123
 msgid "ASS Burn-in"
 msgstr "ASS Burn-in"
 
@@ -650,12 +661,12 @@ msgstr "Audio Codec"
 msgid "Audio codec change"
 msgstr "Audio codec change"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
-#: src/components/pipeline/presets/preset-templates.ts:41
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
+#: src/components/pipeline/presets/preset-templates.ts:50
 msgid "Audio Extract"
 msgstr "Audio Extract"
 
-#: src/components/pipeline/presets/processors/registry.ts:72
+#: src/components/pipeline/presets/processors/registry.ts:83
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
@@ -700,6 +711,10 @@ msgstr "Auto (Default)"
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:329
 msgid "Auto Layout"
 msgstr "Auto Layout"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:238
+msgid "Auto re-login"
+msgstr "Auto re-login"
 
 #: src/components/config/global/file-config-card.tsx:39
 msgid "Auto Thumbnail"
@@ -804,6 +819,58 @@ msgstr "Backup"
 msgid "Backup & Restore"
 msgstr "Backup & Restore"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
+#: src/components/pipeline/presets/preset-templates.ts:41
+msgid "Baidu Netdisk"
+msgstr "Baidu Netdisk"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:160
+msgid "Baidu Netdisk Account"
+msgstr "Baidu Netdisk Account"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:381
+msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
+msgstr "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:119
+msgid "Baidu Netdisk Login"
+msgstr "Baidu Netdisk Login"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:95
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:102
+msgid "Baidu Netdisk login failed"
+msgstr "Baidu Netdisk login failed"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:132
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:140
+msgid "Baidu Netdisk logout failed"
+msgstr "Baidu Netdisk logout failed"
+
+#: src/lib/notification-event-types.ts:43
+msgid "Baidu Netdisk re-login failed"
+msgstr "Baidu Netdisk re-login failed"
+
+#: src/components/pipeline/presets/processors/registry.ts:73
+msgid "Baidu Netdisk Upload"
+msgstr "Baidu Netdisk Upload"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:156
+msgid "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
+msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:593
+msgid "BaiduPCS-Go"
+msgstr "BaiduPCS-Go"
+
+#. placeholder {0}: status?.resolved_binary_path
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:194
+msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
+msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:589
+msgid "BaiduPCS-Go Executable (Optional)"
+msgstr "BaiduPCS-Go Executable (Optional)"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:407
 msgid "Bandwidth"
 msgstr "Bandwidth"
@@ -856,6 +923,10 @@ msgstr "Batch parse error: {0}"
 #: src/components/player/url-input-form.tsx:137
 msgid "Batch URLs"
 msgstr "Batch URLs"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:139
+msgid "BDUSS + STOKEN"
+msgstr "BDUSS + STOKEN"
 
 #: src/components/notifications/forms/webhook-form.tsx:215
 msgid "Bearer Token"
@@ -980,6 +1051,7 @@ msgstr "Cache"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
 #: src/components/pipeline/presets/preset-card.tsx:206
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:237
 #: src/components/pipeline/workflows/step-config-dialog.tsx:595
 #: src/components/pipeline/workflows/step-config-dialog.tsx:636
 #: src/components/pipeline/workflows/workflow-card.tsx:195
@@ -1048,7 +1120,7 @@ msgstr "Case Insensitive"
 msgid "Categories"
 msgstr "Categories"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:242
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:248
 msgid "Category"
 msgstr "Category"
 
@@ -1312,17 +1384,17 @@ msgid "Compress video for storage, upload to cloud, then delete local file to sa
 msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
 msgid "Compression"
 msgstr "Compression"
 
-#: src/components/pipeline/presets/preset-templates.ts:49
+#: src/components/pipeline/presets/preset-templates.ts:58
 msgid "Compression (Zip)"
 msgstr "Compression (Zip)"
 
-#: src/components/pipeline/presets/processors/registry.ts:77
+#: src/components/pipeline/presets/processors/registry.ts:88
 msgid "Compression / Archive"
 msgstr "Compression / Archive"
 
@@ -1355,6 +1427,14 @@ msgstr "Concurrent file transfers (--transfers)."
 #: src/components/sidebar/navbar.tsx:26
 msgid "Config"
 msgstr "Config"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
+msgid "Config Directory (Optional)"
+msgstr "Config Directory (Optional)"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:616
+msgid "Config Directory help"
+msgstr "Config Directory help"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:319
 msgid "Config Path (Optional)"
@@ -1503,9 +1583,17 @@ msgstr "Control verbosity for each module. Lower levels include higher ones."
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:147
+msgid "Cookie string"
+msgstr "Cookie string"
+
 #: src/components/config/shared/network-settings-card.tsx:213
 msgid "Cookies"
 msgstr "Cookies"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:136
+msgid "Cookies (recommended)"
+msgstr "Cookies (recommended)"
 
 #: src/components/config/shared/network-settings-card.tsx:294
 msgid "Cookies Only"
@@ -1537,10 +1625,10 @@ msgstr "Copy (Passthrough)"
 msgid "Copy (Stream Copy)"
 msgstr "Copy (Stream Copy)"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/components/pipeline/presets/processors/registry.ts:82
-#: src/components/pipeline/presets/processors/registry.ts:87
-#: src/components/pipeline/presets/processors/registry.ts:122
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
+#: src/components/pipeline/presets/processors/registry.ts:93
+#: src/components/pipeline/presets/processors/registry.ts:98
+#: src/components/pipeline/presets/processors/registry.ts:133
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
@@ -1568,7 +1656,11 @@ msgstr "Copy Path"
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "Copy the file to another location. Keeps the original file."
 
-#: src/components/pipeline/presets/preset-templates.ts:57
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:160
+msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
+msgstr "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
+
+#: src/components/pipeline/presets/preset-templates.ts:66
 msgid "Copy/Move"
 msgstr "Copy/Move"
 
@@ -1730,9 +1822,21 @@ msgstr "Credential refreshed"
 msgid "Credential Source Status"
 msgstr "Credential Source Status"
 
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:122
+msgid "Credentials are handed to BaiduPCS-Go on the server; the login session persists in its config directory. The app itself keeps them only if you enable remembering below."
+msgstr "Credentials are handed to BaiduPCS-Go on the server; the login session persists in its config directory. The app itself keeps them only if you enable remembering below."
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:88
+msgid "Credentials could not be stored for automatic re-login"
+msgstr "Credentials could not be stored for automatic re-login"
+
 #: src/components/config/shared/network-settings-card.tsx:133
 msgid "Credentials refreshed successfully"
 msgstr "Credentials refreshed successfully"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:81
+msgid "Credentials remembered for automatic re-login"
+msgstr "Credentials remembered for automatic re-login"
 
 #: src/components/config/shared/network-settings-card.tsx:359
 msgid "Credentials saved successfully"
@@ -1876,9 +1980,9 @@ msgstr "DAG Graph"
 msgid "Danmaku"
 msgstr "Danmaku"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
-#: src/components/pipeline/presets/preset-templates.ts:79
-#: src/components/pipeline/presets/processors/registry.ts:107
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
+#: src/components/pipeline/presets/preset-templates.ts:88
+#: src/components/pipeline/presets/processors/registry.ts:118
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
@@ -1947,6 +2051,7 @@ msgstr "Database queries"
 msgid "Date"
 msgstr "Date"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:397
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:278
 msgid "Date placeholder anchor"
@@ -2062,10 +2167,10 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/notifications/channel-card.tsx:232
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:216
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:240
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:189
 #: src/components/pipeline/presets/preset-card.tsx:212
-#: src/components/pipeline/presets/preset-templates.ts:65
+#: src/components/pipeline/presets/preset-templates.ts:74
 #: src/components/pipeline/workflows/workflow-card.tsx:178
 #: src/components/pipeline/workflows/workflow-card.tsx:201
 #: src/components/sessions/session-card.tsx:286
@@ -2083,7 +2188,7 @@ msgstr "Delete Channel?"
 msgid "Delete engine"
 msgstr "Delete engine"
 
-#: src/components/pipeline/presets/processors/registry.ts:92
+#: src/components/pipeline/presets/processors/registry.ts:103
 msgid "Delete File"
 msgstr "Delete File"
 
@@ -2094,6 +2199,10 @@ msgstr "Delete filter"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:375
 msgid "Delete Job"
 msgstr "Delete Job"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:517
+msgid "Delete local files after upload"
+msgstr "Delete local files after upload"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:891
 msgid "Delete original file after successful remux"
@@ -2180,12 +2289,12 @@ msgstr "Depends On (Ancestors)"
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:282
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:288
 #: src/components/pipeline/workflows/workflow-editor.tsx:333
 msgid "Description"
 msgstr "Description"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:297
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
@@ -2206,6 +2315,10 @@ msgstr "Desktop Notifications"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "Desktop notifications are shown by the operating system even when the app is minimized."
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:342
+msgid "Destination"
+msgstr "Destination"
+
 #: src/components/pipeline/jobs/job-uploads-card.tsx:68
 msgid "Destination copied"
 msgstr "Destination copied"
@@ -2213,6 +2326,14 @@ msgstr "Destination copied"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:101
 msgid "Destination Directory"
 msgstr "Destination Directory"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:354
+msgid "Destination Folder"
+msgstr "Destination Folder"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:355
+msgid "Destination Folder help"
+msgstr "Destination Folder help"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
 msgid "Destination Root"
@@ -2246,6 +2367,10 @@ msgstr "Determined from the URL. Platform settings apply automatically."
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:618
+msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
+msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
+
 #: src/components/pipeline/outputs/output-card.tsx:204
 msgid "Directory path copied"
 msgstr "Directory path copied"
@@ -2258,6 +2383,10 @@ msgstr "Directory to scan for new files after command execution"
 #: src/components/streamers/streamer-batch-action-bar.tsx:155
 msgid "Disable"
 msgstr "Disable"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:491
+msgid "Disable rapid upload"
+msgstr "Disable rapid upload"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:149
 #: src/components/streamers/streamer-batch-action-bar.tsx:160
@@ -2296,6 +2425,7 @@ msgstr "Disk Space"
 msgid "Done"
 msgstr "Done"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:664
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:831
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
@@ -2404,9 +2534,17 @@ msgstr "Duration limit"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:629
+msgid "e.g. /app/config/BaiduPCS-Go"
+msgstr "e.g. /app/config/BaiduPCS-Go"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:264
 msgid "e.g. /output/processed/"
 msgstr "e.g. /output/processed/"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
+msgid "e.g. /rust-srec/{streamer}/%Y-%m"
+msgstr "e.g. /rust-srec/{streamer}/%Y-%m"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:985
 msgid "e.g. 0:v:0, 0:a:0"
@@ -2464,7 +2602,7 @@ msgstr "e.g. mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "e.g. My Favorite Streamer"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:223
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:229
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
@@ -2799,8 +2937,8 @@ msgid "Execute"
 msgstr "Execute"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:23
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
-#: src/components/pipeline/presets/processors/registry.ts:102
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
+#: src/components/pipeline/presets/processors/registry.ts:113
 msgid "Execute Command"
 msgstr "Execute Command"
 
@@ -2864,6 +3002,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:162
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:645
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:812
 msgid "Extra Arguments"
@@ -3136,6 +3275,10 @@ msgstr "Failed to parse URL"
 msgid "Failed to process selected streamers"
 msgstr "Failed to process selected streamers"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:188
+msgid "Failed to query BaiduPCS-Go status."
+msgstr "Failed to query BaiduPCS-Go status."
+
 #: src/components/config/shared/network-settings-card.tsx:145
 msgid "Failed to refresh credentials"
 msgstr "Failed to refresh credentials"
@@ -3210,6 +3353,10 @@ msgstr "Failed to update template: {0}"
 #: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:50
 msgid "Failed to update workflow: {0}"
 msgstr "Failed to update workflow: {0}"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:600
+msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
+msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:6
 msgid "Fast Compression"
@@ -3515,6 +3662,7 @@ msgstr "GB"
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
 #: src/components/config/templates/template-editor.tsx:249
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
 #: src/components/streamers/streamer-editor.tsx:149
@@ -3804,6 +3952,10 @@ msgstr "Hour (00-23)"
 msgid "Hours"
 msgstr "Hours"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:474
+msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
+msgstr "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
+
 #: src/components/config/global/concurrency-card.tsx:249
 msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 msgstr "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
@@ -3908,7 +4060,7 @@ msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgid "Icon"
 msgstr "Icon"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:192
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:198
 msgid "ID"
 msgstr "ID"
 
@@ -4114,6 +4266,7 @@ msgstr "Job configurations"
 msgid "Job creation time"
 msgstr "Job creation time"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:412
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:293
 msgid "Job creation time (default)"
 msgstr "Job creation time (default)"
@@ -4367,13 +4520,39 @@ msgstr "Local Archive"
 msgid "Log Files"
 msgstr "Log Files"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:246
+msgid "Log in"
+msgstr "Log in"
+
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:69
 msgid "Log levels & modules"
 msgstr "Log levels & modules"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:275
+msgid "Log out"
+msgstr "Log out"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:219
+msgid "Logged in"
+msgstr "Logged in"
+
 #: src/routes/_public/login.lazy.tsx:64
 msgid "Logged in successfully"
 msgstr "Logged in successfully"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:77
+msgid "Logged in to Baidu Netdisk"
+msgstr "Logged in to Baidu Netdisk"
+
+#. placeholder {0}: result.username
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:76
+msgid "Logged in to Baidu Netdisk as {0}"
+msgstr "Logged in to Baidu Netdisk as {0}"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:130
+msgid "Logged out of Baidu Netdisk"
+msgstr "Logged out of Baidu Netdisk"
 
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:66
 msgid "Logging"
@@ -4496,6 +4675,10 @@ msgstr "Match Strategy"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:521
 msgid "Matching resolution"
 msgstr "Matching resolution"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:543
+msgid "Max Attempts"
+msgstr "Max Attempts"
 
 #: src/components/streamers/config/stream-selection-input.tsx:186
 msgid "Max Bitrate (bps)"
@@ -4661,14 +4844,14 @@ msgid "Messages"
 msgstr "Messages"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 #: src/components/pipeline/presets/preset-card.tsx:95
-#: src/components/pipeline/presets/preset-templates.ts:72
+#: src/components/pipeline/presets/preset-templates.ts:81
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:77
 msgid "Metadata"
 msgstr "Metadata"
 
-#: src/components/pipeline/presets/processors/registry.ts:97
+#: src/components/pipeline/presets/processors/registry.ts:108
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
@@ -4721,6 +4904,10 @@ msgstr "Mint Integrity Token"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:204
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:363
+msgid "Missing folders are created by BaiduPCS-Go during upload."
+msgstr "Missing folders are created by BaiduPCS-Go during upload."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:320
 msgid "Modify the parameters for this processing step."
@@ -4833,7 +5020,7 @@ msgid "My Template"
 msgstr "My Template"
 
 #: src/components/notifications/channel-form.tsx:384
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:224
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
 msgid "Name"
@@ -4866,6 +5053,10 @@ msgstr "Native"
 #: src/components/pipeline/presets/default-presets-i18n.ts:12
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:357
+msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
+msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
 #: src/components/config/shared-config-editor.tsx:174
 msgid "Network"
@@ -5224,6 +5415,10 @@ msgstr "Not Found"
 msgid "Not installed"
 msgstr "Not installed"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:230
+msgid "Not logged in"
+msgstr "Not logged in"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:327
 msgid "Not supported in this browser"
 msgstr "Not supported in this browser"
@@ -5432,7 +5627,7 @@ msgstr "Optimize Stream Headers"
 msgid "Optional"
 msgstr "Optional"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:292
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
@@ -5581,6 +5776,7 @@ msgstr "Overwrite Existing"
 msgid "Overwrite existing .ass files"
 msgstr "Overwrite existing .ass files"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:466
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:271
 msgid "Overwrite existing files"
 msgstr "Overwrite existing files"
@@ -5589,6 +5785,10 @@ msgstr "Overwrite existing files"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:866
 msgid "Overwrite Files"
 msgstr "Overwrite Files"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:469
+msgid "Overwrite only when size changed"
+msgstr "Overwrite only when size changed"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:153
 msgid "Overwrite Output"
@@ -6066,7 +6266,7 @@ msgstr "Preset created successfully"
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:127
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:133
 msgid "Preset Details"
 msgstr "Preset Details"
 
@@ -6212,7 +6412,7 @@ msgid "Processing nodes"
 msgstr "Processing nodes"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1676
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:152
 msgid "Processor"
 msgstr "Processor"
 
@@ -6334,7 +6534,7 @@ msgstr "Ratio"
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
 #: src/components/pipeline/presets/preset-templates.ts:32
 msgid "Rclone"
 msgstr "Rclone"
@@ -6356,8 +6556,8 @@ msgstr "rclone default: 8"
 msgid "Rclone Executable"
 msgstr "Rclone Executable"
 
-#: src/components/pipeline/presets/processors/registry.ts:62
-#: src/components/pipeline/presets/processors/registry.ts:117
+#: src/components/pipeline/presets/processors/registry.ts:68
+#: src/components/pipeline/presets/processors/registry.ts:128
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 
@@ -6483,6 +6683,10 @@ msgstr "Refresh"
 msgid "Refresh failed: Manual login required"
 msgstr "Refresh failed: Manual login required"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:170
+msgid "Refresh status"
+msgstr "Refresh status"
+
 #: src/components/filters/filter-types.ts:54
 msgid "Regex"
 msgstr "Regex"
@@ -6500,6 +6704,10 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
 
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:219
+msgid "Remember for automatic re-login"
+msgstr "Remember for automatic re-login"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:141
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
 msgid "Remove"
@@ -6513,6 +6721,10 @@ msgstr "Remove Input on Success"
 msgid "Remove source on success"
 msgstr "Remove source on success"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:520
+msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
+msgstr "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:43
 #: src/components/pipeline/presets/preset-card.tsx:86
@@ -6520,9 +6732,9 @@ msgstr "Remove source on success"
 msgid "Remux"
 msgstr "Remux"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:60
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
 #: src/components/pipeline/presets/preset-templates.ts:5
-#: src/components/pipeline/presets/processors/registry.ts:57
+#: src/components/pipeline/presets/processors/registry.ts:63
 msgid "Remux / Transcode"
 msgstr "Remux / Transcode"
 
@@ -6799,6 +7011,10 @@ msgstr "S"
 msgid "Same as server"
 msgstr "Same as server"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:448
+msgid "Same-name policy"
+msgstr "Same-name policy"
+
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:164
 msgid "Sample Rate (Hz)"
 msgstr "Sample Rate (Hz)"
@@ -7054,7 +7270,7 @@ msgstr "Select API Mode"
 msgid "Select behavior"
 msgstr "Select behavior"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:257
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:263
 msgid "Select category"
 msgstr "Select category"
 
@@ -7072,6 +7288,7 @@ msgstr "Select codec"
 msgid "Select current page"
 msgstr "Select current page"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:406
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:141
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
 msgid "Select date anchor"
@@ -7101,6 +7318,10 @@ msgstr "Select or type a rate"
 #: src/components/notifications/forms/telegram-form.tsx:94
 msgid "Select parse mode"
 msgstr "Select parse mode"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:457
+msgid "Select policy"
+msgstr "Select policy"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:330
 msgid "Select preset"
@@ -7145,7 +7366,7 @@ msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:236
 #: src/components/notifications/channel-form.tsx:415
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:164
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:170
 msgid "Select type"
 msgstr "Select type"
 
@@ -7364,6 +7585,10 @@ msgstr "Skip after count"
 msgid "Skip after duration"
 msgstr "Skip after duration"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:463
+msgid "Skip existing files (default)"
+msgstr "Skip existing files (default)"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
@@ -7375,6 +7600,10 @@ msgstr "Skipped"
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:494
+msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
+msgstr "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 
 #: src/components/notifications/forms/email-form.tsx:41
 msgid "SMTP Host"
@@ -7506,9 +7735,21 @@ msgstr "Step Library"
 msgid "Steps List"
 msgstr "Steps List"
 
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:181
+msgid "STOKEN (optional)"
+msgstr "STOKEN (optional)"
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:201
+msgid "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
+msgstr "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
+
 #: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "Stop recording when danmu control signals stream closed."
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:222
+msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
+msgstr "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Stream Archive"
@@ -7562,6 +7803,7 @@ msgstr "Stream Player"
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:415
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:153
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:296
 msgid "Stream start time"
@@ -7934,7 +8176,7 @@ msgstr "This filter activates only during the window highlighted on the timeline
 msgid "This filter's settings could not be read."
 msgstr "This filter's settings could not be read."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:301
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:307
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
@@ -7950,6 +8192,10 @@ msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 #: src/components/pipeline/workflows/step-config-dialog.tsx:315
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
+
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:193
+msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
+msgstr "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:95
 msgid "This stream is already active"
@@ -8000,14 +8246,14 @@ msgstr "Throughput"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:70
 msgid "Thumbnail"
 msgstr "Thumbnail"
 
-#: src/components/pipeline/presets/processors/registry.ts:67
+#: src/components/pipeline/presets/processors/registry.ts:78
 msgid "Thumbnail Generator"
 msgstr "Thumbnail Generator"
 
@@ -8105,6 +8351,10 @@ msgstr "Today"
 #: src/components/notifications/forms/webhook-form.tsx:245
 msgid "Token"
 msgstr "Token"
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:577
+msgid "Tool Location"
+msgstr "Tool Location"
 
 #: src/components/danmu/danmu-viewer.tsx:204
 msgid "Top Fixed"
@@ -8456,6 +8706,14 @@ msgstr "Upload (Rclone)"
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:560
+msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
+msgstr "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:436
+msgid "Upload Behavior"
+msgstr "Upload Behavior"
+
 #. placeholder {0}: upload.uploader
 #: src/components/pipeline/outputs/output-card.tsx:140
 msgid "Upload failed via {0}"
@@ -8518,6 +8776,7 @@ msgstr "Use danmu_inputs from job manifest"
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:301
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."

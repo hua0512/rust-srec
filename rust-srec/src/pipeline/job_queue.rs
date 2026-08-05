@@ -49,6 +49,9 @@ pub(crate) fn upload_kind_for_job_type(job_type: &str) -> Option<&'static str> {
     if jt == "rclone" || jt.starts_with("rclone_") || jt == "upload" || jt.starts_with("upload_") {
         return Some("rclone");
     }
+    if jt == "baidupcs" || jt.starts_with("baidupcs_") {
+        return Some("baidupcs");
+    }
     None
 }
 
@@ -3046,10 +3049,17 @@ mod tests {
         assert_eq!(upload_kind_for_job_type("rclone_default"), Some("rclone"));
         assert_eq!(upload_kind_for_job_type("upload"), Some("rclone"));
         assert_eq!(upload_kind_for_job_type("upload_gdrive"), Some("rclone"));
+        assert_eq!(upload_kind_for_job_type("baidupcs"), Some("baidupcs"));
+        assert_eq!(upload_kind_for_job_type("BaiduPCS"), Some("baidupcs"));
+        assert_eq!(
+            upload_kind_for_job_type("baidupcs_default"),
+            Some("baidupcs")
+        );
         assert_eq!(upload_kind_for_job_type("remux"), None);
         assert_eq!(upload_kind_for_job_type("thumbnail"), None);
         // "uploader" would prefix-match "upload_" only with the underscore.
         assert_eq!(upload_kind_for_job_type("uploader"), None);
+        assert_eq!(upload_kind_for_job_type("baidu"), None);
     }
 
     /// `complete()` must persist `JobResult.uploads` to upload_records for

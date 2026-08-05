@@ -3,6 +3,7 @@
 //! Organizes routes by resource type.
 
 pub mod auth;
+pub mod baidupcs;
 pub mod config;
 pub mod credentials;
 pub mod downloads;
@@ -53,6 +54,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/sessions", sessions::router())
         .nest("/api/notifications", notifications::router())
         .nest("/api/parse", parse::router())
+        .nest("/api/tools/baidupcs", baidupcs::router())
         .nest("/api/auth", auth::protected_router());
 
     // Apply JWT auth layer to protected routes if authentication is enabled.

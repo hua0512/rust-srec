@@ -165,3 +165,9 @@ notification:
         ⏰ %{platform} credentials expiring in %{days_remaining} days (%{expires_at})
         Scope: %{scope}
         Action: Consider refreshing soon
+  # ============ External tool events ============
+  baidupcs_relogin_failed:
+    title: "🔐 Baidu Netdisk auto re-login failed (%{config_dir})"
+    description: |-
+      Stored credentials were rejected; uploads keep failing until you log in again from a baidupcs preset.
+      Output: %{message}

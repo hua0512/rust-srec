@@ -2,6 +2,7 @@
 
 mod ass_burnin;
 mod audio_extract;
+mod baidupcs;
 mod compression;
 mod copy_move;
 mod danmaku_factory;
@@ -18,6 +19,7 @@ pub mod utils;
 
 pub use ass_burnin::{AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy};
 pub use audio_extract::AudioExtractProcessor;
+pub use baidupcs::{BaiduPcsConfig, BaiduPcsPolicy, BaiduPcsProcessor};
 pub use compression::CompressionProcessor;
 pub use copy_move::{CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor};
 pub use danmaku_factory::{DanmakuFactoryConfig, DanmakuFactoryProcessor};

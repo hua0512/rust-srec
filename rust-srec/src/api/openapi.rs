@@ -21,6 +21,10 @@ use crate::api::routes::credentials::{
     CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse,
     QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
 };
+use crate::api::routes::baidupcs::{
+    BaiduPcsLoginRequest, BaiduPcsLoginResponse, BaiduPcsLogoutResponse, BaiduPcsStatusResponse,
+    BaiduPcsToolRequest,
+};
 use crate::api::routes::engines::{CreateEngineRequest, EngineTestResponse, UpdateEngineRequest};
 use crate::api::routes::job::{
     ClonePresetRequest, CreatePresetRequest, PresetListResponse, UpdatePresetRequest,
@@ -88,7 +92,8 @@ pub struct MessageResponse {
         (name = "job", description = "Job preset management endpoints"),
         (name = "export_import", description = "Configuration backup and restore endpoints")
         ,
-        (name = "credentials", description = "Credential refresh and provenance endpoints")
+        (name = "credentials", description = "Credential refresh and provenance endpoints"),
+        (name = "tools", description = "External tool integration endpoints (BaiduPCS-Go)")
     ),
     paths(
         // Health endpoints
@@ -219,6 +224,10 @@ pub struct MessageResponse {
         crate::api::routes::credentials::refresh_template_credentials,
         crate::api::routes::credentials::bilibili_qr_generate,
         crate::api::routes::credentials::bilibili_qr_poll,
+        // BaiduPCS-Go tool endpoints
+        crate::api::routes::baidupcs::baidupcs_status,
+        crate::api::routes::baidupcs::baidupcs_login,
+        crate::api::routes::baidupcs::baidupcs_logout,
     ),
     components(
         schemas(
@@ -324,6 +333,12 @@ pub struct MessageResponse {
             CredentialSaveScope,
             QrPollRequest,
             QrPollApiResponse,
+            // BaiduPCS-Go tool schemas
+            BaiduPcsToolRequest,
+            BaiduPcsStatusResponse,
+            BaiduPcsLoginRequest,
+            BaiduPcsLoginResponse,
+            BaiduPcsLogoutResponse,
             // Pipeline DAG schemas
             CreatePipelineRequest,
             CreatePipelineResponse,
