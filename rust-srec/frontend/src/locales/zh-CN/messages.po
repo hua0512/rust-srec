@@ -356,11 +356,11 @@ msgstr "添加过滤器"
 msgid "Add item..."
 msgstr "添加项目..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:21
+#: src/components/pipeline/presets/default-presets-i18n.ts:22
 msgid "Add Metadata"
 msgstr "添加元数据"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:75
+#: src/components/pipeline/presets/default-presets-i18n.ts:77
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。"
 
@@ -556,13 +556,13 @@ msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:47
+#: src/components/pipeline/presets/default-presets-i18n.ts:48
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:72
 msgid "Archive"
 msgstr "归档"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:25
+#: src/components/pipeline/presets/default-presets-i18n.ts:26
 msgid "Archive Compression"
 msgstr "归档压缩"
 
@@ -574,7 +574,7 @@ msgstr "归档格式"
 msgid "Archive Settings"
 msgstr "归档设置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:98
+#: src/components/pipeline/presets/default-presets-i18n.ts:100
 msgid "Archive to Cloud"
 msgstr "云端归档"
 
@@ -620,7 +620,7 @@ msgstr "艺术家"
 msgid "ASS Burn-in"
 msgstr "ASS 硬字幕"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:32
+#: src/components/pipeline/presets/default-presets-i18n.ts:33
 msgid "ASS Subtitle Burn-in"
 msgstr "ASS 字幕内嵌"
 
@@ -641,7 +641,7 @@ msgstr "尝试获取可用的最高原画质量。"
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:230
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
@@ -832,12 +832,12 @@ msgstr "百度网盘账号"
 msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 msgstr "文件将上传到的网盘文件夹。留空时上传到网盘根目录。"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:119
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:117
 msgid "Baidu Netdisk Login"
 msgstr "登录百度网盘"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:95
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:102
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:93
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:100
 msgid "Baidu Netdisk login failed"
 msgstr "百度网盘登录失败"
 
@@ -854,7 +854,7 @@ msgstr "百度网盘重新登录失败"
 msgid "Baidu Netdisk Upload"
 msgstr "百度网盘上传"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:156
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:154
 msgid "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 
@@ -907,7 +907,7 @@ msgstr "此配置模板的基本信息。"
 msgid "Basic Information"
 msgstr "基本信息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:114
+#: src/components/pipeline/presets/default-presets-i18n.ts:116
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
@@ -924,7 +924,7 @@ msgstr "批量解析失败：{0}"
 msgid "Batch URLs"
 msgstr "批量 URL"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:139
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:137
 msgid "BDUSS + STOKEN"
 msgstr "BDUSS + STOKEN"
 
@@ -1016,7 +1016,7 @@ msgstr "浏览器状态"
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:86
+#: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
 
@@ -1051,7 +1051,7 @@ msgstr "缓存"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
 #: src/components/pipeline/presets/preset-card.tsx:206
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:237
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
 #: src/components/pipeline/workflows/step-config-dialog.tsx:595
 #: src/components/pipeline/workflows/step-config-dialog.tsx:636
 #: src/components/pipeline/workflows/workflow-card.tsx:195
@@ -1255,7 +1255,7 @@ msgstr "设置该主播在什么情况下会被录制。"
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:49
+#: src/components/pipeline/presets/default-presets-i18n.ts:50
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
@@ -1345,7 +1345,7 @@ msgstr "命令模板参数。可使用 {INPUT_TOKEN} 和 {OUTPUT_TOKEN} 占位�
 msgid "Comment"
 msgstr "评论"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:120
+#: src/components/pipeline/presets/default-presets-i18n.ts:122
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
@@ -1379,11 +1379,11 @@ msgstr "组件状态"
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "与带宽限制叠加生效——可避免单个大文件占满整条链路，同时仍允许多个小文件并行传输。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:115
+#: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:44
+#: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
@@ -1579,11 +1579,11 @@ msgstr "继续"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:85
+#: src/components/pipeline/presets/default-presets-i18n.ts:87
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 msgstr "使用 DanmakuFactory 将弹幕 XML（Bilibili 格式）转换为 .ass 字幕。支持清单感知和批量处理。"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:147
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:145
 msgid "Cookie string"
 msgstr "Cookie 字符串"
 
@@ -1591,7 +1591,7 @@ msgstr "Cookie 字符串"
 msgid "Cookies"
 msgstr "Cookie"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:136
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:134
 msgid "Cookies (recommended)"
 msgstr "Cookie（推荐）"
 
@@ -1652,11 +1652,11 @@ msgstr "复制 JSON"
 msgid "Copy Path"
 msgstr "复制路径"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:71
+#: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "将文件复制到其他位置，保留原始文件。"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:160
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:158
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "在已登录的百度网盘页面中（浏览器开发者工具的 Network 标签）复制完整的 Cookie 请求头，其中必须包含 BDUSS 和 STOKEN。"
 
@@ -1719,7 +1719,7 @@ msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:69
+#: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
@@ -1822,11 +1822,11 @@ msgstr "凭据已刷新"
 msgid "Credential Source Status"
 msgstr "凭据来源状态"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:122
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:120
 msgid "Credentials are handed to BaiduPCS-Go on the server; the login session persists in its config directory. The app itself keeps them only if you enable remembering below."
 msgstr "凭据会交给服务器上的 BaiduPCS-Go 处理，登录会话保存在它的配置目录中。只有勾选下方的记住选项，应用本身才会保存凭据。"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:88
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:87
 msgid "Credentials could not be stored for automatic re-login"
 msgstr "凭据保存失败，无法自动重新登录"
 
@@ -1903,7 +1903,7 @@ msgstr "当前密码"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:524
-#: src/components/pipeline/presets/default-presets-i18n.ts:51
+#: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:334
@@ -1918,7 +1918,7 @@ msgstr "自定义配置"
 msgid "Custom Configuration"
 msgstr "自定义配置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:22
+#: src/components/pipeline/presets/default-presets-i18n.ts:23
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
@@ -1974,7 +1974,7 @@ msgstr "DAG 配置"
 msgid "DAG Graph"
 msgstr "DAG 图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:54
 #: src/components/pipeline/presets/preset-card.tsx:96
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:78
 msgid "Danmaku"
@@ -1986,7 +1986,7 @@ msgstr "弹幕"
 msgid "Danmaku to ASS"
 msgstr "弹幕转 ASS"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:31
+#: src/components/pipeline/presets/default-presets-i18n.ts:32
 msgid "Danmaku to ASS Subtitles"
 msgstr "弹幕转 ASS 字幕"
 
@@ -2122,7 +2122,7 @@ msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "默认使用 Mesio 内置的直播停顿超时；禁用表示无限等待。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:125
+#: src/components/pipeline/presets/default-presets-i18n.ts:127
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
@@ -2273,7 +2273,7 @@ msgstr "已删除"
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "导入前删除所有现有配置。此操作无法撤销。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:70
+#: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
@@ -2510,7 +2510,7 @@ msgstr "下载中..."
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Dual Format"
 msgstr "双格式输出"
 
@@ -2936,7 +2936,7 @@ msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 msgid "Execute"
 msgstr "执行"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:23
+#: src/components/pipeline/presets/default-presets-i18n.ts:24
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/processors/registry.ts:113
 msgid "Execute Command"
@@ -3012,19 +3012,19 @@ msgstr "额外参数"
 msgid "Extract AAC"
 msgstr "提取 AAC"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:80
+#: src/components/pipeline/presets/default-presets-i18n.ts:82
 msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "提取高质量 MP3（320kbps）音频，用于播客分发。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:68
+#: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 msgstr "提取 AAC（256kbps）音频轨道，质量高且兼容性好。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:67
+#: src/components/pipeline/presets/default-presets-i18n.ts:68
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "提取 MP3（192kbps）音频轨道，适合播客与音乐。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:117
+#: src/components/pipeline/presets/default-presets-i18n.ts:119
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "提取高质量音频用于播客分发并上传。"
 
@@ -3362,23 +3362,23 @@ msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 msgid "Fast Compression"
 msgstr "快速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:118
+#: src/components/pipeline/presets/default-presets-i18n.ts:120
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "快速编码，便于在社交媒体或聊天中快速分享。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:92
+#: src/components/pipeline/presets/default-presets-i18n.ts:94
 msgid "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
 msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 AV1 编码（CQ 28）。需要 RTX 4000+ 系列显卡。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:87
+#: src/components/pipeline/presets/default-presets-i18n.ts:89
 msgid "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
 msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 H.264 编码（CQ 23）。速度与画质的良好平衡。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:89
+#: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
 msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。文件比 H.264 更小。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:60
+#: src/components/pipeline/presets/default-presets-i18n.ts:61
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
@@ -3433,7 +3433,7 @@ msgstr "文件配置"
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:50
+#: src/components/pipeline/presets/default-presets-i18n.ts:51
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
 msgid "File Operations"
 msgstr "文件操作"
@@ -3641,11 +3641,11 @@ msgstr "全天"
 msgid "Full HD Thumbnail"
 msgstr "全高清缩略图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:122
+#: src/components/pipeline/presets/default-presets-i18n.ts:124
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和缩略图生成，然后上传所有文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:103
+#: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Full Processing"
 msgstr "全流程处理"
 
@@ -3673,31 +3673,31 @@ msgstr "常规"
 msgid "General Configuration"
 msgstr "常规配置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:64
+#: src/components/pipeline/presets/default-presets-i18n.ts:65
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "生成全高清缩略图（宽 1280px），适用于现代显示器与播放器。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:63
+#: src/components/pipeline/presets/default-presets-i18n.ts:64
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "在第 10 秒生成高清缩略图（宽 640px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:65
+#: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 msgstr "生成最高质量缩略图（宽 1920px），保留完整 1080p 细节。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:81
+#: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "在第 30 秒生成缩略图（宽 480px）用于预览。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:66
+#: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 msgstr "以原始直播分辨率生成缩略图（不缩放）。质量最佳，但文件体积最大。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:62
+#: src/components/pipeline/presets/default-presets-i18n.ts:63
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:123
+#: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
@@ -3776,11 +3776,11 @@ msgstr "GPU"
 msgid "GPU Health Probe Interval"
 msgstr "GPU 健康探测间隔"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:110
+#: src/components/pipeline/presets/default-presets-i18n.ts:112
 msgid "GPU HQ Archive"
 msgstr "GPU 高质量归档"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:109
+#: src/components/pipeline/presets/default-presets-i18n.ts:111
 msgid "GPU Standard"
 msgstr "GPU 标准"
 
@@ -3788,11 +3788,11 @@ msgstr "GPU 标准"
 msgid "GPU unavailable"
 msgstr "GPU 不可用"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:127
+#: src/components/pipeline/presets/default-presets-i18n.ts:129
 msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端上传。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:126
+#: src/components/pipeline/presets/default-presets-i18n.ts:128
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
@@ -3811,7 +3811,7 @@ msgstr "图表"
 msgid "H.264"
 msgstr "H.264"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:79
+#: src/components/pipeline/presets/default-presets-i18n.ts:81
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
@@ -3875,7 +3875,7 @@ msgctxt "priority"
 msgid "High"
 msgstr "高"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:99
+#: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "High Quality Archive"
 msgstr "高质量归档"
 
@@ -3883,23 +3883,23 @@ msgstr "高质量归档"
 msgid "High Quality Compression"
 msgstr "高质量压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:93
+#: src/components/pipeline/presets/default-presets-i18n.ts:95
 msgid "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
 msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 AV1 编码（CQ 24）。最佳压缩比，需要 RTX 4000+ 系列显卡。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:88
+#: src/components/pipeline/presets/default-presets-i18n.ts:90
 msgid "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
 msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 H.264 编码（CQ 20）。最佳 NVENC 画质。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:90
+#: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
 msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 HEVC/H.265 编码（CQ 21）。GPU 最佳压缩比。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:61
+#: src/components/pipeline/presets/default-presets-i18n.ts:62
 msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:26
+#: src/components/pipeline/presets/default-presets-i18n.ts:27
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
@@ -4512,7 +4512,7 @@ msgstr "正在加载工作流..."
 msgid "Loading…"
 msgstr "加载中…"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:104
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Local Archive"
 msgstr "本地归档"
 
@@ -4521,7 +4521,7 @@ msgid "Log Files"
 msgstr "日志文件"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:246
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:244
 msgid "Log in"
 msgstr "登录"
 
@@ -4598,7 +4598,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "低"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:91
+#: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
 
@@ -4707,7 +4707,7 @@ msgstr "最大并发录制数"
 msgid "Max Duration"
 msgstr "最大时长"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:28
+#: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
@@ -4784,11 +4784,11 @@ msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 msgid "Max Uploads"
 msgstr "最大上传数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:119
+#: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:82
+#: src/components/pipeline/presets/default-presets-i18n.ts:84
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
@@ -4800,7 +4800,7 @@ msgstr "分段下载的最大并发数。"
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:116
+#: src/components/pipeline/presets/default-presets-i18n.ts:118
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
@@ -4843,7 +4843,7 @@ msgstr "消息"
 msgid "Messages"
 msgstr "消息数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:52
+#: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:81
@@ -4967,7 +4967,7 @@ msgstr "移动文件"
 msgid "Move Files"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:72
+#: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
@@ -4999,7 +4999,7 @@ msgstr "多线程流数帮助"
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销会超过其收益。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:105
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
@@ -5492,31 +5492,31 @@ msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:38
+#: src/components/pipeline/presets/default-presets-i18n.ts:39
 msgid "NVENC AV1 Fast"
 msgstr "NVENC AV1 快速"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:39
+#: src/components/pipeline/presets/default-presets-i18n.ts:40
 msgid "NVENC AV1 High Quality"
 msgstr "NVENC AV1 高质量"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:33
+#: src/components/pipeline/presets/default-presets-i18n.ts:34
 msgid "NVENC H.264 Fast"
 msgstr "NVENC H.264 快速"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:34
+#: src/components/pipeline/presets/default-presets-i18n.ts:35
 msgid "NVENC H.264 High Quality"
 msgstr "NVENC H.264 高质量"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:37
+#: src/components/pipeline/presets/default-presets-i18n.ts:38
 msgid "NVENC H.264 Low Latency"
 msgstr "NVENC H.264 低延迟"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:35
+#: src/components/pipeline/presets/default-presets-i18n.ts:36
 msgid "NVENC HEVC Fast"
 msgstr "NVENC HEVC 快速"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:36
+#: src/components/pipeline/presets/default-presets-i18n.ts:37
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
@@ -6194,7 +6194,7 @@ msgstr "请选择一个 JSON 文件"
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:100
+#: src/components/pipeline/presets/default-presets-i18n.ts:102
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
@@ -6303,11 +6303,11 @@ msgstr "可用预设"
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Preview Gallery"
 msgstr "预览图库"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:27
+#: src/components/pipeline/presets/default-presets-i18n.ts:28
 msgid "Preview Thumbnail"
 msgstr "预览缩略图"
 
@@ -6374,11 +6374,11 @@ msgstr "优先级从低到高"
 msgid "Private Network Access"
 msgstr "私有网络访问"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:121
+#: src/components/pipeline/presets/default-presets-i18n.ts:123
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文件夹。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:124
+#: src/components/pipeline/presets/default-presets-i18n.ts:126
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
@@ -6505,7 +6505,7 @@ msgstr "等待下载"
 msgid "Queued Refresh Threshold"
 msgstr "排队刷新阈值"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:101
+#: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Quick Share"
 msgstr "快速分享"
 
@@ -6704,7 +6704,7 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:219
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:217
 msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
@@ -6726,7 +6726,7 @@ msgid "Removes each local file once its upload (or skip) is confirmed. The local
 msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本，删除后本地将不再保留。除非网盘就是最终存储位置，否则请保持关闭。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
-#: src/components/pipeline/presets/default-presets-i18n.ts:43
+#: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:68
 msgid "Remux"
@@ -6738,7 +6738,7 @@ msgstr "重封装"
 msgid "Remux / Transcode"
 msgstr "重封装/转码"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:30
+#: src/components/pipeline/presets/default-presets-i18n.ts:31
 msgid "Remux and Clean"
 msgstr "重封装并清理"
 
@@ -6746,23 +6746,23 @@ msgstr "重封装并清理"
 msgid "Remux to MKV"
 msgstr "重封装为 MKV"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:59
+#: src/components/pipeline/presets/default-presets-i18n.ts:60
 msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 msgstr "无需重新编码，重封装为 MKV。Matroska 支持更多编码与特性。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:78
+#: src/components/pipeline/presets/default-presets-i18n.ts:80
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "使用 faststart 标志重封装为 MP4，以优化网页播放。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:84
+#: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 msgstr "重封装为 MP4 且不重新编码，并在成功后删除原始文件。节省磁盘空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:58
+#: src/components/pipeline/presets/default-presets-i18n.ts:59
 msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改封装格式。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:24
+#: src/components/pipeline/presets/default-presets-i18n.ts:25
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
@@ -6945,11 +6945,11 @@ msgstr "每页行数"
 msgid "Run"
 msgstr "运行"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:76
+#: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:77
+#: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
@@ -7630,7 +7630,7 @@ msgstr "排序方式"
 msgid "Source"
 msgstr "来源"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:102
+#: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Space Saver"
 msgstr "空间节省"
 
@@ -7676,7 +7676,7 @@ msgstr "分割原因"
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:97
+#: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Standard"
 msgstr "标准"
 
@@ -7735,11 +7735,11 @@ msgstr "步骤库"
 msgid "Steps List"
 msgstr "步骤列表"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:181
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:179
 msgid "STOKEN (optional)"
 msgstr "STOKEN（可选）"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:201
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:199
 msgid "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 msgstr "STOKEN 与 BDUSS 来自同一个网盘页面的 Cookie。缺少它时部分功能会失败。"
 
@@ -7747,11 +7747,11 @@ msgstr "STOKEN 与 BDUSS 来自同一个网盘页面的 Cookie。缺少它时部
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "当弹幕控制信号指示直播已关闭时，停止录制。"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:222
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:220
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "将这些凭据保存在服务器上（明文，与平台 Cookie 相同），登录会话过期时上传任务可以自行重新登录。退出登录会一并清除。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:108
+#: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "Stream Archive"
 msgstr "直播归档"
 
@@ -7925,7 +7925,7 @@ msgstr "订阅"
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:54
+#: src/components/pipeline/presets/default-presets-i18n.ts:55
 #: src/components/pipeline/presets/preset-card.tsx:97
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:79
 msgid "Subtitle"
@@ -8193,7 +8193,7 @@ msgstr "此步骤是一个子工作流：<0>{workflowName}</0>。"
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:193
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:191
 msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 msgstr "此 STOKEN 不含大写字母，很可能取错了值。请从网盘页面 Cookie 中复制 STOKEN，而不是 bdstoken。"
 
@@ -8245,7 +8245,7 @@ msgid "Throughput"
 msgstr "吞吐量"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
-#: src/components/pipeline/presets/default-presets-i18n.ts:45
+#: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
@@ -8600,11 +8600,11 @@ msgstr "输入内容..."
 msgid "Ultra HD"
 msgstr "超清"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:29
+#: src/components/pipeline/presets/default-presets-i18n.ts:30
 msgid "Ultrafast Compression"
 msgstr "极速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:83
+#: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
@@ -8688,7 +8688,7 @@ msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 msgid "upload"
 msgstr "上传"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:48
+#: src/components/pipeline/presets/default-presets-i18n.ts:49
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:73
 msgid "Upload"
@@ -8698,11 +8698,15 @@ msgstr "上传"
 msgid "upload : download (asymmetric)"
 msgstr "上传 : 下载（不对称）"
 
+#: src/components/pipeline/presets/default-presets-i18n.ts:20
+msgid "Upload (Baidu Netdisk)"
+msgstr "上传 (百度网盘)"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:19
 msgid "Upload (Rclone)"
 msgstr "上传 (Rclone)"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:20
+#: src/components/pipeline/presets/default-presets-i18n.ts:21
 msgid "Upload and Delete"
 msgstr "上传并删除"
 
@@ -8719,13 +8723,17 @@ msgstr "上传行为"
 msgid "Upload failed via {0}"
 msgstr "通过 {0} 上传失败"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:74
+#: src/components/pipeline/presets/default-presets-i18n.ts:76
 msgid "Upload file to cloud storage and delete local copy after successful upload."
 msgstr "将文件上传到云存储，上传成功后删除本地副本。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:73
+#: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "使用 rclone 将文件上传到云存储。在 rclone 配置中设置远端。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:75
+msgid "Upload files to Baidu Netdisk using BaiduPCS-Go. Configure the account and destination before use."
+msgstr "使用 BaiduPCS-Go 将文件上传到百度网盘。使用前请配置账号和目标目录。"
 
 #. placeholder {0}: upload.uploader
 #: src/components/pipeline/outputs/output-card.tsx:143

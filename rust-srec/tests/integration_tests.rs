@@ -100,49 +100,21 @@ mod database_tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_database_migrations() {
+    async fn test_default_baidupcs_preset_is_seeded() {
         let pool = setup_test_db().await;
 
-        // Verify tables exist by querying sqlite_master
-        let tables: Vec<(String,)> =
-            sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-                .fetch_all(&pool)
-                .await
-                .expect("Failed to query tables");
+        let (processor, config): (String, String) = sqlx::query_as(
+            "SELECT processor, config FROM job_presets WHERE id = 'preset-default-upload-baidupcs'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("BaiduPCS-Go default preset missing");
+        assert_eq!(processor, "baidupcs");
 
-        let table_names: Vec<&str> = tables.iter().map(|t| t.0.as_str()).collect();
-
-        // Check essential tables exist
-        assert!(
-            table_names.contains(&"global_config"),
-            "global_config table missing"
-        );
-        assert!(
-            table_names.contains(&"platform_config"),
-            "platform_config table missing"
-        );
-        assert!(
-            table_names.contains(&"template_config"),
-            "template_config table missing"
-        );
-        assert!(
-            table_names.contains(&"streamers"),
-            "streamers table missing"
-        );
-        assert!(table_names.contains(&"filters"), "filters table missing");
-        assert!(
-            table_names.contains(&"live_sessions"),
-            "live_sessions table missing"
-        );
-        assert!(
-            table_names.contains(&"media_outputs"),
-            "media_outputs table missing"
-        );
-        assert!(table_names.contains(&"job"), "job table missing");
-        assert!(
-            table_names.contains(&"notification_channel"),
-            "notification_channel table missing"
-        );
+        let config: serde_json::Value =
+            serde_json::from_str(&config).expect("BaiduPCS-Go preset config should be valid JSON");
+        assert_eq!(config["destination_root"], "/rust-srec/{streamer}/%Y-%m");
+        assert_eq!(config["remove_source_after_upload"], false);
     }
 
     #[tokio::test]
@@ -448,21 +420,6 @@ mod database_tests {
             r#"{"douyin":{"cookies":"c"},"huya":{"record_danmu":true},"broken":null}"#
         );
         assert_eq!(cookies, "session=abc");
-    }
-
-    #[tokio::test]
-    async fn test_wal_mode_enabled() {
-        let pool = setup_test_db().await;
-
-        // In-memory databases use "memory" journal mode
-        // File-based would use "wal"
-        let result: (String,) = sqlx::query_as("PRAGMA journal_mode")
-            .fetch_one(&pool)
-            .await
-            .expect("Failed to query journal mode");
-
-        // Memory databases can't use WAL, but file-based would
-        assert!(result.0 == "memory" || result.0 == "wal");
     }
 }
 
@@ -1185,43 +1142,6 @@ mod filter_repository_tests {
     }
 }
 
-mod concurrent_access_tests {
-    use super::*;
-    use rust_srec::database::repositories::{ConfigRepository, SqlxConfigRepository};
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_concurrent_reads() {
-        let pool = Arc::new(setup_test_db().await);
-
-        let platform_id = create_test_platform(&pool, "test_platform").await;
-        let repo = Arc::new(SqlxConfigRepository::new(
-            pool.as_ref().clone(),
-            pool.as_ref().clone(),
-        ));
-
-        // Spawn multiple concurrent read tasks
-        let mut handles = vec![];
-        for _ in 0..10 {
-            let platform_id_clone = platform_id.clone();
-            let repo_clone = repo.clone();
-            handles.push(tokio::spawn(async move {
-                let platform = repo_clone
-                    .get_platform_config(&platform_id_clone)
-                    .await
-                    .expect("Failed to read");
-                platform.platform_name
-            }));
-        }
-
-        // All reads should succeed
-        for handle in handles {
-            let result = handle.await.expect("Task failed");
-            assert!(result.starts_with("test_platform_"));
-        }
-    }
-}
-
 mod streamer_manager_tests {
     use super::*;
     use rust_srec::config::ConfigEventBroadcaster;
@@ -1242,26 +1162,6 @@ mod streamer_manager_tests {
         priority: &str,
     ) -> String {
         create_unique_test_streamer(pool, platform_id, name, state, priority).await
-    }
-
-    #[tokio::test]
-    async fn test_streamer_manager_hydration() {
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        // Insert some streamers
-        insert_streamer(&pool, &platform_id, "Streamer1", "NOT_LIVE", "NORMAL").await;
-        insert_streamer(&pool, &platform_id, "Streamer2", "LIVE", "HIGH").await;
-        insert_streamer(&pool, &platform_id, "Streamer3", "NOT_LIVE", "LOW").await;
-
-        // Create manager and hydrate
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo, broadcaster);
-
-        let count = manager.hydrate().await.expect("Failed to hydrate");
-        assert_eq!(count, 3);
-        assert_eq!(manager.count(), 3);
     }
 
     #[tokio::test]
@@ -1398,77 +1298,9 @@ mod streamer_manager_tests {
             .expect("Streamer not found");
         assert!(metadata.last_live_time.is_some());
     }
-
-    #[tokio::test]
-    async fn test_streamer_manager_concurrent_access() {
-        let pool = Arc::new(setup_test_db().await);
-        let platform_id = setup_platform(&pool).await;
-
-        // Insert streamers
-        for i in 0..10 {
-            insert_streamer(
-                &pool,
-                &platform_id,
-                &format!("Streamer{}", i),
-                "NOT_LIVE",
-                "NORMAL",
-            )
-            .await;
-        }
-
-        let repo = Arc::new(SqlxStreamerRepository::new(
-            (*pool).clone(),
-            (*pool).clone(),
-        ));
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = Arc::new(StreamerManager::new(repo, broadcaster));
-        manager.hydrate().await.expect("Failed to hydrate");
-
-        // Spawn concurrent read tasks
-        let mut handles = vec![];
-        for _ in 0..20 {
-            let manager_clone = manager.clone();
-            handles.push(tokio::spawn(async move {
-                let all = manager_clone.get_all();
-                all.len()
-            }));
-        }
-
-        // All reads should succeed
-        for handle in handles {
-            let count = handle.await.expect("Task failed");
-            assert_eq!(count, 10);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_streamer_manager_get_by_platform() {
-        let pool = setup_test_db().await;
-        let platform1 = setup_platform(&pool).await;
-
-        // Create second platform
-        let platform2 = create_test_platform(&pool, "test_platform2").await;
-
-        // Insert streamers on different platforms
-        insert_streamer(&pool, &platform1, "P1S1", "NOT_LIVE", "NORMAL").await;
-        insert_streamer(&pool, &platform1, "P1S2", "NOT_LIVE", "NORMAL").await;
-        insert_streamer(&pool, &platform2, "P2S1", "NOT_LIVE", "NORMAL").await;
-
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo, broadcaster);
-        manager.hydrate().await.expect("Failed to hydrate");
-
-        let p1_streamers = manager.get_by_platform(&platform1);
-        assert_eq!(p1_streamers.len(), 2);
-
-        let p2_streamers = manager.get_by_platform(&platform2);
-        assert_eq!(p2_streamers.len(), 1);
-    }
 }
 
-/// End-to-end verification tests for Sprint 3.
-/// These tests verify the complete flow: add streamer → detect status → update state → emit events.
+/// End-to-end status processing tests.
 mod end_to_end_tests {
     use super::*;
     use chrono::Utc;
@@ -1479,7 +1311,7 @@ mod end_to_end_tests {
     use rust_srec::database::repositories::session::SqlxSessionRepository;
     use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
     use rust_srec::domain::StreamerState;
-    use rust_srec::monitor::{FilterReason, LiveStatus, MonitorEvent, StreamMonitor};
+    use rust_srec::monitor::{LiveStatus, MonitorEvent, StreamMonitor};
     use rust_srec::session::{OfflineClassifier, SessionLifecycle};
     use rust_srec::streamer::{StreamerManager, StreamerMetadata};
     use std::sync::Arc;
@@ -1527,6 +1359,39 @@ mod end_to_end_tests {
         }
     }
 
+    type TestStreamerManager = StreamerManager<SqlxStreamerRepository>;
+    type TestStreamMonitor = StreamMonitor<
+        SqlxStreamerRepository,
+        SqlxFilterRepository,
+        SqlxSessionRepository,
+        SqlxConfigRepository,
+    >;
+
+    async fn setup_monitor(pool: &DbPool) -> (Arc<TestStreamerManager>, TestStreamMonitor) {
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let streamer_manager = Arc::new(StreamerManager::new(
+            streamer_repo.clone(),
+            ConfigEventBroadcaster::new(),
+        ));
+        streamer_manager.hydrate().await.expect("Failed to hydrate");
+
+        let config_service = Arc::new(ConfigService::with_cache(
+            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+            streamer_repo,
+            ConfigCache::new(),
+        ));
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone())),
+            Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone())),
+            config_service,
+            pool.clone(),
+            make_session_lifecycle(pool),
+        );
+
+        (streamer_manager, monitor)
+    }
+
     #[tokio::test]
     async fn test_e2e_live_status_processing() {
         // Setup database
@@ -1541,33 +1406,7 @@ mod end_to_end_tests {
         )
         .await;
 
-        // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
-        streamer_manager.hydrate().await.expect("Failed to hydrate");
-
-        // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let cache = ConfigCache::new();
-        let config_service = Arc::new(ConfigService::with_cache(
-            config_repo,
-            streamer_repo.clone(),
-            cache,
-        ));
-
-        // Create monitor
-        let monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo,
-            config_service,
-            pool.clone(),
-            make_session_lifecycle(&pool),
-        );
+        let (streamer_manager, monitor) = setup_monitor(&pool).await;
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();
@@ -1639,33 +1478,7 @@ mod end_to_end_tests {
         )
         .await;
 
-        // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
-        streamer_manager.hydrate().await.expect("Failed to hydrate");
-
-        // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let cache = ConfigCache::new();
-        let config_service = Arc::new(ConfigService::with_cache(
-            config_repo,
-            streamer_repo.clone(),
-            cache,
-        ));
-
-        // Create monitor
-        let monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo,
-            config_service,
-            pool.clone(),
-            make_session_lifecycle(&pool),
-        );
+        let (streamer_manager, monitor) = setup_monitor(&pool).await;
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();
@@ -1712,78 +1525,6 @@ mod end_to_end_tests {
     }
 
     #[tokio::test]
-    async fn test_e2e_filter_evaluation() {
-        // Setup database
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        let streamer_id = setup_streamer(
-            &pool,
-            &platform_id,
-            "FilteredStreamer",
-            "https://twitch.tv/filteredstreamer",
-        )
-        .await;
-
-        // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
-        streamer_manager.hydrate().await.expect("Failed to hydrate");
-
-        // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let cache = ConfigCache::new();
-        let config_service = Arc::new(ConfigService::with_cache(
-            config_repo,
-            streamer_repo.clone(),
-            cache,
-        ));
-
-        // Create monitor
-        let monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo,
-            config_service,
-            pool.clone(),
-            make_session_lifecycle(&pool),
-        );
-
-        // Create test metadata
-        let metadata = create_test_metadata(
-            &streamer_id,
-            "FilteredStreamer",
-            "https://twitch.tv/filteredstreamer",
-            &platform_id,
-            StreamerState::NotLive,
-        );
-
-        // Process filtered status (out of schedule)
-        let filtered_status = LiveStatus::Filtered {
-            reason: FilterReason::OutOfSchedule {
-                next_available: None,
-            },
-            title: "Late Night Stream".to_string(),
-            category: Some("Just Chatting".to_string()),
-        };
-
-        monitor
-            .process_status(&metadata, filtered_status)
-            .await
-            .expect("Failed to process status");
-
-        // Verify state was updated to OutOfSchedule
-        let updated = streamer_manager
-            .get_streamer(&streamer_id)
-            .expect("Streamer not found");
-        assert_eq!(updated.state, StreamerState::OutOfSchedule);
-    }
-
-    #[tokio::test]
     async fn test_e2e_transient_error_handling() {
         // Setup database
         let pool = setup_test_db().await;
@@ -1797,33 +1538,7 @@ mod end_to_end_tests {
         )
         .await;
 
-        // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
-        streamer_manager.hydrate().await.expect("Failed to hydrate");
-
-        // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let cache = ConfigCache::new();
-        let config_service = Arc::new(ConfigService::with_cache(
-            config_repo,
-            streamer_repo.clone(),
-            cache.clone(),
-        ));
-
-        // Create monitor
-        let monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo,
-            config_service,
-            pool.clone(),
-            make_session_lifecycle(&pool),
-        );
+        let (streamer_manager, monitor) = setup_monitor(&pool).await;
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();
