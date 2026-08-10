@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 pub enum ProgressKind {
     Ffmpeg,
     Rclone,
+    BaiduPcs,
     Compression,
 }
 

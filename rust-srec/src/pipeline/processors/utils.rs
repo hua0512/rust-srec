@@ -171,6 +171,13 @@ struct CappedLines<R> {
     partial: Vec<u8>,
     skipping_to_newline: bool,
     overlong_count: Arc<AtomicUsize>,
+    /// Treat `\r` as a line terminator alongside `\n`. Needed for
+    /// BaiduPCS-Go, whose upload progress bar redraws via bare `\r`
+    /// (`run_baidupcs_with_logs`): without CR splitting an entire
+    /// transfer's redraws accumulate into one overlong "line" that gets
+    /// skipped wholesale. `\r\n` then yields an empty line for the `\n`,
+    /// which callers must skip.
+    split_cr: bool,
 }
 
 impl<R: AsyncRead + Unpin> CappedLines<R> {
@@ -180,6 +187,14 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
             partial: Vec::new(),
             skipping_to_newline: false,
             overlong_count,
+            split_cr: false,
+        }
+    }
+
+    fn with_cr_splitting(reader: R, overlong_count: Arc<AtomicUsize>) -> Self {
+        Self {
+            split_cr: true,
+            ..Self::new(reader, overlong_count)
         }
     }
 
@@ -201,6 +216,7 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
     /// Next complete line (newline and trailing `\r` stripped), `Ok(None)`
     /// at EOF. A final unterminated line is returned as-is.
     async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+        let split_cr = self.split_cr;
         loop {
             let chunk = self.reader.fill_buf().await?;
             if chunk.is_empty() {
@@ -210,7 +226,10 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
                 return Ok(Some(self.take_line()));
             }
 
-            match chunk.iter().position(|&byte| byte == b'\n') {
+            match chunk
+                .iter()
+                .position(|&byte| byte == b'\n' || (split_cr && byte == b'\r'))
+            {
                 Some(newline_index) => {
                     if self.skipping_to_newline {
                         // Tail of a line already counted overlong.
@@ -484,9 +503,13 @@ fn parse_ffmpeg_kv_line(
 
 fn parse_size_to_bytes(s: &str) -> Option<u64> {
     let s = s.trim();
-    let mut parts = s.split_whitespace();
-    let number = parts.next()?;
-    let unit = parts.next().unwrap_or("B");
+    let unit_start = s
+        .find(|ch: char| ch.is_ascii_alphabetic())
+        .unwrap_or(s.len());
+    let (number, unit) = s.split_at(unit_start);
+    let number = number.trim();
+    let unit = unit.trim();
+    let unit = if unit.is_empty() { "B" } else { unit };
     let value = number.replace(',', "").parse::<f64>().ok()?;
     let multiplier = match unit.to_ascii_lowercase().as_str() {
         "b" => 1.0,
@@ -941,6 +964,214 @@ pub async fn run_rclone_with_progress(
     })
 }
 
+/// Minimum seconds between progress-bar lines forwarded to the live log
+/// sink by [`run_baidupcs_with_logs`]; the bar redraws many times per
+/// second.
+const BAIDUPCS_NOISE_INTERVAL_SECS: u64 = 5;
+
+/// True for BaiduPCS-Go upload progress-bar redraws
+/// (`[<id>] ↑ <done>/<total> <speed>/s in <elapsed> ...`). Outcome marker
+/// lines (加入上传队列 / 上传文件成功 / 跳过 / 上传结束 / failure table)
+/// never contain the `↑` glyph, so shape alone identifies the bar.
+fn is_baidupcs_progress_noise(line: &str) -> bool {
+    line.contains('↑') && line.contains("/s")
+}
+
+fn parse_baidupcs_progress_line(line: &str) -> Option<JobProgressSnapshot> {
+    let mut parts = line.split_once('↑')?.1.split_whitespace();
+    let (done, total) = parts.next()?.split_once('/')?;
+    let speed = parts.next()?;
+    let bytes_done = parse_size_to_bytes(done)?;
+    let bytes_total = parse_size_to_bytes(total)?;
+    let speed_bytes_per_sec = parse_speed_to_bytes_per_sec(speed);
+    let percent = (bytes_total > 0)
+        .then(|| (bytes_done as f64 / bytes_total as f64 * 100.0).clamp(0.0, 100.0) as f32);
+    let eta_secs = speed_bytes_per_sec
+        .filter(|speed| *speed > 0.0)
+        .map(|speed| bytes_total.saturating_sub(bytes_done) as f64 / speed);
+
+    let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
+    snapshot.bytes_done = Some(bytes_done);
+    snapshot.bytes_total = Some(bytes_total);
+    snapshot.percent = percent;
+    snapshot.speed_bytes_per_sec = speed_bytes_per_sec;
+    snapshot.eta_secs = eta_secs;
+    snapshot.raw = serde_json::json!({
+        "bytes_done": bytes_done,
+        "bytes_total": bytes_total,
+        "percent": percent,
+        "speed_bytes_per_sec": speed_bytes_per_sec,
+        "eta_secs": eta_secs,
+    });
+    Some(snapshot)
+}
+
+/// Log level for a BaiduPCS-Go output line. Cosmetic for the job-log UI
+/// only; `BaiduPcsProcessor` re-parses the captured lines with precise
+/// markers to resolve per-file outcomes, so mislevelled lines (e.g. the
+/// benign `跳过秒传失败, 开始秒传` note) cannot flip an upload status.
+fn determine_baidupcs_log_level(line: &str) -> LogLevel {
+    if line.contains("失败") || line.contains("错误") || line.contains("ERROR") {
+        LogLevel::Error
+    } else if line.contains("警告") || line.contains("WARNING") {
+        LogLevel::Warn
+    } else {
+        LogLevel::Info
+    }
+}
+
+/// Reads one BaiduPCS-Go output stream to EOF through a CR-splitting
+/// [`CappedLines`]: progress-bar redraws update the progress reporter and
+/// go straight to `noise_sink` at most once per
+/// [`BAIDUPCS_NOISE_INTERVAL_SECS`]. They are never captured; empty
+/// segments produced by `\r\n` are dropped, and every other line is sent
+/// to the bounded log channel for capture.
+async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
+    reader: R,
+    progress: ProgressReporter,
+    noise_sink: Option<super::traits::JobLogSink>,
+    tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    dropped_count: Arc<AtomicUsize>,
+    overlong_count: Arc<AtomicUsize>,
+) -> std::io::Result<()> {
+    let mut lines = CappedLines::with_cr_splitting(reader, overlong_count);
+    let mut last_noise: Option<std::time::Instant> = None;
+    while let Some(line) = lines.next_line().await? {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if is_baidupcs_progress_noise(line) {
+            let now = std::time::Instant::now();
+            if last_noise.is_none_or(|prev| {
+                now.duration_since(prev).as_secs() >= BAIDUPCS_NOISE_INTERVAL_SECS
+            }) {
+                last_noise = Some(now);
+                if let Some(snapshot) = parse_baidupcs_progress_line(line) {
+                    progress.report(snapshot);
+                }
+                if let Some(sink) = &noise_sink {
+                    sink.try_send(create_log_entry(LogLevel::Info, line));
+                }
+            }
+            continue;
+        }
+        let level = determine_baidupcs_log_level(line);
+        if tx.try_send(create_log_entry(level, line)).is_err() {
+            dropped_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}
+
+/// Run a BaiduPCS-Go `upload` command, capturing stdout and stderr as logs.
+/// Both streams are split on `\r` as well as `\n` because the upload
+/// progress bar redraws with bare `\r`; bar redraws are throttled to the
+/// live `log_sink` and excluded from `CommandOutput::logs`, so hours of
+/// redraws cannot evict the per-file outcome markers that
+/// `BaiduPcsProcessor` resolves upload statuses from.
+pub async fn run_baidupcs_with_logs(
+    command: &mut Command,
+    progress: &ProgressReporter,
+    log_sink: Option<super::traits::JobLogSink>,
+) -> crate::Result<CommandOutput> {
+    let start = std::time::Instant::now();
+
+    configure_child_process(command);
+
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
+    let dropped_count = Arc::new(AtomicUsize::new(0));
+    let overlong_count = Arc::new(AtomicUsize::new(0));
+
+    let stdout_handle = child.stdout.take().map(|stdout| {
+        tokio::spawn(consume_baidupcs_stream(
+            stdout,
+            progress.clone(),
+            log_sink.clone(),
+            tx.clone(),
+            dropped_count.clone(),
+            overlong_count.clone(),
+        ))
+    });
+    let stderr_handle = child.stderr.take().map(|stderr| {
+        tokio::spawn(consume_baidupcs_stream(
+            stderr,
+            progress.clone(),
+            log_sink.clone(),
+            tx.clone(),
+            dropped_count.clone(),
+            overlong_count.clone(),
+        ))
+    });
+
+    drop(tx);
+
+    let mut logs = VecDeque::new();
+    let mut truncated_count = 0usize;
+    let mut status: Option<std::process::ExitStatus> = None;
+    let mut wait_fut = Box::pin(child.wait());
+
+    loop {
+        tokio::select! {
+            res = &mut wait_fut, if status.is_none() => {
+                status = Some(res.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
+            }
+            entry = rx.recv() => {
+                match entry {
+                    Some(entry) => {
+                        if let Some(sink) = &log_sink {
+                            sink.try_send(entry.clone());
+                        }
+                        push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
+                    },
+                    None => {
+                        if status.is_none() {
+                            status = Some(wait_fut.await.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let stdout_result = wait_for_reader_task("BaiduPCS-Go stdout", stdout_handle).await;
+    let stderr_result = wait_for_reader_task("BaiduPCS-Go stderr", stderr_handle).await;
+    stdout_result?;
+    stderr_result?;
+
+    let duration = start.elapsed().as_secs_f64();
+    let status =
+        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
+
+    let dropped = dropped_count.load(Ordering::Relaxed);
+    if dropped > 0 {
+        push_log_with_cap(
+            &mut logs,
+            JobLogEntry::warn(format!(
+                "Dropped {} log lines due to backpressure (capacity={})",
+                dropped, LOG_CHANNEL_CAPACITY
+            )),
+            MAX_LOG_ENTRIES,
+            &mut truncated_count,
+        );
+    }
+    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
+
+    Ok(CommandOutput {
+        status,
+        duration,
+        logs: logs.into_iter().collect(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1081,6 +1312,111 @@ mod tests {
 
         assert_eq!(overlong.load(Ordering::Relaxed), 1);
         assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn capped_lines_cr_splitting_separates_bar_redraws() {
+        let overlong = Arc::new(AtomicUsize::new(0));
+        let input =
+            "[1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s\r[1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s\r\n[1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n"
+                .as_bytes();
+        let mut lines = CappedLines::with_cr_splitting(input, overlong.clone());
+
+        let mut collected = Vec::new();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            collected.push(line);
+        }
+
+        // The `\r\n` after the second redraw yields one empty segment,
+        // which consume_baidupcs_stream drops.
+        assert_eq!(
+            collected,
+            vec![
+                "[1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s".to_string(),
+                "[1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s".to_string(),
+                String::new(),
+                "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv".to_string(),
+            ]
+        );
+        assert_eq!(overlong.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn consume_baidupcs_stream_throttles_bar_and_keeps_markers() {
+        let input = "[1] 加入上传队列: D:\\rec\\a.flv\n\
+                     [1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s\r\
+                     [1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s\r\
+                     [1] ↑ 3.00MB/9.00MB 1.00MB/s in 3s\r\n\
+                     [1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n"
+            .as_bytes();
+
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel::<JobLogEntry>(16);
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let overlong = Arc::new(AtomicUsize::new(0));
+
+        consume_baidupcs_stream(
+            input,
+            ProgressReporter::noop("baidupcs-test"),
+            None,
+            log_tx,
+            dropped.clone(),
+            overlong.clone(),
+        )
+        .await
+        .expect("stream drains");
+
+        let mut messages = Vec::new();
+        while let Ok(entry) = log_rx.try_recv() {
+            messages.push(entry.message);
+        }
+
+        // Bar redraws never reach the captured-log channel; markers do.
+        assert_eq!(
+            messages,
+            vec![
+                "[1] 加入上传队列: D:\\rec\\a.flv".to_string(),
+                "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv".to_string(),
+            ]
+        );
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn baidupcs_noise_and_level_classification() {
+        assert!(is_baidupcs_progress_noise(
+            "[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............"
+        ));
+        assert!(!is_baidupcs_progress_noise(
+            "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv"
+        ));
+        assert!(!is_baidupcs_progress_noise("[1] 加入上传队列: /rec/a.flv"));
+
+        assert_eq!(
+            determine_baidupcs_log_level("[1] 上传文件失败, 上传文件错误"),
+            LogLevel::Error
+        );
+        assert_eq!(
+            determine_baidupcs_log_level("警告: 遍历错误: xx"),
+            LogLevel::Error
+        );
+        assert_eq!(
+            determine_baidupcs_log_level("[1] 上传文件成功, 保存到网盘路径: /a"),
+            LogLevel::Info
+        );
+    }
+
+    #[test]
+    fn baidupcs_progress_bar_becomes_progress_snapshot() {
+        let snapshot =
+            parse_baidupcs_progress_line("[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............")
+                .expect("progress bar should parse");
+
+        assert_eq!(snapshot.kind, ProgressKind::BaiduPcs);
+        assert_eq!(snapshot.bytes_done, Some(12 * 1024 * 1024));
+        assert_eq!(snapshot.bytes_total, Some(120 * 1024 * 1024));
+        assert_eq!(snapshot.percent, Some(10.0));
+        assert_eq!(snapshot.speed_bytes_per_sec, Some(3.5 * 1024.0 * 1024.0));
+        assert_eq!(snapshot.eta_secs, Some(108.0 / 3.5));
     }
 
     #[test]

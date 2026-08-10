@@ -135,6 +135,7 @@ export type SessionSegment = z.infer<typeof SessionSegmentSchema>;
 export const JobProgressKindSchema = z.enum([
   'ffmpeg',
   'rclone',
+  'baidupcs',
   'compression',
 ]);
 export type JobProgressKind = z.infer<typeof JobProgressKindSchema>;

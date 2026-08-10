@@ -20,6 +20,7 @@ Rust-Srec 会处理访问令牌、平台 Cookie、通知凭据、录制文件和
 
 - 限制 `.env`、`DATA_DIR`、`CONFIG_DIR`、`LOG_DIR`、配置导出和备份媒体的访问。
 - 平台 Cookie 和密码可能出现在配置导出中；通知渠道可能包含 SMTP 密码、机器人令牌、Webhook 密钥和自定义请求头。
+- 百度网盘登录会话保存在 BaiduPCS-Go 的配置目录中（`BAIDUPCS_GO_CONFIG_DIR`，Docker 中为 `/app/config/BaiduPCS-Go`），请像保护 Cookie 一样保护并备份该目录。勾选“记住凭据以便自动重新登录”后，登录凭据还会以明文保存在应用数据库（`tool_credentials` 表）中，与平台 Cookie 相同；退出登录时会删除。登录（包括自动重新登录）期间，凭据会短暂出现在 BaiduPCS-Go 进程的命令行参数中，本机其他进程可能观察到；应将主机 Shell 访问权限视同网盘账号访问权限。
 - 分享日志或截图前，隐藏令牌、私有 URL、用户名、Cookie 和文件系统路径。
 - 容器不要挂载不必要的宿主机目录或设备；只有所选管道需要时才添加 GPU 设备。
 - 把 `execute`、上传、移动或删除源文件等管道步骤视为具有文件系统和网络权限的代码来审查。

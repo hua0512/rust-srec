@@ -443,6 +443,7 @@ impl WorkerPool {
 
                             // Process the job with timeout
                             let mut job = job;
+                            let is_retry = job.retry_count > 0;
                             let dag_step_execution_id = job.dag_step_execution_id.take();
                             let current_step = job
                                 .execution_info
@@ -613,7 +614,8 @@ impl WorkerPool {
                                 job_queue.progress_reporter(&job_id),
                                 log_sink,
                                 job_cancellation_token.clone(),
-                            );
+                            )
+                            .with_retry(is_retry);
 
                             let result = {
                                 let timed = tokio::time::timeout(

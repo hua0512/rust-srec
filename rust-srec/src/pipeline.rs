@@ -34,10 +34,11 @@ pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
 };
 pub use processors::{
-    AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, CopyMoveConfig, CopyMoveOperation,
-    CopyMoveProcessor, DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor,
-    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
-    RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem,
+    AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, BaiduPcsConfig, BaiduPcsPolicy,
+    BaiduPcsProcessor, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, DanmakuFactoryConfig,
+    DanmakuFactoryProcessor, ExecuteCommandProcessor, Processor, ProcessorContext, ProcessorInput,
+    ProcessorOutput, ProcessorType, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
+    UploadItemStatus, UploadResultItem,
 };
 pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};

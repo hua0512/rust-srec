@@ -14,6 +14,7 @@ pub mod refresh_token;
 pub mod session;
 pub mod streamer;
 pub mod streamer_check_history;
+pub mod tool_credential;
 pub mod upload_record;
 pub mod user;
 
@@ -28,5 +29,6 @@ pub use refresh_token::*;
 pub use session::*;
 pub use streamer::*;
 pub use streamer_check_history::*;
+pub use tool_credential::*;
 pub use upload_record::*;
 pub use user::*;

@@ -20,6 +20,7 @@ The stream proxy blocks private-network targets by default. Enabling `stream_pro
 
 - Restrict `.env`, `DATA_DIR`, `CONFIG_DIR`, `LOG_DIR`, configuration exports, and backup media.
 - Platform cookies and passwords can be present in configuration exports. Notification channels can contain SMTP passwords, bot tokens, webhook secrets, and custom headers.
+- The Baidu Netdisk login session lives in BaiduPCS-Go's config directory (`BAIDUPCS_GO_CONFIG_DIR`, `/app/config/BaiduPCS-Go` in Docker) — protect and back it up like a cookie store. With **Remember for automatic re-login** enabled, the login material is additionally stored plaintext in the application database (`tool_credentials`), like platform cookies; logging out deletes it. During a login (including automatic re-login) the credentials briefly appear on the BaiduPCS-Go process command line, which other local processes can observe; treat host shell access as equivalent to account access.
 - Redact tokens, private URLs, usernames, cookies, and filesystem paths before sharing logs or screenshots.
 - Run containers without unnecessary host mounts or device access. Add GPU devices only when the selected pipeline requires them.
 - Review any `execute`, upload, move, or delete-source pipeline step as code with filesystem and network access.

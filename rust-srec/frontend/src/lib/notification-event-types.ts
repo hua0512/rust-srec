@@ -40,6 +40,7 @@ const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {
   credential_refresh_failed: msg`Credential refresh failed`,
   credential_invalid: msg`Credential invalid`,
   credential_expiring: msg`Credential expiring soon`,
+  baidupcs_relogin_failed: msg`Baidu Netdisk re-login failed`,
 };
 
 /**

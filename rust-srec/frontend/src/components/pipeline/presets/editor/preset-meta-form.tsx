@@ -34,6 +34,7 @@ import {
   Trash,
   Tags,
   Upload,
+  CloudUpload,
   Terminal,
   Settings2,
   FileText,
@@ -68,6 +69,11 @@ const PROCESSOR_OPTIONS = [
     id: 'rclone',
     label: <Trans>Rclone</Trans>,
     icon: Upload,
+  },
+  {
+    id: 'baidupcs',
+    label: <Trans>Baidu Netdisk</Trans>,
+    icon: CloudUpload,
   },
   { id: 'execute', label: <Trans>Execute Command</Trans>, icon: Terminal },
   {

@@ -18,9 +18,9 @@ use super::dag_scheduler::{
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
-    AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
-    DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
-    Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
+    AssBurnInProcessor, AudioExtractProcessor, BaiduPcsProcessor, CompressionProcessor,
+    CopyMoveProcessor, DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor,
+    MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
@@ -328,6 +328,7 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
+            Arc::new(BaiduPcsProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -390,6 +391,7 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
+            Arc::new(BaiduPcsProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),

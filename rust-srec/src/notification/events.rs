@@ -225,6 +225,17 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
             "CredentialExpiring",
         ],
     },
+    // ========== External Tool Events ==========
+    NotificationEventTypeInfo {
+        event_type: "baidupcs_relogin_failed",
+        label: "Baidu Netdisk Re-login Failed",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "baidupcs_relogin_failed",
+            "baidupcs.relogin_failed",
+            "BaiduPcsReloginFailed",
+        ],
+    },
 ];
 
 pub fn notification_event_types() -> &'static [NotificationEventTypeInfo] {
@@ -575,6 +586,21 @@ pub enum NotificationEvent {
     // ========== Credential Events ==========
     /// Credentials subsystem event (refresh, invalidation, etc.).
     Credential { event: CredentialEvent },
+
+    // ========== External Tool Events ==========
+    /// Automatic Baidu Netdisk re-login with stored credentials was
+    /// rejected. Emitted by `crate::baidupcs::StoredLoginAuthenticator`
+    /// after a real replay attempt only — its failure cooldown bounds this
+    /// to at most one event per window per config dir. Uploads keep
+    /// failing until fresh credentials are provided via the login dialog.
+    BaiduPcsReloginFailed {
+        /// Config-dir key of the affected session (`"default"` when the
+        /// CLI's default location is used).
+        config_dir: String,
+        /// Scrubbed, truncated BaiduPCS-Go output tail.
+        message: String,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 impl NotificationEvent {
@@ -619,6 +645,9 @@ impl NotificationEvent {
 
             // Credential events
             Self::Credential { event } => event.severity(),
+
+            // External tool events
+            Self::BaiduPcsReloginFailed { .. } => NotificationPriority::High,
         }
     }
 
@@ -648,6 +677,7 @@ impl NotificationEvent {
             Self::SystemStartup { .. } => "system_startup",
             Self::SystemShutdown { .. } => "system_shutdown",
             Self::Credential { event } => event.event_name(),
+            Self::BaiduPcsReloginFailed { .. } => "baidupcs_relogin_failed",
         }
     }
 
@@ -798,6 +828,11 @@ impl NotificationEvent {
                 reason = reason.as_str(),
             ),
             Self::Credential { event } => credential_title(event, locale),
+            Self::BaiduPcsReloginFailed { config_dir, .. } => crate::t_str_in!(
+                locale,
+                "notification.baidupcs_relogin_failed.title",
+                config_dir = config_dir.as_str(),
+            ),
         }
     }
 
@@ -1055,6 +1090,11 @@ impl NotificationEvent {
                 reason = reason.as_str(),
             ),
             Self::Credential { event } => event.to_message_in(locale),
+            Self::BaiduPcsReloginFailed { message, .. } => crate::t_str_in!(
+                locale,
+                "notification.baidupcs_relogin_failed.description",
+                message = message.as_str(),
+            ),
         }
     }
 
@@ -1082,7 +1122,8 @@ impl NotificationEvent {
             | Self::PipelineQueueWarning { timestamp, .. }
             | Self::PipelineQueueCritical { timestamp, .. }
             | Self::SystemStartup { timestamp, .. }
-            | Self::SystemShutdown { timestamp, .. } => *timestamp,
+            | Self::SystemShutdown { timestamp, .. }
+            | Self::BaiduPcsReloginFailed { timestamp, .. } => *timestamp,
             Self::Credential { event } => match event {
                 CredentialEvent::Refreshed { timestamp, .. }
                 | CredentialEvent::RefreshFailed { timestamp, .. }
@@ -1484,6 +1525,27 @@ mod tests {
     /// tests must serialize on this lock to avoid racing the i18n module's
     /// own tests (and each other).
     static OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn baidupcs_relogin_failed_metadata_and_localization() {
+        let event = NotificationEvent::BaiduPcsReloginFailed {
+            config_dir: "default".to_string(),
+            message: "帐号登录失败".to_string(),
+            timestamp: Utc::now(),
+        };
+        assert_eq!(event.priority(), NotificationPriority::High);
+        assert_eq!(event.event_type(), "baidupcs_relogin_failed");
+        assert_eq!(event.streamer_id(), None, "tool event has no streamer_id");
+        assert!(
+            NotificationEvent::event_type_info("BaiduPcsReloginFailed").is_some(),
+            "alias resolves to the canonical event type"
+        );
+        assert!(event.title_in("en").contains("Baidu Netdisk"));
+        assert!(event.title_in("en").contains("default"));
+        assert!(event.title_in("zh-CN").contains("百度网盘"));
+        assert!(event.description_in("en").contains("帐号登录失败"));
+        assert!(event.description_in("zh-CN").contains("帐号登录失败"));
+    }
 
     #[test]
     fn output_path_inaccessible_basic_metadata() {
