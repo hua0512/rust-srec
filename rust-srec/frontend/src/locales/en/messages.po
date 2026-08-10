@@ -356,11 +356,11 @@ msgstr "Add Filter"
 msgid "Add item..."
 msgstr "Add item..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:21
+#: src/components/pipeline/presets/default-presets-i18n.ts:22
 msgid "Add Metadata"
 msgstr "Add Metadata"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:75
+#: src/components/pipeline/presets/default-presets-i18n.ts:77
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "Add metadata tags (title, artist, date) to the video file."
 
@@ -556,13 +556,13 @@ msgstr "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgid "Apply template settings."
 msgstr "Apply template settings."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:47
+#: src/components/pipeline/presets/default-presets-i18n.ts:48
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:72
 msgid "Archive"
 msgstr "Archive"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:25
+#: src/components/pipeline/presets/default-presets-i18n.ts:26
 msgid "Archive Compression"
 msgstr "Archive Compression"
 
@@ -574,7 +574,7 @@ msgstr "Archive Format"
 msgid "Archive Settings"
 msgstr "Archive Settings"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:98
+#: src/components/pipeline/presets/default-presets-i18n.ts:100
 msgid "Archive to Cloud"
 msgstr "Archive to Cloud"
 
@@ -620,7 +620,7 @@ msgstr "Artist"
 msgid "ASS Burn-in"
 msgstr "ASS Burn-in"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:32
+#: src/components/pipeline/presets/default-presets-i18n.ts:33
 msgid "ASS Subtitle Burn-in"
 msgstr "ASS Subtitle Burn-in"
 
@@ -641,7 +641,7 @@ msgstr "Attempt to get the highest original quality available."
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:230
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
@@ -832,12 +832,12 @@ msgstr "Baidu Netdisk Account"
 msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 msgstr "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:119
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:117
 msgid "Baidu Netdisk Login"
 msgstr "Baidu Netdisk Login"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:95
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:102
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:93
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:100
 msgid "Baidu Netdisk login failed"
 msgstr "Baidu Netdisk login failed"
 
@@ -854,7 +854,7 @@ msgstr "Baidu Netdisk re-login failed"
 msgid "Baidu Netdisk Upload"
 msgstr "Baidu Netdisk Upload"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:156
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:154
 msgid "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 
@@ -907,7 +907,7 @@ msgstr "Basic details for this configuration template."
 msgid "Basic Information"
 msgstr "Basic Information"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:114
+#: src/components/pipeline/presets/default-presets-i18n.ts:116
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
@@ -924,7 +924,7 @@ msgstr "Batch parse error: {0}"
 msgid "Batch URLs"
 msgstr "Batch URLs"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:139
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:137
 msgid "BDUSS + STOKEN"
 msgstr "BDUSS + STOKEN"
 
@@ -1016,7 +1016,7 @@ msgstr "Browser Status"
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:86
+#: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 
@@ -1051,7 +1051,7 @@ msgstr "Cache"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
 #: src/components/pipeline/presets/preset-card.tsx:206
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:237
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
 #: src/components/pipeline/workflows/step-config-dialog.tsx:595
 #: src/components/pipeline/workflows/step-config-dialog.tsx:636
 #: src/components/pipeline/workflows/workflow-card.tsx:195
@@ -1255,7 +1255,7 @@ msgstr "Choose when this streamer should be recorded."
 msgid "Choose your display language"
 msgstr "Choose your display language"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:49
+#: src/components/pipeline/presets/default-presets-i18n.ts:50
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
@@ -1345,7 +1345,7 @@ msgstr "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders
 msgid "Comment"
 msgstr "Comment"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:120
+#: src/components/pipeline/presets/default-presets-i18n.ts:122
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
@@ -1379,11 +1379,11 @@ msgstr "Component Status"
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:115
+#: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:44
+#: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
@@ -1579,11 +1579,11 @@ msgstr "Continue"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:85
+#: src/components/pipeline/presets/default-presets-i18n.ts:87
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:147
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:145
 msgid "Cookie string"
 msgstr "Cookie string"
 
@@ -1591,7 +1591,7 @@ msgstr "Cookie string"
 msgid "Cookies"
 msgstr "Cookies"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:136
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:134
 msgid "Cookies (recommended)"
 msgstr "Cookies (recommended)"
 
@@ -1652,11 +1652,11 @@ msgstr "Copy JSON"
 msgid "Copy Path"
 msgstr "Copy Path"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:71
+#: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "Copy the file to another location. Keeps the original file."
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:160
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:158
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 
@@ -1719,7 +1719,7 @@ msgstr "Create a filter to control when this streamer is recorded. You can filte
 msgid "Create a template to define reusable download configurations."
 msgstr "Create a template to define reusable download configurations."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:69
+#: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
@@ -1822,11 +1822,11 @@ msgstr "Credential refreshed"
 msgid "Credential Source Status"
 msgstr "Credential Source Status"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:122
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:120
 msgid "Credentials are handed to BaiduPCS-Go on the server; the login session persists in its config directory. The app itself keeps them only if you enable remembering below."
 msgstr "Credentials are handed to BaiduPCS-Go on the server; the login session persists in its config directory. The app itself keeps them only if you enable remembering below."
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:88
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:87
 msgid "Credentials could not be stored for automatic re-login"
 msgstr "Credentials could not be stored for automatic re-login"
 
@@ -1903,7 +1903,7 @@ msgstr "Current Password"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:524
-#: src/components/pipeline/presets/default-presets-i18n.ts:51
+#: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:334
@@ -1918,7 +1918,7 @@ msgstr "Custom Config"
 msgid "Custom Configuration"
 msgstr "Custom Configuration"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:22
+#: src/components/pipeline/presets/default-presets-i18n.ts:23
 msgid "Custom FFmpeg"
 msgstr "Custom FFmpeg"
 
@@ -1974,7 +1974,7 @@ msgstr "DAG Configuration"
 msgid "DAG Graph"
 msgstr "DAG Graph"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:54
 #: src/components/pipeline/presets/preset-card.tsx:96
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:78
 msgid "Danmaku"
@@ -1986,7 +1986,7 @@ msgstr "Danmaku"
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:31
+#: src/components/pipeline/presets/default-presets-i18n.ts:32
 msgid "Danmaku to ASS Subtitles"
 msgstr "Danmaku to ASS Subtitles"
 
@@ -2122,7 +2122,7 @@ msgstr "Default pipeline flow. Configure the sequence of processors for new jobs
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:125
+#: src/components/pipeline/presets/default-presets-i18n.ts:127
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 
@@ -2273,7 +2273,7 @@ msgstr "Deleted"
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "Deletes all existing configurations before importing. This action cannot be undone."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:70
+#: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 
@@ -2510,7 +2510,7 @@ msgstr "Downloading..."
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Dual Format"
 msgstr "Dual Format"
 
@@ -2936,7 +2936,7 @@ msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgid "Execute"
 msgstr "Execute"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:23
+#: src/components/pipeline/presets/default-presets-i18n.ts:24
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/processors/registry.ts:113
 msgid "Execute Command"
@@ -3012,19 +3012,19 @@ msgstr "Extra Arguments"
 msgid "Extract AAC"
 msgstr "Extract AAC"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:80
+#: src/components/pipeline/presets/default-presets-i18n.ts:82
 msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:68
+#: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 msgstr "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:67
+#: src/components/pipeline/presets/default-presets-i18n.ts:68
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:117
+#: src/components/pipeline/presets/default-presets-i18n.ts:119
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "Extract high-quality audio for podcast distribution and upload."
 
@@ -3362,23 +3362,23 @@ msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgid "Fast Compression"
 msgstr "Fast Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:118
+#: src/components/pipeline/presets/default-presets-i18n.ts:120
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "Fast encoding for quick sharing on social media or messaging."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:92
+#: src/components/pipeline/presets/default-presets-i18n.ts:94
 msgid "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
 msgstr "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:87
+#: src/components/pipeline/presets/default-presets-i18n.ts:89
 msgid "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
 msgstr "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:89
+#: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
 msgstr "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:60
+#: src/components/pipeline/presets/default-presets-i18n.ts:61
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 
@@ -3433,7 +3433,7 @@ msgstr "File Configuration"
 msgid "File Extension Filter"
 msgstr "File Extension Filter"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:50
+#: src/components/pipeline/presets/default-presets-i18n.ts:51
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
 msgid "File Operations"
 msgstr "File Operations"
@@ -3641,11 +3641,11 @@ msgstr "Full Day"
 msgid "Full HD Thumbnail"
 msgstr "Full HD Thumbnail"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:122
+#: src/components/pipeline/presets/default-presets-i18n.ts:124
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:103
+#: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Full Processing"
 msgstr "Full Processing"
 
@@ -3673,31 +3673,31 @@ msgstr "General"
 msgid "General Configuration"
 msgstr "General Configuration"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:64
+#: src/components/pipeline/presets/default-presets-i18n.ts:65
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:63
+#: src/components/pipeline/presets/default-presets-i18n.ts:64
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:65
+#: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 msgstr "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:81
+#: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "Generate a thumbnail at 30 seconds with 480px width for previews."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:66
+#: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 msgstr "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:62
+#: src/components/pipeline/presets/default-presets-i18n.ts:63
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:123
+#: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
 
@@ -3776,11 +3776,11 @@ msgstr "GPU"
 msgid "GPU Health Probe Interval"
 msgstr "GPU Health Probe Interval"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:110
+#: src/components/pipeline/presets/default-presets-i18n.ts:112
 msgid "GPU HQ Archive"
 msgstr "GPU HQ Archive"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:109
+#: src/components/pipeline/presets/default-presets-i18n.ts:111
 msgid "GPU Standard"
 msgstr "GPU Standard"
 
@@ -3788,11 +3788,11 @@ msgstr "GPU Standard"
 msgid "GPU unavailable"
 msgstr "GPU unavailable"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:127
+#: src/components/pipeline/presets/default-presets-i18n.ts:129
 msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:126
+#: src/components/pipeline/presets/default-presets-i18n.ts:128
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 
@@ -3811,7 +3811,7 @@ msgstr "Graph"
 msgid "H.264"
 msgstr "H.264"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:79
+#: src/components/pipeline/presets/default-presets-i18n.ts:81
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
@@ -3875,7 +3875,7 @@ msgctxt "priority"
 msgid "High"
 msgstr "High"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:99
+#: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "High Quality Archive"
 msgstr "High Quality Archive"
 
@@ -3883,23 +3883,23 @@ msgstr "High Quality Archive"
 msgid "High Quality Compression"
 msgstr "High Quality Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:93
+#: src/components/pipeline/presets/default-presets-i18n.ts:95
 msgid "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
 msgstr "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:88
+#: src/components/pipeline/presets/default-presets-i18n.ts:90
 msgid "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
 msgstr "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:90
+#: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
 msgstr "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:61
+#: src/components/pipeline/presets/default-presets-i18n.ts:62
 msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:26
+#: src/components/pipeline/presets/default-presets-i18n.ts:27
 msgid "High Quality MP3"
 msgstr "High Quality MP3"
 
@@ -4512,7 +4512,7 @@ msgstr "Loading workflows..."
 msgid "Loading…"
 msgstr "Loading…"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:104
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Local Archive"
 msgstr "Local Archive"
 
@@ -4521,7 +4521,7 @@ msgid "Log Files"
 msgstr "Log Files"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:246
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:244
 msgid "Log in"
 msgstr "Log in"
 
@@ -4598,7 +4598,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "Low"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:91
+#: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 
@@ -4707,7 +4707,7 @@ msgstr "Max Downloads"
 msgid "Max Duration"
 msgstr "Max Duration"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:28
+#: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Max HEVC Compression"
 msgstr "Max HEVC Compression"
 
@@ -4784,11 +4784,11 @@ msgstr "Max transactions/second to the remote API (--tpslimit)."
 msgid "Max Uploads"
 msgstr "Max Uploads"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:119
+#: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "Maximum compression to minimize storage usage, then delete original."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:82
+#: src/components/pipeline/presets/default-presets-i18n.ts:84
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
@@ -4800,7 +4800,7 @@ msgstr "Maximum number of concurrent segment downloads."
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:116
+#: src/components/pipeline/presets/default-presets-i18n.ts:118
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "Maximum quality compression with HEVC, then upload to cloud storage."
 
@@ -4843,7 +4843,7 @@ msgstr "Message"
 msgid "Messages"
 msgstr "Messages"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:52
+#: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:81
@@ -4967,7 +4967,7 @@ msgstr "Move File"
 msgid "Move Files"
 msgstr "Move Files"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:72
+#: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Move the file to another location. Removes the original file."
 msgstr "Move the file to another location. Removes the original file."
 
@@ -4999,7 +4999,7 @@ msgstr "Multi-Thread Streams help"
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:105
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Multimedia Archive"
 msgstr "Multimedia Archive"
 
@@ -5492,31 +5492,31 @@ msgstr "Number of days to keep the notification event log. Set to 0 to retain ev
 msgid "Numeric Room IDs Only"
 msgstr "Numeric Room IDs Only"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:38
+#: src/components/pipeline/presets/default-presets-i18n.ts:39
 msgid "NVENC AV1 Fast"
 msgstr "NVENC AV1 Fast"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:39
+#: src/components/pipeline/presets/default-presets-i18n.ts:40
 msgid "NVENC AV1 High Quality"
 msgstr "NVENC AV1 High Quality"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:33
+#: src/components/pipeline/presets/default-presets-i18n.ts:34
 msgid "NVENC H.264 Fast"
 msgstr "NVENC H.264 Fast"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:34
+#: src/components/pipeline/presets/default-presets-i18n.ts:35
 msgid "NVENC H.264 High Quality"
 msgstr "NVENC H.264 High Quality"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:37
+#: src/components/pipeline/presets/default-presets-i18n.ts:38
 msgid "NVENC H.264 Low Latency"
 msgstr "NVENC H.264 Low Latency"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:35
+#: src/components/pipeline/presets/default-presets-i18n.ts:36
 msgid "NVENC HEVC Fast"
 msgstr "NVENC HEVC Fast"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:36
+#: src/components/pipeline/presets/default-presets-i18n.ts:37
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC High Quality"
 
@@ -6194,7 +6194,7 @@ msgstr "Please select a JSON file"
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:100
+#: src/components/pipeline/presets/default-presets-i18n.ts:102
 msgid "Podcast Extraction"
 msgstr "Podcast Extraction"
 
@@ -6303,11 +6303,11 @@ msgstr "Presets Available"
 msgid "Press Enter to add recipient"
 msgstr "Press Enter to add recipient"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Preview Gallery"
 msgstr "Preview Gallery"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:27
+#: src/components/pipeline/presets/default-presets-i18n.ts:28
 msgid "Preview Thumbnail"
 msgstr "Preview Thumbnail"
 
@@ -6374,11 +6374,11 @@ msgstr "Priority low-high"
 msgid "Private Network Access"
 msgstr "Private Network Access"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:121
+#: src/components/pipeline/presets/default-presets-i18n.ts:123
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:124
+#: src/components/pipeline/presets/default-presets-i18n.ts:126
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
@@ -6505,7 +6505,7 @@ msgstr "Queued for download"
 msgid "Queued Refresh Threshold"
 msgstr "Queued Refresh Threshold"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:101
+#: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Quick Share"
 msgstr "Quick Share"
 
@@ -6704,7 +6704,7 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:219
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:217
 msgid "Remember for automatic re-login"
 msgstr "Remember for automatic re-login"
 
@@ -6726,7 +6726,7 @@ msgid "Removes each local file once its upload (or skip) is confirmed. The local
 msgstr "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
-#: src/components/pipeline/presets/default-presets-i18n.ts:43
+#: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:68
 msgid "Remux"
@@ -6738,7 +6738,7 @@ msgstr "Remux"
 msgid "Remux / Transcode"
 msgstr "Remux / Transcode"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:30
+#: src/components/pipeline/presets/default-presets-i18n.ts:31
 msgid "Remux and Clean"
 msgstr "Remux and Clean"
 
@@ -6746,23 +6746,23 @@ msgstr "Remux and Clean"
 msgid "Remux to MKV"
 msgstr "Remux to MKV"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:59
+#: src/components/pipeline/presets/default-presets-i18n.ts:60
 msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 msgstr "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:78
+#: src/components/pipeline/presets/default-presets-i18n.ts:80
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "Remux to MP4 with faststart flag for web streaming optimization."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:84
+#: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 msgstr "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:58
+#: src/components/pipeline/presets/default-presets-i18n.ts:59
 msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:24
+#: src/components/pipeline/presets/default-presets-i18n.ts:25
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
@@ -6945,11 +6945,11 @@ msgstr "Rows per page"
 msgid "Run"
 msgstr "Run"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:76
+#: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "Run a custom FFmpeg command. Edit the args to customize."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:77
+#: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 
@@ -7630,7 +7630,7 @@ msgstr "Sort by"
 msgid "Source"
 msgstr "Source"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:102
+#: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Space Saver"
 msgstr "Space Saver"
 
@@ -7676,7 +7676,7 @@ msgstr "Split Reason"
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "Splits a single large file into N parallel chunks for faster upload."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:97
+#: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Standard"
 msgstr "Standard"
 
@@ -7735,11 +7735,11 @@ msgstr "Step Library"
 msgid "Steps List"
 msgstr "Steps List"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:181
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:179
 msgid "STOKEN (optional)"
 msgstr "STOKEN (optional)"
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:201
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:199
 msgid "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 msgstr "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 
@@ -7747,11 +7747,11 @@ msgstr "STOKEN comes from the same netdisk page cookies as BDUSS. Some features 
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "Stop recording when danmu control signals stream closed."
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:222
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:220
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:108
+#: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "Stream Archive"
 msgstr "Stream Archive"
 
@@ -7925,7 +7925,7 @@ msgstr "Subscriptions"
 msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:54
+#: src/components/pipeline/presets/default-presets-i18n.ts:55
 #: src/components/pipeline/presets/preset-card.tsx:97
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:79
 msgid "Subtitle"
@@ -8193,7 +8193,7 @@ msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
 
-#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:193
+#: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:191
 msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 msgstr "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 
@@ -8245,7 +8245,7 @@ msgid "Throughput"
 msgstr "Throughput"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
-#: src/components/pipeline/presets/default-presets-i18n.ts:45
+#: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
@@ -8600,11 +8600,11 @@ msgstr "Type something..."
 msgid "Ultra HD"
 msgstr "Ultra HD"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:29
+#: src/components/pipeline/presets/default-presets-i18n.ts:30
 msgid "Ultrafast Compression"
 msgstr "Ultrafast Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:83
+#: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
@@ -8688,7 +8688,7 @@ msgstr "Updates existing items and creates new ones. Nothing is deleted."
 msgid "upload"
 msgstr "upload"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:48
+#: src/components/pipeline/presets/default-presets-i18n.ts:49
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:73
 msgid "Upload"
@@ -8698,11 +8698,15 @@ msgstr "Upload"
 msgid "upload : download (asymmetric)"
 msgstr "upload : download (asymmetric)"
 
+#: src/components/pipeline/presets/default-presets-i18n.ts:20
+msgid "Upload (Baidu Netdisk)"
+msgstr "Upload (Baidu Netdisk)"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:19
 msgid "Upload (Rclone)"
 msgstr "Upload (Rclone)"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:20
+#: src/components/pipeline/presets/default-presets-i18n.ts:21
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
@@ -8719,13 +8723,17 @@ msgstr "Upload Behavior"
 msgid "Upload failed via {0}"
 msgstr "Upload failed via {0}"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:74
+#: src/components/pipeline/presets/default-presets-i18n.ts:76
 msgid "Upload file to cloud storage and delete local copy after successful upload."
 msgstr "Upload file to cloud storage and delete local copy after successful upload."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:73
+#: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "Upload file to cloud storage using rclone. Configure remote in rclone config."
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:75
+msgid "Upload files to Baidu Netdisk using BaiduPCS-Go. Configure the account and destination before use."
+msgstr "Upload files to Baidu Netdisk using BaiduPCS-Go. Configure the account and destination before use."
 
 #. placeholder {0}: upload.uploader
 #: src/components/pipeline/outputs/output-card.tsx:143
