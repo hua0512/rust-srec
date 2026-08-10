@@ -503,9 +503,13 @@ fn parse_ffmpeg_kv_line(
 
 fn parse_size_to_bytes(s: &str) -> Option<u64> {
     let s = s.trim();
-    let mut parts = s.split_whitespace();
-    let number = parts.next()?;
-    let unit = parts.next().unwrap_or("B");
+    let unit_start = s
+        .find(|ch: char| ch.is_ascii_alphabetic())
+        .unwrap_or(s.len());
+    let (number, unit) = s.split_at(unit_start);
+    let number = number.trim();
+    let unit = unit.trim();
+    let unit = if unit.is_empty() { "B" } else { unit };
     let value = number.replace(',', "").parse::<f64>().ok()?;
     let multiplier = match unit.to_ascii_lowercase().as_str() {
         "b" => 1.0,
@@ -973,6 +977,35 @@ fn is_baidupcs_progress_noise(line: &str) -> bool {
     line.contains('↑') && line.contains("/s")
 }
 
+fn parse_baidupcs_progress_line(line: &str) -> Option<JobProgressSnapshot> {
+    let mut parts = line.split_once('↑')?.1.split_whitespace();
+    let (done, total) = parts.next()?.split_once('/')?;
+    let speed = parts.next()?;
+    let bytes_done = parse_size_to_bytes(done)?;
+    let bytes_total = parse_size_to_bytes(total)?;
+    let speed_bytes_per_sec = parse_speed_to_bytes_per_sec(speed);
+    let percent = (bytes_total > 0)
+        .then(|| (bytes_done as f64 / bytes_total as f64 * 100.0).clamp(0.0, 100.0) as f32);
+    let eta_secs = speed_bytes_per_sec
+        .filter(|speed| *speed > 0.0)
+        .map(|speed| bytes_total.saturating_sub(bytes_done) as f64 / speed);
+
+    let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
+    snapshot.bytes_done = Some(bytes_done);
+    snapshot.bytes_total = Some(bytes_total);
+    snapshot.percent = percent;
+    snapshot.speed_bytes_per_sec = speed_bytes_per_sec;
+    snapshot.eta_secs = eta_secs;
+    snapshot.raw = serde_json::json!({
+        "bytes_done": bytes_done,
+        "bytes_total": bytes_total,
+        "percent": percent,
+        "speed_bytes_per_sec": speed_bytes_per_sec,
+        "eta_secs": eta_secs,
+    });
+    Some(snapshot)
+}
+
 /// Log level for a BaiduPCS-Go output line. Cosmetic for the job-log UI
 /// only; `BaiduPcsProcessor` re-parses the captured lines with precise
 /// markers to resolve per-file outcomes, so mislevelled lines (e.g. the
@@ -988,12 +1021,14 @@ fn determine_baidupcs_log_level(line: &str) -> LogLevel {
 }
 
 /// Reads one BaiduPCS-Go output stream to EOF through a CR-splitting
-/// [`CappedLines`]: progress-bar redraws go straight to `noise_sink` at
-/// most once per [`BAIDUPCS_NOISE_INTERVAL_SECS`] and are never captured,
-/// empty segments produced by `\r\n` are dropped, and every other line is
-/// sent to the bounded log channel for capture.
+/// [`CappedLines`]: progress-bar redraws update the progress reporter and
+/// go straight to `noise_sink` at most once per
+/// [`BAIDUPCS_NOISE_INTERVAL_SECS`]. They are never captured; empty
+/// segments produced by `\r\n` are dropped, and every other line is sent
+/// to the bounded log channel for capture.
 async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
     reader: R,
+    progress: ProgressReporter,
     noise_sink: Option<super::traits::JobLogSink>,
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped_count: Arc<AtomicUsize>,
@@ -1008,10 +1043,13 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
         }
         if is_baidupcs_progress_noise(line) {
             let now = std::time::Instant::now();
-            if last_noise
-                .is_none_or(|prev| now.duration_since(prev).as_secs() >= BAIDUPCS_NOISE_INTERVAL_SECS)
-            {
+            if last_noise.is_none_or(|prev| {
+                now.duration_since(prev).as_secs() >= BAIDUPCS_NOISE_INTERVAL_SECS
+            }) {
                 last_noise = Some(now);
+                if let Some(snapshot) = parse_baidupcs_progress_line(line) {
+                    progress.report(snapshot);
+                }
                 if let Some(sink) = &noise_sink {
                     sink.try_send(create_log_entry(LogLevel::Info, line));
                 }
@@ -1034,6 +1072,7 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
 /// `BaiduPcsProcessor` resolves upload statuses from.
 pub async fn run_baidupcs_with_logs(
     command: &mut Command,
+    progress: &ProgressReporter,
     log_sink: Option<super::traits::JobLogSink>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
@@ -1054,6 +1093,7 @@ pub async fn run_baidupcs_with_logs(
     let stdout_handle = child.stdout.take().map(|stdout| {
         tokio::spawn(consume_baidupcs_stream(
             stdout,
+            progress.clone(),
             log_sink.clone(),
             tx.clone(),
             dropped_count.clone(),
@@ -1063,6 +1103,7 @@ pub async fn run_baidupcs_with_logs(
     let stderr_handle = child.stderr.take().map(|stderr| {
         tokio::spawn(consume_baidupcs_stream(
             stderr,
+            progress.clone(),
             log_sink.clone(),
             tx.clone(),
             dropped_count.clone(),
@@ -1313,9 +1354,16 @@ mod tests {
         let dropped = Arc::new(AtomicUsize::new(0));
         let overlong = Arc::new(AtomicUsize::new(0));
 
-        consume_baidupcs_stream(input, None, log_tx, dropped.clone(), overlong.clone())
-            .await
-            .expect("stream drains");
+        consume_baidupcs_stream(
+            input,
+            ProgressReporter::noop("baidupcs-test"),
+            None,
+            log_tx,
+            dropped.clone(),
+            overlong.clone(),
+        )
+        .await
+        .expect("stream drains");
 
         let mut messages = Vec::new();
         while let Ok(entry) = log_rx.try_recv() {
@@ -1355,6 +1403,20 @@ mod tests {
             determine_baidupcs_log_level("[1] 上传文件成功, 保存到网盘路径: /a"),
             LogLevel::Info
         );
+    }
+
+    #[test]
+    fn baidupcs_progress_bar_becomes_progress_snapshot() {
+        let snapshot =
+            parse_baidupcs_progress_line("[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............")
+                .expect("progress bar should parse");
+
+        assert_eq!(snapshot.kind, ProgressKind::BaiduPcs);
+        assert_eq!(snapshot.bytes_done, Some(12 * 1024 * 1024));
+        assert_eq!(snapshot.bytes_total, Some(120 * 1024 * 1024));
+        assert_eq!(snapshot.percent, Some(10.0));
+        assert_eq!(snapshot.speed_bytes_per_sec, Some(3.5 * 1024.0 * 1024.0));
+        assert_eq!(snapshot.eta_secs, Some(108.0 / 3.5));
     }
 
     #[test]

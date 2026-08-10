@@ -160,6 +160,7 @@ pub struct ProcessorContext {
     pub progress: ProgressReporter,
     pub log_sink: JobLogSink,
     pub cancellation_token: CancellationToken,
+    pub is_retry: bool,
 }
 
 #[derive(Clone)]
@@ -194,6 +195,7 @@ impl ProcessorContext {
             progress: ProgressReporter::noop(job_id),
             log_sink: JobLogSink::new(log_tx, dropped),
             cancellation_token: CancellationToken::new(),
+            is_retry: false,
         }
     }
 
@@ -208,7 +210,14 @@ impl ProcessorContext {
             progress,
             log_sink,
             cancellation_token,
+            is_retry: false,
         }
+    }
+
+    /// Mark this execution as a retry of a previously persisted job.
+    pub fn with_retry(mut self, is_retry: bool) -> Self {
+        self.is_retry = is_retry;
+        self
     }
 
     /// Emit a log entry.

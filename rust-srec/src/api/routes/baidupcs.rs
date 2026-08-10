@@ -2,12 +2,12 @@
 //!
 //! One-shot wrappers around the BaiduPCS-Go CLI so the web UI can log in
 //! with pasted BDUSS+STOKEN or a cookie string, show the active account and
-//! quota, and log out. Credentials flow one-way into the `login` argv and
-//! persist only in BaiduPCS-Go's own config directory
-//! (`crate::baidupcs::CONFIG_DIR_ENV`); rust-srec never stores them, and
-//! every response passes relayed CLI output through `baidupcs::scrub` so
-//! they are never echoed back. The CLI exits 0 even when login fails, so
-//! success is detected from `baidupcs::LOGIN_SUCCESS_MARKER`.
+//! quota, and log out. BaiduPCS-Go keeps its active session in its config
+//! directory; rust-srec separately retains the supplied login material
+//! only when the request opts into automatic re-login. Every response
+//! passes relayed CLI output through `baidupcs::scrub` so credentials are
+//! never echoed back. The CLI exits 0 even when login fails, so success is
+//! detected from `baidupcs::LOGIN_SUCCESS_MARKER`.
 
 use axum::{Json, Router, routing::post};
 use std::time::Duration;
@@ -259,9 +259,9 @@ pub async fn baidupcs_login(
     let mut message = output_tail(&outcome.message);
 
     let mut credentials_stored = false;
-    if outcome.success && request.remember {
+    if outcome.success {
         match baidupcs::authenticator() {
-            Some(authenticator) => {
+            Some(authenticator) if request.remember => {
                 match authenticator.save_credentials(config_dir, &material).await {
                     Ok(()) => credentials_stored = true,
                     Err(e) => {
@@ -271,9 +271,18 @@ pub async fn baidupcs_login(
                     }
                 }
             }
-            None => {
+            Some(authenticator) => {
+                if let Err(e) = authenticator.delete_credentials(config_dir).await {
+                    tracing::warn!(error = %e, "Failed to clear stored BaiduPCS-Go credentials");
+                    message = format!(
+                        "{message}\n(Clearing previously stored credentials failed; automatic re-login may still use them)"
+                    );
+                }
+            }
+            None if request.remember => {
                 message = format!("{message}\n(Credential storage is unavailable)");
             }
+            None => {}
         }
     }
 

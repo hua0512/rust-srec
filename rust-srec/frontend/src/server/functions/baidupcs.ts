@@ -13,8 +13,8 @@ import {
 /**
  * BaiduPCS-Go tool API (backend routes are mounted under
  * `/api/tools/baidupcs`). Login credentials are forwarded once to the
- * backend, which hands them to the CLI; they are never persisted by the
- * app, so callers should clear their inputs after a login attempt.
+ * CLI; the backend retains a separate copy only when the request opts into
+ * automatic re-login. Callers should clear their inputs after an attempt.
  */
 
 export const getBaiduPcsStatus = createServerFn({ method: 'POST' })

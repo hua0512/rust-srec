@@ -2505,15 +2505,17 @@ fn spawn_progress_aggregator(
                             continue;
                         }
 
-                        // Rclone is the only upload progress emitter (see
-                        // RcloneProcessor / run_rclone_with_progress), so its
-                        // snapshots double as live upload-status WS events.
+                        // Upload processor snapshots double as live
+                        // upload-status WS events.
                         // Publishing on the flush tick reuses this loop's
                         // coalescing instead of adding a second throttle.
                         // has_subscribers first: without it the jobs_cache
                         // lookup and snapshot clone (including its raw JSON
                         // tree) would run on every flush of an idle deployment.
-                        if matches!(snapshot.kind, ProgressKind::Rclone)
+                        if matches!(
+                            snapshot.kind,
+                            ProgressKind::Rclone | ProgressKind::BaiduPcs
+                        )
                             && let Some(broadcaster) = upload_broadcaster.get()
                             && broadcaster.has_subscribers()
                         {
@@ -2810,7 +2812,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn rclone_progress_reports_are_broadcast_as_upload_progress() {
+    async fn baidupcs_progress_reports_are_broadcast_as_upload_progress() {
         let queue = JobQueue::new();
         let broadcaster =
             UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
@@ -2826,7 +2828,7 @@ mod tests {
             .cancellation_tokens
             .insert("job-1".to_string(), CancellationToken::new());
 
-        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
         snapshot.percent = Some(42.0);
         snapshot.bytes_done = Some(4200);
         queue.progress_reporter("job-1").report(snapshot);

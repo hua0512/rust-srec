@@ -183,7 +183,12 @@ impl BaiduPcsCommandRunner for ProcessBaiduPcsCommandRunner {
         command: &mut Command,
         context: &ProcessorContext,
     ) -> Result<CommandOutput> {
-        super::utils::run_baidupcs_with_logs(command, Some(context.log_sink.clone())).await
+        super::utils::run_baidupcs_with_logs(
+            command,
+            &context.progress,
+            Some(context.log_sink.clone()),
+        )
+        .await
     }
 }
 
@@ -625,7 +630,7 @@ impl Processor for BaiduPcsProcessor {
 
         // With remove_source_after_upload, a retried job may legitimately
         // reference sources deleted after an earlier attempt's upload.
-        let (mut pending, resumed) = if config.remove_source_after_upload {
+        let (mut pending, resumed) = if config.remove_source_after_upload && ctx.is_retry {
             Self::partition_absent_inputs(&input.inputs).await
         } else {
             for input_path in &input.inputs {
@@ -840,7 +845,7 @@ impl Processor for BaiduPcsProcessor {
 
         let mut removed: HashSet<String> = resumed.iter().cloned().collect();
         if config.remove_source_after_upload {
-            for path in completed.keys().chain(skipped.keys()) {
+            for path in completed.keys() {
                 if removed.contains(path) {
                     continue;
                 }
@@ -1348,7 +1353,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_input_rejected_without_remove_mode() {
+    async fn missing_input_rejected_on_initial_run() {
         let temp_dir = tempfile::tempdir().unwrap();
         let missing = temp_dir.path().join("missing.flv");
 
@@ -1356,7 +1361,9 @@ mod tests {
         let processor = MockBaiduPcsCommandRunner::processor(runner.clone());
         let input = ProcessorInput {
             inputs: vec![missing.to_string_lossy().into_owned()],
-            config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
+            config: Some(
+                r#"{"destination_root":"/rec","remove_source_after_upload":true}"#.to_string(),
+            ),
             ..Default::default()
         };
 
@@ -1404,8 +1411,8 @@ mod tests {
             .unwrap();
 
         assert!(!uploaded.exists());
-        assert!(!skipped.exists());
-        assert!(output.outputs.is_empty());
+        assert!(skipped.exists());
+        assert_eq!(output.outputs, vec![skipped_str]);
         assert_eq!(output.uploads[0].status, UploadItemStatus::Completed);
         assert_eq!(output.uploads[1].status, UploadItemStatus::Skipped);
         // Sizes were captured before deletion.
@@ -1439,7 +1446,7 @@ mod tests {
         };
 
         let output = processor
-            .process(&input, &ProcessorContext::noop("resume"))
+            .process(&input, &ProcessorContext::noop("resume").with_retry(true))
             .await
             .unwrap();
 
