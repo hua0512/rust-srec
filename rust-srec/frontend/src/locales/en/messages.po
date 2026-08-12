@@ -207,7 +207,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:481
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:485
 msgid "1 year"
 msgstr "1 year"
 
@@ -223,7 +223,7 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:475
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:479
 msgid "30 days"
 msgstr "30 days"
 
@@ -239,11 +239,11 @@ msgstr "44100"
 msgid "587"
 msgstr "587"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:472
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:476
 msgid "7 days"
 msgstr "7 days"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:478
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:482
 msgid "90 days"
 msgstr "90 days"
 
@@ -275,7 +275,7 @@ msgstr "Accept Invalid Certs (Default: Off)"
 msgid "Access"
 msgstr "Access"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:444
 msgid "Access level"
 msgstr "Access level"
 
@@ -554,11 +554,11 @@ msgstr "Any additional command line arguments to pass to Streamlink"
 msgid "Any priority"
 msgstr "Any priority"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:368
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:369
 msgid "API key copied to clipboard"
 msgstr "API key copied to clipboard"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:379
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:383
 msgid "API key created"
 msgstr "API key created"
 
@@ -566,6 +566,7 @@ msgstr "API key created"
 msgid "API key revoked"
 msgstr "API key revoked"
 
+#: src/components/sidebar/user-menu.tsx:106
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:131
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:67
 msgid "API Keys"
@@ -1105,7 +1106,7 @@ msgstr "Cache"
 #: src/components/streamers/streamer-batch-action-bar.tsx:276
 #: src/components/streamers/streamer-editor.tsx:235
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:299
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:489
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:493
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
@@ -1185,6 +1186,7 @@ msgstr "CDN"
 
 #: src/components/layout/site-header.tsx:34
 #: src/components/sidebar/navbar.tsx:28
+#: src/components/sidebar/user-menu.tsx:112
 #: src/routes/_authed/change-password.lazy.tsx:123
 #: src/routes/_authed/change-password.lazy.tsx:270
 msgid "Change Password"
@@ -1497,7 +1499,7 @@ msgstr "Config Path (Optional)"
 msgid "Configuration"
 msgstr "Configuration"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:540
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:544
 msgid "Configuration copied to clipboard"
 msgstr "Configuration copied to clipboard"
 
@@ -1578,7 +1580,7 @@ msgstr "Confirm Password"
 msgid "Confirmed via backstop timer."
 msgstr "Confirmed via backstop timer."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:549
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:553
 msgid "Connect an AI assistant (MCP)"
 msgstr "Connect an AI assistant (MCP)"
 
@@ -1689,7 +1691,7 @@ msgstr "Copy (Stream Copy)"
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:397
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:401
 msgid "Copy API key"
 msgstr "Copy API key"
 
@@ -1709,7 +1711,7 @@ msgstr "Copy Files"
 msgid "Copy JSON"
 msgstr "Copy JSON"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:578
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:582
 msgid "Copy MCP configuration"
 msgstr "Copy MCP configuration"
 
@@ -1725,7 +1727,7 @@ msgstr "Copy the file to another location. Keeps the original file."
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:383
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:387
 msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 msgstr "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 
@@ -1768,7 +1770,7 @@ msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
 #: src/components/config/templates/template-editor.tsx:210
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:498
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:502
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1794,7 +1796,7 @@ msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:143
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:416
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:420
 msgid "Create API key"
 msgstr "Create API key"
 
@@ -1873,7 +1875,7 @@ msgstr "Created"
 msgid "Creating..."
 msgstr "Creating..."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:496
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:500
 msgid "Creating…"
 msgstr "Creating…"
 
@@ -2500,7 +2502,7 @@ msgstr "Disk"
 msgid "Disk Space"
 msgstr "Disk Space"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:408
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:412
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:172
 msgid "Done"
 msgstr "Done"
@@ -2658,7 +2660,7 @@ msgstr "e.g. aliyun, akamaized"
 msgid "e.g. cdn-to-avoid"
 msgstr "e.g. cdn-to-avoid"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:434
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:438
 msgid "e.g. Claude assistant"
 msgstr "e.g. Claude assistant"
 
@@ -2819,7 +2821,7 @@ msgstr "End Time"
 msgid "Ended"
 msgstr "Ended"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:563
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:567
 msgid "Endpoint"
 msgstr "Endpoint"
 
@@ -3074,7 +3076,7 @@ msgid "Expired"
 msgstr "Expired"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:185
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:461
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:465
 msgid "Expires"
 msgstr "Expires"
 
@@ -3206,7 +3208,7 @@ msgstr "Failed to copy"
 msgid "Failed to copy destination"
 msgstr "Failed to copy destination"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:348
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:349
 msgid "Failed to create API key"
 msgstr "Failed to create API key"
 
@@ -3742,7 +3744,7 @@ msgstr "From Address"
 msgid "Full access"
 msgstr "Full access"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:454
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:458
 msgid "Full access — also modify configuration"
 msgstr "Full access — also modify configuration"
 
@@ -5151,7 +5153,7 @@ msgstr "My Template"
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:170
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:428
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:432
 msgid "Name"
 msgstr "Name"
 
@@ -5201,7 +5203,7 @@ msgstr "Network & System"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:238
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:245
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:469
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:473
 msgid "Never"
 msgstr "Never"
 
@@ -6717,11 +6719,11 @@ msgstr "Read Timeout (ms)"
 msgid "Read-only"
 msgstr "Read-only"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:451
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:455
 msgid "Read-only — query data and configuration"
 msgstr "Read-only — query data and configuration"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:588
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:592
 msgid "Read-only keys can call query tools only; configuration-changing tools require a full-access key. The key can also be sent via the X-Api-Key header."
 msgstr "Read-only keys can call query tools only; configuration-changing tools require a full-access key. The key can also be sent via the X-Api-Key header."
 
@@ -7727,8 +7729,7 @@ msgstr "Sidebar Layout"
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/sidebar/menu.tsx:133
-#: src/components/sidebar/menu.tsx:140
+#: src/components/sidebar/user-menu.tsx:122
 msgid "Sign out"
 msgstr "Sign out"
 
@@ -8306,7 +8307,7 @@ msgstr "The configuration matches existing data"
 msgid "The direct link to the channel or stream."
 msgstr "The direct link to the channel or stream."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:419
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:423
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
 msgstr "The key inherits your account's permissions, limited by the access level you pick here."
 
@@ -8375,7 +8376,7 @@ msgstr "This is a default preset. Description cannot be modified."
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:552
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:556
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 
