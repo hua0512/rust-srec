@@ -111,7 +111,10 @@ export default defineConfig({
             },
             {
               text: "API Reference",
-              items: [{ text: "Overview", link: "/en/api/" }],
+              items: [
+                { text: "Overview", link: "/en/api/" },
+                { text: "API Keys & MCP", link: "/en/api/api-keys-mcp" },
+              ],
             },
             {
               text: "Operations",
@@ -242,7 +245,10 @@ export default defineConfig({
             },
             {
               text: "API 参考",
-              items: [{ text: "概述", link: "/zh/api/" }],
+              items: [
+                { text: "概述", link: "/zh/api/" },
+                { text: "API 密钥与 MCP", link: "/zh/api/api-keys-mcp" },
+              ],
             },
             {
               text: "运维",

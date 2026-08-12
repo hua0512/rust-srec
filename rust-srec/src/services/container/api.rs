@@ -8,7 +8,7 @@ use crate::api::auth_service::{AuthConfig, AuthService};
 use crate::api::jwt::JwtService;
 use crate::api::server::{ApiServer, ApiServices, AppState};
 use crate::database::repositories::{
-    SqlxRefreshTokenRepository, SqlxUserRepository,
+    SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
     filter::SqlxFilterRepository,
     preset::{SqliteJobPresetRepository, SqlitePipelinePresetRepository},
     streamer::SqlxStreamerRepository,
@@ -220,8 +220,13 @@ impl ServiceContainer {
                     self.pool.clone(),
                     self.write_pool.clone(),
                 ));
+                let api_key_repo = Arc::new(SqlxApiKeyRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ));
 
-                let auth_svc = AuthService::new(user_repo, token_repo, jwt, auth_config);
+                let auth_svc =
+                    AuthService::new(user_repo, token_repo, api_key_repo, jwt, auth_config);
                 info!("AuthService initialized with user database authentication");
                 Some(Arc::new(auth_svc))
             }
@@ -273,7 +278,17 @@ impl ServiceContainer {
             self.pool.clone(),
             self.write_pool.clone(),
         ));
-        let auth_svc = AuthService::new(user_repo, token_repo, jwt_service, auth_config);
+        let api_key_repo = Arc::new(SqlxApiKeyRepository::new(
+            self.pool.clone(),
+            self.write_pool.clone(),
+        ));
+        let auth_svc = AuthService::new(
+            user_repo,
+            token_repo,
+            api_key_repo,
+            jwt_service,
+            auth_config,
+        );
         info!(
             issuer = %issuer,
             audience = %audience,

@@ -15,15 +15,16 @@ use crate::api::models::{
     UpdateGlobalConfigRequest, UpdatePriorityRequest, UpdateStreamerRequest, UpdateTemplateRequest,
 };
 use crate::api::routes::auth::{
-    ChangePasswordRequest, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
-};
-use crate::api::routes::credentials::{
-    CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse,
-    QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
+    ApiKeyResponse, ChangePasswordRequest, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest,
+    LoginResponse, LogoutRequest, RefreshRequest,
 };
 use crate::api::routes::baidupcs::{
     BaiduPcsLoginRequest, BaiduPcsLoginResponse, BaiduPcsLogoutResponse, BaiduPcsStatusResponse,
     BaiduPcsToolRequest,
+};
+use crate::api::routes::credentials::{
+    CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse,
+    QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
 };
 use crate::api::routes::engines::{CreateEngineRequest, EngineTestResponse, UpdateEngineRequest};
 use crate::api::routes::job::{
@@ -107,6 +108,9 @@ pub struct MessageResponse {
         crate::api::routes::auth::logout_all,
         crate::api::routes::auth::change_password,
         crate::api::routes::auth::list_sessions,
+        crate::api::routes::auth::list_api_keys,
+        crate::api::routes::auth::create_api_key,
+        crate::api::routes::auth::revoke_api_key,
         // Streamer endpoints
         crate::api::routes::streamers::create_streamer,
         crate::api::routes::streamers::list_streamers,
@@ -243,6 +247,10 @@ pub struct MessageResponse {
             ChangePasswordRequest,
             MessageResponse,
             crate::api::auth_service::SessionInfo,
+            CreateApiKeyRequest,
+            CreateApiKeyResponse,
+            ApiKeyResponse,
+            crate::database::models::ApiKeyAccessLevel,
             // Error schema
             crate::api::error::ApiErrorResponse,
             // Streamer schemas
@@ -367,7 +375,8 @@ pub struct MessageResponse {
 )]
 pub struct ApiDoc;
 
-/// Security scheme addon for Bearer JWT authentication.
+/// Security scheme addon for Bearer (JWT or API key) and X-Api-Key header
+/// authentication.
 struct SecurityAddon;
 
 impl utoipa::Modify for SecurityAddon {
@@ -379,7 +388,21 @@ impl utoipa::Modify for SecurityAddon {
                     utoipa::openapi::security::HttpBuilder::new()
                         .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
                         .bearer_format("JWT")
+                        .description(Some(
+                            "JWT access token, or an API key (`srec_...`) created via /api/auth/api-keys",
+                        ))
                         .build(),
+                ),
+            );
+            components.add_security_scheme(
+                "api_key",
+                utoipa::openapi::security::SecurityScheme::ApiKey(
+                    utoipa::openapi::security::ApiKey::Header(
+                        utoipa::openapi::security::ApiKeyValue::with_description(
+                            "X-Api-Key",
+                            "API key created via /api/auth/api-keys",
+                        ),
+                    ),
                 ),
             );
         }

@@ -44,6 +44,11 @@ msgstr "-reconnect 1"
 msgid "\"{0}\" will be removed. Streamers using it fall back to the default engine."
 msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。"
 
+#. placeholder {0}: revokeTarget?.name
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:291
+msgid "\"{0}\" will stop working immediately. This cannot be undone."
+msgstr "“{0}”将立即失效。此操作无法撤销。"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:192
 msgid "(Delete source)"
 msgstr "（删除源文件）"
@@ -202,6 +207,10 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:481
+msgid "1 year"
+msgstr "1 年"
+
 #: src/components/notifications/forms/telegram-form.tsx:50
 msgid "123456:ABC-DEF..."
 msgstr "123456:ABC-DEF..."
@@ -214,6 +223,10 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:475
+msgid "30 days"
+msgstr "30 天"
+
 #: src/components/not-found.tsx:12
 msgid "404"
 msgstr "404"
@@ -225,6 +238,14 @@ msgstr "44100"
 #: src/components/notifications/forms/email-form.tsx:68
 msgid "587"
 msgstr "587"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:472
+msgid "7 days"
+msgstr "7 天"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:478
+msgid "90 days"
+msgstr "90 天"
 
 #: src/components/config/engines/engine-editor.tsx:195
 msgid "A unique and descriptive name for this configuration."
@@ -250,6 +271,14 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:176
+msgid "Access"
+msgstr "权限"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
+msgid "Access level"
+msgstr "权限级别"
+
 #: src/components/streamers/card/use-streamer-status.tsx:172
 #: src/components/streamers/card/use-streamer-status.tsx:181
 msgid "Account Not Found"
@@ -263,6 +292,7 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:218
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:112
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:475
 msgid "Active"
@@ -524,6 +554,23 @@ msgstr "传递给 Streamlink 的其他命令行参数"
 msgid "Any priority"
 msgstr "任意优先级"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:368
+msgid "API key copied to clipboard"
+msgstr "API 密钥已复制到剪贴板"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:379
+msgid "API key created"
+msgstr "API 密钥已创建"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:112
+msgid "API key revoked"
+msgstr "API 密钥已吊销"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:131
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:67
+msgid "API Keys"
+msgstr "API 密钥"
+
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
@@ -540,7 +587,7 @@ msgstr "API 设置"
 msgid "App Token"
 msgstr "应用令牌"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:75
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:82
 msgid "Appearance & style"
 msgstr "外观与样式"
 
@@ -757,7 +804,7 @@ msgstr "可选"
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
-#: src/components/sessions/danmu-stats-panel.tsx:277
+#: src/components/sessions/danmu-stats-panel.tsx:335
 msgid "avg {averagePerMinute}"
 msgstr "均值 {averagePerMinute}"
 
@@ -770,8 +817,8 @@ msgid "Awaiting first check"
 msgstr "等待首次检查"
 
 #: src/components/config/platforms/platform-editor.tsx:143
+#: src/components/config/templates/template-editor.tsx:188
 #: src/components/config/templates/template-editor.tsx:191
-#: src/components/config/templates/template-editor.tsx:194
 msgid "Back"
 msgstr "返回"
 
@@ -814,8 +861,8 @@ msgid "Backup"
 msgstr "备份"
 
 #: src/components/config/global/backup-restore-card.tsx:212
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:78
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:81
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:85
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:88
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
@@ -1057,6 +1104,8 @@ msgstr "缓存"
 #: src/components/pipeline/workflows/workflow-card.tsx:195
 #: src/components/streamers/streamer-batch-action-bar.tsx:276
 #: src/components/streamers/streamer-editor.tsx:235
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:299
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:489
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
@@ -1251,7 +1300,7 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:87
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:94
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
@@ -1448,6 +1497,10 @@ msgstr "配置路径（可选）"
 msgid "Configuration"
 msgstr "配置"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:540
+msgid "Configuration copied to clipboard"
+msgstr "配置已复制到剪贴板"
+
 #: src/components/config/global/backup-restore-card.tsx:91
 msgid "Configuration exported successfully"
 msgstr "配置已成功导出"
@@ -1524,6 +1577,10 @@ msgstr "确认密码"
 #: src/components/sessions/timeline-tab.tsx:339
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:549
+msgid "Connect an AI assistant (MCP)"
+msgstr "连接 AI 助手（MCP）"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:679
 msgid "Connect Timeout (ms)"
@@ -1632,6 +1689,10 @@ msgstr "复制（流复制）"
 msgid "Copy / Move"
 msgstr "复制/移动"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:397
+msgid "Copy API key"
+msgstr "复制 API 密钥"
+
 #: src/components/pipeline/outputs/output-card.tsx:208
 msgid "Copy Directory"
 msgstr "复制目录"
@@ -1648,6 +1709,10 @@ msgstr "复制文件"
 msgid "Copy JSON"
 msgstr "复制 JSON"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:578
+msgid "Copy MCP configuration"
+msgstr "复制 MCP 配置"
+
 #: src/components/pipeline/outputs/output-card.tsx:189
 msgid "Copy Path"
 msgstr "复制路径"
@@ -1659,6 +1724,10 @@ msgstr "将文件复制到其他位置，保留原始文件。"
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:158
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "在已登录的百度网盘页面中（浏览器开发者工具的 Network 标签）复制完整的 Cookie 请求头，其中必须包含 BDUSS 和 STOKEN。"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:383
+msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
+msgstr "请立即复制此密钥。出于安全考虑，它只显示一次，之后无法找回。"
 
 #: src/components/pipeline/presets/preset-templates.ts:66
 msgid "Copy/Move"
@@ -1674,7 +1743,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:345
 #: src/components/config/engines/forms/mesio-hls-form.tsx:390
-#: src/components/sessions/danmu-stats-panel.tsx:268
+#: src/components/sessions/danmu-stats-panel.tsx:304
 msgid "Count"
 msgstr "次数"
 
@@ -1698,7 +1767,8 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:213
+#: src/components/config/templates/template-editor.tsx:210
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:498
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1722,6 +1792,11 @@ msgstr "创建模板以定义可复用的录制配置。"
 #: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:143
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:416
+msgid "Create API key"
+msgstr "创建 API 密钥"
 
 #: src/components/notifications/channel-form.tsx:464
 msgid "Create channel"
@@ -1771,7 +1846,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:165
+#: src/components/config/templates/template-editor.tsx:162
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "创建模板"
@@ -1797,6 +1872,10 @@ msgstr "已创建"
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
 msgid "Creating..."
 msgstr "创建中..."
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:496
+msgid "Creating…"
+msgstr "创建中…"
 
 #: src/components/config/engines/engine-editor.tsx:345
 msgid "Creation Mode"
@@ -1994,7 +2073,7 @@ msgstr "弹幕转 ASS 字幕"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:196
+#: src/components/config/shared-config-editor.tsx:194
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -2006,12 +2085,12 @@ msgstr "弹幕控制"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/components/sessions/danmu-stats-panel.tsx:108
+#: src/components/sessions/danmu-stats-panel.tsx:121
 #: src/components/sessions/overview-tab.tsx:242
 msgid "Danmu Statistics"
 msgstr "弹幕统计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:159
+#: src/components/sessions/danmu-stats-panel.tsx:172
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
@@ -2020,7 +2099,7 @@ msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
 
-#: src/components/sessions/danmu-stats-panel.tsx:246
+#: src/components/sessions/danmu-stats-panel.tsx:282
 msgid "Danmu/min"
 msgstr "弹幕/分钟"
 
@@ -2421,6 +2500,7 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:408
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:172
 msgid "Done"
 msgstr "已完成"
@@ -2577,6 +2657,10 @@ msgstr "例如 aliyun, akamaized"
 #: src/components/streamers/config/stream-selection-input.tsx:133
 msgid "e.g. cdn-to-avoid"
 msgstr "例如 黑名单CDN"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:434
+msgid "e.g. Claude assistant"
+msgstr "例如：Claude 助手"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:62
 msgid "e.g. echo {input} > {output}"
@@ -2735,6 +2819,10 @@ msgstr "结束时间"
 msgid "Ended"
 msgstr "已结束"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:563
+msgid "Endpoint"
+msgstr "端点"
+
 #: src/components/notifications/forms/webhook-form.tsx:71
 msgid "Endpoint Configuration"
 msgstr "端点配置"
@@ -2779,10 +2867,10 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:259
+#: src/components/config/templates/template-editor.tsx:255
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
 msgid "Engines"
 msgstr "引擎列表"
 
@@ -2858,7 +2946,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:235
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:241
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -2980,6 +3068,15 @@ msgstr "实验性"
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:256
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:231
+msgid "Expired"
+msgstr "已过期"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:185
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:461
+msgid "Expires"
+msgstr "过期时间"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:241
 msgid "Explicit TTWID cookie value to use for all requests."
@@ -3109,6 +3206,10 @@ msgstr "复制失败"
 msgid "Failed to copy destination"
 msgstr "复制目标路径失败"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:348
+msgid "Failed to create API key"
+msgstr "创建 API 密钥失败"
+
 #: src/components/notifications/channel-form.tsx:282
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
@@ -3215,7 +3316,7 @@ msgstr "导入配置失败"
 msgid "Failed to load content"
 msgstr "内容加载失败"
 
-#: src/components/sessions/danmu-stats-panel.tsx:170
+#: src/components/sessions/danmu-stats-panel.tsx:183
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
@@ -3294,6 +3395,10 @@ msgstr "重试处理任务失败"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:87
 msgid "Failed to retry steps"
 msgstr "无法重试步骤"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:116
+msgid "Failed to revoke API key"
+msgstr "吊销 API 密钥失败"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:299
 msgid "Failed to send test notification"
@@ -3523,7 +3628,7 @@ msgstr "已过滤"
 msgid "Filtered:"
 msgstr "过滤原因："
 
-#: src/components/config/shared-config-editor.tsx:152
+#: src/components/config/shared-config-editor.tsx:150
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
 msgid "Filters"
 msgstr "过滤器"
@@ -3633,6 +3738,14 @@ msgstr "星期五"
 msgid "From Address"
 msgstr "发件人地址"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:204
+msgid "Full access"
+msgstr "完全访问"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:454
+msgid "Full access — also modify configuration"
+msgstr "完全访问 — 还可修改配置"
+
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:86
 msgid "Full Day"
 msgstr "全天"
@@ -3660,7 +3773,7 @@ msgstr "GB"
 #: src/components/config/engines/forms/mesio-form.tsx:265
 #: src/components/config/platforms/platform-editor.tsx:191
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
-#: src/components/config/templates/template-editor.tsx:249
+#: src/components/config/templates/template-editor.tsx:245
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
@@ -3709,15 +3822,15 @@ msgstr "生成新二维码"
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
-#: src/components/sessions/danmu-stats-panel.tsx:290
-#: src/components/sessions/danmu-stats-panel.tsx:302
+#: src/components/sessions/danmu-stats-panel.tsx:315
+#: src/components/sessions/danmu-stats-panel.tsx:326
 msgid "Gift items"
 msgstr "礼物数"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:199
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:42
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:43
 msgid "Global"
 msgstr "全局"
 
@@ -3750,7 +3863,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:233
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:243
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:249
 msgid "Go Back"
 msgstr "返回"
 
@@ -4263,7 +4376,7 @@ msgstr "处理任务已取消"
 msgid "Job Configuration"
 msgstr "处理任务配置"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:57
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:58
 msgid "Job configurations"
 msgstr "任务配置"
 
@@ -4303,7 +4416,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -4342,6 +4455,7 @@ msgstr "保持运行"
 #: src/components/notifications/forms/webhook-form.tsx:415
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:173
 msgid "Key"
 msgstr "键"
 
@@ -4361,7 +4475,7 @@ msgstr "密钥超时（毫秒）"
 msgid "Keyword"
 msgstr "关键字"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:84
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:91
 msgid "Language"
 msgstr "语言"
 
@@ -4385,6 +4499,10 @@ msgstr "最后错误"
 #: src/components/streamers/card/stream-avatar-info.tsx:146
 msgid "Last Error Log"
 msgstr "最后错误日志"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:182
+msgid "Last used"
+msgstr "最近使用"
 
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:224
 msgid "Latency"
@@ -4530,7 +4648,7 @@ msgstr "日志文件"
 msgid "Log in"
 msgstr "登录"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:69
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:76
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
 
@@ -4559,7 +4677,7 @@ msgstr "已以 {0} 登录百度网盘"
 msgid "Logged out of Baidu Netdisk"
 msgstr "已退出百度网盘"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:66
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:73
 msgid "Logging"
 msgstr "日志"
 
@@ -4583,6 +4701,10 @@ msgstr "登录成功！"
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "日志"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:134
+msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can query data; full-access keys can also change configuration."
+msgstr "用于以编程方式访问 REST API 和内置 MCP 服务器的长期凭据。只读密钥可以查询数据；完全访问密钥还可以更改配置。"
 
 #: src/components/config/engines/forms/mesio-form.tsx:151
 msgid "Loop Protection"
@@ -4844,7 +4966,7 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
-#: src/components/sessions/danmu-stats-panel.tsx:257
+#: src/components/sessions/danmu-stats-panel.tsx:293
 msgid "Messages"
 msgstr "消息数"
 
@@ -5028,6 +5150,8 @@ msgstr "我的模板"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:224
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:170
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:428
 msgid "Name"
 msgstr "名称"
 
@@ -5063,7 +5187,7 @@ msgstr "原始分辨率缩略图"
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间标记。"
 
-#: src/components/config/shared-config-editor.tsx:174
+#: src/components/config/shared-config-editor.tsx:172
 msgid "Network"
 msgstr "网络"
 
@@ -5074,6 +5198,12 @@ msgstr "网络与内容"
 #: src/components/config/global/network-system-card.tsx:42
 msgid "Network & System"
 msgstr "网络与系统"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:238
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:245
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:469
+msgid "Never"
+msgstr "永不"
 
 #: src/components/layout/site-header.tsx:53
 #: src/components/sidebar/navbar.tsx:47
@@ -5124,6 +5254,10 @@ msgstr "夜间"
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:414
 msgid "No active recordings"
 msgstr "暂无正在录制"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:159
+msgid "No API keys yet. Create one to let scripts or AI assistants access this server."
+msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服务器。"
 
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:590
 msgid "No Archives Found"
@@ -5181,6 +5315,11 @@ msgstr "未找到事件"
 #: src/components/filters/FilterList.tsx:23
 msgid "No filters yet"
 msgstr "暂无过滤器"
+
+#: src/components/sessions/danmu-stats-panel.tsx:529
+#: src/components/sessions/danmu-stats-panel.tsx:542
+msgid "No gift data"
+msgstr "暂无礼物数据"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:492
 msgid "No input paths"
@@ -5333,12 +5472,7 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/components/sessions/danmu-stats-panel.tsx:530
-#: src/components/sessions/danmu-stats-panel.tsx:544
-msgid "No gift data"
-msgstr "暂无礼物数据"
-
-#: src/components/sessions/danmu-stats-panel.tsx:409
+#: src/components/sessions/danmu-stats-panel.tsx:471
 msgid "No talker data"
 msgstr "暂无发言用户数据"
 
@@ -5363,7 +5497,7 @@ msgstr "暂无时间线事件"
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
-#: src/components/sessions/danmu-stats-panel.tsx:424
+#: src/components/sessions/danmu-stats-panel.tsx:508
 msgid "No word data"
 msgstr "暂无词频数据"
 
@@ -5673,7 +5807,7 @@ msgstr "空间不足"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:163
+#: src/components/config/shared-config-editor.tsx:161
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -5769,7 +5903,7 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:290
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:296
 msgid "Overview"
 msgstr "概览"
 
@@ -5813,23 +5947,23 @@ msgid "pagination"
 msgstr "分页"
 
 #: src/components/config/global/pipeline-config-card.tsx:206
-#: src/components/config/shared-config-editor.tsx:418
+#: src/components/config/shared-config-editor.tsx:416
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared-config-editor.tsx:559
+#: src/components/config/shared-config-editor.tsx:557
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
 #: src/components/config/global/pipeline-config-card.tsx:203
-#: src/components/config/shared-config-editor.tsx:415
+#: src/components/config/shared-config-editor.tsx:413
 msgid "Paired Segment"
 msgstr "配对分段"
 
 #: src/components/config/global/pipeline-config-card.tsx:214
 #: src/components/config/global/pipeline-config-card.tsx:295
-#: src/components/config/shared-config-editor.tsx:426
-#: src/components/config/shared-config-editor.tsx:529
+#: src/components/config/shared-config-editor.tsx:424
+#: src/components/config/shared-config-editor.tsx:527
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -5922,7 +6056,7 @@ msgstr "暂停"
 msgid "paused"
 msgstr "条已暂停"
 
-#: src/components/sessions/danmu-stats-panel.tsx:309
+#: src/components/sessions/danmu-stats-panel.tsx:367
 msgid "Peak / min"
 msgstr "峰值/分钟"
 
@@ -5964,14 +6098,14 @@ msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; com
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
 #: src/components/config/global/pipeline-config-card.tsx:166
-#: src/components/config/shared-config-editor.tsx:376
+#: src/components/config/shared-config-editor.tsx:374
 msgid "Per-segment"
 msgstr "逐段"
 
 #: src/components/config/global/pipeline-config-card.tsx:177
 #: src/components/config/global/pipeline-config-card.tsx:279
-#: src/components/config/shared-config-editor.tsx:387
-#: src/components/config/shared-config-editor.tsx:498
+#: src/components/config/shared-config-editor.tsx:385
+#: src/components/config/shared-config-editor.tsx:496
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
@@ -5993,7 +6127,7 @@ msgstr "需要权限"
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
-#: src/components/config/shared-config-editor.tsx:207
+#: src/components/config/shared-config-editor.tsx:205
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -6121,7 +6255,7 @@ msgstr "平台名称"
 msgid "Platform not found"
 msgstr "未找到平台"
 
-#: src/components/streamers/config/streamer-configuration.tsx:51
+#: src/components/streamers/config/streamer-configuration.tsx:50
 msgid "Platform options"
 msgstr "平台选项"
 
@@ -6146,10 +6280,10 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:269
+#: src/components/config/templates/template-editor.tsx:265
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:48
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
 msgid "Platforms"
 msgstr "平台"
 
@@ -6417,7 +6551,7 @@ msgstr "处理中"
 msgid "Processing Behavior"
 msgstr "处理行为"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:63
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:64
 msgid "Processing nodes"
 msgstr "处理节点"
 
@@ -6429,6 +6563,10 @@ msgstr "处理器"
 #: src/components/pipeline/presets/preset-editor.tsx:48
 msgid "Processor is required"
 msgstr "必须选择处理器"
+
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:70
+msgid "Programmatic & MCP access"
+msgstr "编程与 MCP 访问"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:276
 msgid "Progress"
@@ -6448,7 +6586,7 @@ msgid "Protocol Settings"
 msgstr "协议设置"
 
 #: src/components/config/global/network-system-card.tsx:236
-#: src/components/config/shared-config-editor.tsx:185
+#: src/components/config/shared-config-editor.tsx:183
 msgid "Proxy"
 msgstr "代理"
 
@@ -6575,6 +6713,18 @@ msgstr "Rclone 传输"
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:208
+msgid "Read-only"
+msgstr "只读"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:451
+msgid "Read-only — query data and configuration"
+msgstr "只读 — 查询数据和配置"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:588
+msgid "Read-only keys can call query tools only; configuration-changing tools require a full-access key. The key can also be sent via the X-Api-Key header."
+msgstr "只读密钥只能调用查询类工具；修改配置的工具需要完全访问密钥。密钥也可以通过 X-Api-Key 请求头发送。"
+
 #: src/components/config/engines/engine-card.tsx:74
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:330
 msgid "Ready"
@@ -6669,7 +6819,7 @@ msgstr "录制已开始"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:309
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:315
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -6826,8 +6976,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
 #: src/components/config/global/pipeline-config-card.tsx:229
-#: src/components/config/shared-config-editor.tsx:441
-#: src/components/config/shared-config-editor.tsx:539
+#: src/components/config/shared-config-editor.tsx:439
+#: src/components/config/shared-config-editor.tsx:537
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -6897,7 +7047,7 @@ msgstr "保留策略"
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
-#: src/components/sessions/danmu-stats-panel.tsx:174
+#: src/components/sessions/danmu-stats-panel.tsx:187
 msgid "Retry"
 msgstr "重试"
 
@@ -6939,6 +7089,22 @@ msgstr "处理管道步骤可复用的处理器配置"
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:308
+msgid "Revoke"
+msgstr "吊销"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:256
+msgid "Revoke API key"
+msgstr "吊销 API 密钥"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:288
+msgid "Revoke API key?"
+msgstr "吊销 API 密钥？"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:223
+msgid "Revoked"
+msgstr "已吊销"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:375
 msgid "Right"
 msgstr "右侧"
@@ -6968,26 +7134,26 @@ msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
 #: src/components/config/global/pipeline-config-card.tsx:281
-#: src/components/config/shared-config-editor.tsx:501
+#: src/components/config/shared-config-editor.tsx:499
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:313
-#: src/components/config/shared-config-editor.tsx:578
+#: src/components/config/shared-config-editor.tsx:576
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
 #: src/components/config/global/pipeline-config-card.tsx:261
-#: src/components/config/shared-config-editor.tsx:477
+#: src/components/config/shared-config-editor.tsx:475
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
 #: src/components/config/global/pipeline-config-card.tsx:223
-#: src/components/config/shared-config-editor.tsx:435
+#: src/components/config/shared-config-editor.tsx:433
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared-config-editor.tsx:533
+#: src/components/config/shared-config-editor.tsx:531
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -7050,7 +7216,7 @@ msgid "Save changes"
 msgstr "保存更改"
 
 #: src/components/config/platforms/platform-editor.tsx:161
-#: src/components/config/templates/template-editor.tsx:215
+#: src/components/config/templates/template-editor.tsx:212
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:612
@@ -7072,7 +7238,7 @@ msgid "Saving"
 msgstr "保存中"
 
 #: src/components/config/platforms/platform-editor.tsx:159
-#: src/components/config/templates/template-editor.tsx:211
+#: src/components/config/templates/template-editor.tsx:208
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7206,7 +7372,7 @@ msgid "Security & Identity"
 msgstr "安全与身份"
 
 #: src/components/config/global/pipeline-config-card.tsx:169
-#: src/components/config/shared-config-editor.tsx:379
+#: src/components/config/shared-config-editor.tsx:377
 msgid "Segment"
 msgstr "分段"
 
@@ -7416,25 +7582,25 @@ msgid "Server URL"
 msgstr "服务器地址"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
-#: src/components/config/shared-config-editor.tsx:461
+#: src/components/config/shared-config-editor.tsx:459
 #: src/components/pipeline/outputs/output-card.tsx:251
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "会话"
 
 #: src/components/config/global/pipeline-config-card.tsx:244
-#: src/components/config/shared-config-editor.tsx:458
+#: src/components/config/shared-config-editor.tsx:456
 msgid "Session Complete"
 msgstr "会话完成"
 
 #: src/components/config/global/pipeline-config-card.tsx:255
 #: src/components/config/global/pipeline-config-card.tsx:311
-#: src/components/config/shared-config-editor.tsx:469
-#: src/components/config/shared-config-editor.tsx:575
+#: src/components/config/shared-config-editor.tsx:467
+#: src/components/config/shared-config-editor.tsx:573
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared-config-editor.tsx:598
+#: src/components/config/shared-config-editor.tsx:596
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -7467,7 +7633,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:238
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:244
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -7508,7 +7674,7 @@ msgstr "设置新的录制工具配置"
 #: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:100
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:107
 msgid "Settings"
 msgstr "设置"
 
@@ -7528,7 +7694,8 @@ msgstr "Shadcn UI 主题预设"
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
-#: src/components/sessions/danmu-stats-panel.tsx:457
+#. placeholder {0}: stats.top_talkers.length
+#: src/components/sessions/danmu-stats-panel.tsx:496
 msgid "Show all {0}"
 msgstr "显示全部 {0} 位"
 
@@ -7536,7 +7703,7 @@ msgstr "显示全部 {0} 位"
 msgid "Show download details"
 msgstr "显示录制下载详情"
 
-#: src/components/sessions/danmu-stats-panel.tsx:452
+#: src/components/sessions/danmu-stats-panel.tsx:491
 msgid "Show less"
 msgstr "收起"
 
@@ -7725,6 +7892,7 @@ msgstr "已开始"
 msgid "State"
 msgstr "状态"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:179
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:479
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:441
@@ -7910,7 +8078,7 @@ msgstr "主播"
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:51
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:52
 msgid "Streaming services"
 msgstr "流媒体服务"
 
@@ -8025,7 +8193,7 @@ msgstr "系统已启动"
 msgid "System Status"
 msgstr "系统状态"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:45
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:46
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
@@ -8100,7 +8268,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:349
 #: src/components/layout/site-header.tsx:44
 #: src/components/sidebar/navbar.tsx:38
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:54
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:55
 msgid "Templates"
 msgstr "模板"
 
@@ -8138,6 +8306,10 @@ msgstr "配置与现有数据一致"
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:419
+msgid "The key inherits your account's permissions, limited by the access level you pick here."
+msgstr "密钥继承你账户的权限，并受此处选择的权限级别限制。"
+
 #: src/components/notifications/forms/channel-delivery-fields.tsx:156
 msgid "The language this channel's messages are written in, whoever reads them."
 msgstr "该渠道所发送消息使用的语言，与谁查看无关。"
@@ -8156,7 +8328,7 @@ msgstr "用于录制的底层工具。"
 
 #: src/components/layout/site-header.tsx:45
 #: src/components/sidebar/navbar.tsx:39
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:72
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:79
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:91
 msgid "Theme"
 msgstr "主题"
@@ -8199,9 +8371,13 @@ msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
 #: src/components/config/global/pipeline-config-card.tsx:183
-#: src/components/config/shared-config-editor.tsx:395
+#: src/components/config/shared-config-editor.tsx:393
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
+
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:552
+msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
+msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API 密钥将其添加到 Claude、Cursor 或任何 MCP 客户端，让助手查看录制、分析弹幕并管理配置。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:310
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
@@ -8304,8 +8480,8 @@ msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进�
 msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
-#: src/components/sessions/danmu-stats-panel.tsx:331
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:296
+#: src/components/sessions/danmu-stats-panel.tsx:393
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:302
 msgid "Timeline"
 msgstr "时间线"
 
@@ -8378,20 +8554,20 @@ msgstr "工具位置"
 msgid "Top Fixed"
 msgstr "顶部固定"
 
-#: src/components/sessions/danmu-stats-panel.tsx:529
+#: src/components/sessions/danmu-stats-panel.tsx:528
 msgid "Top Gifters"
 msgstr "送礼排行"
 
-#: src/components/sessions/danmu-stats-panel.tsx:543
+#: src/components/sessions/danmu-stats-panel.tsx:541
 msgid "Top Gifts"
 msgstr "热门礼物"
 
-#: src/components/sessions/danmu-stats-panel.tsx:315
-#: src/components/sessions/danmu-stats-panel.tsx:408
+#: src/components/sessions/danmu-stats-panel.tsx:373
+#: src/components/sessions/danmu-stats-panel.tsx:470
 msgid "Top Talkers"
 msgstr "活跃发言用户"
 
-#: src/components/sessions/danmu-stats-panel.tsx:423
+#: src/components/sessions/danmu-stats-panel.tsx:507
 msgid "Top Words"
 msgstr "高频词"
 
@@ -8403,7 +8579,7 @@ msgstr "总计"
 msgid "Total"
 msgstr "总计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:303
+#: src/components/sessions/danmu-stats-panel.tsx:361
 msgid "Total Danmu"
 msgstr "总弹幕数"
 
@@ -8473,12 +8649,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:389
+#: src/components/config/shared-config-editor.tsx:387
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
 #: src/components/config/global/pipeline-config-card.tsx:257
-#: src/components/config/shared-config-editor.tsx:471
+#: src/components/config/shared-config-editor.tsx:469
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -8539,7 +8715,7 @@ msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:428
+#: src/components/config/shared-config-editor.tsx:426
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -8635,6 +8811,10 @@ msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 msgid "Unhealthy"
 msgstr "不健康"
 
+#: src/components/sessions/danmu-stats-panel.tsx:379
+msgid "Unique Chatters"
+msgstr "互动人数"
+
 #: src/components/ui/input-with-unit.tsx:181
 msgid "Unit"
 msgstr "单位"
@@ -8646,10 +8826,6 @@ msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:218
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
-
-#: src/components/sessions/danmu-stats-panel.tsx:322
-msgid "Unique Chatters"
-msgstr "互动人数"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:595
 msgid "Unknown"

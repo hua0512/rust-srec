@@ -65,6 +65,10 @@ tower-http = { workspace = true }
 # OpenAPI / Swagger
 utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
+
+# MCP server (streamable HTTP endpoint at /api/mcp)
+rmcp = { workspace = true }
+schemars = { workspace = true }
 jsonwebtoken = { workspace = true }
 lettre = { workspace = true }
 mimalloc = { workspace = true }
