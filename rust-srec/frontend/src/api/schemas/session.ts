@@ -107,11 +107,20 @@ export const DanmuWordFrequencySchema = z.object({
   count: z.number(),
 });
 
+export const DanmuGiftTallySchema = z.object({
+  name: z.string(),
+  count: z.number(),
+});
+
 export const SessionDanmuStatisticsSchema = z.object({
   session_id: z.string(),
   total_danmus: z.number(),
+  // Null on statistics rows persisted before the metric existed.
+  unique_talkers: z.number().nullable().optional(),
   danmu_rate_timeseries: z.array(DanmuRatePointSchema),
   top_talkers: z.array(DanmuTopTalkerSchema),
+  top_gifters: z.array(DanmuTopTalkerSchema).optional().default([]),
+  top_gifts: z.array(DanmuGiftTallySchema).optional().default([]),
   word_frequency: z.array(DanmuWordFrequencySchema),
 });
 

@@ -411,7 +411,6 @@ async fn run_desktop_backend_init(
             event_capacity: 256,
             download_config: backend::DownloadManagerConfig::default(),
             pipeline_config: backend::PipelineManagerConfig::default(),
-            danmu_config: backend::DanmuServiceConfig::default(),
             api_config,
         },
     )

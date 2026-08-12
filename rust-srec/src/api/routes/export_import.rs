@@ -276,7 +276,6 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 record_danmu: t.record_danmu,
                 platform_overrides: t.platform_overrides.clone().map(parse_db_config),
                 download_retry_policy: t.download_retry_policy.clone().map(parse_db_config),
-                danmu_sampling_config: t.danmu_sampling_config.clone().map(parse_db_config),
                 download_engine: t.download_engine.clone(),
                 engines_override: t.engines_override.clone().map(parse_db_config),
                 proxy_config: t.proxy_config.clone().map(parse_db_config),

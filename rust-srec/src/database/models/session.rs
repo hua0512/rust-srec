@@ -118,7 +118,6 @@ pub struct LiveSessionDbModel {
     pub end_time: Option<i64>,
     /// JSON array of timestamped stream titles
     pub titles: Option<String>,
-    pub danmu_statistics_id: Option<String>,
     #[serde(default)]
     pub total_size_bytes: i64,
 }
@@ -131,7 +130,6 @@ impl LiveSessionDbModel {
             start_time: crate::database::time::now_ms(),
             end_time: None,
             titles: Some("[]".to_string()),
-            danmu_statistics_id: None,
             total_size_bytes: 0,
         }
     }
@@ -340,10 +338,16 @@ pub struct DanmuStatisticsDbModel {
     pub id: String,
     pub session_id: String,
     pub total_danmus: i64,
+    /// Approximate distinct senders (NULL on rows written before the column existed)
+    pub unique_talkers: Option<i64>,
     /// JSON array of timestamp-and-count pairs
     pub danmu_rate_timeseries: Option<String>,
     /// JSON array of top 10 most active users
     pub top_talkers: Option<String>,
+    /// JSON array of top gift senders (weighted by gift items)
+    pub top_gifters: Option<String>,
+    /// JSON array of gift-name tallies
+    pub top_gifts: Option<String>,
     /// JSON array of word-frequency entries
     pub word_frequency: Option<String>,
 }
@@ -354,8 +358,11 @@ impl DanmuStatisticsDbModel {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: session_id.into(),
             total_danmus: 0,
+            unique_talkers: None,
             danmu_rate_timeseries: Some("[]".to_string()),
             top_talkers: Some("[]".to_string()),
+            top_gifters: Some("[]".to_string()),
+            top_gifts: Some("[]".to_string()),
             word_frequency: Some("[]".to_string()),
         }
     }
@@ -367,6 +374,20 @@ pub struct TopTalkerEntry {
     pub user_id: String,
     pub username: String,
     pub message_count: i64,
+}
+
+/// Gift tally entry for danmu statistics (gift name -> total items).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GiftTallyEntry {
+    pub name: String,
+    pub count: i64,
+}
+
+/// Word frequency entry for danmu statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordFrequencyEntry {
+    pub word: String,
+    pub count: i64,
 }
 
 /// Danmu rate entry for timeseries.

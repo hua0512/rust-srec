@@ -18,63 +18,14 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::danmu::{
-    DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, ProviderRegistry,
-    create_sampler,
-};
-use crate::database::models::DanmuRateEntry;
+use crate::danmu::{DanmuStatistics, ProviderRegistry};
+use crate::database::models::{DanmuRateEntry, GiftTallyEntry, TopTalkerEntry, WordFrequencyEntry};
 use crate::database::repositories::SessionRepository;
-use crate::domain::DanmuSamplingConfig;
 use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
 
 use super::events::{CollectionCommand, DanmuEvent};
 use super::runner::{CollectionRunner, RunnerParams};
-
-/// Configuration for the danmu service.
-#[derive(Debug, Clone)]
-pub struct DanmuServiceConfig {
-    /// Whether statistics aggregation is enabled.
-    ///
-    /// When disabled, the service still records danmu to segment files, but does not compute
-    /// per-session statistics (top talkers, word frequency, rate timeseries, etc.).
-    pub statistics_enabled: bool,
-    /// Whether sampling is enabled.
-    ///
-    /// Sampling is an optimization hint for statistics. When disabled, the sampler is not updated.
-    pub sampling_enabled: bool,
-    /// Default sampling configuration
-    pub default_sampling: DanmuSamplingConfig,
-    /// Buffer size for statistics (number of recent messages to keep)
-    pub stats_buffer_size: usize,
-}
-
-impl Default for DanmuServiceConfig {
-    fn default() -> Self {
-        Self {
-            statistics_enabled: false,
-            sampling_enabled: false,
-            default_sampling: DanmuSamplingConfig::default(),
-            stats_buffer_size: 100,
-        }
-    }
-}
-
-/// Convert domain DanmuSamplingConfig to sampler config.
-fn to_sampler_config(config: &DanmuSamplingConfig) -> SamplerConfig {
-    use crate::domain::value_objects::SamplingStrategy;
-
-    match config.strategy {
-        SamplingStrategy::Fixed => SamplerConfig::Fixed {
-            interval_secs: config.interval_secs as u64,
-        },
-        SamplingStrategy::Dynamic => SamplerConfig::Velocity {
-            min_interval_secs: config.min_interval_secs as u64,
-            max_interval_secs: config.max_interval_secs as u64,
-            target_danmus_per_sample: config.target_danmus_per_sample,
-        },
-    }
-}
 
 /// Handle for controlling a danmu collection session.
 #[derive(Clone)]
@@ -140,29 +91,8 @@ struct CollectionState {
     done_rx: Option<oneshot::Receiver<std::result::Result<DanmuStatistics, String>>>,
 }
 
-#[derive(Debug, Default)]
-struct NoopSampler;
-
-impl DanmuSampler for NoopSampler {
-    fn record_message(&mut self, _timestamp: chrono::DateTime<chrono::Utc>) {}
-
-    fn should_sample(&self, _now: chrono::DateTime<chrono::Utc>) -> bool {
-        false
-    }
-
-    fn mark_sampled(&mut self, _timestamp: chrono::DateTime<chrono::Utc>) {}
-
-    fn current_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(u64::MAX / 2)
-    }
-
-    fn reset(&mut self) {}
-}
-
 /// Danmu collection service.
 pub struct DanmuService {
-    /// Configuration
-    config: DanmuServiceConfig,
     /// Provider registry
     providers: Arc<ProviderRegistry>,
     /// Active collections (session_id -> state)
@@ -177,32 +107,27 @@ pub struct DanmuService {
     session_repo: Option<Arc<dyn crate::database::repositories::SessionRepository>>,
 }
 
+impl Default for DanmuService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DanmuService {
-    const DEFAULT_MAX_TOP_TALKERS: usize = 32;
-    const DEFAULT_MAX_WORDS: usize = 50;
-    const DEFAULT_RATE_BUCKET_SECS: u64 = 10;
+    const MAX_TOP_TALKERS: usize = 32;
+    const MAX_WORDS: usize = 50;
+    const RATE_BUCKET_SECS: u64 = 10;
 
     /// Create a new danmu service.
-    pub fn new(config: DanmuServiceConfig) -> Self {
-        let (event_tx, _) = broadcast::channel(256);
-
-        Self {
-            config,
-            providers: Arc::new(ProviderRegistry::with_defaults()),
-            collections: Arc::new(DashMap::new()),
-            sessions_by_streamer: Arc::new(DashMap::new()),
-            event_tx,
-            cancel_token: CancellationToken::new(),
-            session_repo: None,
-        }
+    pub fn new() -> Self {
+        Self::with_providers(ProviderRegistry::with_defaults())
     }
 
     /// Create a new danmu service with custom providers.
-    pub fn with_providers(config: DanmuServiceConfig, providers: ProviderRegistry) -> Self {
+    pub fn with_providers(providers: ProviderRegistry) -> Self {
         let (event_tx, _) = broadcast::channel(256);
 
         Self {
-            config,
             providers: Arc::new(providers),
             collections: Arc::new(DashMap::new()),
             sessions_by_streamer: Arc::new(DashMap::new()),
@@ -240,7 +165,6 @@ impl DanmuService {
         session_id: &str,
         streamer_id: &str,
         streamer_url: &str,
-        sampling_config: Option<DanmuSamplingConfig>,
         cookies: Option<String>,
         extras: Option<std::collections::HashMap<String, String>>,
     ) -> Result<CollectionHandle> {
@@ -369,22 +293,12 @@ impl DanmuService {
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
 
-        // Build bounded per-session statistics/sampler state.
-        let max_top_talkers =
-            Self::DEFAULT_MAX_TOP_TALKERS.min(self.config.stats_buffer_size.max(10));
-        let max_words = Self::DEFAULT_MAX_WORDS.min(self.config.stats_buffer_size.max(25));
+        // Build bounded per-session statistics state.
         let stats = platforms_parser::danmaku::StatisticsAggregator::with_config(
-            max_top_talkers,
-            max_words,
-            Self::DEFAULT_RATE_BUCKET_SECS,
+            Self::MAX_TOP_TALKERS,
+            Self::MAX_WORDS,
+            Self::RATE_BUCKET_SECS,
         );
-        let sampler: Box<dyn DanmuSampler> = if self.config.sampling_enabled {
-            let sampling = sampling_config.unwrap_or_else(|| self.config.default_sampling.clone());
-            let sampler_config = to_sampler_config(&sampling);
-            create_sampler(&sampler_config)
-        } else {
-            Box::new(NoopSampler)
-        };
         let cancel_token = self.cancel_token.child_token();
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
@@ -410,7 +324,6 @@ impl DanmuService {
         let sessions_by_streamer = self.sessions_by_streamer.clone();
         let session_repo = self.session_repo.clone();
         let provider = Arc::clone(&provider);
-        let sampling_enabled = self.config.sampling_enabled;
         let conn_config = connection_config;
         let cancel_token_task = cancel_token.clone();
 
@@ -424,8 +337,7 @@ impl DanmuService {
                     provider: Arc::clone(&provider),
                     conn_config,
                     stats,
-                    sampler,
-                    sampling_enabled,
+                    session_repo: session_repo.clone(),
                     event_tx: event_tx.clone(),
                 }),
             )
@@ -684,81 +596,94 @@ fn saturating_u64_to_i64(value: u64) -> i64 {
     }
 }
 
-async fn persist_statistics(
+/// Serialize and upsert danmu statistics for a session.
+///
+/// Called from `stop_collection`/runner-exit with final statistics, and from
+/// `CollectionRunner::run`'s periodic persist tick with in-progress snapshots,
+/// so `GET /api/sessions/{id}/danmu-statistics` reflects live sessions and a
+/// crash loses at most one persist interval of data.
+pub(super) async fn persist_statistics(
     session_repo: Option<&dyn SessionRepository>,
     session_id: &str,
     statistics: &DanmuStatistics,
 ) {
-    #[derive(serde::Serialize)]
-    struct TopTalkerView<'a> {
-        user_id: &'a str,
-        username: &'a str,
-        message_count: i64,
-    }
-
-    #[derive(serde::Serialize)]
-    struct WordFrequencyView<'a> {
-        word: &'a str,
-        count: i64,
-    }
-
     let Some(repo) = session_repo else {
         return;
     };
 
-    let rate_timeseries = statistics
+    // Serialize each aggregate independently: a failed field degrades to NULL
+    // instead of dropping the whole upsert.
+    fn to_json_field<T: serde::Serialize>(
+        session_id: &str,
+        field: &'static str,
+        value: &T,
+    ) -> Option<String> {
+        match serde_json::to_string(value) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                warn!(session_id, field, %error, "Failed to serialize danmu statistics field");
+                None
+            }
+        }
+    }
+
+    let rate_timeseries: Vec<_> = statistics
         .rate_timeseries
         .iter()
         .map(|entry| DanmuRateEntry {
             ts: entry.timestamp.timestamp_millis(),
             count: saturating_u64_to_i64(entry.count),
-        });
-    let danmu_rate_timeseries = match serde_json::to_string(&rate_timeseries.collect::<Vec<_>>()) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            warn!(session_id, %error, "Failed to serialize danmu rate timeseries");
-            None
-        }
-    };
+        })
+        .collect();
 
-    let top_talkers = statistics.top_talkers.iter().map(|entry| TopTalkerView {
-        user_id: entry.user_id.as_str(),
-        username: entry.username.as_str(),
-        message_count: saturating_u64_to_i64(entry.message_count),
-    });
-    let top_talkers = match serde_json::to_string(&top_talkers.collect::<Vec<_>>()) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            warn!(session_id, %error, "Failed to serialize top talkers");
-            None
-        }
-    };
+    let top_talkers: Vec<_> = statistics
+        .top_talkers
+        .iter()
+        .map(|entry| TopTalkerEntry {
+            user_id: entry.user_id.clone(),
+            username: entry.username.clone(),
+            message_count: saturating_u64_to_i64(entry.message_count),
+        })
+        .collect();
 
-    let word_frequency = statistics
+    let top_gifters: Vec<_> = statistics
+        .top_gifters
+        .iter()
+        .map(|entry| TopTalkerEntry {
+            user_id: entry.user_id.clone(),
+            username: entry.username.clone(),
+            message_count: saturating_u64_to_i64(entry.message_count),
+        })
+        .collect();
+
+    let top_gifts: Vec<_> = statistics
+        .top_gifts
+        .iter()
+        .map(|entry| GiftTallyEntry {
+            name: entry.name.clone(),
+            count: saturating_u64_to_i64(entry.count),
+        })
+        .collect();
+
+    let word_frequency: Vec<_> = statistics
         .word_frequency
         .iter()
-        .map(|entry| WordFrequencyView {
-            word: entry.word.as_str(),
+        .map(|entry| WordFrequencyEntry {
+            word: entry.word.clone(),
             count: saturating_u64_to_i64(entry.count),
-        });
-    let word_frequency = match serde_json::to_string(&word_frequency.collect::<Vec<_>>()) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            warn!(session_id, %error, "Failed to serialize word frequency");
-            None
-        }
-    };
+        })
+        .collect();
 
-    if let Err(error) = repo
-        .upsert_danmu_statistics(
-            session_id,
-            saturating_u64_to_i64(statistics.total_count),
-            danmu_rate_timeseries.as_deref(),
-            top_talkers.as_deref(),
-            word_frequency.as_deref(),
-        )
-        .await
-    {
+    let mut model = crate::database::models::DanmuStatisticsDbModel::new(session_id);
+    model.total_danmus = saturating_u64_to_i64(statistics.total_count);
+    model.unique_talkers = Some(saturating_u64_to_i64(statistics.unique_talkers));
+    model.danmu_rate_timeseries = to_json_field(session_id, "rate_timeseries", &rate_timeseries);
+    model.top_talkers = to_json_field(session_id, "top_talkers", &top_talkers);
+    model.top_gifters = to_json_field(session_id, "top_gifters", &top_gifters);
+    model.top_gifts = to_json_field(session_id, "top_gifts", &top_gifts);
+    model.word_frequency = to_json_field(session_id, "word_frequency", &word_frequency);
+
+    if let Err(error) = repo.upsert_danmu_statistics(&model).await {
         warn!(session_id, %error, "Failed to persist danmu statistics");
     }
 }
@@ -795,24 +720,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_danmu_service_creation() {
-        let config = DanmuServiceConfig::default();
-        let service = DanmuService::new(config);
+        let service = DanmuService::new();
 
         assert!(service.active_sessions().is_empty());
     }
 
     #[tokio::test]
     async fn test_is_collecting() {
-        let config = DanmuServiceConfig::default();
-        let service = DanmuService::new(config);
+        let service = DanmuService::new();
 
         assert!(!service.is_collecting("session1"));
     }
 
     #[tokio::test]
     async fn test_get_session_by_streamer_empty() {
-        let config = DanmuServiceConfig::default();
-        let service = DanmuService::new(config);
+        let service = DanmuService::new();
 
         // Should return None when no sessions exist
         assert!(service.get_session_by_streamer("streamer1").is_none());
@@ -824,7 +746,7 @@ mod tests {
     /// orphaned alongside the new session's collector.
     #[tokio::test]
     async fn start_collection_aborts_previous_for_same_streamer() {
-        let service = DanmuService::new(DanmuServiceConfig::default());
+        let service = DanmuService::new();
         let streamer_id = "streamer-1";
         let old_session = "session-old";
         let new_session = "session-new";
@@ -855,7 +777,6 @@ mod tests {
                 "https://example.com/test",
                 None,
                 None,
-                None,
             )
             .await;
         assert!(
@@ -881,7 +802,7 @@ mod tests {
     /// guard.
     #[tokio::test]
     async fn start_collection_idempotent_for_same_session_id() {
-        let service = DanmuService::new(DanmuServiceConfig::default());
+        let service = DanmuService::new();
         let streamer_id = "streamer-1";
         let session_id = "session-1";
 
@@ -892,7 +813,6 @@ mod tests {
                 session_id,
                 streamer_id,
                 "https://example.com/test",
-                None,
                 None,
                 None,
             )

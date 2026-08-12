@@ -2,7 +2,7 @@
 
 use crate::credentials::extractor_platform_extras;
 use crate::database::models::job::DagPipelineDefinition;
-use crate::domain::{DanmuSamplingConfig, ProxyConfig, RetryPolicy};
+use crate::domain::{ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use platforms_parser::extractor::factory::ExtractorSelection;
 use platforms_parser::extractor::platform_configs::merge_platform_extras;
@@ -27,7 +27,6 @@ pub struct MergedConfig {
 
     // Danmu settings
     pub record_danmu: bool,
-    pub danmu_sampling_config: DanmuSamplingConfig,
 
     // Network settings
     pub proxy_config: ProxyConfig,
@@ -84,7 +83,6 @@ pub struct MergedConfigBuilder {
     max_download_duration_secs: Option<i64>,
     max_part_size_bytes: Option<i64>,
     record_danmu: Option<bool>,
-    danmu_sampling_config: Option<DanmuSamplingConfig>,
     proxy_config: Option<ProxyConfig>,
     cookies: Option<String>,
     download_engine: Option<String>,
@@ -164,7 +162,6 @@ pub struct TemplateConfigLayer {
     pub download_engine: Option<String>,
     pub extractor: Option<ExtractorSelection>,
     pub download_retry_policy: Option<RetryPolicy>,
-    pub danmu_sampling_config: Option<DanmuSamplingConfig>,
     pub stream_selection: Option<StreamSelectionConfig>,
     pub engines_override: Option<serde_json::Value>,
     pub pipeline: Option<DagPipelineDefinition>,
@@ -217,7 +214,6 @@ impl MergedConfigBuilder {
         if let Some(v) = extractor {
             self.extractor = Some(v);
         }
-        self.danmu_sampling_config = Some(DanmuSamplingConfig::default());
         self.download_retry_policy = Some(RetryPolicy::default());
         self.pipeline = pipeline;
         self.session_complete_pipeline = session_complete_pipeline;
@@ -371,7 +367,6 @@ impl MergedConfigBuilder {
             download_engine,
             extractor,
             download_retry_policy,
-            danmu_sampling_config,
             stream_selection,
             engines_override,
             pipeline,
@@ -439,10 +434,6 @@ impl MergedConfigBuilder {
         if let Some(v) = download_retry_policy {
             debug!("Template override: download_retry_policy");
             self.download_retry_policy = Some(v);
-        }
-        if let Some(v) = danmu_sampling_config {
-            debug!("Template override: danmu_sampling_config");
-            self.danmu_sampling_config = Some(v);
         }
         if let Some(v) = stream_selection {
             // Merge stream selection config
@@ -615,13 +606,6 @@ impl MergedConfigBuilder {
                 self.download_retry_policy = Some(v);
             }
 
-            if let Some(v) = config.get("danmu_sampling_config")
-                && let Ok(v) = serde_json::from_value::<DanmuSamplingConfig>(v.clone())
-            {
-                debug!("Streamer config override: danmu_sampling_config");
-                self.danmu_sampling_config = Some(v);
-            }
-
             // Merge platform extras from streamer layer.
             //
             // Stripped the same way `ConfigResolver` strips the platform and template layers:
@@ -706,7 +690,6 @@ impl MergedConfigBuilder {
             max_download_duration_secs: self.max_download_duration_secs.unwrap_or(0),
             max_part_size_bytes: self.max_part_size_bytes.unwrap_or(8589934592),
             record_danmu,
-            danmu_sampling_config: self.danmu_sampling_config.unwrap_or_default(),
             proxy_config: self.proxy_config.unwrap_or_default(),
             cookies: self.cookies,
             download_engine,

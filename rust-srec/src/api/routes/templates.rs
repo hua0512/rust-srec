@@ -91,7 +91,6 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         max_download_duration_secs: model.max_download_duration_secs,
         max_part_size_bytes: model.max_part_size_bytes,
         download_retry_policy: model.download_retry_policy.clone(),
-        danmu_sampling_config: model.danmu_sampling_config.clone(),
         proxy_config: model.proxy_config.clone(),
         pipeline: model.pipeline.clone(),
         session_complete_pipeline: model.session_complete_pipeline.clone(),
@@ -178,7 +177,6 @@ pub async fn create_template(
     template.max_download_duration_secs = request.max_download_duration_secs;
     template.max_part_size_bytes = request.max_part_size_bytes;
     template.download_retry_policy = request.download_retry_policy;
-    template.danmu_sampling_config = request.danmu_sampling_config;
     template.proxy_config = request.proxy_config;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
@@ -348,7 +346,6 @@ pub async fn update_template(
     template.max_download_duration_secs = request.max_download_duration_secs;
     template.max_part_size_bytes = request.max_part_size_bytes;
     template.download_retry_policy = request.download_retry_policy;
-    template.danmu_sampling_config = request.danmu_sampling_config;
     template.proxy_config = request.proxy_config;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
@@ -486,7 +483,6 @@ pub async fn clone_template(
     cloned.max_download_duration_secs = existing.max_download_duration_secs;
     cloned.max_part_size_bytes = existing.max_part_size_bytes;
     cloned.download_retry_policy = existing.download_retry_policy;
-    cloned.danmu_sampling_config = existing.danmu_sampling_config;
     cloned.proxy_config = existing.proxy_config;
     cloned.pipeline = existing.pipeline;
     cloned.session_complete_pipeline = existing.session_complete_pipeline;
@@ -531,7 +527,6 @@ mod tests {
             max_download_duration_secs: None,
             max_part_size_bytes: None,
             download_retry_policy: None,
-            danmu_sampling_config: None,
             proxy_config: None,
             pipeline: None,
             session_complete_pipeline: None,

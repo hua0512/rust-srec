@@ -96,7 +96,6 @@ impl ServiceContainer {
             event_capacity,
             download_config,
             pipeline_config,
-            danmu_config,
             api_config,
         } = options;
 
@@ -337,10 +336,10 @@ impl ServiceContainer {
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
         let monitor_event_broadcaster_ms = monitor_event_broadcaster_start.elapsed().as_millis();
 
-        // Create danmu service with custom config
+        // Create danmu service
         let danmu_service_start = Instant::now();
         let danmu_service =
-            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo.clone()));
+            Arc::new(DanmuService::new().with_session_repository(session_repo.clone()));
         let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config

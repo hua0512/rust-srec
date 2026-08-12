@@ -14,7 +14,7 @@ use crate::credentials::{
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
-use crate::domain::{DanmuSamplingConfig, ProxyConfig, RetryPolicy};
+use crate::domain::{ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
@@ -312,16 +312,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; ignoring",
             );
-            let template_danmu: Option<DanmuSamplingConfig> = json::parse_optional(
-                template_config.danmu_sampling_config.as_deref(),
-                JsonContext::StreamerConfig {
-                    streamer_id: &streamer.id,
-                    scope: "template",
-                    scope_id: Some(template_id),
-                    field: "danmu_sampling_config",
-                },
-                "Invalid JSON config; ignoring",
-            );
             let template_stream_selection: Option<StreamSelectionConfig> = json::parse_optional(
                 template_config.stream_selection_config.as_deref(),
                 JsonContext::StreamerConfig {
@@ -448,7 +438,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 download_engine: template_config.download_engine,
                 extractor: parse_extractor(template_config.extractor.as_deref(), "template"),
                 download_retry_policy: template_retry,
-                danmu_sampling_config: template_danmu,
                 stream_selection: template_stream_selection,
                 engines_override: template_engines_override,
                 pipeline: template_pipeline,

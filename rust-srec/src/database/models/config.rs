@@ -250,8 +250,6 @@ pub struct TemplateConfigDbModel {
     pub platform_overrides: Option<String>,
     /// JSON serialized RetryPolicy
     pub download_retry_policy: Option<String>,
-    /// JSON serialized DanmuSamplingConfig
-    pub danmu_sampling_config: Option<String>,
     /// Name of the engine configuration to use
     pub download_engine: Option<String>,
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform/global value.
@@ -289,7 +287,6 @@ impl TemplateConfigDbModel {
             record_danmu: None,
             platform_overrides: None,
             download_retry_policy: None,
-            danmu_sampling_config: None,
             download_engine: None,
             extractor: None,
             engines_override: None,

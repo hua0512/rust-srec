@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 use crate::Result;
 use crate::api::server::ApiServerConfig;
 use crate::config::{ConfigEventBroadcaster, ConfigService};
-use crate::danmu::{DanmuService, service::DanmuServiceConfig};
+use crate::danmu::DanmuService;
 use crate::database::maintenance::MaintenanceScheduler;
 use crate::database::repositories::NotificationRepository;
 use crate::database::repositories::{
@@ -261,7 +261,6 @@ pub struct ServiceContainerConfig {
     pub event_capacity: usize,
     pub download_config: DownloadManagerConfig,
     pub pipeline_config: PipelineManagerConfig,
-    pub danmu_config: DanmuServiceConfig,
     pub api_config: ApiServerConfig,
 }
 
@@ -272,7 +271,6 @@ impl ServiceContainerConfig {
             event_capacity,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: PipelineManagerConfig::default(),
-            danmu_config: DanmuServiceConfig::default(),
             api_config: ApiServerConfig::from_env_or_default(),
         }
     }
@@ -787,7 +785,6 @@ mod tests {
                 event_capacity: 8,
                 download_config: crate::downloader::DownloadManagerConfig::default(),
                 pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-                danmu_config: crate::danmu::service::DanmuServiceConfig::default(),
                 api_config: crate::api::server::ApiServerConfig::default(),
             },
         )

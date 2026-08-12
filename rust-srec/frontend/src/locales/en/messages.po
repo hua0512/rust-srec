@@ -3709,6 +3709,11 @@ msgstr "Generate new QR code"
 msgid "Generating QR code..."
 msgstr "Generating QR code..."
 
+#: src/components/sessions/danmu-stats-panel.tsx:290
+#: src/components/sessions/danmu-stats-panel.tsx:302
+msgid "Gift items"
+msgstr "Gift items"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:199
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
@@ -5327,6 +5332,10 @@ msgstr "No steps defined"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:834
 msgid "No streamers found"
 msgstr "No streamers found"
+
+#: src/components/sessions/danmu-stats-panel.tsx:409
+msgid "No gift data"
+msgstr "No gift data"
 
 #: src/components/sessions/danmu-stats-panel.tsx:409
 msgid "No talker data"
@@ -7518,9 +7527,17 @@ msgstr "Shadcn UI Theme Presets"
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
+#: src/components/sessions/danmu-stats-panel.tsx:457
+msgid "Show all {0}"
+msgstr "Show all {0}"
+
 #: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "Show download details"
+
+#: src/components/sessions/danmu-stats-panel.tsx:452
+msgid "Show less"
+msgstr "Show less"
 
 #: src/routes/_authed/change-password.lazy.tsx:166
 #: src/routes/_authed/change-password.lazy.tsx:208
@@ -8362,6 +8379,15 @@ msgstr "Top Fixed"
 
 #: src/components/sessions/danmu-stats-panel.tsx:315
 #: src/components/sessions/danmu-stats-panel.tsx:408
+msgid "Top Gifters"
+msgstr "Top Gifters"
+
+#: src/components/sessions/danmu-stats-panel.tsx:543
+msgid "Top Gifts"
+msgstr "Top Gifts"
+
+#: src/components/sessions/danmu-stats-panel.tsx:315
+#: src/components/sessions/danmu-stats-panel.tsx:408
 msgid "Top Talkers"
 msgstr "Top Talkers"
 
@@ -8416,10 +8442,6 @@ msgstr "TPS Limit help"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:139
 msgid "Track Information"
 msgstr "Track Information"
-
-#: src/components/sessions/danmu-stats-panel.tsx:321
-msgid "Tracked Words"
-msgstr "Tracked Words"
 
 #: src/components/pipeline/presets/preset-templates.ts:14
 msgid "Transcode H.264"
@@ -8624,6 +8646,10 @@ msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:218
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
+
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:595
+msgid "Unique Chatters"
+msgstr "Unique Chatters"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:595
 msgid "Unknown"

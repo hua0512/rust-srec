@@ -18,13 +18,14 @@ use axum::{
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse, PaginatedResponse,
-    PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse, SessionFilterParams,
-    SessionResponse, SessionSegmentResponse, TitleChange,
+    DanmuGiftTally, DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse,
+    PaginatedResponse, PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse,
+    SessionFilterParams, SessionResponse, SessionSegmentResponse, TitleChange,
 };
 use crate::api::server::AppState;
 use crate::database::models::{
-    DanmuRateEntry, MediaFileType, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
+    DanmuRateEntry, GiftTallyEntry, MediaFileType, Pagination, SessionFilters, TitleEntry,
+    TopTalkerEntry,
 };
 use crate::session::SessionEvent;
 
@@ -510,18 +511,36 @@ pub async fn get_session_danmu_statistics(
         })
         .collect();
 
-    let top_talkers = stats
-        .top_talkers
+    let parse_talkers = |json: Option<&str>, field: &'static str| {
+        json.map(serde_json::from_str::<Vec<TopTalkerEntry>>)
+            .transpose()
+            .map_err(|e| ApiError::internal(format!("Failed to parse {field}: {e}")))
+            .map(|entries| {
+                entries
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|entry| DanmuTopTalker {
+                        user_id: entry.user_id,
+                        username: entry.username,
+                        message_count: entry.message_count,
+                    })
+                    .collect::<Vec<_>>()
+            })
+    };
+    let top_talkers = parse_talkers(stats.top_talkers.as_deref(), "top talkers")?;
+    let top_gifters = parse_talkers(stats.top_gifters.as_deref(), "top gifters")?;
+
+    let top_gifts = stats
+        .top_gifts
         .as_deref()
-        .map(serde_json::from_str::<Vec<TopTalkerEntry>>)
+        .map(serde_json::from_str::<Vec<GiftTallyEntry>>)
         .transpose()
-        .map_err(|e| ApiError::internal(format!("Failed to parse top talkers: {e}")))?
+        .map_err(|e| ApiError::internal(format!("Failed to parse top gifts: {e}")))?
         .unwrap_or_default()
         .into_iter()
-        .map(|entry| DanmuTopTalker {
-            user_id: entry.user_id,
-            username: entry.username,
-            message_count: entry.message_count,
+        .map(|entry| DanmuGiftTally {
+            name: entry.name,
+            count: entry.count,
         })
         .collect();
 
@@ -537,8 +556,13 @@ pub async fn get_session_danmu_statistics(
     let response = SessionDanmuStatisticsResponse {
         session_id: session.id,
         total_danmus: u64::try_from(stats.total_danmus).unwrap_or(0),
+        unique_talkers: stats
+            .unique_talkers
+            .map(|value| u64::try_from(value).unwrap_or(0)),
         danmu_rate_timeseries,
         top_talkers,
+        top_gifters,
+        top_gifts,
         word_frequency,
     };
 

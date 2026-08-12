@@ -1,14 +1,25 @@
-import { type ReactNode, memo, useCallback, useMemo, useRef } from 'react';
+import {
+  type ReactNode,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { motion } from 'motion/react';
 import {
   Activity,
+  ChevronDown,
+  ChevronUp,
   Clock,
+  Gift,
   MessageCircleMore,
   RotateCcw,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import {
   Area,
@@ -41,6 +52,8 @@ import { cn } from '@/lib/utils';
 // ---------------------------------------------------------------------------
 
 const MAX_CHART_POINTS = 150;
+// Talkers shown before expanding; the backend records up to 32.
+const TOP_TALKERS_COLLAPSED = 6;
 const AREA_MARGIN = { top: 8, right: 8, left: 0, bottom: 8 } as const;
 const BAR_MARGIN = { top: 4, right: 8, left: 0, bottom: 4 } as const;
 const BAR_RADIUS_H: [number, number, number, number] = [0, 4, 4, 0];
@@ -225,7 +238,19 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
     };
   }, [stats]);
 
-  const topTalkers = useMemo(() => stats.top_talkers.slice(0, 6), [stats]);
+  const [showAllTalkers, setShowAllTalkers] = useState(false);
+  const toggleShowAllTalkers = useCallback(
+    () => setShowAllTalkers((prev) => !prev),
+    [],
+  );
+
+  const topTalkers = useMemo(
+    () =>
+      showAllTalkers
+        ? stats.top_talkers
+        : stats.top_talkers.slice(0, TOP_TALKERS_COLLAPSED),
+    [stats, showAllTalkers],
+  );
   const topWords = useMemo(() => stats.word_frequency.slice(0, 10), [stats]);
 
   const talkersChartData = useMemo(
@@ -236,6 +261,17 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       })),
     [topTalkers],
   );
+
+  const giftersChartData = useMemo(
+    () =>
+      stats.top_gifters.slice(0, 6).map((item) => ({
+        name: item.username || item.user_id,
+        message_count: item.message_count,
+      })),
+    [stats],
+  );
+  const topGifts = useMemo(() => stats.top_gifts.slice(0, 10), [stats]);
+  const hasGiftData = giftersChartData.length > 0 || topGifts.length > 0;
 
   // -- chart configs -------------------------------------------------------
 
@@ -267,6 +303,28 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
         count: {
           label: i18n._(msg`Count`),
           color: 'var(--chart-3)',
+        },
+      }) satisfies ChartConfig,
+    [i18n],
+  );
+
+  const giftersChartConfig = useMemo(
+    () =>
+      ({
+        message_count: {
+          label: i18n._(msg`Gift items`),
+          color: 'var(--chart-4)',
+        },
+      }) satisfies ChartConfig,
+    [i18n],
+  );
+
+  const giftsChartConfig = useMemo(
+    () =>
+      ({
+        count: {
+          label: i18n._(msg`Gift items`),
+          color: 'var(--chart-5)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -313,13 +371,17 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
             <MetricBlock
               icon={<Users className="h-4 w-4 text-purple-500" />}
               label={i18n._(msg`Top Talkers`)}
-              value={topTalkers.length.toString()}
+              value={stats.top_talkers.length.toString()}
               accent="bg-purple-500/10"
             />
             <MetricBlock
-              icon={<MessageCircleMore className="h-4 w-4 text-emerald-500" />}
-              label={i18n._(msg`Tracked Words`)}
-              value={stats.word_frequency.length.toString()}
+              icon={<UsersRound className="h-4 w-4 text-emerald-500" />}
+              label={i18n._(msg`Unique Chatters`)}
+              value={
+                stats.unique_talkers != null
+                  ? stats.unique_talkers.toLocaleString()
+                  : '—'
+              }
               accent="bg-emerald-500/10"
             />
           </motion.div>
@@ -415,6 +477,28 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               barSize={20}
               rowHeight={36}
               shouldAnimate={shouldAnimate}
+              footer={
+                stats.top_talkers.length > TOP_TALKERS_COLLAPSED && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-7 w-full text-xs text-muted-foreground"
+                    onClick={toggleShowAllTalkers}
+                  >
+                    {showAllTalkers ? (
+                      <>
+                        <ChevronUp className="mr-1 h-3.5 w-3.5" />
+                        <Trans>Show less</Trans>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="mr-1 h-3.5 w-3.5" />
+                        <Trans>Show all {stats.top_talkers.length}</Trans>
+                      </>
+                    )}
+                  </Button>
+                )
+              }
             />
             <RankBarChart
               icon={
@@ -432,6 +516,41 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               shouldAnimate={shouldAnimate}
             />
           </motion.div>
+
+          {/* ── Gift charts (only when the platform reported gifts) ── */}
+          {hasGiftData && (
+            <motion.div
+              variants={containerVariants}
+              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            >
+              <RankBarChart
+                icon={<Gift className="h-3.5 w-3.5 text-pink-500" />}
+                title={i18n._(msg`Top Gifters`)}
+                emptyLabel={i18n._(msg`No gift data`)}
+                config={giftersChartConfig}
+                data={giftersChartData}
+                dataKey="message_count"
+                categoryKey="name"
+                yAxisWidth={80}
+                barSize={20}
+                rowHeight={36}
+                shouldAnimate={shouldAnimate}
+              />
+              <RankBarChart
+                icon={<Gift className="h-3.5 w-3.5 text-amber-500" />}
+                title={i18n._(msg`Top Gifts`)}
+                emptyLabel={i18n._(msg`No gift data`)}
+                config={giftsChartConfig}
+                data={topGifts}
+                dataKey="count"
+                categoryKey="name"
+                yAxisWidth={72}
+                barSize={18}
+                rowHeight={32}
+                shouldAnimate={shouldAnimate}
+              />
+            </motion.div>
+          )}
         </CardContent>
       </PanelShell>
     </motion.div>
@@ -454,6 +573,7 @@ interface RankBarChartProps {
   barSize: number;
   rowHeight: number;
   shouldAnimate: boolean;
+  footer?: ReactNode;
 }
 
 const RankBarChart = memo(function RankBarChart({
@@ -468,6 +588,7 @@ const RankBarChart = memo(function RankBarChart({
   barSize,
   rowHeight,
   shouldAnimate,
+  footer,
 }: RankBarChartProps) {
   const fillVar = `var(--color-${dataKey})`;
   const height = data.length * rowHeight + 16;
@@ -509,6 +630,7 @@ const RankBarChart = memo(function RankBarChart({
           </BarChart>
         </ChartContainer>
       )}
+      {footer}
     </motion.div>
   );
 });

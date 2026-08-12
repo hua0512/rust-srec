@@ -386,12 +386,12 @@ impl ConfigRepository for SqlxConfigRepository {
                 id, name, output_folder, output_filename_template,
                 cookies, output_file_format, min_segment_size_bytes,
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
-                platform_overrides, download_retry_policy, danmu_sampling_config,
+                platform_overrides, download_retry_policy,
                 download_engine, extractor, engines_override, proxy_config, stream_selection_config,
                 pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -407,7 +407,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.record_danmu)
         .bind(&config.platform_overrides)
         .bind(&config.download_retry_policy)
-        .bind(&config.danmu_sampling_config)
         .bind(&config.download_engine)
         .bind(&config.extractor)
         .bind(&config.engines_override)
@@ -440,7 +439,6 @@ impl ConfigRepository for SqlxConfigRepository {
                 record_danmu = ?,
                 platform_overrides = ?,
                 download_retry_policy = ?,
-                danmu_sampling_config = ?,
                 download_engine = ?,
                 extractor = ?,
                 engines_override = ?,
@@ -466,7 +464,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.record_danmu)
         .bind(&config.platform_overrides)
         .bind(&config.download_retry_policy)
-        .bind(&config.danmu_sampling_config)
         .bind(&config.download_engine)
         .bind(&config.extractor)
         .bind(&config.engines_override)
