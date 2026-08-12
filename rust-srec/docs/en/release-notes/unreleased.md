@@ -22,6 +22,10 @@
 
   The Top Talkers card on the session page shows the six most active chatters by default and can now be expanded to the full ranking (up to 32 users are tracked per session).
 
+- **Better word splitting for Chinese chat**
+
+  The frequent-words statistic now treats full-width punctuation (`,` `。` `!` `?` ...), symbols and emoji as word separators. Previously only spaces and ASCII punctuation split words, so a Chinese message without spaces was counted as one giant "word".
+
 - **Removed the `danmu_sampling_config` setting**
 
   This template/streamer setting never had any effect — statistics have always counted every message. The field has been removed from the REST API (`/api/templates`) and the database; existing configurations are cleaned up automatically, and older exports that still contain the field import fine.

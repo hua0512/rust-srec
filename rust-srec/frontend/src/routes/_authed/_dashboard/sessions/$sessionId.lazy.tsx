@@ -127,12 +127,18 @@ function SessionDetailPage() {
     queryFn: () => getSession({ data: sessionId }),
   });
 
+  // While the session is still live, the backend upserts an in-progress
+  // statistics snapshot every 60s (CollectionRunner's persist tick), so poll
+  // at the same cadence. Also recovers from the initial 404 emitted before
+  // the first snapshot lands.
+  const isSessionLive = Boolean(session) && !session?.end_time;
   const danmuStatsQuery = useQuery({
     queryKey: ['session', 'danmu-statistics', sessionId],
     queryFn: () => getSessionDanmuStatistics({ data: sessionId }),
     enabled: Boolean(sessionId),
     staleTime: 30000,
     retry: 1,
+    refetchInterval: isSessionLive ? 60_000 : false,
   });
 
   const isDanmuStatsUnavailable =

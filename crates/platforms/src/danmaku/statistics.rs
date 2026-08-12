@@ -441,9 +441,14 @@ impl StatisticsAggregator {
     }
 
     /// Process words from a message.
+    ///
+    /// Words are maximal alphanumeric runs: splitting on `!is_alphanumeric()`
+    /// treats whitespace, ASCII *and* full-width CJK punctuation (`,`, `。`,
+    /// `!`, ...) and symbols/emoji as separators, so a Chinese message like
+    /// `加油,主播!` counts `加油` and `主播` instead of one giant token.
     fn process_words(&mut self, content: &str) {
         for word in content
-            .split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
+            .split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty())
         {
             let word_lower = word.to_lowercase();
@@ -691,6 +696,39 @@ mod tests {
         assert_eq!(stats.rate_timeseries.len(), 2);
         assert_eq!(stats.rate_timeseries[0].count, 2); // First bucket
         assert_eq!(stats.rate_timeseries[1].count, 1); // Second bucket
+    }
+
+    /// Full-width CJK punctuation must separate words the same way ASCII
+    /// punctuation does, and emoji/symbols must not glue tokens together.
+    #[test]
+    fn test_word_frequency_splits_on_cjk_punctuation() {
+        let mut agg = StatisticsAggregator::with_config(10, 10, 10);
+        let now = Utc::now();
+
+        agg.record_message("u1", "User", "加油,主播!加油", false, now);
+        agg.record_message("u2", "User", "主播。牛逼🤣牛逼", false, now);
+
+        let stats = agg.current_stats();
+        let count_of = |w: &str| {
+            stats
+                .word_frequency
+                .iter()
+                .find(|entry| entry.word == w)
+                .map(|entry| entry.count)
+        };
+
+        assert_eq!(count_of("加油"), Some(2));
+        assert_eq!(count_of("主播"), Some(2));
+        assert_eq!(count_of("牛逼"), Some(2));
+        // No token should contain the full-width separators.
+        assert!(
+            stats
+                .word_frequency
+                .iter()
+                .all(|entry| !entry.word.contains([',', '!', '。'])),
+            "full-width punctuation must not appear inside tokens: {:?}",
+            stats.word_frequency
+        );
     }
 
     /// When the number of rate buckets exceeds `max_rate_points`, resolution is
