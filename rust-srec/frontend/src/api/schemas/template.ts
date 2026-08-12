@@ -3,7 +3,6 @@ import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
   DownloadRetryPolicyObjectSchema,
-  DanmuSamplingConfigObjectSchema,
   ProxyConfigObjectSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
@@ -71,12 +70,6 @@ export const TemplateSchema = z.object({
     .string()
     .transform((str) => JSON.parse(str))
     .pipe(DownloadRetryPolicyObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  danmu_sampling_config: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DanmuSamplingConfigObjectSchema.nullable().optional())
     .nullable()
     .optional(),
   proxy_config: z
@@ -149,7 +142,6 @@ export const CreateTemplateRequestSchema = z.object({
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
-  danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

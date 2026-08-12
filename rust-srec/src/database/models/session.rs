@@ -118,7 +118,6 @@ pub struct LiveSessionDbModel {
     pub end_time: Option<i64>,
     /// JSON array of timestamped stream titles
     pub titles: Option<String>,
-    pub danmu_statistics_id: Option<String>,
     #[serde(default)]
     pub total_size_bytes: i64,
 }
@@ -131,7 +130,6 @@ impl LiveSessionDbModel {
             start_time: crate::database::time::now_ms(),
             end_time: None,
             titles: Some("[]".to_string()),
-            danmu_statistics_id: None,
             total_size_bytes: 0,
         }
     }

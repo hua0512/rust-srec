@@ -7,11 +7,9 @@
 
 // Re-export core types from platforms-parser
 pub use platforms_parser::danmaku::{
-    DanmuConnection, DanmuControlEvent, DanmuItem, DanmuMessage, DanmuProvider, DanmuSampler,
-    DanmuSamplingConfig, DanmuStatistics, DanmuType, FixedIntervalSampler, HuyaDanmuProvider,
-    ProviderRegistry, RateDataPoint, StatisticsAggregator, TopTalker, TwitchDanmuProvider,
-    VelocitySampler, WordFrequency, XmlDanmuWriter, create_sampler, escape_xml,
-    message_type_to_int,
+    DanmuConnection, DanmuControlEvent, DanmuItem, DanmuMessage, DanmuProvider, DanmuStatistics,
+    DanmuType, HuyaDanmuProvider, ProviderRegistry, RateDataPoint, StatisticsAggregator, TopTalker,
+    TwitchDanmuProvider, WordFrequency, XmlDanmuWriter, escape_xml, message_type_to_int,
 };
 
 // Local modules (application-specific)

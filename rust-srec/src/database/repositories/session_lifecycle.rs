@@ -1122,8 +1122,8 @@ mod tests {
             .unwrap();
         for (id, offset) in [("stale-A", -120), ("stale-B", -60)] {
             sqlx::query(
-                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-                 VALUES (?, ?, ?, NULL, '[]', NULL, 0)",
+                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
+                 VALUES (?, ?, ?, NULL, '[]', 0)",
             )
             .bind(id)
             .bind(STREAMER_ID)
@@ -1206,8 +1206,8 @@ mod tests {
                 None
             };
             sqlx::query(
-                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-                 VALUES (?, ?, ?, ?, '[]', NULL, 0)",
+                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
+                 VALUES (?, ?, ?, ?, '[]', 0)",
             )
             .bind(id)
             .bind(STREAMER_ID)

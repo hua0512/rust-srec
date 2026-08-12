@@ -127,7 +127,6 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
 
   stream_selection_config: jsonToString.optional(),
   download_retry_policy: jsonToString.optional(),
-  danmu_sampling_config: jsonToString.optional(),
   proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),

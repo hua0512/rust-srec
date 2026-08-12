@@ -80,7 +80,6 @@ impl SessionRepository for TestSessionRepository {
             start_time: chrono::Utc::now().timestamp_millis(),
             end_time: *self.end_time.lock().expect("lock poisoned"),
             titles: Some("[]".to_string()),
-            danmu_statistics_id: None,
             total_size_bytes: 0,
         })
     }
@@ -1845,7 +1844,6 @@ fn test_session(id: &str, streamer_id: &str, end_time: Option<i64>) -> LiveSessi
         start_time: chrono::Utc::now().timestamp_millis(),
         end_time,
         titles: Some("[]".to_string()),
-        danmu_statistics_id: None,
         total_size_bytes: 1024,
     }
 }

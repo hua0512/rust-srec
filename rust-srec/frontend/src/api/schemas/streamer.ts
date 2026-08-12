@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   StreamSelectionConfigObjectSchema,
   DownloadRetryPolicyObjectSchema,
-  DanmuSamplingConfigObjectSchema,
   PrioritySchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
@@ -49,14 +48,6 @@ export const StreamerSpecificConfigSchema = z.object({
     .preprocess(
       (val) => (typeof val === 'string' ? JSON.parse(val) : val),
       DownloadRetryPolicyObjectSchema.nullable().optional(),
-    )
-    .nullable()
-    .optional(),
-
-  danmu_sampling_config: z
-    .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-      DanmuSamplingConfigObjectSchema.nullable().optional(),
     )
     .nullable()
     .optional(),
@@ -160,7 +151,6 @@ export const StreamerSpecificConfigFormSchema = z.object({
     StreamSelectionConfigObjectSchema.nullable().optional(),
   proxy_config: z.any().nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
-  danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

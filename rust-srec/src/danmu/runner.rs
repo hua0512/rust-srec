@@ -17,10 +17,12 @@ use platforms_parser::danmaku::{
     message::{DanmuMessage, DanmuType},
 };
 
-use crate::danmu::{DanmuSampler, DanmuStatistics, StatisticsAggregator, XmlDanmuWriter};
+use crate::danmu::{DanmuStatistics, StatisticsAggregator, XmlDanmuWriter};
+use crate::database::repositories::SessionRepository;
 use crate::error::{Error, Result};
 
 use super::events::{CollectionCommand, DanmuEvent};
+use super::service::persist_statistics;
 
 /// Configuration constants for the collection runner.
 mod config {
@@ -30,6 +32,8 @@ mod config {
     pub const MAX_BUFFER_SIZE: usize = 100;
     /// Delay before re-polling `DanmuProvider::receive` after it yields `Ok(None)`.
     pub const IDLE_POLL_INTERVAL_MS: u64 = 100;
+    /// Interval between periodic statistics persists for in-progress sessions.
+    pub const STATS_PERSIST_INTERVAL_SECS: u64 = 60;
 }
 
 /// Result of command handling - indicates whether to continue or stop.
@@ -75,8 +79,11 @@ pub(crate) struct CollectionRunner {
 
     // Stats state
     stats: StatisticsAggregator,
-    sampler: Box<dyn DanmuSampler>,
-    sampling_enabled: bool,
+    /// Repository for periodic in-progress statistics persists.
+    session_repo: Option<Arc<dyn SessionRepository>>,
+    /// Total count at the last periodic persist; skips redundant writes when
+    /// no message arrived during the persist interval.
+    last_persisted_total: u64,
 
     event_tx: broadcast::Sender<DanmuEvent>,
 }
@@ -89,8 +96,7 @@ pub(crate) struct RunnerParams {
     pub provider: Arc<dyn DanmuProvider>,
     pub conn_config: ConnectionConfig,
     pub stats: StatisticsAggregator,
-    pub sampler: Box<dyn DanmuSampler>,
-    pub sampling_enabled: bool,
+    pub session_repo: Option<Arc<dyn SessionRepository>>,
     pub event_tx: broadcast::Sender<DanmuEvent>,
 }
 
@@ -104,8 +110,7 @@ impl CollectionRunner {
             provider,
             conn_config,
             stats,
-            sampler,
-            sampling_enabled,
+            session_repo,
             event_tx,
         } = params;
         // Connect to danmu stream
@@ -120,8 +125,8 @@ impl CollectionRunner {
             current_writer: None,
             message_buffer: Vec::with_capacity(config::MAX_BUFFER_SIZE),
             stats,
-            sampler,
-            sampling_enabled,
+            session_repo,
+            last_persisted_total: 0,
             event_tx,
         })
     }
@@ -136,6 +141,11 @@ impl CollectionRunner {
             config::BUFFER_FLUSH_INTERVAL_MS,
         ));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        let mut persist_interval = tokio::time::interval(tokio::time::Duration::from_secs(
+            config::STATS_PERSIST_INTERVAL_SECS,
+        ));
+        persist_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // When `provider.receive` yields `Ok(None)`, the receive branch is disabled
         // until this deadline elapses so the idle wait does not block command,
@@ -165,6 +175,11 @@ impl CollectionRunner {
                     self.flush_buffer_if_needed().await?;
                 }
 
+                // Periodic in-progress statistics persist
+                _ = persist_interval.tick() => {
+                    self.persist_stats_if_changed().await;
+                }
+
                 // Idle back-off expiry - re-enable the receive branch below.
                 _ = Self::wait_until(idle_deadline) => {
                     idle_deadline = None;
@@ -188,7 +203,24 @@ impl CollectionRunner {
             }
         }
 
-        Ok(self.stats.current_stats())
+        // Consume the aggregator so the final statistics carry end_time and
+        // duration_secs; the service persists this exact value on stop.
+        Ok(self.stats.finalize(Utc::now()))
+    }
+
+    /// Persist an in-progress statistics snapshot when new messages arrived
+    /// since the last persist. Uses `persist_statistics`, the same upsert path
+    /// the service uses for final statistics on stop.
+    async fn persist_stats_if_changed(&mut self) {
+        let Some(repo) = &self.session_repo else {
+            return;
+        };
+        let snapshot = self.stats.current_stats();
+        if snapshot.total_count == self.last_persisted_total {
+            return;
+        }
+        persist_statistics(Some(repo.as_ref()), &self.session_id, &snapshot).await;
+        self.last_persisted_total = snapshot.total_count;
     }
 
     /// Sleep until `deadline`, or wait forever when no idle back-off is pending.
@@ -398,11 +430,6 @@ impl CollectionRunner {
             is_gift,
             message.timestamp,
         );
-
-        if self.sampling_enabled {
-            // Update sampler (best-effort; used only when sampling is enabled)
-            self.sampler.record_message(message.timestamp);
-        }
 
         // Buffer the message (will be written on flush)
         if self.current_writer.is_some() {

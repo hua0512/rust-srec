@@ -39,7 +39,6 @@ export function StreamerConfiguration({
         output: basePath, // output_folder etc are in structure
         limits: basePath, // limits are in structure
         danmu: basePath, // record_danmu is in structure
-        danmuSampling: `${basePath}.danmu_sampling_config`,
         pipeline: `${basePath}.pipeline`,
         sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
         pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,

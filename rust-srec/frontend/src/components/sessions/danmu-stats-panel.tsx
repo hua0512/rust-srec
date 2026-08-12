@@ -1,10 +1,19 @@
-import { type ReactNode, memo, useCallback, useMemo, useRef } from 'react';
+import {
+  type ReactNode,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { motion } from 'motion/react';
 import {
   Activity,
+  ChevronDown,
+  ChevronUp,
   Clock,
   MessageCircleMore,
   RotateCcw,
@@ -41,6 +50,8 @@ import { cn } from '@/lib/utils';
 // ---------------------------------------------------------------------------
 
 const MAX_CHART_POINTS = 150;
+// Talkers shown before expanding; the backend records up to 32.
+const TOP_TALKERS_COLLAPSED = 6;
 const AREA_MARGIN = { top: 8, right: 8, left: 0, bottom: 8 } as const;
 const BAR_MARGIN = { top: 4, right: 8, left: 0, bottom: 4 } as const;
 const BAR_RADIUS_H: [number, number, number, number] = [0, 4, 4, 0];
@@ -225,7 +236,19 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
     };
   }, [stats]);
 
-  const topTalkers = useMemo(() => stats.top_talkers.slice(0, 6), [stats]);
+  const [showAllTalkers, setShowAllTalkers] = useState(false);
+  const toggleShowAllTalkers = useCallback(
+    () => setShowAllTalkers((prev) => !prev),
+    [],
+  );
+
+  const topTalkers = useMemo(
+    () =>
+      showAllTalkers
+        ? stats.top_talkers
+        : stats.top_talkers.slice(0, TOP_TALKERS_COLLAPSED),
+    [stats, showAllTalkers],
+  );
   const topWords = useMemo(() => stats.word_frequency.slice(0, 10), [stats]);
 
   const talkersChartData = useMemo(
@@ -313,7 +336,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
             <MetricBlock
               icon={<Users className="h-4 w-4 text-purple-500" />}
               label={i18n._(msg`Top Talkers`)}
-              value={topTalkers.length.toString()}
+              value={stats.top_talkers.length.toString()}
               accent="bg-purple-500/10"
             />
             <MetricBlock
@@ -415,6 +438,28 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               barSize={20}
               rowHeight={36}
               shouldAnimate={shouldAnimate}
+              footer={
+                stats.top_talkers.length > TOP_TALKERS_COLLAPSED && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-7 w-full text-xs text-muted-foreground"
+                    onClick={toggleShowAllTalkers}
+                  >
+                    {showAllTalkers ? (
+                      <>
+                        <ChevronUp className="mr-1 h-3.5 w-3.5" />
+                        <Trans>Show less</Trans>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="mr-1 h-3.5 w-3.5" />
+                        <Trans>Show all {stats.top_talkers.length}</Trans>
+                      </>
+                    )}
+                  </Button>
+                )
+              }
             />
             <RankBarChart
               icon={
@@ -454,6 +499,7 @@ interface RankBarChartProps {
   barSize: number;
   rowHeight: number;
   shouldAnimate: boolean;
+  footer?: ReactNode;
 }
 
 const RankBarChart = memo(function RankBarChart({
@@ -468,6 +514,7 @@ const RankBarChart = memo(function RankBarChart({
   barSize,
   rowHeight,
   shouldAnimate,
+  footer,
 }: RankBarChartProps) {
   const fillVar = `var(--color-${dataKey})`;
   const height = data.length * rowHeight + 16;
@@ -509,6 +556,7 @@ const RankBarChart = memo(function RankBarChart({
           </BarChart>
         </ChartContainer>
       )}
+      {footer}
     </motion.div>
   );
 });

@@ -49,8 +49,6 @@ export interface SharedConfigPaths {
   limits: string;
   // Danmu settings base path (record_danmu)
   danmu: string;
-  // Danmu sampling config path
-  danmuSampling?: string;
   pipeline: string;
   sessionCompletePipeline?: string;
   pairedSegmentPipeline?: string;

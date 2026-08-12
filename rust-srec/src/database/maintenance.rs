@@ -1291,7 +1291,6 @@ mod tests {
                     start_time: end_time - 1000,
                     end_time: Some(end_time),
                     titles: Some("[]".to_string()),
-                    danmu_statistics_id: None,
                     total_size_bytes: total_size,
                 })
                 .await
@@ -1426,7 +1425,6 @@ mod tests {
                     start_time: ended_at - 1000,
                     end_time: Some(ended_at),
                     titles: Some("[]".to_string()),
-                    danmu_statistics_id: None,
                     total_size_bytes: 0,
                 })
                 .await

@@ -167,8 +167,8 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_session", || async {
             sqlx::query(
                 r#"
-                INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&session.id)
@@ -176,7 +176,6 @@ impl SessionRepository for SqlxSessionRepository {
             .bind(session.start_time)
             .bind(session.end_time)
             .bind(&session.titles)
-            .bind(&session.danmu_statistics_id)
             .bind(session.total_size_bytes)
             .execute(&self.write_pool)
             .await?;

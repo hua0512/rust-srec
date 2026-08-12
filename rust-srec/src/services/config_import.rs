@@ -1032,7 +1032,6 @@ fn template_model(
     model.record_danmu = source.record_danmu;
     model.platform_overrides = source.platform_overrides.clone().map(db_json);
     model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
-    model.danmu_sampling_config = source.danmu_sampling_config.clone().map(db_json);
     model.download_engine = source.download_engine.clone();
     model.engines_override = source.engines_override.clone().map(db_json);
     model.proxy_config = source.proxy_config.clone().map(db_json);
@@ -1446,12 +1445,12 @@ async fn persist_template(
         INSERT INTO template_config (
             id, name, output_folder, output_filename_template, cookies, output_file_format,
             min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-            record_danmu, platform_overrides, download_retry_policy, danmu_sampling_config,
+            record_danmu, platform_overrides, download_retry_policy,
             download_engine, engines_override, proxy_config,
             stream_selection_config, pipeline, session_complete_pipeline,
             paired_segment_pipeline, offline_check_count, offline_check_delay_ms,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             output_folder = excluded.output_folder,
@@ -1464,7 +1463,6 @@ async fn persist_template(
             record_danmu = excluded.record_danmu,
             platform_overrides = excluded.platform_overrides,
             download_retry_policy = excluded.download_retry_policy,
-            danmu_sampling_config = excluded.danmu_sampling_config,
             download_engine = excluded.download_engine,
             engines_override = excluded.engines_override,
             proxy_config = excluded.proxy_config,
@@ -1489,7 +1487,6 @@ async fn persist_template(
     .bind(model.record_danmu)
     .bind(&model.platform_overrides)
     .bind(&model.download_retry_policy)
-    .bind(&model.danmu_sampling_config)
     .bind(&model.download_engine)
     .bind(&model.engines_override)
     .bind(&model.proxy_config)

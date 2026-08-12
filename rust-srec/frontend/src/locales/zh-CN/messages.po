@@ -7518,9 +7518,17 @@ msgstr "Shadcn UI 主题预设"
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
+#: src/components/sessions/danmu-stats-panel.tsx:457
+msgid "Show all {0}"
+msgstr "显示全部 {0} 位"
+
 #: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "显示录制下载详情"
+
+#: src/components/sessions/danmu-stats-panel.tsx:452
+msgid "Show less"
+msgstr "收起"
 
 #: src/routes/_authed/change-password.lazy.tsx:166
 #: src/routes/_authed/change-password.lazy.tsx:208

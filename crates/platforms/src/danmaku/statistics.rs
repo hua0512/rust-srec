@@ -472,14 +472,38 @@ impl StatisticsAggregator {
                     count: *count,
                 });
                 if self.rate_data.len() > self.max_rate_points {
-                    while self.rate_data.len() > self.max_rate_points {
-                        self.rate_data.pop_front();
-                    }
+                    self.coarsen_rate_data();
                 }
+                // Recompute: `coarsen_rate_data` doubles `bucket_duration_secs`,
+                // which changes the bucket alignment for new messages.
+                let bucket_start = self.get_bucket_start(timestamp);
                 self.current_bucket = Some((bucket_start, 1));
             }
             None => {
                 self.current_bucket = Some((bucket_start, 1));
+            }
+        }
+    }
+
+    /// Halve the rate-timeseries resolution in place: double
+    /// `bucket_duration_secs` and re-bucket every stored point under the new
+    /// alignment, merging counts that land in the same bucket.
+    ///
+    /// Long sessions therefore keep full-session coverage with a bounded
+    /// number of points, instead of silently dropping the oldest buckets.
+    fn coarsen_rate_data(&mut self) {
+        self.bucket_duration_secs = self.bucket_duration_secs.saturating_mul(2);
+        let old = std::mem::take(&mut self.rate_data);
+        for point in old {
+            let bucket_start = self.get_bucket_start(point.timestamp);
+            match self.rate_data.back_mut() {
+                Some(last) if last.timestamp == bucket_start => {
+                    last.count = last.count.saturating_add(point.count);
+                }
+                _ => self.rate_data.push_back(RateDataPoint {
+                    timestamp: bucket_start,
+                    count: point.count,
+                }),
             }
         }
     }
@@ -547,31 +571,6 @@ impl StatisticsAggregator {
             end_time: None,
             duration_secs: 0,
         }
-    }
-
-    /// Finalize a snapshot up to `end_time` and reset internal state.
-    ///
-    /// This is useful for long-running sessions to avoid unbounded memory growth
-    /// from per-user/per-word tracking over time.
-    pub fn checkpoint(&mut self, end_time: DateTime<Utc>) -> DanmuStatistics {
-        let prev = std::mem::replace(
-            self,
-            Self::with_config(
-                self.max_top_talkers,
-                self.max_words,
-                self.bucket_duration_secs,
-            ),
-        );
-        prev.finalize(end_time)
-    }
-
-    /// Reset all counters and tracked state.
-    pub fn reset(&mut self) {
-        *self = Self::with_config(
-            self.max_top_talkers,
-            self.max_words,
-            self.bucket_duration_secs,
-        );
     }
 }
 
@@ -692,6 +691,44 @@ mod tests {
         assert_eq!(stats.rate_timeseries.len(), 2);
         assert_eq!(stats.rate_timeseries[0].count, 2); // First bucket
         assert_eq!(stats.rate_timeseries[1].count, 1); // Second bucket
+    }
+
+    /// When the number of rate buckets exceeds `max_rate_points`, resolution is
+    /// halved instead of dropping the oldest points: the first bucket's
+    /// timestamp must survive and the total count must be preserved.
+    #[test]
+    fn test_rate_timeseries_coarsens_instead_of_dropping() {
+        let mut agg = StatisticsAggregator::with_config(10, 10, 10);
+        let base = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+
+        // One message per 10s bucket, spanning well past max_rate_points buckets.
+        let buckets = agg.max_rate_points as i64 + 100;
+        for i in 0..buckets {
+            agg.record_message(
+                "user1",
+                "User",
+                "msg",
+                false,
+                base + chrono::Duration::seconds(i * 10),
+            );
+        }
+
+        let end_time = base + chrono::Duration::seconds(buckets * 10);
+        let max_points = agg.max_rate_points;
+        let stats = agg.finalize(end_time);
+
+        assert!(
+            stats.rate_timeseries.len() <= max_points + 1,
+            "rate points must stay bounded (got {})",
+            stats.rate_timeseries.len()
+        );
+        let total: u64 = stats.rate_timeseries.iter().map(|p| p.count).sum();
+        assert_eq!(total, buckets as u64, "coarsening must not lose counts");
+        assert_eq!(
+            stats.rate_timeseries.first().map(|p| p.timestamp),
+            Some(base),
+            "earliest bucket must survive coarsening"
+        );
     }
 
     #[test]

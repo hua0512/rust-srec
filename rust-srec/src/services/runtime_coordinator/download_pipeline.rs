@@ -522,13 +522,11 @@ pub(super) async fn run_live_download_pipeline(
     // socket for a stream we're not recording would leak a platform
     // connection.
     if started && merged_config.record_danmu {
-        let sampling_config = Some(merged_config.danmu_sampling_config.clone());
         match danmu_service
             .start_collection(
                 &session_id,
                 &streamer_id,
                 &streamer_url,
-                sampling_config,
                 cookies,
                 media_extras,
             )

@@ -7518,9 +7518,17 @@ msgstr "Shadcn UI Theme Presets"
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
+#: src/components/sessions/danmu-stats-panel.tsx:457
+msgid "Show all {0}"
+msgstr "Show all {0}"
+
 #: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "Show download details"
+
+#: src/components/sessions/danmu-stats-panel.tsx:452
+msgid "Show less"
+msgstr "Show less"
 
 #: src/routes/_authed/change-password.lazy.tsx:166
 #: src/routes/_authed/change-password.lazy.tsx:208

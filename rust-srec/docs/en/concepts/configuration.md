@@ -46,7 +46,7 @@ Key fields (grouped by concern):
 
 - Output: `output_folder`, `output_filename_template`, `output_file_format`
 - Limits: `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- Danmu: `record_danmu`, `danmu_sampling_config`
+- Danmu: `record_danmu`
 - Network: `proxy_config`, `cookies`
 - Engine: `download_engine`, `download_retry_policy`, `engines_override`
 - Stream selection: `stream_selection`
@@ -67,7 +67,7 @@ builder actually read.
 - Global-only (base defaults + runtime knobs): `auto_thumbnail`, concurrency/job limits,
   scheduler delays, log filter directives
 - Platform-only: `fetch_delay_ms`, `download_delay_ms`, `platform_specific_config`
-- Template-only: `platform_overrides`, `engines_override`, `danmu_sampling_config`
+- Template-only: `platform_overrides`, `engines_override`
 - Streamer-only: `streamer_specific_config` (JSON object; see below)
 
 ::: tip Stream selection naming
@@ -197,7 +197,6 @@ Supported keys that affect `MergedConfig`:
 - `proxy_config` (JSON object)
 - `stream_selection_config` (JSON object)
 - `download_retry_policy` (JSON object)
-- `danmu_sampling_config` (JSON object)
 - `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline` (JSON objects)
 - `platform_extras` (JSON object)
 

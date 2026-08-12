@@ -240,7 +240,6 @@ pub struct TemplateExport {
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub download_retry_policy: Option<serde_json::Value>,
-    pub danmu_sampling_config: Option<serde_json::Value>,
     pub download_engine: Option<String>,
     pub engines_override: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,

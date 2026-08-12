@@ -26,19 +26,6 @@ export const DownloadRetryPolicyObjectSchema = z.object({
   use_jitter: z.boolean(),
 });
 
-export const DanmuSamplingConfigObjectSchema = z.union([
-  z.object({
-    type: z.literal('fixed'),
-    interval_secs: z.number(),
-  }),
-  z.object({
-    type: z.literal('velocity'),
-    min_interval_secs: z.number(),
-    max_interval_secs: z.number(),
-    target_danmus_per_sample: z.number(),
-  }),
-]);
-
 export const ProxyConfigObjectSchema = z.object({
   enabled: z.boolean().default(false).optional(),
   url: z.string().optional(),
