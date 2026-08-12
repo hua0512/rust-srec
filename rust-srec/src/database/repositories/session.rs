@@ -102,15 +102,10 @@ pub trait SessionRepository: Send + Sync {
         Ok(statistics)
     }
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
-    async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
-    async fn upsert_danmu_statistics(
-        &self,
-        session_id: &str,
-        total_danmus: i64,
-        danmu_rate_timeseries: Option<&str>,
-        top_talkers: Option<&str>,
-        word_frequency: Option<&str>,
-    ) -> Result<()>;
+    /// Insert or replace the statistics row for `stats.session_id`
+    /// (`danmu_statistics.session_id` is UNIQUE; `stats.id` is only used when
+    /// the row does not exist yet).
+    async fn upsert_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
 }
 
 /// SQLx implementation of SessionRepository.
@@ -498,15 +493,18 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_danmu_statistics", || async {
             sqlx::query(
                 r#"
-                INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO danmu_statistics (id, session_id, total_danmus, unique_talkers, danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&stats.id)
             .bind(&stats.session_id)
             .bind(stats.total_danmus)
+            .bind(stats.unique_talkers)
             .bind(&stats.danmu_rate_timeseries)
             .bind(&stats.top_talkers)
+            .bind(&stats.top_gifters)
+            .bind(&stats.top_gifts)
             .bind(&stats.word_frequency)
             .execute(&self.write_pool)
             .await?;
@@ -515,56 +513,31 @@ impl SessionRepository for SqlxSessionRepository {
         .await
     }
 
-    async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
-        retry_on_sqlite_busy("update_danmu_statistics", || async {
-            sqlx::query(
-                r#"
-                UPDATE danmu_statistics SET
-                    total_danmus = ?,
-                    danmu_rate_timeseries = ?,
-                    top_talkers = ?,
-                    word_frequency = ?
-                WHERE id = ?
-                "#,
-            )
-            .bind(stats.total_danmus)
-            .bind(&stats.danmu_rate_timeseries)
-            .bind(&stats.top_talkers)
-            .bind(&stats.word_frequency)
-            .bind(&stats.id)
-            .execute(&self.write_pool)
-            .await?;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn upsert_danmu_statistics(
-        &self,
-        session_id: &str,
-        total_danmus: i64,
-        danmu_rate_timeseries: Option<&str>,
-        top_talkers: Option<&str>,
-        word_frequency: Option<&str>,
-    ) -> Result<()> {
+    async fn upsert_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
         retry_on_sqlite_busy("upsert_danmu_statistics", || async {
             sqlx::query(
                 r#"
-                INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO danmu_statistics (id, session_id, total_danmus, unique_talkers, danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     total_danmus = excluded.total_danmus,
+                    unique_talkers = excluded.unique_talkers,
                     danmu_rate_timeseries = excluded.danmu_rate_timeseries,
                     top_talkers = excluded.top_talkers,
+                    top_gifters = excluded.top_gifters,
+                    top_gifts = excluded.top_gifts,
                     word_frequency = excluded.word_frequency
                 "#,
             )
-            .bind(uuid::Uuid::new_v4().to_string())
-            .bind(session_id)
-            .bind(total_danmus)
-            .bind(danmu_rate_timeseries)
-            .bind(top_talkers)
-            .bind(word_frequency)
+            .bind(&stats.id)
+            .bind(&stats.session_id)
+            .bind(stats.total_danmus)
+            .bind(stats.unique_talkers)
+            .bind(&stats.danmu_rate_timeseries)
+            .bind(&stats.top_talkers)
+            .bind(&stats.top_gifters)
+            .bind(&stats.top_gifts)
+            .bind(&stats.word_frequency)
             .execute(&self.write_pool)
             .await?;
             Ok(())

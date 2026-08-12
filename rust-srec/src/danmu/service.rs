@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::danmu::{DanmuStatistics, ProviderRegistry};
-use crate::database::models::DanmuRateEntry;
+use crate::database::models::{DanmuRateEntry, GiftTallyEntry, TopTalkerEntry, WordFrequencyEntry};
 use crate::database::repositories::SessionRepository;
 use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
@@ -607,76 +607,83 @@ pub(super) async fn persist_statistics(
     session_id: &str,
     statistics: &DanmuStatistics,
 ) {
-    #[derive(serde::Serialize)]
-    struct TopTalkerView<'a> {
-        user_id: &'a str,
-        username: &'a str,
-        message_count: i64,
-    }
-
-    #[derive(serde::Serialize)]
-    struct WordFrequencyView<'a> {
-        word: &'a str,
-        count: i64,
-    }
-
     let Some(repo) = session_repo else {
         return;
     };
 
-    let rate_timeseries = statistics
+    // Serialize each aggregate independently: a failed field degrades to NULL
+    // instead of dropping the whole upsert.
+    fn to_json_field<T: serde::Serialize>(
+        session_id: &str,
+        field: &'static str,
+        value: &T,
+    ) -> Option<String> {
+        match serde_json::to_string(value) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                warn!(session_id, field, %error, "Failed to serialize danmu statistics field");
+                None
+            }
+        }
+    }
+
+    let rate_timeseries: Vec<_> = statistics
         .rate_timeseries
         .iter()
         .map(|entry| DanmuRateEntry {
             ts: entry.timestamp.timestamp_millis(),
             count: saturating_u64_to_i64(entry.count),
-        });
-    let danmu_rate_timeseries = match serde_json::to_string(&rate_timeseries.collect::<Vec<_>>()) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            warn!(session_id, %error, "Failed to serialize danmu rate timeseries");
-            None
-        }
-    };
+        })
+        .collect();
 
-    let top_talkers = statistics.top_talkers.iter().map(|entry| TopTalkerView {
-        user_id: entry.user_id.as_str(),
-        username: entry.username.as_str(),
-        message_count: saturating_u64_to_i64(entry.message_count),
-    });
-    let top_talkers = match serde_json::to_string(&top_talkers.collect::<Vec<_>>()) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            warn!(session_id, %error, "Failed to serialize top talkers");
-            None
-        }
-    };
+    let top_talkers: Vec<_> = statistics
+        .top_talkers
+        .iter()
+        .map(|entry| TopTalkerEntry {
+            user_id: entry.user_id.clone(),
+            username: entry.username.clone(),
+            message_count: saturating_u64_to_i64(entry.message_count),
+        })
+        .collect();
 
-    let word_frequency = statistics
+    let top_gifters: Vec<_> = statistics
+        .top_gifters
+        .iter()
+        .map(|entry| TopTalkerEntry {
+            user_id: entry.user_id.clone(),
+            username: entry.username.clone(),
+            message_count: saturating_u64_to_i64(entry.message_count),
+        })
+        .collect();
+
+    let top_gifts: Vec<_> = statistics
+        .top_gifts
+        .iter()
+        .map(|entry| GiftTallyEntry {
+            name: entry.name.clone(),
+            count: saturating_u64_to_i64(entry.count),
+        })
+        .collect();
+
+    let word_frequency: Vec<_> = statistics
         .word_frequency
         .iter()
-        .map(|entry| WordFrequencyView {
-            word: entry.word.as_str(),
+        .map(|entry| WordFrequencyEntry {
+            word: entry.word.clone(),
             count: saturating_u64_to_i64(entry.count),
-        });
-    let word_frequency = match serde_json::to_string(&word_frequency.collect::<Vec<_>>()) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            warn!(session_id, %error, "Failed to serialize word frequency");
-            None
-        }
-    };
+        })
+        .collect();
 
-    if let Err(error) = repo
-        .upsert_danmu_statistics(
-            session_id,
-            saturating_u64_to_i64(statistics.total_count),
-            danmu_rate_timeseries.as_deref(),
-            top_talkers.as_deref(),
-            word_frequency.as_deref(),
-        )
-        .await
-    {
+    let mut model = crate::database::models::DanmuStatisticsDbModel::new(session_id);
+    model.total_danmus = saturating_u64_to_i64(statistics.total_count);
+    model.unique_talkers = Some(saturating_u64_to_i64(statistics.unique_talkers));
+    model.danmu_rate_timeseries = to_json_field(session_id, "rate_timeseries", &rate_timeseries);
+    model.top_talkers = to_json_field(session_id, "top_talkers", &top_talkers);
+    model.top_gifters = to_json_field(session_id, "top_gifters", &top_gifters);
+    model.top_gifts = to_json_field(session_id, "top_gifts", &top_gifts);
+    model.word_frequency = to_json_field(session_id, "word_frequency", &word_frequency);
+
+    if let Err(error) = repo.upsert_danmu_statistics(&model).await {
         warn!(session_id, %error, "Failed to persist danmu statistics");
     }
 }

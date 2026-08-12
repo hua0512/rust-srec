@@ -3709,6 +3709,11 @@ msgstr "生成新二维码"
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
+#: src/components/sessions/danmu-stats-panel.tsx:290
+#: src/components/sessions/danmu-stats-panel.tsx:302
+msgid "Gift items"
+msgstr "礼物数"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:199
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
@@ -5327,6 +5332,11 @@ msgstr "未定义步骤"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:834
 msgid "No streamers found"
 msgstr "未找到主播"
+
+#: src/components/sessions/danmu-stats-panel.tsx:530
+#: src/components/sessions/danmu-stats-panel.tsx:544
+msgid "No gift data"
+msgstr "暂无礼物数据"
 
 #: src/components/sessions/danmu-stats-panel.tsx:409
 msgid "No talker data"
@@ -8368,6 +8378,14 @@ msgstr "工具位置"
 msgid "Top Fixed"
 msgstr "顶部固定"
 
+#: src/components/sessions/danmu-stats-panel.tsx:529
+msgid "Top Gifters"
+msgstr "送礼排行"
+
+#: src/components/sessions/danmu-stats-panel.tsx:543
+msgid "Top Gifts"
+msgstr "热门礼物"
+
 #: src/components/sessions/danmu-stats-panel.tsx:315
 #: src/components/sessions/danmu-stats-panel.tsx:408
 msgid "Top Talkers"
@@ -8424,10 +8442,6 @@ msgstr "TPS 限制帮助"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:139
 msgid "Track Information"
 msgstr "轨道信息"
-
-#: src/components/sessions/danmu-stats-panel.tsx:321
-msgid "Tracked Words"
-msgstr "统计词数"
 
 #: src/components/pipeline/presets/preset-templates.ts:14
 msgid "Transcode H.264"
@@ -8632,6 +8646,10 @@ msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:218
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
+
+#: src/components/sessions/danmu-stats-panel.tsx:322
+msgid "Unique Chatters"
+msgstr "互动人数"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:595
 msgid "Unknown"

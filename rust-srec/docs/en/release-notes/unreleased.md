@@ -26,6 +26,14 @@
 
   The frequent-words statistic now treats full-width punctuation (`,` `。` `!` `?` ...), symbols and emoji as word separators. Previously only spaces and ASCII punctuation split words, so a Chinese message without spaces was counted as one giant "word".
 
+- **Unique chatters metric**
+
+  The session danmu panel now shows how many distinct users chatted during the stream (a memory-bounded estimate, accurate to about 1–2%), alongside the total message count. Sessions recorded before this release show a dash.
+
+- **Gift rankings**
+
+  For platforms that report gifts in chat (Bilibili, Douyu, Bigo, SOOP, ...), the session page now shows two extra charts: the top gift senders and the most-sent gifts, both weighted by the number of gift items rather than messages. The charts only appear when the stream actually received gifts.
+
 - **Removed the `danmu_sampling_config` setting**
 
   This template/streamer setting never had any effect — statistics have always counted every message. The field has been removed from the REST API (`/api/templates`) and the database; existing configurations are cleaned up automatically, and older exports that still contain the field import fine.

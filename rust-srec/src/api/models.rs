@@ -939,9 +939,24 @@ pub struct StreamerCheckHistoryResponse {
 pub struct SessionDanmuStatisticsResponse {
     pub session_id: String,
     pub total_danmus: u64,
+    /// Approximate distinct senders (HyperLogLog estimate). `None` for
+    /// statistics rows persisted before the metric existed.
+    pub unique_talkers: Option<u64>,
     pub danmu_rate_timeseries: Vec<DanmuRatePoint>,
     pub top_talkers: Vec<DanmuTopTalker>,
+    /// Top gift senders; `message_count` holds total gift items.
+    pub top_gifters: Vec<DanmuTopTalker>,
+    /// Most-sent gifts by name.
+    #[schema(inline)]
+    pub top_gifts: Vec<DanmuGiftTally>,
     pub word_frequency: Vec<DanmuWordFrequency>,
+}
+
+/// Gift tally entry (gift name -> total items sent).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct DanmuGiftTally {
+    pub name: String,
+    pub count: i64,
 }
 
 /// Danmu rate datapoint.

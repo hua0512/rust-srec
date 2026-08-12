@@ -15,9 +15,11 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Gift,
   MessageCircleMore,
   RotateCcw,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import {
   Area,
@@ -260,6 +262,17 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
     [topTalkers],
   );
 
+  const giftersChartData = useMemo(
+    () =>
+      stats.top_gifters.slice(0, 6).map((item) => ({
+        name: item.username || item.user_id,
+        message_count: item.message_count,
+      })),
+    [stats],
+  );
+  const topGifts = useMemo(() => stats.top_gifts.slice(0, 10), [stats]);
+  const hasGiftData = giftersChartData.length > 0 || topGifts.length > 0;
+
   // -- chart configs -------------------------------------------------------
 
   const chartConfig = useMemo(
@@ -290,6 +303,28 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
         count: {
           label: i18n._(msg`Count`),
           color: 'var(--chart-3)',
+        },
+      }) satisfies ChartConfig,
+    [i18n],
+  );
+
+  const giftersChartConfig = useMemo(
+    () =>
+      ({
+        message_count: {
+          label: i18n._(msg`Gift items`),
+          color: 'var(--chart-4)',
+        },
+      }) satisfies ChartConfig,
+    [i18n],
+  );
+
+  const giftsChartConfig = useMemo(
+    () =>
+      ({
+        count: {
+          label: i18n._(msg`Gift items`),
+          color: 'var(--chart-5)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -340,9 +375,13 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               accent="bg-purple-500/10"
             />
             <MetricBlock
-              icon={<MessageCircleMore className="h-4 w-4 text-emerald-500" />}
-              label={i18n._(msg`Tracked Words`)}
-              value={stats.word_frequency.length.toString()}
+              icon={<UsersRound className="h-4 w-4 text-emerald-500" />}
+              label={i18n._(msg`Unique Chatters`)}
+              value={
+                stats.unique_talkers != null
+                  ? stats.unique_talkers.toLocaleString()
+                  : '—'
+              }
               accent="bg-emerald-500/10"
             />
           </motion.div>
@@ -477,6 +516,41 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               shouldAnimate={shouldAnimate}
             />
           </motion.div>
+
+          {/* ── Gift charts (only when the platform reported gifts) ── */}
+          {hasGiftData && (
+            <motion.div
+              variants={containerVariants}
+              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            >
+              <RankBarChart
+                icon={<Gift className="h-3.5 w-3.5 text-pink-500" />}
+                title={i18n._(msg`Top Gifters`)}
+                emptyLabel={i18n._(msg`No gift data`)}
+                config={giftersChartConfig}
+                data={giftersChartData}
+                dataKey="message_count"
+                categoryKey="name"
+                yAxisWidth={80}
+                barSize={20}
+                rowHeight={36}
+                shouldAnimate={shouldAnimate}
+              />
+              <RankBarChart
+                icon={<Gift className="h-3.5 w-3.5 text-amber-500" />}
+                title={i18n._(msg`Top Gifts`)}
+                emptyLabel={i18n._(msg`No gift data`)}
+                config={giftsChartConfig}
+                data={topGifts}
+                dataKey="count"
+                categoryKey="name"
+                yAxisWidth={72}
+                barSize={18}
+                rowHeight={32}
+                shouldAnimate={shouldAnimate}
+              />
+            </motion.div>
+          )}
         </CardContent>
       </PanelShell>
     </motion.div>

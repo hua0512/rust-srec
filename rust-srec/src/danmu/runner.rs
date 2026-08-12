@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use platforms_parser::danmaku::{
     ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider,
-    message::{DanmuMessage, DanmuType},
+    message::DanmuMessage,
 };
 
 use crate::danmu::{DanmuStatistics, StatisticsAggregator, XmlDanmuWriter};
@@ -422,14 +422,7 @@ impl CollectionRunner {
     /// Handle a received danmu message.
     async fn handle_message(&mut self, message: DanmuMessage) -> Result<CommandResult> {
         // Update session-level statistics.
-        let is_gift = matches!(message.message_type, DanmuType::Gift | DanmuType::SuperChat);
-        self.stats.record_message(
-            &message.user_id,
-            &message.username,
-            &message.content,
-            is_gift,
-            message.timestamp,
-        );
+        self.stats.record_message(&message);
 
         // Buffer the message (will be written on flush)
         if self.current_writer.is_some() {
