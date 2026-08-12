@@ -37,6 +37,9 @@ const AuthedChangePasswordLazyRouteImport = createFileRoute(
 const AuthedDashboardDashboardLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/dashboard',
 )()
+const AuthedDashboardConfigApiKeysLazyRouteImport = createFileRoute(
+  '/_authed/_dashboard/config/api-keys',
+)()
 const AuthedDashboardConfigBackupLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/backup',
 )()
@@ -162,6 +165,16 @@ const AuthedDashboardDashboardLazyRoute =
     getParentRoute: () => AuthedDashboardRoute,
   } as any).lazy(() =>
     import('./routes/_authed/_dashboard/dashboard.lazy').then((d) => d.Route),
+  )
+const AuthedDashboardConfigApiKeysLazyRoute =
+  AuthedDashboardConfigApiKeysLazyRouteImport.update({
+    id: '/api-keys',
+    path: '/api-keys',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/config/api-keys.lazy').then(
+      (d) => d.Route,
+    ),
   )
 const AuthedDashboardConfigBackupLazyRoute =
   AuthedDashboardConfigBackupLazyRouteImport.update({
@@ -510,6 +523,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthedDashboardDashboardLazyRoute
   '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
+  '/config/api-keys': typeof AuthedDashboardConfigApiKeysLazyRoute
   '/config/backup': typeof AuthedDashboardConfigBackupLazyRoute
   '/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
@@ -553,6 +567,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthedDashboardDashboardLazyRoute
   '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
+  '/config/api-keys': typeof AuthedDashboardConfigApiKeysLazyRoute
   '/config/backup': typeof AuthedDashboardConfigBackupLazyRoute
   '/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
@@ -600,6 +615,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardLazyRoute
   '/_authed/_dashboard/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
+  '/_authed/_dashboard/config/api-keys': typeof AuthedDashboardConfigApiKeysLazyRoute
   '/_authed/_dashboard/config/backup': typeof AuthedDashboardConfigBackupLazyRoute
   '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/_authed/_dashboard/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
@@ -645,6 +661,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/notifications/events'
     | '/pipeline/outputs'
+    | '/config/api-keys'
     | '/config/backup'
     | '/config/global'
     | '/config/language'
@@ -688,6 +705,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/notifications/events'
     | '/pipeline/outputs'
+    | '/config/api-keys'
     | '/config/backup'
     | '/config/global'
     | '/config/language'
@@ -734,6 +752,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/dashboard'
     | '/_authed/_dashboard/notifications/events'
     | '/_authed/_dashboard/pipeline/outputs'
+    | '/_authed/_dashboard/config/api-keys'
     | '/_authed/_dashboard/config/backup'
     | '/_authed/_dashboard/config/global'
     | '/_authed/_dashboard/config/language'
@@ -847,6 +866,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthedDashboardDashboardLazyRouteImport
       parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/config/api-keys': {
+      id: '/_authed/_dashboard/config/api-keys'
+      path: '/api-keys'
+      fullPath: '/config/api-keys'
+      preLoaderRoute: typeof AuthedDashboardConfigApiKeysLazyRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/config/backup': {
       id: '/_authed/_dashboard/config/backup'
@@ -1090,6 +1116,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedDashboardConfigRouteRouteChildren {
+  AuthedDashboardConfigApiKeysLazyRoute: typeof AuthedDashboardConfigApiKeysLazyRoute
   AuthedDashboardConfigBackupLazyRoute: typeof AuthedDashboardConfigBackupLazyRoute
   AuthedDashboardConfigGlobalLazyRoute: typeof AuthedDashboardConfigGlobalLazyRoute
   AuthedDashboardConfigLanguageLazyRoute: typeof AuthedDashboardConfigLanguageLazyRoute
@@ -1107,6 +1134,8 @@ interface AuthedDashboardConfigRouteRouteChildren {
 
 const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteChildren =
   {
+    AuthedDashboardConfigApiKeysLazyRoute:
+      AuthedDashboardConfigApiKeysLazyRoute,
     AuthedDashboardConfigBackupLazyRoute: AuthedDashboardConfigBackupLazyRoute,
     AuthedDashboardConfigGlobalLazyRoute: AuthedDashboardConfigGlobalLazyRoute,
     AuthedDashboardConfigLanguageLazyRoute:

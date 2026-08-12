@@ -208,7 +208,13 @@ pub fn parse_who(output: &str) -> Option<BaiduAccount> {
         let username = rest
             .split("用户名: ")
             .nth(1)
-            .map(|name| name.split(", 性别").next().unwrap_or(name).trim().to_string())
+            .map(|name| {
+                name.split(", 性别")
+                    .next()
+                    .unwrap_or(name)
+                    .trim()
+                    .to_string()
+            })
             .unwrap_or_default();
         return Some(BaiduAccount { uid, username });
     }
@@ -421,7 +427,10 @@ impl ReloginCooldown {
     }
 
     fn record_failure_at(&self, key: &str, now: Instant) {
-        self.last_failure.lock().unwrap().insert(key.to_string(), now);
+        self.last_failure
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), now);
     }
 
     /// Cleared on success and whenever the stored material changes
@@ -646,7 +655,8 @@ mod tests {
 
     #[test]
     fn parse_quota_extracts_sizes() {
-        let output = "用户名: some_user, 总空间: 2.000000TB, 已用空间: 512.000000GB, 比率: 25.000000%\n";
+        let output =
+            "用户名: some_user, 总空间: 2.000000TB, 已用空间: 512.000000GB, 比率: 25.000000%\n";
         let quota = parse_quota(output).expect("quota line parses");
         assert_eq!(quota.total_bytes, 2 * 1024u64.pow(4));
         assert_eq!(quota.used_bytes, 512 * 1024u64.pow(3));
@@ -768,8 +778,7 @@ mod tests {
             tool: &str,
             account_key: &str,
         ) -> crate::Result<Option<ToolCredentialDbModel>> {
-            self.gets
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.gets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self
                 .row
                 .clone()

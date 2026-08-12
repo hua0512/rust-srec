@@ -17,6 +17,7 @@ import {
   Archive,
   Terminal,
   Languages,
+  KeyRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -61,6 +62,12 @@ function ConfigLayout() {
       href: '/config/engines',
       icon: Cpu,
       description: i18n._(msg`Processing nodes`),
+    },
+    {
+      title: i18n._(msg`API Keys`),
+      href: '/config/api-keys',
+      icon: KeyRound,
+      description: i18n._(msg`Programmatic & MCP access`),
     },
     {
       title: i18n._(msg`Logging`),
