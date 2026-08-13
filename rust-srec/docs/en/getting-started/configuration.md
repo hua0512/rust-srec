@@ -179,7 +179,9 @@ Example: `{streamer}/%Y-%m-%d/%H-%M-%S_{title}`
 Pipeline destination fields such as rclone `destination_root` and copy/move
 `destination` support `{platform}`, `{streamer}`, `{title}`, `{streamer_id}`,
 `{session_id}`, and the same `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%t`, and `%%`
-time tokens. Time tokens render in the server's local time zone.
+time tokens. Time tokens render in the server's local time zone. Rclone's
+`public_url_base` expands with the same placeholders and the same `time_anchor`
+as `destination_root`, so the public URL layout can mirror the remote layout.
 
 Rclone expands time tokens with the job creation time by default. Set
 `time_anchor` to `session_start` to keep every segment from one live session in

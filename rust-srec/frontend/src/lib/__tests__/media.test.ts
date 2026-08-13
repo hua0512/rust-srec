@@ -1,5 +1,7 @@
 import {
+  getOutputMediaUrl,
   isPlayable,
+  isRemoteOnly,
   normalizePlayerMediaType,
   resolvePlayerMediaType,
 } from '../media';
@@ -60,5 +62,45 @@ describe('isPlayable', () => {
     expect(
       isPlayable({ format: 'VIDEO', file_path: '/recordings/video.mp4.tmp' }),
     ).toBe(false);
+  });
+});
+
+describe('getOutputMediaUrl', () => {
+  it('uses the backend endpoint with token while the local file exists', () => {
+    expect(
+      getOutputMediaUrl(
+        { id: 'abc', remote_url: 'https://cdn.example.com/a.mp4', local_available: true },
+        'jwt',
+      ),
+    ).toBe('/api/media/abc/content?token=jwt');
+  });
+
+  it('uses the cloud copy without token when the local file is gone', () => {
+    expect(
+      getOutputMediaUrl(
+        { id: 'abc', remote_url: 'https://cdn.example.com/a.mp4', local_available: false },
+        'jwt',
+      ),
+    ).toBe('https://cdn.example.com/a.mp4');
+  });
+
+  it('falls back to the backend endpoint when no cloud copy exists', () => {
+    expect(
+      getOutputMediaUrl({ id: 'abc', remote_url: null, local_available: false }),
+    ).toBe('/api/media/abc/content');
+  });
+});
+
+describe('isRemoteOnly', () => {
+  it('is true only when the local file is gone and a cloud copy exists', () => {
+    expect(
+      isRemoteOnly({ id: 'a', remote_url: 'https://x/a.mp4', local_available: false }),
+    ).toBe(true);
+    expect(
+      isRemoteOnly({ id: 'a', remote_url: 'https://x/a.mp4', local_available: true }),
+    ).toBe(false);
+    expect(isRemoteOnly({ id: 'a', remote_url: null, local_available: false })).toBe(
+      false,
+    );
   });
 });

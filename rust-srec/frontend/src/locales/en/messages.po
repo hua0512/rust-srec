@@ -49,7 +49,7 @@ msgstr "\"{0}\" will be removed. Streamers using it fall back to the default eng
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "\"{0}\" will stop working immediately. This cannot be undone."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:192
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:200
 msgid "(Delete source)"
 msgstr "(Delete source)"
 
@@ -57,13 +57,21 @@ msgstr "(Delete source)"
 msgid "(empty)"
 msgstr "(empty)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:203
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:415
+msgid "(Google Drive / OneDrive / ...)"
+msgstr "(Google Drive / OneDrive / ...)"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:211
 msgid "(Mirror source)"
 msgstr "(Mirror source)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:181
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
 msgid "(Preserve source)"
 msgstr "(Preserve source)"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:404
+msgid "(S3 / CDN / WebDAV)"
+msgstr "(S3 / CDN / WebDAV)"
 
 #. placeholder {0}: uploads.length
 #: src/components/streamers/card/upload-indicator.tsx:45
@@ -163,7 +171,7 @@ msgstr "{seconds}s"
 msgid "* * * * * *"
 msgstr "* * * * * *"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:323
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:331
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
@@ -179,7 +187,7 @@ msgstr "/usr/share/fonts"
 msgid "^Started.*"
 msgstr "^Started.*"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:631
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:809
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 
@@ -187,7 +195,7 @@ msgstr "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if 
 msgid "0 (None) - 9 (Best)"
 msgstr "0 (None) - 9 (Best)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:644
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:822
 msgid "0 = unlimited"
 msgstr "0 = unlimited"
 
@@ -246,6 +254,10 @@ msgstr "7 days"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:482
 msgid "90 days"
 msgstr "90 days"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:521
+msgid "A share link is generated per uploaded file after the transfer completes."
+msgstr "A share link is generated per uploaded file after the transfer completes."
 
 #: src/components/config/engines/engine-editor.tsx:195
 msgid "A unique and descriptive name for this configuration."
@@ -415,7 +427,7 @@ msgstr "Add Pipeline Step"
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "Add randomness to retry delays to prevent thundering herd."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:827
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:1005
 msgid "Add rclone argument"
 msgstr "Add rclone argument"
 
@@ -454,7 +466,7 @@ msgstr "Adjust the roundness of UI elements."
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:334
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:145
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:239
 #: src/components/streamers/streamer-editor.tsx:169
 msgid "Advanced"
@@ -566,7 +578,7 @@ msgstr "API key created"
 msgid "API key revoked"
 msgstr "API key revoked"
 
-#: src/components/sidebar/user-menu.tsx:106
+#: src/components/sidebar/user-menu.tsx:108
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:131
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:67
 msgid "API Keys"
@@ -919,15 +931,15 @@ msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the bi
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:407
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:585
 msgid "Bandwidth"
 msgstr "Bandwidth"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:416
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:594
 msgid "Bandwidth Limit"
 msgstr "Bandwidth Limit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:418
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:596
 msgid "Bandwidth Limit help"
 msgstr "Bandwidth Limit help"
 
@@ -939,7 +951,7 @@ msgstr "Base"
 msgid "Base delay between retries"
 msgstr "Base delay between retries"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:262
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:270
 msgid "Base path for remote storage. Supports metadata and time placeholders."
 msgstr "Base path for remote storage. Supports metadata and time placeholders."
 
@@ -1027,7 +1039,7 @@ msgstr "Bot Name"
 msgid "Bot Token"
 msgstr "Bot Token"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:431
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:609
 msgid "both directions at 10 MiB/s"
 msgstr "both directions at 10 MiB/s"
 
@@ -1039,7 +1051,7 @@ msgstr "Bottom Fixed"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
-#: src/components/sessions/recordings-tab.tsx:246
+#: src/components/sessions/recordings-tab.tsx:272
 msgid "Break"
 msgstr "Break"
 
@@ -1068,7 +1080,7 @@ msgstr "Buffer Limits"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:696
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:874
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
 msgstr "Burst capacity for TPS Limit (--tpslimit-burst)."
 
@@ -1142,7 +1154,7 @@ msgstr "Cancelled"
 msgid "Cancelled {0} steps in pipeline"
 msgstr "Cancelled {0} steps in pipeline"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:458
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:636
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "Caps overall transfer bandwidth (rclone --bwlimit)."
 
@@ -1186,7 +1198,7 @@ msgstr "CDN"
 
 #: src/components/layout/site-header.tsx:34
 #: src/components/sidebar/navbar.tsx:28
-#: src/components/sidebar/user-menu.tsx:112
+#: src/components/sidebar/user-menu.tsx:114
 #: src/routes/_authed/change-password.lazy.tsx:123
 #: src/routes/_authed/change-password.lazy.tsx:270
 msgid "Change Password"
@@ -1241,7 +1253,7 @@ msgstr "Channels"
 msgid "Chat ID"
 msgstr "Chat ID"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:578
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:756
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 
@@ -1270,11 +1282,11 @@ msgstr "Check this streamer and record when it goes live."
 msgid "Check triggered"
 msgstr "Check triggered"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:568
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:746
 msgid "Checkers"
 msgstr "Checkers"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:570
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:748
 msgid "Checkers help"
 msgstr "Checkers help"
 
@@ -1290,7 +1302,7 @@ msgstr "Checking link"
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:210
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:218
 msgid "Choose how files are transferred to the remote."
 msgstr "Choose how files are transferred to the remote."
 
@@ -1368,6 +1380,10 @@ msgstr "Close"
 msgid "Closest to bitrate"
 msgstr "Closest to bitrate"
 
+#: src/components/sessions/recordings-tab.tsx:178
+msgid "Cloud"
+msgstr "Cloud"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:325
 msgid "Collapsible"
 msgstr "Collapsible"
@@ -1426,7 +1442,7 @@ msgstr "Component"
 msgid "Component Status"
 msgstr "Component Status"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:485
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:663
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 
@@ -1454,7 +1470,7 @@ msgid "Compression Level"
 msgstr "Compression Level"
 
 #: src/components/config/global/concurrency-card.tsx:78
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:516
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:694
 msgid "Concurrency"
 msgstr "Concurrency"
 
@@ -1466,11 +1482,11 @@ msgstr "Concurrency limit reached"
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "Concurrency limits, pipeline timeouts, and engine defaults."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:598
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:776
 msgid "Concurrent checkers (--checkers)."
 msgstr "Concurrent checkers (--checkers)."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:555
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:733
 msgid "Concurrent file transfers (--transfers)."
 msgstr "Concurrent file transfers (--transfers)."
 
@@ -1487,7 +1503,7 @@ msgstr "Config Directory (Optional)"
 msgid "Config Directory help"
 msgstr "Config Directory help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:319
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:327
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
@@ -1662,7 +1678,7 @@ msgstr "Cookies Only"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/components/pipeline/outputs/output-card.tsx:189
+#: src/components/pipeline/outputs/output-card.tsx:199
 msgid "Copied!"
 msgstr "Copied!"
 
@@ -1671,7 +1687,7 @@ msgid "copy"
 msgstr "copy"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:178
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:186
 msgid "Copy"
 msgstr "Copy"
 
@@ -1695,7 +1711,7 @@ msgstr "Copy / Move"
 msgid "Copy API key"
 msgstr "Copy API key"
 
-#: src/components/pipeline/outputs/output-card.tsx:208
+#: src/components/pipeline/outputs/output-card.tsx:218
 msgid "Copy Directory"
 msgstr "Copy Directory"
 
@@ -1715,7 +1731,7 @@ msgstr "Copy JSON"
 msgid "Copy MCP configuration"
 msgstr "Copy MCP configuration"
 
-#: src/components/pipeline/outputs/output-card.tsx:189
+#: src/components/pipeline/outputs/output-card.tsx:199
 msgid "Copy Path"
 msgstr "Copy Path"
 
@@ -1866,7 +1882,7 @@ msgid "Create your first workflow to define a sequence of processing steps for y
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
 #: src/components/config/global/backup-restore-card.tsx:178
-#: src/components/pipeline/outputs/output-card.tsx:239
+#: src/components/pipeline/outputs/output-card.tsx:249
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:610
 msgid "Created"
 msgstr "Created"
@@ -2043,7 +2059,7 @@ msgstr "Customize specific engine settings for this template."
 msgid "Customize the application theme and sidebar layout."
 msgstr "Customize the application theme and sidebar layout."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:766
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:944
 msgid "Cutoff"
 msgstr "Cutoff"
 
@@ -2134,7 +2150,7 @@ msgstr "Date"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:397
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:278
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:286
 msgid "Date placeholder anchor"
 msgstr "Date placeholder anchor"
 
@@ -2183,7 +2199,7 @@ msgstr "Default Douyu quality"
 msgid "Default Engine"
 msgstr "Default Engine"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:677
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:855
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 
@@ -2416,11 +2432,11 @@ msgstr "Destination Folder"
 msgid "Destination Folder help"
 msgstr "Destination Folder help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:245
 msgid "Destination Root"
 msgstr "Destination Root"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:238
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
 msgid "Destination Root help"
 msgstr "Destination Root help"
 
@@ -2452,7 +2468,7 @@ msgstr "Dimensions & Filters"
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 
-#: src/components/pipeline/outputs/output-card.tsx:204
+#: src/components/pipeline/outputs/output-card.tsx:214
 msgid "Directory path copied"
 msgstr "Directory path copied"
 
@@ -2476,6 +2492,7 @@ msgstr "Disable selected"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:225
 #: src/components/config/shared/record-danmu-card.tsx:102
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:395
 #: src/components/streamers/card/use-streamer-status.tsx:49
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
@@ -2489,7 +2506,7 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
-#: src/components/sessions/recordings-tab.tsx:257
+#: src/components/sessions/recordings-tab.tsx:283
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "Discontinuity"
@@ -2508,7 +2525,7 @@ msgid "Done"
 msgstr "Done"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:664
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:831
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:1009
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
@@ -2528,7 +2545,7 @@ msgstr "Douyu SD or low rate"
 msgid "Douyu UHD rate"
 msgstr "Douyu UHD rate"
 
-#: src/components/sessions/recordings-tab.tsx:173
+#: src/components/sessions/recordings-tab.tsx:199
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
@@ -2636,7 +2653,7 @@ msgstr "e.g. 0:v:0, 0:a:0"
 msgid "e.g. 1080p, source, 原画"
 msgstr "e.g. 1080p, source, 原画"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:451
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:629
 msgid "e.g. 10M"
 msgstr "e.g. 10M"
 
@@ -2644,11 +2661,15 @@ msgstr "e.g. 10M"
 msgid "e.g. 128k, 320k"
 msgstr "e.g. 128k, 320k"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:495
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:673
 msgid "e.g. 1M"
 msgstr "e.g. 1M"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:788
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:514
+msgid "e.g. 1w"
+msgstr "e.g. 1w"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:966
 msgid "e.g. 250M"
 msgstr "e.g. 250M"
 
@@ -2672,13 +2693,17 @@ msgstr "e.g. echo {input} > {output}"
 msgid "e.g. flv, hls"
 msgstr "e.g. flv, hls"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:255
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:263
 msgid "e.g. gdrive:/videos"
 msgstr "e.g. gdrive:/videos"
 
 #: src/components/config/engines/engine-editor.tsx:190
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:468
+msgid "e.g. https://cdn.example.com/{streamer}"
+msgstr "e.g. https://cdn.example.com/{streamer}"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:290
 msgid "e.g. mp4"
@@ -2948,7 +2973,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:241
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:252
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -2991,7 +3016,7 @@ msgstr "Event Types"
 msgid "Events"
 msgstr "Events"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:426
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:604
 msgid "Examples:"
 msgstr "Examples:"
 
@@ -3103,7 +3128,7 @@ msgstr "Exports include all global settings, platforms, templates, streamers, en
 #: src/components/config/engines/forms/streamlink-form.tsx:162
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:645
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:812
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:990
 msgid "Extra Arguments"
 msgstr "Extra Arguments"
 
@@ -3554,7 +3579,7 @@ msgstr "File Ops"
 msgid "File path copied to clipboard"
 msgstr "File path copied to clipboard"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:795
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:973
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "File size threshold (--multi-thread-cutoff)."
 
@@ -3572,11 +3597,11 @@ msgstr "Filename Template"
 msgid "files"
 msgstr "files"
 
-#: src/components/sessions/recordings-tab.tsx:495
+#: src/components/sessions/recordings-tab.tsx:521
 msgid "Files"
 msgstr "Files"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:772
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:950
 msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 msgstr "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 
@@ -3679,6 +3704,10 @@ msgstr "FLV stream fixing pipeline"
 msgid "FLV Tuning"
 msgstr "FLV Tuning"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:457
+msgid "FLV/TS playback in the browser additionally needs CORS and Range support on the remote host; MP4 plays without CORS."
+msgstr "FLV/TS playback in the browser additionally needs CORS and Range support on the remote host; MP4 plays without CORS."
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:862
 msgid "Follow Redirects (Default: On)"
 msgstr "Follow Redirects (Default: On)"
@@ -3778,7 +3807,7 @@ msgstr "GB"
 #: src/components/config/templates/template-editor.tsx:245
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:139
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
 #: src/components/streamers/streamer-editor.tsx:149
 msgid "General"
@@ -3865,7 +3894,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:233
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:249
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:260
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -4034,7 +4063,7 @@ msgstr "High-priority slot waiting (concurrency limit reached)"
 msgid "High+"
 msgstr "High+"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:535
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:713
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 
@@ -4092,7 +4121,7 @@ msgstr "How many CPU-bound pipeline steps, such as transcodes, may run at the sa
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:530
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:708
 msgid "How many files rclone uploads in parallel."
 msgstr "How many files rclone uploads in parallel."
 
@@ -4100,7 +4129,7 @@ msgstr "How many files rclone uploads in parallel."
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "How many pipeline upload steps may run at the same time."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:671
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:849
 msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
 msgstr "How many requests can briefly burst above TPS Limit before throttling kicks in."
 
@@ -4123,6 +4152,10 @@ msgstr "How the stream address is found. Switch to Streamlink when a site stops 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:442
+msgid "HTTP base URL that serves the same layout as the Destination Root, e.g. a CDN or bucket website in front of the remote."
+msgstr "HTTP base URL that serves the same layout as the Destination Root, e.g. a CDN or bucket website in front of the remote."
 
 #: src/components/config/shared/network-settings-card.tsx:233
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
@@ -4387,7 +4420,7 @@ msgid "Job creation time"
 msgstr "Job creation time"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:412
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:293
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:301
 msgid "Job creation time (default)"
 msgstr "Job creation time (default)"
 
@@ -4418,7 +4451,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:338
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -4442,7 +4475,7 @@ msgstr "JSON array of all outputs"
 msgid "KB"
 msgstr "KB"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:254
 msgid "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
 msgstr "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
 
@@ -4542,9 +4575,17 @@ msgstr "Limits"
 msgid "Limits & Validation"
 msgstr "Limits & Validation"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:479
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:657
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "Limits each individual file's transfer rate rather than the overall total."
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:493
+msgid "Link Expiry (Optional)"
+msgstr "Link Expiry (Optional)"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:494
+msgid "Link Expiry help"
+msgstr "Link Expiry help"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:108
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:111
@@ -4712,7 +4753,7 @@ msgstr "Long-lived credentials for programmatic access to the REST API and the b
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/sessions/recordings-tab.tsx:265
+#: src/components/sessions/recordings-tab.tsx:291
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
@@ -4884,7 +4925,7 @@ msgstr "Max Refresh Retries"
 
 #: src/components/config/shared/retry-policy-form.tsx:52
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:374
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:552
 msgid "Max Retries"
 msgstr "Max Retries"
 
@@ -4904,7 +4945,7 @@ msgstr "Max Segments"
 msgid "Max Stall Duration (ms)"
 msgstr "Max Stall Duration (ms)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:651
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:829
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "Max transactions/second to the remote API (--tpslimit)."
 
@@ -4952,7 +4993,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/components/sessions/recordings-tab.tsx:491
+#: src/components/sessions/recordings-tab.tsx:517
 msgid "Media Timeline"
 msgstr "Media Timeline"
 
@@ -5034,6 +5075,10 @@ msgstr "Mint Integrity Token"
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:476
+msgid "Mirror of the Destination Root reachable over HTTP."
+msgstr "Mirror of the Destination Root reachable over HTTP."
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:363
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "Missing folders are created by BaiduPCS-Go during upload."
@@ -5084,7 +5129,7 @@ msgstr "More pages"
 msgid "Morning"
 msgstr "Morning"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:197
 msgid "Move"
 msgstr "Move"
 
@@ -5112,19 +5157,19 @@ msgstr "MP"
 msgid "ms"
 msgstr "ms"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:710
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:888
 msgid "Multi-Thread Copy"
 msgstr "Multi-Thread Copy"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:769
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:947
 msgid "Multi-Thread Cutoff help"
 msgstr "Multi-Thread Cutoff help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:723
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:901
 msgid "Multi-Thread Streams help"
 msgstr "Multi-Thread Streams help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:778
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:956
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 
@@ -5360,7 +5405,7 @@ msgstr "No logs to display"
 msgid "No matching events found"
 msgstr "No matching events found"
 
-#: src/components/sessions/recordings-tab.tsx:508
+#: src/components/sessions/recordings-tab.tsx:534
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
@@ -5617,7 +5662,7 @@ msgstr "Nth input: {input0}, {input1}..."
 msgid "Nth output: {output0}, {output1}..."
 msgstr "Nth output: {output0}, {output1}..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:385
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:563
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
@@ -5728,7 +5773,7 @@ msgstr "Ongoing"
 msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:732
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:910
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 
@@ -5740,7 +5785,7 @@ msgstr "Only supported for MP4/MOV/M4V"
 #: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:188
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:150
-#: src/components/pipeline/outputs/output-card.tsx:178
+#: src/components/pipeline/outputs/output-card.tsx:188
 #: src/components/pipeline/presets/preset-card.tsx:170
 #: src/components/pipeline/workflows/workflow-card.tsx:164
 msgid "Open menu"
@@ -5751,11 +5796,11 @@ msgid "Open quality options"
 msgstr "Open quality options"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:166
 msgid "Operation"
 msgstr "Operation"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:146
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:154
 msgid "Operation Mode"
 msgstr "Operation Mode"
 
@@ -5905,7 +5950,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:296
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:307
 msgid "Overview"
 msgstr "Overview"
 
@@ -5969,7 +6014,7 @@ msgstr "Paired Segment"
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:572
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:750
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "Parallel integrity checks (e.g. comparing source / destination hashes)."
 
@@ -6002,6 +6047,10 @@ msgstr "Parsing Stream..."
 #: src/components/player/url-input-form.tsx:318
 msgid "Parsing..."
 msgstr "Parsing..."
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:496
+msgid "Passed to rclone link --expire (e.g. 1w, 24h). Leave empty for the backend default. Not every backend honors expiry."
+msgstr "Passed to rclone link --expire (e.g. 1w, 24h). Leave empty for the backend default. Not every backend honors expiry."
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:285
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:222
@@ -6087,15 +6136,15 @@ msgstr "Pending Jobs"
 msgid "Per page:"
 msgstr "Per page:"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:473
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:651
 msgid "Per-File Bandwidth Limit"
 msgstr "Per-File Bandwidth Limit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:476
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:654
 msgid "Per-File Bandwidth Limit help"
 msgstr "Per-File Bandwidth Limit help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:502
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:680
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 
@@ -6289,7 +6338,7 @@ msgstr "platforms"
 msgid "Platforms"
 msgstr "Platforms"
 
-#: src/components/sessions/recordings-tab.tsx:199
+#: src/components/sessions/recordings-tab.tsx:225
 msgid "Play"
 msgstr "Play"
 
@@ -6605,6 +6654,18 @@ msgstr "Proxy Strategy"
 msgid "Proxy URL"
 msgstr "Proxy URL"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:368
+msgid "Public Access URL"
+msgstr "Public Access URL"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:439
+msgid "Public URL Base"
+msgstr "Public URL Base"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:440
+msgid "Public URL Base help"
+msgstr "Public URL Base help"
+
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:165
 msgid "QR code expired"
 msgstr "QR code expired"
@@ -6667,11 +6728,11 @@ msgstr "RAM utilization"
 msgid "Random"
 msgstr "Random"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:610
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:788
 msgid "Rate Limiting"
 msgstr "Rate Limiting"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:624
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:802
 msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 
@@ -6689,22 +6750,26 @@ msgstr "Raw JSON Editor"
 msgid "Rclone"
 msgstr "Rclone"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:689
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:867
 msgid "rclone default: 1"
 msgstr "rclone default: 1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:548
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:744
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:726
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:922
 msgid "rclone default: 4"
 msgstr "rclone default: 4"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:591
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:769
 msgid "rclone default: 8"
 msgstr "rclone default: 8"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:339
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:347
 msgid "Rclone Executable"
 msgstr "Rclone Executable"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:412
+msgid "rclone link"
+msgstr "rclone link"
 
 #: src/components/pipeline/presets/processors/registry.ts:68
 #: src/components/pipeline/presets/processors/registry.ts:128
@@ -6781,6 +6846,10 @@ msgstr "Recommended"
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "Recommended: 8388608 (8 MiB)"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:422
+msgid "Record a public URL for each uploaded file so session previews keep working after local files are deleted."
+msgstr "Record a public URL for each uploaded file so session previews keep working after local files are deleted."
+
 #: src/components/config/global/file-config-card.tsx:29
 #: src/components/config/shared/record-danmu-card.tsx:46
 msgid "Record Danmu"
@@ -6821,7 +6890,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:315
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:326
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -7075,7 +7144,7 @@ msgid "Retry Pipeline"
 msgstr "Retry Pipeline"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:362
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:540
 msgid "Retry Policy"
 msgstr "Retry Policy"
 
@@ -7184,6 +7253,10 @@ msgstr "S"
 msgctxt "Sunday initial"
 msgid "S"
 msgstr "S"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:503
+msgid "S3 pre-signed links are capped at 1 week; expired links break previews. Google Drive links never expire but make the file readable by anyone with the link."
+msgstr "S3 pre-signed links are capped at 1 week; expired links break previews. Google Drive links never expire but make the file readable by anyone with the link."
 
 #: src/components/notifications/forms/channel-delivery-fields.tsx:145
 msgid "Same as server"
@@ -7394,7 +7467,7 @@ msgstr "Segment Timeout (ms)"
 msgid "Segment TTL (ms)"
 msgstr "Segment TTL (ms)"
 
-#: src/components/sessions/recordings-tab.tsx:494
+#: src/components/sessions/recordings-tab.tsx:520
 #: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "Segments"
@@ -7468,7 +7541,7 @@ msgstr "Select current page"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:406
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:141
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:295
 msgid "Select date anchor"
 msgstr "Select date anchor"
 
@@ -7485,7 +7558,7 @@ msgid "Select format"
 msgstr "Select format"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:168
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:176
 msgid "Select operation"
 msgstr "Select operation"
 
@@ -7548,6 +7621,10 @@ msgstr "Select the steps that must complete successfully before this step runs."
 msgid "Select type"
 msgstr "Select type"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:389
+msgid "Select URL mode"
+msgstr "Select URL mode"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:112
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
@@ -7585,7 +7662,7 @@ msgstr "Server URL"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
 #: src/components/config/shared-config-editor.tsx:459
-#: src/components/pipeline/outputs/output-card.tsx:251
+#: src/components/pipeline/outputs/output-card.tsx:261
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "Session"
@@ -7635,7 +7712,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:244
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:255
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -7729,7 +7806,7 @@ msgstr "Sidebar Layout"
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/sidebar/user-menu.tsx:122
+#: src/components/sidebar/user-menu.tsx:121
 msgid "Sign out"
 msgstr "Sign out"
 
@@ -7746,7 +7823,7 @@ msgstr "Since {0}"
 msgid "Single URL"
 msgstr "Single URL"
 
-#: src/components/pipeline/outputs/output-card.tsx:228
+#: src/components/pipeline/outputs/output-card.tsx:238
 #: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
 msgstr "Size"
@@ -7854,11 +7931,11 @@ msgstr "Split on any raw header change. Safe but may cause extra files."
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "Split only on codec configuration changes. Reduces false splits."
 
-#: src/components/sessions/recordings-tab.tsx:125
+#: src/components/sessions/recordings-tab.tsx:127
 msgid "Split Reason"
 msgstr "Split Reason"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:726
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:904
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "Splits a single large file into N parallel chunks for faster upload."
 
@@ -7992,7 +8069,7 @@ msgstr "Stream Splitting Strategy"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:415
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:153
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:296
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:304
 msgid "Stream start time"
 msgstr "Stream start time"
 
@@ -8087,7 +8164,7 @@ msgstr "Streaming services"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:720
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:898
 msgid "Streams"
 msgstr "Streams"
 
@@ -8100,7 +8177,7 @@ msgstr "Streams & Metadata"
 msgid "Streams extracted"
 msgstr "Streams extracted"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:751
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:929
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "Streams per file (--multi-thread-streams)."
 
@@ -8145,9 +8222,13 @@ msgid "Supported Platforms"
 msgstr "Supported Platforms"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:248
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:449
+msgid "Supports the same placeholders as Destination Root: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d. Each file's destination-relative path is appended."
+msgstr "Supports the same placeholders as Destination Root: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d. Each file's destination-relative path is appended."
 
 #: src/components/config/engines/forms/mesio-form.tsx:128
 msgid "Suppress redundant headers to reduce player micro-stutter"
@@ -8163,7 +8244,7 @@ msgstr "Switch language"
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:200
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:208
 msgid "Sync"
 msgstr "Sync"
 
@@ -8222,7 +8303,7 @@ msgstr "Target bitrate"
 msgid "Target Bitrate"
 msgstr "Target Bitrate"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:225
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:233
 msgid "Target Configuration"
 msgstr "Target Configuration"
 
@@ -8314,6 +8395,10 @@ msgstr "The key inherits your account's permissions, limited by the access level
 #: src/components/notifications/forms/channel-delivery-fields.tsx:156
 msgid "The language this channel's messages are written in, whoever reads them."
 msgstr "The language this channel's messages are written in, whoever reads them."
+
+#: src/components/sessions/recordings-tab.tsx:183
+msgid "The local file was removed; playback and download use the cloud copy."
+msgstr "The local file was removed; playback and download use the cloud copy."
 
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
@@ -8435,7 +8520,7 @@ msgstr "This will permanently delete the preset \"{0}\". Pipelines using this pr
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:398
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:576
 msgid "Throughput"
 msgstr "Throughput"
 
@@ -8477,12 +8562,12 @@ msgstr "Time Range"
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:439
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:617
 msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:393
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:302
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:313
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -8522,7 +8607,7 @@ msgstr "Timezone"
 msgid "Timing & Delays"
 msgstr "Timing & Delays"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:443
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:621
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 
@@ -8600,19 +8685,19 @@ msgstr "Total Steps"
 msgid "Total system load"
 msgstr "Total system load"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:667
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:845
 msgid "TPS Burst"
 msgstr "TPS Burst"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:669
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:847
 msgid "TPS Burst help"
 msgstr "TPS Burst help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:620
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:798
 msgid "TPS Limit"
 msgstr "TPS Limit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:622
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:800
 msgid "TPS Limit help"
 msgstr "TPS Limit help"
 
@@ -8624,11 +8709,11 @@ msgstr "Track Information"
 msgid "Transcode H.264"
 msgstr "Transcode H.264"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:526
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:704
 msgid "Transfers"
 msgstr "Transfers"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:528
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:706
 msgid "Transfers help"
 msgstr "Transfers help"
 
@@ -8820,7 +8905,7 @@ msgstr "Unique Chatters"
 msgid "Unit"
 msgstr "Unit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:420
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:598
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 
@@ -8897,7 +8982,7 @@ msgstr "upload"
 msgid "Upload"
 msgstr "Upload"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:435
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:613
 msgid "upload : download (asymmetric)"
 msgstr "upload : download (asymmetric)"
 
@@ -8971,9 +9056,17 @@ msgstr "Uptime <0>{0}</0>"
 msgid "URL"
 msgstr "URL"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:401
+msgid "URL base mapping"
+msgstr "URL base mapping"
+
 #: src/components/player/url-input-form.tsx:33
 msgid "URL is required"
 msgstr "URL is required"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:380
+msgid "URL Mode"
+msgstr "URL Mode"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:839
 msgid "Use <0>-movflags +faststart</0>"
@@ -8988,7 +9081,7 @@ msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:301
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:309
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 
@@ -9121,7 +9214,7 @@ msgstr "View All"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
-#: src/components/sessions/recordings-tab.tsx:186
+#: src/components/sessions/recordings-tab.tsx:212
 msgid "View Danmu"
 msgstr "View Danmu"
 

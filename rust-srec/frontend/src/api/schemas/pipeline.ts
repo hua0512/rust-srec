@@ -113,6 +113,7 @@ export const UploadRecordSchema = z.object({
   uploader: z.string(),
   local_path: z.string(),
   remote_path: z.string().nullable().optional(),
+  public_url: z.string().nullable().optional(),
   status: UploadRecordStatusSchema,
   size_bytes: z.number().nullable().optional(),
   error: z.string().nullable().optional(),

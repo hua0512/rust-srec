@@ -18,8 +18,10 @@ import {
   Link2,
   Unlink,
   ArrowRight,
+  CloudUpload,
 } from 'lucide-react';
-import { isPlayable } from '@/lib/media';
+import { isPlayable, isRemoteOnly } from '@/lib/media';
+import { getUrlHost } from '@/lib/url';
 import { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
 import { formatSplitReason, SplitReasonDetails } from '@/lib/split-reason';
@@ -52,7 +54,7 @@ interface RecordingsTabProps {
   outputs: MediaOutput[];
   segments?: SessionSegment[];
   isSegmentsLoading?: boolean;
-  onDownload: (id: string, name: string) => void;
+  onDownload: (output: MediaOutput, name: string) => void;
   onPlay: (output: MediaOutput) => void;
 }
 
@@ -139,10 +141,13 @@ const OutputRow = memo(function OutputRow({
   onPlay,
 }: {
   output: MediaOutput;
-  onDownload: (id: string, name: string) => void;
+  onDownload: (output: MediaOutput, name: string) => void;
   onPlay: (output: MediaOutput) => void;
 }) {
   const fileName = output.file_path.split('/').pop();
+  const remoteHost = isRemoteOnly(output)
+    ? getUrlHost(output.remote_url)
+    : null;
 
   return (
     <div className="p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/10 transition-colors">
@@ -161,6 +166,27 @@ const OutputRow = memo(function OutputRow({
           >
             {fileName}
           </p>
+          {isRemoteOnly(output) && (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className="h-4 px-1 gap-1 text-[9px] shrink-0 max-w-32 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 bg-emerald-500/10"
+                >
+                  <CloudUpload className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">
+                    {remoteHost ?? <Trans>Cloud</Trans>}
+                  </span>
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-sm">
+                <Trans>
+                  The local file was removed; playback and download use the
+                  cloud copy.
+                </Trans>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
@@ -168,7 +194,7 @@ const OutputRow = memo(function OutputRow({
           variant="outline"
           size="sm"
           className="h-7 text-[10px]"
-          onClick={() => onDownload(output.id, fileName || 'video')}
+          onClick={() => onDownload(output, fileName || 'video')}
         >
           <Download className="mr-1.5 h-3 w-3" /> <Trans>Download</Trans>
         </Button>
@@ -214,7 +240,7 @@ const TimelineNode = memo(function TimelineNode({
   group: TimelineGroup;
   index: number;
   isSegmentsLoading?: boolean;
-  onDownload: (id: string, name: string) => void;
+  onDownload: (output: MediaOutput, name: string) => void;
   onPlay: (output: MediaOutput) => void;
 }) {
   const { i18n } = useLingui();

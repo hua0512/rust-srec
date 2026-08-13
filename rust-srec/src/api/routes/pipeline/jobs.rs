@@ -263,6 +263,7 @@ pub async fn list_job_uploads(
             uploader: r.uploader,
             local_path: r.local_path,
             remote_path: r.remote_path,
+            public_url: r.public_url,
             status: r.status,
             size_bytes: r.size_bytes,
             error: r.error,
@@ -629,7 +630,9 @@ pub async fn list_outputs(
                     .push(MediaOutputUploadInfo {
                         uploader: record.uploader,
                         remote_path: record.remote_path,
+                        public_url: record.public_url,
                         status: record.status,
+                        error: record.error,
                         completed_at: record.completed_at.map(ms_to_datetime),
                     });
             }
@@ -641,10 +644,20 @@ pub async fn list_outputs(
         }
     }
 
+    // Local existence drives the frontend's local-vs-remote_url choice for
+    // playback and download; a page is at most 100 rows, so the metadata
+    // probes are cheap and run concurrently.
+    let local_availability: Vec<bool> = join_all(outputs.iter().map(|output| {
+        let path = output.file_path.clone();
+        async move { tokio::fs::try_exists(&path).await.unwrap_or(false) }
+    }))
+    .await;
+
     // Convert outputs to API response format
     let output_responses: Vec<MediaOutputResponse> = outputs
         .iter()
-        .map(|output| {
+        .zip(local_availability)
+        .map(|(output, local_available)| {
             let created_at = crate::database::time::ms_to_datetime(output.created_at);
 
             let streamer_id = match requested_streamer_id {
@@ -664,6 +677,8 @@ pub async fn list_outputs(
                 duration_secs: None, // Not stored in current model
                 format: output.file_type.clone(),
                 created_at,
+                remote_url: output.remote_url.clone(),
+                local_available,
                 uploads: uploads_by_output
                     .get(&(output.session_id.clone(), output.file_path.clone()))
                     .cloned()

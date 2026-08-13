@@ -113,6 +113,16 @@ export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
                       {record.remote_path}
                     </div>
                   )}
+                  {record.public_url && (
+                    <a
+                      href={record.public_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-mono text-primary/80 hover:text-primary underline truncate block"
+                    >
+                      {record.public_url}
+                    </a>
+                  )}
                   {record.error && (
                     <Tooltip>
                       <TooltipTrigger asChild>

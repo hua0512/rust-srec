@@ -23,11 +23,12 @@ const OUTPUT_KEY_CHUNK: usize = 100;
 const UPSERT_SQL: &str = r#"
     INSERT INTO upload_records (
         id, job_id, streamer_id, session_id, uploader, local_path,
-        remote_path, status, size_bytes, error, created_at, updated_at, completed_at
+        remote_path, public_url, status, size_bytes, error, created_at, updated_at, completed_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (job_id, local_path) DO UPDATE SET
         remote_path  = excluded.remote_path,
+        public_url   = excluded.public_url,
         status       = excluded.status,
         size_bytes   = COALESCE(excluded.size_bytes, upload_records.size_bytes),
         error        = excluded.error,
@@ -37,7 +38,7 @@ const UPSERT_SQL: &str = r#"
 
 const LIST_BY_JOB_SQL: &str = r#"
     SELECT id, job_id, streamer_id, session_id, uploader, local_path,
-           remote_path, status, size_bytes, error, created_at, updated_at, completed_at
+           remote_path, public_url, status, size_bytes, error, created_at, updated_at, completed_at
     FROM upload_records
     WHERE job_id = ?
     ORDER BY local_path ASC
@@ -101,6 +102,7 @@ impl UploadRecordRepository for SqlxUploadRecordRepository {
                     .bind(&record.uploader)
                     .bind(&record.local_path)
                     .bind(record.remote_path.as_deref())
+                    .bind(record.public_url.as_deref())
                     .bind(&record.status)
                     .bind(record.size_bytes)
                     .bind(record.error.as_deref())
@@ -136,7 +138,7 @@ impl UploadRecordRepository for SqlxUploadRecordRepository {
             let placeholders = vec!["(?, ?)"; chunk.len()].join(", ");
             let sql = format!(
                 "SELECT id, job_id, streamer_id, session_id, uploader, local_path, \
-                        remote_path, status, size_bytes, error, created_at, updated_at, completed_at \
+                        remote_path, public_url, status, size_bytes, error, created_at, updated_at, completed_at \
                  FROM upload_records \
                  WHERE (session_id, local_path) IN ({placeholders}) \
                  ORDER BY updated_at DESC"
@@ -183,6 +185,7 @@ mod tests {
             uploader: "rclone".to_string(),
             local_path: local_path.to_string(),
             remote_path: Some(format!("remote:bucket/{local_path}")),
+            public_url: Some(format!("https://cdn.example.com{local_path}")),
             status: status.to_string(),
             size_bytes: Some(1024),
             error: None,

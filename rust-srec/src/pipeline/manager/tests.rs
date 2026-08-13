@@ -187,6 +187,22 @@ impl SessionRepository for TestSessionRepository {
         Ok(())
     }
 
+    async fn upsert_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
+        let mut outputs = self.outputs.lock().expect("lock poisoned");
+        let rows = outputs.entry(output.session_id.clone()).or_default();
+        if let Some(row) = rows
+            .iter_mut()
+            .find(|row| row.file_path == output.file_path)
+        {
+            if output.remote_url.is_some() {
+                row.remote_url = output.remote_url.clone();
+            }
+        } else {
+            rows.push(output.clone());
+        }
+        Ok(())
+    }
+
     async fn delete_media_output(&self, _id: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }

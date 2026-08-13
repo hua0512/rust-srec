@@ -33,8 +33,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { getMediaUrl } from '@/lib/url';
-import { resolvePlayerMediaType } from '@/lib/media';
+import { getOutputMediaUrl, isRemoteOnly, resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
 import { BackendApiError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
@@ -165,13 +164,25 @@ function SessionDetailPage() {
   const dags = dagsData?.dags || [];
   const segments = segmentsData || [];
 
-  const handleDownload = async (outputId: string, filename: string) => {
+  const handleDownload = async (output: MediaOutput, filename: string) => {
     try {
-      const url = getMediaUrl(
-        `/api/media/${outputId}/content`,
-        user?.token?.access_token,
-      );
+      const url = getOutputMediaUrl(output, user?.token?.access_token);
       if (!url) throw new Error('Invalid download URL');
+
+      // Cloud-only copies are downloaded by navigation: a cross-origin
+      // fetch would require CORS on the remote host and would leak the
+      // JWT through the Authorization header.
+      if (isRemoteOnly(output)) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
 
       toast.promise(
         async () => {
@@ -407,8 +418,8 @@ function SessionDetailPage() {
               (playingOutput.format === 'DANMU_XML' ? (
                 <DanmuViewer
                   url={
-                    getMediaUrl(
-                      `/api/media/${playingOutput.id}/content`,
+                    getOutputMediaUrl(
+                      playingOutput,
                       user?.token?.access_token,
                     ) || ''
                   }
@@ -425,8 +436,8 @@ function SessionDetailPage() {
                 >
                   <PlayerCard
                     url={
-                      getMediaUrl(
-                        `/api/media/${playingOutput.id}/content`,
+                      getOutputMediaUrl(
+                        playingOutput,
                         user?.token?.access_token,
                       ) || ''
                     }

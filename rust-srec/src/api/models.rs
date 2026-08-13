@@ -742,6 +742,14 @@ pub struct MediaOutputResponse {
     pub duration_secs: Option<f64>,
     pub format: String,
     pub created_at: DateTime<Utc>,
+    /// Public HTTP URL of the uploaded copy (`media_outputs.remote_url`).
+    /// `GET /api/media/{id}/content` redirects here when the local file is
+    /// gone; clients can also use it directly.
+    pub remote_url: Option<String>,
+    /// Whether `file_path` currently exists on local disk. `false` after
+    /// a move-upload or delete step removed the source; playback and
+    /// download must then go through `remote_url`.
+    pub local_available: bool,
     /// Upload results whose `local_path` matches `file_path` — one entry
     /// per uploader, newest record wins (DAG retries produce rows under
     /// fresh job ids). Empty (and omitted from JSON) when the file was
@@ -756,8 +764,13 @@ pub struct MediaOutputUploadInfo {
     /// Producing processor kind (`upload_records.uploader`, e.g. "rclone").
     pub uploader: String,
     pub remote_path: Option<String>,
+    /// Public HTTP URL derived at upload time (`upload_records.public_url`).
+    pub public_url: Option<String>,
     /// `COMPLETED` | `FAILED` | `SKIPPED`.
     pub status: String,
+    /// Failure detail; also set on COMPLETED records when the transfer
+    /// succeeded but public-link generation failed.
+    pub error: Option<String>,
     pub completed_at: Option<DateTime<Utc>>,
 }
 
@@ -770,6 +783,8 @@ pub struct UploadRecordResponse {
     pub uploader: String,
     pub local_path: String,
     pub remote_path: Option<String>,
+    /// Public HTTP URL derived at upload time (rclone `public_url_mode`).
+    pub public_url: Option<String>,
     /// `COMPLETED` | `FAILED` | `SKIPPED`.
     pub status: String,
     pub size_bytes: Option<i64>,

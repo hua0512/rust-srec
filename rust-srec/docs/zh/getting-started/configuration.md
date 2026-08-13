@@ -179,7 +179,9 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 流水线目标路径字段（例如 rclone 的 `destination_root` 和 copy/move 的
 `destination`）支持 `{platform}`、`{streamer}`、`{title}`、`{streamer_id}`、
 `{session_id}`，以及同样的 `%Y`、`%m`、`%d`、`%H`、`%M`、`%S`、`%t`、
-`%%` 时间占位符。时间占位符会按服务器本地时区渲染。
+`%%` 时间占位符。时间占位符会按服务器本地时区渲染。rclone 的
+`public_url_base` 使用与 `destination_root` 相同的占位符和相同的
+`time_anchor` 展开，因此公开 URL 的目录结构可以与远端布局保持镜像。
 
 rclone 默认使用任务创建时间展开时间占位符。将 `time_anchor` 设为
 `session_start` 后，同一场直播的所有分段都会归入直播开始日期对应的文件夹，
