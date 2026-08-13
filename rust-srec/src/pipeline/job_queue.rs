@@ -769,6 +769,7 @@ impl JobQueue {
                 uploader: uploader.to_string(),
                 local_path: item.local_path.clone(),
                 remote_path: item.remote_path.clone(),
+                public_url: item.public_url.clone(),
                 status: item.status.as_str().to_string(),
                 size_bytes: item.size_bytes.map(|s| s as i64),
                 error: item.error.clone(),
@@ -780,6 +781,74 @@ impl JobQueue {
 
         if let Err(e) = repo.upsert_records(&records).await {
             warn!(job_id, error = %e, "Failed to persist upload records");
+        }
+
+        if let Some(session_id) = session_id.filter(|s| !s.is_empty()) {
+            self.materialize_upload_outputs(session_id, items).await;
+        }
+    }
+
+    /// Mirror completed upload results onto `media_outputs` so session
+    /// previews survive local deletion: rows matching an uploaded
+    /// `local_path` get their `remote_url` set (upload_records are pruned by
+    /// the job-history retention sweep, media_outputs rows are not), and
+    /// uploaded pipeline artifacts that were never registered (e.g. remuxed
+    /// files, which the segment persistence path in `manager::events` never
+    /// sees) gain a row of their own — counted toward
+    /// `live_sessions.total_size_bytes` like every other insert, matching
+    /// the SUM-based recalculation in `SessionTx::end_session`.
+    ///
+    /// Each item is one atomic `upsert_media_output`, race-safe against
+    /// concurrent uploader branches for the same artifact. Best-effort,
+    /// same policy as the caller.
+    async fn materialize_upload_outputs(&self, session_id: &str, items: &[UploadResultItem]) {
+        let Some(repo) = self.session_repo.get() else {
+            return;
+        };
+
+        for item in items {
+            if !matches!(item.status, UploadItemStatus::Completed) {
+                continue;
+            }
+            // Same guard as `persist_thumbnail_output`: only recognized media
+            // files become session outputs — batch uploads also carry
+            // non-media inputs (e.g. the session-complete manifest JSON).
+            let Some(file_type) = Self::media_file_type_for_path(&item.local_path) else {
+                continue;
+            };
+
+            let mut output = MediaOutputDbModel::new(
+                session_id,
+                &item.local_path,
+                file_type,
+                item.size_bytes.map(|s| s as i64).unwrap_or(0),
+            );
+            output.remote_url = item.public_url.clone();
+            if let Err(e) = repo.upsert_media_output(&output).await {
+                warn!(
+                    session_id,
+                    local_path = %item.local_path,
+                    error = %e,
+                    "Failed to materialize uploaded media output"
+                );
+            }
+        }
+    }
+
+    /// `media_outputs.file_type` an uploaded file should be registered
+    /// under; `None` for non-media files, which are not registered.
+    fn media_file_type_for_path(path: &str) -> Option<MediaFileType> {
+        let ext = processor_utils::get_extension(path)?;
+        if processor_utils::is_video(&ext) {
+            Some(MediaFileType::Video)
+        } else if processor_utils::is_audio(&ext) {
+            Some(MediaFileType::Audio)
+        } else if processor_utils::is_image(&ext) {
+            Some(MediaFileType::Thumbnail)
+        } else if ext == "xml" {
+            Some(MediaFileType::DanmuXml)
+        } else {
+            None
         }
     }
 
@@ -2383,6 +2452,7 @@ impl JobQueue {
                 .map(|path| UploadResultItem {
                     local_path: path.clone(),
                     remote_path: None,
+                    public_url: None,
                     size_bytes: None,
                     status: UploadItemStatus::Failed,
                     error: Some(error.to_string()),
@@ -3088,6 +3158,7 @@ mod tests {
         let uploads = vec![UploadResultItem {
             local_path: "/videos/a.mp4".to_string(),
             remote_path: Some("remote:bucket/a.mp4".to_string()),
+            public_url: Some("https://cdn.example.com/a.mp4".to_string()),
             size_bytes: Some(2048),
             status: UploadItemStatus::Completed,
             error: None,
@@ -3115,6 +3186,10 @@ mod tests {
         assert_eq!(rows[0].uploader, "rclone");
         assert_eq!(rows[0].status, "COMPLETED");
         assert_eq!(rows[0].remote_path.as_deref(), Some("remote:bucket/a.mp4"));
+        assert_eq!(
+            rows[0].public_url.as_deref(),
+            Some("https://cdn.example.com/a.mp4")
+        );
         assert!(rows[0].completed_at.is_some());
 
         // Non-upload job type → uploads on the result are ignored.
@@ -3135,6 +3210,168 @@ mod tests {
             .await
             .unwrap();
         assert!(upload_repo.list_by_job(&remux_id).await.unwrap().is_empty());
+    }
+
+    /// Completed uploads must be mirrored onto media_outputs: existing rows
+    /// gain `remote_url`, unregistered media files gain a row of their own
+    /// (counted toward the session byte total, so the incremental total and
+    /// end_session's SUM-based recalculation agree), and non-media inputs
+    /// like the session-complete manifest JSON are skipped.
+    #[tokio::test]
+    async fn test_complete_materializes_uploads_onto_media_outputs() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        // Satisfy the live_sessions -> streamers -> platform_config FK chain.
+        sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES ('p1', 'test')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state) \
+             VALUES ('streamer-1', 'Streamer', 'https://example.com/s1', 'p1', 'NOT_LIVE')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // total_size_bytes matches the seeded danmu row below, as the
+        // create_media_output insert path would have left it.
+        sqlx::query(
+            "INSERT INTO live_sessions (id, streamer_id, start_time, total_size_bytes) \
+             VALUES ('session-1', 'streamer-1', 1704152700000, 100)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let upload_repo = Arc::new(
+            crate::database::repositories::upload_record::SqlxUploadRecordRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        );
+        let session_repo = Arc::new(
+            crate::database::repositories::session::SqlxSessionRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo);
+        queue.set_upload_repo(upload_repo);
+        queue.set_session_repo(session_repo.clone());
+
+        // The danmu XML is already registered (segment persistence path);
+        // the remuxed mp4 and the manifest are not.
+        sqlx::query(
+            "INSERT INTO media_outputs (id, session_id, file_path, file_type, size_bytes, created_at) \
+             VALUES ('mo-1', 'session-1', '/videos/danmu.xml', 'DANMU_XML', 100, 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let uploads = vec![
+            UploadResultItem {
+                local_path: "/videos/danmu.xml".to_string(),
+                remote_path: Some("remote:bucket/danmu.xml".to_string()),
+                public_url: Some("https://cdn.example.com/danmu.xml".to_string()),
+                size_bytes: Some(100),
+                status: UploadItemStatus::Completed,
+                error: None,
+            },
+            UploadResultItem {
+                local_path: "/videos/archive.mp4".to_string(),
+                remote_path: Some("remote:bucket/archive.mp4".to_string()),
+                public_url: Some("https://cdn.example.com/archive.mp4".to_string()),
+                size_bytes: Some(4096),
+                status: UploadItemStatus::Completed,
+                error: None,
+            },
+            UploadResultItem {
+                local_path: "/videos/session_1_inputs.json".to_string(),
+                remote_path: Some("remote:bucket/session_1_inputs.json".to_string()),
+                public_url: Some("https://cdn.example.com/session_1_inputs.json".to_string()),
+                size_bytes: Some(10),
+                status: UploadItemStatus::Completed,
+                error: None,
+            },
+        ];
+
+        let job = Job::new(
+            "rclone",
+            uploads.iter().map(|u| u.local_path.clone()).collect(),
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = queue.enqueue(job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue
+            .complete(
+                &job_id,
+                JobResult {
+                    outputs: vec![],
+                    duration_secs: 1.0,
+                    metadata: None,
+                    uploads,
+                    logs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+
+        let outputs = session_repo
+            .get_media_outputs_for_session("session-1")
+            .await
+            .unwrap();
+        assert_eq!(outputs.len(), 2, "manifest JSON must not be registered");
+
+        let danmu = outputs
+            .iter()
+            .find(|o| o.file_path == "/videos/danmu.xml")
+            .unwrap();
+        assert_eq!(
+            danmu.remote_url.as_deref(),
+            Some("https://cdn.example.com/danmu.xml")
+        );
+
+        let video = outputs
+            .iter()
+            .find(|o| o.file_path == "/videos/archive.mp4")
+            .unwrap();
+        assert_eq!(video.file_type, "VIDEO");
+        assert_eq!(video.size_bytes, 4096);
+        assert_eq!(
+            video.remote_url.as_deref(),
+            Some("https://cdn.example.com/archive.mp4")
+        );
+
+        // The registered artifact counts toward the running total...
+        let total: i64 =
+            sqlx::query_scalar("SELECT total_size_bytes FROM live_sessions WHERE id = 'session-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(total, 100 + 4096);
+
+        // ...and session finalization's SUM over media_outputs recomputes
+        // the same value, so an active session that ends after a
+        // mid-recording upload does not change its reported size.
+        session_repo
+            .end_session("session-1", 1704160000000)
+            .await
+            .unwrap();
+        let recomputed: i64 =
+            sqlx::query_scalar("SELECT total_size_bytes FROM live_sessions WHERE id = 'session-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(recomputed, total);
     }
 
     #[tokio::test]

@@ -148,6 +148,21 @@ export function OutputCard({ output }: OutputCardProps) {
                       {upload.remote_path}
                     </div>
                   )}
+                  {upload.public_url && (
+                    <a
+                      href={upload.public_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono break-all underline opacity-80 hover:opacity-100 block"
+                    >
+                      {upload.public_url}
+                    </a>
+                  )}
+                  {upload.error && (
+                    <div className="text-destructive break-all">
+                      {upload.error}
+                    </div>
+                  )}
                   {upload.completed_at && (
                     <div className="opacity-60">
                       {i18n.date(upload.completed_at, {

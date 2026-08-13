@@ -52,7 +52,7 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 | `thumbnail` | 从视频中提取画面作为图片 | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate` |
 | `compression` | 视频转码 | 编解码器与质量设置 |
-| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `args` |
+| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `public_url_mode`, `public_url_base`, `link_expire`, `args` |
 | `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
 | `metadata` | 写入元数据（nfo, json） | - |
@@ -67,6 +67,17 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 - **目标路径**：`destination_root` 支持 `{streamer}`、`{title}` 及时间占位符，始终解析为网盘的绝对路径。不存在的文件夹会在上传时自动创建。
 - **重试**：BaiduPCS-Go 的退出码无法反映上传结果，rust-srec 会解析其逐文件输出来判定成败。无论是运行内重试还是手动重试任务，都只会重新上传尚未确认结果的文件；配合默认的 `skip` 策略和秒传检测，部分失败后的重试开销很小。
 - **限制**：单文件超过 128 GB 会被百度拒绝；传输中断后只能从头重传（BaiduPCS-Go v4 已不支持断点续传）。由于该工具的本地状态存储不支持并发写入，上传任务同一时间只运行一个 BaiduPCS-Go 进程；任务运行期间也请勿手动对同一配置目录执行 BaiduPCS-Go 命令。
+
+### Rclone 公开访问 URL（`rclone`）
+
+云端上传后删除本地文件（rclone `move`，或 `copy` 后接 `delete` 步骤）时，网页端的会话预览原本会失效。`rclone` 处理器现在可以为每个已上传文件记录一个公开 HTTP URL；本地文件不存在后，网页端的播放、预览和下载会改用该 URL（`GET /api/media/{id}/content` 会重定向过去），录像时间线也会给这类文件打上云端徽标。
+
+- **模式**（`public_url_mode`）：`none`（默认）不记录任何 URL。`base_mapping` 把 `public_url_base` 与每个文件相对目标根路径的相对路径拼接。`rclone_link` 在传输完成后对每个文件执行 `rclone link` 并保存返回的分享链接。
+- **URL 基础地址映射**（`public_url_base`）：适用于保持路径结构的 HTTP 存储——S3 兼容桶（七牛、R2、MinIO 等）、桶前的 CDN、WebDAV/alist，或 `rclone serve http`。基础地址支持与 `destination_root` 相同的 `{streamer}`/`{title}`/时间占位符，且布局应与之镜像：`destination_root = remote:bucket/{streamer}` 搭配 `public_url_base = https://cdn.example.com/{streamer}` 时，上传到 `remote:bucket/Name/a.mp4` 的文件对应 `https://cdn.example.com/Name/a.mp4`。URL 是否真的可读取取决于桶/CDN 的权限配置；私有桶和 `crypt` 远端不适用此模式。基础地址为空或无效会在校验阶段直接判定任务失败——在任何传输开始之前，因此配置错误的预设不可能在没有记录 URL 的情况下把本地文件搬走。
+- **分享链接**（`rclone_link`，可选 `link_expire`）：适用于按 ID 寻址、没有路径型 URL 的网盘（Google Drive、OneDrive、Dropbox 等）。`link_expire`（如 `1w`）会传给 `rclone link --expire`。注意：并非所有后端都支持公开链接（这类文件不会得到 URL）；S3 预签名链接最长一周，过期后预览会再次失效；Google Drive 会把文件权限改为「任何拥有链接的人可查看」；OneDrive 企业版可能禁止匿名链接。每个链接会自动重试数次；仍然失败也不会导致上传任务失败——传输本身已成功，记录保持 COMPLETED，链接错误会写入该记录并在界面上显示。
+- **浏览器播放**：MP4 可直接通过云端 URL 播放。浏览器播放 FLV/TS 时会自行拉取数据流，远端主机需要返回 CORS 头并支持 HTTP Range 请求。
+
+已完成的上传也会登记为会话产物，因此管道中途产生的文件（例如转封装后的 MP4）会连同云端 URL 一起出现在会话的录像列表中。
 
 ## 预设系统 (Presets)
 

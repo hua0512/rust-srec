@@ -31,6 +31,28 @@ pub enum RcloneOperation {
     Sync,
 }
 
+/// How the processor derives a public HTTP URL for each uploaded file.
+///
+/// The derived URL is stored on [`UploadResultItem::public_url`] and
+/// persisted with the upload record, so the web UI can keep serving
+/// previews from the remote copy after the local file is deleted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PublicUrlMode {
+    /// No public URL is derived (default).
+    #[default]
+    None,
+    /// Join [`RcloneConfig::public_url_base`] with the same
+    /// destination-relative path used for the remote transfer, mirroring
+    /// the remote layout. Suited to path-preserving HTTP storage
+    /// (S3-compatible buckets, CDNs, WebDAV) fronting the remote.
+    BaseMapping,
+    /// Run `rclone link <remote>` after the transfer to obtain a share
+    /// link. Suited to ID-addressed drives (Google Drive, OneDrive, ...)
+    /// where no path-based URL exists.
+    RcloneLink,
+}
+
 /// Configuration for the rclone processor.
 ///
 /// Deserialized from the JSON string in `ProcessorInput::config`. Every
@@ -52,6 +74,23 @@ pub struct RcloneConfig {
 
     /// Timestamp source for time placeholder expansion.
     pub time_anchor: TimeAnchor,
+
+    /// How to derive a public HTTP URL for each uploaded file. Defaults
+    /// to [`PublicUrlMode::None`].
+    pub public_url_mode: PublicUrlMode,
+
+    /// HTTP base URL for [`PublicUrlMode::BaseMapping`]. Supports the
+    /// same placeholder expansion as `destination_root`; each file's
+    /// destination-relative path is appended, so this should point at an
+    /// HTTP frontend of the location `destination_root` resolves to
+    /// (e.g. `https://cdn.example.com/{streamer}` mirroring
+    /// `remote:bucket/{streamer}`).
+    pub public_url_base: Option<String>,
+
+    /// `--expire` value passed to `rclone link` in
+    /// [`PublicUrlMode::RcloneLink`] (e.g. `"1w"`). Unset uses the
+    /// backend default. Not every backend honors expiry.
+    pub link_expire: Option<String>,
 
     /// Free-form extra CLI arguments appended verbatim after the
     /// throughput flags. Provided as a power-user escape hatch; prefer
@@ -170,9 +209,23 @@ pub struct RcloneProcessor {
 trait RcloneCommandRunner: Send + Sync {
     async fn run(&self, command: &mut Command, context: &ProcessorContext)
     -> Result<CommandOutput>;
+
+    /// Run a short rclone command capturing raw stdout (`rclone link`
+    /// prints the share link there, which the JSON-log stderr parsing in
+    /// `run` never sees).
+    async fn run_capturing_stdout(&self, command: &mut Command) -> Result<std::process::Output>;
 }
 
 struct ProcessRcloneCommandRunner;
+
+/// Upper bound for one `rclone link` invocation. Links are metadata-only
+/// calls; anything slower than this is treated as a hung child so the
+/// upload job is not held open indefinitely.
+const LINK_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Attempts per file for `rclone link`, with exponential backoff between
+/// them, so transient network errors rarely surface as a missing URL.
+const LINK_MAX_ATTEMPTS: u32 = 3;
 
 #[async_trait]
 impl RcloneCommandRunner for ProcessRcloneCommandRunner {
@@ -188,6 +241,25 @@ impl RcloneCommandRunner for ProcessRcloneCommandRunner {
         )
         .await
     }
+
+    async fn run_capturing_stdout(&self, command: &mut Command) -> Result<std::process::Output> {
+        use process_utils::NoWindowExt;
+
+        command.no_window();
+        // Timing out or cancelling the owning future must not leak the child.
+        command.kill_on_drop(true);
+        command.stdin(std::process::Stdio::null());
+
+        match tokio::time::timeout(LINK_COMMAND_TIMEOUT, command.output()).await {
+            Ok(result) => {
+                result.map_err(|e| crate::Error::Other(format!("Failed to execute rclone: {e}")))
+            }
+            Err(_) => Err(crate::Error::Other(format!(
+                "rclone link timed out after {}s",
+                LINK_COMMAND_TIMEOUT.as_secs()
+            ))),
+        }
+    }
 }
 
 struct RcloneExecution<'a> {
@@ -196,6 +268,10 @@ struct RcloneExecution<'a> {
     config_path: Option<&'a str>,
     throughput: &'a [String],
     extra_args: &'a [String],
+    /// Expanded [`RcloneConfig::public_url_base`], present only in
+    /// [`PublicUrlMode::BaseMapping`] and already validated as an
+    /// absolute URL by `process`.
+    public_url_base: Option<&'a str>,
     context: &'a ProcessorContext,
 }
 
@@ -365,6 +441,38 @@ impl RcloneProcessor {
         ))
     }
 
+    /// Append `segments` to `base` as percent-encoded URL path segments.
+    /// `None` when `base` is not an absolute URL that can carry a path.
+    fn join_public_url<'a>(base: &str, segments: impl Iterator<Item = &'a str>) -> Option<String> {
+        let mut url = url::Url::parse(base).ok()?;
+        {
+            let mut path = url.path_segments_mut().ok()?;
+            path.pop_if_empty();
+            for segment in segments.filter(|s| !s.is_empty()) {
+                path.push(segment);
+            }
+        }
+        Some(url.into())
+    }
+
+    /// Public URL of one batch input: `url_base` + the same base-relative
+    /// path `batch_remote_path` appends to the remote root, so the URL
+    /// layout mirrors the remote layout.
+    fn batch_public_url(base_dir: &Path, url_base: &str, input: &str) -> Option<String> {
+        let relative = Path::new(input).strip_prefix(base_dir).ok()?;
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        Self::join_public_url(url_base, relative.split('/'))
+    }
+
+    /// File name a single-file transfer creates at the destination: the
+    /// last segment of the `copyto`/`moveto` target. Falls back across
+    /// `:` for root-of-remote destinations like `remote:file.mp4`.
+    fn remote_file_name(remote_destination: &str) -> Option<&str> {
+        let tail = remote_destination.rsplit('/').next()?;
+        let tail = tail.rsplit(':').next()?;
+        (!tail.is_empty()).then_some(tail)
+    }
+
     /// Execute a single-file rclone operation.
     async fn process_single(
         &self,
@@ -377,6 +485,7 @@ impl RcloneProcessor {
             config_path,
             throughput,
             extra_args,
+            public_url_base,
             context,
         } = execution;
         let start = std::time::Instant::now();
@@ -396,6 +505,12 @@ impl RcloneProcessor {
         );
 
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
+        // The single-file destination already carries the final remote file
+        // name, so the mirrored URL is base + that last segment.
+        let public_url = public_url_base.and_then(|base| {
+            Self::remote_file_name(remote_destination)
+                .and_then(|name| Self::join_public_url(base, std::iter::once(name)))
+        });
         let mut last_error = None;
         let mut logs = Vec::new();
 
@@ -415,6 +530,7 @@ impl RcloneProcessor {
             uploads: vec![UploadResultItem {
                 local_path: input_path.to_string(),
                 remote_path: Some(remote_destination.to_string()),
+                public_url: public_url.clone(),
                 // Captured before the transfer, so it is present even after
                 // a move deleted the source (None on move-resume retries).
                 size_bytes: input_size_bytes,
@@ -545,6 +661,7 @@ impl RcloneProcessor {
             config_path,
             throughput,
             extra_args,
+            public_url_base,
             context,
         } = execution;
         let start = std::time::Instant::now();
@@ -604,6 +721,8 @@ impl RcloneProcessor {
                 .map(|input| UploadResultItem {
                     local_path: input.clone(),
                     remote_path: Self::batch_remote_path(&base_dir, remote_destination, input),
+                    public_url: public_url_base
+                        .and_then(|base| Self::batch_public_url(&base_dir, base, input)),
                     size_bytes: file_sizes.get(input).copied(),
                     status: UploadItemStatus::Completed,
                     error: None,
@@ -793,8 +912,6 @@ impl RcloneProcessor {
             String::new()
         };
 
-        let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
-
         // Debug: Log all placeholder-related values before expansion
         tracing::debug!(
             template = %remote_destination_raw,
@@ -809,15 +926,7 @@ impl RcloneProcessor {
         );
 
         // Expand placeholders in destination path using reference timestamp
-        let expanded = expand_placeholders_at(
-            &remote_destination_raw,
-            &input.streamer_id,
-            &input.session_id,
-            input.streamer_name.as_deref(),
-            input.session_title.as_deref(),
-            input.platform.as_deref(),
-            Some(reference_timestamp_ms),
-        );
+        let expanded = Self::expand_remote_template(&remote_destination_raw, input, config);
 
         tracing::debug!(
             template = %remote_destination_raw,
@@ -826,6 +935,169 @@ impl RcloneProcessor {
         );
 
         expanded
+    }
+
+    /// Expand `{streamer}`/`{title}`/... and chrono time tokens in
+    /// `template` using the job metadata and the configured
+    /// [`TimeAnchor`]. Shared by `destination_root` and
+    /// `public_url_base` so both expand identically and the URL layout
+    /// can mirror the remote layout.
+    fn expand_remote_template(
+        template: &str,
+        input: &ProcessorInput,
+        config: &RcloneConfig,
+    ) -> String {
+        let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
+        expand_placeholders_at(
+            template,
+            &input.streamer_id,
+            &input.session_id,
+            input.streamer_name.as_deref(),
+            input.session_title.as_deref(),
+            input.platform.as_deref(),
+            Some(reference_timestamp_ms),
+        )
+    }
+
+    /// Resolve the expanded `public_url_base` for
+    /// [`PublicUrlMode::BaseMapping`]; `None` when the mode is off.
+    ///
+    /// An empty or unusable base is a deterministic configuration error, so
+    /// it fails validation here — before any transfer runs — rather than
+    /// silently uploading (and, for `move`, deleting local sources) without
+    /// recording the URLs the preset asked for.
+    fn resolve_public_url_base(
+        input: &ProcessorInput,
+        config: &RcloneConfig,
+    ) -> Result<Option<String>> {
+        if !matches!(config.public_url_mode, PublicUrlMode::BaseMapping) {
+            return Ok(None);
+        }
+        let Some(base) = config.public_url_base.as_deref().filter(|s| !s.is_empty()) else {
+            return Err(crate::Error::Validation(
+                "public_url_mode is base_mapping but public_url_base is empty".to_string(),
+            ));
+        };
+        let expanded = Self::expand_remote_template(base, input, config);
+        if Self::join_public_url(&expanded, std::iter::empty()).is_none() {
+            return Err(crate::Error::Validation(format!(
+                "public_url_base expands to '{expanded}', which is not a usable absolute URL"
+            )));
+        }
+        Ok(Some(expanded))
+    }
+
+    /// Fill [`UploadResultItem::public_url`] by running `rclone link` for
+    /// every completed upload, retrying each file a few times to absorb
+    /// transient errors.
+    ///
+    /// A file whose link still fails does not fail the job: the transfer
+    /// already succeeded, and some link failures are permanent (a backend
+    /// without public-link support) so a FAILED status would never converge
+    /// under retry while misrepresenting an upload that worked. Instead the
+    /// failure is stored on [`UploadResultItem::error`], which
+    /// `JobQueue::persist_upload_records` persists alongside the COMPLETED
+    /// status for the UI to surface.
+    async fn attach_public_links(
+        &self,
+        output: &mut ProcessorOutput,
+        config: &RcloneConfig,
+        ctx: &ProcessorContext,
+    ) {
+        let expire = config.link_expire.as_deref().filter(|s| !s.is_empty());
+        let mut generated = 0usize;
+
+        for item in output.uploads.iter_mut() {
+            if !matches!(item.status, UploadItemStatus::Completed) {
+                continue;
+            }
+            let Some(remote_path) = item.remote_path.as_deref() else {
+                continue;
+            };
+
+            let mut last_error: Option<crate::Error> = None;
+            for attempt in 0..LINK_MAX_ATTEMPTS {
+                if attempt > 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt - 1))).await;
+                }
+                match self
+                    .fetch_public_link(remote_path, config.config_path.as_deref(), expire)
+                    .await
+                {
+                    Ok(link) => {
+                        item.public_url = Some(link);
+                        generated += 1;
+                        last_error = None;
+                        break;
+                    }
+                    Err(e) => {
+                        warn!(
+                            remote_path,
+                            attempt = attempt + 1,
+                            error = %e,
+                            "rclone link failed"
+                        );
+                        last_error = Some(e);
+                    }
+                }
+            }
+
+            if let Some(e) = last_error {
+                ctx.warn(format!("rclone link failed for {remote_path}: {e}"));
+                item.error = Some(format!("rclone link failed: {e}"));
+            }
+        }
+
+        if generated > 0 {
+            ctx.info(format!(
+                "Generated {generated} public link(s) via rclone link"
+            ));
+        }
+    }
+
+    /// Run `rclone link <remote_path>` and return the share link, which
+    /// rclone prints as the last non-empty stdout line.
+    async fn fetch_public_link(
+        &self,
+        remote_path: &str,
+        config_path: Option<&str>,
+        expire: Option<&str>,
+    ) -> Result<String> {
+        let mut cmd = Command::new(&self.rclone_path);
+        if let Some(cfg) = config_path {
+            cmd.arg("--config").arg(cfg);
+        }
+        cmd.arg("link");
+        if let Some(expire) = expire {
+            cmd.arg("--expire").arg(expire);
+        }
+        cmd.arg(remote_path);
+
+        let output = self.command_runner.run_capturing_stdout(&mut cmd).await?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let detail = stderr
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("no error output")
+                .trim()
+                .to_string();
+            return Err(crate::Error::Other(format!(
+                "rclone link exited with code {}: {}",
+                output.status.code().unwrap_or(-1),
+                detail
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| crate::Error::Other("rclone link produced no output".to_string()))
     }
 }
 
@@ -916,8 +1188,10 @@ impl Processor for RcloneProcessor {
             ));
         }
 
+        let public_url_base = Self::resolve_public_url_base(input, &config)?;
+
         // Choose single or batch mode based on input count
-        if input.inputs.len() == 1 {
+        let mut output = if input.inputs.len() == 1 {
             // Single file mode - append filename to destination
             let input_path = &input.inputs[0];
             let input_file = Path::new(input_path);
@@ -939,10 +1213,11 @@ impl Processor for RcloneProcessor {
                     config_path: config.config_path.as_deref(),
                     throughput: &throughput,
                     extra_args: &extra_args,
+                    public_url_base: public_url_base.as_deref(),
                     context: ctx,
                 },
             )
-            .await
+            .await?
         } else {
             // Batch mode - use --files-from
             info!("Using batch mode for {} files", input.inputs.len());
@@ -955,11 +1230,20 @@ impl Processor for RcloneProcessor {
                     config_path: config.config_path.as_deref(),
                     throughput: &throughput,
                     extra_args: &extra_args,
+                    public_url_base: public_url_base.as_deref(),
                     context: ctx,
                 },
             )
-            .await
+            .await?
+        };
+
+        // Share links can only be minted once the files exist remotely, and
+        // a link failure must not fail a transfer that already succeeded.
+        if matches!(config.public_url_mode, PublicUrlMode::RcloneLink) {
+            self.attach_public_links(&mut output, &config, ctx).await;
         }
+
+        Ok(output)
     }
 }
 
@@ -977,8 +1261,14 @@ mod tests {
         succeeds: bool,
     }
 
+    struct MockLinkAttempt {
+        succeeds: bool,
+        stdout: String,
+    }
+
     struct MockRcloneCommandRunner {
         attempts: Mutex<VecDeque<MockAttempt>>,
+        link_attempts: Mutex<VecDeque<MockLinkAttempt>>,
         manifests: Mutex<Vec<Vec<String>>>,
         commands: Mutex<Vec<Vec<String>>>,
     }
@@ -987,9 +1277,15 @@ mod tests {
         fn new(attempts: Vec<MockAttempt>) -> Self {
             Self {
                 attempts: Mutex::new(attempts.into()),
+                link_attempts: Mutex::new(VecDeque::new()),
                 manifests: Mutex::new(Vec::new()),
                 commands: Mutex::new(Vec::new()),
             }
+        }
+
+        fn with_link_attempts(self, link_attempts: Vec<MockLinkAttempt>) -> Self {
+            *self.link_attempts.lock().unwrap() = link_attempts.into();
+            self
         }
 
         fn manifests(&self) -> Vec<Vec<String>> {
@@ -1053,6 +1349,35 @@ mod tests {
                     vec![crate::pipeline::job_queue::JobLogEntry::error(
                         "simulated partial move failure",
                     )]
+                },
+            })
+        }
+
+        async fn run_capturing_stdout(
+            &self,
+            command: &mut Command,
+        ) -> Result<std::process::Output> {
+            let args: Vec<String> = command
+                .as_std()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            self.commands.lock().unwrap().push(args);
+
+            let attempt = self
+                .link_attempts
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| crate::Error::Other("unexpected rclone link attempt".to_string()))?;
+
+            Ok(std::process::Output {
+                status: test_exit_status(attempt.succeeds),
+                stdout: attempt.stdout.into_bytes(),
+                stderr: if attempt.succeeds {
+                    Vec::new()
+                } else {
+                    b"simulated link failure\n".to_vec()
                 },
             })
         }
@@ -1784,6 +2109,31 @@ mod tests {
         assert!(cfg.args.is_empty());
         assert_eq!(cfg.operation, RcloneOperation::Copy);
         assert_eq!(cfg.time_anchor, TimeAnchor::JobCreated);
+        assert_eq!(cfg.public_url_mode, PublicUrlMode::None);
+        assert_eq!(cfg.public_url_base, None);
+        assert_eq!(cfg.link_expire, None);
+    }
+
+    #[test]
+    fn rclone_config_deserializes_public_url_fields() {
+        let cfg: RcloneConfig = serde_json::from_str(
+            r#"{
+                "public_url_mode": "base_mapping",
+                "public_url_base": "https://cdn.example.com/{streamer}"
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.public_url_mode, PublicUrlMode::BaseMapping);
+        assert_eq!(
+            cfg.public_url_base.as_deref(),
+            Some("https://cdn.example.com/{streamer}")
+        );
+
+        let cfg: RcloneConfig =
+            serde_json::from_str(r#"{ "public_url_mode": "rclone_link", "link_expire": "1w" }"#)
+                .unwrap();
+        assert_eq!(cfg.public_url_mode, PublicUrlMode::RcloneLink);
+        assert_eq!(cfg.link_expire.as_deref(), Some("1w"));
     }
 
     #[test]
@@ -1838,5 +2188,379 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         assert_eq!(cfg.throughput_args(), expected);
+    }
+
+    #[test]
+    fn join_public_url_encodes_segments_and_keeps_base_path() {
+        assert_eq!(
+            RcloneProcessor::join_public_url(
+                "https://cdn.example.com/media/",
+                ["2024", "my clip.mp4"].into_iter()
+            ),
+            Some("https://cdn.example.com/media/2024/my%20clip.mp4".to_string())
+        );
+        // Segments must not be able to smuggle a query or fragment.
+        assert_eq!(
+            RcloneProcessor::join_public_url(
+                "https://cdn.example.com",
+                std::iter::once("a#b?c.mp4")
+            ),
+            Some("https://cdn.example.com/a%23b%3Fc.mp4".to_string())
+        );
+        assert_eq!(
+            RcloneProcessor::join_public_url("not a url", std::iter::once("a.mp4")),
+            None
+        );
+    }
+
+    #[test]
+    fn batch_public_url_mirrors_batch_remote_path_layout() {
+        let base = Path::new("/home/user/videos");
+        assert_eq!(
+            RcloneProcessor::batch_public_url(
+                base,
+                "https://cdn.example.com/media",
+                "/home/user/videos/2024/b.mp4"
+            ),
+            Some("https://cdn.example.com/media/2024/b.mp4".to_string())
+        );
+        // Input outside the base dir cannot be mapped, same as the remote path.
+        assert_eq!(
+            RcloneProcessor::batch_public_url(base, "https://cdn.example.com", "/var/other/c.mp4"),
+            None
+        );
+    }
+
+    #[test]
+    fn remote_file_name_takes_the_last_destination_segment() {
+        assert_eq!(
+            RcloneProcessor::remote_file_name("remote:bucket/dir/clip.mp4"),
+            Some("clip.mp4")
+        );
+        assert_eq!(
+            RcloneProcessor::remote_file_name("remote:clip.mp4"),
+            Some("clip.mp4")
+        );
+        assert_eq!(
+            RcloneProcessor::remote_file_name("remote:bucket/dir/"),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn single_copy_with_base_mapping_records_public_url() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("my clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec![],
+            streamer_name: Some("StreamerName".to_string()),
+            config: Some(
+                r#"{
+                    "operation": "copy",
+                    "destination_root": "remote:records/{streamer}",
+                    "public_url_mode": "base_mapping",
+                    "public_url_base": "https://cdn.example.com/{streamer}"
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("single-base-mapping"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.uploads.len(), 1);
+        assert_eq!(
+            output.uploads[0].remote_path.as_deref(),
+            Some("remote:records/StreamerName/my clip.mp4")
+        );
+        assert_eq!(
+            output.uploads[0].public_url.as_deref(),
+            Some("https://cdn.example.com/StreamerName/my%20clip.mp4")
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_copy_with_base_mapping_records_public_urls() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let flat = temp_dir.path().join("a.mp4");
+        let nested_dir = temp_dir.path().join("sub");
+        tokio::fs::create_dir(&nested_dir).await.unwrap();
+        let nested = nested_dir.join("c.mp4");
+        tokio::fs::write(&flat, b"a").await.unwrap();
+        tokio::fs::write(&nested, b"c").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![
+                flat.to_string_lossy().into_owned(),
+                nested.to_string_lossy().into_owned(),
+            ],
+            outputs: vec![],
+            config: Some(
+                r#"{
+                    "operation": "copy",
+                    "destination_root": "remote:records",
+                    "public_url_mode": "base_mapping",
+                    "public_url_base": "https://cdn.example.com/media"
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("batch-base-mapping"))
+            .await
+            .unwrap();
+
+        let urls: Vec<Option<&str>> = output
+            .uploads
+            .iter()
+            .map(|item| item.public_url.as_deref())
+            .collect();
+        assert_eq!(
+            urls,
+            vec![
+                Some("https://cdn.example.com/media/a.mp4"),
+                Some("https://cdn.example.com/media/sub/c.mp4"),
+            ]
+        );
+    }
+
+    /// An unusable base is a deterministic config error: the job must fail
+    /// during validation, before rclone could move (and delete) any source.
+    #[tokio::test]
+    async fn base_mapping_with_unusable_base_fails_before_transfer() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(Vec::new()));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec![],
+            config: Some(
+                r#"{
+                    "operation": "move",
+                    "destination_root": "remote:records",
+                    "public_url_mode": "base_mapping",
+                    "public_url_base": "not a url"
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let error = processor
+            .process(&input, &ProcessorContext::noop("bad-base"))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("public_url_base"));
+        assert!(runner.commands().is_empty(), "no rclone command may run");
+        assert!(file.exists(), "the local source must be untouched");
+    }
+
+    #[tokio::test]
+    async fn base_mapping_with_empty_base_fails_validation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(Vec::new()));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec![],
+            config: Some(
+                r#"{
+                    "operation": "copy",
+                    "destination_root": "remote:records",
+                    "public_url_mode": "base_mapping",
+                    "public_url_base": ""
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let error = processor
+            .process(&input, &ProcessorContext::noop("empty-base"))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("public_url_base is empty"));
+        assert!(runner.commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rclone_link_mode_attaches_share_links() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(vec![MockAttempt {
+                moved_inputs: vec![],
+                succeeds: true,
+            }])
+            .with_link_attempts(vec![MockLinkAttempt {
+                succeeds: true,
+                stdout: "NOTICE: some banner\nhttps://drive.example.com/share/abc\n".to_string(),
+            }]),
+        );
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec![],
+            config: Some(
+                r#"{
+                    "operation": "copy",
+                    "destination_root": "remote:records",
+                    "public_url_mode": "rclone_link",
+                    "link_expire": "1w"
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("link-mode"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            output.uploads[0].public_url.as_deref(),
+            Some("https://drive.example.com/share/abc")
+        );
+        // The transfer command is recorded first, then the link command.
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(
+            commands[1],
+            vec![
+                "link".to_string(),
+                "--expire".to_string(),
+                "1w".to_string(),
+                "remote:records/clip.mp4".to_string(),
+            ]
+        );
+    }
+
+    /// Exhausted link attempts must not fail a job whose transfer already
+    /// succeeded (some link failures are permanent, e.g. a backend without
+    /// public-link support); the failure is recorded on the item's `error`
+    /// so the persisted COMPLETED record carries it.
+    #[tokio::test(start_paused = true)]
+    async fn rclone_link_failure_leaves_public_url_unset_but_job_succeeds() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let failed_attempts = (0..LINK_MAX_ATTEMPTS)
+            .map(|_| MockLinkAttempt {
+                succeeds: false,
+                stdout: String::new(),
+            })
+            .collect();
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(vec![MockAttempt {
+                moved_inputs: vec![],
+                succeeds: true,
+            }])
+            .with_link_attempts(failed_attempts),
+        );
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec![],
+            config: Some(
+                r#"{
+                    "operation": "copy",
+                    "destination_root": "remote:records",
+                    "public_url_mode": "rclone_link"
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("link-mode-failure"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.uploads[0].status, UploadItemStatus::Completed);
+        assert_eq!(output.uploads[0].public_url, None);
+        let error = output.uploads[0].error.as_deref().unwrap();
+        assert!(error.contains("rclone link failed"), "got: {error}");
+        // One transfer command plus one link command per attempt.
+        assert_eq!(runner.commands().len(), 1 + LINK_MAX_ATTEMPTS as usize);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rclone_link_retries_transient_failures() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(vec![MockAttempt {
+                moved_inputs: vec![],
+                succeeds: true,
+            }])
+            .with_link_attempts(vec![
+                MockLinkAttempt {
+                    succeeds: false,
+                    stdout: String::new(),
+                },
+                MockLinkAttempt {
+                    succeeds: true,
+                    stdout: "https://drive.example.com/share/retry\n".to_string(),
+                },
+            ]),
+        );
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec![],
+            config: Some(
+                r#"{
+                    "operation": "copy",
+                    "destination_root": "remote:records",
+                    "public_url_mode": "rclone_link"
+                }"#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("link-retry"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            output.uploads[0].public_url.as_deref(),
+            Some("https://drive.example.com/share/retry")
+        );
+        assert_eq!(output.uploads[0].error, None);
     }
 }

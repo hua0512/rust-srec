@@ -57,6 +57,18 @@ pub trait SessionRepository: Send + Sync {
         Ok(outputs)
     }
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
+
+    /// Insert the media output when `(session_id, file_path)` is not
+    /// registered yet — with the same `live_sessions.total_size_bytes`
+    /// accounting as [`Self::create_media_output`] — otherwise update the
+    /// existing row's `remote_url` when `output.remote_url` is set.
+    ///
+    /// Runs as one immediate transaction; the unique index on
+    /// `(session_id, file_path)` makes the insert race-safe when concurrent
+    /// upload jobs materialize the same artifact
+    /// (`JobQueue::materialize_upload_outputs`).
+    async fn upsert_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
+
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
     /// Get the count of media outputs for a session.
@@ -304,8 +316,8 @@ impl SessionRepository for SqlxSessionRepository {
 
             sqlx::query(
                 r#"
-                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at, remote_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&output.id)
@@ -315,6 +327,7 @@ impl SessionRepository for SqlxSessionRepository {
             .bind(&output.file_type)
             .bind(output.size_bytes)
             .bind(output.created_at)
+            .bind(&output.remote_url)
             .execute(&mut *tx)
             .await?;
 
@@ -326,6 +339,59 @@ impl SessionRepository for SqlxSessionRepository {
             .bind(&output.session_id)
             .execute(&mut *tx)
             .await?;
+
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn upsert_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
+        retry_on_sqlite_busy("upsert_media_output", || async {
+            let mut tx = begin_immediate(&self.write_pool).await?;
+
+            // OR IGNORE + the unique index on (session_id, file_path) make
+            // the existence check and the insert one atomic step; losing the
+            // race simply routes to the update branch below.
+            let inserted = sqlx::query(
+                r#"
+                INSERT OR IGNORE INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at, remote_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&output.id)
+            .bind(&output.session_id)
+            .bind(&output.parent_media_output_id)
+            .bind(&output.file_path)
+            .bind(&output.file_type)
+            .bind(output.size_bytes)
+            .bind(output.created_at)
+            .bind(&output.remote_url)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+
+            if inserted > 0 {
+                // Same session-total accounting as create_media_output, and
+                // consistent with the SUM-based recalculation in
+                // SessionTx::end_session — every media_outputs row counts.
+                sqlx::query(
+                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
+                )
+                .bind(output.size_bytes)
+                .bind(&output.session_id)
+                .execute(&mut *tx)
+                .await?;
+            } else if output.remote_url.is_some() {
+                sqlx::query(
+                    "UPDATE media_outputs SET remote_url = ? WHERE session_id = ? AND file_path = ?",
+                )
+                .bind(&output.remote_url)
+                .bind(&output.session_id)
+                .bind(&output.file_path)
+                .execute(&mut *tx)
+                .await?;
+            }
 
             tx.commit().await?;
             Ok(())
@@ -711,7 +777,7 @@ impl SessionRepository for SqlxSessionRepository {
         // Data query with pagination, ordered by created_at descending
         // Select only media_outputs columns to avoid ambiguity
         let data_sql = format!(
-            "SELECT m.id, m.session_id, m.parent_media_output_id, m.file_path, m.file_type, m.size_bytes, m.created_at \
+            "SELECT m.id, m.session_id, m.parent_media_output_id, m.file_path, m.file_type, m.size_bytes, m.created_at, m.remote_url \
              FROM {} {} ORDER BY m.created_at DESC LIMIT ? OFFSET ?",
             from_clause, where_clause
         );
@@ -884,6 +950,50 @@ mod tests {
         let next = repo.next_session_segment_index("session-1").await.unwrap();
 
         assert_eq!(next, 4);
+    }
+
+    #[tokio::test]
+    async fn upsert_media_output_inserts_once_and_updates_remote_url() {
+        let repo = setup_test_repo().await;
+
+        let first =
+            MediaOutputDbModel::new("session-1", "/archive.mp4", MediaFileType::Video, 4096);
+        repo.upsert_media_output(&first).await.unwrap();
+
+        // Same (session_id, file_path) from a concurrent uploader branch:
+        // must not create a second row nor double-count the size.
+        let mut second =
+            MediaOutputDbModel::new("session-1", "/archive.mp4", MediaFileType::Video, 4096);
+        second.remote_url = Some("https://cdn.example.com/archive.mp4".to_string());
+        repo.upsert_media_output(&second).await.unwrap();
+
+        let outputs = repo
+            .get_media_outputs_for_session("session-1")
+            .await
+            .unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].id, first.id, "existing row is kept");
+        assert_eq!(
+            outputs[0].remote_url.as_deref(),
+            Some("https://cdn.example.com/archive.mp4")
+        );
+
+        let session = repo.get_session("session-1").await.unwrap();
+        assert_eq!(session.total_size_bytes, 4096, "size counted exactly once");
+    }
+
+    #[tokio::test]
+    async fn create_media_output_rejects_duplicate_session_path() {
+        let repo = setup_test_repo().await;
+
+        let output = MediaOutputDbModel::new("session-1", "/dup.mp4", MediaFileType::Video, 10);
+        repo.create_media_output(&output).await.unwrap();
+
+        let duplicate = MediaOutputDbModel::new("session-1", "/dup.mp4", MediaFileType::Video, 10);
+        assert!(
+            repo.create_media_output(&duplicate).await.is_err(),
+            "unique index on (session_id, file_path) must reject plain duplicate inserts"
+        );
     }
 
     #[tokio::test]

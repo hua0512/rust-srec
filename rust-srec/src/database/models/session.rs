@@ -198,6 +198,11 @@ pub struct MediaOutputDbModel {
     pub size_bytes: i64,
     /// Unix epoch milliseconds (UTC) of file creation.
     pub created_at: i64,
+    /// Public HTTP URL of the uploaded copy, set by
+    /// `JobQueue::persist_upload_records` when an upload derives one.
+    /// `GET /api/media/{id}/content` redirects here when `file_path` no
+    /// longer exists locally.
+    pub remote_url: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -285,6 +290,7 @@ impl MediaOutputDbModel {
             file_type: file_type.as_str().to_string(),
             size_bytes,
             created_at: crate::database::time::now_ms(),
+            remote_url: None,
         }
     }
 

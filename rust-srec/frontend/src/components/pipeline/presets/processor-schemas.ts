@@ -75,6 +75,11 @@ export const RemuxConfigSchema = z.object({
 // --- Rclone Processor ---
 export const RcloneOperationSchema = z.enum(['copy', 'move', 'sync']);
 export const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
+export const RclonePublicUrlModeSchema = z.enum([
+  'none',
+  'base_mapping',
+  'rclone_link',
+]);
 
 export const RcloneConfigSchema = z.object({
   rclone_path: z.string().default('rclone'),
@@ -84,6 +89,12 @@ export const RcloneConfigSchema = z.object({
   remote_path: z.string().optional(), // Legacy support or direct override
   operation: RcloneOperationSchema.default('copy'),
   time_anchor: TimeAnchorSchema.default('job_created'),
+  // Public URL derivation for uploaded files (session previews after local
+  // deletion). Mirrors `PublicUrlMode` in src/pipeline/processors/rclone.rs;
+  // empty strings are treated as unset by the backend.
+  public_url_mode: RclonePublicUrlModeSchema.default('none'),
+  public_url_base: z.string().optional(),
+  link_expire: z.string().optional(),
   args: z.array(z.string()).default([]),
 
   // Throughput / bandwidth controls (rclone CLI flags). Empty/undefined

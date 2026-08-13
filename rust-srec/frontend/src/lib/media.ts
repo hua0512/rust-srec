@@ -1,3 +1,5 @@
+import { getMediaUrl } from '@/lib/url';
+
 export type PlayerMediaType =
   | 'hls'
   | 'flv'
@@ -94,4 +96,40 @@ export function isPlayable(output: {
   const extension = getMediaExtension(output.file_path);
 
   return extension !== undefined && PLAYABLE_EXTENSIONS.has(extension);
+}
+
+// Structural subset of MediaOutput needed to pick a media source.
+export interface OutputMediaSource {
+  id: string;
+  remote_url?: string | null;
+  local_available: boolean;
+}
+
+/**
+ * URL an output should be played/downloaded from: the authenticated backend
+ * endpoint while the local file exists, otherwise the cloud copy recorded at
+ * upload time (remote_url). Falls back to the backend endpoint when no cloud
+ * copy exists — it 404s exactly like before this field existed.
+ *
+ * getMediaUrl passes absolute http(s) URLs through untouched and never
+ * appends the auth token to them.
+ */
+export function getOutputMediaUrl(
+  output: OutputMediaSource,
+  token?: string,
+): string | null {
+  if (!output.local_available && output.remote_url) {
+    return getMediaUrl(output.remote_url, token);
+  }
+  return getMediaUrl(`/api/media/${output.id}/content`, token);
+}
+
+/**
+ * True when the output can only be served from its cloud copy — the local
+ * file is gone and remote_url is the effective source. Downloads must then
+ * navigate to the URL directly instead of fetching with the auth header
+ * (cross-origin fetch would need CORS and would leak the JWT).
+ */
+export function isRemoteOnly(output: OutputMediaSource): boolean {
+  return !output.local_available && Boolean(output.remote_url);
 }

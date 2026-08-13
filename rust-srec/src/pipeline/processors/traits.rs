@@ -269,6 +269,11 @@ pub struct UploadResultItem {
     /// Expanded remote destination. `None` when it could not be computed
     /// (e.g. failure synthesis in the worker pool).
     pub remote_path: Option<String>,
+    /// Public HTTP URL for the uploaded file, when the processor is
+    /// configured to derive one (see `RcloneConfig::public_url_mode`).
+    /// Persisted so previews can fall back to the remote copy after the
+    /// local file is deleted.
+    pub public_url: Option<String>,
     /// Size captured before the transfer, so it survives `move` operations
     /// that delete the local source.
     pub size_bytes: Option<u64>,

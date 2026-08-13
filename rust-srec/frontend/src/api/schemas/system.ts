@@ -189,7 +189,11 @@ export const PipelineStatsSchema = z.object({
 export const MediaOutputUploadInfoSchema = z.object({
   uploader: z.string(),
   remote_path: z.string().nullable().optional(),
+  public_url: z.string().nullable().optional(),
   status: z.enum(['COMPLETED', 'FAILED', 'SKIPPED']),
+  // Also present on COMPLETED records when the transfer succeeded but
+  // public-link generation failed.
+  error: z.string().nullable().optional(),
   completed_at: z.string().nullable().optional(),
 });
 export type MediaOutputUploadInfo = z.infer<typeof MediaOutputUploadInfoSchema>;
@@ -203,6 +207,12 @@ export const MediaOutputSchema = z.object({
   duration_secs: z.number().nullable().optional(),
   format: z.string(),
   created_at: z.string(),
+  // Cloud copy URL persisted at upload time; playback/download fall back to
+  // it when local_available is false (see getOutputMediaUrl in lib/media.ts).
+  remote_url: z.string().nullable().optional(),
+  // Older backends don't send the flag; assume the local file exists so the
+  // UI keeps routing through /api/media/{id}/content as before.
+  local_available: z.boolean().default(true),
   uploads: z.array(MediaOutputUploadInfoSchema).default([]),
 });
 export type MediaOutput = z.infer<typeof MediaOutputSchema>;

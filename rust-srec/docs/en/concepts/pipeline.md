@@ -52,7 +52,7 @@ Each pipeline step is executed by a specialized processor:
 | `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
 | `compression` | Transcodes video | Codec and quality settings |
-| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
+| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `public_url_mode`, `public_url_base`, `link_expire`, `args` |
 | `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | Copies or moves local files | Destination and operation settings |
 | `metadata` | Writes metadata (nfo, json) | - |
@@ -67,6 +67,17 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 - **Destination**: `destination_root` supports the usual `{streamer}`/`{title}`/time placeholders and always resolves to an absolute Netdisk path. Missing folders are created during upload.
 - **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
+
+### Rclone public access URLs (`rclone`)
+
+When local recordings are deleted after a cloud upload (rclone `move`, or a `delete` step after `copy`), session previews in the web UI would normally break. The `rclone` processor can record a public HTTP URL for every uploaded file; once the local file is gone, the web UI plays, previews, and downloads from that URL instead (`GET /api/media/{id}/content` redirects to it), and the Recordings tab marks such files with a cloud badge.
+
+- **Modes** (`public_url_mode`): `none` (default) records nothing. `base_mapping` joins `public_url_base` with each file's destination-relative path. `rclone_link` runs `rclone link` for each uploaded file after the transfer and stores the returned share link.
+- **Base mapping** (`public_url_base`): for path-preserving HTTP storage — S3-compatible buckets (Qiniu, R2, MinIO, ...), a CDN in front of the bucket, WebDAV/alist, or `rclone serve http`. The base supports the same `{streamer}`/`{title}`/time placeholders as `destination_root` and should mirror its layout: with `destination_root = remote:bucket/{streamer}` and `public_url_base = https://cdn.example.com/{streamer}`, the file uploaded to `remote:bucket/Name/a.mp4` maps to `https://cdn.example.com/Name/a.mp4`. Whether that URL is actually readable is decided by your bucket/CDN permissions; private buckets and `crypt` remotes do not work with this mode. An empty or invalid base fails the job during validation, before any transfer runs — a misconfigured preset cannot move files away without recording their URLs.
+- **Share links** (`rclone_link`, optional `link_expire`): for ID-addressed drives (Google Drive, OneDrive, Dropbox, ...) where no path-based URL exists. `link_expire` (e.g. `1w`) is passed to `rclone link --expire`. Caveats: not every backend supports public links (those files simply get no URL); S3 pre-signed links are capped at one week and previews break once they expire; Google Drive changes the file's permission to "anyone with the link"; OneDrive business tenants may disallow anonymous links. Each link is attempted a few times; a file whose link still fails does not fail the upload job — the transfer already succeeded, so its record stays COMPLETED with the link error stored on it and shown in the UI.
+- **Browser playback**: MP4 plays from the cloud URL without extra setup. FLV/TS playback in the browser fetches the stream itself, so the remote host must send CORS headers and support HTTP Range requests.
+
+Completed uploads are also registered as session outputs, so files produced mid-pipeline (for example a remuxed MP4) appear on the session's Recordings tab together with their cloud URL.
 
 ## Presets System
 

@@ -30,6 +30,10 @@ pub struct UploadRecordDbModel {
     /// Expanded remote destination (e.g. `remote:bucket/streamer/file.mp4`).
     /// NULL when the destination could not be computed (failure synthesis).
     pub remote_path: Option<String>,
+    /// Public HTTP URL for the uploaded file, derived by the processor
+    /// (`RcloneConfig::public_url_mode`). NULL when no URL mode is
+    /// configured or the derivation failed.
+    pub public_url: Option<String>,
     /// One of [`upload_status::ALL`]; the table CHECK constraint enforces it.
     pub status: String,
     pub size_bytes: Option<i64>,

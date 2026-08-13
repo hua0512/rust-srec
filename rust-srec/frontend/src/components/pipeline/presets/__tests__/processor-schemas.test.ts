@@ -33,6 +33,39 @@ describe('processor time anchor schemas', () => {
   });
 });
 
+describe('rclone public URL config schema', () => {
+  it('defaults to no public URL derivation', () => {
+    const config = RcloneConfigSchema.parse({});
+    expect(config.public_url_mode).toBe('none');
+    expect(config.public_url_base).toBe(undefined);
+    expect(config.link_expire).toBe(undefined);
+  });
+
+  it('preserves explicit base_mapping and rclone_link settings', () => {
+    const baseMapping = RcloneConfigSchema.parse({
+      public_url_mode: 'base_mapping',
+      public_url_base: 'https://cdn.example.com/{streamer}',
+    });
+    expect(baseMapping.public_url_mode).toBe('base_mapping');
+    expect(baseMapping.public_url_base).toBe(
+      'https://cdn.example.com/{streamer}',
+    );
+
+    const link = RcloneConfigSchema.parse({
+      public_url_mode: 'rclone_link',
+      link_expire: '1w',
+    });
+    expect(link.public_url_mode).toBe('rclone_link');
+    expect(link.link_expire).toBe('1w');
+  });
+
+  it('rejects unknown public URL modes', () => {
+    expect(() =>
+      RcloneConfigSchema.parse({ public_url_mode: 'share' }),
+    ).toThrow();
+  });
+});
+
 describe('baidupcs config schema', () => {
   it('applies defaults matching the backend BaiduPcsConfig::default', () => {
     const config = BaiduPcsConfigSchema.parse({});

@@ -102,6 +102,13 @@ pub async fn get_media_content(
         .await
         .map_err(|error| ApiError::from(crate::Error::io_path("try_exists", &path, error)))?;
     if !exists {
+        // The local file may have been deleted after a cloud upload
+        // (rclone move / delete step). When persist_upload_records recorded
+        // a public URL for it, serve the remote copy instead of a 404 so
+        // existing thumbnail/player/download URLs keep working.
+        if let Some(remote_url) = media.remote_url.as_deref().filter(|s| !s.is_empty()) {
+            return Ok(axum::response::Redirect::temporary(remote_url).into_response());
+        }
         return Err(ApiError::not_found(format!("Media file not found: {}", id)));
     }
 

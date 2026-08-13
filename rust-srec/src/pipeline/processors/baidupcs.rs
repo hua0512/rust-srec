@@ -867,6 +867,7 @@ impl Processor for BaiduPcsProcessor {
                     UploadResultItem {
                         local_path: path.clone(),
                         remote_path: Some(remote.clone()),
+                        public_url: None,
                         size_bytes: file_sizes.get(path).copied(),
                         status: UploadItemStatus::Completed,
                         error: None,
@@ -875,6 +876,7 @@ impl Processor for BaiduPcsProcessor {
                     UploadResultItem {
                         local_path: path.clone(),
                         remote_path: Some(Self::computed_remote_path(&remote_dir, path)),
+                        public_url: None,
                         size_bytes: file_sizes.get(path).copied(),
                         status: UploadItemStatus::Skipped,
                         error: Some(reason.clone()),
@@ -886,6 +888,7 @@ impl Processor for BaiduPcsProcessor {
                     UploadResultItem {
                         local_path: path.clone(),
                         remote_path: None,
+                        public_url: None,
                         size_bytes: file_sizes.get(path).copied(),
                         status: UploadItemStatus::Failed,
                         error: last_errors.get(path).cloned(),

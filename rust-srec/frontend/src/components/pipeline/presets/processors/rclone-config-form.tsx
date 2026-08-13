@@ -34,7 +34,10 @@ import {
   Layers,
   Timer,
   Split,
+  Globe,
+  Link2,
 } from 'lucide-react';
+import { useWatch } from 'react-hook-form';
 import { ProcessorConfigFormProps } from './common-props';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -110,6 +113,11 @@ export function RcloneConfigForm({
 }: ProcessorConfigFormProps<RcloneConfig>) {
   const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
+
+  const publicUrlMode = useWatch({
+    control,
+    name: `${prefix}public_url_mode` as any,
+  }) as RcloneConfig['public_url_mode'] | undefined;
 
   // Coerce a numeric `<Input type="number">` change event to `number | undefined`.
   // `valueAsNumber` returns `NaN` for empty input; we map that back to `undefined`
@@ -350,6 +358,176 @@ export function RcloneConfigForm({
                 )}
               />
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Public Access URL */}
+        <Card className="border-border/50 bg-muted/10 shadow-sm">
+          <CardHeaderWithIcon
+            icon={Globe}
+            title={<Trans>Public Access URL</Trans>}
+            className="border-b border-border/10 bg-muted/5"
+            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
+            iconClassName="h-4 w-4"
+          />
+          <CardContent className="grid gap-4 pt-4">
+            <FormField
+              control={control}
+              name={`${prefix}public_url_mode` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>URL Mode</Trans>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? 'none'}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="h-11 bg-background/50">
+                        <SelectValue
+                          placeholder={i18n._(msg`Select URL mode`)}
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <Trans>Disabled</Trans>
+                      </SelectItem>
+                      <SelectItem value="base_mapping">
+                        <div className="flex items-center gap-2">
+                          <Globe className="h-4 w-4 text-sky-400" />
+                          <span>
+                            <Trans>URL base mapping</Trans>
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground/50">
+                            <Trans>(S3 / CDN / WebDAV)</Trans>
+                          </span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="rclone_link">
+                        <div className="flex items-center gap-2">
+                          <Link2 className="h-4 w-4 text-violet-400" />
+                          <span>
+                            <Trans>rclone link</Trans>
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground/50">
+                            <Trans>(Google Drive / OneDrive / ...)</Trans>
+                          </span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    <Trans>
+                      Record a public URL for each uploaded file so session
+                      previews keep working after local files are deleted.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {publicUrlMode === 'base_mapping' && (
+              <FormField
+                control={control}
+                name={`${prefix}public_url_base` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="inline-flex items-center gap-1.5">
+                      <Trans>Public URL Base</Trans>
+                      <FieldHint label={i18n._(msg`Public URL Base help`)}>
+                        <p>
+                          <Trans>
+                            HTTP base URL that serves the same layout as the
+                            Destination Root, e.g. a CDN or bucket website in
+                            front of the remote.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            Supports the same placeholders as Destination
+                            Root: {PLACEHOLDER_TOKENS} and time tokens like
+                            %Y/%m/%d. Each file's destination-relative path is
+                            appended.
+                          </Trans>
+                        </p>
+                        <p className="text-muted-foreground/70">
+                          <Trans>
+                            FLV/TS playback in the browser additionally needs
+                            CORS and Range support on the remote host; MP4
+                            plays without CORS.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={i18n._(
+                          msg`e.g. https://cdn.example.com/{streamer}`,
+                        )}
+                        {...field}
+                        value={field.value ?? ''}
+                        className="h-11 bg-background/50 font-mono text-sm"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>
+                        Mirror of the Destination Root reachable over HTTP.
+                      </Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {publicUrlMode === 'rclone_link' && (
+              <FormField
+                control={control}
+                name={`${prefix}link_expire` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="inline-flex items-center gap-1.5">
+                      <Trans>Link Expiry (Optional)</Trans>
+                      <FieldHint label={i18n._(msg`Link Expiry help`)}>
+                        <p>
+                          <Trans>
+                            Passed to rclone link --expire (e.g. 1w, 24h).
+                            Leave empty for the backend default. Not every
+                            backend honors expiry.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            S3 pre-signed links are capped at 1 week; expired
+                            links break previews. Google Drive links never
+                            expire but make the file readable by anyone with
+                            the link.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={i18n._(msg`e.g. 1w`)}
+                        {...field}
+                        value={field.value ?? ''}
+                        className="h-11 bg-background/50 font-mono text-sm"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>
+                        A share link is generated per uploaded file after the
+                        transfer completes.
+                      </Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
           </CardContent>
         </Card>
       </TabsContent>
