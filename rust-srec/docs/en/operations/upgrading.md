@@ -30,6 +30,27 @@ curl http://localhost:12555/api/health/live
 
 After signing in, verify authenticated readiness, the System Health page, streamer count, recent sessions, one platform check, and a noncritical recording/pipeline. Keep the pre-upgrade backup until the observation period ends.
 
+## Automatic Updates (Watchtower)
+
+The Compose file ships an optional `watchtower` service that pulls new images and recreates the containers automatically. It is off by default; enable it with:
+
+```bash
+docker compose --profile autoupdate up -d
+```
+
+Updates only happen while the system is idle. Before stopping a container, Watchtower runs its pre-update hook, which calls the unauthenticated `GET /api/health/idle` endpoint:
+
+- `200` — nothing is recording or queued to record, and no pipeline job (upload, remux, danmaku conversion, ...) is processing. The update proceeds.
+- `503` or no response — the hook exits with code 75 and Watchtower skips this cycle, retrying on the next poll (`WATCHTOWER_POLL_INTERVAL`, default 3600 seconds).
+
+Pending pipeline jobs do not block an update; they are persisted and re-run after the restart. The frontend container carries the same gate, so both images move to the new version in the same cycle.
+
+Caveats:
+
+- Automatic updates require a mutable image tag: keep `VERSION=latest` (or `dev`). Pinned `vX.Y.Z` tags never receive updates.
+- Database migrations still run at startup and are not reversible. Automatic updates skip the manual pre-upgrade snapshot, so keep scheduled backups (see [Backup and Restore](./backup-restore.md)) and read release notes regularly. If an upgrade must be reviewed before rollout, stay on manual upgrades with a pinned tag.
+- The idle check runs immediately before the container stops; a recording that starts in the few seconds in between is still interrupted.
+
 ## Rollback
 
 Do not start an older binary against a database already migrated by a newer release unless the release notes explicitly say it is compatible.
