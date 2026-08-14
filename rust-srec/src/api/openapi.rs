@@ -101,6 +101,7 @@ pub struct MessageResponse {
         crate::api::routes::health::health_check,
         crate::api::routes::health::readiness_check,
         crate::api::routes::health::liveness_check,
+        crate::api::routes::health::idle_check,
         // Auth endpoints
         crate::api::routes::auth::login,
         crate::api::routes::auth::refresh,
@@ -239,6 +240,7 @@ pub struct MessageResponse {
             HealthResponse,
             ComponentHealth,
             LivenessResponse,
+            crate::api::routes::health::IdleResponse,
             // Auth schemas
             LoginRequest,
             LoginResponse,

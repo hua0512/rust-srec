@@ -172,6 +172,9 @@ WORKDIR /app
 # Copy the built binary from the builder stage
 COPY --from=builder /app/target/release/rust-srec /app/rust-srec
 
+# Watchtower pre-update hook: gates container auto-updates on /api/health/idle.
+COPY --chmod=755 rust-srec/scripts/watchtower-pre-update.sh /app/watchtower-pre-update.sh
+
 # Expose the default port (adjust as needed)
 EXPOSE 8080
 

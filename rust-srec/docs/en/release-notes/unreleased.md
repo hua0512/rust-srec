@@ -58,9 +58,14 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+## Deployment
+
+- **Optional automatic container updates**
+
+  The Docker Compose file now ships an opt-in `watchtower` service (`docker compose --profile autoupdate up -d`) that pulls new images and restarts the containers on its own — but only while the system is idle. A new unauthenticated `GET /api/health/idle` endpoint reports whether anything is recording, queued to record, or being processed by a pipeline job (upload, remux, danmaku conversion, ...); while it reports busy, the update is postponed to the next check, so a restart never cuts a recording or an upload short. Automatic updates require a mutable image tag (`VERSION=latest`). See [Upgrade and Rollback](../operations/upgrading.md#automatic-updates-watchtower).
+
 ## Installation
 
 - **Locale-aware installation script**
 
   The `install.sh` bootstrap script now automatically detects the system locale (or respects `SREC_LANG`) and redirects to the English or Chinese interactive installer accordingly. The script verifies downloaded contents before execution to avoid running captive-portal error pages, and secret generation fails closed if secure random generation fails.
-
