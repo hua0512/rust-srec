@@ -37,7 +37,7 @@ export const listApiKeys = createServerFn({ method: 'GET' }).handler(
 );
 
 export const createApiKey = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof CreateApiKeyInputSchema>) =>
+  .validator((data: z.infer<typeof CreateApiKeyInputSchema>) =>
     CreateApiKeyInputSchema.parse(data),
   )
   .handler(async ({ data }) => {
@@ -49,7 +49,7 @@ export const createApiKey = createServerFn({ method: 'POST' })
   });
 
 export const revokeApiKey = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => z.string().parse(id))
+  .validator((id: string) => z.string().parse(id))
   .handler(async ({ data: id }) => {
     await fetchBackend(`/auth/api-keys/${id}`, { method: 'DELETE' });
   });

@@ -18,13 +18,14 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SettingsCard } from '@/components/config/settings-card';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
+import { containerVariants, itemVariants } from '@/lib/animation';
 import {
   Dialog,
   DialogContent,
@@ -44,7 +45,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -118,36 +118,35 @@ function ApiKeysPage() {
   });
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="flex flex-wrap items-center justify-between gap-3"
-      >
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-primary" />
-            <Trans>API Keys</Trans>
-          </h2>
-          <p className="text-sm text-muted-foreground max-w-2xl">
+    <motion.div
+      className="flex flex-col gap-6 pb-20"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
+      <motion.div variants={itemVariants}>
+        <SettingsCard
+          title={<Trans>API Keys</Trans>}
+          description={
             <Trans>
               Long-lived credentials for programmatic access to the REST API and
               the built-in MCP server. Read-only keys can query data;
               full-access keys can also change configuration.
             </Trans>
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          <Trans>Create API key</Trans>
-        </Button>
-      </motion.div>
-
-      <Card>
-        <CardContent className="pt-6">
+          }
+          icon={KeyRound}
+          action={
+            <Button
+              onClick={() => setCreateOpen(true)}
+              className="gap-2 shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <Trans>Create API key</Trans>
+            </Button>
+          }
+        >
           {isLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-3 pt-2">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
@@ -163,112 +162,118 @@ function ApiKeysPage() {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <Trans>Name</Trans>
-                  </TableHead>
-                  <TableHead>
-                    <Trans>Key</Trans>
-                  </TableHead>
-                  <TableHead>
-                    <Trans>Access</Trans>
-                  </TableHead>
-                  <TableHead>
-                    <Trans>Status</Trans>
-                  </TableHead>
-                  <TableHead>
-                    <Trans>Last used</Trans>
-                  </TableHead>
-                  <TableHead>
-                    <Trans>Expires</Trans>
-                  </TableHead>
-                  <TableHead className="w-[60px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {keys.map((key) => {
-                  const status = keyStatus(key);
-                  return (
-                    <TableRow key={key.id}>
-                      <TableCell className="font-medium">{key.name}</TableCell>
-                      <TableCell>
-                        <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                          {key.key_prefix}…
-                        </code>
-                      </TableCell>
-                      <TableCell>
-                        {key.access_level === 'full' ? (
-                          <Badge variant="default">
-                            <Trans>Full access</Trans>
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">
-                            <Trans>Read-only</Trans>
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {status === 'active' && (
-                          <Badge
-                            variant="outline"
-                            className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-                          >
-                            <Trans>Active</Trans>
-                          </Badge>
-                        )}
-                        {status === 'revoked' && (
-                          <Badge variant="outline" className="opacity-60">
-                            <Trans>Revoked</Trans>
-                          </Badge>
-                        )}
-                        {status === 'expired' && (
-                          <Badge
-                            variant="outline"
-                            className="border-amber-500/40 text-amber-600 dark:text-amber-400"
-                          >
-                            <Trans>Expired</Trans>
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatMs(key.last_used_at) ?? (
-                          <span className="opacity-60">
-                            <Trans>Never</Trans>
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatMs(key.expires_at) ?? (
-                          <span className="opacity-60">
-                            <Trans>Never</Trans>
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {status === 'active' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => setRevokeTarget(key)}
-                            aria-label={i18n._(msg`Revoke API key`)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div className="rounded-md border border-border/50 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <Trans>Name</Trans>
+                    </TableHead>
+                    <TableHead>
+                      <Trans>Key</Trans>
+                    </TableHead>
+                    <TableHead>
+                      <Trans>Access</Trans>
+                    </TableHead>
+                    <TableHead>
+                      <Trans>Status</Trans>
+                    </TableHead>
+                    <TableHead>
+                      <Trans>Last used</Trans>
+                    </TableHead>
+                    <TableHead>
+                      <Trans>Expires</Trans>
+                    </TableHead>
+                    <TableHead className="w-[60px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {keys.map((key) => {
+                    const status = keyStatus(key);
+                    return (
+                      <TableRow key={key.id}>
+                        <TableCell className="font-medium">
+                          {key.name}
+                        </TableCell>
+                        <TableCell>
+                          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                            {key.key_prefix}…
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          {key.access_level === 'full' ? (
+                            <Badge variant="default">
+                              <Trans>Full access</Trans>
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">
+                              <Trans>Read-only</Trans>
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {status === 'active' && (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                            >
+                              <Trans>Active</Trans>
+                            </Badge>
+                          )}
+                          {status === 'revoked' && (
+                            <Badge variant="outline" className="opacity-60">
+                              <Trans>Revoked</Trans>
+                            </Badge>
+                          )}
+                          {status === 'expired' && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-500/40 text-amber-600 dark:text-amber-400"
+                            >
+                              <Trans>Expired</Trans>
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatMs(key.last_used_at) ?? (
+                            <span className="opacity-60">
+                              <Trans>Never</Trans>
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatMs(key.expires_at) ?? (
+                            <span className="opacity-60">
+                              <Trans>Never</Trans>
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {status === 'active' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => setRevokeTarget(key)}
+                              aria-label={i18n._(msg`Revoke API key`)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </SettingsCard>
+      </motion.div>
 
-      <McpQuickStart />
+      <motion.div variants={itemVariants}>
+        <McpQuickStart />
+      </motion.div>
 
       <CreateApiKeyDialog
         open={createOpen}
@@ -310,7 +315,7 @@ function ApiKeysPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </motion.div>
   );
 }
 
@@ -375,7 +380,7 @@ function CreateApiKeyDialog({
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md border-border/50 bg-background/95 backdrop-blur-xl shadow-2xl">
         {createdKey ? (
           <>
             <DialogHeader>
@@ -391,12 +396,13 @@ function CreateApiKeyDialog({
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2">
-              <code className="flex-1 rounded-lg border bg-muted px-3 py-2 text-xs break-all select-all">
+              <code className="flex-1 rounded-xl border border-border/50 bg-background/50 px-3.5 py-2.5 text-xs font-mono break-all select-all shadow-sm">
                 {createdKey}
               </code>
               <Button
                 variant="outline"
                 size="icon"
+                className="h-10 w-10 rounded-xl shrink-0"
                 onClick={copyKey}
                 aria-label={i18n._(msg`Copy API key`)}
               >
@@ -428,11 +434,12 @@ function CreateApiKeyDialog({
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="api-key-name">
+                <ConfigFieldLabel plain>
                   <Trans>Name</Trans>
-                </Label>
+                </ConfigFieldLabel>
                 <Input
                   id="api-key-name"
+                  className={CONFIG_INPUT}
                   value={name}
                   maxLength={100}
                   placeholder={i18n._(msg`e.g. Claude assistant`)}
@@ -440,17 +447,17 @@ function CreateApiKeyDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label>
+                <ConfigFieldLabel plain>
                   <Trans>Access level</Trans>
-                </Label>
+                </ConfigFieldLabel>
                 <Select
                   value={accessLevel}
                   onValueChange={(v) => setAccessLevel(v as ApiKeyAccessLevel)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className={CONFIG_SELECT_CONTENT}>
                     <SelectItem value="read_only">
                       <Trans>Read-only — query data and configuration</Trans>
                     </SelectItem>
@@ -461,14 +468,14 @@ function CreateApiKeyDialog({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>
+                <ConfigFieldLabel plain>
                   <Trans>Expires</Trans>
-                </Label>
+                </ConfigFieldLabel>
                 <Select value={expiry} onValueChange={setExpiry}>
-                  <SelectTrigger>
+                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className={CONFIG_SELECT_CONTENT}>
                     <SelectItem value="never">
                       <Trans>Never</Trans>
                     </SelectItem>
@@ -546,38 +553,34 @@ function McpQuickStart() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Bot className="h-5 w-5 text-primary" />
-          <Trans>Connect an AI assistant (MCP)</Trans>
-        </CardTitle>
-        <CardDescription>
-          <Trans>
-            This server exposes a built-in MCP endpoint (streamable HTTP). Add
-            it to Claude, Cursor, or any MCP client with an API key to let the
-            assistant inspect recordings, analyze danmu, and manage
-            configuration.
-          </Trans>
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <SettingsCard
+      title={<Trans>Connect an AI assistant (MCP)</Trans>}
+      description={
+        <Trans>
+          This server exposes a built-in MCP endpoint (streamable HTTP). Add it
+          to Claude, Cursor, or any MCP client with an API key to let the
+          assistant inspect recordings, analyze danmu, and manage configuration.
+        </Trans>
+      }
+      icon={Bot}
+    >
+      <div className="space-y-4 pt-2">
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground shrink-0">
+          <span className="text-muted-foreground shrink-0 font-medium">
             <Trans>Endpoint</Trans>
           </span>
-          <code className="rounded bg-muted px-2 py-1 text-xs break-all">
+          <code className="rounded bg-muted px-2 py-1 text-xs break-all font-mono">
             {mcpUrl}
           </code>
         </div>
         <div className="relative">
-          <pre className="rounded-lg border bg-muted/50 p-4 text-xs overflow-x-auto">
+          <pre className="rounded-lg border border-border/50 bg-muted/40 p-4 text-xs overflow-x-auto font-mono">
             {configSnippet}
           </pre>
           <Button
             variant="outline"
             size="icon"
-            className="absolute right-2 top-2 h-8 w-8"
+            className="absolute right-2.5 top-2.5 h-8 w-8 bg-background/80 backdrop-blur-sm shadow-xs"
             onClick={copySnippet}
             aria-label={i18n._(msg`Copy MCP configuration`)}
           >
@@ -588,14 +591,14 @@ function McpQuickStart() {
             )}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground leading-relaxed">
           <Trans>
             Read-only keys can call query tools only; configuration-changing
             tools require a full-access key. The key can also be sent via the
             X-Api-Key header.
           </Trans>
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsCard>
   );
 }

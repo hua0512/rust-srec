@@ -18,7 +18,7 @@ export type ResolveUrlResponse = z.infer<typeof ResolveUrlResponseSchema>;
  * Parse a single URL to extract media info
  */
 export const parseUrl = createServerFn({ method: 'POST' })
-  .inputValidator((data: ParseUrlRequest) => ParseUrlRequestSchema.parse(data))
+  .validator((data: ParseUrlRequest) => ParseUrlRequestSchema.parse(data))
   .handler(async ({ data }: { data: ParseUrlRequest }) => {
     const json = await fetchBackend('/parse', {
       method: 'POST',
@@ -31,7 +31,7 @@ export const parseUrl = createServerFn({ method: 'POST' })
  * Parse multiple URLs in batch
  */
 export const parseUrlBatch = createServerFn({ method: 'POST' })
-  .inputValidator((data: ParseUrlRequest[]) =>
+  .validator((data: ParseUrlRequest[]) =>
     z.array(ParseUrlRequestSchema).parse(data),
   )
   .handler(async ({ data }: { data: ParseUrlRequest[] }) => {
@@ -46,9 +46,7 @@ export const parseUrlBatch = createServerFn({ method: 'POST' })
  * Resolve the true URL for a stream
  */
 export const resolveUrl = createServerFn({ method: 'POST' })
-  .inputValidator((data: ResolveUrlRequest) =>
-    ResolveUrlRequestSchema.parse(data),
-  )
+  .validator((data: ResolveUrlRequest) => ResolveUrlRequestSchema.parse(data))
   .handler(async ({ data }: { data: ResolveUrlRequest }) => {
     const json = await fetchBackend('/parse/resolve', {
       method: 'POST',

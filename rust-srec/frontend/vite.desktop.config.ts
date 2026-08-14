@@ -12,8 +12,8 @@ import oxlintPlugin from 'vite-plugin-oxlint';
 import {
   buildThemeScriptHTML,
   CRITICAL_THEME_CSS,
-} from './src/lib/theme-script';
-import { computeThemeCacheId } from './theme-cache-id';
+} from './src/lib/theme-script.ts';
+import { computeThemeCacheId } from './theme-cache-id.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -52,7 +52,7 @@ export const listEngines = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getEngine = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/engines/${id}`);
     const raw = json as any;
@@ -68,7 +68,7 @@ export const getEngine = createServerFn({ method: 'GET' })
   });
 
 export const createEngine = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof CreateEngineRequestSchema>) =>
+  .validator((data: z.infer<typeof CreateEngineRequestSchema>) =>
     (() => {
       const parsed = CreateEngineRequestSchema.parse(data);
       return {
@@ -95,7 +95,7 @@ export const createEngine = createServerFn({ method: 'POST' })
   });
 
 export const updateEngine = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => ({
       id: z.string().parse(d.id),
       data: (() => {
@@ -128,13 +128,13 @@ export const updateEngine = createServerFn({ method: 'POST' })
   });
 
 export const deleteEngine = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/engines/${id}`, { method: 'DELETE' });
   });
 
 export const testEngine = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/engines/${id}/test`);
     return EngineTestResponseSchema.parse(json);
