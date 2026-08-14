@@ -8,10 +8,12 @@
 use axum::Json;
 use axum::extract::{FromRef, State};
 use rmcp::{
-    ErrorData,
+    ErrorData, RoleServer,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
-    schemars, tool, tool_router,
+    schemars,
+    service::RequestContext,
+    tool, tool_router,
 };
 
 use super::{SrecMcpServer, tool_json};
@@ -61,12 +63,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "parse_url",
-        description = "Parse a live room URL and extract stream metadata (title, live status, available qualities/streams). Makes an outbound request to the platform."
+        description = "Parse a live room URL and extract stream metadata (title, live status, available qualities/streams). Makes an outbound request to the platform and requires a full-access API key."
     )]
     pub async fn parse_url_tool(
         &self,
         Parameters(params): Parameters<ParseUrlParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = ParseRouteState::from_ref(&self.app_state);
         let request = ParseUrlRequest {
             url: params.url,

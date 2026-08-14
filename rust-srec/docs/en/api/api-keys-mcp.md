@@ -8,7 +8,7 @@ API keys are an alternative credential to the short-lived JWT session tokens. Th
 
 | Access level | REST API | MCP tools |
 |---|---|---|
-| `read_only` | `GET`/`HEAD`/`OPTIONS` requests only | Query tools only |
+| `read_only` | Approved non-sensitive queries only | Sessions/danmu, aggregate stats, notification events, and health diagnostics |
 | `full` | All requests | All tools, including configuration changes |
 
 Keys look like `srec_<64 hex characters>`. Only a SHA-256 hash is stored server-side; the raw key is shown exactly once at creation and cannot be recovered.
@@ -39,19 +39,17 @@ curl -X DELETE http://localhost:12555/api/auth/api-keys/<key-id> \
 
 ### Using a Key
 
-Send the key either as a Bearer token or in the `X-Api-Key` header:
+Send the key as a Bearer token:
 
 ```bash
-curl http://localhost:12555/api/streamers \
+curl http://localhost:12555/api/sessions \
   -H "Authorization: Bearer srec_..."
-
-curl http://localhost:12555/api/streamers \
-  -H "X-Api-Key: srec_..."
 ```
 
 Restrictions that always apply, regardless of access level:
 
 - API keys cannot call the key-management endpoints above, `POST /api/auth/change-password`, or `POST /api/auth/logout-all`.
+- Read-only keys cannot retrieve configuration, streamer overrides, job records, presets, engines, notification channels, backups, or other responses that can contain stored credentials or operational secrets.
 - The WebSocket/media routes that authenticate via `?token=` query parameter (`/api/downloads`, `/api/logging`, `/api/media`, `/api/stream-proxy`) accept JWT access tokens only, so keys never appear in URLs or logs.
 - Keys of a disabled user, or of a user in the forced-password-change state, are rejected.
 
@@ -63,7 +61,7 @@ The backend serves the MCP **streamable HTTP** transport at:
 http://<host>:<port>/api/mcp
 ```
 
-Authentication uses the same header as the REST API (`Authorization: Bearer srec_...` or `X-Api-Key`). A `read_only` key can call query tools; tools that modify state respond with an error unless the key has `full` access.
+Authentication uses the same header as the REST API (`Authorization: Bearer srec_...`). A `read_only` key can inspect recording sessions and danmu, aggregate pipeline stats, notification events, and system health. Mutating tools, outbound URL parsing, and tools that expose stored configuration require `full` access.
 
 ### Client Configuration
 
@@ -101,9 +99,11 @@ Tools mirror the REST API and run in-process against the same services, so valid
 
 For danmu analysis, prefer `session_danmu_statistics` (aggregated totals, rate time series, top talkers, word frequency) over reading raw XML; use `session_list_danmu_files` + `session_read_danmu` when the assistant needs actual chat text.
 
+Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `streamer_*`, `filter_*`, pipeline/job preset and execution-detail tools, notification channel/subscription tools, and `parse_url`) require a `full` key even for reads. This prevents a read-only assistant from retrieving platform cookies, processor configuration, notification credentials, stream access data, or other stored secrets.
+
 ## Security Notes
 
 - Treat API keys like passwords: store them in secret managers, never in shared configs or source control.
-- Prefer `read_only` keys unless the assistant genuinely needs to change configuration, and set an expiry for keys used in experiments.
-- Revoke keys immediately when a tool or machine is decommissioned; revocation invalidates in-flight caches within seconds.
+- Prefer `read_only` keys unless the assistant genuinely needs configuration or operational details, and set an expiry for keys used in experiments.
+- Revoke keys immediately when a tool or machine is decommissioned; once revocation completes, stale cache fills cannot authorize later requests.
 - When `AUTH_DISABLED=true` (loopback-only development mode), `/api/mcp` is unauthenticated like the rest of the API.

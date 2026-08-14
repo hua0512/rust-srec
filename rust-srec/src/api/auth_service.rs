@@ -6,7 +6,10 @@
 //! - Password change with validation
 //! - Session management (logout, logout-all)
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::Instant;
 
 use argon2::{
@@ -47,7 +50,7 @@ pub struct AuthPrincipal {
     pub claims: Claims,
     pub credential: CredentialKind,
     /// `Full` for JWT sessions; the key's stored level for API keys. The
-    /// middleware enforces this for REST methods and `mcp` tools enforce it
+    /// middleware enforces this for REST routes and `mcp` tools enforce it
     /// per tool.
     pub access: ApiKeyAccessLevel,
 }
@@ -234,6 +237,7 @@ struct CachedUserState {
 /// key's lifetime.
 #[derive(Clone)]
 struct CachedApiKeyState {
+    generation: u64,
     fetched_at: Instant,
     key_id: String,
     user_id: String,
@@ -261,8 +265,13 @@ pub struct AuthService {
     /// stale entry can never back an Ok decision.
     user_state_cache: DashMap<String, CachedUserState>,
     /// Key-hash -> state cache read by `authorize_api_key`; same TTL rules
-    /// as `user_state_cache`. `revoke_api_key` drops entries eagerly.
+    /// as `user_state_cache`. Cache fills are tagged with
+    /// `api_key_cache_generation` so an in-flight fill cannot survive a
+    /// completed revocation.
     api_key_state_cache: DashMap<String, CachedApiKeyState>,
+    /// Incremented after every successful API-key revocation. A cache entry
+    /// from an older generation is never used for authorization.
+    api_key_cache_generation: AtomicU64,
     /// Per-key timestamp of the last `update_last_used` write, consulted by
     /// `touch_api_key` to throttle to `API_KEY_LAST_USED_WRITE_INTERVAL`.
     api_key_last_used_writes: DashMap<String, Instant>,
@@ -285,6 +294,7 @@ impl AuthService {
             config,
             user_state_cache: DashMap::new(),
             api_key_state_cache: DashMap::new(),
+            api_key_cache_generation: AtomicU64::new(0),
             api_key_last_used_writes: DashMap::new(),
         }
     }
@@ -924,9 +934,10 @@ impl AuthService {
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
         if revoked {
-            // The cache is keyed by key hash, which is not derivable from the
-            // id; drop the matching entry so the revocation applies before
-            // the TTL would expire it.
+            // Advance the generation before removing the known entry. A
+            // concurrent cache fill tagged with the previous generation is
+            // then rejected even if it inserts after this retain call.
+            self.api_key_cache_generation.fetch_add(1, Ordering::AcqRel);
             self.api_key_state_cache
                 .retain(|_, state| state.key_id != key_id);
             info!(user_id = %user_id, api_key_id = %key_id, "API key revoked");
@@ -952,50 +963,63 @@ impl AuthService {
 
         let key_hash = Self::hash_token(raw_key);
 
-        let cached = self
-            .api_key_state_cache
-            .get(&key_hash)
-            .filter(|entry| entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL)
-            .map(|entry| entry.clone());
-
-        let state = match cached {
-            Some(state) => state,
-            None => {
-                let key = self
-                    .api_key_repo
-                    .find_by_key_hash(&key_hash)
-                    .await
-                    .map_err(|e| AuthError::Database(e.to_string()))?;
-                let Some(key) = key else {
-                    self.api_key_state_cache.remove(&key_hash);
-                    return Err(AuthError::InvalidToken);
-                };
-
-                let user = self
-                    .user_repo
-                    .find_by_id(&key.user_id)
-                    .await
-                    .map_err(|e| AuthError::Database(e.to_string()))?;
-                let Some(user) = user else {
-                    self.api_key_state_cache.remove(&key_hash);
-                    warn!(api_key_id = %key.id, "API key rejected: owning user not found");
-                    return Err(AuthError::UserNotFound);
-                };
-
-                let state = CachedApiKeyState {
-                    fetched_at: Instant::now(),
-                    key_id: key.id.clone(),
-                    user_id: key.user_id.clone(),
-                    roles: user.get_roles(),
-                    user_is_active: user.is_active,
-                    must_change_password: user.must_change_password,
-                    access_level: key.get_access_level(),
-                    expires_at: key.expires_at,
-                    revoked: key.is_revoked(),
-                };
-                self.api_key_state_cache.insert(key_hash, state.clone());
-                state
+        let state = loop {
+            let generation = self.api_key_cache_generation.load(Ordering::Acquire);
+            if let Some(cached) = self
+                .api_key_state_cache
+                .get(&key_hash)
+                .filter(|entry| {
+                    entry.generation == generation
+                        && entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL
+                })
+                .map(|entry| entry.clone())
+            {
+                break cached;
             }
+
+            let key = self
+                .api_key_repo
+                .find_by_key_hash(&key_hash)
+                .await
+                .map_err(|e| AuthError::Database(e.to_string()))?;
+            let Some(key) = key else {
+                self.api_key_state_cache.remove(&key_hash);
+                return Err(AuthError::InvalidToken);
+            };
+
+            let user = self
+                .user_repo
+                .find_by_id(&key.user_id)
+                .await
+                .map_err(|e| AuthError::Database(e.to_string()))?;
+            let Some(user) = user else {
+                self.api_key_state_cache.remove(&key_hash);
+                warn!(api_key_id = %key.id, "API key rejected: owning user not found");
+                return Err(AuthError::UserNotFound);
+            };
+
+            let state = CachedApiKeyState {
+                generation,
+                fetched_at: Instant::now(),
+                key_id: key.id.clone(),
+                user_id: key.user_id.clone(),
+                roles: user.get_roles(),
+                user_is_active: user.is_active,
+                must_change_password: user.must_change_password,
+                access_level: key.get_access_level(),
+                expires_at: key.expires_at,
+                revoked: key.is_revoked(),
+            };
+
+            self.api_key_state_cache
+                .insert(key_hash.clone(), state.clone());
+            if self.api_key_cache_generation.load(Ordering::Acquire) == generation {
+                break state;
+            }
+
+            // A revocation completed while this state was being fetched. Do
+            // not let the stale fill become an authorization decision.
+            self.api_key_state_cache.remove(&key_hash);
         };
 
         if state.revoked {
@@ -2014,6 +2038,58 @@ mod tests {
             .expect("list should succeed");
         assert_eq!(keys.len(), 1);
         assert!(keys[0].is_revoked());
+    }
+
+    #[tokio::test]
+    async fn api_key_revocation_ignores_a_stale_cache_fill() {
+        let mut user = UserDbModel::new("u", "hash", vec!["admin".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let user_repo = Arc::new(SpyUserRepository { user });
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+        let service = AuthService::new(
+            user_repo,
+            Arc::new(MockRefreshTokenRepository),
+            Arc::new(crate::database::repositories::InMemoryApiKeyRepository::default()),
+            jwt_service,
+            AuthConfig::default(),
+        );
+
+        let (model, raw_key) = service
+            .create_api_key(&user_id, "racing key", ApiKeyAccessLevel::Full, None)
+            .await
+            .expect("key creation should succeed");
+        let stale_generation = service.api_key_cache_generation.load(Ordering::Acquire);
+        let revoked = service
+            .revoke_api_key(&user_id, &model.id)
+            .await
+            .expect("revoke should succeed");
+        assert!(revoked);
+
+        let key_hash = AuthService::hash_token(&raw_key);
+        service.api_key_state_cache.insert(
+            key_hash,
+            CachedApiKeyState {
+                generation: stale_generation,
+                fetched_at: Instant::now(),
+                key_id: model.id,
+                user_id,
+                roles: vec!["admin".to_string()],
+                user_is_active: true,
+                must_change_password: false,
+                access_level: ApiKeyAccessLevel::Full,
+                expires_at: None,
+                revoked: false,
+            },
+        );
+
+        let result = service.authorize_api_key(&raw_key).await;
+        assert!(matches!(result, Err(AuthError::TokenRevoked)));
     }
 
     #[tokio::test]

@@ -8,7 +8,7 @@ API 密钥是短期 JWT 会话令牌之外的另一种凭据。密钥属于创�
 
 | 访问级别 | REST API | MCP 工具 |
 |---|---|---|
-| `read_only` | 仅允许 `GET`/`HEAD`/`OPTIONS` 请求 | 仅查询类工具 |
+| `read_only` | 仅允许经过批准的非敏感查询 | 录制会话/弹幕、聚合统计、通知事件与健康诊断 |
 | `full` | 所有请求 | 所有工具，包括修改配置 |
 
 密钥形如 `srec_<64 位十六进制字符>`。服务端只存储 SHA-256 哈希；原始密钥仅在创建时显示一次，之后无法找回。
@@ -39,19 +39,17 @@ curl -X DELETE http://localhost:12555/api/auth/api-keys/<key-id> \
 
 ### 使用密钥
 
-密钥可以作为 Bearer 令牌发送，也可以放在 `X-Api-Key` 请求头中：
+密钥必须作为 Bearer 令牌发送：
 
 ```bash
-curl http://localhost:12555/api/streamers \
+curl http://localhost:12555/api/sessions \
   -H "Authorization: Bearer srec_..."
-
-curl http://localhost:12555/api/streamers \
-  -H "X-Api-Key: srec_..."
 ```
 
 无论访问级别如何，以下限制始终生效：
 
 - API 密钥不能调用上述密钥管理端点、`POST /api/auth/change-password` 或 `POST /api/auth/logout-all`。
+- 只读密钥不能获取配置、主播覆盖配置、任务记录、预设、引擎、通知渠道、备份，以及其他可能包含已存凭据或运维机密的响应。
 - 通过 `?token=` 查询参数认证的 WebSocket / 媒体路由（`/api/downloads`、`/api/logging`、`/api/media`、`/api/stream-proxy`）只接受 JWT 访问令牌，因此密钥不会出现在 URL 或日志中。
 - 被禁用的用户、或处于强制改密状态的用户，其密钥会被拒绝。
 
@@ -63,7 +61,7 @@ curl http://localhost:12555/api/streamers \
 http://<host>:<port>/api/mcp
 ```
 
-认证方式与 REST API 相同（`Authorization: Bearer srec_...` 或 `X-Api-Key`）。`read_only` 密钥可以调用查询类工具；修改状态的工具在密钥没有 `full` 权限时会返回错误。
+认证方式与 REST API 相同（`Authorization: Bearer srec_...`）。`read_only` 密钥可以查看录制会话与弹幕、处理管道聚合统计、通知事件和系统健康状态。修改状态、向外部发起链接解析，以及暴露已存配置的工具需要 `full` 权限。
 
 ### 客户端配置
 
@@ -101,9 +99,11 @@ http://<host>:<port>/api/mcp
 
 分析弹幕时优先使用 `session_danmu_statistics`（总数、速率时间序列、发言排行、词频统计）；只有当助手需要实际聊天文本时，才使用 `session_list_danmu_files` + `session_read_danmu`。
 
+包含配置的工具组（`config_*`、`template_*`、`engine_*`、`streamer_*`、`filter_*`、处理管道/任务预设与执行详情工具、通知渠道/订阅工具，以及 `parse_url`）即使只读取也需要 `full` 密钥。这样可以防止只读助手获取平台 Cookie、处理器配置、通知凭据、直播访问数据或其他已存机密。
+
 ## 安全注意事项
 
 - 像对待密码一样对待 API 密钥：存放在密钥管理器中，不要放进共享配置或源码仓库。
-- 除非助手确实需要修改配置，否则优先使用 `read_only` 密钥；实验用途的密钥建议设置过期时间。
-- 工具或机器下线时立即吊销密钥；吊销会在数秒内使缓存失效。
+- 除非助手确实需要配置或运维详情，否则优先使用 `read_only` 密钥；实验用途的密钥建议设置过期时间。
+- 工具或机器下线时立即吊销密钥；吊销完成后，过期的并发缓存填充无法授权后续请求。
 - 当 `AUTH_DISABLED=true`（仅限回环地址的开发模式）时，`/api/mcp` 与其余 API 一样不做认证。

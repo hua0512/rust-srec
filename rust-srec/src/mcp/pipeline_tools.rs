@@ -104,12 +104,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "pipeline_list_jobs",
-        description = "List post-processing jobs (paginated, filterable by status/streamer/session/pipeline)."
+        description = "List post-processing jobs (paginated, filterable by status/streamer/session/pipeline). Requires a full-access API key because job records include processor configuration."
     )]
     pub async fn pipeline_list_jobs(
         &self,
         Parameters(params): Parameters<JobListParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
         let pagination = PageParams {
             limit: params.limit,
@@ -142,24 +144,28 @@ impl SrecMcpServer {
 
     #[tool(
         name = "pipeline_get_job",
-        description = "Get one post-processing job by ID."
+        description = "Get one post-processing job by ID. Requires a full-access API key because job records include processor configuration."
     )]
     pub async fn pipeline_get_job(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
         tool_json(jobs::get_job(State(state), Path(params.id)).await)
     }
 
     #[tool(
         name = "pipeline_job_logs",
-        description = "Get the log entries recorded for a post-processing job."
+        description = "Get the log entries recorded for a post-processing job. Requires a full-access API key."
     )]
     pub async fn pipeline_job_logs(
         &self,
         Parameters(params): Parameters<JobLogsParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
         let pagination = PageParams {
             limit: params.limit,
@@ -213,12 +219,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "pipeline_list_dags",
-        description = "List post-processing DAGs (multi-step pipelines) with status summaries."
+        description = "List post-processing DAGs (multi-step pipelines) with status summaries. Requires a full-access API key because DAG records include processor configuration."
     )]
     pub async fn pipeline_list_dags(
         &self,
         Parameters(params): Parameters<DagListParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
         let filters = DagFilterParams {
             status: params.status,
@@ -233,24 +241,28 @@ impl SrecMcpServer {
 
     #[tool(
         name = "pipeline_dag_status",
-        description = "Get the status of one DAG by ID."
+        description = "Get the status of one DAG by ID. Requires a full-access API key because DAG records include processor configuration."
     )]
     pub async fn pipeline_dag_status(
         &self,
         Parameters(params): Parameters<DagIdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
         tool_json(dag::get_dag_status(State(state), Path(params.dag_id)).await)
     }
 
     #[tool(
         name = "pipeline_dag_graph",
-        description = "Get the node/edge graph of one DAG (steps, dependencies, per-node status)."
+        description = "Get the node/edge graph of one DAG (steps, dependencies, per-node status). Requires a full-access API key because nodes include processor configuration."
     )]
     pub async fn pipeline_dag_graph(
         &self,
         Parameters(params): Parameters<DagIdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
         tool_json(dag::get_dag_graph(State(state), Path(params.dag_id)).await)
     }
@@ -285,12 +297,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "pipeline_list_presets",
-        description = "List pipeline presets (reusable multi-step post-processing workflow definitions)."
+        description = "List pipeline presets (reusable multi-step post-processing workflow definitions). Requires a full-access API key."
     )]
     pub async fn pipeline_list_presets(
         &self,
         Parameters(params): Parameters<PresetListParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PresetRouteState::from_ref(&self.app_state);
         let filters = PipelinePresetFilterParams {
             search: params.search,
@@ -306,24 +320,28 @@ impl SrecMcpServer {
 
     #[tool(
         name = "pipeline_get_preset",
-        description = "Get one pipeline preset by ID."
+        description = "Get one pipeline preset by ID. Requires a full-access API key."
     )]
     pub async fn pipeline_get_preset(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = PresetRouteState::from_ref(&self.app_state);
         tool_json(presets::get_pipeline_preset_by_id(State(state), Path(params.id)).await)
     }
 
     #[tool(
         name = "job_preset_list",
-        description = "List job presets (reusable single-processor configurations referenced by pipelines)."
+        description = "List job presets (reusable single-processor configurations referenced by pipelines). Requires a full-access API key."
     )]
     pub async fn job_preset_list(
         &self,
         Parameters(params): Parameters<JobPresetListParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = JobPresetRouteState::from_ref(&self.app_state);
         let filters = PresetFilterParams {
             category: params.category,
@@ -337,11 +355,16 @@ impl SrecMcpServer {
         tool_json(job::list_presets(State(state), Query(filters), Query(pagination)).await)
     }
 
-    #[tool(name = "job_preset_get", description = "Get one job preset by ID.")]
+    #[tool(
+        name = "job_preset_get",
+        description = "Get one job preset by ID. Requires a full-access API key."
+    )]
     pub async fn job_preset_get(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = JobPresetRouteState::from_ref(&self.app_state);
         tool_json(job::get_preset(State(state), Path(params.id)).await)
     }

@@ -76,21 +76,27 @@ impl SrecMcpServer {
 
     #[tool(
         name = "notification_list_channels",
-        description = "List configured notification channels (Discord, email, webhook, Telegram, ...)."
+        description = "List configured notification channels (Discord, email, webhook, Telegram, ...). Requires a full-access API key because channel settings contain credentials."
     )]
-    pub async fn notification_list_channels(&self) -> Result<CallToolResult, ErrorData> {
+    pub async fn notification_list_channels(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(notifications::list_channels(State(state)).await)
     }
 
     #[tool(
         name = "notification_get_channel",
-        description = "Get one notification channel by ID."
+        description = "Get one notification channel by ID. Requires a full-access API key because channel settings contain credentials."
     )]
     pub async fn notification_get_channel(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(notifications::get_channel(State(state), Path(params.id)).await)
     }
@@ -179,12 +185,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "notification_get_subscriptions",
-        description = "Get the event types a notification channel is subscribed to."
+        description = "Get the event types a notification channel is subscribed to. Requires a full-access API key."
     )]
     pub async fn notification_get_subscriptions(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(notifications::get_subscriptions(State(state), Path(params.id)).await)
     }

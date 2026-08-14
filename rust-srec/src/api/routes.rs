@@ -69,7 +69,8 @@ pub fn create_router(state: AppState) -> Router {
 
     // MCP endpoint (Streamable HTTP). Uses `AuthLayer::mcp`: same JWT/API key
     // validation as the REST routes, but read-only keys are allowed to POST
-    // because scope is enforced per tool via `mcp::SrecMcpServer::require_write`.
+    // because scope is enforced per tool via
+    // `mcp::SrecMcpServer::require_full_access`.
     let mcp_routes: Router<AppState> = Router::new().nest_service(
         "/api/mcp",
         crate::mcp::streamable_http_service(state.clone()),

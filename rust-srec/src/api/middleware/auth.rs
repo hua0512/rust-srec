@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use axum::{
-    http::{HeaderName, Method, Request, StatusCode, header::AUTHORIZATION},
+    http::{Method, Request, StatusCode, header::AUTHORIZATION},
     response::{IntoResponse, Response},
 };
 
@@ -16,14 +16,10 @@ use crate::api::auth_service::{API_KEY_PREFIX, AuthPrincipal, AuthService, Crede
 use crate::api::error::ApiError;
 use crate::database::models::ApiKeyAccessLevel;
 
-/// Alternative header carrying an API key for clients that cannot set
-/// `Authorization: Bearer` (both are accepted; `Authorization` wins).
-const X_API_KEY: HeaderName = HeaderName::from_static("x-api-key");
-
 /// Authentication error response.
 #[derive(Debug)]
 pub enum AuthLayerError {
-    /// Missing Authorization / X-Api-Key header
+    /// Missing Authorization header
     MissingToken,
     /// Invalid credential format (not Bearer / non-ASCII header)
     InvalidFormat,
@@ -62,28 +58,39 @@ fn extract_credential<B>(request: &Request<B>) -> Result<RequestCredential<'_>, 
         });
     }
 
-    if let Some(key_header) = request.headers().get(&X_API_KEY) {
-        let key = key_header
-            .to_str()
-            .map_err(|_| AuthLayerError::InvalidFormat)?;
-        return Ok(RequestCredential::ApiKey(key));
-    }
-
     Err(AuthLayerError::MissingToken)
 }
 
-/// Methods a read-only API key may use on REST routes. MCP requests are all
-/// POST, so the MCP layer (`AuthLayer::mcp`) disables this check and relies
-/// on `mcp::require_write` inside each tool instead.
-fn is_safe_method(method: &Method) -> bool {
-    matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+fn has_path_prefix(path: &str, prefix: &str) -> bool {
+    path == prefix
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+/// REST requests available to read-only API keys. This is intentionally an
+/// allowlist: configuration and operational records can contain cookies,
+/// credentials, command arguments, or private endpoints even when exposed by
+/// a safe HTTP method. MCP applies the equivalent rule per tool.
+fn is_read_only_request_allowed(method: &Method, path: &str) -> bool {
+    if *method == Method::OPTIONS {
+        return true;
+    }
+    if !matches!(*method, Method::GET | Method::HEAD) {
+        return false;
+    }
+
+    has_path_prefix(path, "/api/sessions")
+        || path == "/api/pipeline/stats"
+        || path == "/api/notifications/event-types"
+        || path == "/api/notifications/events"
 }
 
 fn read_only_key_response() -> Response {
     ApiError::new(
         StatusCode::FORBIDDEN,
         "API_KEY_READ_ONLY",
-        "This API key is read-only and cannot perform write operations",
+        "This endpoint requires a full-access API key",
     )
     .into_response()
 }
@@ -106,10 +113,10 @@ pub struct AuthLayer {
     /// `must_change_password` flag is set; token validation itself is
     /// unaffected. API keys are rejected outright on these routes.
     allow_password_remediation: bool,
-    /// When set, read-only API keys are limited to `is_safe_method`
-    /// requests. Disabled by `AuthLayer::mcp` because MCP transports POST
-    /// for every call and scope is enforced per tool instead.
-    enforce_read_only_methods: bool,
+    /// When set, read-only API keys are limited to the explicit REST query
+    /// allowlist. Disabled by `AuthLayer::mcp` because MCP transports POST for
+    /// every call and scope is enforced per tool instead.
+    enforce_read_only_access: bool,
 }
 
 impl AuthLayer {
@@ -119,7 +126,7 @@ impl AuthLayer {
         Self {
             auth_service,
             allow_password_remediation: false,
-            enforce_read_only_methods: true,
+            enforce_read_only_access: true,
         }
     }
 
@@ -131,18 +138,18 @@ impl AuthLayer {
         Self {
             auth_service,
             allow_password_remediation: true,
-            enforce_read_only_methods: true,
+            enforce_read_only_access: true,
         }
     }
 
     /// Create an auth layer for the MCP endpoint: identical credential
     /// validation, but read-only scope is enforced by the MCP tools
-    /// themselves (`mcp::require_write`) rather than by HTTP method.
+    /// themselves (`mcp::require_full_access`) rather than by HTTP method.
     pub fn mcp(auth_service: Arc<AuthService>) -> Self {
         Self {
             auth_service,
             allow_password_remediation: false,
-            enforce_read_only_methods: false,
+            enforce_read_only_access: false,
         }
     }
 }
@@ -155,7 +162,7 @@ impl<S> tower::Layer<S> for AuthLayer {
             inner,
             auth_service: self.auth_service.clone(),
             allow_password_remediation: self.allow_password_remediation,
-            enforce_read_only_methods: self.enforce_read_only_methods,
+            enforce_read_only_access: self.enforce_read_only_access,
         }
     }
 }
@@ -166,7 +173,7 @@ pub struct AuthMiddleware<S> {
     inner: S,
     auth_service: Arc<AuthService>,
     allow_password_remediation: bool,
-    enforce_read_only_methods: bool,
+    enforce_read_only_access: bool,
 }
 
 impl<S, B> tower::Service<axum::http::Request<B>> for AuthMiddleware<S>
@@ -191,7 +198,7 @@ where
     fn call(&mut self, mut request: axum::http::Request<B>) -> Self::Future {
         let auth_service = self.auth_service.clone();
         let allow_password_remediation = self.allow_password_remediation;
-        let enforce_read_only_methods = self.enforce_read_only_methods;
+        let enforce_read_only_access = self.enforce_read_only_access;
         // The future must capture the instance `poll_ready` was called on;
         // leave the fresh clone in `self.inner` for the next `call` (the
         // standard tower pattern for cloning a service into a future).
@@ -228,9 +235,9 @@ where
                 Err(error) => return Ok(error.into_response()),
             };
 
-            if enforce_read_only_methods
+            if enforce_read_only_access
                 && principal.access == ApiKeyAccessLevel::ReadOnly
-                && !is_safe_method(request.method())
+                && !is_read_only_request_allowed(request.method(), request.uri().path())
             {
                 return Ok(read_only_key_response());
             }
@@ -373,7 +380,7 @@ mod tests {
     }
 
     async fn call_layer(layer: AuthLayer, path: &str, authorization: Option<&str>) -> Response {
-        call_layer_with(layer, Method::GET, path, authorization, None).await
+        call_layer_with(layer, Method::GET, path, authorization).await
     }
 
     async fn call_layer_with(
@@ -381,7 +388,6 @@ mod tests {
         method: Method,
         path: &str,
         authorization: Option<&str>,
-        x_api_key: Option<&str>,
     ) -> Response {
         let inner = service_fn(|request: Request<Body>| async move {
             let claims = request
@@ -413,13 +419,6 @@ mod tests {
                 value.parse().expect("authorization header should be valid"),
             );
         }
-        if let Some(value) = x_api_key {
-            request.headers_mut().insert(
-                X_API_KEY,
-                value.parse().expect("x-api-key header should be valid"),
-            );
-        }
-
         service
             .oneshot(request)
             .await
@@ -625,31 +624,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn valid_api_key_reaches_handler_via_bearer_and_header() {
+    async fn valid_api_key_reaches_handler_via_bearer() {
         let user = active_user();
         let user_id = user.id.clone();
         let (auth_service, _) = test_services(UserLookup::Found(user));
         let (_, raw_key) = create_key(&auth_service, &user_id, ApiKeyAccessLevel::Full, None).await;
 
         let bearer = call_layer(
-            AuthLayer::new(auth_service.clone()),
+            AuthLayer::new(auth_service),
             "/api/config",
             Some(&format!("Bearer {raw_key}")),
         )
         .await;
         assert_eq!(bearer.status(), StatusCode::OK);
         assert_eq!(bearer.headers()["x-user-id"], user_id);
+    }
 
-        let header = call_layer_with(
-            AuthLayer::new(auth_service),
-            Method::GET,
-            "/api/config",
-            None,
-            Some(&raw_key),
-        )
-        .await;
-        assert_eq!(header.status(), StatusCode::OK);
-        assert_eq!(header.headers()["x-user-id"], user_id);
+    #[test]
+    fn x_api_key_header_is_not_a_credential() {
+        let request = Request::builder()
+            .header("X-Api-Key", "srec_example")
+            .body(Body::empty())
+            .expect("test request should build");
+        assert!(matches!(
+            extract_credential(&request),
+            Err(AuthLayerError::MissingToken)
+        ));
     }
 
     #[tokio::test]
@@ -700,7 +700,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_only_api_key_is_limited_to_safe_methods() {
+    async fn read_only_api_key_is_limited_to_approved_queries() {
         let user = active_user();
         let user_id = user.id.clone();
         let (auth_service, _) = test_services(UserLookup::Found(user));
@@ -710,19 +710,26 @@ mod tests {
         let get = call_layer_with(
             AuthLayer::new(auth_service.clone()),
             Method::GET,
-            "/api/config",
+            "/api/sessions/session-1/danmu-statistics",
             Some(&format!("Bearer {raw_key}")),
-            None,
         )
         .await;
         assert_eq!(get.status(), StatusCode::OK);
 
+        let sensitive_get = call_layer_with(
+            AuthLayer::new(auth_service.clone()),
+            Method::GET,
+            "/api/config/platforms",
+            Some(&format!("Bearer {raw_key}")),
+        )
+        .await;
+        assert_eq!(sensitive_get.status(), StatusCode::FORBIDDEN);
+
         let post = call_layer_with(
             AuthLayer::new(auth_service),
             Method::POST,
-            "/api/config",
+            "/api/sessions/batch-delete",
             Some(&format!("Bearer {raw_key}")),
-            None,
         )
         .await;
         assert_eq!(post.status(), StatusCode::FORBIDDEN);
@@ -746,7 +753,6 @@ mod tests {
             Method::POST,
             "/api/streamers",
             Some(&format!("Bearer {raw_key}")),
-            None,
         )
         .await;
         assert_eq!(post.status(), StatusCode::OK);
@@ -765,7 +771,6 @@ mod tests {
             Method::POST,
             "/api/mcp",
             Some(&format!("Bearer {raw_key}")),
-            None,
         )
         .await;
         assert_eq!(post.status(), StatusCode::OK);
@@ -783,7 +788,6 @@ mod tests {
             Method::POST,
             "/api/auth/change-password",
             Some(&format!("Bearer {raw_key}")),
-            None,
         )
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);

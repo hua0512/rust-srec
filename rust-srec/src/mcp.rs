@@ -4,9 +4,9 @@
 //! Streamable HTTP transport, mounted at `/api/mcp` by
 //! `api::routes::create_router`. Authentication is handled in front of the
 //! transport by `api::middleware::auth::AuthLayer::mcp` (JWT or API key);
-//! per-tool write access is enforced here via [`SrecMcpServer::require_write`]
-//! because every MCP request is a POST and the middleware's method-based
-//! read-only check cannot apply.
+//! per-tool access is enforced here via [`SrecMcpServer::require_full_access`]
+//! because every MCP request is a POST and the middleware's REST allowlist
+//! cannot apply.
 //!
 //! Tools do not duplicate business logic: each one builds the corresponding
 //! route state via `FromRef<AppState>` and calls the same `api::routes`
@@ -42,7 +42,7 @@ pub struct SrecMcpServer {
     app_state: AppState,
     /// Mirrors `AppState.auth_service.is_some()`. When authentication is
     /// disabled (`AUTH_DISABLED`, loopback only) no `AuthPrincipal` exists
-    /// and `require_write` allows everything, matching the unauthenticated
+    /// and full-access checks allow everything, matching the unauthenticated
     /// REST surface in that mode.
     auth_enabled: bool,
     tool_router: ToolRouter<Self>,
@@ -63,28 +63,33 @@ impl SrecMcpServer {
         }
     }
 
-    /// Enforce write access for mutating tools.
+    /// Require a full-access principal for tools that mutate state or expose
+    /// configuration that can contain credentials.
     ///
     /// Reads the `AuthPrincipal` that `AuthLayer` stored in the request
     /// extensions (propagated into the tool context by
     /// `StreamableHttpService` via `http::request::Parts`). Fails closed
     /// when authentication is enabled but no principal is present.
-    fn require_write(&self, context: &RequestContext<RoleServer>) -> Result<(), ErrorData> {
+    fn require_full_access(&self, context: &RequestContext<RoleServer>) -> Result<(), ErrorData> {
         let principal = context
             .extensions
             .get::<axum::http::request::Parts>()
             .and_then(|parts| parts.extensions.get::<AuthPrincipal>());
-        check_write_access(self.auth_enabled, principal)
+        check_full_access(self.auth_enabled, principal)
+    }
+
+    fn require_write(&self, context: &RequestContext<RoleServer>) -> Result<(), ErrorData> {
+        self.require_full_access(context)
     }
 }
 
-/// Core write-access rule shared by every mutating tool.
+/// Core full-access rule shared by mutating and sensitive-read tools.
 ///
 /// `auth_enabled == false` (AUTH_DISABLED loopback mode) allows everything,
 /// mirroring the unauthenticated REST surface. Otherwise a `Full` principal
 /// is required; a missing principal fails closed because `AuthLayer::mcp`
 /// always inserts one for authenticated requests.
-fn check_write_access(
+fn check_full_access(
     auth_enabled: bool,
     principal: Option<&AuthPrincipal>,
 ) -> Result<(), ErrorData> {
@@ -94,11 +99,11 @@ fn check_write_access(
     match principal {
         Some(principal) if principal.access == ApiKeyAccessLevel::Full => Ok(()),
         Some(_) => Err(ErrorData::invalid_request(
-            "This API key is read-only; this tool requires a full-access API key",
+            "This tool requires a full-access API key",
             None,
         )),
         None => Err(ErrorData::invalid_request(
-            "Missing authenticated principal for a write tool",
+            "Missing authenticated principal for a full-access tool",
             None,
         )),
     }
@@ -171,8 +176,9 @@ impl ServerHandler for SrecMcpServer {
                  streamer management), session_* (recording sessions, segments, and danmu/chat \
                  statistics and XML content), pipeline_* / job_preset_* (post-processing jobs and \
                  DAGs), notification_* (notification channels), system_* and parse_url \
-                 (diagnostics and URL extraction). Write tools require a full-access API key; \
-                 read-only keys can only call read tools. JSON-object arguments follow the same \
+                 (diagnostics and URL extraction). Mutating tools and tools that expose stored \
+                 configuration require a full-access API key; read-only keys are limited to \
+                 non-sensitive query tools. JSON-object arguments follow the same \
                  schemas as the REST API documented at /api/docs.",
             )
     }
@@ -271,20 +277,20 @@ mod tests {
     }
 
     #[test]
-    fn write_access_rules() {
+    fn full_access_rules() {
         // AUTH_DISABLED mode: everything allowed, principal or not.
-        assert!(check_write_access(false, None).is_ok());
+        assert!(check_full_access(false, None).is_ok());
 
         // Auth enabled: full key writes, read-only key rejected, missing
         // principal fails closed.
         let full = principal(ApiKeyAccessLevel::Full);
-        assert!(check_write_access(true, Some(&full)).is_ok());
+        assert!(check_full_access(true, Some(&full)).is_ok());
 
         let read_only = principal(ApiKeyAccessLevel::ReadOnly);
-        let error = check_write_access(true, Some(&read_only))
-            .expect_err("read-only key must not pass the write gate");
-        assert!(error.message.contains("read-only"));
+        let error = check_full_access(true, Some(&read_only))
+            .expect_err("read-only key must not pass the full-access gate");
+        assert!(error.message.contains("full-access"));
 
-        assert!(check_write_access(true, None).is_err());
+        assert!(check_full_access(true, None).is_err());
     }
 }

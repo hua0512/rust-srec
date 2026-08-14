@@ -93,9 +93,13 @@ pub struct UpdateEngineParams {
 impl SrecMcpServer {
     #[tool(
         name = "config_get_global",
-        description = "Get the global recording configuration (output folder/format, concurrency limits, danmu recording, default engine/extractor, pipelines, retention, ...)."
+        description = "Get the global recording configuration (output folder/format, concurrency limits, danmu recording, default engine/extractor, pipelines, retention, ...). Requires a full-access API key."
     )]
-    pub async fn config_get_global(&self) -> Result<CallToolResult, ErrorData> {
+    pub async fn config_get_global(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = ConfigRouteState::from_ref(&self.app_state);
         tool_json(config::get_global_config(State(state)).await)
     }
@@ -118,21 +122,27 @@ impl SrecMcpServer {
 
     #[tool(
         name = "config_list_platforms",
-        description = "List all platform-level configurations (per-platform overrides such as cookies, proxy, danmu, engine selection)."
+        description = "List all platform-level configurations (per-platform overrides such as cookies, proxy, danmu, engine selection). Requires a full-access API key."
     )]
-    pub async fn config_list_platforms(&self) -> Result<CallToolResult, ErrorData> {
+    pub async fn config_list_platforms(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = ConfigRouteState::from_ref(&self.app_state);
         tool_json(config::list_platform_configs(State(state)).await)
     }
 
     #[tool(
         name = "config_get_platform",
-        description = "Get one platform configuration by ID."
+        description = "Get one platform configuration by ID. Requires a full-access API key."
     )]
     pub async fn config_get_platform(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = ConfigRouteState::from_ref(&self.app_state);
         tool_json(config::get_platform_config(State(state), Path(params.id)).await)
     }
@@ -167,21 +177,28 @@ impl SrecMcpServer {
 
     #[tool(
         name = "template_list",
-        description = "List reusable configuration templates (paginated)."
+        description = "List reusable configuration templates (paginated). Requires a full-access API key."
     )]
     pub async fn template_list(
         &self,
         Parameters(params): Parameters<PageParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = TemplateRouteState::from_ref(&self.app_state);
         tool_json(templates::list_templates(State(state), Query(params.to_pagination())).await)
     }
 
-    #[tool(name = "template_get", description = "Get one template by ID.")]
+    #[tool(
+        name = "template_get",
+        description = "Get one template by ID. Requires a full-access API key."
+    )]
     pub async fn template_get(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = TemplateRouteState::from_ref(&self.app_state);
         tool_json(templates::get_template(State(state), Path(params.id)).await)
     }
@@ -234,21 +251,27 @@ impl SrecMcpServer {
 
     #[tool(
         name = "engine_list",
-        description = "List download engine configurations (ffmpeg / streamlink / mesio) and their settings."
+        description = "List download engine configurations (ffmpeg / streamlink / mesio) and their settings. Requires a full-access API key."
     )]
-    pub async fn engine_list(&self) -> Result<CallToolResult, ErrorData> {
+    pub async fn engine_list(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = EngineRouteState::from_ref(&self.app_state);
         tool_json(engines::list_engines(State(state)).await)
     }
 
     #[tool(
         name = "engine_get",
-        description = "Get one engine configuration by ID."
+        description = "Get one engine configuration by ID. Requires a full-access API key."
     )]
     pub async fn engine_get(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = EngineRouteState::from_ref(&self.app_state);
         tool_json(engines::get_engine(State(state), Path(params.id)).await)
     }

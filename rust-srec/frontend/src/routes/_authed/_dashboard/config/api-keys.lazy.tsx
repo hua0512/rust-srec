@@ -26,6 +26,7 @@ import {
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { getApiEndpointUrl } from '@/utils/env';
 import {
   Dialog,
   DialogContent,
@@ -130,8 +131,9 @@ function ApiKeysPage() {
           description={
             <Trans>
               Long-lived credentials for programmatic access to the REST API and
-              the built-in MCP server. Read-only keys can query data;
-              full-access keys can also change configuration.
+              the built-in MCP server. Read-only keys can inspect recording
+              sessions and non-sensitive status; configuration and operational
+              records require full access.
             </Trans>
           }
           icon={KeyRound}
@@ -459,10 +461,12 @@ function CreateApiKeyDialog({
                   </SelectTrigger>
                   <SelectContent className={CONFIG_SELECT_CONTENT}>
                     <SelectItem value="read_only">
-                      <Trans>Read-only — query data and configuration</Trans>
+                      <Trans>
+                        Read-only — sessions and non-sensitive status
+                      </Trans>
                     </SelectItem>
                     <SelectItem value="full">
-                      <Trans>Full access — also modify configuration</Trans>
+                      <Trans>Full access — all data and configuration</Trans>
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -522,8 +526,11 @@ function McpQuickStart() {
   const [copied, setCopied] = useState(false);
 
   const mcpUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '/api/mcp';
-    return `${window.location.origin}/api/mcp`;
+    const endpoint = getApiEndpointUrl('/mcp');
+    if (typeof window === 'undefined' || endpoint.startsWith('http')) {
+      return endpoint;
+    }
+    return new URL(endpoint, window.location.origin).toString();
   }, []);
 
   const configSnippet = useMemo(
@@ -593,9 +600,9 @@ function McpQuickStart() {
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
           <Trans>
-            Read-only keys can call query tools only; configuration-changing
-            tools require a full-access key. The key can also be sent via the
-            X-Api-Key header.
+            Read-only keys can inspect sessions, danmu, pipeline totals, and
+            notification events. Configuration and other sensitive tools require
+            a full-access key.
           </Trans>
         </p>
       </div>

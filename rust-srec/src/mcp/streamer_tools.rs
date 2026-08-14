@@ -110,12 +110,14 @@ pub struct FilterIdParams {
 impl SrecMcpServer {
     #[tool(
         name = "streamer_list",
-        description = "List monitored streamers with their state (live/offline), platform, priority, and configuration references (paginated, filterable)."
+        description = "List monitored streamers with their state (live/offline), platform, priority, and configuration references (paginated, filterable). Requires a full-access API key because streamer overrides can contain credentials."
     )]
     pub async fn streamer_list(
         &self,
         Parameters(params): Parameters<StreamerListParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = StreamerRouteState::from_ref(&self.app_state);
         let pagination = PageParams {
             limit: params.limit,
@@ -138,12 +140,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "streamer_get",
-        description = "Get one streamer by ID, including its resolved configuration references and current state."
+        description = "Get one streamer by ID, including its resolved configuration references and current state. Requires a full-access API key because streamer overrides can contain credentials."
     )]
     pub async fn streamer_get(
         &self,
         Parameters(params): Parameters<IdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = StreamerRouteState::from_ref(&self.app_state);
         tool_json(streamers::get_streamer(State(state), Path(params.id)).await)
     }
@@ -216,12 +220,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "streamer_check_history",
-        description = "Get the recent live-status poll history for a streamer (per-check outcome and latency)."
+        description = "Get the recent live-status poll history for a streamer (per-check outcome and latency). Requires a full-access API key."
     )]
     pub async fn streamer_check_history(
         &self,
         Parameters(params): Parameters<CheckHistoryToolParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = StreamerRouteState::from_ref(&self.app_state);
         tool_json(
             streamers::get_check_history(
@@ -237,12 +243,14 @@ impl SrecMcpServer {
 
     #[tool(
         name = "filter_list",
-        description = "List recording filters attached to a streamer (title/time filters controlling when recording triggers)."
+        description = "List recording filters attached to a streamer (title/time filters controlling when recording triggers). Requires a full-access API key."
     )]
     pub async fn filter_list(
         &self,
         Parameters(params): Parameters<StreamerIdParams>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
         let state = FilterRouteState::from_ref(&self.app_state);
         tool_json(filters::list_filters(State(state), Path(params.streamer_id)).await)
     }

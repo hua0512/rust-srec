@@ -375,8 +375,7 @@ pub struct MessageResponse {
 )]
 pub struct ApiDoc;
 
-/// Security scheme addon for Bearer (JWT or API key) and X-Api-Key header
-/// authentication.
+/// Security scheme addon for Bearer authentication with a JWT or API key.
 struct SecurityAddon;
 
 impl utoipa::Modify for SecurityAddon {
@@ -387,22 +386,11 @@ impl utoipa::Modify for SecurityAddon {
                 utoipa::openapi::security::SecurityScheme::Http(
                     utoipa::openapi::security::HttpBuilder::new()
                         .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
-                        .bearer_format("JWT")
+                        .bearer_format("JWT or srec_ API key")
                         .description(Some(
                             "JWT access token, or an API key (`srec_...`) created via /api/auth/api-keys",
                         ))
                         .build(),
-                ),
-            );
-            components.add_security_scheme(
-                "api_key",
-                utoipa::openapi::security::SecurityScheme::ApiKey(
-                    utoipa::openapi::security::ApiKey::Header(
-                        utoipa::openapi::security::ApiKeyValue::with_description(
-                            "X-Api-Key",
-                            "API key created via /api/auth/api-keys",
-                        ),
-                    ),
                 ),
             );
         }

@@ -6,7 +6,8 @@ use sqlx::FromRow;
 /// Access level granted to an API key.
 ///
 /// Enforced by the auth middleware for REST requests (read-only keys may only
-/// issue GET/HEAD/OPTIONS) and by `mcp::require_write` for MCP tool calls.
+/// access approved non-sensitive REST queries) and by MCP's per-tool
+/// full-access checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiKeyAccessLevel {
