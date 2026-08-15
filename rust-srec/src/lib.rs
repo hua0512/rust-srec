@@ -11,6 +11,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 mod api;
 pub mod backend;
 pub mod error;
+mod mcp;
 mod services;
 
 // Internal modules kept `pub` only so the integration tests in `tests/` can

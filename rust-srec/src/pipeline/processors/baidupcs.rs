@@ -376,9 +376,7 @@ fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutco
             }
         }
 
-        if in_failure_table
-            && let Some(input) = match_input_by_containment(inputs, line)
-        {
+        if in_failure_table && let Some(input) = match_input_by_containment(inputs, line) {
             outcomes
                 .failed
                 .entry(input.clone())
@@ -654,12 +652,7 @@ impl Processor for BaiduPcsProcessor {
 
         let mut completed: HashMap<String, String> = resumed
             .iter()
-            .map(|path| {
-                (
-                    path.clone(),
-                    Self::computed_remote_path(&remote_dir, path),
-                )
-            })
+            .map(|path| (path.clone(), Self::computed_remote_path(&remote_dir, path)))
             .collect();
         let mut skipped: HashMap<String, String> = HashMap::new();
         let mut last_errors: HashMap<String, String> = HashMap::new();
@@ -721,9 +714,10 @@ impl Processor for BaiduPcsProcessor {
             // below — `relogin` takes the write side of `cli_lock`.
             if let Some(authenticator) = &authenticator
                 && !relogin_done
-                && authenticator.has_credentials(config.config_dir.as_deref()).await
-                && (attempt > 0
-                    || self.session_logged_out(&binary_path, &config, ctx).await)
+                && authenticator
+                    .has_credentials(config.config_dir.as_deref())
+                    .await
+                && (attempt > 0 || self.session_logged_out(&binary_path, &config, ctx).await)
             {
                 relogin_done = true;
                 self.attempt_relogin(authenticator, &binary_path, &config, ctx)
@@ -803,8 +797,9 @@ impl Processor for BaiduPcsProcessor {
                         completed.insert(path, remote);
                     }
                 } else {
-                    let message =
-                        format!("no per-file outcome reported by BaiduPCS-Go (exit code {exit_code})");
+                    let message = format!(
+                        "no per-file outcome reported by BaiduPCS-Go (exit code {exit_code})"
+                    );
                     for path in unresolved {
                         last_errors.insert(path.clone(), message.clone());
                         still_pending.push(path);
@@ -1009,12 +1004,10 @@ mod tests {
             self.commands.lock().unwrap().push(args);
             self.envs.lock().unwrap().push(envs);
 
-            let attempt = self
-                .attempts
-                .lock()
-                .unwrap()
-                .pop_front()
-                .ok_or_else(|| crate::Error::Other("unexpected BaiduPCS-Go attempt".to_string()))?;
+            let attempt =
+                self.attempts.lock().unwrap().pop_front().ok_or_else(|| {
+                    crate::Error::Other("unexpected BaiduPCS-Go attempt".to_string())
+                })?;
             Ok(CommandOutput {
                 status: test_exit_status(attempt.exit_ok),
                 duration: 0.0,
@@ -1511,10 +1504,7 @@ mod tests {
         let created_at = utc_datetime(2026, 8, 5, 12, 0, 0);
         let expected_dir = format!(
             "/rec/StreamerName/{}",
-            pipeline_common::expand_path_template_at(
-                "%Y%m",
-                Some(created_at.timestamp_millis())
-            )
+            pipeline_common::expand_path_template_at("%Y%m", Some(created_at.timestamp_millis()))
         );
         let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
             exit_ok: true,
@@ -1601,7 +1591,8 @@ mod tests {
         }
 
         fn relogin_calls(&self) -> usize {
-            self.relogin_calls.load(std::sync::atomic::Ordering::Relaxed)
+            self.relogin_calls
+                .load(std::sync::atomic::Ordering::Relaxed)
         }
     }
 

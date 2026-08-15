@@ -126,11 +126,7 @@ mod tests {
         assert!(repo.get("baidupcs", "").await.unwrap().is_none());
 
         repo.upsert(&model("baidupcs", "")).await.unwrap();
-        let stored = repo
-            .get("baidupcs", "")
-            .await
-            .unwrap()
-            .expect("row stored");
+        let stored = repo.get("baidupcs", "").await.unwrap().expect("row stored");
         assert!(stored.payload.contains("BDUSS=abc"));
         assert_eq!(stored.created_at, 1_000);
 

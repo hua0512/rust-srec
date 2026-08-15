@@ -18,7 +18,7 @@ import {
  */
 
 export const getBaiduPcsStatus = createServerFn({ method: 'POST' })
-  .inputValidator((data: BaiduPcsToolRequest) =>
+  .validator((data: BaiduPcsToolRequest) =>
     BaiduPcsToolRequestSchema.parse(data),
   )
   .handler(async ({ data }) => {
@@ -30,7 +30,7 @@ export const getBaiduPcsStatus = createServerFn({ method: 'POST' })
   });
 
 export const baiduPcsLogin = createServerFn({ method: 'POST' })
-  .inputValidator((data: BaiduPcsLoginRequest) =>
+  .validator((data: BaiduPcsLoginRequest) =>
     BaiduPcsLoginRequestSchema.parse(data),
   )
   .handler(async ({ data }) => {
@@ -42,7 +42,7 @@ export const baiduPcsLogin = createServerFn({ method: 'POST' })
   });
 
 export const baiduPcsLogout = createServerFn({ method: 'POST' })
-  .inputValidator((data: BaiduPcsToolRequest) =>
+  .validator((data: BaiduPcsToolRequest) =>
     BaiduPcsToolRequestSchema.parse(data),
   )
   .handler(async ({ data }) => {

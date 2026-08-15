@@ -8,7 +8,7 @@ import { nitro } from 'nitro/vite';
 import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
 
-import { computeThemeCacheId } from './theme-cache-id';
+import { computeThemeCacheId } from './theme-cache-id.ts';
 
 const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const PUBLIC_LOGO_CACHE_CONTROL =

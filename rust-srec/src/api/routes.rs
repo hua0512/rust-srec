@@ -26,7 +26,7 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::api::middleware::JwtAuthLayer;
+use crate::api::middleware::AuthLayer;
 use crate::api::openapi::ApiDoc;
 use crate::api::server::AppState;
 
@@ -36,8 +36,10 @@ use crate::api::server::AppState;
 /// - Public routes: `/api/auth/*` (login), `/api/health/live`
 /// - Password-remediation routes: `/api/auth/change-password`, `/api/auth/logout-all`
 ///   (JWT required, but reachable while a password change is being forced;
-///   they carry their own `JwtAuthLayer` via `auth::password_remediation_router`)
-/// - Protected routes: All other `/api/*` routes (require JWT authentication)
+///   they carry their own `AuthLayer` via `auth::password_remediation_router`)
+/// - Protected routes: All other `/api/*` routes (require a JWT or API key)
+/// - MCP endpoint: `/api/mcp` (Streamable HTTP; JWT or API key via
+///   `AuthLayer::mcp`, which defers read-only enforcement to the tools)
 /// - Documentation: `/api/docs` (Swagger UI), `/api/docs/openapi.json` (OpenAPI spec)
 pub fn create_router(state: AppState) -> Router {
     // Build protected routes with state first
@@ -57,12 +59,26 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/tools/baidupcs", baidupcs::router())
         .nest("/api/auth", auth::protected_router());
 
-    // Apply JWT auth layer to protected routes if authentication is enabled.
+    // Apply the auth layer to protected routes if authentication is enabled.
     // The layer wraps the router, so we need to handle the type conversion
     let protected_routes: Router<AppState> = if let Some(auth_service) = &state.auth_service {
-        protected_routes.layer(JwtAuthLayer::new(auth_service.clone()))
+        protected_routes.layer(AuthLayer::new(auth_service.clone()))
     } else {
         protected_routes
+    };
+
+    // MCP endpoint (Streamable HTTP). Uses `AuthLayer::mcp`: same JWT/API key
+    // validation as the REST routes, but read-only keys are allowed to POST
+    // because scope is enforced per tool via
+    // `mcp::SrecMcpServer::require_full_access`.
+    let mcp_routes: Router<AppState> = Router::new().nest_service(
+        "/api/mcp",
+        crate::mcp::streamable_http_service(state.clone()),
+    );
+    let mcp_routes = if let Some(auth_service) = &state.auth_service {
+        mcp_routes.layer(AuthLayer::mcp(auth_service.clone()))
+    } else {
+        mcp_routes
     };
 
     // Build the main router with public routes first, then merge protected routes
@@ -72,7 +88,7 @@ pub fn create_router(state: AppState) -> Router {
         // Public routes (no authentication required)
         .nest("/api/health", health::router())
         .nest("/api/auth", auth::public_router())
-        // Password-remediation routes carry their own JwtAuthLayer, so they
+        // Password-remediation routes carry their own AuthLayer, so they
         // must sit outside the shared layer above (which would 403 the
         // forced-change users they exist for).
         .nest(
@@ -89,6 +105,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/stream-proxy", stream_proxy::router::<AppState>())
         // Merge protected routes
         .merge(protected_routes)
+        // MCP endpoint with its own auth layer
+        .merge(mcp_routes)
         // Apply state to all routes
         .with_state(state)
 }

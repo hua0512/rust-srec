@@ -3,6 +3,7 @@
 //! This module implements the Repository Pattern to abstract all database interactions,
 //! creating a clean and maintainable data access layer.
 
+pub mod api_key;
 pub mod config;
 pub mod credential_store;
 pub mod dag;
@@ -23,6 +24,7 @@ pub mod tool_credential;
 pub mod upload_record;
 pub mod user;
 
+pub use api_key::*;
 pub use config::*;
 pub use credential_store::*;
 pub use dag::*;

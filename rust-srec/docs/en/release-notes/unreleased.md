@@ -2,6 +2,20 @@
 
 ## `unreleased`
 
+## API and integrations
+
+- **API keys for programmatic access**
+
+  You can now create long-lived API keys as an alternative to short-lived JWT session tokens. Keys belong to the user who created them, carry an optional expiration timestamp, and can be scoped to either `read_only` (access to non-sensitive queries such as sessions, danmu, aggregate statistics, notification events, and system health) or `full` access (all requests including configuration changes and mutations). Keys are stored as SHA-256 hashes and displayed only once at creation. Revoking a key invalidates it immediately across the server and clears any authorization cache. API keys cannot manage other keys or change passwords, and WebSocket media/download streams continue to require JWT tokens to prevent keys from leaking into URLs or access logs. See [API Keys & MCP](../api/api-keys-mcp.md).
+
+- **Built-in Model Context Protocol (MCP) server**
+
+  The backend now exposes a built-in MCP server using the streamable HTTP transport at `/api/mcp`. AI assistants such as Claude Code, Claude Desktop, and Cursor can connect directly using an API key to inspect recording sessions, analyze danmu activity and word frequency, read raw chat XML with byte pagination, observe pipeline jobs, manage streamers, and update configuration. Tools execute in-process against existing application services, sharing the same validations and dynamic updates. Read-only keys are restricted to safe inspection tools and cannot access configuration or credentials. See [API Keys & MCP](../api/api-keys-mcp.md).
+
+- **Dedicated API key management in the Web UI**
+
+  A new **Settings → API Keys** page lets you create, inspect, and revoke API keys with custom names and expiry dates. The page also generates ready-to-copy MCP configuration snippets for Claude Code, Cursor, and standard MCP clients.
+
 ## Pipeline and uploads
 
 - **Upload recordings to Baidu Netdisk**
@@ -38,8 +52,20 @@
 
   This template/streamer setting never had any effect — statistics have always counted every message. The field has been removed from the REST API (`/api/templates`) and the database; existing configurations are cleaned up automatically, and older exports that still contain the field import fine.
 
+## Web interface
+
+- **Sidebar user menu**
+
+  User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
+
 ## Deployment
 
 - **Optional automatic container updates**
 
   The Docker Compose file now ships an opt-in `watchtower` service (`docker compose --profile autoupdate up -d`) that pulls new images and restarts the containers on its own — but only while the system is idle. A new unauthenticated `GET /api/health/idle` endpoint reports whether anything is recording, queued to record, or being processed by a pipeline job (upload, remux, danmaku conversion, ...); while it reports busy, the update is postponed to the next check, so a restart never cuts a recording or an upload short. Automatic updates require a mutable image tag (`VERSION=latest`). See [Upgrade and Rollback](../operations/upgrading.md#automatic-updates-watchtower).
+
+## Installation
+
+- **Locale-aware installation script**
+
+  The `install.sh` bootstrap script now automatically detects the system locale (or respects `SREC_LANG`) and redirects to the English or Chinese interactive installer accordingly. The script verifies downloaded contents before execution to avoid running captive-portal error pages, and secret generation fails closed if secure random generation fails.

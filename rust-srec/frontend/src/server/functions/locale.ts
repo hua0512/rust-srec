@@ -8,7 +8,7 @@ import {
 import { isDesktopBuild } from '@/utils/desktop';
 
 export const updateLocale = createServerFn({ method: 'POST' })
-  .inputValidator((locale: string) => locale as Locale)
+  .validator((locale: string) => locale as Locale)
   .handler(async ({ data }) => {
     if (isLocaleValid(data)) {
       if (isDesktopBuild()) {

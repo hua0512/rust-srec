@@ -3,6 +3,7 @@
 //! These models map directly to the database schema and handle
 //! serialization/deserialization of JSON fields.
 
+pub mod api_key;
 pub mod config;
 pub mod dag;
 pub mod engine;
@@ -18,6 +19,7 @@ pub mod tool_credential;
 pub mod upload_record;
 pub mod user;
 
+pub use api_key::*;
 pub use config::*;
 pub use dag::*;
 pub use engine::*;
