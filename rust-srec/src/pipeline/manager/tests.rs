@@ -2311,13 +2311,13 @@ async fn test_session_complete_waits_for_video_output_when_danmu_arrives_first()
 // in-flight per-segment DAGs.
 // =========================================================================
 
-/// F1 — Session-complete DAG waits for in-flight per-segment video DAGs.
+/// Session-complete DAG waits for in-flight per-segment video DAGs.
 /// Three in-flight video DAGs, observe `SessionTransition::Ended{Failed}`
 /// → session-complete is NOT yet scheduled (entry remains, coordinator
 /// still active). Complete the three DAGs; session-complete fires only
 /// after the last one drains.
 #[tokio::test]
-async fn f1_session_complete_waits_for_in_flight_video_dags() {
+async fn session_complete_waits_for_in_flight_video_dags() {
     let session_repo = Arc::new(TestSessionRepository::new(Some(
         chrono::Utc::now().timestamp_millis(),
     )));

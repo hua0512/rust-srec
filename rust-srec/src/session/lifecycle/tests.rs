@@ -329,10 +329,10 @@ fn make_terminal_rejected(session_id: &str) -> DownloadTerminalEvent {
     }
 }
 
-/// B2 — Terminal::Cancelled is a no-op: session stays Recording, no
+/// Terminal::Cancelled is a no-op: session stays Recording, no
 /// SessionTransition is emitted, and no DB end_time is written.
 #[tokio::test]
-async fn b2_cancelled_keeps_session_recording_and_emits_nothing() {
+async fn cancelled_keeps_session_recording_and_emits_nothing() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -364,10 +364,10 @@ async fn b2_cancelled_keeps_session_recording_and_emits_nothing() {
     );
 }
 
-/// B3 — Terminal::Rejected emits Ended { Rejected } but the cause's policy
+/// Terminal::Rejected emits Ended { Rejected } but the cause's policy
 /// keeps the session-complete pipeline from firing.
 #[tokio::test]
-async fn b3_rejected_emits_ended_but_does_not_trigger_pipeline() {
+async fn rejected_emits_ended_but_does_not_trigger_pipeline() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool);
     let mut rx = lifecycle.subscribe();
@@ -396,10 +396,10 @@ async fn b3_rejected_emits_ended_but_does_not_trigger_pipeline() {
     }
 }
 
-/// B6 — Hand-picked event sequences: for every prefix, the in-memory
+/// Hand-picked event sequences: for every prefix, the in-memory
 /// `is_session_active` view matches `db.session.end_time.is_none()`.
 #[tokio::test]
-async fn b6_in_memory_view_matches_db_for_known_sequences() {
+async fn in_memory_view_matches_db_for_known_sequences() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -460,9 +460,9 @@ async fn b6_in_memory_view_matches_db_for_known_sequences() {
     .await;
 }
 
-// B7 (atomicity / fault injection) deliberately out of scope for this
-// unit suite. Partial-write rollback relies on sqlx's BEGIN IMMEDIATE
-// semantics, which are exercised by the repository tests that assert
+// Atomicity / fault injection is deliberately out of scope here.
+// Partial-write rollback relies on sqlx's BEGIN IMMEDIATE semantics,
+// which the `SessionLifecycleRepository` tests cover by asserting that
 // multi-step bundles land atomically.
 
 // =========================================================================
@@ -487,10 +487,10 @@ async fn take_started(
     }
 }
 
-/// D1 — No prior session in DB → Created outcome. `SessionTransition::
+/// No prior session in DB → Created outcome. `SessionTransition::
 /// Started` carries the new session_id + the monitor-trigger fields.
 #[tokio::test]
-async fn d1_no_prior_session_creates_new() {
+async fn no_prior_session_creates_new() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool);
     let mut rx = lifecycle.subscribe();
@@ -507,12 +507,12 @@ async fn d1_no_prior_session_creates_new() {
     assert!(category.is_none());
 }
 
-/// D2 — Active (not-yet-ended) session → ReusedActive; repeated live
+/// Active (not-yet-ended) session → ReusedActive; repeated live
 /// signals are idempotent at the session level. Each call still emits a
 /// Started transition so the notification layer can dedupe / rate-limit
 /// on its own.
 #[tokio::test]
-async fn d2_active_session_reused_on_repeat_live() {
+async fn active_session_reused_on_repeat_live() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool);
     let mut rx = lifecycle.subscribe();
@@ -532,10 +532,10 @@ async fn d2_active_session_reused_on_repeat_live() {
 // Ended sessions are never resumed. Hysteresis covers the valid case
 // where an interrupted stream resumes before the session is ended.
 
-/// D4 — Once a session is Ended, the next LiveDetected creates a
+/// Once a session is Ended, the next LiveDetected creates a
 /// fresh session. Ended rows are final and never resumed.
 #[tokio::test]
-async fn d4_after_ended_creates_new_session() {
+async fn after_ended_creates_new_session() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool);
     let base = Utc::now() - chrono::Duration::seconds(3600);
@@ -565,39 +565,19 @@ async fn d4_after_ended_creates_new_session() {
 }
 
 // There is no hard-ended cache to cover here. The ended DB row is the
-// authoritative fence.
-
-// D6 (continuation rule) deleted — the rule was retired with gap-resume.
-// Hysteresis covers the legitimate "stream came back briefly" case;
-// anything past the hysteresis window is a new session by design.
+// authoritative fence. Hysteresis covers the legitimate "stream came
+// back briefly" case; anything past the hysteresis window starts a new
+// session by design.
 
 // =========================================================================
 // Additional integration coverage — in-memory / DB consistency under the
-// state transitions that aren't directly covered by suites B or D.
+// state transitions the create/resume and terminal-cause cases above
+// don't reach directly.
 // =========================================================================
 
 // Non-authoritative failures go through Hysteresis. If the stream comes
 // back before the timer expires, the resume path is
 // `resume_from_hysteresis`.
-
-/// Adapted F7 — a per-segment DAG that STARTS after SessionTransition::
-/// Ended still gates session-complete. This models the mesio flush-race
-/// where a late `SegmentCompleted` arrives after `DownloadFailed`; the
-/// gate must wait for that trailing DAG before firing.
-///
-/// Uses the PipelineCoordinator directly (rather than going
-/// through the full `handle_download_event(SegmentCompleted)` path which
-/// also writes to the DB via `persist_segment`). The coordinator's
-/// counters are the authoritative gate, so this isolates the ordering
-/// invariant we care about.
-#[tokio::test]
-async fn late_per_segment_dag_after_ended_still_gates_session_complete() {
-    // Placeholder: this test lives in `pipeline::manager::tests` as it
-    // needs the manager's coordinator. See
-    // `pipeline::manager::tests::f1_session_complete_waits_for_in_flight_video_dags`
-    // for the analogous drain-before-fire coverage. A standalone F7 test
-    // would duplicate plumbing; the behavioural invariant is the same.
-}
 
 /// Multi-session isolation at the lifecycle level. Two streamers, each
 /// with its own session. Lifecycle events on streamer A do not affect the
@@ -720,7 +700,7 @@ async fn multi_session_isolation_across_streamers() {
     );
 }
 
-/// H2 — `is_live` (as computed by the API layer via `end_time.is_none()`)
+/// `is_live` (as computed by the API layer via `end_time.is_none()`)
 /// tracks DB state faithfully through Hysteresis and final Ended state.
 #[tokio::test]
 async fn api_is_live_tracks_db_through_hysteresis() {
@@ -1077,7 +1057,7 @@ async fn pr2_on_segment_completed_resets_counter() {
 /// immediately so the UI and pipeline trigger don't wait for the backoff
 /// window to expire.
 #[tokio::test]
-async fn e1_definitive_offline_bypasses_streamer_disabled_until() {
+async fn definitive_offline_bypasses_streamer_disabled_until() {
     let pool = setup_pool().await;
 
     // Place the streamer in a long backoff window.
@@ -1218,11 +1198,11 @@ fn make_terminal_completed_hls_endlist(session_id: &str) -> DownloadTerminalEven
     }
 }
 
-/// I1 — non-authoritative terminal (mesio FLV clean disconnect) parks
+/// non-authoritative terminal (mesio FLV clean disconnect) parks
 /// the session in `Hysteresis`. `SessionTransition::Ending` is emitted;
 /// DB `end_time IS NULL`.
 #[tokio::test]
-async fn i1_clean_disconnect_enters_hysteresis() {
+async fn clean_disconnect_enters_hysteresis() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -1262,10 +1242,10 @@ async fn i1_clean_disconnect_enters_hysteresis() {
     assert!(lifecycle.is_session_active(started.session_id()));
 }
 
-/// I2 — hysteresis timer expires with no resume → `Ended` transition,
+/// hysteresis timer expires with no resume → `Ended` transition,
 /// DB `end_time IS NOT NULL`, `via_hysteresis=true`.
 #[tokio::test]
-async fn i2_timer_expiry_commits_ended() {
+async fn timer_expiry_commits_ended() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -1305,11 +1285,11 @@ async fn i2_timer_expiry_commits_ended() {
     assert!(!lifecycle.is_session_active(started.session_id()));
 }
 
-/// I3 — `LiveDetected` inside the hysteresis window cancels the timer,
+/// `LiveDetected` inside the hysteresis window cancels the timer,
 /// emits `Resumed`, transitions back to `Recording`. Same `session_id`
 /// continues. DB `end_time` was never set.
 #[tokio::test]
-async fn i3_resume_cancels_timer_and_keeps_session() {
+async fn resume_cancels_timer_and_keeps_session() {
     // Use a longer window so we can resume well within it.
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
@@ -1406,12 +1386,13 @@ async fn i3b_resume_restores_streamer_state_live() {
         .await
         .unwrap();
 
-    // Drain Resumed + Started{from_hysteresis:true} to keep ordering
-    // assertions matching the I3 test next door.
+    // Drain Resumed + Started{from_hysteresis:true} so the ordering
+    // assertions below match `resume_cancels_timer_and_keeps_session`.
     let _ = rx.recv().await.unwrap(); // Resumed
     let _ = rx.recv().await.unwrap(); // Started{from_hysteresis:true}
 
-    // The DB row must now be LIVE again — the fix's whole point.
+    // Resuming must restore the streamer row that `handle_error` flipped
+    // to NOT_LIVE, otherwise the UI shows offline while recording runs.
     assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
 }
 
@@ -1512,15 +1493,16 @@ async fn resume_suppressed_for_disabled_streamer_leaves_hysteresis_armed() {
     );
 }
 
-/// J1 — `DefinitiveOffline { ConsecutiveFailures }` skips Hysteresis.
+/// `DefinitiveOffline { ConsecutiveFailures }` skips Hysteresis.
 /// First Network failure parks the session in Hysteresis (`Ending` is
 /// emitted). Second Network failure crosses the classifier threshold,
 /// promotes to `DefinitiveOffline`, cancels the Hysteresis handle, and
 /// emits `Ended` with `via_hysteresis=false`.
 ///
-/// (J4 covers the parallel HlsEndlist authoritative-end path.)
+/// `completed_with_hls_endlist_skips_hysteresis` covers the parallel
+/// authoritative-end path.
 #[tokio::test]
-async fn j1_definitive_offline_skips_hysteresis() {
+async fn definitive_offline_skips_hysteresis() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool);
     let mut rx = lifecycle.subscribe();
@@ -1588,10 +1570,10 @@ async fn j1_definitive_offline_skips_hysteresis() {
     }
 }
 
-/// J4 — `Completed { engine_signal: HlsEndlist }` skips Hysteresis.
+/// `Completed { engine_signal: HlsEndlist }` skips Hysteresis.
 /// Direct Ended.
 #[tokio::test]
-async fn j4_completed_with_hls_endlist_skips_hysteresis() {
+async fn completed_with_hls_endlist_skips_hysteresis() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool);
     let mut rx = lifecycle.subscribe();
@@ -1615,13 +1597,13 @@ async fn j4_completed_with_hls_endlist_skips_hysteresis() {
     }
 }
 
-/// N1 — `resume_from_hysteresis` must emit `SessionTransition::Started`
+/// `resume_from_hysteresis` must emit `SessionTransition::Started`
 /// with `from_hysteresis: true` AND a populated `download_start`
 /// payload. The container's resume-download subscriber relies on the
 /// payload to (re)start the download for the resumed session — without
 /// it, the streamer stays "Live" in memory but no recording happens.
 #[tokio::test]
-async fn n1_resume_emits_started_with_download_start_payload() {
+async fn resume_emits_started_with_download_start_payload() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
     let mut rx = lifecycle.subscribe();
@@ -1709,7 +1691,7 @@ async fn n1_resume_emits_started_with_download_start_payload() {
     }
 }
 
-/// N2 — CAS atomicity for the `Hysteresis → (Recording | Ended)`
+/// CAS atomicity for the `Hysteresis → (Recording | Ended)`
 /// transition. We model the race by:
 ///
 /// 1. Driving the session into `Hysteresis`.
@@ -1724,11 +1706,12 @@ async fn n1_resume_emits_started_with_download_start_payload() {
 /// `Ended`. The session stays `Hysteresis` (which the simulated
 /// resume would then move to `Recording` if it completed).
 ///
-/// Symmetric loss case (`enter_ended_state` wins, `resume_from_hysteresis`
-/// loses) is exercised by the existing I7 test plus the CAS in
-/// `resume_from_hysteresis` returning `None` on missing handle.
+/// The symmetric loss case (`enter_ended_state` wins,
+/// `resume_from_hysteresis` loses) is covered by
+/// `authoritative_end_during_hysteresis_cancels_timer` plus the CAS in
+/// `resume_from_hysteresis` returning `None` on a missing handle.
 #[tokio::test]
-async fn n2_cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
+async fn cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
     let mut rx = lifecycle.subscribe();
@@ -1810,13 +1793,13 @@ async fn n2_cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
     );
 }
 
-/// N3 — symmetric CAS: `resume_from_hysteresis` returns `None` when
+/// symmetric CAS: `resume_from_hysteresis` returns `None` when
 /// the handle was already claimed by an authoritative end.
 /// `on_live_detected` then falls through to `start_or_resume`, which
 /// produces a fresh `Created` session (since the prior session is
 /// now `Ended` per the won path).
 #[tokio::test]
-async fn n3_cas_resume_falls_through_when_authoritative_end_already_claimed() {
+async fn cas_resume_falls_through_when_authoritative_end_already_claimed() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
     let mut rx = lifecycle.subscribe();
@@ -1881,11 +1864,11 @@ async fn n3_cas_resume_falls_through_when_authoritative_end_already_claimed() {
     }
 }
 
-/// I7 — authoritative end during `Hysteresis` cancels the timer and
+/// authoritative end during `Hysteresis` cancels the timer and
 /// transitions directly to `Ended`. Models the danmu-close-after-FLV-
 /// clean-disconnect scenario.
 #[tokio::test]
-async fn i7_authoritative_end_during_hysteresis_cancels_timer() {
+async fn authoritative_end_during_hysteresis_cancels_timer() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
     let mut rx = lifecycle.subscribe();
@@ -1943,12 +1926,12 @@ async fn i7_authoritative_end_during_hysteresis_cancels_timer() {
     );
 }
 
-/// I9 — sessions map evicts Ended entries after the retention window
+/// sessions map evicts Ended entries after the retention window
 /// elapses. Until then the entry is retained so duplicate
 /// authoritative-end events are deduped by `enter_ended_state`'s
 /// idempotency guard.
 #[tokio::test]
-async fn i9_sessions_map_evicts_on_ended_after_retention() {
+async fn sessions_map_evicts_on_ended_after_retention() {
     let pool = setup_pool().await;
     let retention = std::time::Duration::from_millis(80);
     let lifecycle = Arc::new(
@@ -2001,12 +1984,12 @@ async fn i9_sessions_map_evicts_on_ended_after_retention() {
     );
 }
 
-/// I10 — duplicate authoritative-end events emit a single
+/// Duplicate authoritative-end events emit a single
 /// `SessionTransition::Ended`. The CAS-style guard at the top of
-/// `enter_ended_state` short-circuits the second call thanks to the
-/// retention window introduced in I9.
+/// `enter_ended_state` short-circuits the second call, because the
+/// `Ended` entry is still in the sessions map during `ended_retention`.
 #[tokio::test]
-async fn i10_double_end_dedup() {
+async fn double_end_dedup() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool);
     let mut rx = lifecycle.subscribe();
@@ -2058,8 +2041,8 @@ use crate::session::events::{SessionEventPayload, TerminalCauseDto};
 use crate::session::state::OfflineSignal;
 
 fn make_lifecycle_with_events(pool: SqlitePool) -> Arc<SessionLifecycle> {
-    // Tiny hysteresis window so suite-K tests can exercise the
-    // hysteresis path without sleeping for 90s. Tiny `ended_retention`
+    // Tiny hysteresis window so the audit-log tests below can exercise
+    // the hysteresis path without sleeping for 90s. Tiny `ended_retention`
     // so the in-memory dedup map doesn't leak between scenarios.
     let cfg = HysteresisConfig::from_window(std::time::Duration::from_millis(25));
     let event_repo: Arc<dyn SessionEventRepository> =
@@ -2103,7 +2086,7 @@ fn session_ended_cause(payload: &SessionEventPayload) -> &TerminalCauseDto {
 /// `on_live_detected` for a fresh streamer writes one `session_started`
 /// row inside the same atomic tx as the `live_sessions` insert.
 #[tokio::test]
-async fn k1_session_started_persisted_on_create() {
+async fn session_started_persisted_on_create() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
@@ -2131,7 +2114,7 @@ async fn k1_session_started_persisted_on_create() {
 /// A second `on_live_detected` while the session is still active reuses
 /// the row instead of creating one — and writes no extra audit event.
 #[tokio::test]
-async fn k2_session_started_not_duplicated_on_reused_active() {
+async fn session_started_not_duplicated_on_reused_active() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
@@ -2156,7 +2139,7 @@ async fn k2_session_started_not_duplicated_on_reused_active() {
 /// Ambiguous engine-end (clean disconnect on FLV) → `hysteresis_entered`
 /// row, written best-effort with the original cause preserved.
 #[tokio::test]
-async fn k3_hysteresis_entered_persisted() {
+async fn hysteresis_entered_persisted() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
@@ -2202,7 +2185,7 @@ async fn k3_hysteresis_entered_persisted() {
 /// hysteresis → live_detected within window → both `session_resumed` and
 /// `session_started { from_hysteresis: true }` rows in order.
 #[tokio::test]
-async fn k4_resumed_then_started_pair_persisted() {
+async fn resumed_then_started_pair_persisted() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
@@ -2259,7 +2242,7 @@ async fn k4_resumed_then_started_pair_persisted() {
 /// `OfflineSignal` plumbing through `OfflineDetectedArgs.signal` lands
 /// in the audit log as advertised.
 #[tokio::test]
-async fn k5_session_ended_persisted_with_definitive_offline_signal() {
+async fn session_ended_persisted_with_definitive_offline_signal() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
@@ -2311,7 +2294,7 @@ async fn k5_session_ended_persisted_with_definitive_offline_signal() {
 /// the tx — so exactly one `session_ended` row is persisted per
 /// session, even when the monitor races and emits the offline twice.
 #[tokio::test]
-async fn k6_session_ended_dedup_persists_one_row() {
+async fn session_ended_dedup_persists_one_row() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
@@ -2363,12 +2346,12 @@ async fn latest_session_ended_payload(pool: &SqlitePool, sid: &str) -> Option<Se
         .and_then(|row| row.payload)
 }
 
-/// O1 — `end_for_disable` on an actively-recording session writes
+/// `end_for_disable` on an actively-recording session writes
 /// `end_time`, transitions in-memory to `Ended`, broadcasts
 /// `Ended { cause: UserDisabled, via_hysteresis: false }`, and writes a
 /// matching `session_ended` audit row.
 #[tokio::test]
-async fn o1_end_for_disable_ends_active_recording_session() {
+async fn end_for_disable_ends_active_recording_session() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -2421,11 +2404,11 @@ async fn o1_end_for_disable_ends_active_recording_session() {
     );
 }
 
-/// O2 — `end_for_disable` on a session in `Hysteresis` cancels the
+/// `end_for_disable` on a session in `Hysteresis` cancels the
 /// timer (CAS won), writes Ended with `via_hysteresis: true`, and
 /// emits a single Ended broadcast (no late timer-fire follow-up).
 #[tokio::test]
-async fn o2_end_for_disable_cancels_hysteresis_handle() {
+async fn end_for_disable_cancels_hysteresis_handle() {
     let pool = setup_pool().await;
     // Long window so the timer cannot fire during the test.
     let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(60));
@@ -2483,10 +2466,10 @@ async fn o2_end_for_disable_cancels_hysteresis_handle() {
     );
 }
 
-/// O3 — `end_for_disable` with no active session is `Ok(None)`, no
+/// `end_for_disable` with no active session is `Ok(None)`, no
 /// broadcast, no DB write.
 #[tokio::test]
-async fn o3_end_for_disable_no_active_session_returns_none() {
+async fn end_for_disable_no_active_session_returns_none() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -2504,11 +2487,11 @@ async fn o3_end_for_disable_no_active_session_returns_none() {
     );
 }
 
-/// O4 — back-to-back `end_for_disable` calls collapse to a single
+/// back-to-back `end_for_disable` calls collapse to a single
 /// effective tear-down. Second call returns `Ok(None)` and emits no
 /// second broadcast. Audit log has exactly one `session_ended` row.
 #[tokio::test]
-async fn o4_end_for_disable_idempotent_on_second_call() {
+async fn end_for_disable_idempotent_on_second_call() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -2629,14 +2612,14 @@ async fn o4b_end_for_disable_targets_current_session_when_old_ended_is_retained(
     );
 }
 
-/// O5 — `end_for_disable` loses CAS to a concurrent
+/// `end_for_disable` loses CAS to a concurrent
 /// `resume_from_hysteresis`. The CAS-loss path takes effect: we
 /// observe in-memory Recording (resumed) and the audit row is
 /// retro-updated to `user_disabled` only if a session_ended row
 /// existed (in this scenario it does NOT — resume cancelled hysteresis
 /// without writing Ended). Method returns `Ok(None)` cleanly.
 #[tokio::test]
-async fn o5_end_for_disable_loses_cas_to_resume() {
+async fn end_for_disable_loses_cas_to_resume() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(60));
     let mut rx = lifecycle.subscribe();
@@ -2749,10 +2732,10 @@ async fn o5b_end_for_disable_overwrites_cause_when_timer_wins() {
     );
 }
 
-/// O6 — `end_for_disable` does not touch the streamer row. The API
+/// `end_for_disable` does not touch the streamer row. The API
 /// route owns `streamers.state`; the lifecycle method must not flip it.
 #[tokio::test]
-async fn o6_end_for_disable_does_not_touch_streamer_state() {
+async fn end_for_disable_does_not_touch_streamer_state() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
 
@@ -2780,11 +2763,11 @@ async fn o6_end_for_disable_does_not_touch_streamer_state() {
     );
 }
 
-/// O7 — `end_for_disable` does not enqueue a `StreamerOffline` outbox
+/// `end_for_disable` does not enqueue a `StreamerOffline` outbox
 /// event. The user knows they disabled the streamer; downstream
 /// integrations don't need a synthetic offline push.
 #[tokio::test]
-async fn o7_end_for_disable_skips_outbox_event() {
+async fn end_for_disable_skips_outbox_event() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
 
@@ -2807,11 +2790,11 @@ async fn o7_end_for_disable_skips_outbox_event() {
     );
 }
 
-/// P2 — out-of-schedule tear-down must go through SessionLifecycle, not
+/// out-of-schedule tear-down must go through SessionLifecycle, not
 /// a raw DB row close. This keeps subscribers and the in-memory FSM in
 /// sync while still avoiding a synthetic `StreamerOffline` outbox event.
 #[tokio::test]
-async fn p2_end_for_out_of_schedule_updates_lifecycle_and_outbox() {
+async fn end_for_out_of_schedule_updates_lifecycle_and_outbox() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -2875,7 +2858,7 @@ async fn p2_end_for_out_of_schedule_updates_lifecycle_and_outbox() {
 }
 
 #[tokio::test]
-async fn p2_end_for_out_of_schedule_cancels_hysteresis() {
+async fn end_for_out_of_schedule_cancels_hysteresis() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(60));
     let mut rx = lifecycle.subscribe();
@@ -2924,13 +2907,13 @@ async fn p2_end_for_out_of_schedule_cancels_hysteresis() {
     );
 }
 
-/// O8 — concurrent `end_for_disable` calls collapse to a single
+/// concurrent `end_for_disable` calls collapse to a single
 /// effective tear-down. Exactly one returns `Some(session_id)` after
 /// writing the row; others return either `Ok(None)` (no active row by
 /// the time they reach the repo) or `Some(session_id)` via the
 /// retro-update path. Exactly one `session_ended` audit row exists.
 #[tokio::test]
-async fn o8_end_for_disable_idempotent_under_concurrency() {
+async fn end_for_disable_idempotent_under_concurrency() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
 
@@ -2969,11 +2952,11 @@ async fn o8_end_for_disable_idempotent_under_concurrency() {
     );
 }
 
-/// O9 — broadcast ordering: by the time a subscriber receives `Ended`,
+/// broadcast ordering: by the time a subscriber receives `Ended`,
 /// the in-memory snapshot already reflects the Ended state and the DB
 /// `end_time` is committed. Ordering: commit → in-memory → broadcast.
 #[tokio::test]
-async fn o9_end_for_disable_broadcast_after_commit_and_memory_update() {
+async fn end_for_disable_broadcast_after_commit_and_memory_update() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();

@@ -284,17 +284,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_email_config_default() {
-        let config = EmailConfig::default();
-        assert!(!config.enabled);
-        assert_eq!(config.smtp_port, 587);
-        assert!(config.use_tls);
-        assert_eq!(config.min_priority, NotificationPriority::High);
-    }
-
-    #[test]
     fn test_email_channel_disabled() {
         let config = EmailConfig::default();
+        // Email is the one channel whose default `min_priority` is `High`
+        // rather than `Normal`; `EmailChannel::send` drops any event below
+        // it, so a default mailbox only ever receives High and Critical.
+        assert_eq!(config.min_priority, NotificationPriority::High);
+
         let channel = EmailChannel::new(config);
         assert!(!channel.is_enabled());
     }

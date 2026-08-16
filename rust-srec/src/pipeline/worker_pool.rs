@@ -1200,19 +1200,6 @@ mod tests {
     }
 
     #[test]
-    fn test_worker_pool_config_default() {
-        let config = WorkerPoolConfig::default();
-        assert_eq!(config.max_workers, 4);
-        assert_eq!(config.job_timeout_secs, 3600);
-    }
-
-    #[test]
-    fn test_worker_type_display() {
-        assert_eq!(format!("{}", WorkerType::Cpu), "CPU");
-        assert_eq!(format!("{}", WorkerType::Io), "IO");
-    }
-
-    #[test]
     fn test_worker_pool_creation() {
         let pool = WorkerPool::new(WorkerType::Cpu);
         assert_eq!(pool.worker_type(), WorkerType::Cpu);

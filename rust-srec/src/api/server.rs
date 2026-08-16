@@ -352,6 +352,11 @@ impl ApiServer {
 mod tests {
     use super::*;
 
+    /// The default bind address is all-interfaces, which is what makes
+    /// `services::container::api::validate_auth_mode` refuse to start without
+    /// a JWT secret unless the bind address is loopback. Changing this
+    /// default without revisiting that check would expose an unauthenticated
+    /// API to the network.
     #[test]
     fn test_config_defaults() {
         let config = ApiServerConfig::default();

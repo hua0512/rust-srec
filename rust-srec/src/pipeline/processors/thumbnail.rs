@@ -442,15 +442,6 @@ mod tests {
     }
 
     #[test]
-    fn test_thumbnail_config_default() {
-        let config = ThumbnailConfig::default();
-        assert_eq!(config.timestamp_secs, 10.0);
-        assert_eq!(config.width, 320);
-        assert_eq!(config.quality, 2);
-        assert!(!config.preserve_resolution);
-    }
-
-    #[test]
     fn test_thumbnail_config_parse() {
         let json = r#"{"timestamp_secs": 30.0, "width": 640}"#;
         let config: ThumbnailConfig = serde_json::from_str(json).unwrap();

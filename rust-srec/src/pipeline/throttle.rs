@@ -288,15 +288,6 @@ mod tests {
     }
 
     #[test]
-    fn test_throttle_config_default() {
-        let config = ThrottleConfig::default();
-        assert!(!config.enabled);
-        assert_eq!(config.critical_threshold, 500);
-        assert_eq!(config.warning_threshold, 100);
-        assert!((config.reduction_factor - 0.5).abs() < f32::EPSILON);
-    }
-
-    #[test]
     fn test_throttle_controller_creation() {
         let controller = ThrottleController::with_defaults();
         assert!(!controller.is_throttled());

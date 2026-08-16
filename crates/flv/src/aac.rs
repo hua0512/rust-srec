@@ -179,20 +179,14 @@ mod tests {
 
     #[test]
     fn test_aac_packet_type() {
-        assert_eq!(
-            format!("{:?}", AacPacketType::SequenceHeader),
-            "SequenceHeader"
-        );
-        assert_eq!(format!("{:?}", AacPacketType::Raw), "Raw");
-        let packet_type_2 = AacPacketType::new(0x2).unwrap_or(AacPacketType::Raw);
-        let packet_type_3 = AacPacketType::new(0x3).unwrap_or(AacPacketType::Raw);
-        assert_eq!(format!("{packet_type_2:?}"), "Raw");
-        assert_eq!(format!("{packet_type_3:?}"), "Raw");
-
-        assert_eq!(AacPacketType::new(0x01).unwrap(), AacPacketType::Raw);
+        // Only 0x00 and 0x01 are defined by the FLV spec; anything else must
+        // be rejected rather than silently mapped onto a valid variant.
         assert_eq!(
             AacPacketType::new(0x00).unwrap(),
             AacPacketType::SequenceHeader
         );
+        assert_eq!(AacPacketType::new(0x01).unwrap(), AacPacketType::Raw);
+        assert_eq!(AacPacketType::new(0x02), None);
+        assert_eq!(AacPacketType::new(0x03), None);
     }
 }

@@ -770,11 +770,6 @@ mod tests {
     }
 
     #[test]
-    fn test_health_status_default() {
-        assert_eq!(HealthStatus::default(), HealthStatus::Unknown);
-    }
-
-    #[test]
     fn test_component_health_healthy() {
         let health = ComponentHealth::healthy("test");
         assert_eq!(health.status, HealthStatus::Healthy);

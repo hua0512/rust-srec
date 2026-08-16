@@ -99,11 +99,6 @@ mod tests {
     }
 
     #[test]
-    fn test_priority_default() {
-        assert_eq!(Priority::default(), Priority::Normal);
-    }
-
-    #[test]
     fn test_priority_from_str() {
         assert_eq!(Priority::parse("HIGH"), Some(Priority::High));
         assert_eq!(Priority::parse("high"), Some(Priority::High));

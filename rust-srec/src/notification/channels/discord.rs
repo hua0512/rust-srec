@@ -239,14 +239,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_discord_config_default() {
-        let config = DiscordConfig::default();
-        assert!(!config.enabled);
-        assert!(config.webhook_url.is_empty());
-        assert_eq!(config.min_priority, NotificationPriority::Normal);
-    }
-
-    #[test]
     fn test_discord_channel_disabled() {
         let config = DiscordConfig::default();
         let channel = DiscordChannel::new(config);

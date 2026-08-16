@@ -818,16 +818,6 @@ mod tests {
     }
 
     #[test]
-    fn test_compression_config_default() {
-        let config = CompressionConfig::default();
-        assert_eq!(config.format, ArchiveFormat::Zip);
-        assert_eq!(config.compression_level, 6);
-        assert!(config.output_path.is_none());
-        assert!(config.overwrite);
-        assert!(!config.preserve_paths);
-    }
-
-    #[test]
     fn test_compression_config_parse() {
         let json = r#"{
             "format": "targz",

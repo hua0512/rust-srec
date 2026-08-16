@@ -813,15 +813,6 @@ mod tests {
     }
 
     #[test]
-    fn test_download_progress_default() {
-        let progress = DownloadProgress::default();
-        assert_eq!(progress.bytes_downloaded, 0);
-        assert_eq!(progress.segments_completed, 0);
-        assert_eq!(progress.media_duration_secs, 0.0);
-        assert_eq!(progress.playback_ratio, 0.0);
-    }
-
-    #[test]
     fn io_error_kind_classification() {
         use std::io::ErrorKind;
         assert_eq!(

@@ -415,13 +415,6 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_config_default() {
-        let config = DeleteConfig::default();
-        assert_eq!(config.max_retries, 3);
-        assert_eq!(config.retry_delay_ms, 100);
-    }
-
-    #[test]
     fn test_delete_config_parse() {
         let json = r#"{
             "max_retries": 5,

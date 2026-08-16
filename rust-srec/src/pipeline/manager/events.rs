@@ -210,7 +210,7 @@ where
             // `end_for_out_of_schedule` await the `end_time` DB commit
             // before broadcasting `SessionTransition::Ended` (the ordering
             // is enforced by
-            // `session::lifecycle::tests::o9_end_for_disable_broadcast_after_commit_and_memory_update`),
+            // `session::lifecycle::tests::end_for_disable_broadcast_after_commit_and_memory_update`),
             // so by the time we read this transition the row is already
             // persisted. Apply `SessionEndPersisted` directly instead of
             // re-reading `sessions.end_time`.

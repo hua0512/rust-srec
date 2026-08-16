@@ -16,7 +16,6 @@ hls = { path = "../hls" }
 pipeline-common = { path = "../pipeline-common" }
 ts = { path = "../ts" }
 mp4 = { path = "../mp4" }
-zlib-rs = { workspace = true }
 tracing = { workspace = true }
 tracing-indicatif = { workspace = true, optional = true }
 thiserror = { workspace = true }

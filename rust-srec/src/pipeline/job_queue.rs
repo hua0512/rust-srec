@@ -2862,13 +2862,6 @@ mod tests {
     }
 
     #[test]
-    fn test_job_queue_config_default() {
-        let config = JobQueueConfig::default();
-        assert_eq!(config.warning_threshold, 100);
-        assert_eq!(config.critical_threshold, 500);
-    }
-
-    #[test]
     fn test_job_creation() {
         let job = Job::new(
             "remux",

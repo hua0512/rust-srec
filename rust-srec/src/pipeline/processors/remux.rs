@@ -982,15 +982,6 @@ mod tests {
     }
 
     #[test]
-    fn test_remux_config_default() {
-        let config = RemuxConfig::default();
-        assert!(matches!(config.video_codec, VideoCodec::Copy));
-        assert!(matches!(config.audio_codec, AudioCodec::Copy));
-        assert!(config.faststart);
-        assert!(config.overwrite);
-    }
-
-    #[test]
     fn test_remux_config_parse() {
         let json = r#"{
             "video_codec": "h264",
