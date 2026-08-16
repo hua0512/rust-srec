@@ -264,11 +264,8 @@ mod tests {
     fn classic_classifier() -> OfflineClassifier {
         OfflineClassifier::new()
     }
-
-    // ---- C2 — single Network failure does not classify ----------------
-
     #[test]
-    fn c2_single_network_failure_does_not_classify() {
+    fn single_network_failure_does_not_classify() {
         let c = classic_classifier();
         let result = c.classify_failure("s1", &EngineKind::MesioHls, &DownloadFailureKind::Network);
         assert_eq!(result, None);
@@ -293,11 +290,8 @@ mod tests {
             EngineKind::Ffmpeg
         );
     }
-
-    // ---- C3 — two consecutive Network failures within window → Some ----
-
     #[test]
-    fn c3_two_consecutive_network_failures_classify_as_definitive_offline() {
+    fn two_consecutive_network_failures_classify_as_definitive_offline() {
         let c = classic_classifier();
 
         let first = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
@@ -310,11 +304,8 @@ mod tests {
             "second Network inside window must classify"
         );
     }
-
-    // ---- C4 — window expiry resets the counter ------------------------
-
     #[test]
-    fn c4_expired_window_resets_counter() {
+    fn expired_window_resets_counter() {
         let c = classic_classifier();
 
         // Manually seed the log with a timestamp just past the window so we
@@ -330,11 +321,8 @@ mod tests {
             "stale entries must be pruned before threshold check"
         );
     }
-
-    // ---- C5 — successful segment resets the counter -------------------
-
     #[test]
-    fn c5_successful_segment_resets_counter() {
+    fn successful_segment_resets_counter() {
         let c = classic_classifier();
 
         // First failure primes the counter.
@@ -348,11 +336,8 @@ mod tests {
         let after = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(after, None, "counter must reset after successful segment");
     }
-
-    // ---- C6 / C7 — ffmpeg / streamlink subprocess errors → None -------
-
     #[test]
-    fn c6_ffmpeg_http_404_does_not_classify() {
+    fn ffmpeg_http_404_does_not_classify() {
         let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
@@ -363,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn c6_ffmpeg_subprocess_error_is_none() {
+    fn ffmpeg_subprocess_error_is_none() {
         let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
@@ -374,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn c7_streamlink_subprocess_error_is_none() {
+    fn streamlink_subprocess_error_is_none() {
         let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
@@ -385,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn c7_streamlink_network_never_accumulates() {
+    fn streamlink_network_never_accumulates() {
         let c = classic_classifier();
         // Accumulate many Network failures on a streamlink engine; counter
         // should never fire because streamlink failures are not classified.

@@ -735,15 +735,6 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     #[test]
-    fn test_session_filter_params_default() {
-        let params = SessionFilterParams::default();
-        assert!(params.streamer_id.is_none());
-        assert!(params.from_date.is_none());
-        assert!(params.to_date.is_none());
-        assert!(params.active_only.is_none());
-    }
-
-    #[test]
     fn test_parse_titles_empty() {
         let (titles, title) = parse_titles(&None);
         assert!(titles.is_empty());

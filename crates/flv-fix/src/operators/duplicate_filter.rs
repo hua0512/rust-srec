@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tracing::{debug, trace};
 
-use crate::crc32;
+use pipeline_common::crc32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct TagKey(u64);

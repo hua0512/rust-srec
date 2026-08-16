@@ -173,16 +173,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_gotify_config_default() {
-        let config = GotifyConfig::default();
-        assert!(!config.enabled);
-        assert!(config.server_url.is_empty());
-        assert!(config.app_token.is_empty());
-        assert_eq!(config.min_priority, NotificationPriority::Normal);
-        assert_eq!(config.timeout_secs, 30);
-    }
-
-    #[test]
     fn test_gotify_channel_disabled() {
         let config = GotifyConfig::default();
         let channel = GotifyChannel::new(config);

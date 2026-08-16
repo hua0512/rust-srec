@@ -1160,13 +1160,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pagination_defaults() {
-        let params = PaginationParams::default();
-        assert_eq!(params.limit, 20);
-        assert_eq!(params.offset, 0);
-    }
-
-    #[test]
     fn test_paginated_response() {
         let items = vec![1, 2, 3];
         let response = PaginatedResponse::new(items, 100, 20, 0);

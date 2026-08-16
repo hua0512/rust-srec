@@ -27,6 +27,7 @@ pub mod cancellation;
 pub mod channel_pipeline;
 pub mod config;
 mod context;
+pub mod crc32;
 pub mod pipeline;
 pub mod processor;
 pub mod progress;

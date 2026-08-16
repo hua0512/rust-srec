@@ -682,16 +682,6 @@ mod tests {
     }
 
     #[test]
-    fn test_copy_move_config_default() {
-        let config = CopyMoveConfig::default();
-        assert_eq!(config.operation, CopyMoveOperation::Copy);
-        assert!(config.create_dirs);
-        assert!(config.verify_integrity);
-        assert!(!config.overwrite);
-        assert_eq!(config.time_anchor, None);
-    }
-
-    #[test]
     fn test_copy_move_config_parse() {
         let json = r#"{
             "operation": "move",
@@ -1002,7 +992,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_overwrite_disabled() {
+    async fn test_overwrite_disabled_by_default() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
         let dest_dir = temp_dir.path();
@@ -1019,11 +1009,13 @@ mod tests {
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![],
+            // `overwrite` is omitted: clobbering an existing destination must
+            // require an explicit opt-in, so `CopyMoveConfig`'s serde default
+            // has to be `false`. `test_overwrite_enabled` covers the opt-in.
             config: Some(
                 serde_json::json!({
                     "operation": "copy",
                     "destination": dest_dir.to_string_lossy(),
-                    "overwrite": false
                 })
                 .to_string(),
             ),

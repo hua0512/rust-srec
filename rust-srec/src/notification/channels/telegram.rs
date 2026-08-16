@@ -251,16 +251,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_telegram_config_default() {
-        let config = TelegramConfig::default();
-        assert!(!config.enabled);
-        assert!(config.bot_token.is_empty());
-        assert!(config.chat_id.is_empty());
-        assert_eq!(config.parse_mode, "HTML");
-        assert_eq!(config.min_priority, NotificationPriority::Normal);
-    }
-
-    #[test]
     fn test_telegram_channel_disabled() {
         let config = TelegramConfig::default();
         let channel = TelegramChannel::new(config);

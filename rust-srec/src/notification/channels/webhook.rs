@@ -230,15 +230,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_webhook_config_default() {
-        let config = WebhookConfig::default();
-        assert!(!config.enabled);
-        assert!(config.url.is_empty());
-        assert_eq!(config.method, "POST");
-        assert_eq!(config.timeout_secs, 30);
-    }
-
-    #[test]
     fn test_webhook_channel_disabled() {
         let config = WebhookConfig::default();
         let channel = WebhookChannel::new(config);

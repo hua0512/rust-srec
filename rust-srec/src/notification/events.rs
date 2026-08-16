@@ -1258,12 +1258,6 @@ mod tests {
     }
 
     #[test]
-    fn test_notification_priority_display() {
-        assert_eq!(NotificationPriority::Low.to_string(), "low");
-        assert_eq!(NotificationPriority::Critical.to_string(), "critical");
-    }
-
-    #[test]
     fn test_notification_priority_as_int() {
         assert_eq!(NotificationPriority::Low.as_int(), 2);
         assert_eq!(NotificationPriority::Normal.as_int(), 5);

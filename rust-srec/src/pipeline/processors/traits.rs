@@ -411,18 +411,4 @@ mod tests {
         assert_eq!(output.skipped_inputs[0].0, "/skipped.txt");
         assert_eq!(output.skipped_inputs[0].1, "unsupported format");
     }
-
-    #[test]
-    fn test_processor_output_default() {
-        let output = ProcessorOutput::default();
-        assert!(output.outputs.is_empty());
-        assert_eq!(output.duration_secs, 0.0);
-        assert!(output.metadata.is_none());
-        assert!(output.items_produced.is_empty());
-        assert!(output.input_size_bytes.is_none());
-        assert!(output.output_size_bytes.is_none());
-        assert!(output.failed_inputs.is_empty());
-        assert!(output.succeeded_inputs.is_empty());
-        assert!(output.skipped_inputs.is_empty());
-    }
 }

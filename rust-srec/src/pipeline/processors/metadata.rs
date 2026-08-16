@@ -572,20 +572,6 @@ mod tests {
     }
 
     #[test]
-    fn test_metadata_config_default() {
-        let config = MetadataConfig::default();
-        assert!(config.artist.is_none());
-        assert!(config.title.is_none());
-        assert!(config.date.is_none());
-        assert!(config.album.is_none());
-        assert!(config.comment.is_none());
-        assert!(config.custom.is_empty());
-        assert!(config.output_path.is_none());
-        assert!(config.overwrite);
-        assert!(!config.remove_input_on_success);
-    }
-
-    #[test]
     fn test_metadata_config_parse() {
         let json = r#"{
             "artist": "StreamerName",

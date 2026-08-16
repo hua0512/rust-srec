@@ -2057,7 +2057,6 @@ dependencies = [
  "tracing",
  "tracing-indicatif",
  "tracing-subscriber",
- "zlib-rs",
 ]
 
 [[package]]
@@ -2774,7 +2773,6 @@ dependencies = [
  "tracing-indicatif",
  "tracing-subscriber",
  "ts",
- "zlib-rs",
 ]
 
 [[package]]
@@ -4619,6 +4617,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "zlib-rs",
 ]
 
 [[package]]

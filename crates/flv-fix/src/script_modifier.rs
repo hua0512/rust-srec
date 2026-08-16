@@ -177,10 +177,8 @@ mod tests {
     use amf0::Amf0Value;
     use flv::{FlvTagType, parser::FlvParser, script::ScriptData};
     use std::{fs::File, io::Cursor};
-    use tracing::{info, trace};
-    use tracing_subscriber::fmt;
 
-    use crate::{FlvAnalyzer, analyzer::Keyframe, operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS};
+    use crate::analyzer::Keyframe;
 
     use super::*;
 
@@ -358,104 +356,5 @@ mod tests {
         .unwrap();
 
         assert_eq!(std::fs::read(path).unwrap(), before);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn validate_keyframes_extraction() {
-        let log_file = File::create("test_run.log").expect("Failed to create log file.");
-        let subscriber = fmt()
-            .with_max_level(tracing::Level::TRACE)
-            .with_writer(log_file)
-            .finish();
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("setting default subscriber failed");
-
-        // Source and destination paths
-        let input_path =
-            Path::new("D:/Develop/hua0512/stream-rec/rust-srec/fix/06_11_33-你真的会来吗_p000.flv");
-
-        // Skip if test file doesn't exist
-        if !input_path.exists() {
-            info!(path = %input_path.display(), "Test file not found, skipping test");
-            return;
-        }
-
-        let mut analyzer = FlvAnalyzer::default();
-        let mut keyframes = Vec::new();
-        let mut last_keyframe_timestamp = 0;
-
-        // First, analyze the header
-        let file = std::fs::File::open(input_path).unwrap();
-        let mut reader = std::io::BufReader::new(file);
-        let header = FlvParser::parse_header(&mut reader).unwrap();
-        analyzer.analyze_header(&header).unwrap();
-
-        // The position after the header
-        let current_position = 9u64;
-
-        // Parse tags using the same reader
-        FlvParser::parse_tags(
-            &mut reader,
-            |tag, tag_type, position| {
-                analyzer.analyze_tag(tag).unwrap();
-
-                if tag.is_script_tag() {
-                    let mut script_data = Cursor::new(tag.data().clone());
-                    let data = ScriptData::demux(&mut script_data).unwrap();
-                    println!("Script data: {data:?}");
-                }
-
-                if tag.is_key_frame() && tag_type == FlvTagType::Video {
-                    let timestamp = tag.timestamp_ms;
-                    let add_keyframe = last_keyframe_timestamp == 0
-                        || (timestamp.saturating_sub(last_keyframe_timestamp)
-                            >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
-
-                    trace!(
-                        "Test: Checking keyframe. Current timestamp: {}, Last keyframe timestamp: {}, Condition: {}",
-                        tag.timestamp_ms,
-                        last_keyframe_timestamp,
-                        tag.timestamp_ms.saturating_sub(last_keyframe_timestamp) >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS
-                    );
-                    if add_keyframe {
-                        let keyframe = Keyframe {
-                            timestamp_s: timestamp as f64 / 1000.0,
-                            file_position: position,
-                        };
-                        keyframes.push(keyframe);
-                        trace!("Test: Adding keyframe. New count: {}", keyframes.len());
-                        last_keyframe_timestamp = timestamp;
-                    }
-                }
-            },
-            current_position,
-        )
-        .unwrap();
-
-        // Build the stats to get FlvStats
-        let stats = analyzer.build_stats().unwrap();
-        let analyzed_keyframes = stats
-            .video_stats
-            .as_ref()
-            .map(|vs| vs.keyframes.clone())
-            .unwrap_or_default();
-
-        assert_eq!(
-            analyzed_keyframes.len(),
-            keyframes.len(),
-            "Mismatch in the number of keyframes"
-        );
-
-        for (analyzed, manual) in analyzed_keyframes.iter().zip(keyframes.iter()) {
-            assert_eq!(
-                manual.timestamp_s, analyzed.timestamp_s,
-                "Timestamp mismatch"
-            );
-            assert_eq!(
-                manual.file_position, analyzed.file_position,
-                "File position mismatch"
-            );
-        }
     }
 }

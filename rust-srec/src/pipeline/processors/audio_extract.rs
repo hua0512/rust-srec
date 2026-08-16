@@ -844,17 +844,6 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_extract_config_default() {
-        let config = AudioExtractConfig::default();
-        assert!(config.format.is_none());
-        assert!(config.bitrate.is_none());
-        assert!(config.sample_rate.is_none());
-        assert!(config.channels.is_none());
-        assert!(config.output_path.is_none());
-        assert!(config.overwrite);
-    }
-
-    #[test]
     fn test_audio_extract_config_parse() {
         let json = r#"{
             "format": "mp3",

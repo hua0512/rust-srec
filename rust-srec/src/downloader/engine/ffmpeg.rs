@@ -697,7 +697,6 @@ impl DownloadEngine for FfmpegEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::downloader::engine::utils::parse_time;
 
     fn engine_with_output_args(output_args: &[&str]) -> FfmpegEngine {
         FfmpegEngine {
@@ -767,59 +766,6 @@ mod tests {
             1
         );
         assert!(!args.iter().any(|arg| arg == "+faststart"));
-    }
-
-    #[test]
-    fn test_parse_time() {
-        // Tests now use shared utility
-        assert_eq!(parse_time("00:00:10.50"), Some(10.5));
-        assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
-        assert_eq!(parse_time("invalid"), None);
-    }
-
-    #[test]
-    fn test_parse_progress() {
-        // Tests now use shared utility
-        let line = "frame=  100 fps=25 q=-1.0 size=    1024kB time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
-        let progress = parse_progress(line);
-
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 1024 * 1024);
-        assert_eq!(p.duration_secs, 4.0);
-        // Verify media_duration_secs is populated from time= field
-        assert_eq!(p.media_duration_secs, 4.0);
-        // Verify playback_ratio is populated from speed= field
-        assert_eq!(p.playback_ratio, 1.0);
-    }
-
-    #[test]
-    fn test_parse_progress_with_different_speed() {
-        // Test with speed=2.00x (downloading faster than real-time)
-        let line = "frame=  200 fps=50 q=-1.0 size=    2048kB time=00:01:30.50 bitrate=1024.0kbits/s speed=2.00x";
-        let progress = parse_progress(line);
-
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 2048 * 1024);
-        // 1 minute 30.5 seconds = 90.5 seconds
-        assert_eq!(p.media_duration_secs, 90.5);
-        assert_eq!(p.duration_secs, 90.5);
-        assert_eq!(p.playback_ratio, 2.0);
-    }
-
-    #[test]
-    fn test_parse_progress_without_speed() {
-        // Some FFmpeg outputs may not include speed=
-        let line = "frame=  100 fps=25 q=-1.0 size=    512kB time=00:00:10.00 bitrate=419.4kbits/s";
-        let progress = parse_progress(line);
-
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 512 * 1024);
-        assert_eq!(p.media_duration_secs, 10.0);
-        // playback_ratio should be 0.0 when speed= is not present
-        assert_eq!(p.playback_ratio, 0.0);
     }
 
     #[test]

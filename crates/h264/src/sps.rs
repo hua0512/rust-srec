@@ -1827,7 +1827,10 @@ mod tests {
 
         // timing_info_present_flag
         writer.write_bit(true).unwrap();
-        // num_units_in_tick to 0 (invalid)
+        // num_units_in_tick is valid, so TimingInfo::parse gets past it
+        // and reaches the time_scale field.
+        writer.write_bits(1, 32).unwrap();
+        // time_scale to 0 (invalid)
         writer.write_bits(0, 32).unwrap();
         writer.finish().unwrap();
 
@@ -1836,7 +1839,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert_eq!(err.to_string(), "num_units_in_tick cannot be 0");
+        assert_eq!(err.to_string(), "time_scale cannot be 0");
     }
 
     #[test]

@@ -1204,7 +1204,7 @@ mod tests {
     }
 
     // Helper to create a minimal AuthService for testing password validation
-    fn create_test_service_minimal(config: AuthConfig) -> AuthService {
+    pub(super) fn create_test_service_minimal(config: AuthConfig) -> AuthService {
         use std::sync::Arc;
 
         // Create mock repositories using a simple in-memory implementation
@@ -2143,6 +2143,9 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use super::*;
+    // Shares the no-op-repository `AuthService` with `mod tests`; the
+    // password-strength and hashing checks below never touch persistence.
+    use super::tests::create_test_service_minimal;
 
     #[test]
     fn test_password_hashing_argon2id_format() {
@@ -2294,7 +2297,7 @@ mod property_tests {
     #[test]
     fn test_password_validation_valid_password() {
         let config = AuthConfig::default();
-        let service = create_test_service_for_props(config);
+        let service = create_test_service_minimal(config);
 
         let valid_passwords = vec!["abcd1234", "TestPass123", "LongerPassword9876"];
 
@@ -2310,7 +2313,7 @@ mod property_tests {
     #[test]
     fn test_password_validation_too_short() {
         let config = AuthConfig::default();
-        let service = create_test_service_for_props(config);
+        let service = create_test_service_minimal(config);
 
         let short_passwords = vec!["a1", "ab12", "test1", "Pass12"];
 
@@ -2326,7 +2329,7 @@ mod property_tests {
     #[test]
     fn test_password_validation_no_letter() {
         let config = AuthConfig::default();
-        let service = create_test_service_for_props(config);
+        let service = create_test_service_minimal(config);
 
         let no_letter_passwords = vec!["12345678", "987654321", "0000000000"];
 
@@ -2342,7 +2345,7 @@ mod property_tests {
     #[test]
     fn test_password_validation_no_number() {
         let config = AuthConfig::default();
-        let service = create_test_service_for_props(config);
+        let service = create_test_service_minimal(config);
 
         let no_number_passwords = vec!["abcdefgh", "TestPassword", "OnlyLetters"];
 
@@ -2353,101 +2356,5 @@ mod property_tests {
                 password
             );
         }
-    }
-
-    fn create_test_service_for_props(config: AuthConfig) -> AuthService {
-        use crate::database::models::UserDbModel;
-        use std::sync::Arc;
-
-        struct MockUserRepo;
-
-        #[async_trait::async_trait]
-        impl UserRepository for MockUserRepo {
-            async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn find_by_id(&self, _id: &str) -> crate::Result<Option<UserDbModel>> {
-                Ok(None)
-            }
-            async fn find_by_username(
-                &self,
-                _username: &str,
-            ) -> crate::Result<Option<UserDbModel>> {
-                Ok(None)
-            }
-            async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
-                Ok(None)
-            }
-            async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn delete(&self, _id: &str) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
-                Ok(vec![])
-            }
-            async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn update_password(
-                &self,
-                _id: &str,
-                _hash: &str,
-                _clear: bool,
-            ) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn count(&self) -> crate::Result<i64> {
-                Ok(0)
-            }
-        }
-
-        struct MockTokenRepo;
-
-        #[async_trait::async_trait]
-        impl RefreshTokenRepository for MockTokenRepo {
-            async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn find_by_token_hash(
-                &self,
-                _hash: &str,
-            ) -> crate::Result<Option<RefreshTokenDbModel>> {
-                Ok(None)
-            }
-            async fn find_active_by_user(
-                &self,
-                _user_id: &str,
-            ) -> crate::Result<Vec<RefreshTokenDbModel>> {
-                Ok(vec![])
-            }
-            async fn revoke(&self, _id: &str) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
-                Ok(())
-            }
-            async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
-                Ok(0)
-            }
-        }
-
-        let user_repo = Arc::new(MockUserRepo);
-        let token_repo = Arc::new(MockTokenRepo);
-        let jwt_service = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(900),
-        ));
-
-        AuthService::new(
-            user_repo,
-            token_repo,
-            Arc::new(crate::database::repositories::InMemoryApiKeyRepository::default()),
-            jwt_service,
-            config,
-        )
     }
 }

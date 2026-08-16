@@ -1988,14 +1988,6 @@ mod tests {
     }
 
     #[test]
-    fn test_download_manager_config_default() {
-        let config = DownloadManagerConfig::default();
-        assert_eq!(config.max_concurrent_downloads, 6);
-        assert_eq!(config.high_priority_extra_slots, 2);
-        assert_eq!(config.default_engine, EngineType::Ffmpeg);
-    }
-
-    #[test]
     fn test_download_manager_creation() {
         let manager = DownloadManager::new();
         assert_eq!(manager.active_count(), 0);

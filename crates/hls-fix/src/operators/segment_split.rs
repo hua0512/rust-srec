@@ -6,7 +6,7 @@ use pipeline_common::{PipelineError, Processor, SplitReason, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::crc32;
+use pipeline_common::crc32;
 
 /// An operator that splits HLS segments when meaningful stream parameters change.
 ///

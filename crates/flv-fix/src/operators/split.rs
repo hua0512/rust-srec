@@ -38,8 +38,8 @@ use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::crc32;
 use crate::operators::segment_reinject::SegmentInitCache;
+use pipeline_common::crc32;
 
 /// Controls how `SplitOperator` decides whether a sequence header "changed".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

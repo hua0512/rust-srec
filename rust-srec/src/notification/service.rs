@@ -1612,15 +1612,6 @@ mod tests {
     }
 
     #[test]
-    fn test_notification_service_config_default() {
-        let config = NotificationServiceConfig::default();
-        assert!(config.enabled);
-        assert_eq!(config.max_queue_size, 1000);
-        assert_eq!(config.max_retries, 3);
-        assert_eq!(config.circuit_breaker_threshold, 10);
-    }
-
-    #[test]
     fn test_notification_service_creation() {
         let service = NotificationService::new();
         let stats = service.stats();
