@@ -302,7 +302,7 @@ impl Processor for DanmakuFactoryProcessor {
             let mut cmd = Command::new(&binary);
             let mut args = Self::substitute_args(&config.args, xml_path, ass_path);
             args.extend(config.extra_args.iter().cloned());
-            cmd.args(&args).env("LC_ALL", "C");
+            cmd.args(&args);
 
             debug!("DanmakuFactory args: {:?}", args);
 

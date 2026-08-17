@@ -271,9 +271,9 @@ impl DownloadEngine for StreamlinkEngine {
 
         // Spawn ffmpeg process with stdin piped
         let mut ffmpeg_command = process_utils::tokio_command(&self.ffmpeg_path);
+        crate::utils::configure_ffmpeg_locale(&mut ffmpeg_command);
         ffmpeg_command
             .args(&ffmpeg_args)
-            .env("LC_ALL", "C")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

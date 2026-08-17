@@ -179,6 +179,7 @@ impl ThumbnailProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
         cmd.args([
             "-y",
             "-hide_banner",
@@ -210,8 +211,7 @@ impl ThumbnailProcessor {
             "-update",
             "1",
             output_path,
-        ])
-        .env("LC_ALL", "C");
+        ]);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
