@@ -1,5 +1,7 @@
 //! Utility modules for rust-srec.
 
+use std::ffi::OsStr;
+
 use tokio::process::Command;
 
 pub mod filename;
@@ -11,7 +13,18 @@ pub mod text;
 pub mod url;
 
 pub(crate) fn configure_ffmpeg_locale(command: &mut Command) {
-    // LC_ALL would override these categories and can break Unicode output paths.
+    let inherited_lc_all = std::env::var_os("LC_ALL");
+    configure_ffmpeg_locale_with_lc_all(command, inherited_lc_all.as_deref());
+}
+
+fn configure_ffmpeg_locale_with_lc_all(command: &mut Command, inherited_lc_all: Option<&OsStr>) {
+    // LC_ALL overrides category variables, so retain its Unicode-sensitive categories.
+    if let Some(locale) = inherited_lc_all
+        && !locale.is_empty()
+    {
+        command.env("LC_CTYPE", locale).env("LC_TIME", locale);
+    }
+
     command
         .env_remove("LC_ALL")
         .env("LC_MESSAGES", "C")
@@ -20,31 +33,49 @@ pub(crate) fn configure_ffmpeg_locale(command: &mut Command) {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
-
     use super::*;
 
+    fn configured_env<'a>(command: &'a Command, key: &str) -> Option<Option<&'a OsStr>> {
+        command
+            .as_std()
+            .get_envs()
+            .find(|(candidate, _)| *candidate == OsStr::new(key))
+            .map(|(_, value)| value)
+    }
+
     #[test]
-    fn ffmpeg_locale_keeps_unicode_categories_inherited() {
+    fn ffmpeg_locale_preserves_unicode_categories_from_lc_all() {
         let mut command = Command::new("ffmpeg");
 
-        configure_ffmpeg_locale(&mut command);
+        configure_ffmpeg_locale_with_lc_all(&mut command, Some(OsStr::new("C.UTF-8")));
 
-        let envs: Vec<_> = command.as_std().get_envs().collect();
-        assert!(
-            envs.iter()
-                .any(|(key, value)| *key == OsStr::new("LC_ALL") && value.is_none())
+        assert_eq!(configured_env(&command, "LC_ALL"), Some(None));
+        assert_eq!(
+            configured_env(&command, "LC_MESSAGES"),
+            Some(Some(OsStr::new("C")))
         );
-        assert!(envs.iter().any(|(key, value)| {
-            *key == OsStr::new("LC_MESSAGES") && *value == Some(OsStr::new("C"))
-        }));
-        assert!(envs.iter().any(|(key, value)| {
-            *key == OsStr::new("LC_NUMERIC") && *value == Some(OsStr::new("C"))
-        }));
-        assert!(
-            !envs.iter().any(|(key, _)| {
-                *key == OsStr::new("LC_CTYPE") || *key == OsStr::new("LC_TIME")
-            })
+        assert_eq!(
+            configured_env(&command, "LC_NUMERIC"),
+            Some(Some(OsStr::new("C")))
         );
+        assert_eq!(
+            configured_env(&command, "LC_CTYPE"),
+            Some(Some(OsStr::new("C.UTF-8")))
+        );
+        assert_eq!(
+            configured_env(&command, "LC_TIME"),
+            Some(Some(OsStr::new("C.UTF-8")))
+        );
+    }
+
+    #[test]
+    fn ffmpeg_locale_ignores_empty_lc_all() {
+        let mut command = Command::new("ffmpeg");
+
+        configure_ffmpeg_locale_with_lc_all(&mut command, Some(OsStr::new("")));
+
+        assert_eq!(configured_env(&command, "LC_ALL"), Some(None));
+        assert_eq!(configured_env(&command, "LC_CTYPE"), None);
+        assert_eq!(configured_env(&command, "LC_TIME"), None);
     }
 }
