@@ -6,7 +6,7 @@
 
 - **Fixed Unicode filenames in FFmpeg segment recording**
 
-  FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale. Segment mode remains duration-based; this fix does not add file-size-based segment splitting.
+  FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale.
 
 ## API and integrations
 
