@@ -369,7 +369,8 @@ impl AudioExtractProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args).env("LC_ALL", "C");
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
+        cmd.args(&args);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
@@ -698,7 +699,8 @@ impl Processor for AudioExtractProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args).env("LC_ALL", "C");
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
+        cmd.args(&args);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(

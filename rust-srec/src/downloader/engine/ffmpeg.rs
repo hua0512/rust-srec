@@ -240,9 +240,9 @@ impl DownloadEngine for FfmpegEngine {
 
         // Spawn ffmpeg process
         let mut command = process_utils::tokio_command(&self.config.binary_path);
+        crate::utils::configure_ffmpeg_locale(&mut command);
         command
             .args(&args)
-            .env("LC_ALL", "C") // Force consistent output
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
