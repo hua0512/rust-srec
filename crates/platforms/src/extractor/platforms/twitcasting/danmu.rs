@@ -568,15 +568,16 @@ mod tests {
         println!("Connecting to TwitCasting user: {}", user_id);
 
         match provider.connect(user_id, ConnectionConfig::default()).await {
-            Ok(connection) => {
+            Ok(stream) => {
                 println!("Connected!");
+                let mut items = stream.items;
 
                 // Receive messages for 60 seconds
                 let start = std::time::Instant::now();
                 let mut message_count = 0;
 
                 while start.elapsed() < Duration::from_secs(60) {
-                    match provider.receive(&connection).await {
+                    match tokio::time::timeout(Duration::from_millis(500), items.recv()).await {
                         Ok(Some(item)) => match item {
                             crate::danmaku::DanmuItem::Message(msg) => {
                                 println!(
@@ -590,11 +591,12 @@ mod tests {
                             }
                         },
                         Ok(None) => {
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                        }
-                        Err(e) => {
-                            println!("Error: {}", e);
+                            println!("Stream closed by provider");
                             break;
+                        }
+                        Err(_) => {
+                            // No message within the window; keep waiting until
+                            // the 60s budget is spent.
                         }
                     }
                 }

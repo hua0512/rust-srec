@@ -53,9 +53,19 @@ pub enum DanmuEvent {
         platform: String,
         control: DanmuControlEvent,
     },
-    /// Connection lost and reconnecting
+    /// Connection lost; a reconnect attempt is scheduled.
     Reconnecting { session_id: String, attempt: u32 },
-    /// Reconnection failed
+    /// An item arrived again after `Reconnecting`, ending the outage.
+    Reconnected {
+        session_id: String,
+        /// Reconnect attempts the recovery took.
+        attempts: u32,
+        /// How long the link was down.
+        downtime_secs: u64,
+    },
+    /// The link has been down long enough to be worth attention. Collection keeps
+    /// reconnecting — `CollectionRunner` gives up only when the session ends — so
+    /// this is an alert, not a terminal state.
     ReconnectFailed { session_id: String, error: String },
     /// Error during collection
     Error { session_id: String, error: String },

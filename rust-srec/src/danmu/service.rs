@@ -86,9 +86,9 @@ struct CollectionState {
     cancel_token: CancellationToken,
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
-    /// Signals when the runner has fully stopped (including final XML flush/finalize),
-    /// carrying final statistics when available.
-    done_rx: Option<oneshot::Receiver<std::result::Result<DanmuStatistics, String>>>,
+    /// Signals when the runner has fully stopped (including final XML
+    /// flush/finalize), carrying its final statistics.
+    done_rx: Option<oneshot::Receiver<DanmuStatistics>>,
 }
 
 /// Danmu collection service.
@@ -302,7 +302,7 @@ impl DanmuService {
         let cancel_token = self.cancel_token.child_token();
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
-        let (done_tx, done_rx) = oneshot::channel::<std::result::Result<DanmuStatistics, String>>();
+        let (done_tx, done_rx) = oneshot::channel::<DanmuStatistics>();
 
         let state = CollectionState {
             streamer_id: streamer_id.to_string(),
@@ -328,7 +328,7 @@ impl DanmuService {
         let cancel_token_task = cancel_token.clone();
 
         tokio::spawn(async move {
-            let runner = match tokio::time::timeout(
+            let (runner, items) = match tokio::time::timeout(
                 CONNECT_TIMEOUT,
                 CollectionRunner::new(RunnerParams {
                     session_id: session_id_clone.clone(),
@@ -343,26 +343,22 @@ impl DanmuService {
             )
             .await
             {
-                Ok(Ok(runner)) => {
+                Ok(Ok(started)) => {
                     let _ = ready_tx.send(Ok(()));
-                    runner
+                    started
                 }
                 Ok(Err(e)) => {
                     let error_message = e.to_string();
                     let _ = event_tx.send(DanmuEvent::Error {
                         session_id: session_id_clone.clone(),
-                        error: error_message.clone(),
+                        error: error_message,
                     });
                     let _ = ready_tx.send(Err(e));
-                    if let Some((_, state)) = collections.remove(&session_id_clone) {
-                        let should_remove = sessions_by_streamer
-                            .get(&state.streamer_id)
-                            .is_some_and(|sid| sid.value() == &session_id_clone);
-                        if should_remove {
-                            sessions_by_streamer.remove(&state.streamer_id);
-                        }
-                    }
-                    let _ = done_tx.send(Err(error_message));
+                    remove_collection(&collections, &sessions_by_streamer, &session_id_clone);
+                    // No `CollectionStopped` here on purpose: collection never
+                    // started, so `PipelineCoordinator` never set
+                    // `danmu_observed` and the session-complete gate does not
+                    // wait on a danmu arm.
                     return;
                 }
                 Err(_) => {
@@ -375,53 +371,48 @@ impl DanmuService {
                     )));
                     let _ = event_tx.send(DanmuEvent::Error {
                         session_id: session_id_clone.clone(),
-                        error: message.clone(),
+                        error: message,
                     });
-                    if let Some((_, state)) = collections.remove(&session_id_clone) {
-                        let should_remove = sessions_by_streamer
-                            .get(&state.streamer_id)
-                            .is_some_and(|sid| sid.value() == &session_id_clone);
-                        if should_remove {
-                            sessions_by_streamer.remove(&state.streamer_id);
-                        }
-                    }
-                    let _ = done_tx.send(Err(message));
+                    remove_collection(&collections, &sessions_by_streamer, &session_id_clone);
                     return;
                 }
             };
 
-            let result = runner.run(command_rx, cancel_token_task).await;
-            if let Err(e) = &result {
+            let outcome = runner.run(command_rx, items, cancel_token_task).await;
+            if let Some(error) = &outcome.error {
                 let _ = event_tx.send(DanmuEvent::Error {
                     session_id: session_id_clone.clone(),
-                    error: e.to_string(),
+                    error: error.to_string(),
                 });
             }
 
-            // Ensure the in-memory collection state is cleaned up even if the runner exits due to
-            // an error (or external cancellation) without an explicit `stop_collection()` call.
+            // Clean up the in-memory state when the runner exits on its own — a
+            // transport failure, a `StreamClosed` control event, or external
+            // cancellation — rather than through `stop_collection`.
             //
-            // If `stop_collection()` already removed the entry, `remove()` returns None and we
-            // avoid emitting a duplicate stop event.
-            if let Some((_, state)) = collections.remove(&session_id_clone) {
-                let should_remove = sessions_by_streamer
-                    .get(&state.streamer_id)
-                    .is_some_and(|sid| sid.value() == &session_id_clone);
-                if should_remove {
-                    sessions_by_streamer.remove(&state.streamer_id);
-                }
-                if let Ok(statistics) = &result {
-                    persist_statistics(session_repo.as_deref(), &session_id_clone, statistics)
-                        .await;
-                    let _ = event_tx.send(DanmuEvent::CollectionStopped {
-                        session_id: session_id_clone.clone(),
-                        statistics: statistics.clone(),
-                    });
-                }
+            // `CollectionStopped` is emitted on every one of those paths, failure
+            // included: `PipelineCoordinator::apply_event` treats it as the only
+            // signal that the session's danmu arm is finished (it is the sole
+            // writer of `danmu_complete`), so withholding it after a failure
+            // leaves `CreateSessionCompleteDag` permanently ungated for the
+            // session. The statistics are final either way.
+            //
+            // If `stop_collection` already removed the entry it emits the event
+            // itself, and `remove` returning None keeps this from duplicating it.
+            if remove_collection(&collections, &sessions_by_streamer, &session_id_clone) {
+                persist_statistics(
+                    session_repo.as_deref(),
+                    &session_id_clone,
+                    &outcome.statistics,
+                )
+                .await;
+                let _ = event_tx.send(DanmuEvent::CollectionStopped {
+                    session_id: session_id_clone.clone(),
+                    statistics: outcome.statistics.clone(),
+                });
             }
 
-            let done_value = result.map_err(|e| e.to_string());
-            let _ = done_tx.send(done_value);
+            let _ = done_tx.send(outcome.statistics);
         });
 
         tokio::select! {
@@ -434,27 +425,11 @@ impl DanmuService {
                         });
                     }
                     Ok(Err(e)) => {
-                        if let Some((_, state)) = self.collections.remove(session_id) {
-                            let should_remove = self
-                                .sessions_by_streamer
-                                .get(&state.streamer_id)
-                                .is_some_and(|sid| sid.value() == session_id);
-                            if should_remove {
-                                self.sessions_by_streamer.remove(&state.streamer_id);
-                            }
-                        }
+                        remove_collection(&self.collections, &self.sessions_by_streamer, session_id);
                         return Err(e);
                     }
                     Err(_) => {
-                        if let Some((_, state)) = self.collections.remove(session_id) {
-                            let should_remove = self
-                                .sessions_by_streamer
-                                .get(&state.streamer_id)
-                                .is_some_and(|sid| sid.value() == session_id);
-                            if should_remove {
-                                self.sessions_by_streamer.remove(&state.streamer_id);
-                            }
-                        }
+                        remove_collection(&self.collections, &self.sessions_by_streamer, session_id);
                         return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
                             "Danmu collection task stopped before it became ready",
                         )));
@@ -462,15 +437,7 @@ impl DanmuService {
                 }
             }
             _ = cancel_token.cancelled() => {
-                if let Some((_, state)) = self.collections.remove(session_id) {
-                    let should_remove = self
-                        .sessions_by_streamer
-                        .get(&state.streamer_id)
-                        .is_some_and(|sid| sid.value() == session_id);
-                    if should_remove {
-                        self.sessions_by_streamer.remove(&state.streamer_id);
-                    }
-                }
+                remove_collection(&self.collections, &self.sessions_by_streamer, session_id);
                 return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
                     "Danmu collection cancelled before it became ready",
                 )));
@@ -492,13 +459,7 @@ impl DanmuService {
             ))
         })?;
 
-        let should_remove = self
-            .sessions_by_streamer
-            .get(&state.streamer_id)
-            .is_some_and(|sid| sid.value() == session_id);
-        if should_remove {
-            self.sessions_by_streamer.remove(&state.streamer_id);
-        }
+        release_streamer_slot(&self.sessions_by_streamer, &state.streamer_id, session_id);
 
         // Send stop command
         if state
@@ -516,7 +477,7 @@ impl DanmuService {
         if let Some(done_rx) = state.done_rx {
             const STOP_TIMEOUT: Duration = Duration::from_secs(10);
             match tokio::time::timeout(STOP_TIMEOUT, done_rx).await {
-                Ok(Ok(Ok(statistics))) => {
+                Ok(Ok(statistics)) => {
                     persist_statistics(self.session_repo.as_deref(), session_id, &statistics).await;
                     let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
                         session_id: session_id.to_string(),
@@ -524,13 +485,16 @@ impl DanmuService {
                     });
                     return Ok(statistics);
                 }
-                Ok(Ok(Err(error))) => {
-                    warn!(
+                // The runner task ended without reporting. It removed its own
+                // entry and emitted `CollectionStopped` on that path, so there is
+                // nothing left to do here.
+                Ok(Err(_)) => {
+                    tracing::debug!(
                         session_id,
-                        error, "Danmu collection ended without final statistics"
+                        "Danmu collection task ended without reporting statistics"
                     );
+                    return Ok(DanmuStatistics::default());
                 }
-                Ok(Err(_)) => {}
                 Err(_) => {
                     warn!(
                         "Danmu collection stop timed out after {:?} (session_id={})",
@@ -539,6 +503,16 @@ impl DanmuService {
                 }
             }
         }
+
+        // Reached only on the stop timeout above, where the runner is wedged and
+        // may never report. Emit `CollectionStopped` anyway: it is the sole writer
+        // of the coordinator's `danmu_complete`, so staying silent would leave the
+        // session-complete pipeline ungated forever. A late duplicate from the
+        // runner is harmless — finalization is idempotent.
+        let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
+            session_id: session_id.to_string(),
+            statistics: DanmuStatistics::default(),
+        });
 
         Ok(DanmuStatistics::default())
     }
@@ -586,6 +560,42 @@ impl DanmuService {
             }
         }
     }
+}
+
+/// Drop the streamer reverse-index entry only when it still points at
+/// `session_id`; a newer collector that already claimed the streamer must keep
+/// its slot.
+fn release_streamer_slot(
+    sessions_by_streamer: &DashMap<String, String>,
+    streamer_id: &str,
+    session_id: &str,
+) {
+    // `is_some_and` consumes the guard, so the read is released before `remove`
+    // touches the same shard.
+    let owns_slot = sessions_by_streamer
+        .get(streamer_id)
+        .is_some_and(|sid| sid.value() == session_id);
+    if owns_slot {
+        sessions_by_streamer.remove(streamer_id);
+    }
+}
+
+/// Remove a session's collection state along with its streamer reverse-index
+/// entry.
+///
+/// Returns whether this call was the one that removed the entry; callers use
+/// that to emit `DanmuEvent::CollectionStopped` exactly once when the runner
+/// task and `stop_collection` race.
+fn remove_collection(
+    collections: &DashMap<String, CollectionState>,
+    sessions_by_streamer: &DashMap<String, String>,
+    session_id: &str,
+) -> bool {
+    let Some((_, state)) = collections.remove(session_id) else {
+        return false;
+    };
+    release_streamer_slot(sessions_by_streamer, &state.streamer_id, session_id);
+    true
 }
 
 fn saturating_u64_to_i64(value: u64) -> i64 {
@@ -701,7 +711,7 @@ mod tests {
         service: &DanmuService,
         streamer_id: &str,
         session_id: &str,
-    ) -> oneshot::Sender<std::result::Result<DanmuStatistics, String>> {
+    ) -> oneshot::Sender<DanmuStatistics> {
         let (command_tx, _command_rx) = mpsc::channel(8);
         let (done_tx, done_rx) = oneshot::channel();
         let cancel_token = service.cancel_token.child_token();
@@ -755,7 +765,7 @@ mod tests {
         // `stop_collection`'s await returns promptly instead of waiting on
         // its 10s timeout.
         let done_tx = seed_active_collection(&service, streamer_id, old_session);
-        done_tx.send(Ok(DanmuStatistics::default())).unwrap();
+        done_tx.send(DanmuStatistics::default()).unwrap();
 
         assert!(
             service.is_collecting(old_session),
@@ -793,6 +803,69 @@ mod tests {
         assert!(
             !service.is_collecting(new_session),
             "the new spawn failed at provider lookup so its slot must be empty too"
+        );
+    }
+
+    /// The guarantee `PipelineCoordinator` depends on: a collector that ends on a
+    /// failure rather than a stop request must still emit `CollectionStopped`.
+    ///
+    /// `apply_event`'s `DanmuCollectionStopped` arm is the only writer of
+    /// `danmu_complete`, and `is_ready` will not emit `CreateSessionCompleteDag`
+    /// while a session has `danmu_expected && danmu_observed` but not
+    /// `danmu_complete` — so withholding the event after a failure strands the
+    /// session-complete pipeline for the rest of the process's life.
+    #[tokio::test(start_paused = true)]
+    async fn collection_stopped_is_emitted_when_the_runner_fails() {
+        use crate::danmu::test_support::{FakeProvider, temp_xml_path};
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
+        let mut events = service.subscribe();
+
+        let handle = service
+            .start_collection("session-1", "streamer-1", FakeProvider::URL, None, None)
+            .await
+            .expect("collection starts against the fake provider");
+        assert_eq!(handle.session_id(), "session-1");
+
+        // A segment path whose parent is a regular file cannot be created, so the
+        // runner's loop ends on an error instead of a stop request.
+        let blocker = temp_xml_path("service-loop-error");
+        tokio::fs::write(&blocker, b"not a directory")
+            .await
+            .expect("write blocker file");
+        handle
+            .start_segment(
+                "0",
+                blocker.join("child").join("seg.xml"),
+                chrono::Utc::now(),
+            )
+            .await
+            .expect("command is accepted; the failure happens in the runner");
+
+        let stopped = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                match events.recv().await {
+                    Ok(DanmuEvent::CollectionStopped { session_id, .. }) => return session_id,
+                    Ok(_) => continue,
+                    Err(error) => panic!("danmu event stream ended early: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("CollectionStopped must follow a runner failure");
+        let _ = tokio::fs::remove_file(&blocker).await;
+
+        assert_eq!(stopped, "session-1");
+        assert!(
+            !service.is_collecting("session-1"),
+            "the collection slot must be released"
+        );
+        assert!(
+            service.get_session_by_streamer("streamer-1").is_none(),
+            "the streamer reverse index must be released"
         );
     }
 

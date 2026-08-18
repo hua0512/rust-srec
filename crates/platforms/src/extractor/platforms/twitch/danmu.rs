@@ -324,10 +324,11 @@ mod tests {
         let provider = create_twitch_danmu_provider();
         let channel = "dota2ti";
         println!("Connecting to Twitch channel: {}", channel);
-        let connection = provider
+        let mut items = provider
             .connect(channel, ConnectionConfig::default())
             .await
-            .expect("Failed to connect");
+            .expect("Failed to connect")
+            .items;
         println!("Connected to Twitch channel #{}", channel);
 
         // Receive messages for 60 seconds
@@ -335,7 +336,7 @@ mod tests {
         let mut message_count = 0;
 
         while start.elapsed() < Duration::from_secs(60) {
-            match provider.receive(&connection).await {
+            match tokio::time::timeout(Duration::from_millis(500), items.recv()).await {
                 Ok(Some(item)) => match item {
                     crate::danmaku::DanmuItem::Message(msg) => {
                         println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
@@ -346,11 +347,12 @@ mod tests {
                     }
                 },
                 Ok(None) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Stream closed by provider");
                     break;
+                }
+                Err(_) => {
+                    // No message within the window; keep waiting until the
+                    // 60s budget is spent.
                 }
             }
         }

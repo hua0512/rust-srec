@@ -24,7 +24,7 @@ use url::Url;
 use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::event::DanmuItem;
-use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
+use crate::danmaku::provider::{DanmuConnection, DanmuProvider, DanmuStream};
 use crate::extractor::utils::merge_cookie_headers;
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
@@ -351,8 +351,6 @@ struct WsConnectionState {
         reason = "retained for protocol variants and forward-compatible response handling"
     )]
     reconnect_count: Arc<AtomicU32>,
-    /// Message receiver
-    message_rx: Arc<Mutex<mpsc::Receiver<DanmuItem>>>,
     /// Task handles
     tasks: Vec<JoinHandle<()>>,
     /// Shutdown sender
@@ -424,14 +422,13 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
     ) -> Result<(
         Arc<AtomicBool>,
         Arc<AtomicU32>,
-        Arc<Mutex<mpsc::Receiver<DanmuItem>>>,
+        mpsc::Receiver<DanmuItem>,
         mpsc::Sender<()>,
         Vec<JoinHandle<()>>,
     )> {
         let is_connected = Arc::new(AtomicBool::new(false));
         let reconnect_count = Arc::new(AtomicU32::new(0));
         let (message_tx, message_rx) = mpsc::channel(100);
-        let message_rx = Arc::new(Mutex::new(message_rx));
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
 
         let factory = Arc::clone(&self.factory);
@@ -720,7 +717,7 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
         self.factory.platform()
     }
 
-    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection> {
+    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuStream> {
         let connection_permit = self
             .connection_semaphore
             .clone()
@@ -734,7 +731,7 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
 
         let connection_id = format!("{}-{}-{}", self.platform(), room_id, uuid::Uuid::new_v4());
 
-        let (is_connected, reconnect_count, message_rx, shutdown_tx, tasks) =
+        let (is_connected, reconnect_count, items, shutdown_tx, tasks) =
             self.connect_internal(room_id, config).await?;
 
         let state = WsConnectionState {
@@ -742,7 +739,6 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
             room_id: room_id.to_string(),
             is_connected,
             reconnect_count,
-            message_rx,
             tasks,
             shutdown_tx: Some(shutdown_tx),
             connection_permit,
@@ -753,12 +749,14 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
             .await
             .insert(connection_id.clone(), Arc::new(Mutex::new(state)));
 
-        let mut conn = DanmuConnection::new(connection_id, self.platform(), room_id);
-        // It might take a moment to actually connect, but we return the handle immediately.
-        // The service will check `receive` which handles the logic.
-        conn.set_connected();
+        let mut connection = DanmuConnection::new(connection_id, self.platform(), room_id);
+        // The upgrade and handshake run in the task spawned by `connect_internal`,
+        // so the handle is returned before the socket is necessarily live. The
+        // caller learns the outcome from `items`: frames arrive once the
+        // handshake succeeds, and the channel closes when the task gives up.
+        connection.set_connected();
 
-        Ok(conn)
+        Ok(DanmuStream { connection, items })
     }
 
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()> {
@@ -773,37 +771,6 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
         }
         connection.set_disconnected();
         Ok(())
-    }
-
-    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuItem>> {
-        let state_arc = {
-            let map = self.connections.read().await;
-            map.get(&connection.id).cloned()
-        };
-
-        let Some(state_arc) = state_arc else {
-            return Err(DanmakuError::connection("Connection not found"));
-        };
-
-        let message_rx = {
-            let state = state_arc.lock().await;
-            state.message_rx.clone()
-        };
-
-        let next = tokio::time::timeout(Duration::from_millis(100), async move {
-            let mut rx = message_rx.lock().await;
-            rx.recv().await
-        })
-        .await;
-
-        match next {
-            Ok(Some(msg)) => Ok(Some(msg)),
-            Ok(None) => {
-                drop(self.connections.write().await.remove(&connection.id));
-                Err(DanmakuError::connection("Channel closed"))
-            }
-            Err(_) => Ok(None), // Timeout
-        }
     }
 
     fn supports_url(&self, url: &str) -> bool {

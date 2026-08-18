@@ -10,7 +10,7 @@ pub mod writer;
 pub use error::{DanmakuError, Result};
 pub use event::{DanmuControlEvent, DanmuItem};
 pub use message::{DanmuMessage, DanmuType};
-pub use provider::{ConnectionConfig, DanmuConnection, DanmuProvider};
+pub use provider::{ConnectionConfig, DanmuConnection, DanmuProvider, DanmuStream};
 pub use registry::ProviderRegistry;
 pub use statistics::{
     DanmuStatistics, RateDataPoint, StatisticsAggregator, TopTalker, WordFrequency,

@@ -1027,8 +1027,8 @@ mod tests {
         let room_id = "1721766859";
 
         println!("Connecting to Bilibili room: {}", room_id);
-        let connection = match provider.connect(room_id, ConnectionConfig::default()).await {
-            Ok(conn) => conn,
+        let mut items = match provider.connect(room_id, ConnectionConfig::default()).await {
+            Ok(stream) => stream.items,
             Err(e) => {
                 eprintln!("Failed to connect: {}", e);
                 return;
@@ -1040,7 +1040,7 @@ mod tests {
         let mut message_count = 0;
 
         while start.elapsed() < Duration::from_secs(60) {
-            match provider.receive(&connection).await {
+            match tokio::time::timeout(Duration::from_millis(500), items.recv()).await {
                 Ok(Some(item)) => match item {
                     crate::danmaku::DanmuItem::Message(msg) => {
                         println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
@@ -1051,11 +1051,12 @@ mod tests {
                     }
                 },
                 Ok(None) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Stream closed by provider");
                     break;
+                }
+                Err(_) => {
+                    // No message within the window; keep waiting until the 60s
+                    // budget is spent.
                 }
             }
         }

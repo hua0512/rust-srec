@@ -234,6 +234,7 @@ impl ServiceContainer {
             config_service: self.config_service.clone(),
             stream_monitor: self.stream_monitor.clone(),
             discarded_segment_keys: self.discarded_segment_keys.clone(),
+            danmu_link_down: self.danmu_link_down.clone(),
         };
         let cancellation_token = self.cancellation_token.clone();
 
@@ -671,6 +672,26 @@ impl DownloadEventProcessor {
                     {
                         warn!("Failed to start danmu segment: {}", e);
                     }
+                } else {
+                    // Config is resolved only on the miss path: a session without
+                    // `record_danmu` legitimately has no collector, while one that
+                    // wants danmu has lost it and every later segment of this
+                    // recording will have no chat file. `DanmuService` removes the
+                    // handle as soon as its runner exits, so this is the only place
+                    // segment rotation can notice.
+                    let expects_danmu = self
+                        .config_service
+                        .get_config_for_streamer(streamer_id)
+                        .await
+                        .is_ok_and(|config| config.record_danmu);
+                    if expects_danmu {
+                        warn!(
+                            session_id = %session_id,
+                            streamer_id = %streamer_id,
+                            segment_index,
+                            "danmu: no active collector for new segment; chat will be missing from here on"
+                        );
+                    }
                 }
             }
             DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
@@ -754,6 +775,15 @@ impl DownloadEventProcessor {
                             e
                         ),
                     }
+                    // The `discarded_segment_keys` entry above only suppresses a
+                    // danmu segment whose `SegmentCompleted` is still to come. When
+                    // the danmu side finished first — the runner finalizes an open
+                    // segment on stream close or transport failure, both while the
+                    // video segment is still recording — its media output row
+                    // already exists and would outlive the file just deleted.
+                    self.pipeline_manager
+                        .remove_danmu_segment_output(session_id, &danmu_path.to_string_lossy())
+                        .await;
                     // Discarded segments never reach the pipeline manager.
                     return;
                 }
@@ -796,6 +826,7 @@ struct DanmuEventHandler {
     config_service: Arc<RuntimeConfigService>,
     stream_monitor: Arc<RuntimeStreamMonitor>,
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
+    danmu_link_down: Arc<DashMap<String, Instant>>,
 }
 
 impl DanmuEventHandler {
@@ -846,6 +877,9 @@ impl DanmuEventHandler {
                     "Danmu collection stopped for session {}: {} messages",
                     session_id, statistics.total_count
                 );
+                // Bounds `danmu_link_down`: a session that stops mid-outage never
+                // sends `Reconnected`, so this is the entry's only other removal.
+                self.danmu_link_down.remove(session_id);
                 self.pipeline_manager
                     .handle_danmu_event(event.clone())
                     .await;
@@ -928,16 +962,29 @@ impl DanmuEventHandler {
                 session_id,
                 attempt,
             } => {
+                // Stamped on the first attempt of an outage and left alone after,
+                // so the health probe can measure how long the link has been down.
+                self.danmu_link_down
+                    .entry(session_id.clone())
+                    .or_insert_with(Instant::now);
                 warn!(
                     "Danmu reconnecting for session {}: attempt {}",
                     session_id, attempt
                 );
             }
-            DanmuEvent::ReconnectFailed { session_id, error } => {
-                warn!(
-                    "Danmu reconnect failed for session {}: {}",
-                    session_id, error
+            DanmuEvent::Reconnected {
+                session_id,
+                attempts,
+                downtime_secs,
+            } => {
+                self.danmu_link_down.remove(session_id);
+                info!(
+                    "Danmu reconnected for session {} after {} attempt(s), {}s down",
+                    session_id, attempts, downtime_secs
                 );
+            }
+            DanmuEvent::ReconnectFailed { session_id, error } => {
+                warn!("Danmu link down for session {}: {}", session_id, error);
             }
             DanmuEvent::Error { session_id, error } => {
                 warn!("Danmu error for session {}: {}", session_id, error);

@@ -532,6 +532,7 @@ impl ServiceContainer {
             task_supervisor,
             logging_config: std::sync::OnceLock::new(),
             discarded_segment_keys: Arc::new(DashMap::new()),
+            danmu_link_down: Arc::new(DashMap::new()),
         })
     }
 }

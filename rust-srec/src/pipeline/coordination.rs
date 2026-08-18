@@ -676,9 +676,15 @@ impl PipelineCoordinatorState {
         let mut removed = 0;
         self.sessions.retain(|session_id, session| {
             if session.last_activity.elapsed() > max_age {
+                // `unmet` is the diagnosis: discarding a session that never
+                // triggered means its session-complete pipeline is lost, and the
+                // gate condition still outstanding says which producer went
+                // missing.
                 warn!(
                     session_id = %session_id,
                     age_secs = %session.last_activity.elapsed().as_secs(),
+                    session_complete_triggered = session.session_complete_triggered,
+                    unmet = ?session.unmet_completion_conditions(),
                     "Removing stale pipeline coordinator session"
                 );
                 removed += 1;
@@ -1146,6 +1152,45 @@ impl SessionPipelineState {
             && self.session_end_persisted
             && !self.session_complete_triggered
             && self.artifacts_drained_for_session_complete()
+    }
+
+    /// The finalization gate conditions still unmet, for diagnosing a session
+    /// that never reached `is_ready`.
+    ///
+    /// Mirrors `is_ready` and `artifacts_drained_for_session_complete`; keep the
+    /// two in step when either gains a condition.
+    fn unmet_completion_conditions(&self) -> Vec<&'static str> {
+        let mut unmet = Vec::new();
+        if !self.session_end_observed {
+            unmet.push("session_end_observed");
+        }
+        if !self.session_end_persisted {
+            unmet.push("session_end_persisted");
+        }
+        if !self.video_complete {
+            unmet.push("video_complete");
+        }
+        if self.pending_video_dags != 0 {
+            unmet.push("pending_video_dags");
+        }
+        if self.danmu_expected && self.danmu_observed {
+            if !self.danmu_complete {
+                unmet.push("danmu_complete");
+            }
+            if self.pending_danmu_dags != 0 {
+                unmet.push("pending_danmu_dags");
+            }
+        }
+        if self.pending_paired_dags != 0 {
+            unmet.push("pending_paired_dags");
+        }
+        if !self.pending_paired_starts.is_empty() {
+            unmet.push("pending_paired_starts");
+        }
+        if !self.has_video_output() {
+            unmet.push("has_video_output");
+        }
+        unmet
     }
 
     fn artifacts_drained_for_session_complete(&self) -> bool {

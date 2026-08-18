@@ -16,6 +16,8 @@ pub use platforms_parser::danmaku::{
 pub mod events;
 mod runner;
 pub mod service;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use events::DanmuEvent;
 pub use service::DanmuService;

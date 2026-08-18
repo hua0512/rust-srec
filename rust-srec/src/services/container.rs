@@ -370,6 +370,14 @@ pub struct ServiceContainer {
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
+    /// Sessions whose danmu link is currently down, and when it went down.
+    ///
+    /// `CollectionRunner` keeps reconnecting for the life of the session, so a
+    /// down link still counts as an active collection; without this the
+    /// `danmu_service` health probe would report a silent outage as healthy.
+    /// Maintained from `DanmuEvent::Reconnecting`/`Reconnected` and cleared when
+    /// collection stops.
+    danmu_link_down: Arc<DashMap<String, Instant>>,
 }
 
 /// Wire the streamer-check-history pipeline:

@@ -30,6 +30,18 @@
 
 ## Danmu
 
+- **Chat recording now survives network interruptions**
+
+  If the connection to a platform's chat server dropped and could not be re-established within a few minutes, chat recording used to stop for the rest of the stream — the video kept recording, but every later part had no chat file, and nothing said so. Chat now keeps reconnecting for as long as the recording lasts, and picks up again by itself when the connection comes back. Each part of the recording still gets its own chat file even if the connection is down while that part is recorded, and the statistics carry on from where they left off instead of restarting. A chat connection that stays down is reported on the system health page, so an outage is visible rather than silent.
+
+- **Post-processing no longer stalls when chat recording fails**
+
+  When chat recording ended unexpectedly, the session's post-processing steps — uploads, transcodes, anything configured to run after a recording finishes — were never started for that session. They now run as normal.
+
+- **Chat files are no longer left incomplete**
+
+  A chat recording that ended because of a connection failure left its file unterminated and unregistered, so it did not appear among the session's files and could not be used by the danmaku conversion step. The file is now closed properly and recorded like any other, and chat belonging to a recording part that gets discarded for being too small is now removed from the session's file list along with it.
+
 - **Live danmu statistics while recording**
 
   Danmu statistics no longer wait for the stream to end: while a recording is running, a snapshot is saved about once a minute, so the session page's danmu panel (totals, activity timeline, top talkers, frequent words) fills in while the stream is still live. If the app crashes or the host reboots mid-recording, at most the last minute of statistics is lost instead of the whole session's.
