@@ -210,7 +210,7 @@ export class MpegtsPlaybackController {
     try {
       const player = this.replacePlayer(targetTime);
       if (resumePlayback) {
-        void player.play().catch((error: unknown) => {
+        void Promise.resolve(player.play()).catch((error: unknown) => {
           if (!this.destroyed && player === this.player) {
             this.options.onWarning(
               'Unable to resume playback after seek recovery',

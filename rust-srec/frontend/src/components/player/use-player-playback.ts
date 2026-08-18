@@ -101,7 +101,7 @@ export function buildPlaybackUrl({
 function matchesRequest(
   resolved: ResolvedSource | null,
   options: UseResolvedSourceOptions,
-): boolean {
+): resolved is ResolvedSource {
   if (!resolved || !options.title || !options.streamData) return false;
 
   const { request } = resolved;

@@ -412,7 +412,10 @@ function SessionDetailPage() {
                       user?.token?.access_token,
                     ) || ''
                   }
-                  title={playingOutput.file_path.split('/').pop()}
+                  title={
+                    playingOutput.file_path.split('/').pop() ??
+                    playingOutput.file_path
+                  }
                   onClose={() => setPlayingOutput(null)}
                 />
               ) : (
@@ -430,7 +433,10 @@ function SessionDetailPage() {
                         user?.token?.access_token,
                       ) || ''
                     }
-                    title={playingOutput.file_path.split('/').pop()}
+                    title={
+                      playingOutput.file_path.split('/').pop() ??
+                      playingOutput.file_path
+                    }
                     mediaType={resolvePlayerMediaType(
                       undefined,
                       playingOutput.file_path,

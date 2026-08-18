@@ -14,13 +14,14 @@
     "compile": "lingui compile",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "lint": "oxlint --type-aware ."
+    "lint": "oxlint --type-aware .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.14.0",
     "@fontsource-variable/inter": "^5.3.0",
-    "@hookform/resolvers": "^5.9.0",
-    "@icons-pack/react-simple-icons": "^13.13.0",
+    "@hookform/resolvers": "^5.9.1",
+    "@icons-pack/react-simple-icons": "^13.15.1",
     "@lingui/core": "^6.6.0",
     "@lingui/react": "^6.6.0",
     "@radix-ui/react-accordion": "^1.2.20",
@@ -77,13 +78,15 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
     "@bufbuild/buf": "^1.72.0",
     "@bufbuild/protoc-gen-es": "^2.14.0",
+    "@lingui/babel-plugin-lingui-macro": "^6.6.0",
     "@lingui/cli": "^6.6.0",
     "@lingui/conf": "^6.6.0",
     "@lingui/format-po": "^6.6.0",
-    "@lingui/swc-plugin": "^6.6.0",
     "@lingui/vite-plugin": "^6.6.0",
+    "@rolldown/plugin-babel": "^0.2.3",
     "@tanstack/devtools-vite": "^0.8.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
@@ -91,7 +94,7 @@
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react-swc": "^4.3.3",
+    "@vitejs/plugin-react": "^6.0.5",
     "cross-env": "^10.1.0",
     "jsdom": "^30.0.1",
     "oxfmt": "^0.62.0",

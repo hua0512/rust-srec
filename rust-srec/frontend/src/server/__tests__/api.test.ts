@@ -44,10 +44,10 @@ describe('fetchBackend', () => {
 
     const request = fetchBackend('/resource');
 
-    await expect(request).rejects.toMatchObject<Partial<BackendApiError>>({
+    await expect(request).rejects.toMatchObject({
       status: 422,
       body: { detail: 'invalid request' },
-    });
+    } satisfies Partial<BackendApiError>);
     const retryHeaders = fetchMock.mock.calls[1][1]?.headers as Headers;
     expect(retryHeaders.get('Authorization')).toBe('Bearer new-token');
   });

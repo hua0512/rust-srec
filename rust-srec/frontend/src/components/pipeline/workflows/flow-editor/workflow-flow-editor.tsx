@@ -38,7 +38,9 @@ const nodeTypes = {
 
 const edgeColor = 'rgba(59, 130, 246, 0.68)';
 
-const defaultEdgeOptions: DefaultEdgeOptions = {
+const defaultEdgeOptions: DefaultEdgeOptions & {
+  pathOptions: { borderRadius: number; offset: number };
+} = {
   style: { strokeWidth: 1.8, stroke: edgeColor },
   type: 'smoothstep',
   pathOptions: { borderRadius: 12, offset: 28 },
