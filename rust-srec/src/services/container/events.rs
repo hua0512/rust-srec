@@ -871,11 +871,11 @@ impl DanmuEventHandler {
             }
             DanmuEvent::CollectionStopped {
                 session_id,
-                statistics,
+                total_count,
             } => {
                 info!(
                     "Danmu collection stopped for session {}: {} messages",
-                    session_id, statistics.total_count
+                    session_id, total_count
                 );
                 // Bounds `danmu_link_down`: a session that stops mid-outage never
                 // sends `Reconnected`, so this is the entry's only other removal.

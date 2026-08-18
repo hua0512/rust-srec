@@ -147,6 +147,10 @@ msgstr "{0}/{1} 步"
 msgid "{0}h {1}m"
 msgstr "{0}小时{1}分"
 
+#: src/components/sessions/danmu-stats-panel.tsx:318
+msgid "{chat} chat · {gift} gift"
+msgstr "{chat} 条弹幕 · {gift} 个礼物"
+
 #: src/components/streamers/edit/status-check-history.tsx:475
 msgid "{hours}h"
 msgstr "{hours} 小时"
@@ -207,7 +211,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:494
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:496
 msgid "1 year"
 msgstr "1 年"
 
@@ -223,7 +227,7 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:488
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:490
 msgid "30 days"
 msgstr "30 天"
 
@@ -239,11 +243,11 @@ msgstr "44100"
 msgid "587"
 msgstr "587"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:485
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:487
 msgid "7 days"
 msgstr "7 天"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:491
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:493
 msgid "90 days"
 msgstr "90 天"
 
@@ -805,9 +809,13 @@ msgstr "可选"
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
-#: src/components/sessions/danmu-stats-panel.tsx:335
+#: src/components/sessions/danmu-stats-panel.tsx:417
 msgid "avg {averagePerMinute}"
 msgstr "均值 {averagePerMinute}"
+
+#: src/components/sessions/danmu-stats-panel.tsx:456
+msgid "Avg / min"
+msgstr "平均/分钟"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:366
 msgid "Avg. Duration"
@@ -1106,7 +1114,7 @@ msgstr "缓存"
 #: src/components/streamers/streamer-batch-action-bar.tsx:276
 #: src/components/streamers/streamer-editor.tsx:235
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:502
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
@@ -1499,7 +1507,7 @@ msgstr "配置路径（可选）"
 msgid "Configuration"
 msgstr "配置"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:556
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:558
 msgid "Configuration copied to clipboard"
 msgstr "配置已复制到剪贴板"
 
@@ -1580,7 +1588,7 @@ msgstr "确认密码"
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:562
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:564
 msgid "Connect an AI assistant (MCP)"
 msgstr "连接 AI 助手（MCP）"
 
@@ -1711,7 +1719,7 @@ msgstr "复制文件"
 msgid "Copy JSON"
 msgstr "复制 JSON"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:590
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:592
 msgid "Copy MCP configuration"
 msgstr "复制 MCP 配置"
 
@@ -1745,7 +1753,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:345
 #: src/components/config/engines/forms/mesio-hls-form.tsx:390
-#: src/components/sessions/danmu-stats-panel.tsx:304
+#: src/components/sessions/danmu-stats-panel.tsx:386
 msgid "Count"
 msgstr "次数"
 
@@ -1770,7 +1778,7 @@ msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
 #: src/components/config/templates/template-editor.tsx:210
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:511
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1875,7 +1883,7 @@ msgstr "已创建"
 msgid "Creating..."
 msgstr "创建中..."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:509
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:511
 msgid "Creating…"
 msgstr "创建中…"
 
@@ -2087,12 +2095,12 @@ msgstr "弹幕控制"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/components/sessions/danmu-stats-panel.tsx:121
+#: src/components/sessions/danmu-stats-panel.tsx:171
 #: src/components/sessions/overview-tab.tsx:242
 msgid "Danmu Statistics"
 msgstr "弹幕统计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:172
+#: src/components/sessions/danmu-stats-panel.tsx:222
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
@@ -2101,7 +2109,7 @@ msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
 
-#: src/components/sessions/danmu-stats-panel.tsx:282
+#: src/components/sessions/danmu-stats-panel.tsx:364
 msgid "Danmu/min"
 msgstr "弹幕/分钟"
 
@@ -2821,7 +2829,7 @@ msgstr "结束时间"
 msgid "Ended"
 msgstr "已结束"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:575
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:577
 msgid "Endpoint"
 msgstr "端点"
 
@@ -3076,7 +3084,7 @@ msgid "Expired"
 msgstr "已过期"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:187
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:474
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:476
 msgid "Expires"
 msgstr "过期时间"
 
@@ -3318,7 +3326,7 @@ msgstr "导入配置失败"
 msgid "Failed to load content"
 msgstr "内容加载失败"
 
-#: src/components/sessions/danmu-stats-panel.tsx:183
+#: src/components/sessions/danmu-stats-panel.tsx:233
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
@@ -3744,7 +3752,7 @@ msgstr "发件人地址"
 msgid "Full access"
 msgstr "完全访问"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:467
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:469
 msgid "Full access — all data and configuration"
 msgstr "完全访问 — 所有数据和配置"
 
@@ -3824,8 +3832,8 @@ msgstr "生成新二维码"
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
-#: src/components/sessions/danmu-stats-panel.tsx:315
-#: src/components/sessions/danmu-stats-panel.tsx:326
+#: src/components/sessions/danmu-stats-panel.tsx:397
+#: src/components/sessions/danmu-stats-panel.tsx:408
 msgid "Gift items"
 msgstr "礼物数"
 
@@ -4968,7 +4976,7 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
-#: src/components/sessions/danmu-stats-panel.tsx:293
+#: src/components/sessions/danmu-stats-panel.tsx:375
 msgid "Messages"
 msgstr "消息数"
 
@@ -5203,7 +5211,7 @@ msgstr "网络与系统"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:242
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:249
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:482
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:484
 msgid "Never"
 msgstr "永不"
 
@@ -5318,8 +5326,8 @@ msgstr "未找到事件"
 msgid "No filters yet"
 msgstr "暂无过滤器"
 
-#: src/components/sessions/danmu-stats-panel.tsx:529
-#: src/components/sessions/danmu-stats-panel.tsx:542
+#: src/components/sessions/danmu-stats-panel.tsx:613
+#: src/components/sessions/danmu-stats-panel.tsx:626
 msgid "No gift data"
 msgstr "暂无礼物数据"
 
@@ -5474,7 +5482,7 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/components/sessions/danmu-stats-panel.tsx:471
+#: src/components/sessions/danmu-stats-panel.tsx:554
 msgid "No talker data"
 msgstr "暂无发言用户数据"
 
@@ -5499,7 +5507,7 @@ msgstr "暂无时间线事件"
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
-#: src/components/sessions/danmu-stats-panel.tsx:508
+#: src/components/sessions/danmu-stats-panel.tsx:592
 msgid "No word data"
 msgstr "暂无词频数据"
 
@@ -6058,7 +6066,7 @@ msgstr "暂停"
 msgid "paused"
 msgstr "条已暂停"
 
-#: src/components/sessions/danmu-stats-panel.tsx:367
+#: src/components/sessions/danmu-stats-panel.tsx:450
 msgid "Peak / min"
 msgstr "峰值/分钟"
 
@@ -6723,7 +6731,7 @@ msgstr "只读"
 msgid "Read-only — sessions and non-sensitive status"
 msgstr "只读 — 会话和非敏感状态"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:600
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:602
 msgid "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 msgstr "只读密钥可以查看会话、弹幕、处理管道汇总和通知事件。配置及其他敏感工具需要完全访问密钥。"
 
@@ -7049,7 +7057,7 @@ msgstr "保留策略"
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
-#: src/components/sessions/danmu-stats-panel.tsx:187
+#: src/components/sessions/danmu-stats-panel.tsx:237
 msgid "Retry"
 msgstr "重试"
 
@@ -7697,7 +7705,7 @@ msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
 #. placeholder {0}: stats.top_talkers.length
-#: src/components/sessions/danmu-stats-panel.tsx:496
+#: src/components/sessions/danmu-stats-panel.tsx:580
 msgid "Show all {0}"
 msgstr "显示全部 {0} 位"
 
@@ -7705,7 +7713,7 @@ msgstr "显示全部 {0} 位"
 msgid "Show download details"
 msgstr "显示录制下载详情"
 
-#: src/components/sessions/danmu-stats-panel.tsx:491
+#: src/components/sessions/danmu-stats-panel.tsx:575
 msgid "Show less"
 msgstr "收起"
 
@@ -8376,7 +8384,7 @@ msgstr "这是默认预设，描述无法修改。"
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:564
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:566
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API 密钥将其添加到 Claude、Cursor 或任何 MCP 客户端，让助手查看录制、分析弹幕并管理配置。"
 
@@ -8481,7 +8489,7 @@ msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进�
 msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
-#: src/components/sessions/danmu-stats-panel.tsx:393
+#: src/components/sessions/danmu-stats-panel.tsx:476
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:302
 msgid "Timeline"
 msgstr "时间线"
@@ -8555,20 +8563,19 @@ msgstr "工具位置"
 msgid "Top Fixed"
 msgstr "顶部固定"
 
-#: src/components/sessions/danmu-stats-panel.tsx:528
+#: src/components/sessions/danmu-stats-panel.tsx:612
 msgid "Top Gifters"
 msgstr "送礼排行"
 
-#: src/components/sessions/danmu-stats-panel.tsx:541
+#: src/components/sessions/danmu-stats-panel.tsx:625
 msgid "Top Gifts"
 msgstr "热门礼物"
 
-#: src/components/sessions/danmu-stats-panel.tsx:373
-#: src/components/sessions/danmu-stats-panel.tsx:470
+#: src/components/sessions/danmu-stats-panel.tsx:553
 msgid "Top Talkers"
 msgstr "活跃发言用户"
 
-#: src/components/sessions/danmu-stats-panel.tsx:507
+#: src/components/sessions/danmu-stats-panel.tsx:591
 msgid "Top Words"
 msgstr "高频词"
 
@@ -8580,7 +8587,7 @@ msgstr "总计"
 msgid "Total"
 msgstr "总计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:361
+#: src/components/sessions/danmu-stats-panel.tsx:443
 msgid "Total Danmu"
 msgstr "总弹幕数"
 
@@ -8812,7 +8819,7 @@ msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 msgid "Unhealthy"
 msgstr "不健康"
 
-#: src/components/sessions/danmu-stats-panel.tsx:379
+#: src/components/sessions/danmu-stats-panel.tsx:462
 msgid "Unique Chatters"
 msgstr "互动人数"
 

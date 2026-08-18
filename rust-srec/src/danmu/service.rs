@@ -293,12 +293,19 @@ impl DanmuService {
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
 
-        // Build bounded per-session statistics state.
-        let stats = platforms_parser::danmaku::StatisticsAggregator::with_config(
-            Self::MAX_TOP_TALKERS,
-            Self::MAX_WORDS,
-            Self::RATE_BUCKET_SECS,
-        );
+        // Build bounded per-session statistics state, resuming from a checkpoint
+        // when this session was already being collected before a restart.
+        let stats = super::checkpoint::load_or_new(
+            self.session_repo.as_ref(),
+            session_id,
+            platforms_parser::danmaku::StatisticsConfig {
+                top_talkers: Self::MAX_TOP_TALKERS,
+                top_words: Self::MAX_WORDS,
+                rate_bucket_secs: Self::RATE_BUCKET_SECS,
+                ..Default::default()
+            },
+        )
+        .await;
         let cancel_token = self.cancel_token.child_token();
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
@@ -399,6 +406,13 @@ impl DanmuService {
             //
             // If `stop_collection` already removed the entry it emits the event
             // itself, and `remove` returning None keeps this from duplicating it.
+            // Only a session that is genuinely over releases its checkpoint;
+            // collection interrupted by a process shutdown keeps it so the next
+            // start resumes rather than recounting from zero.
+            if outcome.session_ended {
+                super::checkpoint::discard(session_repo.as_ref(), &session_id_clone).await;
+            }
+
             if remove_collection(&collections, &sessions_by_streamer, &session_id_clone) {
                 persist_statistics(
                     session_repo.as_deref(),
@@ -408,7 +422,7 @@ impl DanmuService {
                 .await;
                 let _ = event_tx.send(DanmuEvent::CollectionStopped {
                     session_id: session_id_clone.clone(),
-                    statistics: outcome.statistics.clone(),
+                    total_count: outcome.statistics.total_count,
                 });
             }
 
@@ -481,7 +495,7 @@ impl DanmuService {
                     persist_statistics(self.session_repo.as_deref(), session_id, &statistics).await;
                     let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
                         session_id: session_id.to_string(),
-                        statistics: statistics.clone(),
+                        total_count: statistics.total_count,
                     });
                     return Ok(statistics);
                 }
@@ -511,7 +525,7 @@ impl DanmuService {
         // runner is harmless — finalization is idempotent.
         let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
             session_id: session_id.to_string(),
-            statistics: DanmuStatistics::default(),
+            total_count: 0,
         });
 
         Ok(DanmuStatistics::default())
@@ -646,25 +660,15 @@ pub(super) async fn persist_statistics(
         })
         .collect();
 
-    let top_talkers: Vec<_> = statistics
-        .top_talkers
-        .iter()
-        .map(|entry| TopTalkerEntry {
-            user_id: entry.user_id.clone(),
-            username: entry.username.clone(),
-            message_count: saturating_u64_to_i64(entry.message_count),
-        })
-        .collect();
+    let to_talker_entry = |entry: &platforms_parser::danmaku::TopTalker| TopTalkerEntry {
+        user_id: entry.user_id.clone(),
+        username: entry.username.clone(),
+        message_count: saturating_u64_to_i64(entry.message_count),
+        error: saturating_u64_to_i64(entry.error),
+    };
 
-    let top_gifters: Vec<_> = statistics
-        .top_gifters
-        .iter()
-        .map(|entry| TopTalkerEntry {
-            user_id: entry.user_id.clone(),
-            username: entry.username.clone(),
-            message_count: saturating_u64_to_i64(entry.message_count),
-        })
-        .collect();
+    let top_talkers: Vec<_> = statistics.top_talkers.iter().map(to_talker_entry).collect();
+    let top_gifters: Vec<_> = statistics.top_gifters.iter().map(to_talker_entry).collect();
 
     let top_gifts: Vec<_> = statistics
         .top_gifts
@@ -681,12 +685,19 @@ pub(super) async fn persist_statistics(
         .map(|entry| WordFrequencyEntry {
             word: entry.word.clone(),
             count: saturating_u64_to_i64(entry.count),
+            error: saturating_u64_to_i64(entry.error),
         })
         .collect();
 
     let mut model = crate::database::models::DanmuStatisticsDbModel::new(session_id);
     model.total_danmus = saturating_u64_to_i64(statistics.total_count);
     model.unique_talkers = Some(saturating_u64_to_i64(statistics.unique_talkers));
+    model.chat_count = Some(saturating_u64_to_i64(statistics.chat_count));
+    model.gift_count = Some(saturating_u64_to_i64(statistics.gift_count));
+    model.duration_secs = Some(saturating_u64_to_i64(statistics.duration_secs));
+    model.start_time = statistics.start_time.map(|time| time.timestamp_millis());
+    model.end_time = statistics.end_time.map(|time| time.timestamp_millis());
+    model.rate_bucket_secs = Some(saturating_u64_to_i64(statistics.bucket_duration_secs));
     model.danmu_rate_timeseries = to_json_field(session_id, "rate_timeseries", &rate_timeseries);
     model.top_talkers = to_json_field(session_id, "top_talkers", &top_talkers);
     model.top_gifters = to_json_field(session_id, "top_gifters", &top_gifters);

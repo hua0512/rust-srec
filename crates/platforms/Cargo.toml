@@ -45,6 +45,7 @@ regex = { workspace = true, default-features = false, features = [
     "std",
     "unicode-perl",
 ] }
+jieba-rs = { workspace = true }
 
  # Logging
 tracing = { workspace = true }

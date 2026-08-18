@@ -942,6 +942,21 @@ pub struct SessionDanmuStatisticsResponse {
     /// Approximate distinct senders (HyperLogLog estimate). `None` for
     /// statistics rows persisted before the metric existed.
     pub unique_talkers: Option<u64>,
+    /// Messages that were not gifts or super chats.
+    pub chat_count: Option<u64>,
+    /// Gift and super-chat messages.
+    pub gift_count: Option<u64>,
+    /// Seconds from the first message to the end of collection. Together with
+    /// `total_danmus` this gives an average rate over wall-clock time, which the
+    /// timeseries alone cannot provide because silent buckets are absent.
+    pub duration_secs: Option<u64>,
+    /// First message time.
+    pub start_time: Option<DateTime<Utc>>,
+    /// Collection end time; `None` while the session is still recording.
+    pub end_time: Option<DateTime<Utc>>,
+    /// Width of one `danmu_rate_timeseries` bucket. Long sessions are coarsened,
+    /// so this varies within a session and must be read rather than assumed.
+    pub rate_bucket_secs: Option<u64>,
     pub danmu_rate_timeseries: Vec<DanmuRatePoint>,
     pub top_talkers: Vec<DanmuTopTalker>,
     /// Top gift senders; `message_count` holds total gift items.
@@ -973,6 +988,10 @@ pub struct DanmuTopTalker {
     pub user_id: String,
     pub username: String,
     pub message_count: i64,
+    /// Overestimate bound; the true count is at least `message_count - error`.
+    /// Zero means exact, which is the case for every entry in a room with fewer
+    /// distinct senders than the tracking capacity.
+    pub error: i64,
 }
 
 /// Word frequency entry.
@@ -980,6 +999,8 @@ pub struct DanmuTopTalker {
 pub struct DanmuWordFrequency {
     pub word: String,
     pub count: i64,
+    /// Overestimate bound; the true count is at least `count - error`.
+    pub error: i64,
 }
 
 /// Title change entry representing a stream title update.

@@ -147,6 +147,10 @@ msgstr "{0}/{1} steps"
 msgid "{0}h {1}m"
 msgstr "{0}h {1}m"
 
+#: src/components/sessions/danmu-stats-panel.tsx:318
+msgid "{chat} chat · {gift} gift"
+msgstr "{chat} chat · {gift} gift"
+
 #: src/components/streamers/edit/status-check-history.tsx:475
 msgid "{hours}h"
 msgstr "{hours}h"
@@ -207,7 +211,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:494
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:496
 msgid "1 year"
 msgstr "1 year"
 
@@ -223,7 +227,7 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:488
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:490
 msgid "30 days"
 msgstr "30 days"
 
@@ -239,11 +243,11 @@ msgstr "44100"
 msgid "587"
 msgstr "587"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:485
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:487
 msgid "7 days"
 msgstr "7 days"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:491
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:493
 msgid "90 days"
 msgstr "90 days"
 
@@ -805,9 +809,13 @@ msgstr "available"
 msgid "Avatar URL (Optional)"
 msgstr "Avatar URL (Optional)"
 
-#: src/components/sessions/danmu-stats-panel.tsx:335
+#: src/components/sessions/danmu-stats-panel.tsx:417
 msgid "avg {averagePerMinute}"
 msgstr "avg {averagePerMinute}"
+
+#: src/components/sessions/danmu-stats-panel.tsx:456
+msgid "Avg / min"
+msgstr "Avg / min"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:366
 msgid "Avg. Duration"
@@ -1106,7 +1114,7 @@ msgstr "Cache"
 #: src/components/streamers/streamer-batch-action-bar.tsx:276
 #: src/components/streamers/streamer-editor.tsx:235
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:502
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
@@ -1499,7 +1507,7 @@ msgstr "Config Path (Optional)"
 msgid "Configuration"
 msgstr "Configuration"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:556
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:558
 msgid "Configuration copied to clipboard"
 msgstr "Configuration copied to clipboard"
 
@@ -1580,7 +1588,7 @@ msgstr "Confirm Password"
 msgid "Confirmed via backstop timer."
 msgstr "Confirmed via backstop timer."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:562
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:564
 msgid "Connect an AI assistant (MCP)"
 msgstr "Connect an AI assistant (MCP)"
 
@@ -1711,7 +1719,7 @@ msgstr "Copy Files"
 msgid "Copy JSON"
 msgstr "Copy JSON"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:590
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:592
 msgid "Copy MCP configuration"
 msgstr "Copy MCP configuration"
 
@@ -1745,7 +1753,7 @@ msgstr "Could not connect to the server. Please check your connection."
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:345
 #: src/components/config/engines/forms/mesio-hls-form.tsx:390
-#: src/components/sessions/danmu-stats-panel.tsx:304
+#: src/components/sessions/danmu-stats-panel.tsx:386
 msgid "Count"
 msgstr "Count"
 
@@ -1770,7 +1778,7 @@ msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
 #: src/components/config/templates/template-editor.tsx:210
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:511
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
 msgid "Create"
@@ -1875,7 +1883,7 @@ msgstr "Created"
 msgid "Creating..."
 msgstr "Creating..."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:509
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:511
 msgid "Creating…"
 msgstr "Creating…"
 
@@ -2087,12 +2095,12 @@ msgstr "Danmu Control"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
-#: src/components/sessions/danmu-stats-panel.tsx:121
+#: src/components/sessions/danmu-stats-panel.tsx:171
 #: src/components/sessions/overview-tab.tsx:242
 msgid "Danmu Statistics"
 msgstr "Danmu Statistics"
 
-#: src/components/sessions/danmu-stats-panel.tsx:172
+#: src/components/sessions/danmu-stats-panel.tsx:222
 msgid "Danmu statistics are not available for this session."
 msgstr "Danmu statistics are not available for this session."
 
@@ -2101,7 +2109,7 @@ msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "Danmu Stream Closed"
 
-#: src/components/sessions/danmu-stats-panel.tsx:282
+#: src/components/sessions/danmu-stats-panel.tsx:364
 msgid "Danmu/min"
 msgstr "Danmu/min"
 
@@ -2821,7 +2829,7 @@ msgstr "End Time"
 msgid "Ended"
 msgstr "Ended"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:575
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:577
 msgid "Endpoint"
 msgstr "Endpoint"
 
@@ -3076,7 +3084,7 @@ msgid "Expired"
 msgstr "Expired"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:187
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:474
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:476
 msgid "Expires"
 msgstr "Expires"
 
@@ -3318,7 +3326,7 @@ msgstr "Failed to import configuration"
 msgid "Failed to load content"
 msgstr "Failed to load content"
 
-#: src/components/sessions/danmu-stats-panel.tsx:183
+#: src/components/sessions/danmu-stats-panel.tsx:233
 msgid "Failed to load danmu statistics."
 msgstr "Failed to load danmu statistics."
 
@@ -3744,7 +3752,7 @@ msgstr "From Address"
 msgid "Full access"
 msgstr "Full access"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:467
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:469
 msgid "Full access — all data and configuration"
 msgstr "Full access — all data and configuration"
 
@@ -3824,8 +3832,8 @@ msgstr "Generate new QR code"
 msgid "Generating QR code..."
 msgstr "Generating QR code..."
 
-#: src/components/sessions/danmu-stats-panel.tsx:315
-#: src/components/sessions/danmu-stats-panel.tsx:326
+#: src/components/sessions/danmu-stats-panel.tsx:397
+#: src/components/sessions/danmu-stats-panel.tsx:408
 msgid "Gift items"
 msgstr "Gift items"
 
@@ -4968,7 +4976,7 @@ msgstr "Merge Changes"
 msgid "Message"
 msgstr "Message"
 
-#: src/components/sessions/danmu-stats-panel.tsx:293
+#: src/components/sessions/danmu-stats-panel.tsx:375
 msgid "Messages"
 msgstr "Messages"
 
@@ -5203,7 +5211,7 @@ msgstr "Network & System"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:242
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:249
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:482
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:484
 msgid "Never"
 msgstr "Never"
 
@@ -5318,8 +5326,8 @@ msgstr "No events found"
 msgid "No filters yet"
 msgstr "No filters yet"
 
-#: src/components/sessions/danmu-stats-panel.tsx:529
-#: src/components/sessions/danmu-stats-panel.tsx:542
+#: src/components/sessions/danmu-stats-panel.tsx:613
+#: src/components/sessions/danmu-stats-panel.tsx:626
 msgid "No gift data"
 msgstr "No gift data"
 
@@ -5474,7 +5482,7 @@ msgstr "No steps defined"
 msgid "No streamers found"
 msgstr "No streamers found"
 
-#: src/components/sessions/danmu-stats-panel.tsx:471
+#: src/components/sessions/danmu-stats-panel.tsx:554
 msgid "No talker data"
 msgstr "No talker data"
 
@@ -5499,7 +5507,7 @@ msgstr "No Timeline Events"
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "No title changes or lifecycle events were recorded for this session."
 
-#: src/components/sessions/danmu-stats-panel.tsx:508
+#: src/components/sessions/danmu-stats-panel.tsx:592
 msgid "No word data"
 msgstr "No word data"
 
@@ -6058,7 +6066,7 @@ msgstr "Pause"
 msgid "paused"
 msgstr "paused"
 
-#: src/components/sessions/danmu-stats-panel.tsx:367
+#: src/components/sessions/danmu-stats-panel.tsx:450
 msgid "Peak / min"
 msgstr "Peak / min"
 
@@ -6723,7 +6731,7 @@ msgstr "Read-only"
 msgid "Read-only — sessions and non-sensitive status"
 msgstr "Read-only — sessions and non-sensitive status"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:600
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:602
 msgid "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 msgstr "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 
@@ -7049,7 +7057,7 @@ msgstr "Retention"
 msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
-#: src/components/sessions/danmu-stats-panel.tsx:187
+#: src/components/sessions/danmu-stats-panel.tsx:237
 msgid "Retry"
 msgstr "Retry"
 
@@ -7697,7 +7705,7 @@ msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
 #. placeholder {0}: stats.top_talkers.length
-#: src/components/sessions/danmu-stats-panel.tsx:496
+#: src/components/sessions/danmu-stats-panel.tsx:580
 msgid "Show all {0}"
 msgstr "Show all {0}"
 
@@ -7705,7 +7713,7 @@ msgstr "Show all {0}"
 msgid "Show download details"
 msgstr "Show download details"
 
-#: src/components/sessions/danmu-stats-panel.tsx:491
+#: src/components/sessions/danmu-stats-panel.tsx:575
 msgid "Show less"
 msgstr "Show less"
 
@@ -8376,7 +8384,7 @@ msgstr "This is a default preset. Description cannot be modified."
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:564
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:566
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 
@@ -8481,7 +8489,7 @@ msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
-#: src/components/sessions/danmu-stats-panel.tsx:393
+#: src/components/sessions/danmu-stats-panel.tsx:476
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:302
 msgid "Timeline"
 msgstr "Timeline"
@@ -8555,20 +8563,19 @@ msgstr "Tool Location"
 msgid "Top Fixed"
 msgstr "Top Fixed"
 
-#: src/components/sessions/danmu-stats-panel.tsx:528
+#: src/components/sessions/danmu-stats-panel.tsx:612
 msgid "Top Gifters"
 msgstr "Top Gifters"
 
-#: src/components/sessions/danmu-stats-panel.tsx:541
+#: src/components/sessions/danmu-stats-panel.tsx:625
 msgid "Top Gifts"
 msgstr "Top Gifts"
 
-#: src/components/sessions/danmu-stats-panel.tsx:373
-#: src/components/sessions/danmu-stats-panel.tsx:470
+#: src/components/sessions/danmu-stats-panel.tsx:553
 msgid "Top Talkers"
 msgstr "Top Talkers"
 
-#: src/components/sessions/danmu-stats-panel.tsx:507
+#: src/components/sessions/danmu-stats-panel.tsx:591
 msgid "Top Words"
 msgstr "Top Words"
 
@@ -8580,7 +8587,7 @@ msgstr "total"
 msgid "Total"
 msgstr "Total"
 
-#: src/components/sessions/danmu-stats-panel.tsx:361
+#: src/components/sessions/danmu-stats-panel.tsx:443
 msgid "Total Danmu"
 msgstr "Total Danmu"
 
@@ -8812,7 +8819,7 @@ msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgid "Unhealthy"
 msgstr "Unhealthy"
 
-#: src/components/sessions/danmu-stats-panel.tsx:379
+#: src/components/sessions/danmu-stats-panel.tsx:462
 msgid "Unique Chatters"
 msgstr "Unique Chatters"
 

@@ -24,6 +24,7 @@ use crate::danmu::{DanmuStatistics, StatisticsAggregator, XmlDanmuWriter};
 use crate::database::repositories::SessionRepository;
 use crate::error::Result;
 
+use super::checkpoint;
 use super::events::{CollectionCommand, DanmuEvent};
 use super::service::persist_statistics;
 
@@ -35,6 +36,11 @@ mod config {
     pub const MAX_BUFFER_SIZE: usize = 100;
     /// Interval between periodic statistics persists for in-progress sessions.
     pub const STATS_PERSIST_INTERVAL_SECS: u64 = 60;
+    /// Interval between aggregator checkpoints. Slower than the statistics
+    /// persist because the checkpoint is a much larger blob; a crash costs up to
+    /// this much *resume fidelity* while the published statistics stay on the
+    /// faster cadence.
+    pub const CHECKPOINT_INTERVAL_SECS: u64 = 300;
     /// Delay before the first reconnect attempt, doubling per attempt.
     pub const RECONNECT_BASE_DELAY_MS: u64 = 5_000;
     /// Ceiling for the exponential reconnect back-off.
@@ -64,6 +70,10 @@ pub(crate) struct CollectionOutcome {
     /// `Some` when the loop stopped because of a failure rather than a stop
     /// request or cancellation.
     pub error: Option<crate::error::Error>,
+    /// Whether the session itself is over, as opposed to collection being
+    /// interrupted by a process shutdown. Decides whether the aggregator
+    /// checkpoint is kept for a resume or discarded.
+    pub session_ended: bool,
 }
 
 /// Transport state for the item channel handed over by `DanmuProvider::connect`.
@@ -86,6 +96,7 @@ enum LoopEvent {
     Cancelled,
     Flush,
     Persist,
+    Checkpoint,
     Item(DanmuItem),
     /// The item channel closed: the provider's transport is finished.
     LinkClosed,
@@ -123,6 +134,8 @@ pub(crate) struct CollectionRunner {
     /// Total count at the last periodic persist; skips redundant writes when
     /// no message arrived during the persist interval.
     last_persisted_total: u64,
+    /// Total count at the last aggregator checkpoint, for the same reason.
+    last_checkpoint_total: u64,
 
     /// Reconnect attempts since the last item arrived, used for the back-off
     /// curve and reported on `DanmuEvent::Reconnecting`.
@@ -164,6 +177,9 @@ impl CollectionRunner {
             session_repo,
             event_tx,
         } = params;
+        // Read before `stats` is moved into the runner.
+        let resumed_total = stats.total_count();
+
         // Connect to danmu stream
         let stream = provider.connect(&room_id, conn_config.clone()).await?;
 
@@ -180,6 +196,9 @@ impl CollectionRunner {
                 stats,
                 session_repo,
                 last_persisted_total: 0,
+                // Seeded from the resumed count so an immediately-restarted
+                // collector does not rewrite an identical checkpoint.
+                last_checkpoint_total: resumed_total,
                 reconnect_attempts: 0,
                 link_down_since: None,
                 outage_alerted: false,
@@ -211,11 +230,29 @@ impl CollectionRunner {
             );
         }
 
+        // A cancelled token means `DanmuService::shutdown` is tearing the process
+        // down — it cancels before sending `Stop` — so the session is not over and
+        // its checkpoint must survive for the next start to resume from. Anything
+        // else (a stop request from session end, `StreamClosed`, or a failure)
+        // means this session is finished.
+        let session_ended = !cancel_token.is_cancelled();
+        if !session_ended {
+            // Take a final checkpoint so a shutdown costs nothing rather than up
+            // to one checkpoint interval.
+            checkpoint::save(
+                self.session_repo.as_ref(),
+                &self.session_id,
+                &self.stats.export_state(),
+            )
+            .await;
+        }
+
         CollectionOutcome {
             // Consume the aggregator so the statistics carry end_time and
             // duration_secs; the service persists this exact value.
             statistics: self.stats.finalize(Utc::now()),
             error: loop_result.err(),
+            session_ended,
         }
     }
 
@@ -233,6 +270,10 @@ impl CollectionRunner {
             tokio::time::interval(Duration::from_secs(config::STATS_PERSIST_INTERVAL_SECS));
         persist_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        let mut checkpoint_interval =
+            tokio::time::interval(Duration::from_secs(config::CHECKPOINT_INTERVAL_SECS));
+        checkpoint_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         let mut link = Link::Up(items);
 
         loop {
@@ -243,6 +284,7 @@ impl CollectionRunner {
                 _ = cancel_token.cancelled() => LoopEvent::Cancelled,
                 _ = flush_interval.tick() => LoopEvent::Flush,
                 _ = persist_interval.tick() => LoopEvent::Persist,
+                _ = checkpoint_interval.tick() => LoopEvent::Checkpoint,
                 event = Self::next_link_event(&mut link) => event,
             };
 
@@ -254,6 +296,7 @@ impl CollectionRunner {
                 LoopEvent::Cancelled => return Ok(()),
                 LoopEvent::Flush => self.flush_buffer_if_needed().await?,
                 LoopEvent::Persist => self.persist_stats_if_changed().await,
+                LoopEvent::Checkpoint => self.checkpoint_if_changed().await,
                 LoopEvent::Item(item) => {
                     // An arriving item is the only proof the link works, so it —
                     // not a successful `connect` — is what ends an outage.
@@ -424,6 +467,17 @@ impl CollectionRunner {
         }
         persist_statistics(Some(repo.as_ref()), &self.session_id, &snapshot).await;
         self.last_persisted_total = snapshot.total_count;
+    }
+
+    /// Store an aggregator checkpoint when new messages arrived since the last
+    /// one, so a restart resumes counting instead of starting over.
+    async fn checkpoint_if_changed(&mut self) {
+        if self.session_repo.is_none() || self.stats.total_count() == self.last_checkpoint_total {
+            return;
+        }
+        let state = self.stats.export_state();
+        checkpoint::save(self.session_repo.as_ref(), &self.session_id, &state).await;
+        self.last_checkpoint_total = self.stats.total_count();
     }
 
     /// Handle a command from the channel.

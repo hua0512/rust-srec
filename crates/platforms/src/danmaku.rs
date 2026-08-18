@@ -13,7 +13,8 @@ pub use message::{DanmuMessage, DanmuType};
 pub use provider::{ConnectionConfig, DanmuConnection, DanmuProvider, DanmuStream};
 pub use registry::ProviderRegistry;
 pub use statistics::{
-    DanmuStatistics, RateDataPoint, StatisticsAggregator, TopTalker, WordFrequency,
+    AggregatorState, DanmuStatistics, RateDataPoint, StatisticsAggregator, StatisticsConfig,
+    TopTalker, WordFrequency,
 };
 pub use websocket::{DanmuProtocol, WebSocketDanmuProvider};
 pub use writer::{XmlDanmuWriter, escape_xml, message_type_to_int};

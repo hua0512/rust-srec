@@ -25,7 +25,7 @@ use crate::api::models::{
 use crate::api::server::AppState;
 use crate::database::models::{
     DanmuRateEntry, GiftTallyEntry, MediaFileType, Pagination, SessionFilters, TitleEntry,
-    TopTalkerEntry,
+    TopTalkerEntry, WordFrequencyEntry,
 };
 use crate::session::SessionEvent;
 
@@ -226,10 +226,12 @@ pub async fn list_sessions(
         .into_iter()
         .collect();
 
-    let (streamers, outputs, danmu_statistics) = tokio::try_join!(
+    // Counts only: this list renders a number per session, and the full
+    // statistics rows carry aggregate JSON blobs tens of kilobytes each.
+    let (streamers, outputs, danmu_totals) = tokio::try_join!(
         streamer_repository.get_streamers_by_ids(&streamer_ids),
         session_repository.get_media_outputs_for_sessions(&session_ids),
-        session_repository.get_danmu_statistics_for_sessions(&session_ids),
+        session_repository.get_danmu_counts_for_sessions(&session_ids),
     )
     .map_err(ApiError::from)?;
 
@@ -248,14 +250,9 @@ pub async fn list_sessions(
                 .or_insert_with(|| format!("/api/media/{}/content", output.id));
         }
     }
-    let danmu_counts: std::collections::HashMap<_, _> = danmu_statistics
+    let danmu_counts: std::collections::HashMap<_, _> = danmu_totals
         .into_iter()
-        .map(|stats| {
-            (
-                stats.session_id,
-                u64::try_from(stats.total_danmus).unwrap_or(0),
-            )
-        })
+        .map(|(session_id, total)| (session_id, u64::try_from(total).unwrap_or(0)))
         .collect();
 
     let session_responses = sessions
@@ -406,11 +403,17 @@ pub async fn get_session(
         (String::new(), None)
     };
 
-    // Fetch danmu stats by session id (danmu_statistics.session_id).
-    let danmu_count = match session_repository.get_danmu_statistics(&session.id).await {
-        Ok(stats) => stats.map(|stats| u64::try_from(stats.total_danmus).unwrap_or(0)),
+    // Count only; the full statistics are served by the dedicated
+    // danmu-statistics endpoint rather than inflating every session response.
+    let danmu_count = match session_repository
+        .get_danmu_counts_for_sessions(std::slice::from_ref(&session.id))
+        .await
+    {
+        Ok(counts) => counts
+            .first()
+            .map(|(_, total)| u64::try_from(*total).unwrap_or(0)),
         Err(error) => {
-            tracing::warn!(session_id = %id, %error, "Failed to load session danmu statistics");
+            tracing::warn!(session_id = %id, %error, "Failed to load session danmu count");
             None
         }
     };
@@ -523,6 +526,7 @@ pub async fn get_session_danmu_statistics(
                         user_id: entry.user_id,
                         username: entry.username,
                         message_count: entry.message_count,
+                        error: entry.error,
                     })
                     .collect::<Vec<_>>()
             })
@@ -544,21 +548,35 @@ pub async fn get_session_danmu_statistics(
         })
         .collect();
 
-    let mut word_frequency = stats
+    // Parsed as the stored entry type rather than the response type: rows written
+    // before `error` existed omit the field, and only the stored type defaults it.
+    let mut word_frequency: Vec<DanmuWordFrequency> = stats
         .word_frequency
         .as_deref()
-        .map(serde_json::from_str::<Vec<DanmuWordFrequency>>)
+        .map(serde_json::from_str::<Vec<WordFrequencyEntry>>)
         .transpose()
         .map_err(|e| ApiError::internal(format!("Failed to parse word frequency: {e}")))?
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| DanmuWordFrequency {
+            word: entry.word,
+            count: entry.count,
+            error: entry.error,
+        })
+        .collect();
     word_frequency.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.word.cmp(&b.word)));
 
+    let to_u64 = |value: i64| u64::try_from(value).unwrap_or(0);
     let response = SessionDanmuStatisticsResponse {
         session_id: session.id,
-        total_danmus: u64::try_from(stats.total_danmus).unwrap_or(0),
-        unique_talkers: stats
-            .unique_talkers
-            .map(|value| u64::try_from(value).unwrap_or(0)),
+        total_danmus: to_u64(stats.total_danmus),
+        unique_talkers: stats.unique_talkers.map(to_u64),
+        chat_count: stats.chat_count.map(to_u64),
+        gift_count: stats.gift_count.map(to_u64),
+        duration_secs: stats.duration_secs.map(to_u64),
+        start_time: stats.start_time.map(crate::database::time::ms_to_datetime),
+        end_time: stats.end_time.map(crate::database::time::ms_to_datetime),
+        rate_bucket_secs: stats.rate_bucket_secs.map(to_u64),
         danmu_rate_timeseries,
         top_talkers,
         top_gifters,

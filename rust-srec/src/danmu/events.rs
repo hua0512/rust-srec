@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
-use crate::danmu::{DanmuControlEvent, DanmuStatistics};
+use crate::danmu::DanmuControlEvent;
 
 /// Events emitted by the danmu service.
 ///
@@ -20,10 +20,15 @@ pub enum DanmuEvent {
         session_id: String,
         streamer_id: String,
     },
-    /// Collection stopped for a session
+    /// Collection stopped for a session.
+    ///
+    /// Carries only the message total, not the full `DanmuStatistics`: the
+    /// statistics are persisted by `persist_statistics` before this is emitted,
+    /// and the aggregate vectors would otherwise be cloned into the broadcast
+    /// channel for every subscriber when the sole consumer wants the count.
     CollectionStopped {
         session_id: String,
-        statistics: DanmuStatistics,
+        total_count: u64,
     },
     /// Segment file started
     SegmentStarted {
