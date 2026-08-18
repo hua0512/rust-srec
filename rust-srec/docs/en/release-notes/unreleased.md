@@ -78,7 +78,12 @@
 
 ## Desktop
 
+- **Fixed SQLite lock on first launch**
+
+  The desktop application now establishes SQLite WAL mode through a dedicated bootstrap connection before opening the read and write connection pools. Previously, concurrent initialization of both pools caused transient `SQLITE_BUSY` errors when opening fresh database files on first launch, because SQLite requires an exclusive lock when switching journal modes that cannot wait for a busy timeout. Reusable connection pool options also no longer repeat the journal-mode pragma during pool growth.
+
 - **Actionable boot failure and recovery screen**
 
   When the desktop application encounters an unrecoverable startup error (such as a locked database, permission denial, full storage, or a corrupted database image), it now displays a dedicated safe-mode recovery screen instead of silently crashing or failing to launch. The interface highlights the exact failure stage and error kind, provides actionable troubleshooting guidance, lets you open the data and log folders directly, and allows one-click copying of full diagnostic details.
+
 
