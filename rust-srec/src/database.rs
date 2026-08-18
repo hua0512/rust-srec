@@ -14,10 +14,11 @@ pub mod time;
 pub use batching::{BatchWriter, BatchWriterConfig, JobStatusUpdate, StatsUpdate};
 pub use maintenance::{MaintenanceConfig, MaintenanceScheduler};
 
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
-use sqlx::{Pool, Row, Sqlite};
 use std::str::FromStr;
 use std::time::Duration;
+
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::{Connection, Pool, Row, Sqlite};
 
 /// Database connection pool type alias.
 pub type DbPool = Pool<Sqlite>;
@@ -100,6 +101,20 @@ async fn ensure_wal_mode(pool: &DbPool, pool_name: &str) -> Result<(), sqlx::Err
     Ok(())
 }
 
+fn sqlite_connect_options(database_url: &str) -> Result<SqliteConnectOptions, sqlx::Error> {
+    Ok(SqliteConnectOptions::from_str(database_url)?
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_millis(DEFAULT_BUSY_TIMEOUT_MS))
+        .foreign_keys(true)
+        .create_if_missing(true))
+}
+
+async fn establish_wal_mode(database_url: &str) -> Result<(), sqlx::Error> {
+    let options = sqlite_connect_options(database_url)?.journal_mode(SqliteJournalMode::Wal);
+    let connection = sqlx::SqliteConnection::connect_with(&options).await?;
+    connection.close().await
+}
+
 /// Compute a sensible default read pool size based on available CPU cores.
 ///
 /// SQLite readers don't benefit much beyond ~10 connections, and on low-core
@@ -111,29 +126,11 @@ pub fn default_read_pool_size() -> u32 {
     (cores * 2).min(DEFAULT_POOL_SIZE)
 }
 
-/// Initialize the database connection pool with WAL mode and performance optimizations.
-///
-/// # Arguments
-/// * `database_url` - SQLite database URL (e.g., "sqlite:srec.db?mode=rwc")
-/// * `max_connections` - Maximum number of connections in the pool
-///
-/// # Returns
-/// A configured SQLite connection pool.
-pub async fn init_pool_with_size(
+async fn open_pool_with_size(
     database_url: &str,
     max_connections: u32,
 ) -> Result<DbPool, sqlx::Error> {
-    let connect_options = SqliteConnectOptions::from_str(database_url)?
-        // Enable WAL mode for concurrent reads during writes
-        .journal_mode(SqliteJournalMode::Wal)
-        // NORMAL synchronous mode - balance between safety and performance
-        .synchronous(SqliteSynchronous::Normal)
-        // Set busy timeout to wait for locks
-        .busy_timeout(Duration::from_millis(DEFAULT_BUSY_TIMEOUT_MS))
-        // Enable foreign key constraints
-        .foreign_keys(true)
-        // Create database if it doesn't exist
-        .create_if_missing(true);
+    let connect_options = sqlite_connect_options(database_url)?;
 
     let pool = SqlitePoolOptions::new()
         .max_connections(max_connections)
@@ -152,6 +149,22 @@ pub async fn init_pool_with_size(
     );
 
     Ok(pool)
+}
+
+/// Initialize the database connection pool with WAL mode and performance optimizations.
+///
+/// # Arguments
+/// * `database_url` - SQLite database URL (e.g., "sqlite:srec.db?mode=rwc")
+/// * `max_connections` - Maximum number of connections in the pool
+///
+/// # Returns
+/// A configured SQLite connection pool.
+pub async fn init_pool_with_size(
+    database_url: &str,
+    max_connections: u32,
+) -> Result<DbPool, sqlx::Error> {
+    establish_wal_mode(database_url).await?;
+    open_pool_with_size(database_url, max_connections).await
 }
 
 /// Initialize the database connection pool with default size.
@@ -176,12 +189,12 @@ pub async fn init_pool(database_url: &str) -> Result<DbPool, sqlx::Error> {
 /// # Returns
 /// A configured SQLite connection pool with a single connection.
 pub async fn init_write_pool(database_url: &str) -> Result<WritePool, sqlx::Error> {
-    let connect_options = SqliteConnectOptions::from_str(database_url)?
-        .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)
-        .busy_timeout(Duration::from_millis(DEFAULT_BUSY_TIMEOUT_MS))
-        .foreign_keys(true)
-        .create_if_missing(true);
+    establish_wal_mode(database_url).await?;
+    open_write_pool(database_url).await
+}
+
+async fn open_write_pool(database_url: &str) -> Result<WritePool, sqlx::Error> {
+    let connect_options = sqlite_connect_options(database_url)?;
 
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
@@ -212,6 +225,23 @@ pub async fn init_write_pool(database_url: &str) -> Result<WritePool, sqlx::Erro
     tracing::info!("Write pool initialized with 1 max connection (serialized writes)");
 
     Ok(pool)
+}
+
+/// Initialize the read and write pools in the order required by SQLite.
+///
+/// Entering WAL mode requires an exclusive lock that SQLite's busy timeout cannot wait for.
+/// A short-lived connection establishes the persistent mode before either pool opens the database.
+pub async fn init_database_pools(database_url: &str) -> Result<(DbPool, WritePool), sqlx::Error> {
+    establish_wal_mode(database_url).await?;
+    let pool = open_pool_with_size(database_url, default_read_pool_size()).await?;
+    let write_pool = match open_write_pool(database_url).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            pool.close().await;
+            return Err(error);
+        }
+    };
+    Ok((pool, write_pool))
 }
 
 pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
@@ -267,6 +297,32 @@ mod tests {
         // In-memory databases use "memory" journal mode, not WAL
         // For file-based databases, this would be "wal"
         assert!(result.0 == "memory" || result.0 == "wal");
+    }
+
+    #[tokio::test]
+    async fn fresh_file_database_pools_initialize_reliably() {
+        let directory = tempfile::tempdir().unwrap();
+
+        for attempt in 0..32 {
+            let path = directory.path().join(format!("fresh-{attempt}.db"));
+            let url = format!("sqlite:{}?mode=rwc", path.to_string_lossy());
+            let (pool, write_pool) = init_database_pools(&url).await.unwrap();
+
+            let read_mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            let write_mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+                .fetch_one(&write_pool)
+                .await
+                .unwrap();
+
+            assert_eq!(read_mode, "wal");
+            assert_eq!(write_mode, "wal");
+
+            pool.close().await;
+            write_pool.close().await;
+        }
     }
 
     #[tokio::test]

@@ -326,11 +326,10 @@ async fn run_desktop_backend_init(
     let logging_future =
         tokio::task::spawn_blocking(move || backend::init_logging(&log_dir_str_clone));
 
-    let pool_future = backend::init_pool(&database_url);
-    let write_pool_future = backend::init_write_pool(&database_url);
+    let database_pools_future = backend::init_database_pools(&database_url);
 
-    let (logging_result, pool_result, write_pool_result) =
-        tokio::join!(logging_future, pool_future, write_pool_future);
+    let (logging_result, database_pools_result) =
+        tokio::join!(logging_future, database_pools_future);
 
     // Handle logging result
     let (logging_config, log_guard) = match logging_result {
@@ -351,23 +350,10 @@ async fn run_desktop_backend_init(
     let log_and_pool_ms = log_and_pool_start.elapsed().as_millis();
     log::info!("Desktop init: logging + db pool took {}ms", log_and_pool_ms);
 
-    // Handle database pool result
-    let pool = match pool_result {
-        Ok(p) => p,
+    let (pool, write_pool) = match database_pools_result {
+        Ok(pools) => pools,
         Err(e) => {
             show_boot_error_window(&app_handle, &format!("Failed to open database: {e}")).await;
-            return;
-        }
-    };
-
-    let write_pool = match write_pool_result {
-        Ok(p) => p,
-        Err(e) => {
-            show_boot_error_window(
-                &app_handle,
-                &format!("Failed to open write database pool: {e}"),
-            )
-            .await;
             return;
         }
     };

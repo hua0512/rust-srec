@@ -5,7 +5,7 @@
 //! services, and infrastructure do not expand the crate's public API.
 
 pub use crate::api::server::ApiServerConfig;
-pub use crate::database::{init_pool, init_write_pool, run_migrations};
+pub use crate::database::{init_database_pools, init_pool, init_write_pool, run_migrations};
 pub use crate::downloader::DownloadManagerConfig;
 pub use crate::logging::init_logging;
 pub use crate::notification::{NotificationEvent, NotificationPriority};

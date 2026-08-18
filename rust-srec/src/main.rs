@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use rust_srec::backend::{
-    NotificationEvent, ServiceContainer, init_logging, init_pool, init_write_pool,
-    install_panic_hook, install_rustls_provider, run_migrations,
+    NotificationEvent, ServiceContainer, init_database_pools, init_logging, install_panic_hook,
+    install_rustls_provider, run_migrations,
 };
 use tracing::{error, info, warn};
 
@@ -40,8 +40,7 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
 
     info!("Connecting to database: {}", database_url);
-    let pool = init_pool(&database_url).await?;
-    let write_pool = init_write_pool(&database_url).await?;
+    let (pool, write_pool) = init_database_pools(&database_url).await?;
 
     // Run migrations
     info!("Running database migrations...");
