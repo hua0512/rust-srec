@@ -403,7 +403,7 @@ function copyResponseHeaders(upstream: Response): Headers {
 async function readManifest(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   initialChunks: Uint8Array[],
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   const chunks = [...initialChunks];
   let total = chunks.reduce((size, chunk) => size + chunk.byteLength, 0);
   if (total > MAX_MANIFEST_BYTES) {

@@ -1,11 +1,12 @@
 import { defineConfig, type Plugin } from 'vite';
+import { lingui, linguiTransformerBabelPreset } from '@lingui/vite-plugin';
+import babel from '@rolldown/plugin-babel';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
-import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
 import { nitro } from 'nitro/vite';
 
-import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
 
 import { computeThemeCacheId } from './theme-cache-id.ts';
@@ -63,9 +64,8 @@ export default defineConfig(() => ({
     }),
     tailwindcss(),
     tanstackStart({}),
-    react({
-      plugins: [['@lingui/swc-plugin', {}]],
-    }),
+    react(),
+    babel({ presets: [linguiTransformerBabelPreset()] }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],

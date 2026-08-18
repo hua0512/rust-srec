@@ -1,13 +1,11 @@
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react-swc';
+import { linguiTransformerBabelPreset } from '@lingui/vite-plugin';
+import babel from '@rolldown/plugin-babel';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [
-    react({
-      plugins: [['@lingui/swc-plugin', {}]],
-    }),
-  ],
+  plugins: [react(), babel({ presets: [linguiTransformerBabelPreset()] })],
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
