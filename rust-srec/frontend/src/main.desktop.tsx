@@ -6,6 +6,12 @@ import { RouterProvider } from '@tanstack/react-router';
 
 import { isTauriRuntime } from '@/utils/tauri';
 
+import {
+  createFrontendFailure,
+  FatalScreen,
+  parseBootFailure,
+  type BootFailurePayload,
+} from './desktop/fatal-screen';
 import { getRouter } from './router.desktop';
 import {
   createI18nInstance,
@@ -18,21 +24,17 @@ import {
 } from './integrations/lingui/i18n';
 
 const rootEl = document.getElementById('root')!;
-
-function escapeHtml(input: string): string {
-  return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+const root = createRoot(rootEl);
 
 let frontendReadyNotified = false;
 
-function getBootError(): string | null {
-  const raw = (globalThis as any).__RUST_SREC_BOOT_ERROR__;
-  return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
+function getBootError(): ReturnType<typeof parseBootFailure> {
+  const raw = (
+    globalThis as typeof globalThis & {
+      __RUST_SREC_BOOT_ERROR__?: BootFailurePayload | string | null;
+    }
+  ).__RUST_SREC_BOOT_ERROR__;
+  return parseBootFailure(raw);
 }
 
 async function notifyFrontendReady(): Promise<void> {
@@ -50,21 +52,15 @@ async function notifyFrontendReady(): Promise<void> {
 }
 
 function renderFatal(error: unknown) {
-  const message =
-    error instanceof Error
-      ? `${error.name}: ${error.message}\n\n${error.stack ?? ''}`
-      : String(error);
+  root.render(<FatalScreen failure={createFrontendFailure(error)} />);
 
-  rootEl.innerHTML = `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0b1220;color:#e5e7eb;">
-      <div style="max-width:920px;width:100%;">
-        <div style="font:600 18px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;margin-bottom:12px;">Rust-Srec (Desktop) failed to start</div>
-        <div style="font:400 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;white-space:pre-wrap;background:#0f172a;border:1px solid #24324a;border-radius:12px;padding:14px;">${escapeHtml(message)}</div>
-        <div style="margin-top:12px;font:400 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;color:#a7b0bf;">Open DevTools to see console details.</div>
-      </div>
-    </div>
-  `;
+  void notifyFrontendReady();
+}
 
+function renderBootFailure(
+  failure: NonNullable<ReturnType<typeof getBootError>>,
+) {
+  root.render(<FatalScreen failure={failure} />);
   void notifyFrontendReady();
 }
 
@@ -91,7 +87,7 @@ async function resolveInitialLocale(): Promise<Locale> {
 async function bootstrap() {
   const bootError = getBootError();
   if (bootError) {
-    renderFatal(bootError);
+    renderBootFailure(bootError);
     return;
   }
 
@@ -126,7 +122,7 @@ async function bootstrap() {
     return null;
   }
 
-  createRoot(rootEl).render(
+  root.render(
     <React.StrictMode>
       <NotifyFirstCommit />
       <RouterProvider router={router} />

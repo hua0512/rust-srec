@@ -32,6 +32,7 @@ fs2 = "0.4"
 tauri = { version = "2.11.0", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 rust-srec = { path = ".." }
