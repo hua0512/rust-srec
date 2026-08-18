@@ -12,6 +12,7 @@ use super::{
     should_record_recovery_from_progress,
 };
 use crate::config::{ConfigService, ConfigUpdateEvent};
+use crate::danmu::events::DanmuCoordinationReceiver;
 use crate::danmu::{DanmuEvent, DanmuService};
 use crate::database::repositories::{
     config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
@@ -224,28 +225,17 @@ impl ServiceContainer {
             });
     }
 
-    /// Set up danmu event subscriptions for segment coordination.
+    /// Set up required danmu event handling.
     ///
-    /// Drained through a bounded queue like the download events above, and for
-    /// the same reason: `broadcast` skips messages for a lagging receiver, and
-    /// the handler awaits config resolution and database writes per event.
-    /// Losing chatter like `Reconnecting` would be harmless, but
-    /// `DanmuEvent::CollectionStopped` is the sole writer of
-    /// `PipelineCoordinator`'s `danmu_complete` and `SegmentCompleted` is what
-    /// registers a segment's XML — those must not depend on how fast the
-    /// handler runs. The drain does nothing but forward, so the broadcast side
-    /// is consumed at channel speed regardless of handler latency.
+    /// All low-volume service events arrive directly over a lossless MPSC owned
+    /// by the composition root, preserving their order and ensuring state-changing
+    /// events never depend on observer speed. `DanmuService::subscribe` remains a
+    /// separate best-effort broadcast interface for optional observers.
     pub(super) fn setup_danmu_event_subscriptions(&self) {
-        let receiver = self.danmu_service.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        const DANMU_EVENT_QUEUE_CAPACITY: usize = 8192;
-        let (event_tx, event_rx) = mpsc::channel::<DanmuEvent>(DANMU_EVENT_QUEUE_CAPACITY);
-
-        self.task_supervisor.spawn(
-            "danmu event drain",
-            run_danmu_event_drain(receiver, event_tx, cancellation_token.clone()),
-        );
+        let Some(event_rx) = self.danmu_coordination_receiver.lock().take() else {
+            warn!("Required danmu coordination consumer is already running");
+            return;
+        };
 
         let handler = DanmuEventHandler {
             pipeline_manager: self.pipeline_manager.clone(),
@@ -257,10 +247,8 @@ impl ServiceContainer {
             danmu_link_down: self.danmu_link_down.clone(),
         };
 
-        self.task_supervisor.spawn(
-            "danmu event handler",
-            handler.run(event_rx, cancellation_token),
-        );
+        self.task_supervisor
+            .spawn_critical("danmu event handler", handler.run(event_rx));
     }
 
     /// Set up notification service event subscriptions.
@@ -584,49 +572,6 @@ async fn run_download_event_drain(
     }
 }
 
-/// Forward danmu events from the lossy broadcast into the handler's queue.
-///
-/// Mirrors [`run_download_event_drain`], with one difference in severity:
-/// danmu events are low-volume (per segment, per reconnect — never per
-/// message), so this receiver lagging means something is badly wrong, and any
-/// skipped batch may have contained `CollectionStopped` — whose loss strands
-/// the session-complete pipeline — or `SegmentCompleted`, whose loss leaves a
-/// finished XML unregistered. Logged as an error, not a warning, so it cannot
-/// pass unnoticed.
-async fn run_danmu_event_drain(
-    mut receiver: broadcast::Receiver<DanmuEvent>,
-    event_tx: mpsc::Sender<DanmuEvent>,
-    drain_token: CancellationToken,
-) {
-    loop {
-        tokio::select! {
-            _ = drain_token.cancelled() => {
-                debug!("Danmu event drain shutting down");
-                break;
-            }
-            result = receiver.recv() => {
-                match result {
-                    Ok(event) => {
-                        if event_tx.send(event).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        tracing::error!(
-                            skipped,
-                            "Danmu event drain lagged; coordination events may have been lost"
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        debug!("Danmu event channel closed");
-                        break;
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// Owned service handles for the `download event processor` task, cloned
 /// out of [`ServiceContainer`] by
 /// [`ServiceContainer::setup_download_event_subscriptions`] so the spawned
@@ -878,7 +823,7 @@ impl DownloadEventProcessor {
     }
 }
 
-/// Owned service handles for the `danmu event handler` task, cloned out of
+/// Owned service handles for the required `danmu event handler` task, cloned out of
 /// [`ServiceContainer`] by [`ServiceContainer::setup_danmu_event_subscriptions`]
 /// so the spawned future is `'static`.
 struct DanmuEventHandler {
@@ -892,32 +837,16 @@ struct DanmuEventHandler {
 }
 
 impl DanmuEventHandler {
-    async fn run(
-        self,
-        mut receiver: mpsc::Receiver<DanmuEvent>,
-        cancellation_token: CancellationToken,
-    ) {
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    debug!("Danmu event handler shutting down");
-                    break;
-                }
-                event = receiver.recv() => {
-                    match event {
-                        Some(event) => self.handle_event(event).await,
-                        None => {
-                            debug!("Danmu event queue closed");
-                            break;
-                        }
-                    }
-                }
-            }
+    async fn run(self, mut receiver: DanmuCoordinationReceiver) -> std::result::Result<(), String> {
+        while let Some(event) = receiver.recv().await.map_err(str::to_string)? {
+            self.handle_event(event).await;
         }
+        debug!("Danmu event handler drained and shut down");
+        Ok(())
     }
 
     async fn handle_event(&self, event: DanmuEvent) {
-        match &event {
+        match event {
             DanmuEvent::CollectionStarted {
                 session_id,
                 streamer_id,
@@ -927,7 +856,10 @@ impl DanmuEventHandler {
                     session_id, streamer_id
                 );
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::CollectionStarted {
+                        session_id,
+                        streamer_id,
+                    })
                     .await;
             }
             DanmuEvent::CollectionStopped {
@@ -940,9 +872,12 @@ impl DanmuEventHandler {
                 );
                 // Bounds `danmu_link_down`: a session that stops mid-outage never
                 // sends `Reconnected`, so this is the entry's only other removal.
-                self.danmu_link_down.remove(session_id);
+                self.danmu_link_down.remove(&session_id);
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::CollectionStopped {
+                        session_id,
+                        total_count,
+                    })
                     .await;
             }
             DanmuEvent::SegmentStarted {
@@ -959,10 +894,10 @@ impl DanmuEventHandler {
             }
             DanmuEvent::SegmentCompleted {
                 session_id,
+                streamer_id,
                 segment_id,
                 output_path,
                 message_count,
-                ..
             } => {
                 info!(
                     "Danmu segment completed: session={}, segment={}, messages={}",
@@ -973,7 +908,7 @@ impl DanmuEventHandler {
                     .remove(&(session_id.clone(), segment_id.clone()))
                     .is_some()
                 {
-                    match tokio::fs::remove_file(output_path).await {
+                    match tokio::fs::remove_file(&output_path).await {
                         Ok(()) => {
                             debug!("Deleted discarded danmu segment: {}", output_path.display())
                         }
@@ -992,7 +927,13 @@ impl DanmuEventHandler {
                 }
                 // Forward to pipeline manager for processing
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::SegmentCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_id,
+                        output_path,
+                        message_count,
+                    })
                     .await;
             }
             DanmuEvent::Control {
@@ -1008,14 +949,19 @@ impl DanmuEventHandler {
 
                 // Forward to pipeline manager (e.g., title updates).
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::Control {
+                        session_id: session_id.clone(),
+                        streamer_id: streamer_id.clone(),
+                        platform: platform.clone(),
+                        control: control.clone(),
+                    })
                     .await;
 
                 if matches!(
                     control,
                     crate::danmu::DanmuControlEvent::StreamClosed { .. }
                 ) {
-                    self.handle_stream_closed(session_id, streamer_id, platform)
+                    self.handle_stream_closed(&session_id, &streamer_id, &platform)
                         .await;
                 }
             }
@@ -1023,8 +969,9 @@ impl DanmuEventHandler {
                 session_id,
                 attempt,
             } => {
-                // Stamped on the first attempt of an outage and left alone after,
-                // so the health probe can measure how long the link has been down.
+                // This shares the required queue with CollectionStopped so a
+                // delayed reconnect cannot recreate health state for a session
+                // after its terminal cleanup.
                 self.danmu_link_down
                     .entry(session_id.clone())
                     .or_insert_with(Instant::now);
@@ -1038,7 +985,7 @@ impl DanmuEventHandler {
                 attempts,
                 downtime_secs,
             } => {
-                self.danmu_link_down.remove(session_id);
+                self.danmu_link_down.remove(&session_id);
                 info!(
                     "Danmu reconnected for session {} after {} attempt(s), {}s down",
                     session_id, attempts, downtime_secs

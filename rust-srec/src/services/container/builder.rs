@@ -12,7 +12,7 @@ use crate::credentials::{
     CredentialRefreshService, CredentialResolver,
     platforms::{BilibiliCredentialManager, SoopCredentialManager},
 };
-use crate::danmu::DanmuService;
+use crate::danmu::{DanmuService, events::danmu_coordination_channel};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
     ConfigRepository, SqlxCredentialStore, SqlxNotificationRepository,
@@ -338,8 +338,12 @@ impl ServiceContainer {
 
         // Create danmu service
         let danmu_service_start = Instant::now();
-        let danmu_service =
-            Arc::new(DanmuService::new().with_session_repository(session_repo.clone()));
+        let (danmu_coordination_sender, danmu_coordination_receiver) = danmu_coordination_channel();
+        let danmu_service = Arc::new(
+            DanmuService::new()
+                .with_session_repository(session_repo.clone())
+                .with_coordination_sender(danmu_coordination_sender.clone()),
+        );
         let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config
@@ -516,6 +520,8 @@ impl ServiceContainer {
             )),
             runtime_coordinator,
             danmu_service,
+            danmu_coordination_sender,
+            danmu_coordination_receiver: parking_lot::Mutex::new(Some(danmu_coordination_receiver)),
             notification_service,
             notification_repository,
             web_push_service,

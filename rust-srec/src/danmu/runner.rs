@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -23,7 +23,7 @@ use platforms_parser::danmaku::{
 use crate::danmu::XmlDanmuWriter;
 use crate::error::{Error, Result};
 
-use super::events::{CollectionCommand, DanmuEvent};
+use super::events::{CollectionCommand, DanmuEvent, DanmuEventPublisher};
 use super::lifecycle::{CollectionExitReason, CollectionOutcome};
 use super::statistics_session::StatisticsSession;
 
@@ -123,7 +123,7 @@ pub(crate) struct CollectionRunner {
     /// alert fires once per outage rather than once per attempt.
     outage_alerted: bool,
 
-    event_tx: broadcast::Sender<DanmuEvent>,
+    events: DanmuEventPublisher,
 }
 
 /// Parameters for creating a new collection runner.
@@ -134,7 +134,7 @@ pub(crate) struct RunnerParams {
     pub provider: Arc<dyn DanmuProvider>,
     pub conn_config: ConnectionConfig,
     pub statistics: StatisticsSession,
-    pub event_tx: broadcast::Sender<DanmuEvent>,
+    pub events: DanmuEventPublisher,
 }
 
 impl CollectionRunner {
@@ -148,7 +148,7 @@ impl CollectionRunner {
             provider,
             conn_config,
             statistics,
-            event_tx,
+            events,
         } = params;
 
         // Connect to danmu stream
@@ -168,7 +168,7 @@ impl CollectionRunner {
                 reconnect_attempts: 0,
                 link_down_since: None,
                 outage_alerted: false,
-                event_tx,
+                events,
             },
             stream.items,
         ))
@@ -333,7 +333,7 @@ impl CollectionRunner {
         let downtime = down_since.elapsed();
 
         let delay = Self::reconnect_delay(attempt);
-        let _ = self.event_tx.send(DanmuEvent::Reconnecting {
+        self.events.publish(DanmuEvent::Reconnecting {
             session_id: self.session_id.clone(),
             attempt,
         });
@@ -344,7 +344,7 @@ impl CollectionRunner {
             && downtime >= Duration::from_secs(config::RECONNECT_ALERT_AFTER_SECS)
         {
             self.outage_alerted = true;
-            let _ = self.event_tx.send(DanmuEvent::ReconnectFailed {
+            self.events.publish(DanmuEvent::ReconnectFailed {
                 session_id: self.session_id.clone(),
                 error: format!(
                     "danmu link down for {}s after {attempt} attempts: {cause}",
@@ -380,7 +380,7 @@ impl CollectionRunner {
                 downtime_secs,
                 "danmu: link recovered"
             );
-            let _ = self.event_tx.send(DanmuEvent::Reconnected {
+            self.events.publish(DanmuEvent::Reconnected {
                 session_id: self.session_id.clone(),
                 attempts: self.reconnect_attempts,
                 downtime_secs,
@@ -501,7 +501,7 @@ impl CollectionRunner {
         let writer =
             XmlDanmuWriter::with_start_time_and_comments(&output_path, start_time, comments)
                 .await?;
-        let _ = self.event_tx.send(DanmuEvent::SegmentStarted {
+        self.events.publish(DanmuEvent::SegmentStarted {
             session_id: self.session_id.clone(),
             streamer_id: self.streamer_id.clone(),
             segment_id: segment_id.clone(),
@@ -569,7 +569,7 @@ impl CollectionRunner {
             let count = writer.message_count();
             let path = writer.output_path().to_path_buf();
             writer.finalize().await?;
-            let _ = self.event_tx.send(DanmuEvent::SegmentCompleted {
+            self.events.publish(DanmuEvent::SegmentCompleted {
                 session_id: self.session_id.clone(),
                 streamer_id: self.streamer_id.clone(),
                 segment_id,
@@ -622,7 +622,7 @@ impl CollectionRunner {
         // after the loop ends (emitting `DanmuEvent::SegmentCompleted` if a
         // segment is open); `DanmuEvent::CollectionStopped` is emitted by the
         // service once the runner returns.
-        let _ = self.event_tx.send(DanmuEvent::Control {
+        self.events.publish(DanmuEvent::Control {
             session_id: self.session_id.clone(),
             streamer_id: self.streamer_id.clone(),
             platform: self.provider.platform().to_string(),
@@ -673,7 +673,7 @@ mod tests {
     /// Build a runner over `provider`, consuming its first queued stream.
     async fn runner_for(
         provider: Arc<FakeProvider>,
-        event_tx: broadcast::Sender<DanmuEvent>,
+        events: DanmuEventPublisher,
     ) -> (CollectionRunner, mpsc::Receiver<DanmuItem>) {
         CollectionRunner::new(RunnerParams {
             session_id: "session-1".to_string(),
@@ -687,7 +687,7 @@ mod tests {
                 DanmuStatisticsConfig::default(),
             )
             .await,
-            event_tx,
+            events,
         })
         .await
         .expect("first connect succeeds")
@@ -702,8 +702,9 @@ mod tests {
         let (items_tx, items_rx) = mpsc::channel(8);
         // A single stream, so every reconnect fails and the link stays down.
         let provider = Arc::new(FakeProvider::new(vec![items_rx]));
-        let (event_tx, mut events) = broadcast::channel(64);
-        let (runner, items) = runner_for(provider.clone(), event_tx).await;
+        let event_publisher = DanmuEventPublisher::new(64);
+        let mut events = event_publisher.subscribe();
+        let (runner, items) = runner_for(provider.clone(), event_publisher).await;
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let first = temp_xml_path("outage-seg-0");
@@ -803,8 +804,7 @@ mod tests {
     async fn loop_error_still_releases_the_transport() {
         let (items_tx, items_rx) = mpsc::channel(8);
         let provider = Arc::new(FakeProvider::new(vec![items_rx]));
-        let (event_tx, _events) = broadcast::channel(64);
-        let (runner, items) = runner_for(provider.clone(), event_tx).await;
+        let (runner, items) = runner_for(provider.clone(), DanmuEventPublisher::new(64)).await;
 
         let (command_tx, command_rx) = mpsc::channel(8);
         items_tx.send(chat("counted")).await.expect("send message");
@@ -852,8 +852,7 @@ mod tests {
         let (first_tx, first_rx) = mpsc::channel(8);
         let (second_tx, second_rx) = mpsc::channel(8);
         let provider = Arc::new(FakeProvider::new(vec![first_rx, second_rx]));
-        let (event_tx, _events) = broadcast::channel(64);
-        let (runner, items) = runner_for(provider.clone(), event_tx).await;
+        let (runner, items) = runner_for(provider.clone(), DanmuEventPublisher::new(64)).await;
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let path = temp_xml_path("reconnect");
@@ -916,8 +915,7 @@ mod tests {
     async fn stop_collects_queued_messages_before_finishing() {
         let (items_tx, items_rx) = mpsc::channel(8);
         let provider = Arc::new(FakeProvider::new(vec![items_rx]));
-        let (event_tx, _events) = broadcast::channel(64);
-        let (runner, items) = runner_for(provider, event_tx).await;
+        let (runner, items) = runner_for(provider, DanmuEventPublisher::new(64)).await;
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let path = temp_xml_path("stop-drain");
@@ -966,8 +964,7 @@ mod tests {
     async fn cancellation_has_an_explicit_interrupted_outcome() {
         let (_items_tx, items_rx) = mpsc::channel(8);
         let provider = Arc::new(FakeProvider::new(vec![items_rx]));
-        let (event_tx, _events) = broadcast::channel(8);
-        let (runner, items) = runner_for(provider, event_tx).await;
+        let (runner, items) = runner_for(provider, DanmuEventPublisher::new(8)).await;
         let (_command_tx, command_rx) = mpsc::channel(8);
         let cancel_token = CancellationToken::new();
         cancel_token.cancel();
@@ -983,8 +980,7 @@ mod tests {
     async fn stop_command_finalizes_without_error() {
         let (items_tx, items_rx) = mpsc::channel(8);
         let provider = Arc::new(FakeProvider::new(vec![items_rx]));
-        let (event_tx, _events) = broadcast::channel(64);
-        let (runner, items) = runner_for(provider, event_tx).await;
+        let (runner, items) = runner_for(provider, DanmuEventPublisher::new(64)).await;
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let path = temp_xml_path("stop");

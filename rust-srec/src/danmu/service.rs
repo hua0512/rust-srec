@@ -22,7 +22,7 @@ use crate::danmu::{DanmuStatistics, ProviderRegistry};
 use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
 
-use super::events::{CollectionCommand, DanmuEvent};
+use super::events::{CollectionCommand, DanmuCoordinationSender, DanmuEvent, DanmuEventPublisher};
 use super::lifecycle::{CollectionOutcome, CollectionSpec, CollectionStopReason};
 use super::runner::{CollectionRunner, RunnerParams};
 use super::statistics_session::StatisticsSession;
@@ -98,8 +98,8 @@ pub struct DanmuService {
     collections: Arc<DashMap<String, CollectionState>>,
     /// Reverse index for fast lookups (streamer_id -> session_id).
     sessions_by_streamer: Arc<DashMap<String, String>>,
-    /// Event sender
-    event_tx: broadcast::Sender<DanmuEvent>,
+    /// Routes required coordination events separately from observer events.
+    events: DanmuEventPublisher,
     /// Global cancellation token
     cancel_token: CancellationToken,
     /// Session repository for persistence
@@ -120,13 +120,11 @@ impl DanmuService {
 
     /// Create a new danmu service with custom providers.
     pub fn with_providers(providers: ProviderRegistry) -> Self {
-        let (event_tx, _) = broadcast::channel(256);
-
         Self {
             providers: Arc::new(providers),
             collections: Arc::new(DashMap::new()),
             sessions_by_streamer: Arc::new(DashMap::new()),
-            event_tx,
+            events: DanmuEventPublisher::new(256),
             cancel_token: CancellationToken::new(),
             session_repo: None,
         }
@@ -141,9 +139,15 @@ impl DanmuService {
         self
     }
 
+    /// Install the required runtime coordination path.
+    pub(crate) fn with_coordination_sender(mut self, sender: DanmuCoordinationSender) -> Self {
+        self.events = self.events.with_coordination_sender(sender);
+        self
+    }
+
     /// Subscribe to danmu events.
     pub fn subscribe(&self) -> broadcast::Receiver<DanmuEvent> {
-        self.event_tx.subscribe()
+        self.events.subscribe()
     }
 
     /// Start danmu collection for a session.
@@ -314,7 +318,7 @@ impl DanmuService {
             cancel_token: cancel_token.clone(),
             collections: self.collections.clone(),
             sessions_by_streamer: self.sessions_by_streamer.clone(),
-            event_tx: self.event_tx.clone(),
+            events: self.events.clone(),
             ready_tx,
             done_tx,
         }));
@@ -323,7 +327,7 @@ impl DanmuService {
             ready = ready_rx => {
                 match ready {
                     Ok(Ok(())) => {
-                        let _ = self.event_tx.send(DanmuEvent::CollectionStarted {
+                        self.events.publish(DanmuEvent::CollectionStarted {
                             session_id: session_id.clone(),
                             streamer_id: streamer_id.clone(),
                         });
@@ -415,7 +419,7 @@ impl DanmuService {
                 // releases the coordinator gate. A late task observes the
                 // missing entry and cannot emit a duplicate terminal event.
                 if remove_collection(&self.collections, &self.sessions_by_streamer, session_id) {
-                    let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
+                    self.events.publish(DanmuEvent::CollectionStopped {
                         session_id: session_id.to_string(),
                         total_count: 0,
                     });
@@ -489,7 +493,7 @@ struct CollectionTaskContext {
     cancel_token: CancellationToken,
     collections: Arc<DashMap<String, CollectionState>>,
     sessions_by_streamer: Arc<DashMap<String, String>>,
-    event_tx: broadcast::Sender<DanmuEvent>,
+    events: DanmuEventPublisher,
     /// Resolved once, to tell `start_collection` whether the connect succeeded.
     ready_tx: oneshot::Sender<Result<()>>,
     /// Carries the final outcome to a waiting `stop_collection`.
@@ -514,7 +518,7 @@ async fn collection_task(ctx: CollectionTaskContext) {
         cancel_token,
         collections,
         sessions_by_streamer,
-        event_tx,
+        events,
         ready_tx,
         done_tx,
     } = ctx;
@@ -525,7 +529,7 @@ async fn collection_task(ctx: CollectionTaskContext) {
     let mut cleanup = CollectionCleanupGuard {
         collections: collections.clone(),
         sessions_by_streamer: sessions_by_streamer.clone(),
-        event_tx: event_tx.clone(),
+        events: events.clone(),
         session_id: session_id.clone(),
         armed: true,
     };
@@ -539,7 +543,7 @@ async fn collection_task(ctx: CollectionTaskContext) {
             provider,
             conn_config,
             statistics,
-            event_tx: event_tx.clone(),
+            events: events.clone(),
         }),
     )
     .await
@@ -550,7 +554,7 @@ async fn collection_task(ctx: CollectionTaskContext) {
         }
         Ok(Err(e)) => {
             let error_message = e.to_string();
-            let _ = event_tx.send(DanmuEvent::Error {
+            events.publish(DanmuEvent::Error {
                 session_id: session_id.clone(),
                 error: error_message,
             });
@@ -570,7 +574,7 @@ async fn collection_task(ctx: CollectionTaskContext) {
             let _ = ready_tx.send(Err(Error::from(
                 platforms_parser::danmaku::DanmakuError::connection(message.clone()),
             )));
-            let _ = event_tx.send(DanmuEvent::Error {
+            events.publish(DanmuEvent::Error {
                 session_id: session_id.clone(),
                 error: message,
             });
@@ -582,20 +586,20 @@ async fn collection_task(ctx: CollectionTaskContext) {
 
     let outcome = runner.run(command_rx, items, cancel_token).await;
     if let Some(error) = &outcome.error {
-        let _ = event_tx.send(DanmuEvent::Error {
+        events.publish(DanmuEvent::Error {
             session_id: session_id.clone(),
             error: error.to_string(),
         });
     }
     for error in &outcome.cleanup_errors {
-        let _ = event_tx.send(DanmuEvent::Error {
+        events.publish(DanmuEvent::Error {
             session_id: session_id.clone(),
             error: error.to_string(),
         });
     }
 
     if remove_collection(&collections, &sessions_by_streamer, &session_id) {
-        let _ = event_tx.send(DanmuEvent::CollectionStopped {
+        events.publish(DanmuEvent::CollectionStopped {
             session_id: session_id.clone(),
             total_count: outcome.statistics.total_count,
         });
@@ -616,14 +620,14 @@ async fn collection_task(ctx: CollectionTaskContext) {
 /// only thing that lets the session-complete pipeline run.
 ///
 /// Both operations are synchronous — `DashMap::remove` and
-/// `broadcast::Sender::send` — so the whole cleanup fits in `Drop`. The daemon's
+/// `DanmuEventPublisher::publish` — so the whole cleanup fits in `Drop`. The daemon's
 /// release profile deliberately keeps unwinding (see the comment on
 /// `[profile.release]` in the workspace manifest), so this runs on a panic rather
 /// than the process aborting.
 struct CollectionCleanupGuard {
     collections: Arc<DashMap<String, CollectionState>>,
     sessions_by_streamer: Arc<DashMap<String, String>>,
-    event_tx: broadcast::Sender<DanmuEvent>,
+    events: DanmuEventPublisher,
     session_id: String,
     armed: bool,
 }
@@ -650,7 +654,7 @@ impl Drop for CollectionCleanupGuard {
                 session_id = %self.session_id,
                 "danmu: collector task ended without completing; releasing the session"
             );
-            let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
+            self.events.publish(DanmuEvent::CollectionStopped {
                 session_id: self.session_id.clone(),
                 total_count: 0,
             });
@@ -899,7 +903,7 @@ mod tests {
             let _guard = CollectionCleanupGuard {
                 collections: service.collections.clone(),
                 sessions_by_streamer: service.sessions_by_streamer.clone(),
-                event_tx: service.event_tx.clone(),
+                events: service.events.clone(),
                 session_id: "session-1".to_string(),
                 armed: true,
             };
@@ -934,7 +938,7 @@ mod tests {
             let mut guard = CollectionCleanupGuard {
                 collections: service.collections.clone(),
                 sessions_by_streamer: service.sessions_by_streamer.clone(),
-                event_tx: service.event_tx.clone(),
+                events: service.events.clone(),
                 session_id: "session-1".to_string(),
                 armed: true,
             };
