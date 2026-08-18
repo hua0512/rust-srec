@@ -20,13 +20,12 @@ use platforms_parser::danmaku::{
     message::DanmuMessage,
 };
 
-use crate::danmu::{DanmuStatistics, StatisticsAggregator, XmlDanmuWriter};
-use crate::database::repositories::SessionRepository;
-use crate::error::Result;
+use crate::danmu::XmlDanmuWriter;
+use crate::error::{Error, Result};
 
-use super::checkpoint;
 use super::events::{CollectionCommand, DanmuEvent};
-use super::service::persist_statistics;
+use super::lifecycle::{CollectionExitReason, CollectionOutcome};
+use super::statistics_session::StatisticsSession;
 
 /// Configuration constants for the collection runner.
 mod config {
@@ -57,23 +56,7 @@ pub(crate) enum CommandResult {
     /// Continue running the collection loop.
     Continue,
     /// Stop the collection loop.
-    Stop,
-}
-
-/// Final state of a collection run.
-///
-/// `statistics` is always populated, including when `error` is `Some`: the
-/// aggregator's contents are just as final after a transport failure as after a
-/// clean stop, and `DanmuService` persists them either way.
-pub(crate) struct CollectionOutcome {
-    pub statistics: DanmuStatistics,
-    /// `Some` when the loop stopped because of a failure rather than a stop
-    /// request or cancellation.
-    pub error: Option<crate::error::Error>,
-    /// Whether the session itself is over, as opposed to collection being
-    /// interrupted by a process shutdown. Decides whether the aggregator
-    /// checkpoint is kept for a resume or discarded.
-    pub session_ended: bool,
+    Stop(CollectionExitReason),
 }
 
 /// Transport state for the item channel handed over by `DanmuProvider::connect`.
@@ -127,18 +110,7 @@ pub(crate) struct CollectionRunner {
     // Message buffer for sorting before writing
     message_buffer: Vec<DanmuMessage>,
 
-    // Stats state
-    stats: StatisticsAggregator,
-    /// Repository for periodic in-progress statistics persists. `None` when the
-    /// session's config disables statistics, which also disables checkpoints.
-    session_repo: Option<Arc<dyn SessionRepository>>,
-    /// Whether messages feed the aggregator at all. XML recording is unaffected.
-    statistics_enabled: bool,
-    /// Total count at the last periodic persist; skips redundant writes when
-    /// no message arrived during the persist interval.
-    last_persisted_total: u64,
-    /// Total count at the last aggregator checkpoint, for the same reason.
-    last_checkpoint_total: u64,
+    statistics: StatisticsSession,
 
     /// Reconnect attempts since the last item arrived, used for the back-off
     /// curve and reported on `DanmuEvent::Reconnecting`.
@@ -161,9 +133,7 @@ pub(crate) struct RunnerParams {
     pub room_id: String,
     pub provider: Arc<dyn DanmuProvider>,
     pub conn_config: ConnectionConfig,
-    pub stats: StatisticsAggregator,
-    pub session_repo: Option<Arc<dyn SessionRepository>>,
-    pub statistics_enabled: bool,
+    pub statistics: StatisticsSession,
     pub event_tx: broadcast::Sender<DanmuEvent>,
 }
 
@@ -177,13 +147,9 @@ impl CollectionRunner {
             room_id,
             provider,
             conn_config,
-            stats,
-            session_repo,
-            statistics_enabled,
+            statistics,
             event_tx,
         } = params;
-        // Read before `stats` is moved into the runner.
-        let resumed_total = stats.total_count();
 
         // Connect to danmu stream
         let stream = provider.connect(&room_id, conn_config.clone()).await?;
@@ -198,13 +164,7 @@ impl CollectionRunner {
                 conn_config,
                 current_writer: None,
                 message_buffer: Vec::with_capacity(config::MAX_BUFFER_SIZE),
-                stats,
-                session_repo,
-                statistics_enabled,
-                last_persisted_total: 0,
-                // Seeded from the resumed count so an immediately-restarted
-                // collector does not rewrite an identical checkpoint.
-                last_checkpoint_total: resumed_total,
+                statistics,
                 reconnect_attempts: 0,
                 link_down_since: None,
                 outage_alerted: false,
@@ -226,39 +186,18 @@ impl CollectionRunner {
         items: mpsc::Receiver<DanmuItem>,
         cancel_token: CancellationToken,
     ) -> CollectionOutcome {
-        let loop_result = self.run_loop(&mut command_rx, items, &cancel_token).await;
-
-        if let Err(error) = self.shutdown().await {
-            warn!(
-                session_id = %self.session_id,
-                %error,
-                "danmu: failed to finalize collection cleanly"
-            );
-        }
-
-        // A cancelled token means `DanmuService::shutdown` is tearing the process
-        // down — it cancels before sending `Stop` — so the session is not over and
-        // its checkpoint must survive for the next start to resume from. Anything
-        // else (a stop request from session end, `StreamClosed`, or a failure)
-        // means this session is finished.
-        let session_ended = !cancel_token.is_cancelled();
-        if !session_ended {
-            // Take a final checkpoint so a shutdown costs nothing rather than up
-            // to one checkpoint interval.
-            checkpoint::save(
-                self.session_repo.as_ref(),
-                &self.session_id,
-                &self.stats.export_state(),
-            )
-            .await;
-        }
+        let (reason, error) = match self.run_loop(&mut command_rx, items, &cancel_token).await {
+            Ok(reason) => (reason, None),
+            Err(error) => (CollectionExitReason::Failed, Some(error)),
+        };
+        let cleanup_errors = self.shutdown().await;
+        let statistics = self.statistics.finish(reason).await;
 
         CollectionOutcome {
-            // Consume the aggregator so the statistics carry end_time and
-            // duration_secs; the service persists this exact value.
-            statistics: self.stats.finalize(Utc::now()),
-            error: loop_result.err(),
-            session_ended,
+            statistics,
+            reason,
+            error,
+            cleanup_errors,
         }
     }
 
@@ -267,7 +206,7 @@ impl CollectionRunner {
         command_rx: &mut mpsc::Receiver<CollectionCommand>,
         items: mpsc::Receiver<DanmuItem>,
         cancel_token: &CancellationToken,
-    ) -> Result<()> {
+    ) -> Result<CollectionExitReason> {
         let mut flush_interval =
             tokio::time::interval(Duration::from_millis(config::BUFFER_FLUSH_INTERVAL_MS));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -297,19 +236,28 @@ impl CollectionRunner {
             match event {
                 LoopEvent::Command(cmd) => match self.handle_command(cmd).await? {
                     CommandResult::Continue => {}
-                    CommandResult::Stop => return Ok(()),
+                    CommandResult::Stop(reason) => {
+                        self.drain_pending(&mut link).await?;
+                        return Ok(reason);
+                    }
                 },
-                LoopEvent::Cancelled => return Ok(()),
+                LoopEvent::Cancelled => {
+                    self.drain_pending(&mut link).await?;
+                    return Ok(CollectionExitReason::Cancelled);
+                }
                 LoopEvent::Flush => self.flush_buffer_if_needed().await?,
-                LoopEvent::Persist => self.persist_stats_if_changed().await,
-                LoopEvent::Checkpoint => self.checkpoint_if_changed().await,
+                LoopEvent::Persist => self.statistics.persist_if_changed().await,
+                LoopEvent::Checkpoint => self.statistics.checkpoint_if_changed().await,
                 LoopEvent::Item(item) => {
                     // An arriving item is the only proof the link works, so it —
                     // not a successful `connect` — is what ends an outage.
                     self.note_link_recovered();
                     match self.handle_item(item).await? {
                         CommandResult::Continue => {}
-                        CommandResult::Stop => return Ok(()),
+                        CommandResult::Stop(reason) => {
+                            self.drain_pending(&mut link).await?;
+                            return Ok(reason);
+                        }
                     }
                 }
                 LoopEvent::LinkClosed => {
@@ -320,6 +268,40 @@ impl CollectionRunner {
                 }
             }
         }
+    }
+
+    /// Take whatever the provider has already queued before leaving the loop.
+    ///
+    /// Commands are polled before items (`biased`), so a stop request preempts
+    /// messages still sitting in the channel — up to its capacity. Those messages
+    /// are part of the recording, so they are collected here instead of being
+    /// dropped, and the unconditional flush in `run` writes them to the segment.
+    ///
+    /// `try_recv` only: this must never wait on a provider that has gone quiet.
+    async fn drain_pending(&mut self, link: &mut Link) -> Result<()> {
+        let Link::Up(items) = link else {
+            return Ok(());
+        };
+
+        let mut drained = 0usize;
+        while let Ok(item) = items.try_recv() {
+            // Control events are skipped rather than breaking the drain: the loop
+            // is already ending — a `StreamClosed` is often why — but a control
+            // event sitting mid-queue must not strand the messages behind it.
+            if let DanmuItem::Message(message) = item {
+                self.handle_message(message).await?;
+                drained += 1;
+            }
+        }
+
+        if drained > 0 {
+            debug!(
+                session_id = %self.session_id,
+                drained,
+                "danmu: collected queued messages before stopping"
+            );
+        }
+        Ok(())
     }
 
     /// Wait for the next transport event: an item while the link is up, or the
@@ -339,10 +321,11 @@ impl CollectionRunner {
 
     /// Count a transport failure and schedule the next attempt.
     ///
-    /// Returns `Err` once `config::MAX_RECONNECT_ATTEMPTS` consecutive attempts
-    /// have passed without an item, which ends the run — `run` still finalizes
-    /// the segment and the service still persists statistics and emits
-    /// `DanmuEvent::CollectionStopped`.
+    /// Never gives up: the runner serves one recording session and its lifetime
+    /// is bounded by the cancellation token `stop_collection` fires at session
+    /// end. Staying alive keeps `DanmuService::get_handle` answering, so segment
+    /// rotation keeps opening one XML file per video segment while the link is
+    /// down.
     fn schedule_retry(&mut self, cause: &str) -> Link {
         self.reconnect_attempts = self.reconnect_attempts.saturating_add(1);
         let attempt = self.reconnect_attempts;
@@ -460,32 +443,6 @@ impl CollectionRunner {
         Duration::from_millis(millis)
     }
 
-    /// Persist an in-progress statistics snapshot when new messages arrived
-    /// since the last persist. Uses `persist_statistics`, the same upsert path
-    /// the service uses for final statistics on stop.
-    async fn persist_stats_if_changed(&mut self) {
-        let Some(repo) = &self.session_repo else {
-            return;
-        };
-        let snapshot = self.stats.current_stats();
-        if snapshot.total_count == self.last_persisted_total {
-            return;
-        }
-        persist_statistics(Some(repo.as_ref()), &self.session_id, &snapshot).await;
-        self.last_persisted_total = snapshot.total_count;
-    }
-
-    /// Store an aggregator checkpoint when new messages arrived since the last
-    /// one, so a restart resumes counting instead of starting over.
-    async fn checkpoint_if_changed(&mut self) {
-        if self.session_repo.is_none() || self.stats.total_count() == self.last_checkpoint_total {
-            return;
-        }
-        let state = self.stats.export_state();
-        checkpoint::save(self.session_repo.as_ref(), &self.session_id, &state).await;
-        self.last_checkpoint_total = self.stats.total_count();
-    }
-
     /// Handle a command from the channel.
     async fn handle_command(&mut self, cmd: Option<CollectionCommand>) -> Result<CommandResult> {
         match cmd {
@@ -504,7 +461,12 @@ impl CollectionRunner {
             }
             // `run` finalizes the segment and disconnects after the loop ends, so
             // stopping only has to leave the loop.
-            Some(CollectionCommand::Stop) | None => Ok(CommandResult::Stop),
+            Some(CollectionCommand::Stop(reason)) => {
+                Ok(CommandResult::Stop(CollectionExitReason::from(reason)))
+            }
+            None => Ok(CommandResult::Stop(
+                CollectionExitReason::CommandChannelClosed,
+            )),
         }
     }
 
@@ -568,11 +530,37 @@ impl CollectionRunner {
     /// Idempotent: `finalize_current_segment` takes the writer, `flush_buffer`
     /// no-ops on an empty buffer, and `disconnect` no-ops once the connection is
     /// gone from the provider's map.
-    async fn shutdown(&mut self) -> Result<()> {
-        self.flush_buffer().await?;
-        self.finalize_current_segment().await?;
-        self.provider.disconnect(&mut self.connection).await?;
-        Ok(())
+    async fn shutdown(&mut self) -> Vec<Error> {
+        let mut errors = Vec::new();
+
+        if let Err(error) = self.flush_buffer().await {
+            warn!(
+                session_id = %self.session_id,
+                %error,
+                "danmu: failed to flush the final message buffer"
+            );
+            errors.push(error);
+        }
+
+        if let Err(error) = self.finalize_current_segment().await {
+            warn!(
+                session_id = %self.session_id,
+                %error,
+                "danmu: failed to finalize the active segment"
+            );
+            errors.push(error);
+        }
+
+        if let Err(error) = self.provider.disconnect(&mut self.connection).await {
+            warn!(
+                session_id = %self.session_id,
+                %error,
+                "danmu: failed to disconnect the collection transport"
+            );
+            errors.push(error.into());
+        }
+
+        errors
     }
 
     /// Finalize the current segment if one is active.
@@ -642,7 +630,9 @@ impl CollectionRunner {
         });
 
         match control {
-            DanmuControlEvent::StreamClosed { .. } => Ok(CommandResult::Stop),
+            DanmuControlEvent::StreamClosed { .. } => {
+                Ok(CommandResult::Stop(CollectionExitReason::StreamClosed))
+            }
             DanmuControlEvent::RoomInfoChanged { .. } | DanmuControlEvent::Other { .. } => {
                 Ok(CommandResult::Continue)
             }
@@ -652,9 +642,7 @@ impl CollectionRunner {
     /// Handle a received danmu message.
     async fn handle_message(&mut self, message: DanmuMessage) -> Result<CommandResult> {
         // Update session-level statistics.
-        if self.statistics_enabled {
-            self.stats.record_message(&message);
-        }
+        self.statistics.record_message(&message);
 
         // Buffer the message (will be written on flush)
         if self.current_writer.is_some() {
@@ -674,7 +662,9 @@ impl CollectionRunner {
 mod tests {
     use super::*;
     use crate::danmu::test_support::{FakeProvider, temp_xml_path};
-    use platforms_parser::danmaku::StatisticsAggregator;
+    use crate::domain::DanmuStatisticsConfig;
+
+    use super::super::lifecycle::CollectionStopReason;
 
     fn chat(content: &str) -> DanmuItem {
         DanmuItem::Message(DanmuMessage::chat("id", "user-1", "User", content))
@@ -691,9 +681,12 @@ mod tests {
             room_id: "room-1".to_string(),
             provider,
             conn_config: ConnectionConfig::default(),
-            stats: StatisticsAggregator::new(),
-            session_repo: None,
-            statistics_enabled: true,
+            statistics: StatisticsSession::load(
+                "session-1".to_string(),
+                None,
+                DanmuStatisticsConfig::default(),
+            )
+            .await,
             event_tx,
         })
         .await
@@ -750,11 +743,12 @@ mod tests {
             .await
             .expect("start second segment");
         command_tx
-            .send(CollectionCommand::Stop)
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
             .await
             .expect("send stop");
 
         let outcome = handle.await.expect("runner task");
+        assert_eq!(outcome.reason, CollectionExitReason::SessionStopped);
         assert!(
             outcome.error.is_none(),
             "an outage is not a run failure: {:?}",
@@ -840,6 +834,7 @@ mod tests {
             outcome.error.is_some(),
             "the failed segment start must be reported"
         );
+        assert_eq!(outcome.reason, CollectionExitReason::Failed);
         assert_eq!(
             outcome.statistics.total_count, 1,
             "statistics must survive so the service can persist them"
@@ -885,11 +880,12 @@ mod tests {
         // item still sitting in the channel. Yield first so the runner drains it.
         tokio::time::sleep(Duration::from_millis(50)).await;
         command_tx
-            .send(CollectionCommand::Stop)
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
             .await
             .expect("send stop");
 
         let outcome = handle.await.expect("runner task");
+        assert_eq!(outcome.reason, CollectionExitReason::SessionStopped);
         assert!(
             outcome.error.is_none(),
             "a recovered transport is not a failure: {:?}",
@@ -909,6 +905,77 @@ mod tests {
         let _ = tokio::fs::remove_file(&path).await;
         assert!(xml.contains("before") && xml.contains("after"));
         assert!(xml.trim_end().ends_with("</i>"));
+    }
+
+    /// A stop request must not discard messages already queued by the provider.
+    ///
+    /// Commands are polled before items, so without the drain a `Stop` preempted
+    /// everything sitting in the channel — the final messages of the stream, and
+    /// they were missing from the last segment's XML too.
+    #[tokio::test(start_paused = true)]
+    async fn stop_collects_queued_messages_before_finishing() {
+        let (items_tx, items_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![items_rx]));
+        let (event_tx, _events) = broadcast::channel(64);
+        let (runner, items) = runner_for(provider, event_tx).await;
+
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let path = temp_xml_path("stop-drain");
+        command_tx
+            .send(CollectionCommand::StartSegment {
+                segment_id: "0".to_string(),
+                output_path: path.clone(),
+                start_time: Utc::now(),
+            })
+            .await
+            .expect("start segment");
+
+        // Queue messages and the stop together, so the stop is polled first.
+        for i in 0..5 {
+            items_tx
+                .send(chat(&format!("queued-{i}")))
+                .await
+                .expect("send message");
+        }
+        command_tx
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
+            .await
+            .expect("send stop");
+
+        let outcome = runner
+            .run(command_rx, items, CancellationToken::new())
+            .await;
+
+        assert!(outcome.error.is_none());
+        assert_eq!(
+            outcome.statistics.total_count, 5,
+            "queued messages must be counted, not dropped"
+        );
+
+        let xml = tokio::fs::read_to_string(&path).await.expect("read xml");
+        let _ = tokio::fs::remove_file(&path).await;
+        for i in 0..5 {
+            assert!(
+                xml.contains(&format!("queued-{i}")),
+                "queued-{i} must reach the segment XML, got: {xml}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_has_an_explicit_interrupted_outcome() {
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![items_rx]));
+        let (event_tx, _events) = broadcast::channel(8);
+        let (runner, items) = runner_for(provider, event_tx).await;
+        let (_command_tx, command_rx) = mpsc::channel(8);
+        let cancel_token = CancellationToken::new();
+        cancel_token.cancel();
+
+        let outcome = runner.run(command_rx, items, cancel_token).await;
+
+        assert_eq!(outcome.reason, CollectionExitReason::Cancelled);
+        assert!(outcome.error.is_none());
     }
 
     /// A plain stop leaves no error behind and still closes the file.
@@ -936,12 +1003,13 @@ mod tests {
         // message before asking it to stop.
         tokio::time::sleep(Duration::from_millis(50)).await;
         command_tx
-            .send(CollectionCommand::Stop)
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
             .await
             .expect("send stop");
 
         let outcome = handle.await.expect("runner task");
 
+        assert_eq!(outcome.reason, CollectionExitReason::SessionStopped);
         assert!(outcome.error.is_none());
         assert_eq!(outcome.statistics.total_count, 1);
         assert!(outcome.statistics.end_time.is_some());

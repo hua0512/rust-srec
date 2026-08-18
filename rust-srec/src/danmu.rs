@@ -16,10 +16,13 @@ pub use platforms_parser::danmaku::{
 // Local modules (application-specific)
 mod checkpoint;
 pub mod events;
+mod lifecycle;
 mod runner;
 pub mod service;
+mod statistics_session;
 #[cfg(test)]
 pub(crate) mod test_support;
 
 pub use events::DanmuEvent;
+pub use lifecycle::CollectionSpec;
 pub use service::DanmuService;

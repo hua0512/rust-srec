@@ -263,6 +263,57 @@ impl BoundedTally {
     }
 }
 
+/// Counters evicted per pass, as a fraction of capacity.
+///
+/// Space-Saving needs the lowest counter to admit a new key, and finding it is a
+/// linear scan. Evicting a batch amortizes that scan over the admissions the freed
+/// slots absorb, which turns an O(capacity) cost per admission into
+/// O(capacity / batch). The trade is that a batch also discards counters that only
+/// one admission needed room for.
+const EVICTION_BATCH_DIVISOR: usize = 20;
+
+/// The count a newly admitted key inherits after `evict_batch`, and the number of
+/// evictions the batch made room for.
+///
+/// Space-Saving's invariant is that the lowest tracked count upper-bounds the true
+/// frequency of anything untracked. `floor` is the *highest* count in the evicted
+/// batch, so it is at least that lower bound: admitting with `count = floor + n`
+/// keeps `count` an upper bound on the truth, and recording `error = floor` keeps
+/// `count - error` a lower bound. A batch only makes the estimate looser, never
+/// wrong, and `error` reports by how much.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+struct AdmissionFloor {
+    floor: u64,
+}
+
+/// Select the `batch` lowest-counted keys, returning them with the highest count
+/// among them.
+///
+/// `select_nth_unstable_by_key` partitions in O(n) rather than sorting, and only
+/// the chosen keys are cloned.
+fn lowest_keys<C>(
+    counters: &HashMap<String, C>,
+    batch: usize,
+    count_of: impl Fn(&C) -> u64,
+) -> (Vec<String>, u64) {
+    let batch = batch.clamp(1, counters.len());
+    let mut entries: Vec<(u64, &str)> = counters
+        .iter()
+        .map(|(key, counter)| (count_of(counter), key.as_str()))
+        .collect();
+
+    // Everything before `nth` is <= `nth`, so `nth` is the highest count in the
+    // selected batch and therefore the admission floor.
+    let (lowest, nth, _) = entries.select_nth_unstable_by_key(batch - 1, |&(count, _)| count);
+    let floor = nth.0;
+    let doomed = lowest
+        .iter()
+        .chain(std::iter::once(&*nth))
+        .map(|&(_, key)| key.to_string())
+        .collect();
+    (doomed, floor)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TalkerCounter {
     username: String,
@@ -274,6 +325,10 @@ struct TalkerCounter {
 struct TalkerHeavyHitters {
     capacity: usize,
     counters: HashMap<String, TalkerCounter>,
+    /// Absent on checkpoints written before batch eviction; zero is the safe
+    /// starting bound.
+    #[serde(default)]
+    admission: AdmissionFloor,
 }
 
 impl TalkerHeavyHitters {
@@ -281,6 +336,7 @@ impl TalkerHeavyHitters {
         Self {
             capacity: capacity.max(1),
             counters: HashMap::new(),
+            admission: AdmissionFloor::default(),
         }
     }
 
@@ -298,34 +354,39 @@ impl TalkerHeavyHitters {
         }
 
         if self.counters.len() < self.capacity {
+            let floor = self.admission.floor;
             self.counters.insert(
                 user_id.to_string(),
                 TalkerCounter {
                     username: username.to_string(),
-                    count: n,
-                    error: 0,
+                    count: floor.saturating_add(n),
+                    error: floor,
                 },
             );
             return;
         }
 
-        let min_key_and_count = self
-            .counters
-            .iter()
-            .min_by_key(|(_, counter)| counter.count)
-            .map(|(key, counter)| (key.clone(), counter.count));
+        self.evict_batch();
+        let floor = self.admission.floor;
+        self.counters.insert(
+            user_id.to_string(),
+            TalkerCounter {
+                username: username.to_string(),
+                count: floor.saturating_add(n),
+                error: floor,
+            },
+        );
+    }
 
-        if let Some((key, min_count)) = min_key_and_count {
+    /// Free a batch of slots and raise the admission floor accordingly.
+    fn evict_batch(&mut self) {
+        let batch = (self.capacity / EVICTION_BATCH_DIVISOR).max(1);
+        let (doomed, floor) = lowest_keys(&self.counters, batch, |counter| counter.count);
+        for key in doomed {
             self.counters.remove(&key);
-            self.counters.insert(
-                user_id.to_string(),
-                TalkerCounter {
-                    username: username.to_string(),
-                    count: min_count.saturating_add(n),
-                    error: min_count,
-                },
-            );
         }
+        // Monotonic: counts only grow, so a later batch never lowers the bound.
+        self.admission.floor = self.admission.floor.max(floor);
     }
 
     /// Drop all but the `capacity` highest counters, for a checkpoint restored
@@ -411,6 +472,8 @@ struct WordCounter {
 struct WordHeavyHitters {
     capacity: usize,
     counters: HashMap<String, WordCounter>,
+    #[serde(default)]
+    admission: AdmissionFloor,
 }
 
 impl WordHeavyHitters {
@@ -418,6 +481,7 @@ impl WordHeavyHitters {
         Self {
             capacity: capacity.max(1),
             counters: HashMap::new(),
+            admission: AdmissionFloor::default(),
         }
     }
 
@@ -428,27 +492,36 @@ impl WordHeavyHitters {
         }
 
         if self.counters.len() < self.capacity {
-            self.counters
-                .insert(word.to_string(), WordCounter { count: 1, error: 0 });
-            return;
-        }
-
-        let min_key_and_count = self
-            .counters
-            .iter()
-            .min_by_key(|(_, counter)| counter.count)
-            .map(|(key, counter)| (key.clone(), counter.count));
-
-        if let Some((key, min_count)) = min_key_and_count {
-            self.counters.remove(&key);
+            let floor = self.admission.floor;
             self.counters.insert(
                 word.to_string(),
                 WordCounter {
-                    count: min_count.saturating_add(1),
-                    error: min_count,
+                    count: floor.saturating_add(1),
+                    error: floor,
                 },
             );
+            return;
         }
+
+        self.evict_batch();
+        let floor = self.admission.floor;
+        self.counters.insert(
+            word.to_string(),
+            WordCounter {
+                count: floor.saturating_add(1),
+                error: floor,
+            },
+        );
+    }
+
+    /// Free a batch of slots and raise the admission floor accordingly.
+    fn evict_batch(&mut self) {
+        let batch = (self.capacity / EVICTION_BATCH_DIVISOR).max(1);
+        let (doomed, floor) = lowest_keys(&self.counters, batch, |counter| counter.count);
+        for key in doomed {
+            self.counters.remove(&key);
+        }
+        self.admission.floor = self.admission.floor.max(floor);
     }
 
     fn compare_entries(a: (&str, &WordCounter), b: (&str, &WordCounter)) -> Ordering {
@@ -1322,6 +1395,115 @@ mod tests {
                 rare.error
             );
         }
+    }
+
+    /// Batch eviction frees several slots per scan, so an admitted key inherits
+    /// the highest count in the evicted batch rather than the single lowest
+    /// count. That is a looser bound, so this pins down what must still hold:
+    /// the reported count is never below the truth, and `count - error` is never
+    /// above it.
+    #[test]
+    fn batch_eviction_keeps_counts_bounded() {
+        let mut agg = StatisticsAggregator::with_settings(StatisticsConfig {
+            top_words: 50,
+            word_capacity: 64,
+            ..StatisticsConfig::default()
+        });
+        let now = Utc::now();
+
+        // "hot" appears in every message so it is never the batch minimum; each
+        // "noise" word appears exactly once.
+        let messages = 20_000usize;
+        for i in 0..messages {
+            agg.record_message(&chat_at("u1", "User", &format!("noise{i} hot"), now));
+        }
+
+        let stats = agg.current_stats();
+        let hot = stats
+            .word_frequency
+            .iter()
+            .find(|entry| entry.word == "hot")
+            .expect("an always-resident word must be tracked");
+        assert_eq!(
+            (hot.count, hot.error),
+            (messages as u64, 0),
+            "a word that never faces eviction stays exact"
+        );
+
+        for entry in &stats.word_frequency {
+            if entry.word == "hot" {
+                continue;
+            }
+            let true_count = 1;
+            assert!(
+                entry.count >= true_count,
+                "{} reported {} below its true count",
+                entry.word,
+                entry.count
+            );
+            assert!(
+                entry.count - entry.error <= true_count,
+                "{} claims a lower bound of {} above its true count {true_count}",
+                entry.word,
+                entry.count - entry.error
+            );
+        }
+    }
+
+    #[test]
+    fn every_slot_freed_by_word_batch_eviction_uses_the_admission_floor() {
+        let mut hitters = WordHeavyHitters::new(64);
+        for i in 0..64 {
+            hitters.increment(&format!("word-{i}"));
+        }
+
+        hitters.increment("trigger");
+        let evicted = (0..64)
+            .map(|i| format!("word-{i}"))
+            .find(|word| !hitters.counters.contains_key(word))
+            .expect("batch eviction must free more than the trigger's slot");
+
+        hitters.increment(&evicted);
+        let counter = hitters
+            .counters
+            .get(&evicted)
+            .expect("the evicted word is readmitted");
+        assert!(
+            counter.error > 0,
+            "readmission must retain the eviction floor"
+        );
+        assert!(
+            counter.count - counter.error <= 2,
+            "the reported lower bound cannot exceed the true count"
+        );
+    }
+
+    #[test]
+    fn every_slot_freed_by_talker_batch_eviction_uses_the_admission_floor() {
+        let mut hitters = TalkerHeavyHitters::new(64);
+        for i in 0..64 {
+            hitters.increment(&format!("user-{i}"), "User");
+        }
+
+        hitters.increment("trigger", "Trigger");
+        let evicted = (0..64)
+            .map(|i| format!("user-{i}"))
+            .find(|user_id| !hitters.counters.contains_key(user_id))
+            .expect("batch eviction must free more than the trigger's slot");
+
+        hitters.increment(&evicted, "Returned");
+        let counter = hitters
+            .counters
+            .get(&evicted)
+            .expect("the evicted talker is readmitted");
+        assert!(
+            counter.error > 0,
+            "readmission must retain the eviction floor"
+        );
+        assert!(
+            counter.count - counter.error <= 2,
+            "the reported lower bound cannot exceed the true count"
+        );
     }
 
     /// While fewer distinct keys than the configured capacity have been seen,

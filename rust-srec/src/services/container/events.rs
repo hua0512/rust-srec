@@ -225,8 +225,28 @@ impl ServiceContainer {
     }
 
     /// Set up danmu event subscriptions for segment coordination.
+    ///
+    /// Drained through a bounded queue like the download events above, and for
+    /// the same reason: `broadcast` skips messages for a lagging receiver, and
+    /// the handler awaits config resolution and database writes per event.
+    /// Losing chatter like `Reconnecting` would be harmless, but
+    /// `DanmuEvent::CollectionStopped` is the sole writer of
+    /// `PipelineCoordinator`'s `danmu_complete` and `SegmentCompleted` is what
+    /// registers a segment's XML — those must not depend on how fast the
+    /// handler runs. The drain does nothing but forward, so the broadcast side
+    /// is consumed at channel speed regardless of handler latency.
     pub(super) fn setup_danmu_event_subscriptions(&self) {
         let receiver = self.danmu_service.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        const DANMU_EVENT_QUEUE_CAPACITY: usize = 8192;
+        let (event_tx, event_rx) = mpsc::channel::<DanmuEvent>(DANMU_EVENT_QUEUE_CAPACITY);
+
+        self.task_supervisor.spawn(
+            "danmu event drain",
+            run_danmu_event_drain(receiver, event_tx, cancellation_token.clone()),
+        );
+
         let handler = DanmuEventHandler {
             pipeline_manager: self.pipeline_manager.clone(),
             download_manager: self.download_manager.clone(),
@@ -236,11 +256,10 @@ impl ServiceContainer {
             discarded_segment_keys: self.discarded_segment_keys.clone(),
             danmu_link_down: self.danmu_link_down.clone(),
         };
-        let cancellation_token = self.cancellation_token.clone();
 
         self.task_supervisor.spawn(
             "danmu event handler",
-            handler.run(receiver, cancellation_token),
+            handler.run(event_rx, cancellation_token),
         );
     }
 
@@ -565,6 +584,49 @@ async fn run_download_event_drain(
     }
 }
 
+/// Forward danmu events from the lossy broadcast into the handler's queue.
+///
+/// Mirrors [`run_download_event_drain`], with one difference in severity:
+/// danmu events are low-volume (per segment, per reconnect — never per
+/// message), so this receiver lagging means something is badly wrong, and any
+/// skipped batch may have contained `CollectionStopped` — whose loss strands
+/// the session-complete pipeline — or `SegmentCompleted`, whose loss leaves a
+/// finished XML unregistered. Logged as an error, not a warning, so it cannot
+/// pass unnoticed.
+async fn run_danmu_event_drain(
+    mut receiver: broadcast::Receiver<DanmuEvent>,
+    event_tx: mpsc::Sender<DanmuEvent>,
+    drain_token: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            _ = drain_token.cancelled() => {
+                debug!("Danmu event drain shutting down");
+                break;
+            }
+            result = receiver.recv() => {
+                match result {
+                    Ok(event) => {
+                        if event_tx.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::error!(
+                            skipped,
+                            "Danmu event drain lagged; coordination events may have been lost"
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        debug!("Danmu event channel closed");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Owned service handles for the `download event processor` task, cloned
 /// out of [`ServiceContainer`] by
 /// [`ServiceContainer::setup_download_event_subscriptions`] so the spawned
@@ -832,7 +894,7 @@ struct DanmuEventHandler {
 impl DanmuEventHandler {
     async fn run(
         self,
-        mut receiver: broadcast::Receiver<DanmuEvent>,
+        mut receiver: mpsc::Receiver<DanmuEvent>,
         cancellation_token: CancellationToken,
     ) {
         loop {
@@ -841,13 +903,12 @@ impl DanmuEventHandler {
                     debug!("Danmu event handler shutting down");
                     break;
                 }
-                result = receiver.recv() => {
-                    match result {
-                        Ok(event) => self.handle_event(event).await,
-                        Err(error) => {
-                            if !broadcast_error_is_recoverable("danmu", error) {
-                                break;
-                            }
+                event = receiver.recv() => {
+                    match event {
+                        Some(event) => self.handle_event(event).await,
+                        None => {
+                            debug!("Danmu event queue closed");
+                            break;
                         }
                     }
                 }

@@ -64,7 +64,7 @@ export const DanmuStatisticsCard = memo(
                 onChange={(event) =>
                   formField.onChange(
                     event.target.value === ''
-                      ? null
+                      ? undefined
                       : Number(event.target.value),
                   )
                 }
@@ -179,7 +179,7 @@ export const DanmuStatisticsCard = memo(
                         .split('\n')
                         .map((word) => word.trim())
                         .filter(Boolean);
-                      field.onChange(words.length > 0 ? words : null);
+                      field.onChange(words.length > 0 ? words : undefined);
                     }}
                   />
                 </FormControl>

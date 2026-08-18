@@ -6,6 +6,7 @@ use dashmap::DashMap;
 use pipeline_common::expand_path_template;
 use tracing::{debug, info, warn};
 
+use crate::danmu::CollectionSpec;
 use crate::database::repositories::SessionRepository;
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{DownloadConfig, DownloadProtocol};
@@ -524,14 +525,14 @@ pub(super) async fn run_live_download_pipeline(
     // connection.
     if started && merged_config.record_danmu {
         match danmu_service
-            .start_collection(
-                &session_id,
-                &streamer_id,
-                &streamer_url,
+            .start_collection(CollectionSpec {
+                session_id: session_id.clone(),
+                streamer_id: streamer_id.clone(),
+                streamer_url,
                 cookies,
-                media_extras,
-                danmu_statistics,
-            )
+                extras: media_extras,
+                statistics: danmu_statistics,
+            })
             .await
         {
             Ok(handle) => {

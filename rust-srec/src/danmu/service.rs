@@ -19,14 +19,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::danmu::{DanmuStatistics, ProviderRegistry};
-use crate::database::models::{DanmuRateEntry, GiftTallyEntry, TopTalkerEntry, WordFrequencyEntry};
-use crate::database::repositories::SessionRepository;
-use crate::domain::DanmuStatisticsConfig;
 use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
 
 use super::events::{CollectionCommand, DanmuEvent};
+use super::lifecycle::{CollectionOutcome, CollectionSpec, CollectionStopReason};
 use super::runner::{CollectionRunner, RunnerParams};
+use super::statistics_session::StatisticsSession;
 
 /// Handle for controlling a danmu collection session.
 #[derive(Clone)]
@@ -87,9 +86,8 @@ struct CollectionState {
     cancel_token: CancellationToken,
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
-    /// Signals when the runner has fully stopped (including final XML
-    /// flush/finalize), carrying its final statistics.
-    done_rx: Option<oneshot::Receiver<DanmuStatistics>>,
+    /// Signals when the task has completed all normal finalization.
+    done_rx: Option<oneshot::Receiver<CollectionOutcome>>,
 }
 
 /// Danmu collection service.
@@ -143,13 +141,6 @@ impl DanmuService {
         self
     }
 
-    /// Get the session repository (if set).
-    pub fn session_repo(
-        &self,
-    ) -> Option<&Arc<dyn crate::database::repositories::SessionRepository>> {
-        self.session_repo.as_ref()
-    }
-
     /// Subscribe to danmu events.
     pub fn subscribe(&self) -> broadcast::Receiver<DanmuEvent> {
         self.event_tx.subscribe()
@@ -157,19 +148,18 @@ impl DanmuService {
 
     /// Start danmu collection for a session.
     /// Returns a handle that can be used to control segment file writing.
-    pub async fn start_collection(
-        &self,
-        session_id: &str,
-        streamer_id: &str,
-        streamer_url: &str,
-        cookies: Option<String>,
-        extras: Option<std::collections::HashMap<String, String>>,
-        statistics: DanmuStatisticsConfig,
-    ) -> Result<CollectionHandle> {
-        const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+    pub async fn start_collection(&self, spec: CollectionSpec) -> Result<CollectionHandle> {
+        let CollectionSpec {
+            session_id,
+            streamer_id,
+            streamer_url,
+            cookies,
+            extras,
+            statistics,
+        } = spec;
 
         // Check if already collecting
-        if self.collections.contains_key(session_id) {
+        if self.collections.contains_key(&session_id) {
             return Err(Error::from(
                 platforms_parser::danmaku::DanmakuError::connection(format!(
                     "Collection already active for session {}",
@@ -190,7 +180,7 @@ impl DanmuService {
         // with `stop_collection` (which mutates the same shard).
         let prior_session_id: Option<String> = self
             .sessions_by_streamer
-            .get(streamer_id)
+            .get(&streamer_id)
             .map(|entry| entry.value().clone());
 
         if let Some(old_sid) = prior_session_id
@@ -218,7 +208,7 @@ impl DanmuService {
         }
 
         // Find provider for URL
-        let provider = self.providers.get_by_url(streamer_url).ok_or_else(|| {
+        let provider = self.providers.get_by_url(&streamer_url).ok_or_else(|| {
             Error::from(platforms_parser::danmaku::DanmakuError::connection(
                 format!("No danmu provider for URL: {}", streamer_url),
             ))
@@ -238,7 +228,7 @@ impl DanmuService {
                     .as_ref()
                     .and_then(|e| e.get("presenter_uid"))
                     .cloned()
-                    .or_else(|| provider.extract_room_id(streamer_url))
+                    .or_else(|| provider.extract_room_id(&streamer_url))
             }
             "douyin" => {
                 // Douyin uses id_str (room_id) for danmu connection
@@ -246,7 +236,7 @@ impl DanmuService {
                     .as_ref()
                     .and_then(|e| e.get("id_str"))
                     .cloned()
-                    .or_else(|| provider.extract_room_id(streamer_url))
+                    .or_else(|| provider.extract_room_id(&streamer_url))
             }
             "douyu" => {
                 // Douyu uses rid for danmu connection
@@ -254,7 +244,7 @@ impl DanmuService {
                     .as_ref()
                     .and_then(|e| e.get("rid"))
                     .cloned()
-                    .or_else(|| provider.extract_room_id(streamer_url))
+                    .or_else(|| provider.extract_room_id(&streamer_url))
             }
             "soop" => {
                 // SOOP chat path uses bj id; chat host/FTK arrive via MediaInfo extras.
@@ -262,7 +252,7 @@ impl DanmuService {
                     .as_ref()
                     .and_then(|e| e.get("bjid").or_else(|| e.get("channel_id")))
                     .cloned()
-                    .or_else(|| provider.extract_room_id(streamer_url))
+                    .or_else(|| provider.extract_room_id(&streamer_url))
             }
             "bigo" => {
                 // Bigo WS enter needs studio roomId (not siteId from the URL)
@@ -270,9 +260,9 @@ impl DanmuService {
                     .as_ref()
                     .and_then(|e| e.get("room_id"))
                     .cloned()
-                    .or_else(|| provider.extract_room_id(streamer_url))
+                    .or_else(|| provider.extract_room_id(&streamer_url))
             }
-            _ => provider.extract_room_id(streamer_url),
+            _ => provider.extract_room_id(&streamer_url),
         }
         .ok_or_else(|| {
             Error::from(platforms_parser::danmaku::DanmakuError::connection(
@@ -294,156 +284,56 @@ impl DanmuService {
         // With statistics disabled the aggregator is left empty and never
         // persisted, so the session has no statistics row and the API reports
         // them as unavailable. XML recording is unaffected.
-        let statistics_enabled = statistics.enabled;
-        let stats_repo = self.session_repo.clone().filter(|_| statistics_enabled);
-
-        // Build bounded per-session statistics state, resuming from a checkpoint
-        // when this session was already being collected before a restart.
-        let stats = super::checkpoint::load_or_new(
-            stats_repo.as_ref(),
-            session_id,
-            statistics.to_aggregator_config(),
-        )
-        .await;
+        let statistics =
+            StatisticsSession::load(session_id.clone(), self.session_repo.clone(), statistics)
+                .await;
         let cancel_token = self.cancel_token.child_token();
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
-        let (done_tx, done_rx) = oneshot::channel::<DanmuStatistics>();
+        let (done_tx, done_rx) = oneshot::channel::<CollectionOutcome>();
 
         let state = CollectionState {
-            streamer_id: streamer_id.to_string(),
+            streamer_id: streamer_id.clone(),
             cancel_token: cancel_token.clone(),
             command_tx: command_tx.clone(),
             done_rx: Some(done_rx),
         };
 
-        self.collections.insert(session_id.to_string(), state);
+        self.collections.insert(session_id.clone(), state);
         self.sessions_by_streamer
-            .insert(streamer_id.to_string(), session_id.to_string());
+            .insert(streamer_id.clone(), session_id.clone());
 
-        // Start collection task
-        let session_id_clone = session_id.to_string();
-        let streamer_id_clone = streamer_id.to_string();
-        let room_id_clone = room_id.clone();
-        let event_tx = self.event_tx.clone();
-        let collections = self.collections.clone();
-        let sessions_by_streamer = self.sessions_by_streamer.clone();
-        let session_repo = stats_repo.clone();
-        let provider = Arc::clone(&provider);
-        let conn_config = connection_config;
-        let cancel_token_task = cancel_token.clone();
-
-        tokio::spawn(async move {
-            let (runner, items) = match tokio::time::timeout(
-                CONNECT_TIMEOUT,
-                CollectionRunner::new(RunnerParams {
-                    session_id: session_id_clone.clone(),
-                    streamer_id: streamer_id_clone.clone(),
-                    room_id: room_id_clone,
-                    provider: Arc::clone(&provider),
-                    conn_config,
-                    stats,
-                    session_repo: session_repo.clone(),
-                    statistics_enabled,
-                    event_tx: event_tx.clone(),
-                }),
-            )
-            .await
-            {
-                Ok(Ok(started)) => {
-                    let _ = ready_tx.send(Ok(()));
-                    started
-                }
-                Ok(Err(e)) => {
-                    let error_message = e.to_string();
-                    let _ = event_tx.send(DanmuEvent::Error {
-                        session_id: session_id_clone.clone(),
-                        error: error_message,
-                    });
-                    let _ = ready_tx.send(Err(e));
-                    remove_collection(&collections, &sessions_by_streamer, &session_id_clone);
-                    // No `CollectionStopped` here on purpose: collection never
-                    // started, so `PipelineCoordinator` never set
-                    // `danmu_observed` and the session-complete gate does not
-                    // wait on a danmu arm.
-                    return;
-                }
-                Err(_) => {
-                    let message = format!(
-                        "Danmu connection timed out after {:?} (session_id={})",
-                        CONNECT_TIMEOUT, session_id_clone
-                    );
-                    let _ = ready_tx.send(Err(Error::from(
-                        platforms_parser::danmaku::DanmakuError::connection(message.clone()),
-                    )));
-                    let _ = event_tx.send(DanmuEvent::Error {
-                        session_id: session_id_clone.clone(),
-                        error: message,
-                    });
-                    remove_collection(&collections, &sessions_by_streamer, &session_id_clone);
-                    return;
-                }
-            };
-
-            let outcome = runner.run(command_rx, items, cancel_token_task).await;
-            if let Some(error) = &outcome.error {
-                let _ = event_tx.send(DanmuEvent::Error {
-                    session_id: session_id_clone.clone(),
-                    error: error.to_string(),
-                });
-            }
-
-            // Clean up the in-memory state when the runner exits on its own — a
-            // transport failure, a `StreamClosed` control event, or external
-            // cancellation — rather than through `stop_collection`.
-            //
-            // `CollectionStopped` is emitted on every one of those paths, failure
-            // included: `PipelineCoordinator::apply_event` treats it as the only
-            // signal that the session's danmu arm is finished (it is the sole
-            // writer of `danmu_complete`), so withholding it after a failure
-            // leaves `CreateSessionCompleteDag` permanently ungated for the
-            // session. The statistics are final either way.
-            //
-            // If `stop_collection` already removed the entry it emits the event
-            // itself, and `remove` returning None keeps this from duplicating it.
-            // Only a session that is genuinely over releases its checkpoint;
-            // collection interrupted by a process shutdown keeps it so the next
-            // start resumes rather than recounting from zero.
-            if outcome.session_ended {
-                super::checkpoint::discard(session_repo.as_ref(), &session_id_clone).await;
-            }
-
-            if remove_collection(&collections, &sessions_by_streamer, &session_id_clone) {
-                persist_statistics(
-                    session_repo.as_deref(),
-                    &session_id_clone,
-                    &outcome.statistics,
-                )
-                .await;
-                let _ = event_tx.send(DanmuEvent::CollectionStopped {
-                    session_id: session_id_clone.clone(),
-                    total_count: outcome.statistics.total_count,
-                });
-            }
-
-            let _ = done_tx.send(outcome.statistics);
-        });
+        tokio::spawn(collection_task(CollectionTaskContext {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            room_id,
+            provider: Arc::clone(&provider),
+            conn_config: connection_config,
+            statistics,
+            command_rx,
+            cancel_token: cancel_token.clone(),
+            collections: self.collections.clone(),
+            sessions_by_streamer: self.sessions_by_streamer.clone(),
+            event_tx: self.event_tx.clone(),
+            ready_tx,
+            done_tx,
+        }));
 
         tokio::select! {
             ready = ready_rx => {
                 match ready {
                     Ok(Ok(())) => {
                         let _ = self.event_tx.send(DanmuEvent::CollectionStarted {
-                            session_id: session_id.to_string(),
-                            streamer_id: streamer_id.to_string(),
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
                         });
                     }
                     Ok(Err(e)) => {
-                        remove_collection(&self.collections, &self.sessions_by_streamer, session_id);
+                        remove_collection(&self.collections, &self.sessions_by_streamer, &session_id);
                         return Err(e);
                     }
                     Err(_) => {
-                        remove_collection(&self.collections, &self.sessions_by_streamer, session_id);
+                        remove_collection(&self.collections, &self.sessions_by_streamer, &session_id);
                         return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
                             "Danmu collection task stopped before it became ready",
                         )));
@@ -451,7 +341,7 @@ impl DanmuService {
                 }
             }
             _ = cancel_token.cancelled() => {
-                remove_collection(&self.collections, &self.sessions_by_streamer, session_id);
+                remove_collection(&self.collections, &self.sessions_by_streamer, &session_id);
                 return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
                     "Danmu collection cancelled before it became ready",
                 )));
@@ -459,76 +349,80 @@ impl DanmuService {
         }
 
         Ok(CollectionHandle {
-            session_id: session_id.to_string(),
+            session_id,
             command_tx,
         })
     }
 
     /// Stop danmu collection for a session.
     pub async fn stop_collection(&self, session_id: &str) -> Result<DanmuStatistics> {
-        // Get and remove state
-        let (_, state) = self.collections.remove(session_id).ok_or_else(|| {
-            Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                format!("No active collection for session {}", session_id),
-            ))
-        })?;
+        self.stop_collection_with_reason(session_id, CollectionStopReason::SessionEnded)
+            .await
+    }
 
-        release_streamer_slot(&self.sessions_by_streamer, &state.streamer_id, session_id);
+    async fn stop_collection_with_reason(
+        &self,
+        session_id: &str,
+        reason: CollectionStopReason,
+    ) -> Result<DanmuStatistics> {
+        let (command_tx, cancel_token, done_rx) = {
+            let mut state = self.collections.get_mut(session_id).ok_or_else(|| {
+                Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                    format!("No active collection for session {}", session_id),
+                ))
+            })?;
+            let done_rx = state.done_rx.take().ok_or_else(|| {
+                Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                    format!("Collection is already stopping for session {}", session_id),
+                ))
+            })?;
+            (
+                state.command_tx.clone(),
+                state.cancel_token.clone(),
+                done_rx,
+            )
+        };
 
-        // Send stop command
-        if state
-            .command_tx
-            .send(CollectionCommand::Stop)
+        if command_tx
+            .send(CollectionCommand::Stop(reason))
             .await
             .is_err()
         {
             tracing::debug!(session_id, "Danmu collection task already stopped");
         }
 
-        // Cancel the collection task
-        state.cancel_token.cancel();
+        const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+        match tokio::time::timeout(STOP_TIMEOUT, done_rx).await {
+            Ok(Ok(outcome)) => {
+                tracing::debug!(session_id, reason = ?outcome.reason, "Danmu collection stopped");
+                Ok(outcome.statistics)
+            }
+            Ok(Err(_)) => {
+                tracing::debug!(
+                    session_id,
+                    "Danmu collection task ended without reporting an outcome"
+                );
+                Ok(DanmuStatistics::default())
+            }
+            Err(_) => {
+                warn!(
+                    "Danmu collection stop timed out after {:?} (session_id={})",
+                    STOP_TIMEOUT, session_id
+                );
+                cancel_token.cancel();
 
-        if let Some(done_rx) = state.done_rx {
-            const STOP_TIMEOUT: Duration = Duration::from_secs(10);
-            match tokio::time::timeout(STOP_TIMEOUT, done_rx).await {
-                Ok(Ok(statistics)) => {
-                    persist_statistics(self.session_repo.as_deref(), session_id, &statistics).await;
+                // A wedged task cannot own completion, so the timeout fallback
+                // releases the coordinator gate. A late task observes the
+                // missing entry and cannot emit a duplicate terminal event.
+                if remove_collection(&self.collections, &self.sessions_by_streamer, session_id) {
                     let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
                         session_id: session_id.to_string(),
-                        total_count: statistics.total_count,
+                        total_count: 0,
                     });
-                    return Ok(statistics);
                 }
-                // The runner task ended without reporting. It removed its own
-                // entry and emitted `CollectionStopped` on that path, so there is
-                // nothing left to do here.
-                Ok(Err(_)) => {
-                    tracing::debug!(
-                        session_id,
-                        "Danmu collection task ended without reporting statistics"
-                    );
-                    return Ok(DanmuStatistics::default());
-                }
-                Err(_) => {
-                    warn!(
-                        "Danmu collection stop timed out after {:?} (session_id={})",
-                        STOP_TIMEOUT, session_id
-                    );
-                }
+                Ok(DanmuStatistics::default())
             }
         }
-
-        // Reached only on the stop timeout above, where the runner is wedged and
-        // may never report. Emit `CollectionStopped` anyway: it is the sole writer
-        // of the coordinator's `danmu_complete`, so staying silent would leave the
-        // session-complete pipeline ungated forever. A late duplicate from the
-        // runner is harmless — finalization is idempotent.
-        let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
-            session_id: session_id.to_string(),
-            total_count: 0,
-        });
-
-        Ok(DanmuStatistics::default())
     }
 
     /// Get a handle for an existing collection.
@@ -569,9 +463,197 @@ impl DanmuService {
         // Stop all active collections
         let session_ids: Vec<_> = self.collections.iter().map(|r| r.key().clone()).collect();
         for session_id in session_ids {
-            if let Err(error) = self.stop_collection(&session_id).await {
+            if let Err(error) = self
+                .stop_collection_with_reason(&session_id, CollectionStopReason::ServiceShutdown)
+                .await
+            {
                 warn!(session_id, %error, "Failed to stop danmu collection during shutdown");
             }
+        }
+    }
+}
+
+/// Everything one collection task owns for its lifetime.
+///
+/// Named rather than captured by a closure so `start_collection` reads as
+/// setup + spawn + ready-handshake, and the task body — which owns registry
+/// cleanup and the terminal event — is reviewable on its own.
+struct CollectionTaskContext {
+    session_id: String,
+    streamer_id: String,
+    room_id: String,
+    provider: Arc<dyn platforms_parser::danmaku::DanmuProvider>,
+    conn_config: ConnectionConfig,
+    statistics: StatisticsSession,
+    command_rx: mpsc::Receiver<CollectionCommand>,
+    cancel_token: CancellationToken,
+    collections: Arc<DashMap<String, CollectionState>>,
+    sessions_by_streamer: Arc<DashMap<String, String>>,
+    event_tx: broadcast::Sender<DanmuEvent>,
+    /// Resolved once, to tell `start_collection` whether the connect succeeded.
+    ready_tx: oneshot::Sender<Result<()>>,
+    /// Carries the final outcome to a waiting `stop_collection`.
+    done_tx: oneshot::Sender<CollectionOutcome>,
+}
+
+/// One collection, from connect to terminal event.
+///
+/// The task is the sole owner of normal completion: registry cleanup,
+/// persistence (inside `CollectionRunner::run`), and `CollectionStopped`.
+/// Callers only request a stop and await the outcome.
+async fn collection_task(ctx: CollectionTaskContext) {
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+    let CollectionTaskContext {
+        session_id,
+        streamer_id,
+        room_id,
+        provider,
+        conn_config,
+        statistics,
+        command_rx,
+        cancel_token,
+        collections,
+        sessions_by_streamer,
+        event_tx,
+        ready_tx,
+        done_tx,
+    } = ctx;
+
+    // Armed for the whole task: every early return below either disarms it
+    // or has already released the session, and a panic in between is what
+    // it exists for.
+    let mut cleanup = CollectionCleanupGuard {
+        collections: collections.clone(),
+        sessions_by_streamer: sessions_by_streamer.clone(),
+        event_tx: event_tx.clone(),
+        session_id: session_id.clone(),
+        armed: true,
+    };
+
+    let (runner, items) = match tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        CollectionRunner::new(RunnerParams {
+            session_id: session_id.clone(),
+            streamer_id,
+            room_id,
+            provider,
+            conn_config,
+            statistics,
+            event_tx: event_tx.clone(),
+        }),
+    )
+    .await
+    {
+        Ok(Ok(started)) => {
+            let _ = ready_tx.send(Ok(()));
+            started
+        }
+        Ok(Err(e)) => {
+            let error_message = e.to_string();
+            let _ = event_tx.send(DanmuEvent::Error {
+                session_id: session_id.clone(),
+                error: error_message,
+            });
+            let _ = ready_tx.send(Err(e));
+            cleanup.disarm();
+            remove_collection(&collections, &sessions_by_streamer, &session_id);
+            // No `CollectionStopped` here on purpose: collection never
+            // started, so `PipelineCoordinator` never set `danmu_observed`
+            // and the session-complete gate does not wait on a danmu arm.
+            return;
+        }
+        Err(_) => {
+            let message = format!(
+                "Danmu connection timed out after {:?} (session_id={})",
+                CONNECT_TIMEOUT, session_id
+            );
+            let _ = ready_tx.send(Err(Error::from(
+                platforms_parser::danmaku::DanmakuError::connection(message.clone()),
+            )));
+            let _ = event_tx.send(DanmuEvent::Error {
+                session_id: session_id.clone(),
+                error: message,
+            });
+            cleanup.disarm();
+            remove_collection(&collections, &sessions_by_streamer, &session_id);
+            return;
+        }
+    };
+
+    let outcome = runner.run(command_rx, items, cancel_token).await;
+    if let Some(error) = &outcome.error {
+        let _ = event_tx.send(DanmuEvent::Error {
+            session_id: session_id.clone(),
+            error: error.to_string(),
+        });
+    }
+    for error in &outcome.cleanup_errors {
+        let _ = event_tx.send(DanmuEvent::Error {
+            session_id: session_id.clone(),
+            error: error.to_string(),
+        });
+    }
+
+    if remove_collection(&collections, &sessions_by_streamer, &session_id) {
+        let _ = event_tx.send(DanmuEvent::CollectionStopped {
+            session_id: session_id.clone(),
+            total_count: outcome.statistics.total_count,
+        });
+    }
+    cleanup.disarm();
+
+    let _ = done_tx.send(outcome);
+}
+
+/// Releases a session's collection state if the collector task unwinds.
+///
+/// The normal exit paths do this themselves, with final statistics, and call
+/// [`Self::disarm`]. This covers the path that cannot: a panic inside
+/// `CollectionRunner::run` would otherwise leave the `collections` entry behind —
+/// so `is_collecting` keeps reporting a live collector and the `danmu_service`
+/// health probe sees nothing wrong — and withhold `CollectionStopped`, which is
+/// the only writer of `PipelineCoordinator`'s `danmu_complete` and therefore the
+/// only thing that lets the session-complete pipeline run.
+///
+/// Both operations are synchronous — `DashMap::remove` and
+/// `broadcast::Sender::send` — so the whole cleanup fits in `Drop`. The daemon's
+/// release profile deliberately keeps unwinding (see the comment on
+/// `[profile.release]` in the workspace manifest), so this runs on a panic rather
+/// than the process aborting.
+struct CollectionCleanupGuard {
+    collections: Arc<DashMap<String, CollectionState>>,
+    sessions_by_streamer: Arc<DashMap<String, String>>,
+    event_tx: broadcast::Sender<DanmuEvent>,
+    session_id: String,
+    armed: bool,
+}
+
+impl CollectionCleanupGuard {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CollectionCleanupGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        // `remove_collection` returning false means an exit path already
+        // released the session, so there is nothing to announce.
+        if remove_collection(
+            &self.collections,
+            &self.sessions_by_streamer,
+            &self.session_id,
+        ) {
+            warn!(
+                session_id = %self.session_id,
+                "danmu: collector task ended without completing; releasing the session"
+            );
+            let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
+                session_id: self.session_id.clone(),
+                total_count: 0,
+            });
         }
     }
 }
@@ -612,103 +694,6 @@ fn remove_collection(
     true
 }
 
-fn saturating_u64_to_i64(value: u64) -> i64 {
-    if value > i64::MAX as u64 {
-        i64::MAX
-    } else {
-        value as i64
-    }
-}
-
-/// Serialize and upsert danmu statistics for a session.
-///
-/// Called from `stop_collection`/runner-exit with final statistics, and from
-/// `CollectionRunner::run`'s periodic persist tick with in-progress snapshots,
-/// so `GET /api/sessions/{id}/danmu-statistics` reflects live sessions and a
-/// crash loses at most one persist interval of data.
-pub(super) async fn persist_statistics(
-    session_repo: Option<&dyn SessionRepository>,
-    session_id: &str,
-    statistics: &DanmuStatistics,
-) {
-    let Some(repo) = session_repo else {
-        return;
-    };
-
-    // Serialize each aggregate independently: a failed field degrades to NULL
-    // instead of dropping the whole upsert.
-    fn to_json_field<T: serde::Serialize>(
-        session_id: &str,
-        field: &'static str,
-        value: &T,
-    ) -> Option<String> {
-        match serde_json::to_string(value) {
-            Ok(value) => Some(value),
-            Err(error) => {
-                warn!(session_id, field, %error, "Failed to serialize danmu statistics field");
-                None
-            }
-        }
-    }
-
-    let rate_timeseries: Vec<_> = statistics
-        .rate_timeseries
-        .iter()
-        .map(|entry| DanmuRateEntry {
-            ts: entry.timestamp.timestamp_millis(),
-            count: saturating_u64_to_i64(entry.count),
-        })
-        .collect();
-
-    let to_talker_entry = |entry: &platforms_parser::danmaku::TopTalker| TopTalkerEntry {
-        user_id: entry.user_id.clone(),
-        username: entry.username.clone(),
-        message_count: saturating_u64_to_i64(entry.message_count),
-        error: saturating_u64_to_i64(entry.error),
-    };
-
-    let top_talkers: Vec<_> = statistics.top_talkers.iter().map(to_talker_entry).collect();
-    let top_gifters: Vec<_> = statistics.top_gifters.iter().map(to_talker_entry).collect();
-
-    let top_gifts: Vec<_> = statistics
-        .top_gifts
-        .iter()
-        .map(|entry| GiftTallyEntry {
-            name: entry.name.clone(),
-            count: saturating_u64_to_i64(entry.count),
-        })
-        .collect();
-
-    let word_frequency: Vec<_> = statistics
-        .word_frequency
-        .iter()
-        .map(|entry| WordFrequencyEntry {
-            word: entry.word.clone(),
-            count: saturating_u64_to_i64(entry.count),
-            error: saturating_u64_to_i64(entry.error),
-        })
-        .collect();
-
-    let mut model = crate::database::models::DanmuStatisticsDbModel::new(session_id);
-    model.total_danmus = saturating_u64_to_i64(statistics.total_count);
-    model.unique_talkers = Some(saturating_u64_to_i64(statistics.unique_talkers));
-    model.chat_count = Some(saturating_u64_to_i64(statistics.chat_count));
-    model.gift_count = Some(saturating_u64_to_i64(statistics.gift_count));
-    model.duration_secs = Some(saturating_u64_to_i64(statistics.duration_secs));
-    model.start_time = statistics.start_time.map(|time| time.timestamp_millis());
-    model.end_time = statistics.end_time.map(|time| time.timestamp_millis());
-    model.rate_bucket_secs = Some(saturating_u64_to_i64(statistics.bucket_duration_secs));
-    model.danmu_rate_timeseries = to_json_field(session_id, "rate_timeseries", &rate_timeseries);
-    model.top_talkers = to_json_field(session_id, "top_talkers", &top_talkers);
-    model.top_gifters = to_json_field(session_id, "top_gifters", &top_gifters);
-    model.top_gifts = to_json_field(session_id, "top_gifts", &top_gifts);
-    model.word_frequency = to_json_field(session_id, "word_frequency", &word_frequency);
-
-    if let Err(error) = repo.upsert_danmu_statistics(&model).await {
-        warn!(session_id, %error, "Failed to persist danmu statistics");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,13 +707,13 @@ mod tests {
         service: &DanmuService,
         streamer_id: &str,
         session_id: &str,
-    ) -> oneshot::Sender<DanmuStatistics> {
+    ) -> (oneshot::Sender<CollectionOutcome>, CancellationToken) {
         let (command_tx, _command_rx) = mpsc::channel(8);
         let (done_tx, done_rx) = oneshot::channel();
         let cancel_token = service.cancel_token.child_token();
         let state = CollectionState {
             streamer_id: streamer_id.to_string(),
-            cancel_token,
+            cancel_token: cancel_token.clone(),
             command_tx,
             done_rx: Some(done_rx),
         };
@@ -736,7 +721,18 @@ mod tests {
         service
             .sessions_by_streamer
             .insert(streamer_id.to_string(), session_id.to_string());
-        done_tx
+        (done_tx, cancel_token)
+    }
+
+    fn collection_spec(session_id: &str, streamer_id: &str, streamer_url: &str) -> CollectionSpec {
+        CollectionSpec {
+            session_id: session_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            streamer_url: streamer_url.to_string(),
+            cookies: None,
+            extras: None,
+            statistics: crate::domain::DanmuStatisticsConfig::default(),
+        }
     }
 
     #[tokio::test]
@@ -767,16 +763,24 @@ mod tests {
     /// orphaned alongside the new session's collector.
     #[tokio::test]
     async fn start_collection_aborts_previous_for_same_streamer() {
-        let service = DanmuService::new();
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_first_items_tx, first_items_rx) = mpsc::channel(8);
+        let (_second_items_tx, second_items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![
+            first_items_rx,
+            second_items_rx,
+        ])));
+        let service = DanmuService::with_providers(registry);
         let streamer_id = "streamer-1";
         let old_session = "session-old";
         let new_session = "session-new";
 
-        // Seed a prior collection for the streamer. Resolve the done_tx so
-        // `stop_collection`'s await returns promptly instead of waiting on
-        // its 10s timeout.
-        let done_tx = seed_active_collection(&service, streamer_id, old_session);
-        done_tx.send(DanmuStatistics::default()).unwrap();
+        service
+            .start_collection(collection_spec(old_session, streamer_id, FakeProvider::URL))
+            .await
+            .expect("first collection starts");
 
         assert!(
             service.is_collecting(old_session),
@@ -787,24 +791,10 @@ mod tests {
             Some(old_session)
         );
 
-        // `start_collection` will fail at provider lookup for our fake URL
-        // (no provider is registered for `https://example.com/test`). The
-        // abort logic runs *before* the provider lookup, so by the time the
-        // call returns the error, the prior collector should already be gone.
-        let outcome = service
-            .start_collection(
-                new_session,
-                streamer_id,
-                "https://example.com/test",
-                None,
-                None,
-                DanmuStatisticsConfig::default(),
-            )
-            .await;
-        assert!(
-            outcome.is_err(),
-            "expected provider-lookup failure for fake URL"
-        );
+        service
+            .start_collection(collection_spec(new_session, streamer_id, FakeProvider::URL))
+            .await
+            .expect("replacement collection starts");
 
         // The old collection must have been removed by the abort path,
         // even though the new spawn ultimately failed.
@@ -813,9 +803,13 @@ mod tests {
             "prior collector for {old_session} must have been aborted"
         );
         assert!(
-            !service.is_collecting(new_session),
-            "the new spawn failed at provider lookup so its slot must be empty too"
+            service.is_collecting(new_session),
+            "the replacement collector must own the session slot"
         );
+        service
+            .stop_collection(new_session)
+            .await
+            .expect("replacement stops");
     }
 
     /// The guarantee `PipelineCoordinator` depends on: a collector that ends on a
@@ -837,14 +831,11 @@ mod tests {
         let mut events = service.subscribe();
 
         let handle = service
-            .start_collection(
+            .start_collection(collection_spec(
                 "session-1",
                 "streamer-1",
                 FakeProvider::URL,
-                None,
-                None,
-                DanmuStatisticsConfig::default(),
-            )
+            ))
             .await
             .expect("collection starts against the fake provider");
         assert_eq!(handle.session_id(), "session-1");
@@ -888,35 +879,204 @@ mod tests {
         );
     }
 
+    /// The last line of defence for the session-complete gate: if the collector
+    /// task unwinds, `CollectionCleanupGuard::drop` must still release the session
+    /// and emit `CollectionStopped`.
+    ///
+    /// Without it a panic inside `CollectionRunner::run` leaves the `collections`
+    /// entry behind — so `is_collecting` keeps reporting a live collector, which
+    /// the health probe trusts — and withholds the only event that sets the
+    /// coordinator's `danmu_complete`.
+    #[tokio::test]
+    async fn cleanup_guard_releases_the_session_when_the_task_unwinds() {
+        let service = DanmuService::new();
+        let mut events = service.subscribe();
+        let (_done_tx, _) = seed_active_collection(&service, "streamer-1", "session-1");
+        assert!(service.is_collecting("session-1"));
+
+        // Dropping without disarming is what an unwind through the task body does.
+        {
+            let _guard = CollectionCleanupGuard {
+                collections: service.collections.clone(),
+                sessions_by_streamer: service.sessions_by_streamer.clone(),
+                event_tx: service.event_tx.clone(),
+                session_id: "session-1".to_string(),
+                armed: true,
+            };
+        }
+
+        assert!(
+            !service.is_collecting("session-1"),
+            "the collection slot must be released"
+        );
+        assert!(
+            service.get_session_by_streamer("streamer-1").is_none(),
+            "the streamer reverse index must be released"
+        );
+        assert!(
+            matches!(
+                events.try_recv(),
+                Ok(DanmuEvent::CollectionStopped { session_id, .. }) if session_id == "session-1"
+            ),
+            "the coordinator's danmu arm must still be released"
+        );
+    }
+
+    /// A disarmed guard is inert, so the normal exit path — which does its own
+    /// cleanup with real statistics — cannot be duplicated by it.
+    #[tokio::test]
+    async fn cleanup_guard_is_inert_once_disarmed() {
+        let service = DanmuService::new();
+        let mut events = service.subscribe();
+        let (_done_tx, _) = seed_active_collection(&service, "streamer-1", "session-1");
+
+        {
+            let mut guard = CollectionCleanupGuard {
+                collections: service.collections.clone(),
+                sessions_by_streamer: service.sessions_by_streamer.clone(),
+                event_tx: service.event_tx.clone(),
+                session_id: "session-1".to_string(),
+                armed: true,
+            };
+            guard.disarm();
+        }
+
+        assert!(
+            service.is_collecting("session-1"),
+            "a disarmed guard must not touch the collection"
+        );
+        assert!(events.try_recv().is_err(), "and must not emit an event");
+    }
+
     /// Calling `start_collection` twice with the same `session_id` keeps
     /// the existing "already active" error path. The new abort logic must
     /// not fire for self-replace because of the `old_sid != session_id`
     /// guard.
     #[tokio::test]
     async fn start_collection_idempotent_for_same_session_id() {
-        let service = DanmuService::new();
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
         let streamer_id = "streamer-1";
         let session_id = "session-1";
 
-        let _done_tx = seed_active_collection(&service, streamer_id, session_id);
+        service
+            .start_collection(collection_spec(session_id, streamer_id, FakeProvider::URL))
+            .await
+            .expect("first collection starts");
 
         let result = service
-            .start_collection(
-                session_id,
-                streamer_id,
-                "https://example.com/test",
-                None,
-                None,
-                DanmuStatisticsConfig::default(),
-            )
+            .start_collection(collection_spec(session_id, streamer_id, FakeProvider::URL))
             .await;
 
         assert!(
             result.is_err(),
             "second start_collection for same session must return the 'already active' error"
         );
-        // The seeded collector must still be present — the early-return at
-        // line 250 short-circuits before the abort logic could touch it.
         assert!(service.is_collecting(session_id));
+        service
+            .stop_collection(session_id)
+            .await
+            .expect("collection stops");
+    }
+
+    #[tokio::test]
+    async fn normal_stop_does_not_cancel_the_collection_token() {
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
+        let mut events = service.subscribe();
+        service
+            .start_collection(collection_spec(
+                "session-1",
+                "streamer-1",
+                FakeProvider::URL,
+            ))
+            .await
+            .expect("collection starts");
+        let cancel_token = service
+            .collections
+            .get("session-1")
+            .expect("active collection")
+            .cancel_token
+            .clone();
+
+        service
+            .stop_collection("session-1")
+            .await
+            .expect("collection stops");
+
+        assert!(
+            !cancel_token.is_cancelled(),
+            "a normal session stop must not be treated as process shutdown"
+        );
+        let stopped_events = std::iter::from_fn(|| events.try_recv().ok())
+            .filter(|event| matches!(event, DanmuEvent::CollectionStopped { .. }))
+            .count();
+        assert_eq!(
+            stopped_events, 1,
+            "normal completion must have one terminal event owner"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_statistics_are_not_persisted_on_stop() {
+        use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
+        use crate::database::repositories::{
+            SessionRepository as _, SqlxSessionRepository, SqlxStreamerRepository,
+            StreamerRepository as _,
+        };
+        use crate::database::{init_pool_with_size, run_migrations};
+
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
+
+        let mut session = LiveSessionDbModel::new("streamer-1");
+        session.id = "session-1".to_string();
+        let repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool));
+        repo.create_session(&session).await.unwrap();
+
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry).with_session_repository(repo.clone());
+        let mut spec = collection_spec("session-1", "streamer-1", FakeProvider::URL);
+        spec.statistics.enabled = false;
+        service
+            .start_collection(spec)
+            .await
+            .expect("collection starts");
+
+        service
+            .stop_collection("session-1")
+            .await
+            .expect("collection stops");
+
+        assert!(
+            repo.get_danmu_statistics("session-1")
+                .await
+                .unwrap()
+                .is_none(),
+            "disabled collection must not create an empty statistics row"
+        );
     }
 }

@@ -63,11 +63,11 @@ impl Default for DanmuStatisticsConfig {
 impl DanmuStatisticsConfig {
     /// Upper bound on tracking capacity.
     ///
-    /// Eviction is a linear scan of the counter map, so capacity trades accuracy
-    /// against per-message cost: measured throughput falls from ~390k to ~80k
-    /// messages per second between capacity 256 and 4000 in a high-churn room.
-    /// Both are far above any real room's rate, and this ceiling keeps it that
-    /// way even if a user maximises every field.
+    /// A memory bound, not a throughput one: the aggregator evicts in batches, so
+    /// measured throughput is flat across capacities (~460k messages per second at
+    /// both 256 and 8192 in a high-churn room). What capacity does cost is
+    /// residency — two counter maps per session, each holding this many usernames
+    /// and words, plus the same again in a resume checkpoint.
     const MAX_CAPACITY: usize = 8192;
     const MIN_CAPACITY: usize = 64;
     /// Upper bound on reported list sizes. Beyond this the payload dominates the

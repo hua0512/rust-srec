@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc};
@@ -327,40 +326,14 @@ pub trait DanmuProtocol: Send + 'static {
 
 /// Internal state for a WebSocket connection
 struct WsConnectionState {
-    /// Connection ID
-    #[expect(
-        dead_code,
-        reason = "retained for protocol variants and forward-compatible response handling"
-    )]
-    id: String,
-    /// Room ID
-    #[expect(
-        dead_code,
-        reason = "retained for protocol variants and forward-compatible response handling"
-    )]
-    room_id: String,
-    /// Connected status
-    #[expect(
-        dead_code,
-        reason = "retained for protocol variants and forward-compatible response handling"
-    )]
-    is_connected: Arc<AtomicBool>,
-    /// Reconnect count
-    #[expect(
-        dead_code,
-        reason = "retained for protocol variants and forward-compatible response handling"
-    )]
-    reconnect_count: Arc<AtomicU32>,
     /// Task handles
     tasks: Vec<JoinHandle<()>>,
     /// Shutdown sender
     shutdown_tx: Option<mpsc::Sender<()>>,
-    /// Limits total active connections to prevent unbounded growth if callers forget to disconnect.
-    #[expect(
-        dead_code,
-        reason = "retained for protocol variants and forward-compatible response handling"
-    )]
-    connection_permit: OwnedSemaphorePermit,
+    /// Held for its `Drop`: releasing it returns the slot taken from
+    /// `WebSocketDanmuProvider::connection_semaphore` in `connect`, which is
+    /// what bounds active connections when callers forget to disconnect.
+    _connection_permit: OwnedSemaphorePermit,
 }
 
 impl WsConnectionState {
@@ -420,14 +393,10 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
         room_id: &str,
         config: ConnectionConfig,
     ) -> Result<(
-        Arc<AtomicBool>,
-        Arc<AtomicU32>,
         mpsc::Receiver<DanmuItem>,
         mpsc::Sender<()>,
         Vec<JoinHandle<()>>,
     )> {
-        let is_connected = Arc::new(AtomicBool::new(false));
-        let reconnect_count = Arc::new(AtomicU32::new(0));
         let (message_tx, message_rx) = mpsc::channel(100);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
 
@@ -436,9 +405,6 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
         let room_id_owned = room_id.to_string();
         let cookies = config.cookies;
         let extras = config.extras;
-        let is_connected_clone = is_connected.clone();
-        let reconnect_count_clone = reconnect_count.clone();
-
         // Spawn main management task
         let handle = tokio::spawn(async move {
             let mut current_connection: Option<(
@@ -585,8 +551,6 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                                     }
 
                                     if handshake_ok {
-                                        is_connected_clone.store(true, Ordering::SeqCst);
-                                        reconnect_count_clone.store(0, Ordering::SeqCst);
                                         attempt = 0;
                                         delay = ws_config.base_reconnect_delay_ms;
                                         current_connection = Some((ws_stream, protocol));
@@ -608,7 +572,6 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                             break;
                         }
                         attempt += 1;
-                        reconnect_count_clone.store(attempt, Ordering::SeqCst);
 
                         tokio::select! {
                             _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
@@ -693,21 +656,12 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                             }
                         }
                     }
-
-                    // If we break internal loop, connection is lost/broken
-                    is_connected_clone.store(false, Ordering::SeqCst);
                 }
             }
             debug!("WebSocket task for {} stopped", room_id_owned);
         });
 
-        Ok((
-            is_connected,
-            reconnect_count,
-            message_rx,
-            shutdown_tx,
-            vec![handle],
-        ))
+        Ok((message_rx, shutdown_tx, vec![handle]))
     }
 }
 
@@ -731,17 +685,12 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
 
         let connection_id = format!("{}-{}-{}", self.platform(), room_id, uuid::Uuid::new_v4());
 
-        let (is_connected, reconnect_count, items, shutdown_tx, tasks) =
-            self.connect_internal(room_id, config).await?;
+        let (items, shutdown_tx, tasks) = self.connect_internal(room_id, config).await?;
 
         let state = WsConnectionState {
-            id: connection_id.clone(),
-            room_id: room_id.to_string(),
-            is_connected,
-            reconnect_count,
             tasks,
             shutdown_tx: Some(shutdown_tx),
-            connection_permit,
+            _connection_permit: connection_permit,
         };
 
         self.connections

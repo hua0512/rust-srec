@@ -9,6 +9,8 @@ use chrono::{DateTime, Utc};
 
 use crate::danmu::DanmuControlEvent;
 
+use super::lifecycle::CollectionStopReason;
+
 /// Events emitted by the danmu service.
 ///
 /// These events can be subscribed to via `DanmuService::subscribe()` to
@@ -92,5 +94,5 @@ pub(crate) enum CollectionCommand {
     /// End the current segment file
     EndSegment { segment_id: String },
     /// Stop collection entirely
-    Stop,
+    Stop(CollectionStopReason),
 }

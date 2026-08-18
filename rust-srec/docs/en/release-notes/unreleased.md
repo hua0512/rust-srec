@@ -38,6 +38,10 @@
 
   When chat recording ended unexpectedly, the session's post-processing steps — uploads, transcodes, anything configured to run after a recording finishes — were never started for that session. They now run as normal.
 
+- **The last messages of a stream are no longer dropped**
+
+  When a recording stopped, chat messages the platform had already delivered but that were still queued were discarded — up to a hundred of the stream's final messages, missing from both the statistics and the last chat file. They are now collected before the recording closes.
+
 - **Chat files are no longer left incomplete**
 
   A chat recording that ended because of a connection failure left its file unterminated and unregistered, so it did not appear among the session's files and could not be used by the danmaku conversion step. The file is now closed properly and recorded like any other, and chat belonging to a recording part that gets discarded for being too small is now removed from the session's file list along with it.

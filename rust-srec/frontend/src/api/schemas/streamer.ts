@@ -46,9 +46,10 @@ export const StreamerSpecificConfigSchema = z.object({
     .optional(),
 
   danmu_statistics: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DanmuStatisticsObjectSchema.nullable().optional())
+    .preprocess(
+      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      DanmuStatisticsObjectSchema.nullable().optional(),
+    )
     .nullable()
     .optional(),
 
