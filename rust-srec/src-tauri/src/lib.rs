@@ -9,13 +9,14 @@ use std::time::Instant;
 
 use fs2::FileExt;
 use rust_srec::backend;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tauri::Listener;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
 
 mod desktop_notifications;
 
@@ -37,6 +38,175 @@ impl Default for BootProgressPayload {
             progress: 0.0,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BootFailureStage {
+    Logging,
+    Database,
+    Migrations,
+    Backend,
+    Services,
+    ApiServer,
+    Window,
+}
+
+impl BootFailureStage {
+    fn is_database(self) -> bool {
+        matches!(self, Self::Database | Self::Migrations)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BootFailureKind {
+    DatabaseBusy,
+    PermissionDenied,
+    StorageFull,
+    DatabaseCorrupt,
+    MigrationFailed,
+    LoggingFailed,
+    ServiceFailed,
+    ApiServerFailed,
+    WindowFailed,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BootFailurePayload {
+    stage: BootFailureStage,
+    kind: BootFailureKind,
+    title: String,
+    message: String,
+    details: String,
+}
+
+impl BootFailurePayload {
+    fn new(stage: BootFailureStage, details: impl Into<String>) -> Self {
+        let details = details.into();
+        let kind = classify_boot_failure(stage, &details);
+        let (title, message) = boot_failure_copy(kind);
+
+        Self {
+            stage,
+            kind,
+            title: title.to_string(),
+            message: message.to_string(),
+            details,
+        }
+    }
+}
+
+fn classify_boot_failure(stage: BootFailureStage, details: &str) -> BootFailureKind {
+    let normalized = details.to_ascii_lowercase();
+
+    if stage.is_database()
+        && [
+            "database is locked",
+            "database is busy",
+            "(code: 5)",
+            "(code: 6)",
+        ]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        return BootFailureKind::DatabaseBusy;
+    }
+
+    if [
+        "permission denied",
+        "access is denied",
+        "read-only",
+        "readonly",
+        "attempt to write a readonly database",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+    {
+        return BootFailureKind::PermissionDenied;
+    }
+
+    if ["database or disk is full", "no space left on device"]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        return BootFailureKind::StorageFull;
+    }
+
+    if stage.is_database()
+        && [
+            "database disk image is malformed",
+            "file is not a database",
+            "database corruption",
+        ]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        return BootFailureKind::DatabaseCorrupt;
+    }
+
+    match stage {
+        BootFailureStage::Logging => BootFailureKind::LoggingFailed,
+        BootFailureStage::Migrations => BootFailureKind::MigrationFailed,
+        BootFailureStage::Backend | BootFailureStage::Services => BootFailureKind::ServiceFailed,
+        BootFailureStage::ApiServer => BootFailureKind::ApiServerFailed,
+        BootFailureStage::Window => BootFailureKind::WindowFailed,
+        BootFailureStage::Database => BootFailureKind::Unknown,
+    }
+}
+
+fn boot_failure_copy(kind: BootFailureKind) -> (&'static str, &'static str) {
+    match kind {
+        BootFailureKind::DatabaseBusy => (
+            "The database is temporarily unavailable",
+            "Another process is using the application database. Close other Rust-Srec windows or database tools, then restart.",
+        ),
+        BootFailureKind::PermissionDenied => (
+            "Rust-Srec cannot access its files",
+            "Check the application data folder permissions and security software, then restart.",
+        ),
+        BootFailureKind::StorageFull => (
+            "There is not enough free disk space",
+            "Free some space on the drive containing the application data, then restart.",
+        ),
+        BootFailureKind::DatabaseCorrupt => (
+            "The database may be damaged",
+            "Do not delete the database. Open the data folder and make a backup before attempting recovery.",
+        ),
+        BootFailureKind::MigrationFailed => (
+            "The database could not be upgraded",
+            "Review the logs before restarting. The existing database has not been reset.",
+        ),
+        BootFailureKind::LoggingFailed => (
+            "Logging could not start",
+            "Check that the log folder is writable and that the drive has free space.",
+        ),
+        BootFailureKind::ServiceFailed => (
+            "A desktop service could not start",
+            "Restart the application. If the problem continues, copy the details and review the logs.",
+        ),
+        BootFailureKind::ApiServerFailed => (
+            "The local API could not start",
+            "Restart the application. If the problem continues, review the logs for the underlying service error.",
+        ),
+        BootFailureKind::WindowFailed => (
+            "The desktop window could not be created",
+            "Restart the application. Updating the system webview may be required if the problem continues.",
+        ),
+        BootFailureKind::Unknown => (
+            "Rust-Srec could not finish starting",
+            "Restart the application. If the problem continues, copy the details and review the logs.",
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DesktopRecoveryLocation {
+    Data,
+    Logs,
 }
 
 // Desktop notifications are implemented in `desktop_notifications`.
@@ -119,6 +289,7 @@ struct DesktopBackendState {
     latest_launch: std::sync::Mutex<LaunchArgsPayload>,
 
     data_dir: PathBuf,
+    log_dir: PathBuf,
     desktop_notifications: std::sync::Mutex<DesktopNotificationConfig>,
 }
 
@@ -133,6 +304,7 @@ impl DesktopBackendState {
         instance_lock: std::fs::File,
         initial_launch: LaunchArgsPayload,
         data_dir: PathBuf,
+        log_dir: PathBuf,
         desktop_notifications: DesktopNotificationConfig,
     ) -> Self {
         Self {
@@ -146,6 +318,7 @@ impl DesktopBackendState {
             latest_launch: std::sync::Mutex::new(initial_launch),
 
             data_dir,
+            log_dir,
             desktop_notifications: std::sync::Mutex::new(desktop_notifications),
         }
     }
@@ -241,7 +414,7 @@ fn emit_boot_progress(app: &tauri::AppHandle, status: &str, progress: f32) {
 fn build_init_script(
     backend_url: &str,
     launch: &LaunchArgsPayload,
-    boot_error: Option<&str>,
+    boot_error: Option<&BootFailurePayload>,
     desktop_notifications: &DesktopNotificationConfig,
 ) -> String {
     let backend_url_json =
@@ -249,7 +422,7 @@ fn build_init_script(
     let launch_args_json = serde_json::to_string(&launch.args).unwrap_or_else(|_| "[]".to_string());
     let launch_cwd_json = serde_json::to_string(&launch.cwd).unwrap_or_else(|_| "\"\"".to_string());
     let boot_error_json = match boot_error {
-        Some(msg) => serde_json::to_string(msg).unwrap_or_else(|_| "null".to_string()),
+        Some(error) => serde_json::to_string(error).unwrap_or_else(|_| "null".to_string()),
         None => "null".to_string(),
     };
 
@@ -265,7 +438,14 @@ fn build_init_script(
     )
 }
 
-async fn show_boot_error_window(app_handle: &tauri::AppHandle, message: &str) {
+async fn show_boot_error_window(app_handle: &tauri::AppHandle, failure: BootFailurePayload) {
+    log::error!(
+        "Desktop boot failed at {:?} ({:?}): {}",
+        failure.stage,
+        failure.kind,
+        failure.details
+    );
+
     let state = app_handle.state::<DesktopBackendState>();
     let launch = state.current_launch();
     let desktop_notifications = state.desktop_notifications();
@@ -279,27 +459,65 @@ async fn show_boot_error_window(app_handle: &tauri::AppHandle, message: &str) {
         tauri::WebviewUrl::App("index.desktop.html".into())
     };
 
-    let init_script = build_init_script("", &launch, Some(message), &desktop_notifications);
+    let init_script = build_init_script("", &launch, Some(&failure), &desktop_notifications);
 
     if app_handle.get_webview_window("main").is_none() {
-        if let Ok(window) = tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)
-            .title("Rust-Srec")
-            .inner_size(1280.0, 1024.0)
-            .min_inner_size(800.0, 600.0)
+        match tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)
+            .title("Rust-Srec - Startup error")
+            .inner_size(920.0, 720.0)
+            .min_inner_size(640.0, 520.0)
             .initialization_script(init_script)
             .build()
         {
-            center_main_window_once(app_handle);
-            let _ = window.show();
-            let _ = window.set_focus();
+            Ok(window) => {
+                center_main_window_once(app_handle);
+                if let Err(error) = window.show() {
+                    log::error!("Failed to show desktop boot error window: {}", error);
+                }
+                if let Err(error) = window.set_focus() {
+                    log::warn!("Failed to focus desktop boot error window: {}", error);
+                }
+            }
+            Err(error) => {
+                log::error!("Failed to create desktop boot error window: {}", error);
+            }
         }
     } else {
         show_main_window(app_handle);
     }
 
-    if let Some(splash) = app_handle.get_webview_window("splash") {
-        let _ = splash.close();
+    if let Some(splash) = app_handle.get_webview_window("splash")
+        && let Err(error) = splash.close()
+    {
+        log::warn!("Failed to close splash after boot failure: {}", error);
     }
+}
+
+#[tauri::command]
+fn open_desktop_recovery_location(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DesktopBackendState>,
+    location: DesktopRecoveryLocation,
+) -> Result<(), String> {
+    let path = match location {
+        DesktopRecoveryLocation::Data => &state.data_dir,
+        DesktopRecoveryLocation::Logs => &state.log_dir,
+    };
+    let path_display = path.to_string_lossy().into_owned();
+
+    app.opener()
+        .open_path(path_display.clone(), None::<&str>)
+        .map_err(|error| format!("Failed to open '{path_display}': {error}"))
+}
+
+#[tauri::command]
+fn restart_desktop(app: tauri::AppHandle) {
+    app.request_restart();
+}
+
+#[tauri::command]
+fn quit_desktop(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 async fn run_desktop_backend_init(
@@ -326,7 +544,24 @@ async fn run_desktop_backend_init(
     let logging_future =
         tokio::task::spawn_blocking(move || backend::init_logging(&log_dir_str_clone));
 
-    let database_pools_future = backend::init_database_pools(&database_url);
+    let database_pools_future = async {
+        let mut retry_count = 0_u32;
+        loop {
+            let result = backend::init_database_pools(&database_url).await;
+            let should_retry = result.as_ref().is_err_and(|error| {
+                classify_boot_failure(BootFailureStage::Database, &error.to_string())
+                    == BootFailureKind::DatabaseBusy
+                    && retry_count < 2
+            });
+
+            if !should_retry {
+                break result;
+            }
+
+            retry_count += 1;
+            tokio::time::sleep(Duration::from_millis(250 * u64::from(retry_count))).await;
+        }
+    };
 
     let (logging_result, database_pools_result) =
         tokio::join!(logging_future, database_pools_future);
@@ -335,12 +570,25 @@ async fn run_desktop_backend_init(
     let (logging_config, log_guard) = match logging_result {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
-            show_boot_error_window(&app_handle, &format!("Failed to initialize logging: {e}"))
-                .await;
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Logging,
+                    format!("Failed to initialize logging: {e}"),
+                ),
+            )
+            .await;
             return;
         }
         Err(e) => {
-            show_boot_error_window(&app_handle, &format!("Logging init panicked: {e}")).await;
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Logging,
+                    format!("Logging initialization task failed: {e}"),
+                ),
+            )
+            .await;
             return;
         }
     };
@@ -353,7 +601,14 @@ async fn run_desktop_backend_init(
     let (pool, write_pool) = match database_pools_result {
         Ok(pools) => pools,
         Err(e) => {
-            show_boot_error_window(&app_handle, &format!("Failed to open database: {e}")).await;
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Database,
+                    format!("Failed to open database: {e}"),
+                ),
+            )
+            .await;
             return;
         }
     };
@@ -367,7 +622,14 @@ async fn run_desktop_backend_init(
     let migrations_start = Instant::now();
 
     if let Err(e) = backend::run_migrations(&pool).await {
-        show_boot_error_window(&app_handle, &format!("Database migration failed: {e}")).await;
+        show_boot_error_window(
+            &app_handle,
+            BootFailurePayload::new(
+                BootFailureStage::Migrations,
+                format!("Database migration failed: {e}"),
+            ),
+        )
+        .await;
         return;
     }
 
@@ -404,8 +666,14 @@ async fn run_desktop_backend_init(
     {
         Ok(c) => Arc::new(c),
         Err(e) => {
-            show_boot_error_window(&app_handle, &format!("Backend initialization failed: {e}"))
-                .await;
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Backend,
+                    format!("Backend initialization failed: {e}"),
+                ),
+            )
+            .await;
             return;
         }
     };
@@ -457,7 +725,14 @@ async fn run_desktop_backend_init(
     let services_start = Instant::now();
 
     if let Err(e) = container.initialize().await {
-        show_boot_error_window(&app_handle, &format!("Service initialization failed: {e}")).await;
+        show_boot_error_window(
+            &app_handle,
+            BootFailurePayload::new(
+                BootFailureStage::Services,
+                format!("Service initialization failed: {e}"),
+            ),
+        )
+        .await;
         return;
     }
 
@@ -482,7 +757,14 @@ async fn run_desktop_backend_init(
     let backend_addr = match backend_addr {
         Ok(addr) => addr,
         Err(e) => {
-            show_boot_error_window(&app_handle, &format!("Failed to start API server: {e}")).await;
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::ApiServer,
+                    format!("Failed to start API server: {e}"),
+                ),
+            )
+            .await;
             return;
         }
     };
@@ -573,8 +855,14 @@ async fn run_desktop_backend_init(
                 let _ = window; // suppress unused warning
             }
             Err(e) => {
-                show_boot_error_window(&app_handle, &format!("Failed to create main window: {e}"))
-                    .await;
+                show_boot_error_window(
+                    &app_handle,
+                    BootFailurePayload::new(
+                        BootFailureStage::Window,
+                        format!("Failed to create main window: {e}"),
+                    ),
+                )
+                .await;
                 return;
             }
         }
@@ -760,9 +1048,15 @@ pub fn run() {
             );
         }));
         builder = builder.plugin(tauri_plugin_notification::init());
+        builder = builder.plugin(tauri_plugin_opener::init());
     }
 
     let app = builder
+        .invoke_handler(tauri::generate_handler![
+            open_desktop_recovery_location,
+            restart_desktop,
+            quit_desktop
+        ])
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -805,6 +1099,7 @@ pub fn run() {
                     cwd: launch_cwd.clone(),
                 },
                 data_dir.clone(),
+                log_dir.clone(),
                 desktop_notifications,
             ));
 
@@ -1033,4 +1328,52 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_transient_database_lock() {
+        let failure = BootFailurePayload::new(
+            BootFailureStage::Database,
+            "Failed to open database: (code: 5) database is locked",
+        );
+
+        assert_eq!(failure.kind, BootFailureKind::DatabaseBusy);
+        assert!(failure.message.contains("Close other Rust-Srec windows"));
+    }
+
+    #[test]
+    fn classifies_database_corruption_without_destructive_advice() {
+        let failure = BootFailurePayload::new(
+            BootFailureStage::Migrations,
+            "database disk image is malformed",
+        );
+
+        assert_eq!(failure.kind, BootFailureKind::DatabaseCorrupt);
+        assert!(failure.message.contains("Do not delete the database"));
+        assert!(failure.message.contains("make a backup"));
+    }
+
+    #[test]
+    fn classifies_permission_and_storage_failures_across_stages() {
+        assert_eq!(
+            classify_boot_failure(BootFailureStage::Logging, "Access is denied"),
+            BootFailureKind::PermissionDenied
+        );
+        assert_eq!(
+            classify_boot_failure(BootFailureStage::Services, "No space left on device"),
+            BootFailureKind::StorageFull
+        );
+    }
+
+    #[test]
+    fn uses_stage_specific_fallback_for_migration_errors() {
+        assert_eq!(
+            classify_boot_failure(BootFailureStage::Migrations, "unexpected schema version"),
+            BootFailureKind::MigrationFailed
+        );
+    }
 }
