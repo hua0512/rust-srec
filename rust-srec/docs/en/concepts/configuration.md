@@ -46,7 +46,7 @@ Key fields (grouped by concern):
 
 - Output: `output_folder`, `output_filename_template`, `output_file_format`
 - Limits: `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- Danmu: `record_danmu`
+- Danmu: `record_danmu`, `danmu_statistics`
 - Network: `proxy_config`, `cookies`
 - Engine: `download_engine`, `download_retry_policy`, `engines_override`
 - Stream selection: `stream_selection`
@@ -192,7 +192,7 @@ Supported keys that affect `MergedConfig`:
 
 - `output_folder`, `output_filename_template`, `output_file_format`
 - `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- `record_danmu`, `cookies`, `download_engine`, `offline_check_count`,
+- `record_danmu`, `danmu_statistics`, `cookies`, `download_engine`, `offline_check_count`,
   `offline_check_delay_ms`
 - `proxy_config` (JSON object)
 - `stream_selection_config` (JSON object)

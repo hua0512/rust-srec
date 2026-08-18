@@ -92,6 +92,8 @@ pub struct GlobalConfigDbModel {
     pub max_download_duration_secs: i64,
     pub max_part_size_bytes: i64,
     pub record_danmu: bool,
+    /// JSON `DanmuStatisticsConfig`; NULL resolves to its defaults.
+    pub danmu_statistics: Option<String>,
     pub max_concurrent_downloads: i32,
     pub max_concurrent_uploads: i32,
     pub streamer_check_delay_ms: i64,
@@ -163,6 +165,7 @@ impl Default for GlobalConfigDbModel {
             max_download_duration_secs: 0,   // No limit
             max_part_size_bytes: 8589934592, // 8GB
             record_danmu: false,
+            danmu_statistics: None,
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,
@@ -207,6 +210,8 @@ pub struct PlatformConfigDbModel {
     /// JSON serialized ProxyConfig
     pub proxy_config: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; NULL inherits the global layer.
+    pub danmu_statistics: Option<String>,
 
     // Explicit overrides
     pub output_folder: Option<String>,
@@ -246,6 +251,8 @@ pub struct TemplateConfigDbModel {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; NULL inherits the platform layer.
+    pub danmu_statistics: Option<String>,
     /// JSON map of platform names to their specific configuration overrides
     pub platform_overrides: Option<String>,
     /// JSON serialized RetryPolicy
@@ -285,6 +292,7 @@ impl TemplateConfigDbModel {
             max_download_duration_secs: None,
             max_part_size_bytes: None,
             record_danmu: None,
+            danmu_statistics: None,
             platform_overrides: None,
             download_retry_policy: None,
             download_engine: None,

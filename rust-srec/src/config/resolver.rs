@@ -14,7 +14,7 @@ use crate::credentials::{
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
-use crate::domain::{ProxyConfig, RetryPolicy};
+use crate::domain::{DanmuStatisticsConfig, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
@@ -110,6 +110,16 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             },
             "Invalid JSON config; ignoring",
         );
+        let global_danmu_statistics: Option<DanmuStatisticsConfig> = json::parse_optional(
+            global_config.danmu_statistics.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "global",
+                scope_id: None,
+                field: "danmu_statistics",
+            },
+            "Invalid JSON config; ignoring",
+        );
         let global_paired_segment_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
             global_config.paired_segment_pipeline.as_deref(),
             JsonContext::StreamerConfig {
@@ -129,6 +139,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             max_download_duration_secs: global_config.max_download_duration_secs,
             max_part_size_bytes: global_config.max_part_size_bytes,
             record_danmu: global_config.record_danmu,
+            danmu_statistics: global_danmu_statistics,
             proxy_config: json::parse_or_default(
                 &global_config.proxy_config,
                 JsonContext::StreamerConfig {
@@ -245,6 +256,16 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             cookies: platform_config.cookies.clone(),
             proxy_config: platform_proxy,
             record_danmu: platform_config.record_danmu,
+            danmu_statistics: json::parse_optional(
+                platform_config.danmu_statistics.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "platform",
+                    scope_id: Some(&platform_config.platform_name),
+                    field: "danmu_statistics",
+                },
+                "Invalid JSON config; ignoring",
+            ),
             platform_specific_config: platform_extras,
             output_folder: platform_config.output_folder.clone(),
             output_filename_template: platform_config.output_filename_template.clone(),
@@ -433,6 +454,16 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 max_download_duration_secs: template_config.max_download_duration_secs,
                 max_part_size_bytes: template_config.max_part_size_bytes,
                 record_danmu: template_config.record_danmu,
+                danmu_statistics: json::parse_optional(
+                    template_config.danmu_statistics.as_deref(),
+                    JsonContext::StreamerConfig {
+                        streamer_id: &streamer.id,
+                        scope: "template",
+                        scope_id: Some(&template_config.id),
+                        field: "danmu_statistics",
+                    },
+                    "Invalid JSON config; ignoring",
+                ),
                 proxy_config: template_proxy,
                 cookies: template_config.cookies,
                 download_engine: template_config.download_engine,

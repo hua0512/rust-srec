@@ -101,6 +101,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 record_danmu = ?,
+                danmu_statistics = ?,
                 max_concurrent_downloads = ?,
                 max_concurrent_uploads = ?,
                 streamer_check_delay_ms = ?,
@@ -134,6 +135,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(config.max_concurrent_downloads)
         .bind(config.max_concurrent_uploads)
         .bind(config.streamer_check_delay_ms)
@@ -170,7 +172,7 @@ impl ConfigRepository for SqlxConfigRepository {
             INSERT INTO global_config (
                 id, output_folder, output_filename_template, output_file_format,
                 min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                record_danmu, max_concurrent_downloads, max_concurrent_uploads,
+                record_danmu, danmu_statistics, max_concurrent_downloads, max_concurrent_uploads,
                 streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
                 offline_check_count, default_download_engine, default_extractor, max_concurrent_cpu_jobs,
                 max_concurrent_io_jobs, job_history_retention_days, notification_event_log_retention_days,
@@ -182,7 +184,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 queue_freshness_threshold_ms,
                 gpu_health_probe_interval_secs,
                 stream_proxy_allow_private_targets
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -193,6 +195,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(config.max_concurrent_downloads)
         .bind(config.max_concurrent_uploads)
         .bind(config.streamer_check_delay_ms)
@@ -253,12 +256,12 @@ impl ConfigRepository for SqlxConfigRepository {
             r#"
             INSERT INTO platform_config (
                 id, platform_name, fetch_delay_ms, download_delay_ms,
-                cookies, platform_specific_config, proxy_config, record_danmu,
+                cookies, platform_specific_config, proxy_config, record_danmu, danmu_statistics,
                 output_folder, output_filename_template, download_engine, extractor, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
                 download_retry_policy, pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -269,6 +272,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.platform_specific_config)
         .bind(&config.proxy_config)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
         .bind(&config.download_engine)
@@ -300,6 +304,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 platform_specific_config = ?,
                 proxy_config = ?,
                 record_danmu = ?,
+                danmu_statistics = ?,
                 output_folder = ?,
                 output_filename_template = ?,
                 download_engine = ?,
@@ -325,6 +330,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.platform_specific_config)
         .bind(&config.proxy_config)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
         .bind(&config.download_engine)
@@ -385,13 +391,13 @@ impl ConfigRepository for SqlxConfigRepository {
             INSERT INTO template_config (
                 id, name, output_folder, output_filename_template,
                 cookies, output_file_format, min_segment_size_bytes,
-                max_download_duration_secs, max_part_size_bytes, record_danmu,
+                max_download_duration_secs, max_part_size_bytes, record_danmu, danmu_statistics,
                 platform_overrides, download_retry_policy,
                 download_engine, extractor, engines_override, proxy_config, stream_selection_config,
                 pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -405,6 +411,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.platform_overrides)
         .bind(&config.download_retry_policy)
         .bind(&config.download_engine)
@@ -437,6 +444,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 record_danmu = ?,
+                danmu_statistics = ?,
                 platform_overrides = ?,
                 download_retry_policy = ?,
                 download_engine = ?,
@@ -462,6 +470,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.platform_overrides)
         .bind(&config.download_retry_policy)
         .bind(&config.download_engine)

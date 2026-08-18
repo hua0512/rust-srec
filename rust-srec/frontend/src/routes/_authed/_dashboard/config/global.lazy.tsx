@@ -44,6 +44,11 @@ const NetworkSystemCard = lazy(() =>
     default: m.NetworkSystemCard,
   })),
 );
+const GlobalDanmuStatisticsCard = lazy(() =>
+  import('@/components/config/global/danmu-statistics-card').then((m) => ({
+    default: m.GlobalDanmuStatisticsCard,
+  })),
+);
 const PipelineConfigCard = lazy(() =>
   import('@/components/config/global/pipeline-config-card').then((m) => ({
     default: m.PipelineConfigCard,
@@ -70,6 +75,8 @@ const SECTIONS: {
   { Card: ResourceLimitsCard, skeletonRows: [3] },
   { Card: ConcurrencyCard, skeletonRows: [3, 2, 1] },
   { Card: NetworkSystemCard, skeletonRows: [2, 1, 2] },
+  // One switch row, a 2x2 numeric grid, then the ignored-words textarea.
+  { Card: GlobalDanmuStatisticsCard, skeletonRows: [1, 2, 2, 1] },
   {
     Card: PipelineConfigCard,
     wide: true,

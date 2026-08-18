@@ -987,6 +987,7 @@ fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> Global
     model.max_download_duration_secs = source.max_download_duration_secs;
     model.max_part_size_bytes = source.max_part_size_bytes;
     model.record_danmu = source.record_danmu;
+    model.danmu_statistics = source.danmu_statistics.clone();
     model.max_concurrent_downloads = source.max_concurrent_downloads;
     model.max_concurrent_uploads = source.max_concurrent_uploads;
     model.streamer_check_delay_ms = source.streamer_check_delay_ms;
@@ -1030,6 +1031,7 @@ fn template_model(
     model.max_download_duration_secs = source.max_download_duration_secs;
     model.max_part_size_bytes = source.max_part_size_bytes;
     model.record_danmu = source.record_danmu;
+    model.danmu_statistics = source.danmu_statistics.clone();
     model.platform_overrides = source.platform_overrides.clone().map(db_json);
     model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
     model.download_engine = source.download_engine.clone();
@@ -1056,6 +1058,7 @@ fn platform_model(
     model.platform_specific_config = source.platform_specific_config.clone().map(db_json);
     model.proxy_config = source.proxy_config.clone().map(db_json);
     model.record_danmu = source.record_danmu;
+    model.danmu_statistics = source.danmu_statistics.clone();
     model.output_folder = source.output_folder.clone();
     model.output_filename_template = source.output_filename_template.clone();
     model.download_engine = source.download_engine.clone();
@@ -1366,7 +1369,7 @@ async fn persist_global(
         UPDATE global_config SET
             output_folder = ?, output_filename_template = ?, output_file_format = ?,
             min_segment_size_bytes = ?, max_download_duration_secs = ?, max_part_size_bytes = ?,
-            record_danmu = ?, max_concurrent_downloads = ?, max_concurrent_uploads = ?,
+            record_danmu = ?, danmu_statistics = ?, max_concurrent_downloads = ?, max_concurrent_uploads = ?,
             streamer_check_delay_ms = ?, proxy_config = ?, offline_check_delay_ms = ?,
             offline_check_count = ?, default_download_engine = ?, max_concurrent_cpu_jobs = ?,
             max_concurrent_io_jobs = ?, job_history_retention_days = ?,
@@ -1385,6 +1388,7 @@ async fn persist_global(
     .bind(config.max_download_duration_secs)
     .bind(config.max_part_size_bytes)
     .bind(config.record_danmu)
+    .bind(&config.danmu_statistics)
     .bind(config.max_concurrent_downloads)
     .bind(config.max_concurrent_uploads)
     .bind(config.streamer_check_delay_ms)
@@ -1445,12 +1449,12 @@ async fn persist_template(
         INSERT INTO template_config (
             id, name, output_folder, output_filename_template, cookies, output_file_format,
             min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-            record_danmu, platform_overrides, download_retry_policy,
+            record_danmu, danmu_statistics, platform_overrides, download_retry_policy,
             download_engine, engines_override, proxy_config,
             stream_selection_config, pipeline, session_complete_pipeline,
             paired_segment_pipeline, offline_check_count, offline_check_delay_ms,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             output_folder = excluded.output_folder,
@@ -1461,6 +1465,7 @@ async fn persist_template(
             max_download_duration_secs = excluded.max_download_duration_secs,
             max_part_size_bytes = excluded.max_part_size_bytes,
             record_danmu = excluded.record_danmu,
+            danmu_statistics = excluded.danmu_statistics,
             platform_overrides = excluded.platform_overrides,
             download_retry_policy = excluded.download_retry_policy,
             download_engine = excluded.download_engine,
@@ -1485,6 +1490,7 @@ async fn persist_template(
     .bind(model.max_download_duration_secs)
     .bind(model.max_part_size_bytes)
     .bind(model.record_danmu)
+    .bind(&model.danmu_statistics)
     .bind(&model.platform_overrides)
     .bind(&model.download_retry_policy)
     .bind(&model.download_engine)
@@ -1511,7 +1517,7 @@ async fn persist_platform(
         r#"
         UPDATE platform_config SET
             platform_name = ?, fetch_delay_ms = ?, download_delay_ms = ?, cookies = ?,
-            platform_specific_config = ?, proxy_config = ?, record_danmu = ?, output_folder = ?,
+            platform_specific_config = ?, proxy_config = ?, record_danmu = ?, danmu_statistics = ?, output_folder = ?,
             output_filename_template = ?, download_engine = ?, stream_selection_config = ?,
             output_file_format = ?, min_segment_size_bytes = ?, max_download_duration_secs = ?,
             max_part_size_bytes = ?, download_retry_policy = ?, pipeline = ?,
@@ -1527,6 +1533,7 @@ async fn persist_platform(
     .bind(&model.platform_specific_config)
     .bind(&model.proxy_config)
     .bind(model.record_danmu)
+    .bind(&model.danmu_statistics)
     .bind(&model.output_folder)
     .bind(&model.output_filename_template)
     .bind(&model.download_engine)
@@ -1751,6 +1758,7 @@ mod tests {
                 max_download_duration_secs: global.max_download_duration_secs,
                 max_part_size_bytes: global.max_part_size_bytes,
                 record_danmu: global.record_danmu,
+                danmu_statistics: None,
                 max_concurrent_downloads: global.max_concurrent_downloads,
                 max_concurrent_uploads: global.max_concurrent_uploads,
                 streamer_check_delay_ms: global.streamer_check_delay_ms,

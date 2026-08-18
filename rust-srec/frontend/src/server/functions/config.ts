@@ -27,6 +27,7 @@ const jsonToString = z.any().transform((val) => {
 
 // Extend the write schema to handle stringification
 const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
+  danmu_statistics: jsonToString.optional(),
   proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),
@@ -73,6 +74,7 @@ const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
 
   stream_selection_config: jsonToString.optional(),
   download_retry_policy: jsonToString.optional(),
+  danmu_statistics: jsonToString.optional(),
   proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),
@@ -127,6 +129,7 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
 
   stream_selection_config: jsonToString.optional(),
   download_retry_policy: jsonToString.optional(),
+  danmu_statistics: jsonToString.optional(),
   proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),

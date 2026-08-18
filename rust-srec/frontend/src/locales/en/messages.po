@@ -314,6 +314,10 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:144
+msgid "Activity resolution (seconds)"
+msgstr "Activity resolution (seconds)"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1027
 msgid "Adaptive Refresh (Default: On)"
 msgstr "Adaptive Refresh (Default: On)"
@@ -825,9 +829,9 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:143
-#: src/components/config/templates/template-editor.tsx:188
+#: src/components/config/platforms/platform-editor.tsx:145
 #: src/components/config/templates/template-editor.tsx:191
+#: src/components/config/templates/template-editor.tsx:194
 msgid "Back"
 msgstr "Back"
 
@@ -1244,10 +1248,18 @@ msgstr "channels"
 msgid "Channels"
 msgstr "Channels"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:112
+msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
+msgstr "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
+
 #: src/components/notifications/channel-card.tsx:121
 #: src/components/notifications/forms/telegram-form.tsx:65
 msgid "Chat ID"
 msgstr "Chat ID"
+
+#: src/components/config/shared/danmu-statistics-card.tsx:153
+msgid "Chatters tracked"
+msgstr "Chatters tracked"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:578
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
@@ -1379,6 +1391,10 @@ msgstr "Closest to bitrate"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:325
 msgid "Collapsible"
 msgstr "Collapsible"
+
+#: src/components/config/shared/danmu-statistics-card.tsx:109
+msgid "Collect statistics"
+msgstr "Collect statistics"
 
 #: src/components/notifications/channel-form.tsx:479
 msgid "Coming soon"
@@ -1757,6 +1773,10 @@ msgstr "Could not connect to the server. Please check your connection."
 msgid "Count"
 msgstr "Count"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:154
+msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
+msgstr "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
+
 #: src/components/config/global/network-system-card.tsx:273
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
@@ -1777,7 +1797,7 @@ msgstr "CPU Usage"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
-#: src/components/config/templates/template-editor.tsx:210
+#: src/components/config/templates/template-editor.tsx:213
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:326
@@ -1856,7 +1876,7 @@ msgstr "Create Preset"
 msgid "Create streamer"
 msgstr "Create streamer"
 
-#: src/components/config/templates/template-editor.tsx:162
+#: src/components/config/templates/template-editor.tsx:165
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "Create Template"
@@ -2083,7 +2103,7 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:194
+#: src/components/config/shared-config-editor.tsx:195
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -2095,6 +2115,7 @@ msgstr "Danmu Control"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:91
 #: src/components/sessions/danmu-stats-panel.tsx:171
 #: src/components/sessions/overview-tab.tsx:242
 msgid "Danmu Statistics"
@@ -2877,7 +2898,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:255
+#: src/components/config/templates/template-editor.tsx:258
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
@@ -3029,6 +3050,10 @@ msgstr "Exclude Patterns"
 #: src/components/streamers/config/stream-selection-input.tsx:138
 msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
+
+#: src/components/config/shared/danmu-statistics-card.tsx:187
+msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
+msgstr "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 
 #: src/components/config/global/concurrency-card.tsx:324
 msgid "Execute"
@@ -3445,7 +3470,7 @@ msgstr "Failed to update preset: {0}"
 msgid "Failed to update priority"
 msgstr "Failed to update priority"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:168
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:175
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
@@ -3638,7 +3663,7 @@ msgstr "Filtered"
 msgid "Filtered:"
 msgstr "Filtered:"
 
-#: src/components/config/shared-config-editor.tsx:150
+#: src/components/config/shared-config-editor.tsx:151
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
 msgid "Filters"
 msgstr "Filters"
@@ -3740,6 +3765,10 @@ msgstr "Format"
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:138
+msgid "Frequent words to keep"
+msgstr "Frequent words to keep"
+
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:71
 msgid "Friday"
 msgstr "Friday"
@@ -3781,9 +3810,9 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:191
+#: src/components/config/platforms/platform-editor.tsx:193
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
-#: src/components/config/templates/template-editor.tsx:245
+#: src/components/config/templates/template-editor.tsx:248
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
@@ -4080,6 +4109,10 @@ msgstr "Hour (00-23)"
 msgid "Hours"
 msgstr "Hours"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:94
+msgid "How chat activity is summarised on the session page."
+msgstr "How chat activity is summarised on the session page."
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:474
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 msgstr "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
@@ -4091,6 +4124,14 @@ msgstr "How long a pipeline step may run before it is cancelled. These are read 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1332
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "How long to keep decrypted/processed segments in cache."
+
+#: src/components/config/shared/danmu-statistics-card.tsx:133
+msgid "How many appear in the ranking. 1–500."
+msgstr "How many appear in the ranking. 1–500."
+
+#: src/components/config/shared/danmu-statistics-card.tsx:139
+msgid "How many appear in the word chart. 1–500."
+msgstr "How many appear in the word chart. 1–500."
 
 #: src/components/config/global/concurrency-card.tsx:151
 msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
@@ -4227,6 +4268,10 @@ msgstr "Ignore streams above this bitrate."
 #: src/components/streamers/config/stream-selection-input.tsx:180
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
+
+#: src/components/config/shared/danmu-statistics-card.tsx:168
+msgid "Ignored words"
+msgstr "Ignored words"
 
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:327
 msgid "Immersive Mode"
@@ -5197,7 +5242,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
-#: src/components/config/shared-config-editor.tsx:172
+#: src/components/config/shared-config-editor.tsx:173
 msgid "Network"
 msgstr "Network"
 
@@ -5728,6 +5773,10 @@ msgstr "Offset Consistency Check"
 msgid "OK"
 msgstr "OK"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:173
+msgid "One word per line"
+msgstr "One word per line"
+
 #: src/components/sessions/session-card.tsx:97
 msgid "Ongoing"
 msgstr "Ongoing"
@@ -5817,7 +5866,7 @@ msgstr "Out of Space"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:161
+#: src/components/config/shared-config-editor.tsx:162
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -5957,23 +6006,23 @@ msgid "pagination"
 msgstr "pagination"
 
 #: src/components/config/global/pipeline-config-card.tsx:206
-#: src/components/config/shared-config-editor.tsx:416
+#: src/components/config/shared-config-editor.tsx:421
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared-config-editor.tsx:557
+#: src/components/config/shared-config-editor.tsx:562
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
 #: src/components/config/global/pipeline-config-card.tsx:203
-#: src/components/config/shared-config-editor.tsx:413
+#: src/components/config/shared-config-editor.tsx:418
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:214
 #: src/components/config/global/pipeline-config-card.tsx:295
-#: src/components/config/shared-config-editor.tsx:424
-#: src/components/config/shared-config-editor.tsx:527
+#: src/components/config/shared-config-editor.tsx:429
+#: src/components/config/shared-config-editor.tsx:532
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -6108,14 +6157,14 @@ msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; com
 msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 
 #: src/components/config/global/pipeline-config-card.tsx:166
-#: src/components/config/shared-config-editor.tsx:374
+#: src/components/config/shared-config-editor.tsx:379
 msgid "Per-segment"
 msgstr "Per-segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:177
 #: src/components/config/global/pipeline-config-card.tsx:279
-#: src/components/config/shared-config-editor.tsx:385
-#: src/components/config/shared-config-editor.tsx:496
+#: src/components/config/shared-config-editor.tsx:390
+#: src/components/config/shared-config-editor.tsx:501
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
@@ -6137,7 +6186,7 @@ msgstr "Permission required"
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
-#: src/components/config/shared-config-editor.tsx:205
+#: src/components/config/shared-config-editor.tsx:206
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -6290,7 +6339,7 @@ msgid "platforms"
 msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:265
+#: src/components/config/templates/template-editor.tsx:268
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
@@ -6596,7 +6645,7 @@ msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
 #: src/components/config/global/network-system-card.tsx:236
-#: src/components/config/shared-config-editor.tsx:183
+#: src/components/config/shared-config-editor.tsx:184
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -6986,8 +7035,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
 #: src/components/config/global/pipeline-config-card.tsx:229
-#: src/components/config/shared-config-editor.tsx:439
-#: src/components/config/shared-config-editor.tsx:537
+#: src/components/config/shared-config-editor.tsx:444
+#: src/components/config/shared-config-editor.tsx:542
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -7144,26 +7193,26 @@ msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
 #: src/components/config/global/pipeline-config-card.tsx:281
-#: src/components/config/shared-config-editor.tsx:499
+#: src/components/config/shared-config-editor.tsx:504
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
 #: src/components/config/global/pipeline-config-card.tsx:313
-#: src/components/config/shared-config-editor.tsx:576
+#: src/components/config/shared-config-editor.tsx:581
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
 #: src/components/config/global/pipeline-config-card.tsx:261
-#: src/components/config/shared-config-editor.tsx:475
+#: src/components/config/shared-config-editor.tsx:480
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
 #: src/components/config/global/pipeline-config-card.tsx:223
-#: src/components/config/shared-config-editor.tsx:433
+#: src/components/config/shared-config-editor.tsx:438
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared-config-editor.tsx:531
+#: src/components/config/shared-config-editor.tsx:536
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
@@ -7225,8 +7274,8 @@ msgstr "Saturday"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:161
-#: src/components/config/templates/template-editor.tsx:212
+#: src/components/config/platforms/platform-editor.tsx:163
+#: src/components/config/templates/template-editor.tsx:215
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:612
@@ -7247,8 +7296,8 @@ msgstr "Save Workflow"
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:159
-#: src/components/config/templates/template-editor.tsx:208
+#: src/components/config/platforms/platform-editor.tsx:161
+#: src/components/config/templates/template-editor.tsx:211
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7382,7 +7431,7 @@ msgid "Security & Identity"
 msgstr "Security & Identity"
 
 #: src/components/config/global/pipeline-config-card.tsx:169
-#: src/components/config/shared-config-editor.tsx:377
+#: src/components/config/shared-config-editor.tsx:382
 msgid "Segment"
 msgstr "Segment"
 
@@ -7592,25 +7641,25 @@ msgid "Server URL"
 msgstr "Server URL"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
-#: src/components/config/shared-config-editor.tsx:459
+#: src/components/config/shared-config-editor.tsx:464
 #: src/components/pipeline/outputs/output-card.tsx:251
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "Session"
 
 #: src/components/config/global/pipeline-config-card.tsx:244
-#: src/components/config/shared-config-editor.tsx:456
+#: src/components/config/shared-config-editor.tsx:461
 msgid "Session Complete"
 msgstr "Session Complete"
 
 #: src/components/config/global/pipeline-config-card.tsx:255
 #: src/components/config/global/pipeline-config-card.tsx:311
-#: src/components/config/shared-config-editor.tsx:467
-#: src/components/config/shared-config-editor.tsx:573
+#: src/components/config/shared-config-editor.tsx:472
+#: src/components/config/shared-config-editor.tsx:578
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared-config-editor.tsx:596
+#: src/components/config/shared-config-editor.tsx:601
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -7692,7 +7741,7 @@ msgstr "Settings"
 msgid "Settings updated"
 msgstr "Settings updated"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:164
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:171
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
@@ -7828,7 +7877,7 @@ msgstr "Source"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:201
+#: src/components/config/platforms/platform-editor.tsx:203
 #: src/components/config/templates/tabs/platform-override-card.tsx:69
 msgid "Specific"
 msgstr "Specific"
@@ -8380,7 +8429,7 @@ msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
 #: src/components/config/global/pipeline-config-card.tsx:183
-#: src/components/config/shared-config-editor.tsx:393
+#: src/components/config/shared-config-editor.tsx:398
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -8494,6 +8543,10 @@ msgstr "time-of-day timetable"
 msgid "Timeline"
 msgstr "Timeline"
 
+#: src/components/config/shared/danmu-statistics-card.tsx:145
+msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
+msgstr "Timeline granularity. Very long streams are automatically coarsened past a point."
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:66
 msgid "Timeout"
 msgstr "Timeout"
@@ -8558,6 +8611,10 @@ msgstr "Token"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:577
 msgid "Tool Location"
 msgstr "Tool Location"
+
+#: src/components/config/shared/danmu-statistics-card.tsx:132
+msgid "Top chatters to keep"
+msgstr "Top chatters to keep"
 
 #: src/components/danmu/danmu-viewer.tsx:204
 msgid "Top Fixed"
@@ -8657,12 +8714,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:387
+#: src/components/config/shared-config-editor.tsx:392
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
 #: src/components/config/global/pipeline-config-card.tsx:257
-#: src/components/config/shared-config-editor.tsx:469
+#: src/components/config/shared-config-editor.tsx:474
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -8723,7 +8780,7 @@ msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:426
+#: src/components/config/shared-config-editor.tsx:431
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
@@ -9325,7 +9382,7 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/components/streamers/streamer-editor.tsx:107
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:180
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:187
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "You have unsaved changes. Leave without saving?"
 

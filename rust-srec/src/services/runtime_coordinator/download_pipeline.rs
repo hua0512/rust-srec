@@ -494,6 +494,7 @@ pub(super) async fn run_live_download_pipeline(
     );
 
     let cookies = merged_config.cookies.clone();
+    let danmu_statistics = merged_config.danmu_statistics.clone();
 
     // Start engine on the slot.
     let started = match download_manager.start_with_slot(slot, config, engine).await {
@@ -529,6 +530,7 @@ pub(super) async fn run_live_download_pipeline(
                 &streamer_url,
                 cookies,
                 media_extras,
+                danmu_statistics,
             )
             .await
         {

@@ -17,6 +17,7 @@ export const GlobalConfigSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
+  danmu_statistics: z.any().optional(),
   proxy_config: z.any().optional(),
 
   offline_check_delay_ms: z.number(),
@@ -94,6 +95,7 @@ export const GlobalConfigFormSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
+  danmu_statistics: z.any().optional(),
   proxy_config: z.any().optional(),
 
   offline_check_delay_ms: z.number(),
@@ -132,6 +134,7 @@ export const GlobalConfigWriteSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
+  danmu_statistics: z.any().optional(),
   proxy_config: z.any().optional(),
 
   offline_check_delay_ms: z.number(),

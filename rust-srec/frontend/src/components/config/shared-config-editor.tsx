@@ -26,6 +26,7 @@ import { StreamSelectionTab } from './shared/stream-selection-tab';
 import { LimitsCard } from './shared/limits-card';
 import { OutputSettingsCard } from './shared/output-settings-card';
 import { RecordDanmuCard } from './shared/record-danmu-card';
+import { DanmuStatisticsCard } from './shared/danmu-statistics-card';
 import { OfflineCheckCard } from './shared/offline-check-card';
 
 const PipelineConfigAdapter = lazy(() =>
@@ -341,6 +342,10 @@ export function SharedConfigEditor<T extends FieldValues>({
               className="space-y-6"
             >
               <RecordDanmuCard
+                form={form}
+                basePath={paths.danmu === '' ? undefined : paths.danmu}
+              />
+              <DanmuStatisticsCard
                 form={form}
                 basePath={paths.danmu === '' ? undefined : paths.danmu}
               />

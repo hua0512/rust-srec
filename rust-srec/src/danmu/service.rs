@@ -21,6 +21,7 @@ use tracing::{info, warn};
 use crate::danmu::{DanmuStatistics, ProviderRegistry};
 use crate::database::models::{DanmuRateEntry, GiftTallyEntry, TopTalkerEntry, WordFrequencyEntry};
 use crate::database::repositories::SessionRepository;
+use crate::domain::DanmuStatisticsConfig;
 use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
 
@@ -114,10 +115,6 @@ impl Default for DanmuService {
 }
 
 impl DanmuService {
-    const MAX_TOP_TALKERS: usize = 32;
-    const MAX_WORDS: usize = 50;
-    const RATE_BUCKET_SECS: u64 = 10;
-
     /// Create a new danmu service.
     pub fn new() -> Self {
         Self::with_providers(ProviderRegistry::with_defaults())
@@ -167,6 +164,7 @@ impl DanmuService {
         streamer_url: &str,
         cookies: Option<String>,
         extras: Option<std::collections::HashMap<String, String>>,
+        statistics: DanmuStatisticsConfig,
     ) -> Result<CollectionHandle> {
         const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -293,17 +291,18 @@ impl DanmuService {
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
 
+        // With statistics disabled the aggregator is left empty and never
+        // persisted, so the session has no statistics row and the API reports
+        // them as unavailable. XML recording is unaffected.
+        let statistics_enabled = statistics.enabled;
+        let stats_repo = self.session_repo.clone().filter(|_| statistics_enabled);
+
         // Build bounded per-session statistics state, resuming from a checkpoint
         // when this session was already being collected before a restart.
         let stats = super::checkpoint::load_or_new(
-            self.session_repo.as_ref(),
+            stats_repo.as_ref(),
             session_id,
-            platforms_parser::danmaku::StatisticsConfig {
-                top_talkers: Self::MAX_TOP_TALKERS,
-                top_words: Self::MAX_WORDS,
-                rate_bucket_secs: Self::RATE_BUCKET_SECS,
-                ..Default::default()
-            },
+            statistics.to_aggregator_config(),
         )
         .await;
         let cancel_token = self.cancel_token.child_token();
@@ -329,7 +328,7 @@ impl DanmuService {
         let event_tx = self.event_tx.clone();
         let collections = self.collections.clone();
         let sessions_by_streamer = self.sessions_by_streamer.clone();
-        let session_repo = self.session_repo.clone();
+        let session_repo = stats_repo.clone();
         let provider = Arc::clone(&provider);
         let conn_config = connection_config;
         let cancel_token_task = cancel_token.clone();
@@ -345,6 +344,7 @@ impl DanmuService {
                     conn_config,
                     stats,
                     session_repo: session_repo.clone(),
+                    statistics_enabled,
                     event_tx: event_tx.clone(),
                 }),
             )
@@ -798,6 +798,7 @@ mod tests {
                 "https://example.com/test",
                 None,
                 None,
+                DanmuStatisticsConfig::default(),
             )
             .await;
         assert!(
@@ -836,7 +837,14 @@ mod tests {
         let mut events = service.subscribe();
 
         let handle = service
-            .start_collection("session-1", "streamer-1", FakeProvider::URL, None, None)
+            .start_collection(
+                "session-1",
+                "streamer-1",
+                FakeProvider::URL,
+                None,
+                None,
+                DanmuStatisticsConfig::default(),
+            )
             .await
             .expect("collection starts against the fake provider");
         assert_eq!(handle.session_id(), "session-1");
@@ -899,6 +907,7 @@ mod tests {
                 "https://example.com/test",
                 None,
                 None,
+                DanmuStatisticsConfig::default(),
             )
             .await;
 

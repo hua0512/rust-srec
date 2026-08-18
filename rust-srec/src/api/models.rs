@@ -290,6 +290,8 @@ pub struct GlobalConfigResponse {
     pub max_download_duration_secs: u64,
     pub max_part_size_bytes: u64,
     pub record_danmu: bool,
+    /// JSON `DanmuStatisticsConfig`; absent resolves to its defaults.
+    pub danmu_statistics: Option<String>,
     pub max_concurrent_downloads: u32,
     pub max_concurrent_uploads: u32,
     pub streamer_check_delay_ms: u64,
@@ -353,6 +355,7 @@ pub struct UpdateGlobalConfigRequest {
     pub default_download_engine: Option<serde_json::Value>,
     pub default_extractor: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
+    pub danmu_statistics: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<serde_json::Value>,
@@ -384,6 +387,8 @@ pub struct PlatformConfigResponse {
     pub fetch_delay_ms: Option<u64>,
     pub download_delay_ms: Option<u64>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub cookies: Option<String>,
     pub platform_specific_config: Option<String>,
     pub proxy_config: Option<String>,
@@ -423,6 +428,8 @@ pub struct CreateTemplateRequest {
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
     pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -450,6 +457,8 @@ pub struct UpdateTemplateRequest {
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
     pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -478,6 +487,8 @@ pub struct TemplateResponse {
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
     pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,

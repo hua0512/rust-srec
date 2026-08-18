@@ -79,15 +79,16 @@ pub struct DanmuStatistics {
     pub chat_count: u64,
     /// Number of gift messages
     pub gift_count: u64,
-    /// Approximate number of distinct senders (HyperLogLog estimate, ~1% error)
+    /// Approximate number of distinct senders (HyperLogLog estimate, ~1.6%
+    /// standard error; see `HyperLogLog`)
     pub unique_talkers: u64,
-    /// Top talkers (user_id -> message count)
+    /// Most active senders, highest count first
     pub top_talkers: Vec<TopTalker>,
     /// Top gift senders (`message_count` holds total gift items, not messages)
     pub top_gifters: Vec<TopTalker>,
     /// Most-sent gifts by name (total items across the session)
     pub top_gifts: Vec<GiftCount>,
-    /// Word frequency (word -> count)
+    /// Most frequent words, highest count first
     pub word_frequency: Vec<WordFrequency>,
     /// Danmu rate timeseries (timestamp -> count)
     pub rate_timeseries: Vec<RateDataPoint>,

@@ -32,6 +32,7 @@ async fn create_test_platform(pool: &DbPool, prefix: &str) -> String {
         platform_specific_config: None,
         proxy_config: None,
         record_danmu: None,
+        danmu_statistics: None,
         output_folder: None,
         output_filename_template: None,
         download_engine: None,

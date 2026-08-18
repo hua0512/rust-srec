@@ -129,8 +129,11 @@ pub(crate) struct CollectionRunner {
 
     // Stats state
     stats: StatisticsAggregator,
-    /// Repository for periodic in-progress statistics persists.
+    /// Repository for periodic in-progress statistics persists. `None` when the
+    /// session's config disables statistics, which also disables checkpoints.
     session_repo: Option<Arc<dyn SessionRepository>>,
+    /// Whether messages feed the aggregator at all. XML recording is unaffected.
+    statistics_enabled: bool,
     /// Total count at the last periodic persist; skips redundant writes when
     /// no message arrived during the persist interval.
     last_persisted_total: u64,
@@ -160,6 +163,7 @@ pub(crate) struct RunnerParams {
     pub conn_config: ConnectionConfig,
     pub stats: StatisticsAggregator,
     pub session_repo: Option<Arc<dyn SessionRepository>>,
+    pub statistics_enabled: bool,
     pub event_tx: broadcast::Sender<DanmuEvent>,
 }
 
@@ -175,6 +179,7 @@ impl CollectionRunner {
             conn_config,
             stats,
             session_repo,
+            statistics_enabled,
             event_tx,
         } = params;
         // Read before `stats` is moved into the runner.
@@ -195,6 +200,7 @@ impl CollectionRunner {
                 message_buffer: Vec::with_capacity(config::MAX_BUFFER_SIZE),
                 stats,
                 session_repo,
+                statistics_enabled,
                 last_persisted_total: 0,
                 // Seeded from the resumed count so an immediately-restarted
                 // collector does not rewrite an identical checkpoint.
@@ -646,7 +652,9 @@ impl CollectionRunner {
     /// Handle a received danmu message.
     async fn handle_message(&mut self, message: DanmuMessage) -> Result<CommandResult> {
         // Update session-level statistics.
-        self.stats.record_message(&message);
+        if self.statistics_enabled {
+            self.stats.record_message(&message);
+        }
 
         // Buffer the message (will be written on flush)
         if self.current_writer.is_some() {
@@ -685,6 +693,7 @@ mod tests {
             conn_config: ConnectionConfig::default(),
             stats: StatisticsAggregator::new(),
             session_repo: None,
+            statistics_enabled: true,
             event_tx,
         })
         .await
