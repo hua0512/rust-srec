@@ -26,7 +26,7 @@ The `rust-srec` executable runs the backend. A complete browser-based installati
 
 - Rust 1.95 or newer on the stable channel. This is the `rust-version` declared in the workspace `Cargo.toml`; Cargo refuses to build with anything older.
 - Git, CMake 3.12 or newer, and a C/C++ compiler.
-- Node.js 24 and the pnpm version declared in `rust-srec/frontend/package.json` when running the frontend.
+- Node.js 26 and the pnpm version declared in `rust-srec/frontend/package.json` when running the frontend.
 - At least 2 GB of free disk space for dependencies and build artifacts.
 
 Install the native build tools for your operating system:

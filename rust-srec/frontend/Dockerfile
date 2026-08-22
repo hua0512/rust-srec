@@ -1,5 +1,5 @@
 # Build stage
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -11,9 +11,9 @@ ENV VITE_UI_BUILD=$VITE_UI_BUILD
 # Copy package files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-# Install dependencies
-RUN corepack enable
-RUN corepack prepare pnpm@10.28.1 --activate
+# Install dependencies. node:26-alpine ships no corepack, so pnpm is installed
+# directly; keep this version matching "packageManager" in package.json.
+RUN npm install -g pnpm@11.11.0
 RUN pnpm install --frozen-lockfile
 
 # Copy source files
@@ -23,7 +23,7 @@ COPY . .
 RUN pnpm run build
 
 # Runtime stage
-FROM node:24-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 

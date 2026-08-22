@@ -17,7 +17,7 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 
 ## CONVENTIONS / ANTI-PATTERNS
 - **Sync**: Maintain parity between `en/` and `zh/` content and file structure.
-- **Node Version**: CI uses **Node 20**. Ensure local environment compatibility.
+- **Node Version**: CI uses **Node 26**, pinned in the repo-root `.nvmrc`. Ensure local environment compatibility.
 - **Sidebars**: New pages must be manually added to `sidebar` in `config.mts`.
 - **Assets**: Reference assets in `public/` using root-relative paths (e.g., `/stream-rec.svg`).
 - **Dead Links**: Backend-managed links (e.g., `/api/docs`) are ignored via `ignoreDeadLinks` in config.
