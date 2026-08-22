@@ -1,8 +1,11 @@
 //! Email notification channel using SMTP.
 
 use async_trait::async_trait;
+use lettre::message::{Mailbox, MultiPart};
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::NotificationChannel;
 use crate::Result;
@@ -39,6 +42,10 @@ pub struct EmailConfig {
     /// Minimum priority level to send (default: High).
     #[serde(default = "default_email_priority")]
     pub min_priority: NotificationPriority,
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
     /// Batch emails within this window (seconds).
     #[serde(default = "default_batch_window")]
     pub batch_window_secs: u64,
@@ -66,6 +73,7 @@ impl Default for EmailConfig {
             from_address: String::new(),
             to_addresses: Vec::new(),
             min_priority: NotificationPriority::High,
+            locale: None,
             batch_window_secs: 60,
         }
     }
@@ -84,15 +92,18 @@ impl EmailChannel {
 
     /// Build the email subject.
     fn build_subject(&self, event: &NotificationEvent) -> String {
-        format!("[rust-srec] {}", event.title())
+        format!(
+            "[rust-srec] {}",
+            event.title_for(self.config.locale.as_deref())
+        )
     }
 
     /// Build the email body (plain text).
     fn build_body_text(&self, event: &NotificationEvent) -> String {
         format!(
             "{}\n\n{}\n\nPriority: {}\nType: {}\nTime: {}",
-            event.title(),
-            event.description(),
+            event.title_for(self.config.locale.as_deref()),
+            event.description_for(self.config.locale.as_deref()),
             event.priority(),
             event.event_type(),
             event.timestamp().to_rfc3339()
@@ -107,6 +118,12 @@ impl EmailChannel {
             NotificationPriority::High => "#f39c12",
             NotificationPriority::Critical => "#e74c3c",
         };
+
+        let title = escape_html(&event.title_for(self.config.locale.as_deref()));
+        let description = escape_html(&event.description_for(self.config.locale.as_deref()));
+        let priority = escape_html(&event.priority().to_string());
+        let event_type = escape_html(event.event_type());
+        let timestamp = escape_html(&event.timestamp().to_rfc3339());
 
         format!(
             r#"<!DOCTYPE html>
@@ -131,13 +148,68 @@ impl EmailChannel {
     </div>
 </body>
 </html>"#,
-            priority_color,
-            event.title(),
-            event.description(),
-            event.priority(),
-            event.event_type(),
-            event.timestamp().to_rfc3339()
+            priority_color, title, description, priority, event_type, timestamp
         )
+    }
+
+    fn build_message(&self, event: &NotificationEvent) -> Result<Message> {
+        let from = parse_mailbox(&self.config.from_address, "sender")?;
+        let mut builder = Message::builder()
+            .from(from)
+            .subject(self.build_subject(event));
+
+        for address in &self.config.to_addresses {
+            builder = builder.to(parse_mailbox(address, "recipient")?);
+        }
+
+        builder
+            .multipart(MultiPart::alternative_plain_html(
+                self.build_body_text(event),
+                self.build_body_html(event),
+            ))
+            .map_err(|error| crate::Error::config(format!("Invalid email message: {error}")))
+    }
+
+    fn build_transport(&self) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
+        let host = self.config.smtp_host.trim();
+        if host.is_empty() {
+            return Err(crate::Error::config("SMTP host cannot be empty"));
+        }
+
+        let mut builder = if self.config.use_tls {
+            if self.config.smtp_port == 465 {
+                AsyncSmtpTransport::<Tokio1Executor>::relay(host)
+            } else {
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)
+            }
+            .map_err(|error| {
+                crate::Error::config(format!("Invalid SMTP TLS configuration: {error}"))
+            })?
+        } else {
+            AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host)
+        };
+
+        builder = builder.port(self.config.smtp_port);
+        match (&self.config.smtp_username, &self.config.smtp_password) {
+            (Some(username), Some(password))
+                if !username.trim().is_empty() && !password.is_empty() =>
+            {
+                builder = builder.credentials(Credentials::new(
+                    username.trim().to_string(),
+                    password.clone(),
+                ));
+            }
+            (None, None) => {}
+            (Some(username), None) if username.trim().is_empty() => {}
+            (None, Some(password)) if password.is_empty() => {}
+            _ => {
+                return Err(crate::Error::config(
+                    "SMTP username and password must either both be configured or both be absent",
+                ));
+            }
+        }
+
+        Ok(builder.build())
     }
 }
 
@@ -170,25 +242,16 @@ impl NotificationChannel for EmailChannel {
             return Ok(());
         }
 
-        // Note: In a real implementation, we would use the `lettre` crate here.
-        // For now, we log the email that would be sent.
-        let subject = self.build_subject(event);
-        let _body_text = self.build_body_text(event);
-        let _body_html = self.build_body_html(event);
+        let message = self.build_message(event)?;
+        let transport = self.build_transport()?;
+        transport.send(message).await.map_err(|error| {
+            crate::Error::Other(format!("Email delivery via SMTP failed: {error}"))
+        })?;
 
-        // TODO: Implement actual SMTP sending with lettre crate
-        // let email = Message::builder()
-        //     .from(self.config.from_address.parse()?)
-        //     .to(self.config.to_addresses[0].parse()?)
-        //     .subject(&subject)
-        //     .multipart(MultiPart::alternative_plain_html(body_text, body_html))?;
-
-        warn!(
-            "Email sending not yet implemented. Would send: {} to {:?}",
-            subject, self.config.to_addresses
+        debug!(
+            event_type = event.event_type(),
+            "Email notification delivered"
         );
-
-        debug!("Email notification prepared: {}", event.event_type());
         Ok(())
     }
 
@@ -201,22 +264,33 @@ impl NotificationChannel for EmailChannel {
     }
 }
 
+fn parse_mailbox(address: &str, kind: &str) -> Result<Mailbox> {
+    address.trim().parse().map_err(|error| {
+        crate::Error::config(format!("Invalid email {kind} address '{address}': {error}"))
+    })
+}
+
+fn escape_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_email_config_default() {
-        let config = EmailConfig::default();
-        assert!(!config.enabled);
-        assert_eq!(config.smtp_port, 587);
-        assert!(config.use_tls);
-        assert_eq!(config.min_priority, NotificationPriority::High);
-    }
-
-    #[test]
     fn test_email_channel_disabled() {
         let config = EmailConfig::default();
+        // Email is the one channel whose default `min_priority` is `High`
+        // rather than `Normal`; `EmailChannel::send` drops any event below
+        // it, so a default mailbox only ever receives High and Critical.
+        assert_eq!(config.min_priority, NotificationPriority::High);
+
         let channel = EmailChannel::new(config);
         assert!(!channel.is_enabled());
     }
@@ -237,5 +311,66 @@ mod tests {
         let subject = channel.build_subject(&event);
         assert!(subject.contains("rust-srec"));
         assert!(subject.contains("TestStreamer"));
+    }
+
+    #[test]
+    fn message_contains_all_recipients_and_multipart_bodies() {
+        let config = EmailConfig {
+            enabled: true,
+            smtp_host: "smtp.example.com".to_string(),
+            from_address: "rust-srec@example.com".to_string(),
+            to_addresses: vec![
+                "first@example.com".to_string(),
+                "second@example.com".to_string(),
+            ],
+            ..EmailConfig::default()
+        };
+        let channel = EmailChannel::new(config);
+        let event = NotificationEvent::StreamOnline {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            title: "Playing Games".to_string(),
+            category: None,
+            timestamp: chrono::Utc::now(),
+        };
+
+        let formatted = String::from_utf8(channel.build_message(&event).unwrap().formatted())
+            .expect("message should be UTF-8");
+        assert!(formatted.contains("first@example.com"));
+        assert!(formatted.contains("second@example.com"));
+        assert!(formatted.contains("multipart/alternative"));
+        assert!(formatted.contains("TestStreamer"));
+    }
+
+    #[test]
+    fn html_body_escapes_event_content() {
+        let channel = EmailChannel::new(EmailConfig::default());
+        let event = NotificationEvent::StreamOnline {
+            streamer_id: "123".to_string(),
+            streamer_name: "<script>alert('x')</script>".to_string(),
+            title: "A & B".to_string(),
+            category: None,
+            timestamp: chrono::Utc::now(),
+        };
+
+        let html = channel.build_body_html(&event);
+        assert!(!html.contains("<script>"));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("A &amp; B"));
+    }
+
+    #[test]
+    fn smtp_credentials_must_be_configured_as_a_pair() {
+        let config = EmailConfig {
+            smtp_host: "smtp.example.com".to_string(),
+            smtp_username: Some("user".to_string()),
+            smtp_password: None,
+            ..EmailConfig::default()
+        };
+
+        let error = EmailChannel::new(config)
+            .build_transport()
+            .expect_err("partial credentials must be rejected");
+        assert!(error.to_string().contains("username and password"));
     }
 }

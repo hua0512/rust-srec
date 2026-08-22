@@ -8,6 +8,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::{Priority, StreamerState};
 
+pub(crate) const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
+const MIN_DOWNLOAD_FAILURE_THRESHOLD: u32 = 2;
+
+/// Derives the consecutive download-failure threshold from the effective
+/// offline-check count.
+///
+/// The floor of two preserves the same transient-failure safety margin used
+/// by the session offline classifier when operators configure a single
+/// offline check.
+pub(crate) fn download_failure_threshold(offline_check_count: u32) -> i32 {
+    i32::try_from(offline_check_count.max(MIN_DOWNLOAD_FAILURE_THRESHOLD)).unwrap_or(i32::MAX)
+}
+
 /// Lightweight streamer metadata for in-memory storage.
 ///
 /// This struct contains only the essential fields needed for
@@ -40,17 +53,26 @@ pub struct StreamerMetadata {
     pub last_error: Option<String>,
     /// Streamer specific configuration override (JSON string).
     pub streamer_specific_config: Option<String>,
-    /// Effective offline-check count after merging the 4-layer config
-    /// hierarchy (Global → Platform → Template → Streamer). Refreshed at
-    /// registration and on each `ConfigUpdateEvent`. Both the StreamerActor
-    /// and the SessionLifecycle hysteresis backstop read from here so they
-    /// stay in lockstep.
-    #[serde(default = "default_offline_check_count")]
-    pub effective_offline_check_count: u32,
-    /// Effective offline-check delay (ms) after merging — see
-    /// [`Self::effective_offline_check_count`].
-    #[serde(default = "default_offline_check_delay_ms")]
-    pub effective_offline_check_delay_ms: u64,
+    /// Offline-check count after merging the Global → Platform → Template →
+    /// Streamer configuration hierarchy.
+    ///
+    /// The serialized alias `effective_offline_check_count` is deprecated and
+    /// will be removed in a future version.
+    #[serde(
+        default = "default_offline_check_count",
+        alias = "effective_offline_check_count"
+    )]
+    pub offline_check_count: u32,
+    /// Offline-check delay after applying the same configuration hierarchy as
+    /// [`Self::offline_check_count`].
+    ///
+    /// The serialized alias `effective_offline_check_delay_ms` is deprecated
+    /// and will be removed in a future version.
+    #[serde(
+        default = "default_offline_check_delay_ms",
+        alias = "effective_offline_check_delay_ms"
+    )]
+    pub offline_check_delay_ms: u64,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
@@ -58,7 +80,7 @@ pub struct StreamerMetadata {
 }
 
 fn default_offline_check_count() -> u32 {
-    3
+    DEFAULT_OFFLINE_CHECK_COUNT
 }
 
 fn default_offline_check_delay_ms() -> u64 {
@@ -68,8 +90,8 @@ fn default_offline_check_delay_ms() -> u64 {
 impl StreamerMetadata {
     /// Create new metadata from database model.
     ///
-    /// `effective_offline_check_*` are populated from defaults; resolve them
-    /// via [`Self::apply_resolved_config`] once the merged config is known.
+    /// `offline_check_*` are populated from defaults; resolve them via
+    /// [`Self::apply_resolved_config`] once the merged config is known.
     pub fn from_db_model(model: &crate::database::models::StreamerDbModel) -> Self {
         Self {
             id: model.id.clone(),
@@ -85,8 +107,8 @@ impl StreamerMetadata {
             last_error: model.last_error.clone(),
             // Map config overrides
             streamer_specific_config: model.streamer_specific_config.clone(),
-            effective_offline_check_count: default_offline_check_count(),
-            effective_offline_check_delay_ms: default_offline_check_delay_ms(),
+            offline_check_count: default_offline_check_count(),
+            offline_check_delay_ms: default_offline_check_delay_ms(),
             disabled_until: model
                 .disabled_until
                 .map(crate::database::time::ms_to_datetime),
@@ -98,12 +120,26 @@ impl StreamerMetadata {
         }
     }
 
-    /// Refresh the cached effective values from a freshly resolved
-    /// [`crate::domain::config::MergedConfig`]. Called at registration
+    /// Refresh the cached offline-check values from a freshly resolved
+    /// [`crate::config::MergedConfig`]. Called at registration
     /// and from the scheduler's `ConfigUpdate` fan-out path.
-    pub fn apply_resolved_config(&mut self, merged: &crate::domain::config::MergedConfig) {
-        self.effective_offline_check_count = merged.offline_check_count;
-        self.effective_offline_check_delay_ms = merged.offline_check_delay_ms;
+    pub fn apply_resolved_config(&mut self, merged: &crate::config::MergedConfig) {
+        self.offline_check_count = merged.offline_check_count;
+        self.offline_check_delay_ms = merged.offline_check_delay_ms;
+    }
+
+    /// Reset the error bookkeeping accumulated by `StreamerManager::record_error`:
+    /// `consecutive_error_count`, `disabled_until` and `last_error`.
+    ///
+    /// `state` is left untouched — callers that also need a state change set it
+    /// themselves. Clearing `disabled_until` is what makes
+    /// [`Self::is_ready_for_check`] pass again; zeroing `consecutive_error_count`
+    /// restarts the exponential backoff in `StreamerManager::calculate_backoff`
+    /// from its base delay rather than resuming mid-curve.
+    pub fn clear_error_tracking(&mut self) {
+        self.consecutive_error_count = 0;
+        self.disabled_until = None;
+        self.last_error = None;
     }
 
     /// Check if the streamer is currently disabled (in backoff).
@@ -140,6 +176,13 @@ impl StreamerMetadata {
         })
     }
 
+    /// [`Self::remaining_backoff`] as a `std::time::Duration`, for callers
+    /// scheduling timers or filling wire payloads. `None` when no backoff
+    /// is active.
+    pub fn remaining_backoff_std(&self) -> Option<std::time::Duration> {
+        self.remaining_backoff().and_then(|d| d.to_std().ok())
+    }
+
     /// Get the platform name derived from platform_config_id.
     ///
     /// Returns the platform name (e.g., "douyin", "twitch", "bilibili").
@@ -170,8 +213,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
-            effective_offline_check_count: default_offline_check_count(),
-            effective_offline_check_delay_ms: default_offline_check_delay_ms(),
+            offline_check_count: default_offline_check_count(),
+            offline_check_delay_ms: default_offline_check_delay_ms(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -255,5 +298,36 @@ mod tests {
         // Past backoff
         metadata.disabled_until = Some(Utc::now() - chrono::Duration::hours(1));
         assert!(metadata.remaining_backoff().is_none());
+    }
+
+    #[test]
+    fn download_failure_threshold_tracks_offline_check_count_with_safety_floor() {
+        assert_eq!(download_failure_threshold(1), 2);
+        assert_eq!(download_failure_threshold(3), 3);
+        assert_eq!(download_failure_threshold(5), 5);
+        assert_eq!(download_failure_threshold(u32::MAX), i32::MAX);
+    }
+
+    mod deprecated_compatibility {
+        #![allow(deprecated)]
+
+        use super::*;
+
+        #[test]
+        #[deprecated(
+            note = "effective_offline_check_* aliases and this test will be removed in a future release"
+        )]
+        fn effective_offline_check_aliases_remove_in_future_release() {
+            let mut value = serde_json::to_value(create_test_metadata()).unwrap();
+            let object = value.as_object_mut().unwrap();
+            let count = object.remove("offline_check_count").unwrap();
+            let delay = object.remove("offline_check_delay_ms").unwrap();
+            object.insert("effective_offline_check_count".to_string(), count);
+            object.insert("effective_offline_check_delay_ms".to_string(), delay);
+
+            let restored: StreamerMetadata = serde_json::from_value(value).unwrap();
+            assert_eq!(restored.offline_check_count, DEFAULT_OFFLINE_CHECK_COUNT);
+            assert_eq!(restored.offline_check_delay_ms, 20_000);
+        }
     }
 }

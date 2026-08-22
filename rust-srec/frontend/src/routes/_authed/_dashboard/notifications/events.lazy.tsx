@@ -53,8 +53,10 @@ import {
   setLastSeenCriticalMs,
 } from '@/lib/notification-state';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
-import { SearchInput } from '@/components/sessions/search-input';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { priorityLabel } from '@/lib/priority';
+import { eventTypeLabel } from '@/lib/notification-event-types';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/notifications/events',
@@ -67,10 +69,12 @@ export const Route = createLazyFileRoute(
 function NotificationEventsPage() {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
-  const [eventType, setEventType] = useState<string>('all');
-  const [priority, setPriority] = useState<string>('all');
-  const [streamerId, setStreamerId] = useState<string>('');
-  const [page, setPage] = useState(1);
+  const search = Route.useSearch();
+  const updateSearch = useUpdateSearch<typeof search>();
+  const eventType = search.type ?? 'all';
+  const priority = search.priority ?? 'all';
+  const streamerId = search.q ?? '';
+  const page = search.page ?? 1;
   const [selectedPayload, setSelectedPayload] = useState<{
     title: string;
     payload: string;
@@ -186,48 +190,66 @@ function NotificationEventsPage() {
 
   const clearFilters = useCallback(() => {
     startTransition(() => {
-      setEventType('all');
-      setPriority('all');
-      setStreamerId('');
-      setPage(1);
+      updateSearch({
+        type: undefined,
+        priority: undefined,
+        q: undefined,
+        page: undefined,
+      });
     });
-  }, []);
+  }, [updateSearch]);
 
-  const handleSetPriority = useCallback((val: string) => {
-    startTransition(() => {
-      setPriority(val);
-    });
-  }, []);
-
-  const handleSetEventType = useCallback((val: string) => {
-    startTransition(() => {
-      setEventType(val);
-    });
-  }, []);
-
-  const handleSetStreamerId = useCallback((val: string) => {
-    startTransition(() => {
-      setStreamerId(val);
-    });
-  }, []);
-
-  const handleSetPage = useCallback(
-    (updater: number | ((p: number) => number)) => {
-      setPage(updater);
+  const handleSetPriority = useCallback(
+    (val: string) => {
+      startTransition(() => {
+        updateSearch({
+          priority: val === 'all' ? undefined : val,
+          page: undefined,
+        });
+      });
     },
-    [],
+    [updateSearch],
   );
 
-  const handleViewDetails = useCallback((event: any) => {
-    setSelectedPayload({
-      title: `${event.event_type} (${priorityLabel(event.priority)})`,
-      payload: event.payload,
-    });
-  }, []);
+  const handleSetEventType = useCallback(
+    (val: string) => {
+      startTransition(() => {
+        updateSearch({
+          type: val === 'all' ? undefined : val,
+          page: undefined,
+        });
+      });
+    },
+    [updateSearch],
+  );
 
-  useEffect(() => {
-    setPage(1);
-  }, [eventType, priority, streamerId]);
+  const handleSetStreamerId = useCallback(
+    (val: string) => {
+      startTransition(() => {
+        updateSearch({ q: val || undefined, page: undefined });
+      });
+    },
+    [updateSearch],
+  );
+
+  const handleSetPage = useCallback(
+    (newPage: number) => {
+      startTransition(() => {
+        updateSearch({ page: newPage <= 1 ? undefined : newPage });
+      });
+    },
+    [updateSearch],
+  );
+
+  const handleViewDetails = useCallback(
+    (event: any) => {
+      setSelectedPayload({
+        title: `${i18n._(eventTypeLabel(event.event_type))} (${i18n._(priorityLabel(event.priority))})`,
+        payload: event.payload,
+      });
+    },
+    [i18n],
+  );
 
   const hasMore = (events?.length ?? 0) >= limit;
   const hasPrev = page > 1;
@@ -329,7 +351,7 @@ function NotificationEventsPage() {
                   </SelectItem>
                   {(eventTypes ?? []).map((et) => (
                     <SelectItem key={et.event_type} value={et.event_type}>
-                      {et.label}
+                      {i18n._(eventTypeLabel(et.event_type))}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -449,7 +471,7 @@ function NotificationEventsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleSetPage((p) => Math.max(1, p - 1))}
+              onClick={() => handleSetPage(Math.max(1, page - 1))}
               disabled={!hasPrev}
               className="h-9 px-4 rounded-xl"
             >
@@ -464,7 +486,7 @@ function NotificationEventsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleSetPage((p) => p + 1)}
+              onClick={() => handleSetPage(page + 1)}
               disabled={!hasMore}
               className="h-9 px-4 rounded-xl"
             >

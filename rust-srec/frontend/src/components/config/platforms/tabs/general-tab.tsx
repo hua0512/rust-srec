@@ -3,7 +3,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 
@@ -14,6 +13,11 @@ import { Clock } from 'lucide-react';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { UseFormReturn } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CONFIG_INPUT } from '@/components/config/shared/config-field';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 interface GeneralTabProps {
   form: UseFormReturn<any>;
@@ -41,10 +45,10 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
             control={form.control}
             name={basePath ? `${basePath}.fetch_delay_ms` : 'fetch_delay_ms'}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Fetch Delay</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <InputWithUnit
                     value={
@@ -57,10 +61,10 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
                     }
                     unitType="duration"
                     placeholder={i18n._(msg`Global Default`)}
-                    className="bg-background"
+                    className={CONFIG_INPUT}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>Interval between checks.</Trans>
                 </FormDescription>
                 <FormMessage />
@@ -73,10 +77,10 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
               basePath ? `${basePath}.download_delay_ms` : 'download_delay_ms'
             }
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>Download Delay</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <InputWithUnit
                     value={
@@ -89,10 +93,10 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
                     }
                     unitType="duration"
                     placeholder={i18n._(msg`Global Default`)}
-                    className="bg-background"
+                    className={CONFIG_INPUT}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>Wait time before starting.</Trans>
                 </FormDescription>
                 <FormMessage />

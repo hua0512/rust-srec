@@ -1,3 +1,4 @@
+export * from './apiKeys';
 export * from './auth';
 export * from './config';
 export * from './engines';
@@ -10,4 +11,4 @@ export * from './streamers';
 export * from './system';
 export * from './notifications';
 export * from './credentials';
-export * from './tdl';
+export * from './baidupcs';

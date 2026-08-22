@@ -36,11 +36,11 @@ generate_secret() {
     elif [ -r /dev/urandom ]; then
         head -c "$length" /dev/urandom | od -An -tx1 | tr -d ' \n'
     else
-        local secret=""
-        for _ in $(seq 1 "$length"); do
-            secret+=$(printf '%x' $((RANDOM % 16)))
-        done
-        echo "$secret"
+        error "无法安全生成密钥：缺少 openssl，且 /dev/urandom 不可读。"
+        error "请安装 openssl，或在其他环境生成两个 32 字节十六进制值，例如："
+        error "  python3 -c 'import secrets; print(secrets.token_hex(32))'"
+        error "然后手动填写 JWT_SECRET 和 SESSION_SECRET：https://docs.srec.rs/zh/getting-started/docker#手动安装"
+        return 1
     fi
 }
 

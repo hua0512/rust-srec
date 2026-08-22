@@ -1,4 +1,7 @@
-#![allow(unused)]
+#![expect(
+    unused,
+    reason = "API response models include fields not consumed by the extractor"
+)]
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

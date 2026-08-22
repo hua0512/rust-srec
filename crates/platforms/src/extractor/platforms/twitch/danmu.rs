@@ -3,12 +3,13 @@
 //! Implements danmu collection for the Twitch streaming platform using IRC over WebSocket.
 
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::Result;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage, DanmuType};
 
 use super::URL_REGEX;
@@ -23,22 +24,12 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 300;
 
 /// Twitch Danmu Protocol Implementation using WebSocket IRC
 #[derive(Clone, Default)]
-pub struct TwitchDanmuProtocol {
-    /// Optional OAuth token for authenticated sessions
-    oauth_token: Option<String>,
-}
+pub struct TwitchDanmuProtocol;
 
 impl TwitchDanmuProtocol {
     /// Create a new TwitchDanmuProtocol instance (anonymous).
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create a new TwitchDanmuProtocol with OAuth token for authenticated access.
-    pub fn with_oauth(token: impl Into<String>) -> Self {
-        Self {
-            oauth_token: Some(token.into()),
-        }
+        Self
     }
 
     /// Generate random anonymous username
@@ -131,7 +122,9 @@ impl TwitchDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for TwitchDanmuProtocol {
+impl DanmuProtocolFactory for TwitchDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "twitch"
     }
@@ -144,7 +137,13 @@ impl DanmuProtocol for TwitchDanmuProtocol {
         capture_group_1(&URL_REGEX, url).map(str::to_lowercase)
     }
 
-    async fn websocket_url(&self, _room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        self.clone()
+    }
+}
+
+impl DanmuProtocol for TwitchDanmuProtocol {
+    async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
         Ok(TWITCH_WS_URL.to_string())
     }
 
@@ -153,7 +152,7 @@ impl DanmuProtocol for TwitchDanmuProtocol {
         None
     }
 
-    async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         let mut messages = Vec::new();
 
         // Request Twitch capabilities for tags and commands
@@ -161,26 +160,8 @@ impl DanmuProtocol for TwitchDanmuProtocol {
             "CAP REQ :twitch.tv/tags twitch.tv/commands".into(),
         ));
 
-        // Send PASS (OAuth token or empty for anonymous)
-        let pass = if let Some(ref token) = self.oauth_token {
-            if token.starts_with("oauth:") {
-                format!("PASS {}", token)
-            } else {
-                format!("PASS oauth:{}", token)
-            }
-        } else {
-            "PASS oauth:".to_string()
-        };
-        messages.push(Message::Text(pass.into()));
-
-        // Send NICK
-        let nick = if self.oauth_token.is_some() {
-            // For authenticated, the nick should match the token owner
-            // But for simplicity, we still use anonymous nick pattern
-            Self::generate_anonymous_nick()
-        } else {
-            Self::generate_anonymous_nick()
-        };
+        messages.push(Message::Text("PASS oauth:".into()));
+        let nick = Self::generate_anonymous_nick();
         messages.push(Message::Text(format!("NICK {}", nick).into()));
 
         // Join channel
@@ -205,34 +186,32 @@ impl DanmuProtocol for TwitchDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
-            Message::Text(text) => Self::decode_text(text, tx).await,
+            Message::Text(text) => Ok(Self::decode_text(text)),
             Message::Binary(data) => {
                 // Twitch IRC uses text, but handle binary just in case
                 if let Ok(text) = std::str::from_utf8(data) {
-                    Self::decode_text(text, tx).await
+                    Ok(Self::decode_text(text))
                 } else {
-                    Ok(vec![])
+                    Ok(DanmuProtocolOutput::default())
                 }
             }
-            Message::Ping(data) => {
-                // Respond to WebSocket-level PING
-                let _ = tx.send(Message::Pong(data.clone())).await;
-                Ok(vec![])
-            }
-            _ => Ok(vec![]),
+            Message::Ping(data) => Ok(DanmuProtocolOutput::outbound(vec![Message::Pong(
+                data.clone(),
+            )])),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
 
 impl TwitchDanmuProtocol {
-    async fn decode_text(text: &str, tx: &mpsc::Sender<Message>) -> Result<Vec<DanmuItem>> {
+    fn decode_text(text: &str) -> DanmuProtocolOutput {
         let mut items = Vec::new();
+        let mut outbound = Vec::new();
 
         // Handle each line (Twitch may send multiple messages in one frame)
         for line in text.lines() {
@@ -246,7 +225,7 @@ impl TwitchDanmuProtocol {
                 let pong_data = trimmed.strip_prefix("PING ").unwrap_or(":tmi.twitch.tv");
                 let pong = format!("PONG {}", pong_data);
                 debug!("Sending PONG: {}", pong);
-                let _ = tx.send(Message::Text(pong.into())).await;
+                outbound.push(Message::Text(pong.into()));
                 continue;
             }
 
@@ -256,7 +235,7 @@ impl TwitchDanmuProtocol {
             }
         }
 
-        Ok(items)
+        DanmuProtocolOutput::new(items, outbound)
     }
 }
 
@@ -265,7 +244,7 @@ pub type TwitchDanmuProvider = WebSocketDanmuProvider<TwitchDanmuProtocol>;
 
 /// Creates a new Twitch danmu provider (anonymous).
 pub fn create_twitch_danmu_provider() -> TwitchDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(TwitchDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(TwitchDanmuProtocol, None)
 }
 
 #[cfg(test)]
@@ -293,6 +272,20 @@ mod tests {
         let line = "PING :tmi.twitch.tv";
         let result = TwitchDanmuProtocol::parse_irc_message(line);
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn ping_returns_pong_as_outbound_protocol_frame() {
+        let mut protocol = TwitchDanmuProtocol;
+        let output = protocol
+            .decode_message(&Message::Text("PING :tmi.twitch.tv".into()), "channel")
+            .await
+            .expect("decode ping");
+        let (items, outbound) = output.into_parts();
+
+        assert!(items.is_empty());
+        assert_eq!(outbound.len(), 1);
+        assert_eq!(outbound[0], Message::Text("PONG :tmi.twitch.tv".into()));
     }
 
     #[test]
@@ -331,10 +324,11 @@ mod tests {
         let provider = create_twitch_danmu_provider();
         let channel = "dota2ti";
         println!("Connecting to Twitch channel: {}", channel);
-        let connection = provider
+        let mut items = provider
             .connect(channel, ConnectionConfig::default())
             .await
-            .expect("Failed to connect");
+            .expect("Failed to connect")
+            .items;
         println!("Connected to Twitch channel #{}", channel);
 
         // Receive messages for 60 seconds
@@ -342,7 +336,7 @@ mod tests {
         let mut message_count = 0;
 
         while start.elapsed() < Duration::from_secs(60) {
-            match provider.receive(&connection).await {
+            match tokio::time::timeout(Duration::from_millis(500), items.recv()).await {
                 Ok(Some(item)) => match item {
                     crate::danmaku::DanmuItem::Message(msg) => {
                         println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
@@ -353,11 +347,12 @@ mod tests {
                     }
                 },
                 Ok(None) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Stream closed by provider");
                     break;
+                }
+                Err(_) => {
+                    // No message within the window; keep waiting until the
+                    // 60s budget is spent.
                 }
             }
         }

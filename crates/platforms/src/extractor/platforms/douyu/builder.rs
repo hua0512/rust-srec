@@ -67,6 +67,8 @@ pub struct Douyu {
     pub disable_interactive_game: bool,
     /// Quality rate selection (0 = original quality, higher = lower quality)
     pub rate: i64,
+    /// Request audio-only streams.
+    pub only_audio: bool,
     /// Number of retries for API requests (helps with overseas/intermittent failures)
     pub request_retries: u32,
 }
@@ -83,7 +85,7 @@ impl Douyu {
         extras: Option<serde_json::Value>,
     ) -> Self {
         let cdn = extras_get_str(extras.as_ref(), "cdn")
-            .unwrap_or("hw-h5")
+            .unwrap_or("ws-h5")
             .to_owned();
 
         let disable_interactive_game =
@@ -91,8 +93,15 @@ impl Douyu {
 
         let rate = extras_get_i64(extras.as_ref(), "rate").unwrap_or(0);
 
+        let only_audio = extras_get_bool(extras.as_ref(), "only_audio")
+            .or_else(|| extras_get_bool(extras.as_ref(), "onlyAudio"))
+            .unwrap_or(false);
+
+        // Clamp to at least 1 so the `for attempt in 0..self.request_retries` loop in
+        // `get_betard_room_info` runs; 0 would make every betard fetch return the generic
+        // "Failed to get betard room info" error and silently disable VIP detection.
         let request_retries = extras_get_u64(extras.as_ref(), "request_retries")
-            .map(|v| v as u32)
+            .map(|v| (v as u32).max(1))
             .unwrap_or(Self::DEFAULT_RETRIES);
 
         let mut extractor = Extractor::new("Douyu", url, client);
@@ -107,6 +116,7 @@ impl Douyu {
             cdn,
             disable_interactive_game,
             rate,
+            only_audio,
             request_retries,
         }
     }
@@ -582,8 +592,8 @@ impl Douyu {
             form_data.insert("iar", "0".to_string());
             form_data.insert("ive", "0".to_string());
             form_data.insert("rid", rid.to_string());
-            form_data.insert("hevc", "0".to_string());
-            form_data.insert("fa", "0".to_string());
+            form_data.insert("hevc", "1".to_string());
+            form_data.insert("fa", Self::form_bool(self.only_audio));
             form_data.insert("sov", "0".to_string());
 
             // Fallback auth always uses V1 API with POST
@@ -634,12 +644,15 @@ impl Douyu {
                 }
                 // Handle specific Douyu error codes
                 match resp.error {
-                    -5 => {
-                        //  Room is closed / streamer is not live (error -5)
-                        return Err(ExtractorError::ValidationError(format!(
-                            "Room is closed / streamer is not live (error -5): {}",
-                            resp.msg
-                        )));
+                    -5..=-3 => {
+                        // Codes -3/-4/-5 mean the room is unavailable / streamer is offline;
+                        // `parse_web_response` matches on `NoStreamsFound` to recover the
+                        // went-offline race without inspecting message text.
+                        debug!(
+                            "getH5PlayV1 reports room unavailable (error {}): {}",
+                            resp.error, resp.msg
+                        );
+                        return Err(ExtractorError::NoStreamsFound);
                     }
                     -9 => {
                         // Timestamp mismatch — retryable since each attempt generates a fresh timestamp
@@ -681,7 +694,36 @@ impl Douyu {
         cdn.starts_with("scdn")
     }
 
-    #[allow(clippy::too_many_arguments)]
+    fn form_bool(enabled: bool) -> String {
+        (if enabled { "1" } else { "0" }).to_string()
+    }
+
+    fn stream_codec(is_h265: bool, only_audio: bool) -> &'static str {
+        if only_audio {
+            "aac"
+        } else if is_h265 {
+            "hevc,aac"
+        } else {
+            "avc,aac"
+        }
+    }
+
+    fn stream_url(play_info: &DouyuH5PlayData, is_h265: bool, only_audio: bool) -> String {
+        if is_h265
+            && !only_audio
+            && let Some(player_url) = play_info.player_1.as_deref()
+            && !player_url.is_empty()
+        {
+            return player_url.to_string();
+        }
+
+        format!("{}/{}", play_info.rtmp_url, play_info.rtmp_live)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "arguments map the Douyu response into one MediaInfo value"
+    )]
     fn create_media_info(
         &self,
         title: &str,
@@ -879,9 +921,9 @@ impl Douyu {
         // streamer is live
         let streams = match self.get_streams_with_stable_auth(rid, is_vip).await {
             Ok(streams) => streams,
-            Err(ExtractorError::ValidationError(msg)) if msg.contains("error -5") => {
+            Err(ExtractorError::NoStreamsFound) => {
                 // Room went offline between status check and stream fetch
-                debug!("Room went offline during stream fetch: {}", msg);
+                debug!("Room went offline during stream fetch (rid {})", rid);
                 return Ok(self.create_media_info(
                     &title,
                     &artist,
@@ -940,7 +982,7 @@ impl Douyu {
                     MediaFormat::Ts
                 };
 
-                let codec = if cdn.is_h265 { "hevc,aac" } else { "avc,aac" };
+                let codec = Self::stream_codec(cdn.is_h265, self.only_audio);
 
                 let priority = if cdn.cdn == preferred_cdn && rate.rate == preferred_rate {
                     0
@@ -952,6 +994,8 @@ impl Douyu {
                     "cdn": cdn.cdn.clone(),
                     "rate": rate.rate.to_string(),
                     "rid": rid.to_string(),
+                    "is_h265": cdn.is_h265,
+                    "only_audio": self.only_audio,
                 });
 
                 stream_infos.push(
@@ -960,8 +1004,9 @@ impl Douyu {
                         .bitrate(rate.bit)
                         .priority(priority)
                         .extras(extras)
-                        .codec(codec.to_string())
+                        .codec(codec)
                         .is_headers_needed(true)
+                        .is_audio_only(self.only_audio)
                         .build(),
                 );
             }
@@ -1069,20 +1114,26 @@ impl PlatformExtractor for Douyu {
             .and_then(|s| s.parse::<i64>().ok())
             .ok_or_else(|| ExtractorError::ValidationError("Missing rate in extras".to_string()))?;
 
+        let is_h265 = extras_get_bool(Some(extras), "is_h265").unwrap_or(false);
+        let only_audio = extras_get_bool(Some(extras), "only_audio")
+            .or_else(|| extras_get_bool(Some(extras), "onlyAudio"))
+            .unwrap_or(self.only_audio);
+
         debug!("Resolving Douyu stream URL for rid: {}", rid);
         let (resp, _actual_cdn) = self
             .get_play_info_fallback_with_scdn_avoidance(rid, cdn, rate, None)
             .await?;
 
-        let base_stream_url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
-
-        stream_info.url = base_stream_url;
+        stream_info.url = Self::stream_url(&resp, is_h265, only_audio);
+        stream_info.codec = Self::stream_codec(is_h265, only_audio).to_string();
+        stream_info.is_audio_only = only_audio;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use tracing::Level;
 
     use crate::extractor::{
@@ -1104,7 +1155,87 @@ mod tests {
         println!("{media_info:?}");
     }
 
-    use crate::extractor::platforms::douyu::models::DouyuH5PlayResponse;
+    use crate::extractor::platforms::douyu::models::{DouyuH5PlayData, DouyuH5PlayResponse};
+
+    #[test]
+    fn test_douyu_extractor_reads_audio_only_option() {
+        let extractor = Douyu::new(
+            "https://www.douyu.com/309763".to_string(),
+            default_client(),
+            None,
+            Some(json!({
+                "onlyAudio": true
+            })),
+        );
+
+        assert!(extractor.only_audio);
+    }
+
+    #[test]
+    fn test_stream_codec_uses_cdn_h265_flag() {
+        assert_eq!(Douyu::stream_codec(true, false), "hevc,aac");
+        assert_eq!(Douyu::stream_codec(false, false), "avc,aac");
+        assert_eq!(Douyu::stream_codec(true, true), "aac");
+    }
+
+    #[test]
+    fn test_stream_url_uses_player_1_only_for_h265_video() {
+        let play_info: DouyuH5PlayData = serde_json::from_value(json!({
+            "room_id": 1,
+            "rtmp_cdn": "ws-h5",
+            "rtmp_url": "https://example.com/live",
+            "rtmp_live": "stream.flv",
+            "player_1": "https://example.com/hevc.flv",
+            "cdnsWithName": [],
+            "multirates": []
+        }))
+        .unwrap();
+
+        assert_eq!(
+            Douyu::stream_url(&play_info, true, false),
+            "https://example.com/hevc.flv"
+        );
+        assert_eq!(
+            Douyu::stream_url(&play_info, false, false),
+            "https://example.com/live/stream.flv"
+        );
+        assert_eq!(
+            Douyu::stream_url(&play_info, true, true),
+            "https://example.com/live/stream.flv"
+        );
+    }
+
+    #[test]
+    fn test_stream_url_falls_back_when_player_1_is_missing() {
+        let play_info: DouyuH5PlayData = serde_json::from_value(json!({
+            "room_id": 1,
+            "rtmp_cdn": "ws-h5",
+            "rtmp_url": "https://example.com/live",
+            "rtmp_live": "stream.flv",
+            "cdnsWithName": [],
+            "multirates": []
+        }))
+        .unwrap();
+
+        assert_eq!(
+            Douyu::stream_url(&play_info, true, false),
+            "https://example.com/live/stream.flv"
+        );
+    }
+
+    #[test]
+    fn test_request_retries_extras_zero_clamped_to_one() {
+        let extractor = Douyu::new(
+            "https://www.douyu.com/309763".to_string(),
+            default_client(),
+            None,
+            Some(json!({
+                "request_retries": 0
+            })),
+        );
+
+        assert_eq!(extractor.request_retries, 1);
+    }
 
     #[test]
     fn test_parse_h5play_response_error_minus5() {

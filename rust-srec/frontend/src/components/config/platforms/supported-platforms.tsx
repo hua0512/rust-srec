@@ -5,6 +5,7 @@ import { Globe } from 'lucide-react';
 
 const SUPPORTED_PLATFORMS = [
   'acfun',
+  'bigo',
   'bilibili',
   'douyin',
   'douyu',
@@ -12,6 +13,7 @@ const SUPPORTED_PLATFORMS = [
   'pandatv',
   'picarto',
   'redbook',
+  'soop',
   'tiktok',
   'twitcasting',
   'twitch',

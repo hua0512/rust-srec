@@ -5,6 +5,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
+use tokio::sync::mpsc;
 
 use crate::danmaku::error::Result;
 use crate::danmaku::event::DanmuItem;
@@ -61,6 +62,20 @@ impl DanmuConnection {
     }
 }
 
+/// An established danmu stream: the connection handle plus the item channel.
+///
+/// `items` is closed when the provider's background transport gives up (for
+/// [`WebSocketDanmuProvider`](crate::danmaku::WebSocketDanmuProvider), after
+/// `WebSocketProviderConfig::max_reconnect_attempts`), so a `None` from
+/// `items.recv()` means "this stream is finished" and the caller should
+/// [`DanmuProvider::disconnect`] `connection` before deciding whether to
+/// reconnect.
+#[derive(Debug)]
+pub struct DanmuStream {
+    pub connection: DanmuConnection,
+    pub items: mpsc::Receiver<DanmuItem>,
+}
+
 /// Configuration for establishing a danmu connection.
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionConfig {
@@ -102,14 +117,15 @@ pub trait DanmuProvider: Send + Sync {
     fn platform(&self) -> &str;
 
     /// Connect to the danmu stream for a room.
-    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection>;
+    ///
+    /// Ownership of the item channel passes to the caller, so decoded items are
+    /// awaited directly instead of polled through the provider. Call
+    /// [`Self::disconnect`] with the returned `connection` to release the
+    /// provider-side transport tasks.
+    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuStream>;
 
     /// Disconnect from the danmu stream.
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()>;
-
-    /// Receive the next danmu item (message or control event).
-    /// Returns None if the connection is closed.
-    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuItem>>;
 
     /// Check if the provider supports the given URL.
     fn supports_url(&self, url: &str) -> bool;

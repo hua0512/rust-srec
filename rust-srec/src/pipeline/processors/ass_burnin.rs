@@ -524,7 +524,8 @@ impl Processor for AssBurnInProcessor {
             debug!("FFmpeg args: {:?}", args);
 
             let mut cmd = Command::new(&ffmpeg);
-            cmd.args(&args).env("LC_ALL", "C");
+            crate::utils::configure_ffmpeg_locale(&mut cmd);
+            cmd.args(&args);
 
             let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
                 &mut cmd,
@@ -637,6 +638,7 @@ impl Processor for AssBurnInProcessor {
             failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
+            uploads: vec![],
             logs,
         })
     }

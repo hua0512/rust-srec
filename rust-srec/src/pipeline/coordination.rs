@@ -132,7 +132,10 @@ impl SessionOutputs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional runtime paths and diagnostics"
+)]
 pub enum PipelineScope {
     Segment {
         source: SourceType,
@@ -294,21 +297,22 @@ impl PipelineCoordinator {
         }
 
         let (tx, mut rx) = mpsc::channel::<CoordinatorRequest>(1024);
-        let inner = self.inner.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => break,
-                    request = rx.recv() => {
-                        let Some(request) = request else {
-                            break;
-                        };
-                        Self::handle_request(&inner, request);
-                    }
+        *tx_guard = Some(tx);
+        drop(tx_guard);
+
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => break,
+                request = rx.recv() => {
+                    let Some(request) = request else {
+                        break;
+                    };
+                    Self::handle_request(&self.inner, request);
                 }
             }
-        });
-        *tx_guard = Some(tx);
+        }
+
+        *self.tx.lock().await = None;
     }
 
     fn lock_state(
@@ -377,9 +381,14 @@ impl PipelineCoordinator {
     pub async fn cleanup_stale(&self, session_ttl_secs: u64) {
         let tx = { self.tx.lock().await.clone() };
         if let Some(tx) = tx {
-            let _ = tx
+            if tx
                 .send(CoordinatorRequest::Cleanup { session_ttl_secs })
-                .await;
+                .await
+                .is_err()
+            {
+                warn!("Pipeline coordinator stopped; cleaning stale sessions inline");
+                Self::lock_state(&self.inner).cleanup_stale(session_ttl_secs);
+            }
         } else {
             Self::lock_state(&self.inner).cleanup_stale(session_ttl_secs);
         }
@@ -667,9 +676,15 @@ impl PipelineCoordinatorState {
         let mut removed = 0;
         self.sessions.retain(|session_id, session| {
             if session.last_activity.elapsed() > max_age {
+                // `unmet` is the diagnosis: discarding a session that never
+                // triggered means its session-complete pipeline is lost, and the
+                // gate condition still outstanding says which producer went
+                // missing.
                 warn!(
                     session_id = %session_id,
                     age_secs = %session.last_activity.elapsed().as_secs(),
+                    session_complete_triggered = session.session_complete_triggered,
+                    unmet = ?session.unmet_completion_conditions(),
                     "Removing stale pipeline coordinator session"
                 );
                 removed += 1;
@@ -1137,6 +1152,45 @@ impl SessionPipelineState {
             && self.session_end_persisted
             && !self.session_complete_triggered
             && self.artifacts_drained_for_session_complete()
+    }
+
+    /// The finalization gate conditions still unmet, for diagnosing a session
+    /// that never reached `is_ready`.
+    ///
+    /// Mirrors `is_ready` and `artifacts_drained_for_session_complete`; keep the
+    /// two in step when either gains a condition.
+    fn unmet_completion_conditions(&self) -> Vec<&'static str> {
+        let mut unmet = Vec::new();
+        if !self.session_end_observed {
+            unmet.push("session_end_observed");
+        }
+        if !self.session_end_persisted {
+            unmet.push("session_end_persisted");
+        }
+        if !self.video_complete {
+            unmet.push("video_complete");
+        }
+        if self.pending_video_dags != 0 {
+            unmet.push("pending_video_dags");
+        }
+        if self.danmu_expected && self.danmu_observed {
+            if !self.danmu_complete {
+                unmet.push("danmu_complete");
+            }
+            if self.pending_danmu_dags != 0 {
+                unmet.push("pending_danmu_dags");
+            }
+        }
+        if self.pending_paired_dags != 0 {
+            unmet.push("pending_paired_dags");
+        }
+        if !self.pending_paired_starts.is_empty() {
+            unmet.push("pending_paired_starts");
+        }
+        if !self.has_video_output() {
+            unmet.push("has_video_output");
+        }
+        unmet
     }
 
     fn artifacts_drained_for_session_complete(&self) -> bool {

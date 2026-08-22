@@ -32,14 +32,14 @@
 //! - hua0512
 //!
 use flv::data::FlvData;
-use flv::header::FlvHeader;
 use flv::tag::FlvTag;
 use pipeline_common::split_reason::{AudioCodecInfo, SplitReason, VideoCodecInfo};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::crc32;
+use crate::operators::segment_reinject::SegmentInitCache;
+use pipeline_common::crc32;
 
 /// Controls how `SplitOperator` decides whether a sequence header "changed".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -60,10 +60,8 @@ pub enum SequenceHeaderChangeMode {
 
 // Store data wrapped in Arc for efficient cloning
 struct StreamState {
-    header: Option<FlvHeader>,
-    metadata: Option<FlvTag>,
-    audio_sequence_tag: Option<FlvTag>,
-    video_sequence_tag: Option<FlvTag>,
+    /// Cached header/metadata/sequence tags re-injected by `split_stream`.
+    cache: SegmentInitCache,
     /// Key for detecting changes in the last seen video sequence header.
     ///
     /// The exact meaning depends on `SequenceHeaderChangeMode`.
@@ -93,10 +91,7 @@ struct StreamState {
 impl StreamState {
     fn new() -> Self {
         Self {
-            header: None,
-            metadata: None,
-            audio_sequence_tag: None,
-            video_sequence_tag: None,
+            cache: SegmentInitCache::new(),
             video_sig: None,
             audio_sig: None,
             prev_video_codec_info: None,
@@ -110,10 +105,7 @@ impl StreamState {
     }
 
     fn reset(&mut self) {
-        self.header = None;
-        self.metadata = None;
-        self.audio_sequence_tag = None;
-        self.video_sequence_tag = None;
+        self.cache.clear();
         self.video_sig = None;
         self.audio_sig = None;
         self.prev_video_codec_info = None;
@@ -158,7 +150,7 @@ impl SplitOperator {
 
     fn video_change_key(&self, tag: &FlvTag) -> u32 {
         match self.sequence_header_change_mode {
-            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data.as_ref()),
+            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data().as_ref()),
             SequenceHeaderChangeMode::SemanticSignature => {
                 Self::calculate_video_sequence_signature(tag)
             }
@@ -167,7 +159,7 @@ impl SplitOperator {
 
     fn audio_change_key(&self, tag: &FlvTag) -> u32 {
         match self.sequence_header_change_mode {
-            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data.as_ref()),
+            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data().as_ref()),
             SequenceHeaderChangeMode::SemanticSignature => {
                 Self::calculate_audio_sequence_signature(tag)
             }
@@ -186,7 +178,7 @@ impl SplitOperator {
     /// - enhanced: `fourcc || payload[5..]`
     ///   - skips the first byte (flags/packet type)
     fn calculate_video_sequence_signature(tag: &FlvTag) -> u32 {
-        let data = tag.data.as_ref();
+        let data = tag.data().as_ref();
         if data.is_empty() {
             return 0;
         }
@@ -219,10 +211,10 @@ impl SplitOperator {
 
     /// Compute a "semantic signature" for AAC sequence headers.
     ///
-    /// Layout: [AudioHeader][AACPacketType=0][AudioSpecificConfig...]
+    /// Layout: `AudioHeader | AACPacketType=0 | AudioSpecificConfig...`
     /// We ignore the legacy audio header bits and only hash the AAC payload.
     fn calculate_audio_sequence_signature(tag: &FlvTag) -> u32 {
-        let data = tag.data.as_ref();
+        let data = tag.data().as_ref();
         let mut state = 0u32;
 
         if data.len() >= 2 {
@@ -241,6 +233,35 @@ impl SplitOperator {
         state
     }
 
+    /// Codec info carrying only a name, for tags `VideoData::demux` cannot
+    /// deep-parse (`EnhancedPacket::Unknown`, multitrack/ModEx wrappers) or
+    /// cannot parse at all. `FlvTag::get_video_codec` covers both legacy codec
+    /// IDs and enhanced FourCCs; enhanced names must match the strings the
+    /// deep-parse arms in `extract_video_codec_info` produce ("AVC", "HEVC",
+    /// "AV1") because `VideoCodecInfo::codec` pairs `from`/`to` values in
+    /// `SplitReason::VideoCodecChange`.
+    fn fallback_video_codec_info(tag: &FlvTag, signature: u32) -> VideoCodecInfo {
+        use flv::video::{VideoCodec, VideoFourCC};
+
+        let codec = match tag.get_video_codec() {
+            Some(VideoCodec::Legacy(id)) => format!("{id:?}"),
+            Some(VideoCodec::Enhanced(VideoFourCC::Avc1)) => "AVC".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Hvc1)) => "HEVC".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01)) => "AV1".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Vp08)) => "VP8".to_string(),
+            Some(VideoCodec::Enhanced(VideoFourCC::Vp09)) => "VP9".to_string(),
+            None => "unknown".to_string(),
+        };
+        VideoCodecInfo {
+            codec,
+            profile: None,
+            level: None,
+            width: None,
+            height: None,
+            signature,
+        }
+    }
+
     /// Extract video codec configuration info from a sequence header tag.
     ///
     /// Does best-effort deep parsing to extract codec name, profile, level,
@@ -251,95 +272,78 @@ impl SplitOperator {
         use flv::hevc::HevcPacket;
         use flv::video::{EnhancedPacket, VideoData, VideoTagBody};
 
-        let data = tag.data.clone();
+        let data = tag.data().clone();
         let mut cursor = std::io::Cursor::new(data);
 
-        match VideoData::demux(&mut cursor) {
+        // A multitrack tag reports its first track, matching
+        // `FlvTag::get_video_codec`, which reads the first track's FourCC.
+        let body = match VideoData::demux(&mut cursor) {
             Ok(video) => match video.body {
-                VideoTagBody::Avc(AvcPacket::SequenceHeader(config)) => {
-                    let resolution =
-                        AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "AVC".to_string(),
-                        profile: Some(config.profile_indication),
-                        level: Some(config.level_indication),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
+                VideoTagBody::Multitrack(mut tracks) if !tracks.is_empty() => {
+                    VideoTagBody::Enhanced(tracks.remove(0).body)
                 }
-                VideoTagBody::Hevc(HevcPacket::SequenceStart(config)) => {
-                    let resolution =
-                        HevcPacket::SequenceStart(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "HEVC".to_string(),
-                        profile: Some(config.general_profile_idc),
-                        level: Some(config.general_level_idc),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(config))) => {
-                    let resolution =
-                        Av1Packet::SequenceStart(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "AV1".to_string(),
-                        profile: Some(config.seq_profile),
-                        level: Some(config.seq_level_idx_0),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::SequenceHeader(config))) => {
-                    let resolution =
-                        AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "AVC".to_string(),
-                        profile: Some(config.profile_indication),
-                        level: Some(config.level_indication),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(config))) => {
-                    let resolution =
-                        HevcPacket::SequenceStart(config.clone()).get_video_resolution();
-                    VideoCodecInfo {
-                        codec: "HEVC".to_string(),
-                        profile: Some(config.general_profile_idc),
-                        level: Some(config.general_level_idc),
-                        width: resolution.as_ref().map(|r| r.width as u32),
-                        height: resolution.as_ref().map(|r| r.height as u32),
-                        signature,
-                    }
-                }
-                _ => {
-                    // Fallback: use codec ID from tag
-                    let codec = tag
-                        .get_video_codec_id()
-                        .map(|id| format!("{id:?}"))
-                        .unwrap_or_else(|| "unknown".to_string());
-                    VideoCodecInfo {
-                        codec,
-                        profile: None,
-                        level: None,
-                        width: None,
-                        height: None,
-                        signature,
-                    }
-                }
+                body => body,
             },
-            Err(_) => VideoCodecInfo {
-                codec: "unknown".to_string(),
-                profile: None,
-                level: None,
-                width: None,
-                height: None,
-                signature,
-            },
+            Err(_) => return Self::fallback_video_codec_info(tag, signature),
+        };
+
+        match body {
+            VideoTagBody::Avc(AvcPacket::SequenceHeader(config)) => {
+                let resolution = AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "AVC".to_string(),
+                    profile: Some(config.profile_indication),
+                    level: Some(config.level_indication),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Hevc(HevcPacket::SequenceStart(config)) => {
+                let resolution = HevcPacket::SequenceStart(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "HEVC".to_string(),
+                    profile: Some(config.general_profile_idc),
+                    level: Some(config.general_level_idc),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(config))) => {
+                let resolution = Av1Packet::SequenceStart(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "AV1".to_string(),
+                    profile: Some(config.seq_profile),
+                    level: Some(config.seq_level_idx_0),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::SequenceHeader(config))) => {
+                let resolution = AvcPacket::SequenceHeader(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "AVC".to_string(),
+                    profile: Some(config.profile_indication),
+                    level: Some(config.level_indication),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(config))) => {
+                let resolution = HevcPacket::SequenceStart(config.clone()).get_video_resolution();
+                VideoCodecInfo {
+                    codec: "HEVC".to_string(),
+                    profile: Some(config.general_profile_idc),
+                    level: Some(config.general_level_idc),
+                    width: resolution.as_ref().map(|r| r.width as u32),
+                    height: resolution.as_ref().map(|r| r.height as u32),
+                    signature,
+                }
+            }
+            _ => Self::fallback_video_codec_info(tag, signature),
         }
     }
 
@@ -348,12 +352,18 @@ impl SplitOperator {
     /// For AAC, parses AudioSpecificConfig to extract sample rate and channels.
     /// For other codecs, returns the codec name only.
     fn extract_audio_codec_info(tag: &FlvTag, signature: u32) -> AudioCodecInfo {
-        let codec_name = tag
-            .get_audio_codec_id()
-            .map(|sf| format!("{sf:?}"))
-            .unwrap_or_else(|| "unknown".to_string());
+        use flv::audio::AudioCodec;
 
-        let data = tag.data.as_ref();
+        // `AudioFourCC`'s Debug names line up with `SoundFormat`'s (e.g.
+        // "Aac", "Mp3"), so an enhanced tag reports the same codec string a
+        // legacy tag with the equivalent format would, instead of "ExHeader".
+        let codec_name = match tag.get_audio_codec() {
+            Some(AudioCodec::Legacy(sound_format)) => format!("{sound_format:?}"),
+            Some(AudioCodec::Enhanced(four_cc)) => format!("{four_cc:?}"),
+            None => "unknown".to_string(),
+        };
+
+        let data = tag.data().as_ref();
 
         // For AAC: parse AudioSpecificConfig
         // Layout: [audio_header_byte][0x00=seq_header][AudioSpecificConfig...]
@@ -416,6 +426,7 @@ impl SplitOperator {
             let new_sig = self.state.video_sig.unwrap_or(0);
             let to = self
                 .state
+                .cache
                 .video_sequence_tag
                 .as_ref()
                 .map(|t| Self::extract_video_codec_info(t, new_sig))
@@ -435,6 +446,7 @@ impl SplitOperator {
             let new_sig = self.state.audio_sig.unwrap_or(0);
             let to = self
                 .state
+                .cache
                 .audio_sequence_tag
                 .as_ref()
                 .map(|t| Self::extract_audio_codec_info(t, new_sig))
@@ -447,24 +459,10 @@ impl SplitOperator {
             output(FlvData::Split(SplitReason::AudioCodecChange { from, to }))?;
         }
 
-        // Note on timestamp handling:
-        // When we split the stream, we re-inject the header and sequence information
-        // using the original timestamps from when they were first encountered.
-        // This maintains timestamp consistency within the stream segments
-        // but does not reset the timeline. Downstream components or players
-        // may need to handle potential timestamp discontinuities at split points.
-        if let Some(header) = &self.state.header {
-            output(FlvData::Header(header.clone()))?;
-        }
-        if let Some(metadata) = &self.state.metadata {
-            output(FlvData::Tag(metadata.clone()))?;
-        }
-        if let Some(video_seq) = &self.state.video_sequence_tag {
-            output(FlvData::Tag(video_seq.clone()))?;
-        }
-        if let Some(audio_seq) = &self.state.audio_sequence_tag {
-            output(FlvData::Tag(audio_seq.clone()))?;
-        }
+        // Re-inject the cached header/metadata/sequence tags with the timestamps they
+        // were stored with; the timeline is not reset, so downstream components may
+        // need to handle a timestamp discontinuity at the split point.
+        self.state.cache.reinject(output, None)?;
         self.state.changed = false;
         self.state.buffered_metadata = false;
         self.state.buffered_audio_sequence_tag = false;
@@ -485,17 +483,17 @@ impl SplitOperator {
         // We intentionally do NOT inject a new header here to avoid creating an empty segment (and
         // triggering writer rotation) when the stream ends before the next media tag arrives.
         if self.state.buffered_metadata
-            && let Some(metadata) = self.state.metadata.take()
+            && let Some(metadata) = self.state.cache.metadata.take()
         {
             output(FlvData::Tag(metadata))?;
         }
         if self.state.buffered_video_sequence_tag
-            && let Some(video_seq) = self.state.video_sequence_tag.take()
+            && let Some(video_seq) = self.state.cache.video_sequence_tag.take()
         {
             output(FlvData::Tag(video_seq))?;
         }
         if self.state.buffered_audio_sequence_tag
-            && let Some(audio_seq) = self.state.audio_sequence_tag.take()
+            && let Some(audio_seq) = self.state.cache.audio_sequence_tag.take()
         {
             output(FlvData::Tag(audio_seq))?;
         }
@@ -521,10 +519,10 @@ impl Processor<FlvData> for SplitOperator {
         match input {
             FlvData::Header(header) => {
                 // If we already have a header, this is a stream restart — emit a Split marker.
-                let is_restart = self.state.header.is_some();
+                let is_restart = self.state.cache.header.is_some();
                 // Reset state when a new header is encountered
                 self.state.reset();
-                self.state.header = Some(header.clone());
+                self.state.cache.header = Some(header.clone());
                 if is_restart {
                     output(FlvData::Split(SplitReason::HeaderReceived))?;
                 }
@@ -546,7 +544,7 @@ impl Processor<FlvData> for SplitOperator {
                             "{} Metadata detected while split pending",
                             self.context.name
                         );
-                        self.state.metadata = Some(tag);
+                        self.state.cache.metadata = Some(tag);
                         self.state.buffered_metadata = true;
                         return Ok(());
                     }
@@ -559,12 +557,12 @@ impl Processor<FlvData> for SplitOperator {
                         let new_sig = self.video_change_key(&tag);
                         if let Some(old_sig) = self.state.video_sig
                             && old_sig != new_sig
-                            && let Some(old_tag) = self.state.video_sequence_tag.as_ref()
+                            && let Some(old_tag) = self.state.cache.video_sequence_tag.as_ref()
                         {
                             self.state.prev_video_codec_info =
                                 Some(Self::extract_video_codec_info(old_tag, old_sig));
                         }
-                        self.state.video_sequence_tag = Some(tag);
+                        self.state.cache.store_video_sequence_tag(tag, false);
                         self.state.buffered_video_sequence_tag = true;
                         self.state.video_sig = Some(new_sig);
                         return Ok(());
@@ -578,12 +576,12 @@ impl Processor<FlvData> for SplitOperator {
                         let new_sig = self.audio_change_key(&tag);
                         if let Some(old_sig) = self.state.audio_sig
                             && old_sig != new_sig
-                            && let Some(old_tag) = self.state.audio_sequence_tag.as_ref()
+                            && let Some(old_tag) = self.state.cache.audio_sequence_tag.as_ref()
                         {
                             self.state.prev_audio_codec_info =
                                 Some(Self::extract_audio_codec_info(old_tag, old_sig));
                         }
-                        self.state.audio_sequence_tag = Some(tag);
+                        self.state.cache.store_audio_sequence_tag(tag, false);
                         self.state.buffered_audio_sequence_tag = true;
                         self.state.audio_sig = Some(new_sig);
                         return Ok(());
@@ -598,7 +596,7 @@ impl Processor<FlvData> for SplitOperator {
                 // Normal operation: track key tags and detect parameter changes.
                 if tag.is_script_tag() {
                     debug!("{} Metadata detected", self.context.name);
-                    self.state.metadata = Some(tag.clone());
+                    self.state.cache.metadata = Some(tag.clone());
                     return output(FlvData::Tag(tag));
                 }
 
@@ -613,7 +611,7 @@ impl Processor<FlvData> for SplitOperator {
                             "{} Dropping duplicate video sequence header (sig: {:x})",
                             self.context.name, sig
                         );
-                        self.state.video_sequence_tag = Some(tag);
+                        self.state.cache.store_video_sequence_tag(tag, false);
                         self.state.video_sig = Some(sig);
                         return Ok(());
                     }
@@ -631,7 +629,7 @@ impl Processor<FlvData> for SplitOperator {
                                 self.context.name, prev_sig, sig
                             );
                             // Eagerly extract codec info from the old tag before we overwrite it.
-                            if let Some(old_tag) = self.state.video_sequence_tag.as_ref() {
+                            if let Some(old_tag) = self.state.cache.video_sequence_tag.as_ref() {
                                 self.state.prev_video_codec_info =
                                     Some(Self::extract_video_codec_info(old_tag, prev_sig));
                             }
@@ -644,7 +642,9 @@ impl Processor<FlvData> for SplitOperator {
                             );
                         }
                     }
-                    self.state.video_sequence_tag = Some(tag.clone());
+                    self.state
+                        .cache
+                        .store_video_sequence_tag(tag.clone(), false);
                     self.state.video_sig = Some(sig);
 
                     // If we just detected a change, buffer the new header and wait for the next
@@ -667,7 +667,7 @@ impl Processor<FlvData> for SplitOperator {
                             "{} Dropping duplicate audio sequence header (sig: {:x})",
                             self.context.name, sig
                         );
-                        self.state.audio_sequence_tag = Some(tag);
+                        self.state.cache.store_audio_sequence_tag(tag, false);
                         self.state.audio_sig = Some(sig);
                         return Ok(());
                     }
@@ -681,7 +681,7 @@ impl Processor<FlvData> for SplitOperator {
                                 self.context.name, prev_sig, sig
                             );
                             // Eagerly extract codec info from the old tag before we overwrite it.
-                            if let Some(old_tag) = self.state.audio_sequence_tag.as_ref() {
+                            if let Some(old_tag) = self.state.cache.audio_sequence_tag.as_ref() {
                                 self.state.prev_audio_codec_info =
                                     Some(Self::extract_audio_codec_info(old_tag, prev_sig));
                             }
@@ -694,7 +694,9 @@ impl Processor<FlvData> for SplitOperator {
                             );
                         }
                     }
-                    self.state.audio_sequence_tag = Some(tag.clone());
+                    self.state
+                        .cache
+                        .store_audio_sequence_tag(tag.clone(), false);
                     self.state.audio_sig = Some(sig);
 
                     if self.state.changed {
@@ -800,6 +802,50 @@ mod tests {
             header_count, 2,
             "Should detect video codec change and inject new header"
         );
+    }
+
+    #[test]
+    fn test_extract_video_codec_info_fallback_enhanced_vp9() {
+        // Enhanced keyframe + SEQUENCE_START with the VP9 FourCC: `VideoData::demux`
+        // yields `EnhancedPacket::Unknown` (no VP9 config parser), so
+        // `extract_video_codec_info` takes its `get_video_codec` fallback arm.
+        let tag = FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![0x90, b'v', b'p', b'0', b'9', 0x01, 0x02]),
+        );
+
+        let info = SplitOperator::extract_video_codec_info(&tag, 0);
+
+        assert_eq!(info.codec, "VP9");
+        assert_eq!(info.profile, None);
+        assert_eq!(info.level, None);
+        assert_eq!(info.width, None);
+        assert_eq!(info.height, None);
+    }
+
+    #[test]
+    fn test_extract_video_codec_info_deep_parses_multitrack_av1() {
+        // OneTrack + SequenceStart multitrack wrapper: the first track's
+        // `EnhancedPacket::Av1` sequence start supplies codec, profile, and
+        // level, matching the single-track AV1 arm.
+        let tag = FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![
+                0x96, 0x00, b'a', b'v', b'0', b'1', 0x00, 0x81, 0x0D, 0x0C, 0x00,
+            ]),
+        );
+
+        let info = SplitOperator::extract_video_codec_info(&tag, 0);
+
+        assert_eq!(info.codec, "AV1");
+        assert_eq!(info.profile, Some(0));
+        assert_eq!(info.level, Some(13));
     }
 
     #[test]
@@ -1037,7 +1083,7 @@ mod tests {
             last.is_video_sequence_header(),
             "Expected flushed video sequence header at end"
         );
-        assert_eq!(last.data[5], 2, "Expected version=2 sequence header");
+        assert_eq!(last.data()[5], 2, "Expected version=2 sequence header");
     }
 
     #[test]
@@ -1157,19 +1203,19 @@ mod tests {
 
         // Same codec-config bytes, but different frame-type + composition-time.
         // The operator should ignore these differences and avoid splitting.
-        let same_config_different_prefix = FlvData::Tag(FlvTag {
-            timestamp_ms: 0,
-            stream_id: 0,
-            tag_type: flv::tag::FlvTagType::Video,
-            is_filtered: false,
-            data: Bytes::from(vec![
+        let same_config_different_prefix = FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![
                 0x27, // Inter frame + AVC (same codec)
                 0x00, // AVC sequence header
                 0x12, 0x34, 0x56, // composition time (not part of config)
                 1,    // AVC configurationVersion (same as before)
                 0x64, 0x00, 0x28, // rest of AVCC bytes (same as before)
             ]),
-        });
+        ));
         operator
             .process(&context, same_config_different_prefix, &mut output_fn)
             .unwrap();
@@ -1215,18 +1261,18 @@ mod tests {
 
         // Same AudioSpecificConfig payload, but change legacy FLV audio header bits
         // (rate/size/type). The operator should ignore this and avoid splitting.
-        let same_config_different_header_bits = FlvData::Tag(FlvTag {
-            timestamp_ms: 0,
-            stream_id: 0,
-            tag_type: flv::tag::FlvTagType::Audio,
-            is_filtered: false,
-            data: Bytes::from(vec![
+        let same_config_different_header_bits = FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Audio,
+            false,
+            Bytes::from(vec![
                 0xA3, // AAC + different rate/size/type bits than 0xAF
                 0x00, // AAC sequence header
                 1,    // same ASC payload
                 0x10,
             ]),
-        });
+        ));
         operator
             .process(&context, same_config_different_header_bits, &mut output_fn)
             .unwrap();

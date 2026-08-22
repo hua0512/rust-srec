@@ -22,20 +22,20 @@ import {
   Copy,
   CheckCircle2,
   FolderOpen,
+  CloudUpload,
+  CloudAlert,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
-
-interface MediaOutput {
-  id: string;
-  session_id: string;
-  file_path: string;
-  file_size_bytes: number;
-  format: string;
-  created_at: string;
-}
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import type { MediaOutput } from '@/api/schemas';
 
 interface OutputCardProps {
   output: MediaOutput;
@@ -54,7 +54,7 @@ const FORMAT_COLORS: Record<string, string> = {
   webp: 'from-amber-500/10 to-amber-500/5 text-amber-500 border-amber-500/20',
 };
 
-import { formatBytes } from '@/lib/format';
+import { basename, formatBytes } from '@/lib/format';
 
 export function OutputCard({ output }: OutputCardProps) {
   const { i18n } = useLingui();
@@ -73,12 +73,12 @@ export function OutputCard({ output }: OutputCardProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const filename =
-    output.file_path.split(/[\\/]/).pop() || i18n._(msg`Unknown File`);
+  const filename = basename(output.file_path) || i18n._(msg`Unknown File`);
   const formatLower = output.format.toLowerCase();
   const colorClass =
     FORMAT_COLORS[formatLower] ||
     'from-gray-500/10 to-gray-500/5 text-gray-500 border-gray-500/20';
+  const hasFailedUpload = output.uploads.some((u) => u.status === 'FAILED');
 
   return (
     <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
@@ -111,6 +111,56 @@ export function OutputCard({ output }: OutputCardProps) {
             </span>
           </div>
         </div>
+        {output.uploads.length > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className={cn(
+                  'p-1.5 rounded-lg border',
+                  hasFailedUpload
+                    ? 'bg-destructive/10 text-destructive border-destructive/20'
+                    : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400',
+                )}
+              >
+                {hasFailedUpload ? (
+                  <CloudAlert className="h-3.5 w-3.5" />
+                ) : (
+                  <CloudUpload className="h-3.5 w-3.5" />
+                )}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm space-y-1.5">
+              {output.uploads.map((upload) => (
+                <div key={upload.uploader} className="text-xs space-y-0.5">
+                  <div className="font-medium">
+                    {upload.status === 'COMPLETED' && (
+                      <Trans>Uploaded via {upload.uploader}</Trans>
+                    )}
+                    {upload.status === 'FAILED' && (
+                      <Trans>Upload failed via {upload.uploader}</Trans>
+                    )}
+                    {upload.status === 'SKIPPED' && (
+                      <Trans>Upload skipped via {upload.uploader}</Trans>
+                    )}
+                  </div>
+                  {upload.remote_path && (
+                    <div className="font-mono break-all opacity-80">
+                      {upload.remote_path}
+                    </div>
+                  )}
+                  {upload.completed_at && (
+                    <div className="opacity-60">
+                      {i18n.date(upload.completed_at, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </TooltipContent>
+          </Tooltip>
+        )}
         <Badge
           className={`bg-gradient-to-br ${colorClass} border font-mono text-xs uppercase`}
         >

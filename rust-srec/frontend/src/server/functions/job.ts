@@ -24,7 +24,7 @@ export interface JobPresetFilters {
 }
 
 export const listJobPresets = createServerFn({ method: 'GET' })
-  .inputValidator((d: JobPresetFilters = {}) => d)
+  .validator((d: JobPresetFilters = {}) => d)
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.category) params.set('category', data.category);
@@ -38,14 +38,14 @@ export const listJobPresets = createServerFn({ method: 'GET' })
   });
 
 export const getJobPreset = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/job/presets/${id}`);
     return JobPresetSchema.parse(json);
   });
 
 export const createJobPreset = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: {
       id: string;
       name: string;
@@ -69,7 +69,7 @@ export const createJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const updateJobPreset = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: {
       id: string;
       name: string;
@@ -94,13 +94,13 @@ export const updateJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const deleteJobPreset = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/job/presets/${id}`, { method: 'DELETE' });
   });
 
 export const cloneJobPreset = createServerFn({ method: 'POST' })
-  .inputValidator((d: { id: string; new_name: string }) => d)
+  .validator((d: { id: string; new_name: string }) => d)
   .handler(async ({ data }) => {
     const { id, new_name } = data;
     const json = await fetchBackend(`/job/presets/${id}/clone`, {

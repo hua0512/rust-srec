@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { CheckCircle2, Radio, Server, Video } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
+import { resolvePlayerMediaType } from '@/lib/media';
 
 export interface StreamOption {
   url: string;
@@ -263,7 +264,10 @@ function extractStreams(mediaInfo: any): StreamOption[] {
         url: stream.url || stream.src || '',
         quality: stream.quality || stream.resolution || 'unknown',
         cdn: stream.cdn || stream.server || extras.cdn,
-        format: stream.format || detectFormat(stream.url),
+        format:
+          stream.format ||
+          stream.stream_format ||
+          resolvePlayerMediaType(undefined, stream.url),
         bitrate: stream.bitrate || stream.bandwidth,
         headers: { ...mediaInfo.headers, ...stream.headers },
         extras,
@@ -276,7 +280,10 @@ function extractStreams(mediaInfo: any): StreamOption[] {
       url: mediaInfo.url,
       quality: mediaInfo.quality || 'default',
       cdn: mediaInfo.cdn || extras.cdn,
-      format: mediaInfo.format || detectFormat(mediaInfo.url),
+      format:
+        mediaInfo.format ||
+        mediaInfo.stream_format ||
+        resolvePlayerMediaType(undefined, mediaInfo.url),
       bitrate: mediaInfo.bitrate,
       headers: mediaInfo.headers || {},
       extras,
@@ -284,16 +291,6 @@ function extractStreams(mediaInfo: any): StreamOption[] {
   }
 
   return streams.filter((s) => s.url);
-}
-
-// Detect format from URL
-function detectFormat(url: string): string {
-  if (!url) return 'unknown';
-  if (url.includes('.m3u8')) return 'hls';
-  if (url.includes('.flv')) return 'flv';
-  if (url.includes('.ts')) return 'mpegts';
-  if (url.includes('.mp4')) return 'mp4';
-  return 'unknown';
 }
 
 function stringifyValues(obj: Record<string, any>): Record<string, string> {

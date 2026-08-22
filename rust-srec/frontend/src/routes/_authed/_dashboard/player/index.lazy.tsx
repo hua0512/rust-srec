@@ -33,6 +33,7 @@ import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { resolvePlayerMediaType } from '@/lib/media';
 
 // Lazy loaded PlayerCard
 const PlayerCard = React.lazy(() =>
@@ -508,6 +509,8 @@ const PlayerItem = React.memo(function PlayerItem({
         <PlayerCard
           url={player.currentStream.url}
           title={player.title}
+          mediaType={player.currentStream.format}
+          isLive={player.response.is_live}
           headers={headers}
           streamData={streamData}
           onRemove={onRemove}
@@ -542,7 +545,10 @@ function extractFirstStream(mediaInfo: any): StreamOption | null {
       url: stream.url || stream.src || '',
       quality: stream.quality || stream.resolution || 'default',
       cdn: stream.cdn || stream.server || extras.cdn,
-      format: stream.format || detectFormat(stream.url),
+      format:
+        stream.format ||
+        stream.stream_format ||
+        resolvePlayerMediaType(undefined, stream.url),
       bitrate: stream.bitrate || stream.bandwidth,
       headers: { ...mediaInfo.headers, ...stream.headers },
       extras,
@@ -556,7 +562,10 @@ function extractFirstStream(mediaInfo: any): StreamOption | null {
       url: mediaInfo.url,
       quality: mediaInfo.quality || 'default',
       cdn: mediaInfo.cdn || extras.cdn,
-      format: mediaInfo.format || detectFormat(mediaInfo.url),
+      format:
+        mediaInfo.format ||
+        mediaInfo.stream_format ||
+        resolvePlayerMediaType(undefined, mediaInfo.url),
       bitrate: mediaInfo.bitrate,
       headers: mediaInfo.headers || {},
       extras,
@@ -568,23 +577,12 @@ function extractFirstStream(mediaInfo: any): StreamOption | null {
     return {
       url: mediaInfo,
       quality: 'default',
-      format: detectFormat(mediaInfo),
+      format: resolvePlayerMediaType(undefined, mediaInfo),
       extras: {},
     };
   }
 
-  console.log('Unable to extract stream from media_info:', mediaInfo);
   return null;
-}
-
-// Detect format from URL
-function detectFormat(url: string): string {
-  if (!url) return 'unknown';
-  if (url.includes('.m3u8')) return 'hls';
-  if (url.includes('.flv')) return 'flv';
-  if (url.includes('.ts')) return 'mpegts';
-  if (url.includes('.mp4')) return 'mp4';
-  return 'unknown';
 }
 
 function stringifyValues(obj: Record<string, any>): Record<string, string> {

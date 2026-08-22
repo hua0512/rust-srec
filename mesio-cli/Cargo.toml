@@ -1,10 +1,14 @@
 [package]
 name = "mesio"
-version = "0.4.1"
+version = "0.6.0"
 edition.workspace = true
+rust-version.workspace = true
 description = "Mesio (media) streaming downloader CLI"
 license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -22,16 +26,16 @@ clap = { version = "4.6", features = ["derive"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["ansi"] }
 tracing-appender = { workspace = true }
-tracing-indicatif = "0.3"
+tracing-indicatif = { workspace = true }
 
 # Workspace crates
 pipeline-common = { path = "../crates/pipeline-common" }
 flv = { path = "../crates/flv" }
-flv-fix = { path = "../crates/flv-fix" }
+flv-fix = { path = "../crates/flv-fix", features = ["progress"] }
 hls = { path = "../crates/hls" }
-hls-fix = { path = "../crates/hls-fix" }
+hls-fix = { path = "../crates/hls-fix", features = ["progress"] }
 mesio-engine = { path = "../crates/mesio", features = ["clap"] }
-indicatif = "0.18.4"
+indicatif = { workspace = true }
 thiserror = { workspace = true }
 mimalloc = { workspace = true }
 

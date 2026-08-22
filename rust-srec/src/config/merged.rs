@@ -1,0 +1,1143 @@
+//! Merged configuration.
+
+use crate::credentials::extractor_platform_extras;
+use crate::database::models::job::DagPipelineDefinition;
+use crate::domain::{DanmuStatisticsConfig, ProxyConfig, RetryPolicy};
+use crate::downloader::StreamSelectionConfig;
+use platforms_parser::extractor::factory::ExtractorSelection;
+use platforms_parser::extractor::platform_configs::merge_platform_extras;
+use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
+
+/// Fully resolved configuration for a streamer.
+///
+/// This represents the result of merging the 4-layer configuration hierarchy:
+/// Global → Platform → Template → Streamer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergedConfig {
+    // Output settings
+    pub output_folder: String,
+    pub output_filename_template: String,
+    pub output_file_format: String,
+
+    // Size and duration limits
+    pub min_segment_size_bytes: i64,
+    pub max_download_duration_secs: i64,
+    pub max_part_size_bytes: i64,
+
+    // Danmu settings
+    pub record_danmu: bool,
+    /// How this streamer's danmu statistics are aggregated.
+    pub danmu_statistics: DanmuStatisticsConfig,
+
+    // Network settings
+    pub proxy_config: ProxyConfig,
+    pub cookies: Option<String>,
+
+    // Engine settings
+    pub download_engine: String,
+    /// Which extractor resolves the stream URL. Independent of `download_engine`, which only
+    /// decides how the resolved URL is pulled.
+    pub extractor: ExtractorSelection,
+    pub download_retry_policy: RetryPolicy,
+
+    // Platform-specific
+    pub fetch_delay_ms: i64,
+    pub download_delay_ms: i64,
+
+    // Stream selection settings
+    pub stream_selection: StreamSelectionConfig,
+
+    // Engine overrides from template
+    pub engines_override: Option<serde_json::Value>,
+
+    // Pipeline configuration
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    /// Optional pipeline that triggers once both video+danmu for a segment are available.
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    // Platform-specific extractor options (merged from all layers)
+    pub platform_extras: Option<serde_json::Value>,
+    /// Whether to automatically generate thumbnails for new sessions
+    pub auto_thumbnail: bool,
+
+    // Offline-confirmation cadence (used by both the StreamerActor and the
+    // SessionLifecycle hysteresis backstop). Always populated — global is
+    // the authoritative base; platform/template/streamer can override.
+    pub offline_check_count: u32,
+    pub offline_check_delay_ms: u64,
+}
+
+impl MergedConfig {
+    /// Create a builder for MergedConfig.
+    pub fn builder() -> MergedConfigBuilder {
+        MergedConfigBuilder::default()
+    }
+}
+
+/// Builder for MergedConfig.
+#[derive(Debug, Default)]
+pub struct MergedConfigBuilder {
+    output_folder: Option<String>,
+    output_filename_template: Option<String>,
+    output_file_format: Option<String>,
+    min_segment_size_bytes: Option<i64>,
+    max_download_duration_secs: Option<i64>,
+    max_part_size_bytes: Option<i64>,
+    record_danmu: Option<bool>,
+    danmu_statistics: Option<DanmuStatisticsConfig>,
+    proxy_config: Option<ProxyConfig>,
+    cookies: Option<String>,
+    download_engine: Option<String>,
+    extractor: Option<ExtractorSelection>,
+    download_retry_policy: Option<RetryPolicy>,
+    fetch_delay_ms: Option<i64>,
+    download_delay_ms: Option<i64>,
+    stream_selection: Option<StreamSelectionConfig>,
+    engines_override: Option<serde_json::Value>,
+    pipeline: Option<DagPipelineDefinition>,
+    session_complete_pipeline: Option<DagPipelineDefinition>,
+    paired_segment_pipeline: Option<DagPipelineDefinition>,
+    platform_extras: Option<serde_json::Value>,
+    auto_thumbnail: Option<bool>,
+    offline_check_count: Option<u32>,
+    offline_check_delay_ms: Option<u64>,
+}
+
+/// Fully parsed global configuration layer.
+pub struct GlobalConfigLayer {
+    pub output_folder: String,
+    pub output_filename_template: String,
+    pub output_file_format: String,
+    pub min_segment_size_bytes: i64,
+    pub max_download_duration_secs: i64,
+    pub max_part_size_bytes: i64,
+    pub record_danmu: bool,
+    pub danmu_statistics: Option<DanmuStatisticsConfig>,
+    pub proxy_config: ProxyConfig,
+    pub download_engine: String,
+    pub extractor: Option<ExtractorSelection>,
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    pub auto_thumbnail: bool,
+    pub offline_check_count: u32,
+    pub offline_check_delay_ms: u64,
+}
+
+/// Fully parsed platform configuration overrides.
+#[derive(Default)]
+pub struct PlatformConfigLayer {
+    pub fetch_delay_ms: Option<i64>,
+    pub download_delay_ms: Option<i64>,
+    pub cookies: Option<String>,
+    pub proxy_config: Option<ProxyConfig>,
+    pub record_danmu: Option<bool>,
+    pub danmu_statistics: Option<DanmuStatisticsConfig>,
+    pub platform_specific_config: Option<serde_json::Value>,
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub download_engine: Option<String>,
+    pub extractor: Option<ExtractorSelection>,
+    pub stream_selection: Option<StreamSelectionConfig>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub download_retry_policy: Option<RetryPolicy>,
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
+}
+
+/// Fully parsed template configuration overrides.
+#[derive(Default)]
+pub struct TemplateConfigLayer {
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub record_danmu: Option<bool>,
+    pub danmu_statistics: Option<DanmuStatisticsConfig>,
+    pub proxy_config: Option<ProxyConfig>,
+    pub cookies: Option<String>,
+    pub download_engine: Option<String>,
+    pub extractor: Option<ExtractorSelection>,
+    pub download_retry_policy: Option<RetryPolicy>,
+    pub stream_selection: Option<StreamSelectionConfig>,
+    pub engines_override: Option<serde_json::Value>,
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    pub platform_extras: Option<serde_json::Value>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
+}
+
+impl MergedConfigBuilder {
+    /// Apply global config as the base layer.
+    pub fn with_global(mut self, layer: GlobalConfigLayer) -> Self {
+        let GlobalConfigLayer {
+            output_folder,
+            output_filename_template,
+            output_file_format,
+            min_segment_size_bytes,
+            max_download_duration_secs,
+            max_part_size_bytes,
+            record_danmu,
+            danmu_statistics,
+            proxy_config,
+            download_engine,
+            extractor,
+            pipeline,
+            session_complete_pipeline,
+            paired_segment_pipeline,
+            auto_thumbnail,
+            offline_check_count,
+            offline_check_delay_ms,
+        } = layer;
+        debug!(
+            "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, pipeline_steps={}",
+            output_folder,
+            output_file_format,
+            download_engine,
+            record_danmu,
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
+        );
+        self.output_folder = Some(output_folder);
+        self.output_filename_template = Some(output_filename_template);
+        self.output_file_format = Some(output_file_format);
+        self.min_segment_size_bytes = Some(min_segment_size_bytes);
+        self.max_download_duration_secs = Some(max_download_duration_secs);
+        self.max_part_size_bytes = Some(max_part_size_bytes);
+        self.record_danmu = Some(record_danmu);
+        // Absent at the global layer means "no explicit base", which `build`
+        // resolves to `DanmuStatisticsConfig::default()`.
+        self.danmu_statistics = danmu_statistics;
+        self.proxy_config = Some(proxy_config);
+        self.download_engine = Some(download_engine);
+        // NULL at the global layer means "no preference", leaving the default `Auto`.
+        if let Some(v) = extractor {
+            self.extractor = Some(v);
+        }
+        self.download_retry_policy = Some(RetryPolicy::default());
+        self.pipeline = pipeline;
+        self.session_complete_pipeline = session_complete_pipeline;
+        self.paired_segment_pipeline = paired_segment_pipeline;
+        self.auto_thumbnail = Some(auto_thumbnail);
+        self.offline_check_count = Some(offline_check_count);
+        self.offline_check_delay_ms = Some(offline_check_delay_ms);
+        self
+    }
+
+    /// Apply platform config layer.
+    pub fn with_platform(mut self, layer: PlatformConfigLayer) -> Self {
+        let PlatformConfigLayer {
+            fetch_delay_ms,
+            download_delay_ms,
+            cookies,
+            proxy_config,
+            record_danmu,
+            danmu_statistics,
+            platform_specific_config,
+            output_folder,
+            output_filename_template,
+            download_engine,
+            extractor,
+            stream_selection,
+            output_file_format,
+            min_segment_size_bytes,
+            max_download_duration_secs,
+            max_part_size_bytes,
+            download_retry_policy,
+            pipeline,
+            session_complete_pipeline,
+            paired_segment_pipeline,
+            offline_check_count,
+            offline_check_delay_ms,
+        } = layer;
+        debug!(
+            "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
+            output_folder,
+            download_engine,
+            record_danmu,
+            cookies.is_some(),
+            stream_selection.is_some(),
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
+        );
+        if let Some(v) = fetch_delay_ms {
+            self.fetch_delay_ms = Some(v);
+        }
+        if let Some(v) = download_delay_ms {
+            self.download_delay_ms = Some(v);
+        }
+
+        if cookies.is_some() {
+            self.cookies = cookies;
+        }
+        if let Some(proxy) = proxy_config {
+            self.proxy_config = Some(proxy);
+        }
+        if let Some(danmu) = record_danmu {
+            self.record_danmu = Some(danmu);
+        }
+        // Whole-object replacement, like the pipeline definitions: a layer either
+        // states the statistics settings or inherits them entirely.
+        if let Some(statistics) = danmu_statistics {
+            self.danmu_statistics = Some(statistics);
+        }
+
+        if let Some(pipe) = pipeline {
+            debug!("Platform config override: pipeline");
+            self.pipeline = Some(pipe);
+        }
+        if let Some(pipe) = session_complete_pipeline {
+            debug!("Platform config override: session_complete_pipeline");
+            self.session_complete_pipeline = Some(pipe);
+        }
+        if let Some(pipe) = paired_segment_pipeline {
+            debug!("Platform config override: paired_segment_pipeline");
+            self.paired_segment_pipeline = Some(pipe);
+        }
+
+        // Apply platform-specific config overrides
+        if let Some(config) = platform_specific_config {
+            debug!("Applying platform-specific config overrides");
+            self.platform_extras = merge_platform_extras(self.platform_extras.take(), Some(config));
+        }
+
+        // Apply explicit overrides
+        if let Some(v) = output_folder {
+            debug!("Platform override: output_folder = {}", v);
+            self.output_folder = Some(v);
+        }
+        if let Some(v) = output_filename_template {
+            debug!("Platform override: output_filename_template = {}", v);
+            self.output_filename_template = Some(v);
+        }
+        if let Some(v) = download_engine {
+            debug!("Platform override: download_engine = {}", v);
+            self.download_engine = Some(v);
+        }
+        if let Some(v) = extractor {
+            debug!("Platform override: extractor = {}", v);
+            self.extractor = Some(v);
+        }
+        if let Some(v) = stream_selection {
+            if let Some(existing) = &self.stream_selection {
+                debug!("Platform override: merging stream_selection");
+                self.stream_selection = Some(existing.merge(&v));
+            } else {
+                debug!("Platform override: stream_selection");
+                self.stream_selection = Some(v);
+            }
+        }
+        if let Some(v) = output_file_format {
+            debug!("Platform override: output_file_format = {}", v);
+            self.output_file_format = Some(v);
+        }
+        if let Some(v) = min_segment_size_bytes {
+            debug!("Platform override: min_segment_size_bytes = {}", v);
+            self.min_segment_size_bytes = Some(v);
+        }
+        if let Some(v) = max_download_duration_secs {
+            debug!("Platform override: max_download_duration_secs = {}", v);
+            self.max_download_duration_secs = Some(v);
+        }
+        if let Some(v) = max_part_size_bytes {
+            debug!("Platform override: max_part_size_bytes = {}", v);
+            self.max_part_size_bytes = Some(v);
+        }
+        if let Some(v) = download_retry_policy {
+            debug!("Platform override: download_retry_policy");
+            self.download_retry_policy = Some(v);
+        }
+        if let Some(v) = offline_check_count {
+            debug!("Platform override: offline_check_count = {}", v);
+            self.offline_check_count = Some(v.max(1) as u32);
+        }
+        if let Some(v) = offline_check_delay_ms {
+            debug!("Platform override: offline_check_delay_ms = {}", v);
+            self.offline_check_delay_ms = Some((v.max(1_000)) as u64);
+        }
+
+        self
+    }
+
+    /// Apply template config layer.
+    pub fn with_template(mut self, layer: TemplateConfigLayer) -> Self {
+        let TemplateConfigLayer {
+            output_folder,
+            output_filename_template,
+            output_file_format,
+            min_segment_size_bytes,
+            max_download_duration_secs,
+            max_part_size_bytes,
+            record_danmu,
+            danmu_statistics,
+            proxy_config,
+            cookies,
+            download_engine,
+            extractor,
+            download_retry_policy,
+            stream_selection,
+            engines_override,
+            pipeline,
+            session_complete_pipeline,
+            paired_segment_pipeline,
+            platform_extras,
+            offline_check_count,
+            offline_check_delay_ms,
+        } = layer;
+        debug!(
+            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
+            output_folder,
+            download_engine,
+            record_danmu,
+            cookies.is_some(),
+            stream_selection.is_some(),
+            engines_override.is_some(),
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0),
+            platform_extras.is_some()
+        );
+        if let Some(v) = output_folder {
+            debug!("Template override: output_folder = {}", v);
+            self.output_folder = Some(v);
+        }
+        if let Some(v) = output_filename_template {
+            debug!("Template override: output_filename_template = {}", v);
+            self.output_filename_template = Some(v);
+        }
+        if let Some(v) = output_file_format {
+            debug!("Template override: output_file_format = {}", v);
+            self.output_file_format = Some(v);
+        }
+        if let Some(v) = min_segment_size_bytes {
+            debug!("Template override: min_segment_size_bytes = {}", v);
+            self.min_segment_size_bytes = Some(v);
+        }
+        if let Some(v) = max_download_duration_secs {
+            debug!("Template override: max_download_duration_secs = {}", v);
+            self.max_download_duration_secs = Some(v);
+        }
+        if let Some(v) = max_part_size_bytes {
+            debug!("Template override: max_part_size_bytes = {}", v);
+            self.max_part_size_bytes = Some(v);
+        }
+        if let Some(v) = record_danmu {
+            debug!("Template override: record_danmu = {}", v);
+            self.record_danmu = Some(v);
+        }
+        if let Some(statistics) = danmu_statistics {
+            debug!("Template override: danmu_statistics");
+            self.danmu_statistics = Some(statistics);
+        }
+        if let Some(v) = proxy_config {
+            debug!("Template override: proxy_config");
+            self.proxy_config = Some(v);
+        }
+        if cookies.is_some() {
+            debug!("Template override: cookies");
+            self.cookies = cookies;
+        }
+        if let Some(v) = download_engine {
+            debug!("Template override: download_engine = {}", v);
+            self.download_engine = Some(v);
+        }
+        if let Some(v) = extractor {
+            debug!("Template override: extractor = {}", v);
+            self.extractor = Some(v);
+        }
+        if let Some(v) = download_retry_policy {
+            debug!("Template override: download_retry_policy");
+            self.download_retry_policy = Some(v);
+        }
+        if let Some(v) = stream_selection {
+            // Merge stream selection config
+            if let Some(existing) = &self.stream_selection {
+                debug!("Template override: merging stream_selection");
+                self.stream_selection = Some(existing.merge(&v));
+            } else {
+                debug!("Template override: stream_selection");
+                self.stream_selection = Some(v);
+            }
+        }
+        if let Some(v) = engines_override {
+            debug!("Template override: engines_override");
+            self.engines_override = Some(v);
+        }
+        if let Some(pipe) = pipeline {
+            debug!("Template override: pipeline");
+            self.pipeline = Some(pipe);
+        }
+        if let Some(pipe) = session_complete_pipeline {
+            debug!("Template override: session_complete_pipeline");
+            self.session_complete_pipeline = Some(pipe);
+        }
+        if let Some(pipe) = paired_segment_pipeline {
+            debug!("Template override: paired_segment_pipeline");
+            self.paired_segment_pipeline = Some(pipe);
+        }
+        // Merge platform extras from template layer
+        if let Some(extras) = platform_extras {
+            debug!("Template override: platform_extras");
+            self.platform_extras = merge_platform_extras(self.platform_extras.take(), Some(extras));
+        }
+        if let Some(v) = offline_check_count {
+            debug!("Template override: offline_check_count = {}", v);
+            self.offline_check_count = Some(v.max(1) as u32);
+        }
+        if let Some(v) = offline_check_delay_ms {
+            debug!("Template override: offline_check_delay_ms = {}", v);
+            self.offline_check_delay_ms = Some((v.max(1_000)) as u64);
+        }
+        self
+    }
+
+    /// Apply streamer-specific config layer.
+    pub fn with_streamer(mut self, streamer_config: Option<&serde_json::Value>) -> Self {
+        debug!(
+            "[Layer 4: Streamer] Applying overrides: streamer_config={}",
+            streamer_config.is_some()
+        );
+
+        // Parse streamer-specific config JSON
+        if let Some(config) = streamer_config {
+            debug!("Applying streamer-specific config overrides: {}", config);
+            if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: output_folder = {}", v);
+                self.output_folder = Some(v.to_string());
+            }
+            if let Some(v) = config
+                .get("output_filename_template")
+                .and_then(|v| v.as_str())
+            {
+                debug!("Streamer config override: output_filename_template = {}", v);
+                self.output_filename_template = Some(v.to_string());
+            }
+            if let Some(v) = config.get("extractor").and_then(|v| v.as_str()) {
+                match v.parse::<ExtractorSelection>() {
+                    Ok(selection) => {
+                        debug!("Streamer config override: extractor = {}", selection);
+                        self.extractor = Some(selection);
+                    }
+                    // An unrecognized name inherits rather than failing the whole resolution.
+                    Err(e) => warn!("Ignoring streamer config override: {}", e),
+                }
+            }
+
+            if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: download_engine = {}", v);
+                self.download_engine = Some(v.to_string());
+            }
+            if let Some(v) = config.get("record_danmu").and_then(|v| v.as_bool()) {
+                debug!("Streamer config override: record_danmu = {}", v);
+                self.record_danmu = Some(v);
+            }
+            // A malformed value means "inherit", matching how every other nested
+            // key behaves here: a bad streamer blob must not fail a recording.
+            if let Some(value) = config.get("danmu_statistics")
+                && let Ok(statistics) =
+                    serde_json::from_value::<DanmuStatisticsConfig>(value.clone())
+            {
+                debug!("Streamer config override: danmu_statistics");
+                self.danmu_statistics = Some(statistics);
+            }
+            if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: cookies");
+                self.cookies = Some(v.to_string());
+            }
+            if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
+                debug!("Streamer config override: max_part_size_bytes = {}", v);
+                self.max_part_size_bytes = Some(v);
+            }
+            if let Some(v) = config
+                .get("max_download_duration_secs")
+                .and_then(|v| v.as_i64())
+            {
+                debug!(
+                    "Streamer config override: max_download_duration_secs = {}",
+                    v
+                );
+                self.max_download_duration_secs = Some(v);
+            }
+            if let Some(v) = config.get("output_file_format").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: output_file_format = {}", v);
+                self.output_file_format = Some(v.to_string());
+            }
+            if let Some(v) = config
+                .get("min_segment_size_bytes")
+                .and_then(|v| v.as_i64())
+            {
+                debug!("Streamer config override: min_segment_size_bytes = {}", v);
+                self.min_segment_size_bytes = Some(v);
+            }
+
+            // Parse proxy config from streamer-specific config
+            if let Some(proxy_val) = config.get("proxy_config")
+                && let Ok(v) = serde_json::from_value::<ProxyConfig>(proxy_val.clone())
+            {
+                debug!("Streamer config override: proxy_config");
+                self.proxy_config = Some(v);
+            }
+
+            // Parse stream selection config from streamer-specific config
+            if let Some(stream_sel) = config.get("stream_selection_config")
+                && let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone())
+            {
+                if let Some(existing) = &self.stream_selection {
+                    debug!("Streamer config override: merging stream_selection");
+                    self.stream_selection = Some(existing.merge(&v));
+                } else {
+                    debug!("Streamer config override: stream_selection");
+                    self.stream_selection = Some(v);
+                }
+            }
+
+            // Parse pipeline config from streamer-specific config (Flexible: Enum untagged)
+            if let Some(pipeline_val) = config.get("pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.pipeline = Some(v);
+            }
+
+            if let Some(pipeline_val) = config.get("session_complete_pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: session_complete_pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.session_complete_pipeline = Some(v);
+            }
+
+            if let Some(pipeline_val) = config.get("paired_segment_pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: paired_segment_pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.paired_segment_pipeline = Some(v);
+            }
+
+            if let Some(v) = config.get("download_retry_policy")
+                && let Ok(v) = serde_json::from_value::<RetryPolicy>(v.clone())
+            {
+                debug!("Streamer config override: download_retry_policy");
+                self.download_retry_policy = Some(v);
+            }
+
+            // Merge platform extras from streamer layer.
+            //
+            // Stripped the same way `ConfigResolver` strips the platform and template layers:
+            // extras are handed to extractors, which must never receive credential material.
+            if let Some(extras) = config.get("platform_extras").cloned() {
+                debug!("Streamer config override: platform_extras");
+                self.platform_extras = merge_platform_extras(
+                    self.platform_extras.take(),
+                    Some(extractor_platform_extras(extras)),
+                );
+            }
+
+            if let Some(v) = config.get("offline_check_count").and_then(|v| v.as_u64()) {
+                debug!("Streamer config override: offline_check_count = {}", v);
+                self.offline_check_count = Some((v as u32).max(1));
+            }
+            if let Some(v) = config
+                .get("offline_check_delay_ms")
+                .and_then(|v| v.as_u64())
+            {
+                debug!("Streamer config override: offline_check_delay_ms = {}", v);
+                self.offline_check_delay_ms = Some(v.max(1_000));
+            }
+        }
+        self
+    }
+
+    /// Override the per-segment pipeline (used by template platform overrides).
+    pub fn override_pipeline(mut self, pipeline: DagPipelineDefinition) -> Self {
+        debug!("Template platform override: pipeline");
+        self.pipeline = Some(pipeline);
+        self
+    }
+
+    /// Override the session-complete pipeline (used by template platform overrides).
+    pub fn override_session_complete_pipeline(mut self, pipeline: DagPipelineDefinition) -> Self {
+        debug!("Template platform override: session_complete_pipeline");
+        self.session_complete_pipeline = Some(pipeline);
+        self
+    }
+
+    /// Override the paired-segment pipeline (used by template platform overrides).
+    pub fn override_paired_segment_pipeline(mut self, pipeline: DagPipelineDefinition) -> Self {
+        debug!("Template platform override: paired_segment_pipeline");
+        self.paired_segment_pipeline = Some(pipeline);
+        self
+    }
+
+    /// Build the final MergedConfig.
+    pub fn build(self) -> MergedConfig {
+        let output_folder = self
+            .output_folder
+            .unwrap_or_else(|| "/app/output".to_string());
+        let output_filename_template = self
+            .output_filename_template
+            .unwrap_or_else(|| "{streamer}-%Y%m%d-%H%M%S-{title}".to_string());
+        let output_file_format = self.output_file_format.unwrap_or_else(|| "flv".to_string());
+        let download_engine = self
+            .download_engine
+            .unwrap_or_else(|| "default-mesio".to_string());
+        // No layer expressed a preference: dispatch on the URL regex registry.
+        let extractor = self.extractor.unwrap_or_default();
+        let record_danmu = self.record_danmu.unwrap_or(false);
+        // Clamped here rather than at each write boundary, so every path into the
+        // config — API, import, streamer blob — lands on workable values.
+        let danmu_statistics = self.danmu_statistics.unwrap_or_default().sanitized();
+        let stream_selection = self.stream_selection.unwrap_or_default();
+        let pipeline = self.pipeline;
+
+        debug!(
+            "[Config Merge Complete] Final config: output_folder={}, format={}, engine={}, record_danmu={}, stream_selection={:?}, pipeline_steps={}",
+            output_folder,
+            output_file_format,
+            download_engine,
+            record_danmu,
+            stream_selection,
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
+        );
+
+        MergedConfig {
+            output_folder,
+            output_filename_template,
+            output_file_format,
+            min_segment_size_bytes: self.min_segment_size_bytes.unwrap_or(1048576),
+            max_download_duration_secs: self.max_download_duration_secs.unwrap_or(0),
+            max_part_size_bytes: self.max_part_size_bytes.unwrap_or(8589934592),
+            record_danmu,
+            danmu_statistics,
+            proxy_config: self.proxy_config.unwrap_or_default(),
+            cookies: self.cookies,
+            download_engine,
+            extractor,
+            download_retry_policy: self.download_retry_policy.unwrap_or_default(),
+            fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
+            download_delay_ms: self.download_delay_ms.unwrap_or(1000),
+            stream_selection,
+            engines_override: self.engines_override,
+            pipeline,
+            session_complete_pipeline: self.session_complete_pipeline,
+            paired_segment_pipeline: self.paired_segment_pipeline,
+            platform_extras: self.platform_extras,
+            auto_thumbnail: self.auto_thumbnail.unwrap_or(true),
+            offline_check_count: self.offline_check_count.unwrap_or(3).max(1),
+            offline_check_delay_ms: self.offline_check_delay_ms.unwrap_or(20_000).max(1_000),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::database::models::PipelineStep;
+
+    use super::*;
+
+    fn global_layer(download_engine: &str) -> GlobalConfigLayer {
+        GlobalConfigLayer {
+            output_folder: "/app/output".to_string(),
+            output_filename_template: "{streamer}".to_string(),
+            output_file_format: "flv".to_string(),
+            min_segment_size_bytes: 1_024,
+            max_download_duration_secs: 0,
+            max_part_size_bytes: 8_589_934_592,
+            record_danmu: false,
+            danmu_statistics: None,
+            proxy_config: ProxyConfig::disabled(),
+            download_engine: download_engine.to_string(),
+            extractor: None,
+            pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
+            auto_thumbnail: true,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
+        }
+    }
+
+    #[test]
+    fn test_merged_config_builder() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
+            .build();
+
+        assert_eq!(config.output_folder, "/app/output");
+        assert_eq!(config.download_engine, "mesio");
+        assert!(!config.record_danmu);
+    }
+
+    #[test]
+    fn test_layer_override() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("ffmpeg"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                record_danmu: Some(true),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                output_folder: Some("./custom".to_string()),
+                download_engine: Some("mesio".to_string()),
+                ..Default::default()
+            })
+            .build();
+
+        // Template overrides global
+        assert_eq!(config.output_folder, "./custom");
+        assert_eq!(config.download_engine, "mesio");
+        // Platform overrides global
+        assert!(config.record_danmu);
+    }
+
+    #[test]
+    fn test_streamer_pipeline_override() {
+        // Create a streamer-specific config with custom pipeline
+        let streamer_config = serde_json::json!({
+            "pipeline": {
+                "name": "streamer_custom",
+                "steps": [
+                    {"id": "step1", "step": {"type": "preset", "name": "fast_remux"}, "depends_on": []},
+                    {"id": "step2", "step": {"type": "preset", "name": "s3_upload"}, "depends_on": ["step1"]}
+                ]
+            }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(GlobalConfigLayer {
+                pipeline: Some(DagPipelineDefinition::new(
+                    "global",
+                    vec![
+                        crate::database::models::job::DagStep::new(
+                            "step1",
+                            PipelineStep::preset("remux"),
+                        ),
+                        crate::database::models::job::DagStep::new(
+                            "step2",
+                            PipelineStep::preset("upload"),
+                        ),
+                    ],
+                )),
+                ..global_layer("mesio")
+            })
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        // Streamer pipeline should override global
+        let dag = config.pipeline.expect("Pipeline should be set");
+        assert_eq!(dag.steps.len(), 2);
+        assert!(matches!(&dag.steps[0].step, PipelineStep::Preset{name} if name == "fast_remux"));
+        assert!(matches!(&dag.steps[1].step, PipelineStep::Preset{name} if name == "s3_upload"));
+    }
+
+    #[test]
+    fn test_streamer_inline_pipeline() {
+        // Create a streamer-specific config with inline pipeline step
+        let streamer_config = serde_json::json!({
+            "pipeline": {
+                "name": "inline_pipeline",
+                "steps": [
+                    {"id": "step1", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+                    {"id": "step2", "step": {
+                        "type": "inline",
+                        "processor": "execute",
+                        "config": {
+                            "command": "echo {input}"
+                        }
+                    }, "depends_on": ["step1"]}
+                ]
+            }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        // Should have 2 steps: preset + inline
+        let dag = config.pipeline.expect("Pipeline should be set");
+        assert_eq!(dag.steps.len(), 2);
+        assert!(matches!(&dag.steps[0].step, PipelineStep::Preset{name} if name == "remux"));
+        assert!(
+            matches!(&dag.steps[1].step, PipelineStep::Inline { processor, .. } if processor == "execute")
+        );
+    }
+
+    /// Each layer replaces the whole statistics object, and the streamer layer —
+    /// the most specific — wins. Also checks that a partial JSON override inherits
+    /// the defaults for fields it does not name.
+    #[test]
+    fn danmu_statistics_precedence_runs_streamer_last() {
+        let streamer_config = serde_json::json!({
+            "danmu_statistics": { "top_words": 25 }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                danmu_statistics: Some(DanmuStatisticsConfig {
+                    top_talkers: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                danmu_statistics: Some(DanmuStatisticsConfig {
+                    top_talkers: 20,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        assert_eq!(config.danmu_statistics.top_words, 25);
+        assert_eq!(
+            config.danmu_statistics.top_talkers,
+            DanmuStatisticsConfig::default().top_talkers,
+            "the streamer layer replaces the whole object, so the template's \
+             top_talkers is not inherited"
+        );
+    }
+
+    /// With no layer stating anything, the resolved config is the default rather
+    /// than zeros, and `build` clamps whatever it is handed.
+    #[test]
+    fn danmu_statistics_defaults_and_clamps() {
+        let unset = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .build();
+        assert_eq!(unset.danmu_statistics, DanmuStatisticsConfig::default());
+
+        let clamped = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                danmu_statistics: Some(DanmuStatisticsConfig {
+                    top_talkers: 100_000,
+                    rate_bucket_secs: 0,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .build();
+        assert!(clamped.danmu_statistics.top_talkers <= 500);
+        assert_eq!(clamped.danmu_statistics.rate_bucket_secs, 1);
+    }
+
+    /// A malformed streamer blob means "inherit", never a failed resolve.
+    #[test]
+    fn danmu_statistics_ignores_malformed_streamer_override() {
+        let streamer_config = serde_json::json!({
+            "danmu_statistics": "not an object"
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        assert_eq!(config.danmu_statistics, DanmuStatisticsConfig::default());
+    }
+
+    #[test]
+    fn test_streamer_session_and_paired_pipelines_override() {
+        let streamer_config = serde_json::json!({
+            "session_complete_pipeline": {
+                "name": "session_concat",
+                "steps": [
+                    {"id": "concat", "step": {"type": "preset", "name": "remux"}, "depends_on": []}
+                ]
+            },
+            "paired_segment_pipeline": {
+                "name": "burn_in",
+                "steps": [
+                    {"id": "burn", "step": {"type": "inline", "processor": "execute", "config": {"command": "echo {input}"}}, "depends_on": []}
+                ]
+            }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                record_danmu: Some(true),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        let session = config
+            .session_complete_pipeline
+            .expect("session_complete_pipeline should be set");
+        assert_eq!(session.steps.len(), 1);
+        assert!(matches!(
+            &session.steps[0].step,
+            PipelineStep::Preset { name } if name == "remux"
+        ));
+
+        let paired = config
+            .paired_segment_pipeline
+            .expect("paired_segment_pipeline should be set");
+        assert_eq!(paired.steps.len(), 1);
+        assert!(matches!(
+            &paired.steps[0].step,
+            PipelineStep::Inline { processor, .. } if processor == "execute"
+        ));
+    }
+
+    /// Verifies the precedence chain Global → Platform → Template → Streamer
+    /// for `offline_check_*`, plus the floor enforcement at each layer.
+    #[test]
+    fn test_offline_check_layer_override_and_floors() {
+        // Global = 3 / 20_000. Platform overrides count to 5. Template
+        // overrides delay_ms to 30_000. Streamer overrides count to 7.
+        let streamer_config = serde_json::json!({
+            "offline_check_count": 7,
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                offline_check_count: Some(5),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                offline_check_delay_ms: Some(30_000),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        // Streamer wins for count, template wins for delay_ms.
+        assert_eq!(config.offline_check_count, 7);
+        assert_eq!(config.offline_check_delay_ms, 30_000);
+    }
+
+    /// Verifies floors: out-of-range values are clamped to safe minimums
+    /// (count >= 1, delay_ms >= 1000) so a typo can't park sessions in a
+    /// pathological hysteresis window.
+    #[test]
+    fn test_offline_check_floors() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                offline_check_count: Some(0),
+                offline_check_delay_ms: Some(50),
+                ..Default::default()
+            })
+            .build();
+
+        assert_eq!(config.offline_check_count, 1);
+        assert_eq!(config.offline_check_delay_ms, 1_000);
+    }
+
+    /// No layer expresses a preference, so extraction stays on the URL regex registry.
+    #[test]
+    fn test_extractor_defaults_to_auto() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .build();
+
+        assert_eq!(config.extractor, ExtractorSelection::Auto);
+    }
+
+    /// Each layer overrides the one above it, and a layer that says nothing inherits.
+    #[test]
+    fn test_extractor_layer_precedence() {
+        let mut global = global_layer("mesio");
+        global.extractor = Some(ExtractorSelection::Streamlink);
+
+        // Platform stays silent, so the global choice survives it.
+        let config = MergedConfig::builder()
+            .with_global(global)
+            .with_platform(PlatformConfigLayer::default())
+            .build();
+        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
+
+        // Template overrides the platform, then the streamer overrides the template.
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                extractor: Some(ExtractorSelection::Streamlink),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                extractor: Some(ExtractorSelection::Auto),
+                ..Default::default()
+            })
+            .with_streamer(Some(&serde_json::json!({ "extractor": "streamlink" })))
+            .build();
+        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
+    }
+
+    /// An unparseable name inherits rather than failing resolution outright.
+    #[test]
+    fn test_unknown_streamer_extractor_is_ignored() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                extractor: Some(ExtractorSelection::Streamlink),
+                ..Default::default()
+            })
+            .with_streamer(Some(
+                &serde_json::json!({ "extractor": "not-an-extractor" }),
+            ))
+            .build();
+
+        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
+    }
+
+    /// Extras reach extractors, so credential material must be stripped from the streamer
+    /// layer the same way `ConfigResolver` strips the platform and template layers.
+    #[test]
+    fn test_streamer_platform_extras_strip_credentials() {
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_streamer(Some(&serde_json::json!({
+                "platform_extras": {
+                    "refresh_token": "secret",
+                    "session_cookies": "secret",
+                    "quality": "best"
+                }
+            })))
+            .build();
+
+        let extras = config.platform_extras.expect("extras should be set");
+        assert_eq!(extras.get("quality").and_then(|v| v.as_str()), Some("best"));
+        assert!(extras.get("refresh_token").is_none());
+        assert!(extras.get("session_cookies").is_none());
+    }
+}

@@ -34,3 +34,9 @@ export const getBaseUrl = () => {
 };
 
 export const BASE_URL = getBaseUrl();
+
+export const getApiEndpointUrl = (path: string) => {
+  const baseUrl = getBaseUrl().replace(/\/$/, '');
+  const endpoint = path.startsWith('/') ? path : `/${path}`;
+  return `${baseUrl}${endpoint}`;
+};

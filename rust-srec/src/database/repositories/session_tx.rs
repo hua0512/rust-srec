@@ -65,8 +65,8 @@ impl SessionTxOps {
 
         sqlx::query(
             r#"
-            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(session_id)
@@ -74,7 +74,6 @@ impl SessionTxOps {
         .bind(start_time.timestamp_millis())
         .bind(Option::<i64>::None)
         .bind(Some(titles_json))
-        .bind(Option::<String>::None)
         .bind(0_i64)
         .execute(tx)
         .await?;

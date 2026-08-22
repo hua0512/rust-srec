@@ -1,15 +1,20 @@
 //! Rclone processor for cloud storage operations.
 
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::{error, info, warn};
 
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
+    UploadItemStatus, UploadResultItem,
 };
+use super::utils::CommandOutput;
 use crate::Result;
 use crate::utils::filename::expand_placeholders_at;
 
@@ -134,12 +139,64 @@ impl RcloneConfig {
     }
 }
 
+/// Drops `-P`/`--progress` from user-supplied extra args, returning the kept
+/// args and how many tokens were removed. `--progress` replaces rclone's
+/// line-delimited stderr logging with a control-code terminal display that
+/// `run_rclone_with_progress` cannot parse (and whose newline-free redraws
+/// its line reader would have to skip as overlong). Only these exact tokens
+/// are stripped; every other arg keeps the last-wins override contract.
+fn sanitize_extra_args(args: &[String]) -> (Vec<String>, usize) {
+    let kept: Vec<String> = args
+        .iter()
+        .filter(|arg| *arg != "-P" && *arg != "--progress")
+        .cloned()
+        .collect();
+    let stripped = args.len() - kept.len();
+    (kept, stripped)
+}
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
     rclone_path: String,
     /// Maximum retry attempts.
     max_retries: u32,
+    /// Runs assembled rclone commands; a seam so tests can observe and
+    /// stub invocations without spawning a real process.
+    command_runner: Arc<dyn RcloneCommandRunner>,
+}
+
+#[async_trait]
+trait RcloneCommandRunner: Send + Sync {
+    async fn run(&self, command: &mut Command, context: &ProcessorContext)
+    -> Result<CommandOutput>;
+}
+
+struct ProcessRcloneCommandRunner;
+
+#[async_trait]
+impl RcloneCommandRunner for ProcessRcloneCommandRunner {
+    async fn run(
+        &self,
+        command: &mut Command,
+        context: &ProcessorContext,
+    ) -> Result<CommandOutput> {
+        super::utils::run_rclone_with_progress(
+            command,
+            &context.progress,
+            Some(context.log_sink.clone()),
+        )
+        .await
+    }
+}
+
+struct RcloneExecution<'a> {
+    remote_destination: &'a str,
+    operation: RcloneOperation,
+    config_path: Option<&'a str>,
+    throughput: &'a [String],
+    extra_args: &'a [String],
+    context: &'a ProcessorContext,
 }
 
 impl RcloneProcessor {
@@ -148,6 +205,7 @@ impl RcloneProcessor {
         Self {
             rclone_path: std::env::var("RCLONE_PATH").unwrap_or_else(|_| "rclone".to_string()),
             max_retries: 3,
+            command_runner: Arc::new(ProcessRcloneCommandRunner),
         }
     }
 
@@ -156,6 +214,19 @@ impl RcloneProcessor {
         Self {
             rclone_path: path.into(),
             max_retries: 3,
+            command_runner: Arc::new(ProcessRcloneCommandRunner),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_command_runner(
+        path: impl Into<String>,
+        command_runner: Arc<dyn RcloneCommandRunner>,
+    ) -> Self {
+        Self {
+            rclone_path: path.into(),
+            max_retries: 3,
+            command_runner,
         }
     }
 
@@ -198,19 +269,21 @@ impl RcloneProcessor {
         Some(common)
     }
 
-    /// Create a temporary file containing relative paths for --files-from.
-    /// Creates the file in the base directory with a UUID-based name.
-    /// Returns the temp file path and relative paths, or error.
+    /// Create the `--files-from` manifest listing `inputs` relative to `base_dir`.
+    ///
+    /// Returned as a [`TempPath`] so the manifest is removed when the guard
+    /// drops, including when a job timeout or cancellation drops the owning
+    /// future before the explicit `close()` in `process_batch`.
     async fn create_files_from_list(
         inputs: &[String],
         base_dir: &Path,
-    ) -> std::io::Result<(PathBuf, Vec<String>)> {
-        // Create temp file in base directory
-        let temp_filename = format!(".rclone_files_{}.txt", uuid::Uuid::new_v4());
-        let temp_path = base_dir.join(&temp_filename);
-
-        let mut file = tokio::fs::File::create(&temp_path).await?;
-        let mut relative_paths = Vec::with_capacity(inputs.len());
+    ) -> std::io::Result<TempPath> {
+        let named_file = tempfile::Builder::new()
+            .prefix(".rclone_files_")
+            .suffix(".txt")
+            .tempfile_in(base_dir)?;
+        let (file, temp_path) = named_file.into_parts();
+        let mut file = tokio::fs::File::from_std(file);
 
         for input in inputs {
             let input_path = Path::new(input);
@@ -220,42 +293,98 @@ impl RcloneProcessor {
             let relative_str = relative.to_string_lossy();
             file.write_all(relative_str.as_bytes()).await?;
             file.write_all(b"\n").await?;
-            relative_paths.push(relative_str.to_string());
         }
 
         file.flush().await?;
-        Ok((temp_path, relative_paths))
+        Ok(temp_path)
     }
 
-    /// Clean up the temporary files-from list file.
-    async fn cleanup_files_from_list(path: &Path) {
-        if let Err(e) = tokio::fs::remove_file(path).await {
-            warn!(
-                "Failed to clean up temp files-from list {}: {}",
-                path.display(),
-                e
-            );
+    /// True only when the filesystem positively reports the path as absent.
+    ///
+    /// Source absence is what marks a move input as consumed, so an I/O
+    /// error from `try_exists` (e.g. an unreadable or unmounted parent
+    /// directory) must keep the input pending instead of reporting an
+    /// upload that never happened.
+    async fn is_confirmed_absent(path: &Path) -> bool {
+        matches!(tokio::fs::try_exists(path).await, Ok(false))
+    }
+
+    /// Split move inputs into (pending, already moved by an earlier attempt).
+    async fn partition_move_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
+        let mut pending = Vec::new();
+        let mut moved = Vec::new();
+        for input in inputs {
+            if Self::is_confirmed_absent(Path::new(input)).await {
+                moved.push(input.clone());
+            } else {
+                pending.push(input.clone());
+            }
         }
+        (pending, moved)
+    }
+
+    /// Drain inputs whose sources rclone consumed during the last attempt.
+    async fn take_moved_inputs(pending_inputs: &mut Vec<String>) -> Vec<String> {
+        let mut moved_inputs = Vec::new();
+        let mut still_pending = Vec::with_capacity(pending_inputs.len());
+        for input in pending_inputs.drain(..) {
+            if Self::is_confirmed_absent(Path::new(&input)).await {
+                moved_inputs.push(input);
+            } else {
+                still_pending.push(input);
+            }
+        }
+        *pending_inputs = still_pending;
+        moved_inputs
+    }
+
+    /// Per-file sizes captured before the transfer so `UploadResultItem`
+    /// sizes survive `move` operations that delete the local source.
+    /// Unreadable inputs are simply absent from the map.
+    async fn input_size_map(inputs: &[String]) -> std::collections::HashMap<String, u64> {
+        let mut sizes = std::collections::HashMap::with_capacity(inputs.len());
+        for input in inputs {
+            if let Ok(metadata) = tokio::fs::metadata(input).await {
+                sizes.insert(input.clone(), metadata.len());
+            }
+        }
+        sizes
+    }
+
+    /// Remote path of one batch input: `remote_root` + the input's path
+    /// relative to `base_dir`, matching how rclone `--files-from` lays out
+    /// files under the destination. Always joined with `/` — rclone remote
+    /// paths are forward-slash regardless of the local OS separator.
+    fn batch_remote_path(base_dir: &Path, remote_root: &str, input: &str) -> Option<String> {
+        let relative = Path::new(input).strip_prefix(base_dir).ok()?;
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        Some(format!(
+            "{}/{}",
+            remote_root.trim_end_matches('/'),
+            relative
+        ))
     }
 
     /// Execute a single-file rclone operation.
-    #[allow(clippy::too_many_arguments)]
     async fn process_single(
         &self,
         input_path: &str,
-        remote_destination: &str,
-        operation: RcloneOperation,
-        config_path: Option<&str>,
-        throughput: &[String],
-        extra_args: &[String],
-        ctx: &ProcessorContext,
+        execution: &RcloneExecution<'_>,
     ) -> Result<ProcessorOutput> {
+        let RcloneExecution {
+            remote_destination,
+            operation,
+            config_path,
+            throughput,
+            extra_args,
+            context,
+        } = execution;
         let start = std::time::Instant::now();
 
         // Use 'copyto' and 'moveto' for single-file operations.
         // Unlike 'copy' and 'move', these commands are designed for file-to-file transfer
         // and won't create a directory with the destination filename.
-        let cmd_op = match operation {
+        let cmd_op = match *operation {
             RcloneOperation::Copy => "copyto",
             RcloneOperation::Move => "moveto",
             RcloneOperation::Sync => unreachable!(),
@@ -266,9 +395,46 @@ impl RcloneProcessor {
             cmd_op, input_path, remote_destination
         );
 
+        let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
         let mut last_error = None;
+        let mut logs = Vec::new();
+
+        let success_output = |logs| ProcessorOutput {
+            outputs: match *operation {
+                RcloneOperation::Move => vec![],
+                _ => vec![input_path.to_string()],
+            },
+            duration_secs: start.elapsed().as_secs_f64(),
+            metadata: None,
+            items_produced: vec![],
+            input_size_bytes,
+            output_size_bytes: None,
+            failed_inputs: vec![],
+            succeeded_inputs: vec![input_path.to_string()],
+            skipped_inputs: vec![],
+            uploads: vec![UploadResultItem {
+                local_path: input_path.to_string(),
+                remote_path: Some(remote_destination.to_string()),
+                // Captured before the transfer, so it is present even after
+                // a move deleted the source (None on move-resume retries).
+                size_bytes: input_size_bytes,
+                status: UploadItemStatus::Completed,
+                error: None,
+            }],
+            logs,
+        };
 
         for attempt in 0..self.max_retries {
+            if matches!(*operation, RcloneOperation::Move)
+                && Self::is_confirmed_absent(Path::new(input_path)).await
+            {
+                info!(
+                    input = input_path,
+                    "Rclone move source is already absent; treating it as successfully moved"
+                );
+                return Ok(success_output(logs));
+            }
+
             if attempt > 0 {
                 info!("Retry attempt {} for rclone {}", attempt + 1, cmd_op);
                 tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
@@ -276,37 +442,50 @@ impl RcloneProcessor {
 
             let mut cmd = Command::new(&self.rclone_path);
 
-            if let Some(cfg) = config_path {
+            if let Some(cfg) = *config_path {
                 cmd.arg("--config").arg(cfg);
             }
 
+            // `run_rclone_with_progress` parses each stderr line as a
+            // `--use-json-log` object; entries carrying `stats` become
+            // progress snapshots. `--stats-log-level NOTICE` must not be
+            // filtered by the main `--log-level`, or the periodic stats
+            // never reach stderr. `--stats-one-line` only shrinks the human
+            // `msg` embedded in each stats object.
             cmd.args([
+                "--use-json-log",
                 "--log-level",
-                "ERROR",
+                "NOTICE",
+                "--stats-log-level",
+                "NOTICE",
                 "--stats",
                 "1s",
                 "--stats-one-line",
-                "--stats-one-line-date",
                 cmd_op,
                 input_path,
                 remote_destination,
             ]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
-            cmd.args(throughput);
-            for arg in extra_args {
+            cmd.args(*throughput);
+            for arg in *extra_args {
                 cmd.arg(arg);
             }
 
-            let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
-                &mut cmd,
-                &ctx.progress,
-                Some(ctx.log_sink.clone()),
-            )
-            .await
-            {
+            let command_output = match self.command_runner.run(&mut cmd, context).await {
                 Ok(output) => output,
                 Err(e) => {
+                    if matches!(*operation, RcloneOperation::Move)
+                        && Self::is_confirmed_absent(Path::new(input_path)).await
+                    {
+                        warn!(
+                            input = input_path,
+                            attempt = attempt + 1,
+                            error = %e,
+                            "Rclone reported an execution error after moving the source"
+                        );
+                        return Ok(success_output(logs));
+                    }
                     last_error = Some(format!("Failed to execute rclone: {}", e));
                     continue;
                 }
@@ -315,27 +494,8 @@ impl RcloneProcessor {
             if command_output.status.success() {
                 let duration = start.elapsed().as_secs_f64();
                 info!("Rclone {} completed in {:.2}s", cmd_op, duration);
-
-                let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
-
-                let outputs = match operation {
-                    // Move operation does not produce any outputs
-                    RcloneOperation::Move => vec![],
-                    _ => vec![input_path.to_string()],
-                };
-
-                return Ok(ProcessorOutput {
-                    outputs,
-                    duration_secs: duration,
-                    metadata: None,
-                    items_produced: vec![],
-                    input_size_bytes,
-                    output_size_bytes: None,
-                    failed_inputs: vec![],
-                    succeeded_inputs: vec![input_path.to_string()],
-                    skipped_inputs: vec![],
-                    logs: command_output.logs,
-                });
+                logs.extend(command_output.logs);
+                return Ok(success_output(logs));
             } else {
                 let error_msg = command_output
                     .logs
@@ -343,6 +503,18 @@ impl RcloneProcessor {
                     .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                     .map(|l| l.message.clone())
                     .unwrap_or_else(|| "Unknown error".to_string());
+                logs.extend(command_output.logs);
+
+                if matches!(*operation, RcloneOperation::Move)
+                    && Self::is_confirmed_absent(Path::new(input_path)).await
+                {
+                    warn!(
+                        input = input_path,
+                        attempt = attempt + 1,
+                        "Rclone exited unsuccessfully after moving the source; treating the input as successful"
+                    );
+                    return Ok(success_output(logs));
+                }
 
                 last_error = Some(format!(
                     "rclone failed with exit code {}: {}",
@@ -362,49 +534,116 @@ impl RcloneProcessor {
     }
 
     /// Execute a batch rclone operation using --files-from.
-    #[allow(clippy::too_many_arguments)]
     async fn process_batch(
         &self,
         inputs: &[String],
-        remote_destination: &str,
-        operation: RcloneOperation,
-        config_path: Option<&str>,
-        throughput: &[String],
-        extra_args: &[String],
-        ctx: &ProcessorContext,
+        execution: &RcloneExecution<'_>,
     ) -> Result<ProcessorOutput> {
+        let RcloneExecution {
+            remote_destination,
+            operation,
+            config_path,
+            throughput,
+            extra_args,
+            context,
+        } = execution;
         let start = std::time::Instant::now();
 
-        let cmd_op = match operation {
+        let cmd_op = match *operation {
             RcloneOperation::Copy => "copy",
             RcloneOperation::Move => "move",
             RcloneOperation::Sync => "sync",
         };
 
-        // Find common base directory
         let base_dir = Self::find_common_base_dir(inputs).ok_or_else(|| {
             crate::Error::Validation(
                 "Could not determine common base directory for batch upload".to_string(),
             )
         })?;
-
-        // Create temp file with file list
-        let (files_from_path, _relative_paths) = Self::create_files_from_list(inputs, &base_dir)
-            .await
-            .map_err(|e| crate::Error::Other(format!("Failed to create files-from list: {}", e)))?;
-
-        let files_from_path_str = files_from_path.to_string_lossy().to_string();
         let base_dir_str = base_dir.to_string_lossy().to_string();
+        let (mut pending_inputs, already_moved_inputs) =
+            if matches!(*operation, RcloneOperation::Move) {
+                Self::partition_move_inputs(inputs).await
+            } else {
+                (inputs.to_vec(), Vec::new())
+            };
+        let resumed_inputs = already_moved_inputs.len();
+        let mut completed_inputs = resumed_inputs;
+        // Sizes are captured before rclone runs so move'd sources still have
+        // one; inputs already consumed by an earlier attempt are absent and
+        // fall back to None (the upsert's COALESCE keeps any earlier value).
+        let file_sizes = Self::input_size_map(&pending_inputs).await;
+        let total_input_size = file_sizes.values().copied().sum::<u64>();
+
+        let success_output = |logs, attempts| ProcessorOutput {
+            outputs: match *operation {
+                RcloneOperation::Move => vec![],
+                _ => inputs.to_vec(),
+            },
+            duration_secs: start.elapsed().as_secs_f64(),
+            metadata: Some(
+                serde_json::json!({
+                    "batch_size": inputs.len(),
+                    "base_dir": base_dir_str,
+                    "operation": cmd_op,
+                    "attempts": attempts,
+                    "resumed_inputs": resumed_inputs,
+                })
+                .to_string(),
+            ),
+            items_produced: vec![],
+            input_size_bytes: Some(total_input_size),
+            output_size_bytes: None,
+            failed_inputs: vec![],
+            succeeded_inputs: inputs.to_vec(),
+            skipped_inputs: vec![],
+            // Every input (including ones resumed from an earlier attempt)
+            // is Completed here — batch success is all-or-nothing.
+            uploads: inputs
+                .iter()
+                .map(|input| UploadResultItem {
+                    local_path: input.clone(),
+                    remote_path: Self::batch_remote_path(&base_dir, remote_destination, input),
+                    size_bytes: file_sizes.get(input).copied(),
+                    status: UploadItemStatus::Completed,
+                    error: None,
+                })
+                .collect(),
+            logs,
+        };
+
+        if resumed_inputs > 0 {
+            warn!(
+                resumed_inputs,
+                pending_inputs = pending_inputs.len(),
+                "Rclone move batch contains missing sources; treating them as previously moved"
+            );
+            context.info(format!(
+                "Resuming rclone move with {} pending input(s); {} input(s) were already moved",
+                pending_inputs.len(),
+                resumed_inputs
+            ));
+        }
+
+        if pending_inputs.is_empty() {
+            info!(
+                inputs = inputs.len(),
+                "Rclone move batch is already complete because all sources are absent"
+            );
+            return Ok(success_output(Vec::new(), 0));
+        }
 
         info!(
-            "Rclone {} batch: {} files from {} -> {}",
+            "Rclone {} batch: {} pending files ({} total) from {} -> {}",
             cmd_op,
+            pending_inputs.len(),
             inputs.len(),
             base_dir_str,
             remote_destination
         );
 
         let mut last_error = None;
+        let mut logs = Vec::new();
 
         for attempt in 0..self.max_retries {
             if attempt > 0 {
@@ -412,19 +651,29 @@ impl RcloneProcessor {
                 tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
             }
 
+            let files_from_path = Self::create_files_from_list(&pending_inputs, &base_dir)
+                .await
+                .map_err(|e| {
+                    crate::Error::io_path("creating rclone files-from list", &base_dir, e)
+                })?;
+            let files_from_path_str = files_from_path.to_string_lossy().to_string();
             let mut cmd = Command::new(&self.rclone_path);
 
-            if let Some(cfg) = config_path {
+            if let Some(cfg) = *config_path {
                 cmd.arg("--config").arg(cfg);
             }
 
+            // Same stderr contract as `process_single`: JSON log lines with
+            // stats at NOTICE so `run_rclone_with_progress` receives them.
             cmd.args([
+                "--use-json-log",
                 "--log-level",
-                "ERROR",
+                "NOTICE",
+                "--stats-log-level",
+                "NOTICE",
                 "--stats",
                 "1s",
                 "--stats-one-line",
-                "--stats-one-line-date",
                 "--files-from",
                 &files_from_path_str,
                 cmd_op,
@@ -433,92 +682,96 @@ impl RcloneProcessor {
             ]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
-            cmd.args(throughput);
-            for arg in extra_args {
+            cmd.args(*throughput);
+            for arg in *extra_args {
                 cmd.arg(arg);
             }
 
-            let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
-                &mut cmd,
-                &ctx.progress,
-                Some(ctx.log_sink.clone()),
-            )
-            .await
-            {
-                Ok(output) => output,
-                Err(e) => {
-                    last_error = Some(format!("Failed to execute rclone: {}", e));
-                    continue;
-                }
-            };
-
-            if command_output.status.success() {
-                let duration = start.elapsed().as_secs_f64();
-                info!(
-                    "Rclone {} batch completed in {:.2}s ({} files)",
-                    cmd_op,
-                    duration,
-                    inputs.len()
+            let command_result = self.command_runner.run(&mut cmd, context).await;
+            if let Err(e) = files_from_path.close() {
+                warn!(
+                    path = %files_from_path_str,
+                    error = %e,
+                    "Failed to remove rclone files-from manifest"
                 );
+            }
 
-                // Calculate total input size
-                let mut total_input_size: u64 = 0;
-                for input in inputs {
-                    if let Ok(meta) = tokio::fs::metadata(input).await {
-                        total_input_size += meta.len();
-                    }
+            if matches!(*operation, RcloneOperation::Move) {
+                let moved_inputs = Self::take_moved_inputs(&mut pending_inputs).await;
+                completed_inputs = completed_inputs.saturating_add(moved_inputs.len());
+                if !moved_inputs.is_empty() {
+                    info!(
+                        attempt = attempt + 1,
+                        moved_inputs = moved_inputs.len(),
+                        pending_inputs = pending_inputs.len(),
+                        "Reconciled successfully moved rclone inputs"
+                    );
+                    context.info(format!(
+                        "Rclone move attempt {} completed {} input(s); {} remain pending",
+                        attempt + 1,
+                        moved_inputs.len(),
+                        pending_inputs.len()
+                    ));
                 }
+            }
 
-                // Determine outputs based on operation
-                let outputs = match operation {
-                    RcloneOperation::Move => vec![], // Files consumed
-                    _ => inputs.to_vec(),            // Copy/Sync: pass through original inputs
-                };
+            match command_result {
+                Ok(command_output) if command_output.status.success() => {
+                    logs.extend(command_output.logs);
+                    let duration = start.elapsed().as_secs_f64();
+                    info!(
+                        "Rclone {} batch completed in {:.2}s ({} files)",
+                        cmd_op,
+                        duration,
+                        inputs.len()
+                    );
+                    return Ok(success_output(logs, attempt + 1));
+                }
+                Ok(command_output) => {
+                    let error_msg = command_output
+                        .logs
+                        .iter()
+                        .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
+                        .map(|l| l.message.clone())
+                        .unwrap_or_else(|| "Unknown error".to_string());
+                    let exit_code = command_output.status.code().unwrap_or(-1);
+                    logs.extend(command_output.logs);
 
-                // Clean up temp file
-                Self::cleanup_files_from_list(&files_from_path).await;
+                    if matches!(*operation, RcloneOperation::Move) && pending_inputs.is_empty() {
+                        warn!(
+                            attempt = attempt + 1,
+                            exit_code,
+                            "Rclone exited unsuccessfully after moving every pending input; treating the batch as successful"
+                        );
+                        return Ok(success_output(logs, attempt + 1));
+                    }
 
-                return Ok(ProcessorOutput {
-                    outputs,
-                    duration_secs: duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "batch_size": inputs.len(),
-                            "base_dir": base_dir_str,
-                            "operation": cmd_op,
-                        })
-                        .to_string(),
-                    ),
-                    items_produced: vec![],
-                    input_size_bytes: Some(total_input_size),
-                    output_size_bytes: None,
-                    failed_inputs: vec![],
-                    succeeded_inputs: inputs.to_vec(),
-                    skipped_inputs: vec![],
-                    logs: command_output.logs,
-                });
-            } else {
-                let error_msg = command_output
-                    .logs
-                    .iter()
-                    .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                    .map(|l| l.message.clone())
-                    .unwrap_or_else(|| "Unknown error".to_string());
+                    last_error = Some(format!(
+                        "rclone batch failed with exit code {}: {}",
+                        exit_code, error_msg
+                    ));
+                }
+                Err(e) => {
+                    if matches!(*operation, RcloneOperation::Move) && pending_inputs.is_empty() {
+                        warn!(
+                            attempt = attempt + 1,
+                            error = %e,
+                            "Rclone reported an execution error after moving every pending input"
+                        );
+                        return Ok(success_output(logs, attempt + 1));
+                    }
 
-                last_error = Some(format!(
-                    "rclone batch failed with exit code {}: {}",
-                    command_output.status.code().unwrap_or(-1),
-                    error_msg
-                ));
+                    last_error = Some(format!("Failed to execute rclone: {}", e));
+                }
             }
         }
 
-        // Clean up temp file on failure
-        Self::cleanup_files_from_list(&files_from_path).await;
-
         error!(
-            "Rclone {} batch failed after {} attempts",
-            cmd_op, self.max_retries
+            pending_inputs = pending_inputs.len(),
+            completed_inputs,
+            attempts = self.max_retries,
+            "Rclone {} batch failed",
+            cmd_op
         );
         Err(crate::Error::Other(
             last_error.unwrap_or_else(|| "Rclone batch failed".to_string()),
@@ -614,23 +867,28 @@ impl Processor for RcloneProcessor {
             ));
         }
 
-        // Validate all input files exist
-        for input_path in &input.inputs {
-            if !Path::new(input_path).exists() {
-                return Err(crate::Error::Validation(format!(
-                    "Input file does not exist: {}",
-                    input_path
-                )));
-            }
-        }
-
-        // Parse config into the typed struct.
         let config: RcloneConfig = match input.config.as_deref() {
             Some(s) => serde_json::from_str(s).map_err(|e| {
                 crate::Error::Validation(format!("Invalid rclone config JSON: {e}"))
             })?,
             None => RcloneConfig::default(),
         };
+
+        // A retried move may legitimately reference sources consumed by an earlier attempt.
+        if !matches!(config.operation, RcloneOperation::Move) {
+            for input_path in &input.inputs {
+                let path = Path::new(input_path);
+                let exists = tokio::fs::try_exists(path)
+                    .await
+                    .map_err(|error| crate::Error::io_path("try_exists", path, error))?;
+                if !exists {
+                    return Err(crate::Error::Validation(format!(
+                        "Input file does not exist: {}",
+                        input_path
+                    )));
+                }
+            }
+        }
 
         let remote_destination = Self::determine_remote_destination(input, &config);
 
@@ -649,6 +907,15 @@ impl Processor for RcloneProcessor {
         // extra args win on duplicate flags (rclone applies last-wins).
         let throughput = config.throughput_args();
 
+        let (extra_args, stripped_progress_args) = sanitize_extra_args(&config.args);
+        if stripped_progress_args > 0 {
+            ctx.warn(format!(
+                "Removed {} unsupported --progress/-P argument(s) from rclone extra args; \
+                 transfer progress is reported from rclone's periodic stats instead",
+                stripped_progress_args
+            ));
+        }
+
         // Choose single or batch mode based on input count
         if input.inputs.len() == 1 {
             // Single file mode - append filename to destination
@@ -666,12 +933,14 @@ impl Processor for RcloneProcessor {
 
             self.process_single(
                 input_path,
-                &full_destination,
-                config.operation,
-                config.config_path.as_deref(),
-                &throughput,
-                &config.args,
-                ctx,
+                &RcloneExecution {
+                    remote_destination: &full_destination,
+                    operation: config.operation,
+                    config_path: config.config_path.as_deref(),
+                    throughput: &throughput,
+                    extra_args: &extra_args,
+                    context: ctx,
+                },
             )
             .await
         } else {
@@ -680,12 +949,14 @@ impl Processor for RcloneProcessor {
 
             self.process_batch(
                 &input.inputs,
-                &remote_destination,
-                config.operation,
-                config.config_path.as_deref(),
-                &throughput,
-                &config.args,
-                ctx,
+                &RcloneExecution {
+                    remote_destination: &remote_destination,
+                    operation: config.operation,
+                    config_path: config.config_path.as_deref(),
+                    throughput: &throughput,
+                    extra_args: &extra_args,
+                    context: ctx,
+                },
             )
             .await
         }
@@ -694,14 +965,568 @@ impl Processor for RcloneProcessor {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::process::ExitStatus;
+    use std::sync::Mutex;
+
     use super::super::test_utils::utc_datetime;
     use super::*;
+
+    struct MockAttempt {
+        moved_inputs: Vec<PathBuf>,
+        succeeds: bool,
+    }
+
+    struct MockRcloneCommandRunner {
+        attempts: Mutex<VecDeque<MockAttempt>>,
+        manifests: Mutex<Vec<Vec<String>>>,
+        commands: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl MockRcloneCommandRunner {
+        fn new(attempts: Vec<MockAttempt>) -> Self {
+            Self {
+                attempts: Mutex::new(attempts.into()),
+                manifests: Mutex::new(Vec::new()),
+                commands: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn manifests(&self) -> Vec<Vec<String>> {
+            self.manifests.lock().unwrap().clone()
+        }
+
+        fn commands(&self) -> Vec<Vec<String>> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl RcloneCommandRunner for MockRcloneCommandRunner {
+        async fn run(
+            &self,
+            command: &mut Command,
+            _context: &ProcessorContext,
+        ) -> Result<CommandOutput> {
+            let args: Vec<String> = command
+                .as_std()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            // Single-file commands (copyto/moveto) carry no --files-from;
+            // only batch commands record a manifest.
+            if let Some(manifest_index) = args.iter().position(|arg| arg == "--files-from") {
+                let manifest_path =
+                    PathBuf::from(args.get(manifest_index + 1).ok_or_else(|| {
+                        crate::Error::Other("missing files-from path".to_string())
+                    })?);
+                let manifest = tokio::fs::read_to_string(&manifest_path)
+                    .await
+                    .map_err(|e| {
+                        crate::Error::io_path("reading test rclone manifest", &manifest_path, e)
+                    })?
+                    .lines()
+                    .map(str::to_string)
+                    .collect();
+                self.manifests.lock().unwrap().push(manifest);
+            }
+            self.commands.lock().unwrap().push(args);
+
+            let attempt = self
+                .attempts
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| crate::Error::Other("unexpected rclone attempt".to_string()))?;
+            for input in attempt.moved_inputs {
+                tokio::fs::remove_file(&input)
+                    .await
+                    .map_err(|e| crate::Error::io_path("moving test input", &input, e))?;
+            }
+
+            Ok(CommandOutput {
+                status: test_exit_status(attempt.succeeds),
+                duration: 0.0,
+                logs: if attempt.succeeds {
+                    Vec::new()
+                } else {
+                    vec![crate::pipeline::job_queue::JobLogEntry::error(
+                        "simulated partial move failure",
+                    )]
+                },
+            })
+        }
+    }
+
+    #[cfg(unix)]
+    fn test_exit_status(succeeds: bool) -> ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+
+        ExitStatus::from_raw(if succeeds { 0 } else { 1 << 8 })
+    }
+
+    #[cfg(windows)]
+    fn test_exit_status(succeeds: bool) -> ExitStatus {
+        use std::os::windows::process::ExitStatusExt;
+
+        ExitStatus::from_raw(if succeeds { 0 } else { 1 })
+    }
 
     fn expected_local_destination(dt: chrono::DateTime<chrono::Utc>) -> String {
         format!(
             "remote:/{}/StreamerName",
             pipeline_common::expand_path_template_at("%Y/%m/%d", Some(dt.timestamp_millis()))
         )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn batch_move_retries_only_inputs_that_still_exist() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first = temp_dir.path().join("first.mp4");
+        let second = temp_dir.path().join("second.jpg");
+        tokio::fs::write(&first, b"video").await.unwrap();
+        tokio::fs::write(&second, b"thumbnail").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![
+            MockAttempt {
+                moved_inputs: vec![first.clone()],
+                succeeds: false,
+            },
+            MockAttempt {
+                moved_inputs: vec![second.clone()],
+                succeeds: false,
+            },
+        ]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let inputs = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let input = ProcessorInput {
+            inputs: inputs.clone(),
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"move"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("batch-move"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.succeeded_inputs, inputs);
+        assert!(output.failed_inputs.is_empty());
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert_eq!(
+            runner.manifests(),
+            vec![
+                vec!["first.mp4".to_string(), "second.jpg".to_string()],
+                vec!["second.jpg".to_string()],
+            ]
+        );
+        assert!(runner.commands().iter().all(|args| {
+            args.iter().any(|arg| arg == "move") && !args.iter().any(|arg| arg == "copy")
+        }));
+        assert!(std::fs::read_dir(temp_dir.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".rclone_files_")
+        }));
+    }
+
+    #[tokio::test]
+    async fn batch_move_skips_inputs_moved_by_a_previous_job_attempt() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let already_moved = temp_dir.path().join("already-moved.mp4");
+        let pending = temp_dir.path().join("pending.jpg");
+        tokio::fs::write(&pending, b"thumbnail").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![pending.clone()],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let inputs = vec![
+            already_moved.to_string_lossy().into_owned(),
+            pending.to_string_lossy().into_owned(),
+        ];
+        let input = ProcessorInput {
+            inputs: inputs.clone(),
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"move"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("resumed-batch-move"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.succeeded_inputs, inputs);
+        assert_eq!(runner.manifests(), vec![vec!["pending.jpg".to_string()]]);
+        assert!(!pending.exists());
+    }
+
+    #[tokio::test]
+    async fn single_move_skips_input_moved_by_a_previous_job_attempt() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let already_moved = temp_dir.path().join("already-moved.mp4");
+        let runner = Arc::new(MockRcloneCommandRunner::new(Vec::new()));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input_path = already_moved.to_string_lossy().into_owned();
+        let input = ProcessorInput {
+            inputs: vec![input_path.clone()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"move"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("resumed-single-move"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.succeeded_inputs, vec![input_path]);
+        assert!(output.outputs.is_empty());
+        assert!(runner.commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn single_move_succeeds_when_rclone_fails_after_consuming_the_source() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source = temp_dir.path().join("input.mp4");
+        tokio::fs::write(&source, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![source.clone()],
+            succeeds: false,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input_path = source.to_string_lossy().into_owned();
+        let input = ProcessorInput {
+            inputs: vec![input_path.clone()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"move"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("single-move-consumed"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.succeeded_inputs, vec![input_path]);
+        assert!(output.outputs.is_empty());
+        assert!(!source.exists());
+        assert_eq!(runner.commands().len(), 1);
+        assert!(runner.commands()[0].iter().any(|arg| arg == "moveto"));
+    }
+
+    /// `plain.txt/child.mp4` makes `try_exists` fail with `NotADirectory`
+    /// instead of reporting absence; `partition_move_inputs` must keep such
+    /// inputs pending rather than count them as already moved.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn partition_move_inputs_keeps_unverifiable_paths_pending() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let not_a_dir = temp_dir.path().join("plain.txt");
+        std::fs::write(&not_a_dir, b"file").unwrap();
+        let unverifiable = not_a_dir.join("child.mp4").to_string_lossy().into_owned();
+
+        let (pending, moved) =
+            RcloneProcessor::partition_move_inputs(std::slice::from_ref(&unverifiable)).await;
+
+        assert_eq!(pending, vec![unverifiable]);
+        assert!(moved.is_empty());
+    }
+
+    #[tokio::test]
+    async fn files_from_list_is_removed_when_guard_is_dropped() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = temp_dir.path().join("input.mp4");
+        tokio::fs::write(&input, b"video").await.unwrap();
+
+        let manifest = RcloneProcessor::create_files_from_list(
+            &[input.to_string_lossy().into_owned()],
+            temp_dir.path(),
+        )
+        .await
+        .unwrap();
+        let manifest_path = manifest.to_path_buf();
+
+        assert_eq!(
+            tokio::fs::read_to_string(&manifest_path).await.unwrap(),
+            "input.mp4\n"
+        );
+        assert!(manifest_path.exists());
+        drop(manifest);
+        assert!(!manifest_path.exists());
+    }
+
+    #[tokio::test]
+    async fn copy_still_rejects_missing_inputs() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = ProcessorInput {
+            inputs: vec![
+                temp_dir
+                    .path()
+                    .join("missing.mp4")
+                    .to_string_lossy()
+                    .into_owned(),
+            ],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"copy"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let error = RcloneProcessor::new()
+            .process(&input, &ProcessorContext::noop("missing-copy"))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Input file does not exist"));
+    }
+
+    /// The ordered flag block `process_single`/`process_batch` place before
+    /// the subcommand; `run_rclone_with_progress` parses stderr on the
+    /// assumption that every one of these is present.
+    const EXPECTED_STATS_FLAGS: [&str; 8] = [
+        "--use-json-log",
+        "--log-level",
+        "NOTICE",
+        "--stats-log-level",
+        "NOTICE",
+        "--stats",
+        "1s",
+        "--stats-one-line",
+    ];
+
+    fn stats_flag_window(args: &[String]) -> Vec<&str> {
+        let pos = args
+            .iter()
+            .position(|arg| arg == "--use-json-log")
+            .expect("argv contains --use-json-log");
+        args[pos..pos + EXPECTED_STATS_FLAGS.len()]
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn single_copy_passes_json_stats_flags() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"copy"}"#.to_string()),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("single-copy-flags"))
+            .await
+            .unwrap();
+
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 1);
+        let args = &commands[0];
+        assert_eq!(stats_flag_window(args), EXPECTED_STATS_FLAGS);
+        assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
+        assert!(args.iter().any(|arg| arg == "copyto"));
+    }
+
+    #[tokio::test]
+    async fn batch_copy_passes_json_stats_flags() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first = temp_dir.path().join("first.mp4");
+        let second = temp_dir.path().join("second.mp4");
+        tokio::fs::write(&first, b"a").await.unwrap();
+        tokio::fs::write(&second, b"b").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
+            ],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"copy"}"#.to_string()),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("batch-copy-flags"))
+            .await
+            .unwrap();
+
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 1);
+        let args = &commands[0];
+        assert_eq!(stats_flag_window(args), EXPECTED_STATS_FLAGS);
+        assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
+        assert!(args.iter().any(|arg| arg == "--files-from"));
+    }
+
+    #[tokio::test]
+    async fn progress_flags_are_stripped_from_extra_args() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("clip.mp4");
+        tokio::fs::write(&file, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![],
+            succeeds: true,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![file.to_string_lossy().into_owned()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(
+                r#"{"operation":"copy","args":["--progress","-P","--transfers","2"]}"#.to_string(),
+            ),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("strip-progress"))
+            .await
+            .unwrap();
+
+        let args = &runner.commands()[0];
+        assert!(!args.iter().any(|arg| arg == "--progress" || arg == "-P"));
+        // Surviving extra args still trail the built-in flag block so they
+        // keep last-wins override semantics.
+        let transfers_pos = args.iter().position(|arg| arg == "--transfers").unwrap();
+        let one_line_pos = args
+            .iter()
+            .position(|arg| arg == "--stats-one-line")
+            .unwrap();
+        assert!(transfers_pos > one_line_pos);
+        assert_eq!(args[transfers_pos + 1], "2");
+    }
+
+    /// End-to-end against a real rclone binary: runs the production flag
+    /// set on a bwlimit'd local copy and asserts progress snapshots stream
+    /// out of the JSON stats parsing while stats never leak into job logs.
+    /// Run manually: `cargo test -p rust-srec --lib live_rclone -- --ignored`.
+    #[tokio::test]
+    #[ignore = "requires an rclone binary on PATH"]
+    async fn live_rclone_copy_streams_progress_snapshots() {
+        use crate::pipeline::processors::traits::JobLogSink;
+        use std::sync::atomic::AtomicUsize;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src = temp_dir.path().join("src.bin");
+        let dest_dir = temp_dir.path().join("dest");
+        tokio::fs::create_dir(&dest_dir).await.unwrap();
+        let payload = vec![0u8; 300 * 1024];
+        tokio::fs::write(&src, &payload).await.unwrap();
+
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(64);
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(256);
+        let ctx = ProcessorContext::new(
+            "live-job",
+            crate::pipeline::ProgressReporter::new("live-job", progress_tx),
+            JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let processor = RcloneProcessor::new();
+        let dest = format!("{}/", dest_dir.to_string_lossy().replace('\\', "/"));
+        let input = ProcessorInput {
+            inputs: vec![src.to_string_lossy().into_owned()],
+            outputs: vec![dest],
+            // bwlimit throttles the copy across several 1s stats ticks.
+            config: Some(r#"{"operation":"copy","bwlimit":"100k"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.succeeded_inputs.len(), 1);
+        assert!(dest_dir.join("src.bin").exists(), "file copied");
+
+        drop(ctx);
+        let mut snapshots = Vec::new();
+        while let Ok(update) = progress_rx.try_recv() {
+            assert_eq!(update.job_id, "live-job");
+            snapshots.push(update.snapshot);
+        }
+        assert!(
+            !snapshots.is_empty(),
+            "no progress snapshots parsed from live rclone stderr"
+        );
+        let last = snapshots.last().unwrap();
+        assert_eq!(last.bytes_total, Some(payload.len() as u64));
+        assert!(last.percent.is_some(), "percent computed from stats");
+
+        // Stats lines must be consumed as progress, never surface as logs.
+        while let Ok(entry) = log_rx.try_recv() {
+            assert!(
+                !entry.message.contains("\"stats\""),
+                "raw stats JSON leaked into job logs: {}",
+                entry.message
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_extra_args_strips_only_progress_tokens() {
+        let args = vec![
+            "--progress".to_string(),
+            "-P".to_string(),
+            "--transfers".to_string(),
+            "2".to_string(),
+        ];
+        let (kept, stripped) = sanitize_extra_args(&args);
+        assert_eq!(kept, vec!["--transfers".to_string(), "2".to_string()]);
+        assert_eq!(stripped, 2);
+
+        let (kept, stripped) = sanitize_extra_args(&[]);
+        assert!(kept.is_empty());
+        assert_eq!(stripped, 0);
+    }
+
+    #[test]
+    fn test_batch_remote_path() {
+        let base = Path::new("/home/user/videos");
+        // Flat file directly under the base.
+        assert_eq!(
+            RcloneProcessor::batch_remote_path(
+                base,
+                "remote:bucket/dest",
+                "/home/user/videos/a.mp4"
+            ),
+            Some("remote:bucket/dest/a.mp4".to_string())
+        );
+        // Nested file keeps its base-relative subpath.
+        assert_eq!(
+            RcloneProcessor::batch_remote_path(
+                base,
+                "remote:bucket/dest/",
+                "/home/user/videos/2024/b.mp4"
+            ),
+            Some("remote:bucket/dest/2024/b.mp4".to_string())
+        );
+        // Input outside the base dir cannot be mapped.
+        assert_eq!(
+            RcloneProcessor::batch_remote_path(base, "remote:bucket", "/var/other/c.mp4"),
+            None
+        );
     }
 
     #[test]

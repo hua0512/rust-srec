@@ -14,17 +14,17 @@ use super::coordination::{
     SessionOutputs, SourceType,
 };
 use super::dag_scheduler::{
-    DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagScheduler,
+    DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagRunContext, DagScheduler,
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
-    AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
-    DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
-    Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor, ThumbnailProcessor,
+    AssBurnInProcessor, AudioExtractProcessor, BaiduPcsProcessor, CompressionProcessor,
+    CopyMoveProcessor, DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor,
+    MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
-use super::purge::{JobPurgeService, PurgeConfig};
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
+use super::upload_events::UploadStatusBroadcaster;
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Error;
 use crate::Result;
@@ -41,6 +41,7 @@ use crate::database::repositories::config::{ConfigRepository, SqlxConfigReposito
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+    UploadRecordRepository,
 };
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::utils::filename::sanitize_filename;
@@ -130,10 +131,6 @@ pub struct PipelineManagerConfig {
     /// Throttle controller configuration.
     #[serde(default)]
     pub throttle: ThrottleConfig,
-    /// Job purge service configuration.
-    #[serde(default)]
-    pub purge: PurgeConfig,
-
     /// Timeout in seconds for the `execute` processor.
     ///
     /// This is enforced inside the processor (in addition to worker pool timeouts).
@@ -159,7 +156,6 @@ impl Default for PipelineManagerConfig {
             },
 
             throttle: ThrottleConfig::default(),
-            purge: PurgeConfig::default(),
             execute_timeout_secs: default_execute_timeout_secs(),
         }
     }
@@ -221,8 +217,6 @@ pub struct PipelineManager<
     throttle_controller: Option<Arc<ThrottleController>>,
     /// Download limit adjuster for throttle controller integration.
     download_adjuster: Option<Arc<dyn DownloadLimitAdjuster>>,
-    /// Job purge service for automatic cleanup of old jobs.
-    purge_service: Option<Arc<JobPurgeService>>,
     /// Job preset repository for resolving named pipeline steps.
     preset_repo: Option<Arc<dyn JobPresetRepository>>,
     /// Pipeline preset repository for resolving workflow steps.
@@ -248,6 +242,22 @@ pub struct PipelineManager<
     job_repository: Option<Arc<dyn JobRepository>>,
     /// DAG scheduler for orchestrating DAG pipeline execution.
     dag_scheduler: Option<Arc<DagScheduler>>,
+}
+
+/// Dependencies that every production pipeline runtime requires.
+pub(crate) struct PipelineRuntimeDependencies<
+    CR: ConfigRepository + Send + Sync + 'static,
+    SR: StreamerRepository + Send + Sync + 'static,
+> {
+    pub(crate) job_repository: Arc<dyn JobRepository>,
+    pub(crate) session_repository: Arc<dyn SessionRepository>,
+    pub(crate) streamer_repository: Arc<SR>,
+    pub(crate) preset_repository: Arc<dyn JobPresetRepository>,
+    pub(crate) pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
+    pub(crate) config_service: Arc<ConfigService<CR, SR>>,
+    pub(crate) dag_repository: Arc<dyn DagRepository>,
+    pub(crate) upload_record_repository: Arc<dyn UploadRecordRepository>,
+    pub(crate) upload_broadcaster: UploadStatusBroadcaster,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -296,12 +306,16 @@ where
         );
     }
 
-    /// Create a new Pipeline Manager.
+    /// Create an in-memory Pipeline Manager without persistence repositories.
+    #[expect(
+        clippy::new_without_default,
+        reason = "production construction requires PipelineRuntimeDependencies"
+    )]
     pub fn new() -> Self {
         Self::with_config(PipelineManagerConfig::default())
     }
 
-    /// Create a new Pipeline Manager with custom configuration.
+    /// Create an in-memory Pipeline Manager with custom configuration.
     pub fn with_config(config: PipelineManagerConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_config(config.job_queue.clone()));
@@ -314,7 +328,7 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
+            Arc::new(BaiduPcsProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -343,7 +357,6 @@ where
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
-            purge_service: None,
             preset_repo: None,
             pipeline_preset_repo: None,
             config_service: None,
@@ -372,23 +385,13 @@ where
 
         let execute_timeout_secs = config.execute_timeout_secs;
 
-        // Create purge service if retention is enabled
-        let purge_service = if config.purge.retention_days > 0 {
-            Some(Arc::new(JobPurgeService::new(
-                config.purge.clone(),
-                job_repository.clone(),
-            )))
-        } else {
-            None
-        };
-
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
+            Arc::new(BaiduPcsProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -417,7 +420,6 @@ where
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
-            purge_service,
             preset_repo: None,
             pipeline_preset_repo: None,
             config_service: None,
@@ -430,6 +432,34 @@ where
             job_repository: Some(job_repository),
             dag_scheduler: None,
         }
+    }
+
+    /// Create the fully wired production pipeline runtime.
+    pub(crate) fn for_runtime(
+        config: PipelineManagerConfig,
+        dependencies: PipelineRuntimeDependencies<CR, SR>,
+    ) -> Self {
+        let PipelineRuntimeDependencies {
+            job_repository,
+            session_repository,
+            streamer_repository,
+            preset_repository,
+            pipeline_preset_repository,
+            config_service,
+            dag_repository,
+            upload_record_repository,
+            upload_broadcaster,
+        } = dependencies;
+
+        Self::with_repository(config, job_repository)
+            .with_session_repository(session_repository)
+            .with_streamer_repository(streamer_repository)
+            .with_preset_repository(preset_repository)
+            .with_pipeline_preset_repository(pipeline_preset_repository)
+            .with_config_service(config_service)
+            .with_dag_repository(dag_repository)
+            .with_upload_record_repository(upload_record_repository)
+            .with_upload_broadcaster(upload_broadcaster)
     }
 
     /// Set the session repository for persistence.
@@ -449,6 +479,21 @@ where
         self.job_queue
             .set_streamer_repo(streamer_repository.clone() as Arc<dyn StreamerRepository>);
         self.streamer_repo = Some(streamer_repository);
+        self
+    }
+
+    /// Set the upload record repository for persisting per-file upload results.
+    pub fn with_upload_record_repository(
+        self,
+        upload_record_repository: Arc<dyn UploadRecordRepository>,
+    ) -> Self {
+        self.job_queue.set_upload_repo(upload_record_repository);
+        self
+    }
+
+    /// Install the live upload-status broadcaster on the job queue.
+    pub fn with_upload_broadcaster(self, broadcaster: UploadStatusBroadcaster) -> Self {
+        self.job_queue.set_upload_broadcaster(broadcaster);
         self
     }
 
@@ -519,11 +564,6 @@ where
             .map(|tc| tc.is_throttled())
             .unwrap_or(false)
     }
-
-    /// Get a reference to the purge service, if enabled.
-    pub fn purge_service(&self) -> Option<&Arc<JobPurgeService>> {
-        self.purge_service.as_ref()
-    }
 }
 
 /// Comprehensive pipeline statistics.
@@ -559,12 +599,6 @@ pub struct PipelineCreationResult {
     pub total_steps: usize,
     /// List of all steps in the pipeline.
     pub steps: Vec<String>,
-}
-
-impl Default for PipelineManager {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]

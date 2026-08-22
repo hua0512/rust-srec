@@ -14,10 +14,52 @@ use super::traits::{
     EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, is_disk_full_line, is_segment_start, parse_opened_path, parse_progress,
+    OutputRecordReader, is_disk_full_line, is_segment_start, observe_segment_event_send,
+    parse_opened_path, parse_progress,
 };
 use crate::Result;
 use crate::database::models::engine::FfmpegEngineConfig;
+
+fn is_mp4_family(format: &str) -> bool {
+    matches!(
+        format
+            .trim()
+            .trim_start_matches('.')
+            .to_ascii_lowercase()
+            .as_str(),
+        "mp4" | "mov" | "m4v"
+    )
+}
+
+fn contains_option(args: &[String], name: &str) -> bool {
+    args.iter().any(|arg| {
+        arg == name
+            || arg
+                .strip_prefix(name)
+                .is_some_and(|suffix| suffix.starts_with('='))
+    })
+}
+
+fn append_faststart_option(
+    args: &mut Vec<String>,
+    output_args: &[String],
+    output_format: &str,
+    segment_mode: bool,
+) {
+    if !is_mp4_family(output_format) {
+        return;
+    }
+
+    let (option, value) = if segment_mode {
+        ("-segment_format_options", "movflags=+faststart")
+    } else {
+        ("-movflags", "+faststart")
+    };
+
+    if !contains_option(output_args, option) {
+        args.extend([option.to_string(), value.to_string()]);
+    }
+}
 
 /// FFmpeg-based download engine.
 pub struct FfmpegEngine {
@@ -106,8 +148,10 @@ impl FfmpegEngine {
             args.extend(["-fs".to_string(), config.max_segment_size_bytes.to_string()]);
         }
 
+        let segment_mode = config.max_segment_duration_secs > 0;
+
         // Segment options if splitting is enabled
-        if config.max_segment_duration_secs > 0 {
+        if segment_mode {
             args.extend([
                 "-f".to_string(),
                 "segment".to_string(),
@@ -120,13 +164,20 @@ impl FfmpegEngine {
             ]);
         }
 
+        append_faststart_option(
+            &mut args,
+            &self.config.output_args,
+            &config.output_format,
+            segment_mode,
+        );
+
         // Output path
         let output_path = config.output_dir.join(format!(
             "{}.{}",
             config.filename_template, config.output_format
         ));
 
-        if config.max_segment_duration_secs > 0 {
+        if segment_mode {
             // Use segment pattern with strftime enabled by -strftime 1 flag
             // In strftime mode, %d is the segment counter (not day-of-month)
             // TODO : ENSURE USER PATH IS VALID
@@ -189,9 +240,9 @@ impl DownloadEngine for FfmpegEngine {
 
         // Spawn ffmpeg process
         let mut command = process_utils::tokio_command(&self.config.binary_path);
+        crate::utils::configure_ffmpeg_locale(&mut command);
         command
             .args(&args)
-            .env("LC_ALL", "C") // Force consistent output
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -233,9 +284,15 @@ impl DownloadEngine for FfmpegEngine {
                 _ = cancellation_token.cancelled() => {
                     debug!("FFmpeg stop requested, sending 'q' for graceful exit");
                     if let Some(mut stdin) = stdin.take() {
-                        let _ = stdin.write_all(b"q").await;
-                        let _ = stdin.flush().await;
-                        let _ = stdin.shutdown().await;
+                        if let Err(e) = stdin.write_all(b"q").await {
+                            warn!(error = %e, "Failed to send graceful stop to ffmpeg");
+                        }
+                        if let Err(e) = stdin.flush().await {
+                            warn!(error = %e, "Failed to flush ffmpeg stop command");
+                        }
+                        if let Err(e) = stdin.shutdown().await {
+                            warn!(error = %e, "Failed to close ffmpeg stdin");
+                        }
                     }
 
                     match tokio::time::timeout(graceful_stop_timeout, child.wait()).await {
@@ -246,7 +303,9 @@ impl DownloadEngine for FfmpegEngine {
                         }
                         Err(_) => {
                             warn!("FFmpeg did not exit in time; killing process");
-                            let _ = child.kill().await;
+                            if let Err(e) = child.kill().await {
+                                warn!(error = %e, "Failed to kill ffmpeg process");
+                            }
                             match child.wait().await {
                                 Ok(exit_status) => exit_status.code(),
                                 Err(e) => {
@@ -259,7 +318,9 @@ impl DownloadEngine for FfmpegEngine {
                 }
             };
 
-            let _ = exit_tx.send(exit_code);
+            if exit_tx.send(exit_code).is_err() {
+                debug!("Download exit receiver dropped before ffmpeg completed");
+            }
         });
 
         let event_tx = handle.event_tx.clone();
@@ -291,13 +352,16 @@ impl DownloadEngine for FfmpegEngine {
                 next_segment_index = 1;
                 let started_at = Utc::now();
                 active_segment = Some((index, path.clone(), 0.0, started_at));
-                let _ = event_tx
-                    .send(SegmentEvent::SegmentStarted {
-                        path,
-                        sequence: index,
-                        started_at,
-                    })
-                    .await;
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::SegmentStarted {
+                            path,
+                            sequence: index,
+                            started_at,
+                        })
+                        .await,
+                    &streamer_id,
+                );
             }
 
             loop {
@@ -325,18 +389,21 @@ impl DownloadEngine for FfmpegEngine {
                                             total_bytes = bytes_completed;
                                             total_duration = media_duration_offset_secs;
                                             cached_active_segment_bytes = 0;
-                                            let _ = event_tx
-                                                .send(SegmentEvent::SegmentCompleted(SegmentInfo {
-                                                    path,
-                                                    duration_secs,
-                                                    size_bytes,
-                                                    index,
-                                                    started_at: Some(started_at),
-                                                    completed_at: Utc::now(),
-                                                    split_reason_code: None,
-                                                    split_reason_details_json: None,
-                                                }))
-                                                .await;
+                                            observe_segment_event_send(
+                                                event_tx
+                                                    .send(SegmentEvent::SegmentCompleted(SegmentInfo {
+                                                        path,
+                                                        duration_secs,
+                                                        size_bytes,
+                                                        index,
+                                                        started_at: Some(started_at),
+                                                        completed_at: Utc::now(),
+                                                        split_reason_code: None,
+                                                        split_reason_details_json: None,
+                                                    }))
+                                                    .await,
+                                                &streamer_id,
+                                            );
                                         }
 
                                         let index = next_segment_index;
@@ -349,13 +416,16 @@ impl DownloadEngine for FfmpegEngine {
                                             started_at,
                                         ));
 
-                                        let _ = event_tx
-                                            .send(SegmentEvent::SegmentStarted {
-                                                path,
-                                                sequence: index,
-                                                started_at,
-                                            })
-                                            .await;
+                                        observe_segment_event_send(
+                                            event_tx
+                                                .send(SegmentEvent::SegmentStarted {
+                                                    path,
+                                                    sequence: index,
+                                                    started_at,
+                                                })
+                                                .await,
+                                            &streamer_id,
+                                        );
                                         debug!(
                                             "FFmpeg segment {} started for {}",
                                             index, streamer_id
@@ -438,7 +508,10 @@ impl DownloadEngine for FfmpegEngine {
                                     last_progress_snapshot =
                                         Some((bytes_total, elapsed_secs, media_duration_total_secs));
 
-                                    let _ = event_tx.send(SegmentEvent::Progress(progress)).await;
+                                    observe_segment_event_send(
+                                        event_tx.send(SegmentEvent::Progress(progress)).await,
+                                        &streamer_id,
+                                    );
                                 }
 
                                 // Log stderr output at debug level for troubleshooting
@@ -457,9 +530,10 @@ impl DownloadEngine for FfmpegEngine {
                                 // often a "-28" errno reference) when ENOSPC hits
                                 // the muxer. Catching it here lets the manager
                                 // trip the output-root write gate BEFORE ffmpeg
-                                // exits, which is crucial for #508 where today's
-                                // date dir already exists so prepare_output_dir
-                                // never sees the failure.
+                                // exits; once the dated output dir exists,
+                                // prepare_output_dir has nothing left to create
+                                // and never sees ENOSPC, so this stderr scan is
+                                // the only mid-stream signal.
                                 if !disk_full_reported && is_disk_full_line(&line) {
                                     disk_full_reported = true;
                                     warn!(
@@ -467,12 +541,15 @@ impl DownloadEngine for FfmpegEngine {
                                         output_dir = %output_dir.display(),
                                         "FFmpeg signalled disk full; emitting DiskFull event for gate"
                                     );
-                                    let _ = event_tx
-                                        .send(SegmentEvent::DiskFull {
-                                            output_dir: output_dir.clone(),
-                                            detail: format!("ffmpeg: {}", line),
-                                        })
-                                        .await;
+                                    observe_segment_event_send(
+                                        event_tx
+                                            .send(SegmentEvent::DiskFull {
+                                                output_dir: output_dir.clone(),
+                                                detail: format!("ffmpeg: {}", line),
+                                            })
+                                            .await,
+                                        &streamer_id,
+                                    );
                                 }
                             }
                             Ok(None) => {
@@ -505,18 +582,21 @@ impl DownloadEngine for FfmpegEngine {
                 } else {
                     total_duration = media_duration_total_secs;
                 }
-                let _ = event_tx
-                    .send(SegmentEvent::SegmentCompleted(SegmentInfo {
-                        path,
-                        duration_secs,
-                        size_bytes,
-                        index,
-                        started_at: Some(started_at),
-                        completed_at: Utc::now(),
-                        split_reason_code: None,
-                        split_reason_details_json: None,
-                    }))
-                    .await;
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::SegmentCompleted(SegmentInfo {
+                            path,
+                            duration_secs,
+                            size_bytes,
+                            index,
+                            started_at: Some(started_at),
+                            completed_at: Utc::now(),
+                            split_reason_code: None,
+                            split_reason_details_json: None,
+                        }))
+                        .await,
+                    &streamer_id,
+                );
             }
 
             // Wait for exit status from process wait task (also completes on cancellation)
@@ -529,14 +609,18 @@ impl DownloadEngine for FfmpegEngine {
                     // ffmpeg was killed cleanly. SessionLifecycle treats
                     // SubprocessExitZero as non-authoritative, so the
                     // session enters hysteresis to absorb a possible reconnect.
-                    let _ = event_tx
-                        .send(SegmentEvent::DownloadCompleted {
-                            total_bytes,
-                            total_duration_secs: total_duration,
-                            total_segments: segments_completed,
-                            engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        event_tx
+                            .send(SegmentEvent::DownloadCompleted {
+                                total_bytes,
+                                total_duration_secs: total_duration,
+                                total_segments: segments_completed,
+                                engine_signal:
+                                    crate::downloader::EngineEndSignal::SubprocessExitZero,
+                            })
+                            .await,
+                        &streamer_id,
+                    );
                 }
                 Some(code) => {
                     // If ffmpeg exited with code 228 and we didn't already
@@ -554,29 +638,39 @@ impl DownloadEngine for FfmpegEngine {
                             output_dir = %output_dir.display(),
                             "FFmpeg exited with code 228; assuming disk-full and emitting DiskFull event"
                         );
-                        let _ = event_tx
-                            .send(SegmentEvent::DiskFull {
-                                output_dir: output_dir.clone(),
-                                detail: "ffmpeg exit 228 (I/O error, likely ENOSPC)".to_string(),
-                            })
-                            .await;
+                        observe_segment_event_send(
+                            event_tx
+                                .send(SegmentEvent::DiskFull {
+                                    output_dir: output_dir.clone(),
+                                    detail: "ffmpeg exit 228 (I/O error, likely ENOSPC)"
+                                        .to_string(),
+                                })
+                                .await,
+                            &streamer_id,
+                        );
                     }
 
                     // Non-zero exit code - failure
-                    let _ = event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind: DownloadFailureKind::ProcessExit { code: Some(code) },
-                            message: format!("FFmpeg exited with code {}", code),
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        event_tx
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                                message: format!("FFmpeg exited with code {}", code),
+                            })
+                            .await,
+                        &streamer_id,
+                    );
                 }
                 None => {
-                    let _ = event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind: DownloadFailureKind::ProcessExit { code: None },
-                            message: "FFmpeg exited without an exit code".to_string(),
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        event_tx
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: DownloadFailureKind::ProcessExit { code: None },
+                                message: "FFmpeg exited without an exit code".to_string(),
+                            })
+                            .await,
+                        &streamer_id,
+                    );
                 }
             }
         });
@@ -603,59 +697,75 @@ impl DownloadEngine for FfmpegEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::downloader::engine::utils::parse_time;
 
-    #[test]
-    fn test_parse_time() {
-        // Tests now use shared utility
-        assert_eq!(parse_time("00:00:10.50"), Some(10.5));
-        assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
-        assert_eq!(parse_time("invalid"), None);
+    fn engine_with_output_args(output_args: &[&str]) -> FfmpegEngine {
+        FfmpegEngine {
+            config: FfmpegEngineConfig {
+                output_args: output_args.iter().map(ToString::to_string).collect(),
+                ..Default::default()
+            },
+            version: None,
+        }
+    }
+
+    fn download_config(format: &str, segment_duration_secs: u64) -> DownloadConfig {
+        DownloadConfig::new(
+            "https://example.com/live",
+            "recordings",
+            "streamer-id",
+            "Streamer",
+            "session-id",
+        )
+        .with_filename_template("recording-%Y%m%d-%H%M%S")
+        .with_output_format(format)
+        .with_max_segment_duration(segment_duration_secs)
+    }
+
+    fn has_arg_pair(args: &[String], option: &str, value: &str) -> bool {
+        args.windows(2)
+            .any(|pair| pair[0] == option && pair[1] == value)
     }
 
     #[test]
-    fn test_parse_progress() {
-        // Tests now use shared utility
-        let line = "frame=  100 fps=25 q=-1.0 size=    1024kB time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
-        let progress = parse_progress(line);
+    fn mp4_output_uses_faststart() {
+        let args = engine_with_output_args(&[]).build_args(&download_config("mp4", 0));
 
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 1024 * 1024);
-        assert_eq!(p.duration_secs, 4.0);
-        // Verify media_duration_secs is populated from time= field
-        assert_eq!(p.media_duration_secs, 4.0);
-        // Verify playback_ratio is populated from speed= field
-        assert_eq!(p.playback_ratio, 1.0);
+        assert!(has_arg_pair(&args, "-movflags", "+faststart"));
+        assert!(!contains_option(&args, "-segment_format_options"));
     }
 
     #[test]
-    fn test_parse_progress_with_different_speed() {
-        // Test with speed=2.00x (downloading faster than real-time)
-        let line = "frame=  200 fps=50 q=-1.0 size=    2048kB time=00:01:30.50 bitrate=1024.0kbits/s speed=2.00x";
-        let progress = parse_progress(line);
+    fn segmented_mp4_output_passes_faststart_to_the_segment_muxer() {
+        let args = engine_with_output_args(&[]).build_args(&download_config("MP4", 60));
 
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 2048 * 1024);
-        // 1 minute 30.5 seconds = 90.5 seconds
-        assert_eq!(p.media_duration_secs, 90.5);
-        assert_eq!(p.duration_secs, 90.5);
-        assert_eq!(p.playback_ratio, 2.0);
+        assert!(has_arg_pair(
+            &args,
+            "-segment_format_options",
+            "movflags=+faststart"
+        ));
+        assert!(!contains_option(&args, "-movflags"));
     }
 
     #[test]
-    fn test_parse_progress_without_speed() {
-        // Some FFmpeg outputs may not include speed=
-        let line = "frame=  100 fps=25 q=-1.0 size=    512kB time=00:00:10.00 bitrate=419.4kbits/s";
-        let progress = parse_progress(line);
+    fn non_mp4_output_does_not_use_faststart() {
+        let args = engine_with_output_args(&[]).build_args(&download_config("mkv", 0));
 
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 512 * 1024);
-        assert_eq!(p.media_duration_secs, 10.0);
-        // playback_ratio should be 0.0 when speed= is not present
-        assert_eq!(p.playback_ratio, 0.0);
+        assert!(!contains_option(&args, "-movflags"));
+        assert!(!contains_option(&args, "-segment_format_options"));
+    }
+
+    #[test]
+    fn custom_faststart_option_is_not_overridden() {
+        let args = engine_with_output_args(&["-movflags=+frag_keyframe"])
+            .build_args(&download_config("mp4", 0));
+
+        assert_eq!(
+            args.iter()
+                .filter(|arg| arg.starts_with("-movflags"))
+                .count(),
+            1
+        );
+        assert!(!args.iter().any(|arg| arg == "+faststart"));
     }
 
     #[test]

@@ -16,12 +16,25 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{get, post},
 };
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct JobPresetRouteState {
+    pipeline_manager: std::sync::Arc<crate::pipeline::PipelineManager>,
+}
+
+impl FromRef<AppState> for JobPresetRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            pipeline_manager: state.pipeline_manager.clone(),
+        }
+    }
+}
 
 /// Create the job router.
 ///
@@ -143,14 +156,11 @@ pub struct PresetListResponse {
     security(("bearer_auth" = []))
 )]
 pub async fn list_presets(
-    State(state): State<AppState>,
+    State(state): State<JobPresetRouteState>,
     Query(filters): Query<PresetFilterParams>,
     Query(pagination): Query<PresetPaginationParams>,
 ) -> ApiResult<Json<PresetListResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let db_filters = crate::database::repositories::JobPresetFilters {
         category: filters.category,
@@ -193,13 +203,10 @@ pub async fn list_presets(
     security(("bearer_auth" = []))
 )]
 pub async fn get_preset(
-    State(state): State<AppState>,
+    State(state): State<JobPresetRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let preset = pipeline_manager
         .get_preset(&id)
@@ -222,13 +229,10 @@ pub async fn get_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn create_preset(
-    State(state): State<AppState>,
+    State(state): State<JobPresetRouteState>,
     Json(payload): Json<CreatePresetRequest>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let preset = crate::database::models::JobPreset {
         id: payload.id,
@@ -280,14 +284,11 @@ pub async fn create_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn update_preset(
-    State(state): State<AppState>,
+    State(state): State<JobPresetRouteState>,
     Path(id): Path<String>,
     Json(payload): Json<UpdatePresetRequest>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Check if preset exists
     let existing = pipeline_manager
@@ -343,13 +344,10 @@ pub async fn update_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_preset(
-    State(state): State<AppState>,
+    State(state): State<JobPresetRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<()>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     pipeline_manager
         .delete_preset(&id)
@@ -371,14 +369,11 @@ pub async fn delete_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn clone_preset(
-    State(state): State<AppState>,
+    State(state): State<JobPresetRouteState>,
     Path(id): Path<String>,
     Json(payload): Json<ClonePresetRequest>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let cloned = pipeline_manager
         .clone_preset(&id, payload.new_name)

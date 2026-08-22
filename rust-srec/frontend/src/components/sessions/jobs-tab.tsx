@@ -11,10 +11,11 @@ import {
   getStatusConfig,
   getStatusLabel,
 } from '@/components/pipeline/status-config';
+import type { DagSummary } from '@/api/schemas';
 
 interface JobsTabProps {
   isLoading: boolean;
-  dags: any[];
+  dags: DagSummary[];
 }
 
 export function JobsTab({ isLoading, dags }: JobsTabProps) {
@@ -48,7 +49,7 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
           ) : (
             <div className="divide-y divide-border/40">
               <AnimatePresence mode="popLayout">
-                {dags.map((dag: any, index: number) => (
+                {dags.map((dag, index) => (
                   <motion.div
                     key={dag.id}
                     initial={{ opacity: 0, x: -10 }}

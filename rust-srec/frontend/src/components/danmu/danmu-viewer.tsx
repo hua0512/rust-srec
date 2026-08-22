@@ -20,6 +20,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { DanmuComment } from './danmu-parser';
+import type { ParseResponse } from './danmu-parser.worker';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 
 interface DanmuViewerProps {
   url: string;
@@ -27,22 +32,14 @@ interface DanmuViewerProps {
   onClose?: () => void;
 }
 
-interface DanmuComment {
-  time: number; // Seconds from start
-  mode: number;
-  size: number;
-  color: number;
-  timestamp: number; // Unix timestamp
-  pool: number;
-  userHash: string;
-  rowId: string;
-  username?: string;
-  content: string;
-}
-
 type FilterMode = 'all' | 'scrolling' | 'top' | 'bottom';
 
+export function formatDanmuOffset(seconds: number): string {
+  return formatDuration(seconds, { nullValue: '0s' });
+}
+
 export function DanmuViewer({ url, title }: DanmuViewerProps) {
+  const { i18n } = useLingui();
   const [comments, setComments] = useState<DanmuComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,75 +47,42 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   useEffect(() => {
-    const fetchAndParseDanmu = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Failed to fetch danmu file');
+    setLoading(true);
+    setError(null);
+    setComments([]);
 
-        const text = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, 'text/xml');
-
-        const dTags = xmlDoc.getElementsByTagName('d');
-        const parsedComments: DanmuComment[] = [];
-
-        for (let i = 0; i < dTags.length; i++) {
-          const d = dTags[i];
-          const p = d.getAttribute('p');
-          if (!p) continue;
-
-          const parts = p.split(',');
-          if (parts.length < 8) continue;
-
-          // Parse rowId and username from the last part
-          const lastPart = parts[7];
-          const spaceIndex = lastPart.indexOf(' ');
-          let rowId = lastPart;
-          let username = '';
-
-          if (spaceIndex !== -1) {
-            rowId = lastPart.substring(0, spaceIndex);
-            const userPart = lastPart.substring(spaceIndex + 1);
-            if (userPart.startsWith('user=')) {
-              username = userPart.substring(5);
-            }
-          }
-
-          parsedComments.push({
-            time: parseFloat(parts[0]),
-            mode: parseInt(parts[1]),
-            size: parseInt(parts[2]),
-            color: parseInt(parts[3]),
-            timestamp: parseInt(parts[4]),
-            pool: parseInt(parts[5]),
-            userHash: parts[6],
-            rowId,
-            username,
-            content: d.textContent || '',
-          });
-        }
-
-        parsedComments.sort((a, b) => a.time - b.time);
-        setComments(parsedComments);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
+    const worker = new Worker(
+      new URL('./danmu-parser.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    worker.addEventListener('message', (event: MessageEvent<ParseResponse>) => {
+      if (event.data.type === 'success') {
+        setComments(event.data.comments);
+      } else {
+        setError(event.data.message);
       }
-    };
+      setLoading(false);
+      worker.terminate();
+    });
+    worker.addEventListener('error', () => {
+      setError('Failed to parse danmu file');
+      setLoading(false);
+      worker.terminate();
+    });
+    worker.postMessage({ type: 'parse', url });
 
-    void fetchAndParseDanmu();
+    return () => {
+      worker.terminate();
+    };
   }, [url]);
 
   const filteredComments = useMemo(() => {
+    // Lowercase the query once; the per-comment filter reuses it for both
+    // the content and username matches.
+    const query = searchQuery.toLowerCase();
     return comments.filter((c) => {
-      const contentMatch = c.content
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase());
-      const userMatch = c.username
-        ?.toLowerCase()
-        .includes(searchQuery.toLowerCase());
+      const contentMatch = c.content.toLowerCase().includes(query);
+      const userMatch = c.username?.toLowerCase().includes(query);
       const matchesSearch = contentMatch || userMatch;
       if (!matchesSearch) return false;
 
@@ -197,7 +161,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       <div className="flex items-center p-2 px-4 border-b bg-background gap-3 shrink-0 h-12">
         <div className="relative flex-1 group flex items-center">
           <Input
-            placeholder="Search comments..."
+            placeholder={i18n._(msg`Search comments...`)}
             className="pl-9 h-8 w-full bg-muted/20 border-border/40 focus-visible:ring-1 focus-visible:ring-primary/20 transition-shadow text-xs rounded-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -225,25 +189,25 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
               onClick={() => setFilterMode('all')}
               className="text-xs"
             >
-              All Types {filterMode === 'all' && '✓'}
+              <Trans>All Types</Trans> {filterMode === 'all' && '✓'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setFilterMode('scrolling')}
               className="text-xs"
             >
-              Scrolling {filterMode === 'scrolling' && '✓'}
+              <Trans>Scrolling</Trans> {filterMode === 'scrolling' && '✓'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setFilterMode('top')}
               className="text-xs"
             >
-              Top Fixed {filterMode === 'top' && '✓'}
+              <Trans>Top Fixed</Trans> {filterMode === 'top' && '✓'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setFilterMode('bottom')}
               className="text-xs"
             >
-              Bottom Fixed {filterMode === 'bottom' && '✓'}
+              <Trans>Bottom Fixed</Trans> {filterMode === 'bottom' && '✓'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -258,7 +222,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <Loader2 className="h-10 w-10 animate-spin text-primary opacity-30" />
             <p className="text-xs font-medium text-muted-foreground tracking-widest uppercase">
-              Loading Danmu
+              <Trans>Loading Danmu</Trans>
             </p>
           </div>
         ) : error ? (
@@ -268,7 +232,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
             </div>
             <div className="space-y-1">
               <p className="font-bold text-foreground">
-                Failed to load content
+                <Trans>Failed to load content</Trans>
               </p>
               <p className="text-xs text-muted-foreground max-w-[300px] leading-relaxed">
                 {error}
@@ -296,7 +260,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                   <div className="py-24 flex flex-col items-center justify-center text-muted-foreground/30 gap-3">
                     <Filter className="h-12 w-12 stroke-[1px]" />
                     <p className="text-sm font-medium tracking-tight">
-                      No results found
+                      <Trans>No results found</Trans>
                     </p>
                   </div>
                 ) : (
@@ -309,7 +273,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                       >
                         <div className="w-16 shrink-0 font-mono text-[10px] text-muted-foreground/50 tabular-nums flex items-center gap-1.5 group-hover:text-muted-foreground transition-colors">
                           <Clock className="h-3 w-3 opacity-50" />
-                          {formatDuration(comment.time)}
+                          {formatDanmuOffset(comment.time)}
                         </div>
 
                         <div className="min-w-0 flex-1 flex items-center gap-3">
@@ -334,23 +298,25 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                           </div>
                         </div>
 
-                        <div className="shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] h-5 tabular-nums font-mono px-1.5 bg-muted transition-all"
-                          >
-                            {new Date(comment.timestamp * 1000).toLocaleString(
-                              [],
-                              {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                              },
-                            )}
-                          </Badge>
-                        </div>
+                        {comment.timestampMs !== null && (
+                          <div className="shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Badge
+                              variant="secondary"
+                              className="text-[9px] h-5 tabular-nums font-mono px-1.5 bg-muted transition-all"
+                            >
+                              {new Date(comment.timestampMs).toLocaleString(
+                                [],
+                                {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                },
+                              )}
+                            </Badge>
+                          </div>
+                        )}
                       </div>
                     );
                   })

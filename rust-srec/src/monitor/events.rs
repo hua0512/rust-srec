@@ -7,9 +7,19 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 
 use crate::domain::StreamerState;
+use crate::domain::streamer::FatalErrorType;
+use crate::streamer::{DEFAULT_OFFLINE_CHECK_COUNT, download_failure_threshold};
+
+/// Supplies the deprecated default for events serialized without a threshold.
+///
+/// Missing `backoff_threshold` support is retained for persisted legacy events
+/// and will be removed in a future version.
+fn deprecated_backoff_threshold_default() -> i32 {
+    download_failure_threshold(DEFAULT_OFFLINE_CHECK_COUNT)
+}
 
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
@@ -59,6 +69,12 @@ pub enum MonitorEvent {
         streamer_name: String,
         error_message: String,
         consecutive_errors: i32,
+        /// Consecutive-error count that applies backoff for this streamer.
+        ///
+        /// Omitting this field during deserialization is deprecated and will
+        /// be rejected in a future version.
+        #[serde(default = "deprecated_backoff_threshold_default")]
+        backoff_threshold: i32,
         timestamp: DateTime<Utc>,
     },
     /// Streamer state changed.
@@ -76,87 +92,24 @@ pub enum MonitorEvent {
         reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
-    /// Internal trigger emitted by the monitor to ask [`crate::session::
-    /// SessionLifecycle`] to start or resume a recording session.
-    ///
-    /// Distinct from [`Self::StreamerLive`], which is the outbox-destined
-    /// notification emitted *by* `SessionLifecycle` once the DB write lands.
-    /// This trigger must never be enqueued into `monitor_event_outbox` —
-    /// it is a pure in-process broadcast signal.
-    LiveDetected {
-        streamer_id: String,
-        streamer_name: String,
-        streamer_url: String,
-        current_avatar: Option<String>,
-        new_avatar: Option<String>,
-        title: String,
-        category: Option<String>,
-        streams: Vec<StreamInfo>,
-        media_headers: Option<HashMap<String, String>>,
-        media_extras: Option<HashMap<String, String>>,
-        timestamp: DateTime<Utc>,
-    },
-    /// Internal trigger emitted by the monitor to ask [`crate::session::
-    /// SessionLifecycle`] to end the active session for a streamer.
-    ///
-    /// Distinct from [`Self::StreamerOffline`], which is the outbox-destined
-    /// notification emitted *by* `SessionLifecycle` once the DB write lands.
-    /// This trigger must never be enqueued into `monitor_event_outbox`.
-    OfflineDetected {
-        streamer_id: String,
-        streamer_name: String,
-        /// Explicit session id to end, if the monitor knows which session
-        /// was active. When `None`, the lifecycle falls back to closing
-        /// the active session for `streamer_id`.
-        session_id: Option<String>,
-        /// `true` if the streamer's pre-end state was `Live` — drives
-        /// whether `StreamerOffline` is emitted onto the outbox.
-        state_was_live: bool,
-        /// `true` if the streamer had accumulated transient errors that
-        /// should be cleared on this clean observation.
-        clear_errors: bool,
-        /// Optional definitive-offline signal that originated this event.
-        /// When `Some`, the lifecycle records the session-end cause as
-        /// [`crate::session::TerminalCause::DefinitiveOffline`] (carrying
-        /// the signal) instead of the default
-        /// [`crate::session::TerminalCause::StreamerOffline`]. Used by the
-        /// danmu observer to preserve `DanmuStreamClosed` in the audit log;
-        /// other call sites pass `None`.
-        signal: Option<crate::session::state::OfflineSignal>,
-        timestamp: DateTime<Utc>,
-    },
 }
 
-/// Types of fatal errors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FatalErrorType {
-    /// Streamer not found on platform.
-    NotFound,
-    /// Streamer is banned.
-    Banned,
-    /// Content is age-restricted.
-    AgeRestricted,
-    /// Content is region-locked.
-    RegionLocked,
-    /// Content is private.
-    Private,
-    /// Platform is not supported.
-    UnsupportedPlatform,
+/// A durable monitor event awaiting acknowledgement from the required runtime consumer.
+pub(crate) struct MonitorEventDelivery {
+    pub(crate) event: MonitorEvent,
+    pub(crate) acknowledgement: oneshot::Sender<()>,
 }
 
-impl FatalErrorType {
-    /// Stable string discriminator. Used as the on-the-wire / on-disk value
-    /// (notification payloads, `streamer_check_history.fatal_kind`) so the
-    /// frontend can switch on it without parsing Debug output.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            FatalErrorType::NotFound => "NotFound",
-            FatalErrorType::Banned => "Banned",
-            FatalErrorType::AgeRestricted => "AgeRestricted",
-            FatalErrorType::RegionLocked => "RegionLocked",
-            FatalErrorType::Private => "Private",
-            FatalErrorType::UnsupportedPlatform => "UnsupportedPlatform",
-        }
+impl MonitorEventDelivery {
+    pub(crate) fn new(event: MonitorEvent) -> (Self, oneshot::Receiver<()>) {
+        let (acknowledgement, receiver) = oneshot::channel();
+        (
+            Self {
+                event,
+                acknowledgement,
+            },
+            receiver,
+        )
     }
 }
 
@@ -201,12 +154,6 @@ impl MonitorEvent {
             } => {
                 format!("{}: {} -> {}", streamer_name, old_state, new_state)
             }
-            MonitorEvent::LiveDetected { streamer_name, .. } => {
-                format!("{} live detected (lifecycle trigger)", streamer_name)
-            }
-            MonitorEvent::OfflineDetected { streamer_name, .. } => {
-                format!("{} offline detected (lifecycle trigger)", streamer_name)
-            }
         }
     }
 
@@ -217,14 +164,11 @@ impl MonitorEvent {
             MonitorEvent::StreamerOffline { .. } => true,
             MonitorEvent::FatalError { .. } => true,
             MonitorEvent::TransientError {
-                consecutive_errors, ..
-            } => {
-                // Only notify after multiple consecutive errors
-                *consecutive_errors >= 3
-            }
+                consecutive_errors,
+                backoff_threshold,
+                ..
+            } => *consecutive_errors >= *backoff_threshold,
             MonitorEvent::StateChanged { .. } => false,
-            // Internal lifecycle triggers — never user-visible.
-            MonitorEvent::LiveDetected { .. } | MonitorEvent::OfflineDetected { .. } => false,
         }
     }
 }
@@ -340,6 +284,7 @@ mod tests {
             streamer_name: "Test".to_string(),
             error_message: "Network error".to_string(),
             consecutive_errors: 2,
+            backoff_threshold: 3,
             timestamp: Utc::now(),
         };
         assert!(!transient_error.should_notify());
@@ -349,9 +294,59 @@ mod tests {
             streamer_name: "Test".to_string(),
             error_message: "Network error".to_string(),
             consecutive_errors: 3,
+            backoff_threshold: 3,
             timestamp: Utc::now(),
         };
         assert!(transient_error_many.should_notify());
+    }
+
+    #[test]
+    fn transient_error_notification_uses_event_backoff_threshold() {
+        let event = MonitorEvent::TransientError {
+            streamer_id: "123".to_string(),
+            streamer_name: "Test".to_string(),
+            error_message: "Network error".to_string(),
+            consecutive_errors: 3,
+            backoff_threshold: 5,
+            timestamp: Utc::now(),
+        };
+        assert!(!event.should_notify());
+    }
+
+    mod deprecated_compatibility {
+        #![allow(deprecated)]
+
+        use super::*;
+
+        #[test]
+        #[deprecated(
+            note = "missing backoff_threshold compatibility and this test will be removed in a future release"
+        )]
+        fn missing_backoff_threshold_remove_in_future_release() {
+            let event = MonitorEvent::TransientError {
+                streamer_id: "123".to_string(),
+                streamer_name: "Test".to_string(),
+                error_message: "Network error".to_string(),
+                consecutive_errors: 3,
+                backoff_threshold: 5,
+                timestamp: Utc::now(),
+            };
+            let mut value = serde_json::to_value(event).unwrap();
+            value["TransientError"]
+                .as_object_mut()
+                .unwrap()
+                .remove("backoff_threshold");
+
+            let restored: MonitorEvent = serde_json::from_value(value).unwrap();
+            assert!(restored.should_notify());
+            assert!(matches!(
+                restored,
+                MonitorEvent::TransientError {
+                    backoff_threshold: 3,
+                    ..
+                }
+            ));
+        }
     }
 
     #[test]
@@ -383,36 +378,5 @@ mod tests {
             timestamp: Utc::now(),
         };
         assert!(event.should_notify());
-    }
-
-    #[test]
-    fn test_live_detected_ignores_legacy_gap_fields() {
-        let payload = serde_json::json!({
-            "LiveDetected": {
-                "streamer_id": "123",
-                "streamer_name": "Test",
-                "streamer_url": "https://example.com/test",
-                "current_avatar": null,
-                "new_avatar": null,
-                "title": "Test stream",
-                "category": null,
-                "streams": [],
-                "media_headers": null,
-                "media_extras": null,
-                "started_at": null,
-                "gap_threshold_secs": 3600,
-                "timestamp": Utc::now()
-            }
-        });
-
-        let event: MonitorEvent = serde_json::from_value(payload).unwrap();
-        assert!(matches!(
-            event,
-            MonitorEvent::LiveDetected {
-                streamer_id,
-                title,
-                ..
-            } if streamer_id == "123" && title == "Test stream"
-        ));
     }
 }

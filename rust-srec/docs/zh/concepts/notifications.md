@@ -1,87 +1,84 @@
 # 通知系统
 
-rust-srec 内置了灵活且强大的通知系统，用于实时通报直播状态、系统错误和任务进度。
-
-## 系统架构
-
-通知系统基于事件驱动模式构建。当系统内发生重要变更时，相应的组件会发布一个事件，`NotificationService` 订阅这些事件并根据配置转发至不同的渠道（Channels）。
+Rust-Srec 会记录通知事件，并可把选定事件发送到外部渠道。渠道送达语言、界面语言和仅浏览器通知彼此独立配置。
 
 ```mermaid
 flowchart LR
-    E1[MonitorEvent] --> NS[NotificationService]
-    E2[DownloadEvent] --> NS
-    E3[PipelineEvent] --> NS
-    
-    NS --> C1[Discord Channel]
-    NS --> C2[Email Channel]
-    NS --> C3[Webhook Channel]
-    
-    subgraph NS_Inner["内部逻辑"]
-        NS --> Filter[优先级过滤]
-        Filter --> Retry[指数退避重试]
-        Retry --> CB[熔断保护]
-    end
+  E[直播、下载、管道、系统与凭据事件] --> L[通知事件日志]
+  E --> S[各渠道事件订阅]
+  S --> P[优先级过滤]
+  P --> R[重试与熔断]
+  R --> C[外部渠道]
+  E --> B[浏览器或桌面通知]
 ```
 
-## 通知渠道 (Channels)
+## 可用目标
 
-目前支持以下通知渠道：
+| 目标 | v0.5 Web 界面 | 要求 |
+|---|---|---|
+| Webhook | 可创建、编辑、测试 | HTTPS 端点；可选请求头或认证 |
+| Telegram | 可创建、编辑、测试 | 机器人令牌和 Chat ID |
+| Gotify | 可创建、编辑、测试 | 服务器 URL 和应用令牌 |
+| Email | 可创建、编辑、测试 | SMTP 主机、发件人与收件人；仅在中继允许时可不填凭据 |
+| Discord | 可表示已有渠道；v0.5 表单禁用新建选择 | 后端/API 支持 Discord Webhook 设置 |
+| Web Push | 按浏览器配置 | VAPID 密钥，以及 HTTPS 或 localhost |
+| 实时轮询 | 按浏览器配置 | 应用标签页必须保持打开 |
+| 桌面通知 | 仅桌面版 | 操作系统通知权限 |
 
-| 渠道 | 描述 | 典型配置 |
-|------|------|---------|
-| **Discord** | 通过 Discord Webhook 发送格式化消息。 | Webhook URL, 用户名, 头像 |
-| **Email** | 通过 SMTP 发送电子邮件通知。 | SMTP 服务器, 端口, 账号/密码 |
-| **Webhook** | 发送自定义 JSON POST 请求到指定 URL。 | 目标 URL, 自定义 Headers |
+因此 Discord 是受后端支持、但 v0.5 Web 界面新建受限的渠道，并非该版本界面中普遍可选的渠道。
 
-## 基础设施关键事件
+## 配置外部渠道
 
-以下两个事件会在录制文件系统本身出现问题时触发：
+1. 打开**通知**，选择**添加渠道**。
+2. 选择 Webhook、Telegram、Gotify 或 Email，并输入易识别的渠道名称。
+3. 设置**最低优先级**、消息语言和**启用**状态。
+4. 保存后执行测试操作；接收端收到测试消息才算验证成功。
+5. 打开订阅管理器，选择应发送到该渠道的事件类型。
 
-| 事件 | 触发时机 | 能否自动恢复？ |
-|------|---------|---------------|
-| `out_of_space` | 预警：磁盘使用率超过配置阈值，但录制仍在运行。 | 不适用（仅预警） |
-| `output_path_inaccessible` | **[输出根写入门](./architecture.md#输出根写入门)已实际阻止录制**，原因是 `create_dir_all` 或中途写入时遇到 ENOENT / ENOSPC / EACCES / EROFS / 超时等错误。每次 `Healthy → Degraded` 状态切换**只发出一次**（不是每次失败都发）。 | 真正的 ENOSPC：是，磁盘释放后约 30 秒内自动恢复。失效的 Docker 绑定挂载：**否**，必须重启容器。详见 [Docker 故障排查](../getting-started/docker.md#使用绑定挂载时如何释放磁盘空间)。 |
+渠道设置与事件订阅相互独立。仅创建目标并不代表它会自动接收全部事件。
 
-设置环境变量 `RUST_SREC_LOCALE` 后，**所有通知事件**都会按语言本地化——直播上/下线、录制生命周期、分段、流水线任务、系统告警、凭据事件——并通过所有外部渠道（Telegram、Gotify、Discord、Webhook、邮件、Web Push）按配置语言下发。目前支持：`en`、`zh-CN`。此外，`output_path_inaccessible` 的描述还会根据底层 `io::ErrorKind` 分支——`NotFound`（挂载失效）会显示与 `StorageFull`（磁盘真正写满）不同的恢复建议。
+## 优先级
 
-## 优先级与过滤
+API 与界面设置采用 0-10 数值优先级：
 
-并非所有事件都需要立即通知。系统引入了 `NotificationPriority` 对事件进行分级：
+| 级别 | 值 | 示例 |
+|---|---:|---|
+| Low | 2 | 下播、分片进度、管道开始/完成 |
+| Normal | 5 | 开播、下载完成、系统启动/关闭 |
+| High | 8 | 下载错误/拒绝、管道失败、凭据刷新失败、百度网盘重新登录失败 |
+| Critical | 10 | 致命错误、输出路径不可访问、空间不足、凭据无效 |
 
-- **Critical (严重)**: 会阻塞录制的系统级故障（`output_path_inaccessible`、`fatal_error`、`pipeline_queue_critical`）。
-- **High (高)**: 重要警告，录制可能仍能继续（`out_of_space`、`download_rejected`）。
-- **Normal (中)**: 上下线事件、管道生命周期、系统启停。
-- **Low (低)**: 细粒度状态变化、分段级进度（通常会被过滤）。
+渠道会过滤低于其最低值的事件。在注明兼容的位置，API 也接受旧字符串 `low`、`normal`、`high`、`critical`；`info` 不是有效优先级。
 
-您可以在配置中设置 `min_priority`，仅接收高于该级别的通知。
+## 语言
 
-## 可靠性保证
+每个外部渠道可跟随服务器语言，也可覆盖为 `en` 或 `zh-CN`。`RUST_SREC_LOCALE` 设置后端生成消息的默认语言，与用户在 Web 界面选择的语言无关。
 
-为了确保通知在网络波动下仍能送达，系统具备以下机制：
+## Web Push
 
-1. **重试机制**：失败的通知会进入重试队列，采用指数退避算法（Exponential Backoff）。
-2. **熔断机制 (Circuit Breaker)**：如果某个渠道持续失败（如 Webhook 链接失效），系统会自动熔断该渠道，防止无效重试消耗系统资源。
-3. **死信队列 (Dead Letter Queue)**：多次重试仍失败的通知将被存入死信队列，您可以通过 API 查看失败原因。
+生成 VAPID 密钥对，并在后端启动前设置三个变量：
 
-## 配置示例
-
-在全局配置或平台配置中启用通知：
-
-```json
-{
-  "notifications": {
-    "enabled": true,
-    "min_priority": "info",
-    "channels": [
-      {
-        "type": "discord",
-        "webhook_url": "https://discord.com/api/webhooks/..."
-      }
-    ]
-  }
-}
+```bash
+docker run --rm ghcr.io/hua0512/rust-srec-vapid:v0.5.1
 ```
 
-::: tip 提示
-您可以为主播设置不同的通知策略。例如，给特别重要的主播设置高优先级的通知，甚至使用不同的 Webhook 渠道。
-:::
+```dotenv
+WEB_PUSH_VAPID_PUBLIC_KEY=...
+WEB_PUSH_VAPID_PRIVATE_KEY=...
+WEB_PUSH_VAPID_SUBJECT=mailto:operations@example.com
+```
+
+然后在**通知**页面为当前浏览器启用 Web Push、授予浏览器权限、选择优先级并发送测试。浏览器要求安全上下文；localhost 以外必须使用 HTTPS。
+
+## 送达行为
+
+外部渠道会对临时失败进行退避重试，并对反复失败的渠道使用熔断器。重试耗尽的送达会进入死信，通知事件则按配置保留周期留在事件历史中。
+
+这些机制只能减少临时丢失，不能构成端到端送达保证。应监控接收服务，在配置变更后重新测试渠道，并为严重事件设置第二目标。
+
+## 存储严重事件
+
+- `out_of_space` 表示磁盘用量越过阈值。
+- `output_path_inaccessible` 表示[输出根写入门](./architecture.md#输出根写入门)因跟踪目录不可写而阻止了新录制任务。
+
+真实磁盘满在释放空间后可于后续探测自动恢复；失效 Docker 绑定挂载可能需要重启容器，参见[存储与容量](../operations/storage.md)。

@@ -40,8 +40,8 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/config/theme')({
 
 function ConfigTheme() {
   const { i18n } = useLingui();
-  const { mode, setMode } = useTheme();
-  const { startTransition } = useCircularTransition();
+  const { mode } = useTheme();
+  const { setModeWithReveal } = useCircularTransition();
   const { config: sidebarConfig, updateConfig: updateSidebarConfig } =
     useSidebarConfig();
   const { toggleSidebar, state: sidebarState, isMobile } = useSidebar();
@@ -127,12 +127,10 @@ function ConfigTheme() {
                     role="button"
                     onClick={(event) => {
                       if (mode === value) return;
-                      startTransition(
-                        { x: event.clientX, y: event.clientY },
-                        () => {
-                          setMode(value as 'light' | 'dark' | 'system');
-                        },
-                      );
+                      setModeWithReveal(value as 'light' | 'dark' | 'system', {
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
                     }}
                     className={cn(
                       'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50',

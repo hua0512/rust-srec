@@ -12,21 +12,40 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{get, post},
 };
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse, PaginatedResponse,
-    PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse, SessionFilterParams,
-    SessionResponse, SessionSegmentResponse, TitleChange,
+    DanmuGiftTally, DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse,
+    PaginatedResponse, PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse,
+    SessionFilterParams, SessionResponse, SessionSegmentResponse, TitleChange,
 };
 use crate::api::server::AppState;
 use crate::database::models::{
-    DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
+    DanmuRateEntry, GiftTallyEntry, MediaFileType, Pagination, SessionFilters, TitleEntry,
+    TopTalkerEntry, WordFrequencyEntry,
 };
-use crate::domain::session::SessionEvent;
+use crate::session::SessionEvent;
+
+#[derive(Clone)]
+pub struct SessionRouteState {
+    session_repository: std::sync::Arc<dyn crate::database::repositories::SessionRepository>,
+    session_event_repository:
+        std::sync::Arc<dyn crate::database::repositories::SessionEventRepository>,
+    streamer_repository: std::sync::Arc<dyn crate::database::repositories::StreamerRepository>,
+}
+
+impl FromRef<AppState> for SessionRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            session_repository: state.session_repository.clone(),
+            session_event_repository: state.session_event_repository.clone(),
+            streamer_repository: state.streamer_repository.clone(),
+        }
+    }
+}
 
 /// Create the sessions router.
 ///
@@ -60,15 +79,11 @@ pub fn router() -> Router<AppState> {
     security(("bearer_auth" = []))
 )]
 pub async fn list_session_segments(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PageResponse<SessionSegmentResponse>>> {
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?
-        .clone();
+    let session_repository = state.session_repository.clone();
 
     session_repository
         .get_session(&id)
@@ -175,20 +190,14 @@ pub async fn list_session_segments(
     security(("bearer_auth" = []))
 )]
 pub async fn list_sessions(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<SessionFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<SessionResponse>>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
-    let streamer_repository = state
-        .streamer_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_repository = &state.streamer_repository;
 
     // Convert API filter params to database filter types
     let db_filters = SessionFilters {
@@ -209,70 +218,85 @@ pub async fn list_sessions(
         .await
         .map_err(ApiError::from)?;
 
-    // Fetch all streamers for mapping details
-    let streamers = streamer_repository
-        .list_all_streamers()
-        .await
-        .map_err(ApiError::from)?;
+    let session_ids: Vec<String> = sessions.iter().map(|session| session.id.clone()).collect();
+    let streamer_ids: Vec<String> = sessions
+        .iter()
+        .map(|session| session.streamer_id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    // Counts only: this list renders a number per session, and the full
+    // statistics rows carry aggregate JSON blobs tens of kilobytes each.
+    let (streamers, outputs, danmu_totals) = tokio::try_join!(
+        streamer_repository.get_streamers_by_ids(&streamer_ids),
+        session_repository.get_media_outputs_for_sessions(&session_ids),
+        session_repository.get_danmu_counts_for_sessions(&session_ids),
+    )
+    .map_err(ApiError::from)?;
 
     let streamer_map: std::collections::HashMap<_, _> =
         streamers.into_iter().map(|s| (s.id.clone(), s)).collect();
-
-    // Convert sessions to API response format
-    let mut session_responses: Vec<SessionResponse> = Vec::with_capacity(sessions.len());
-
-    for session in &sessions {
-        // Get output count for each session
-        let output_count = session_repository
-            .get_output_count(&session.id)
-            .await
-            .unwrap_or(0);
-
-        let start_time = crate::database::time::ms_to_datetime(session.start_time);
-        let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
-
-        // Calculate duration
-        let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
-
-        // Parse titles JSON
-        let (titles, title) = parse_titles(&session.titles);
-
-        // Get streamer details
-        let (streamer_name, streamer_avatar) =
-            if let Some(s) = streamer_map.get(&session.streamer_id) {
-                (s.name.clone(), s.avatar.clone())
-            } else {
-                (String::new(), None)
-            };
-
-        let danmu_count = session_repository
-            .get_danmu_statistics(&session.id)
-            .await
-            .ok()
-            .flatten()
-            .map(|stats| stats.total_danmus as u64);
-
-        session_responses.push(SessionResponse {
-            id: session.id.clone(),
-            streamer_id: session.streamer_id.clone(),
-            streamer_name,
-            title,
-            titles,
-            // Lifecycle audit log isn't loaded on the list endpoint — N+1
-            // queries on a paginated response. Frontend lists don't render
-            // it; the detail endpoint populates it.
-            events: Vec::new(),
-            start_time,
-            end_time,
-            is_live: end_time.is_none(),
-            duration_secs,
-            output_count,
-            total_size_bytes: session.total_size_bytes as u64,
-            danmu_count,
-            thumbnail_url: get_thumbnail_url(&session.id, session_repository.as_ref()).await,
-            streamer_avatar,
-        });
+    let mut output_counts = std::collections::HashMap::new();
+    let mut thumbnail_urls = std::collections::HashMap::new();
+    for output in outputs {
+        let count = output_counts
+            .entry(output.session_id.clone())
+            .or_insert(0_u32);
+        *count = count.saturating_add(1);
+        if output.file_type == MediaFileType::Thumbnail.as_str() {
+            thumbnail_urls
+                .entry(output.session_id)
+                .or_insert_with(|| format!("/api/media/{}/content", output.id));
+        }
     }
+    let danmu_counts: std::collections::HashMap<_, _> = danmu_totals
+        .into_iter()
+        .map(|(session_id, total)| (session_id, u64::try_from(total).unwrap_or(0)))
+        .collect();
+
+    let session_responses = sessions
+        .iter()
+        .map(|session| {
+            let start_time = crate::database::time::ms_to_datetime(session.start_time);
+            let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
+
+            let duration_secs =
+                end_time.map(|end| u64::try_from((end - start_time).num_seconds()).unwrap_or(0));
+
+            // Parse titles JSON
+            let (titles, title) = parse_titles(&session.titles);
+
+            // Get streamer details
+            let (streamer_name, streamer_avatar) =
+                if let Some(s) = streamer_map.get(&session.streamer_id) {
+                    (s.name.clone(), s.avatar.clone())
+                } else {
+                    (String::new(), None)
+                };
+
+            SessionResponse {
+                id: session.id.clone(),
+                streamer_id: session.streamer_id.clone(),
+                streamer_name,
+                title,
+                titles,
+                // Lifecycle audit log isn't loaded on the list endpoint — N+1
+                // queries on a paginated response. Frontend lists don't render
+                // it; the detail endpoint populates it.
+                events: Vec::new(),
+                start_time,
+                end_time,
+                is_live: end_time.is_none(),
+                duration_secs,
+                output_count: output_counts.get(&session.id).copied().unwrap_or(0),
+                total_size_bytes: u64::try_from(session.total_size_bytes).unwrap_or(0),
+                danmu_count: danmu_counts.get(&session.id).copied(),
+                thumbnail_url: thumbnail_urls.get(&session.id).cloned(),
+                streamer_avatar,
+            }
+        })
+        .collect();
 
     let response =
         PaginatedResponse::new(session_responses, total, effective_limit, pagination.offset);
@@ -328,19 +352,13 @@ pub async fn list_sessions(
     security(("bearer_auth" = []))
 )]
 pub async fn get_session(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<SessionResponse>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
-    let streamer_repository = state
-        .streamer_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_repository = &state.streamer_repository;
 
     // Get session by ID
     let session = session_repository
@@ -349,53 +367,69 @@ pub async fn get_session(
         .map_err(ApiError::from)?;
 
     // Get output count
-    let output_count = session_repository.get_output_count(&id).await.unwrap_or(0);
+    let output_count = match session_repository.get_output_count(&id).await {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(session_id = %id, %error, "Failed to load session output count");
+            0
+        }
+    };
 
     let start_time = crate::database::time::ms_to_datetime(session.start_time);
     let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
 
     // Calculate duration
-    let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
+    let duration_secs =
+        end_time.map(|end| u64::try_from((end - start_time).num_seconds()).unwrap_or(0));
 
     // Parse titles JSON
     let (titles, title) = parse_titles(&session.titles);
 
     // Get streamer details
-    let streamer = streamer_repository
-        .get_streamer(&session.streamer_id)
-        .await
-        .ok();
+    let streamer = match streamer_repository.get_streamer(&session.streamer_id).await {
+        Ok(streamer) => Some(streamer),
+        Err(error) => {
+            tracing::warn!(
+                streamer_id = %session.streamer_id,
+                %error,
+                "Failed to load streamer for session response"
+            );
+            None
+        }
+    };
     let (streamer_name, streamer_avatar) = if let Some(s) = streamer {
         (s.name, s.avatar)
     } else {
         (String::new(), None)
     };
 
-    // Fetch danmu stats by session id (danmu_statistics.session_id).
-    let danmu_count = session_repository
-        .get_danmu_statistics(&session.id)
+    // Count only; the full statistics are served by the dedicated
+    // danmu-statistics endpoint rather than inflating every session response.
+    let danmu_count = match session_repository
+        .get_danmu_counts_for_sessions(std::slice::from_ref(&session.id))
         .await
-        .ok()
-        .flatten()
-        .map(|stats| stats.total_danmus as u64);
+    {
+        Ok(counts) => counts
+            .first()
+            .map(|(_, total)| u64::try_from(*total).unwrap_or(0)),
+        Err(error) => {
+            tracing::warn!(session_id = %id, %error, "Failed to load session danmu count");
+            None
+        }
+    };
 
     // Get thumbnail URL
     let thumbnail_url = get_thumbnail_url(&session.id, session_repository.as_ref()).await;
 
-    // Load the lifecycle audit log for the Timeline tab. Repository is
-    // optional in `AppState` (test harnesses may omit it) and a query
-    // failure here must not break the rest of the response — fall back to
-    // an empty list and log.
-    let events = match state.session_event_repository.as_ref() {
-        Some(repo) => match repo.list_for_session(&id).await {
-            Ok(rows) => map_session_events(rows),
-            Err(e) => {
-                tracing::warn!(session_id = %id, error = %e,
-                    "Failed to load session events; returning empty timeline");
-                Vec::new()
-            }
-        },
-        None => Vec::new(),
+    // A timeline query is an enhancement to the session response, so a
+    // storage failure still degrades to an empty timeline.
+    let events = match state.session_event_repository.list_for_session(&id).await {
+        Ok(rows) => map_session_events(rows),
+        Err(e) => {
+            tracing::warn!(session_id = %id, error = %e,
+                "Failed to load session events; returning empty timeline");
+            Vec::new()
+        }
     };
 
     let response = SessionResponse {
@@ -410,7 +444,7 @@ pub async fn get_session(
         is_live: end_time.is_none(),
         duration_secs,
         output_count,
-        total_size_bytes: session.total_size_bytes as u64,
+        total_size_bytes: u64::try_from(session.total_size_bytes).unwrap_or(0),
         danmu_count,
         thumbnail_url,
         streamer_avatar,
@@ -447,13 +481,10 @@ fn map_session_events(events: Vec<SessionEvent>) -> Vec<SessionEventResponse> {
     security(("bearer_auth" = []))
 )]
 pub async fn get_session_danmu_statistics(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<SessionDanmuStatisticsResponse>> {
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
     // Ensure session exists so missing stats can cleanly map to 404.
     let session = session_repository
@@ -483,35 +514,73 @@ pub async fn get_session_danmu_statistics(
         })
         .collect();
 
-    let top_talkers = stats
-        .top_talkers
+    let parse_talkers = |json: Option<&str>, field: &'static str| {
+        json.map(serde_json::from_str::<Vec<TopTalkerEntry>>)
+            .transpose()
+            .map_err(|e| ApiError::internal(format!("Failed to parse {field}: {e}")))
+            .map(|entries| {
+                entries
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|entry| DanmuTopTalker {
+                        user_id: entry.user_id,
+                        username: entry.username,
+                        message_count: entry.message_count,
+                        error: entry.error,
+                    })
+                    .collect::<Vec<_>>()
+            })
+    };
+    let top_talkers = parse_talkers(stats.top_talkers.as_deref(), "top talkers")?;
+    let top_gifters = parse_talkers(stats.top_gifters.as_deref(), "top gifters")?;
+
+    let top_gifts = stats
+        .top_gifts
         .as_deref()
-        .map(serde_json::from_str::<Vec<TopTalkerEntry>>)
+        .map(serde_json::from_str::<Vec<GiftTallyEntry>>)
         .transpose()
-        .map_err(|e| ApiError::internal(format!("Failed to parse top talkers: {e}")))?
+        .map_err(|e| ApiError::internal(format!("Failed to parse top gifts: {e}")))?
         .unwrap_or_default()
         .into_iter()
-        .map(|entry| DanmuTopTalker {
-            user_id: entry.user_id,
-            username: entry.username,
-            message_count: entry.message_count,
+        .map(|entry| DanmuGiftTally {
+            name: entry.name,
+            count: entry.count,
         })
         .collect();
 
-    let mut word_frequency = stats
+    // Parsed as the stored entry type rather than the response type: rows written
+    // before `error` existed omit the field, and only the stored type defaults it.
+    let mut word_frequency: Vec<DanmuWordFrequency> = stats
         .word_frequency
         .as_deref()
-        .map(serde_json::from_str::<Vec<DanmuWordFrequency>>)
+        .map(serde_json::from_str::<Vec<WordFrequencyEntry>>)
         .transpose()
         .map_err(|e| ApiError::internal(format!("Failed to parse word frequency: {e}")))?
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| DanmuWordFrequency {
+            word: entry.word,
+            count: entry.count,
+            error: entry.error,
+        })
+        .collect();
     word_frequency.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.word.cmp(&b.word)));
 
+    let to_u64 = |value: i64| u64::try_from(value).unwrap_or(0);
     let response = SessionDanmuStatisticsResponse {
         session_id: session.id,
-        total_danmus: stats.total_danmus as u64,
+        total_danmus: to_u64(stats.total_danmus),
+        unique_talkers: stats.unique_talkers.map(to_u64),
+        chat_count: stats.chat_count.map(to_u64),
+        gift_count: stats.gift_count.map(to_u64),
+        duration_secs: stats.duration_secs.map(to_u64),
+        start_time: stats.start_time.map(crate::database::time::ms_to_datetime),
+        end_time: stats.end_time.map(crate::database::time::ms_to_datetime),
+        rate_bucket_secs: stats.rate_bucket_secs.map(to_u64),
         danmu_rate_timeseries,
         top_talkers,
+        top_gifters,
+        top_gifts,
         word_frequency,
     };
 
@@ -586,17 +655,14 @@ fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
     security(("bearer_auth" = []))
 )]
 pub async fn delete_session(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<()> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
     // Check if session exists
-    let _ = session_repository
+    session_repository
         .get_session(&id)
         .await
         .map_err(ApiError::from)?;
@@ -665,14 +731,11 @@ pub struct BatchDeleteResponse {
     security(("bearer_auth" = []))
 )]
 pub async fn delete_sessions_batch(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Json(request): Json<BatchDeleteRequest>,
 ) -> ApiResult<Json<BatchDeleteResponse>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
     // Delete sessions in batch
     let deleted = session_repository
@@ -688,15 +751,6 @@ mod tests {
     use super::*;
     use crate::api::models::SessionSegmentResponse;
     use chrono::{TimeZone, Utc};
-
-    #[test]
-    fn test_session_filter_params_default() {
-        let params = SessionFilterParams::default();
-        assert!(params.streamer_id.is_none());
-        assert!(params.from_date.is_none());
-        assert!(params.to_date.is_none());
-        assert!(params.active_only.is_none());
-    }
 
     #[test]
     fn test_parse_titles_empty() {

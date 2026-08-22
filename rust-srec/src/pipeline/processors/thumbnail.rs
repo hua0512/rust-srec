@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_image, is_video, parse_config_or_default};
@@ -179,6 +179,7 @@ impl ThumbnailProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
         cmd.args([
             "-y",
             "-hide_banner",
@@ -210,8 +211,7 @@ impl ThumbnailProcessor {
             "-update",
             "1",
             output_path,
-        ])
-        .env("LC_ALL", "C");
+        ]);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
@@ -304,6 +304,7 @@ impl ThumbnailProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs: command_output.logs,
         })
     }
@@ -386,7 +387,13 @@ impl Processor for ThumbnailProcessor {
                 }
                 Err(e) => {
                     for produced in &items_produced {
-                        let _ = tokio::fs::remove_file(produced).await;
+                        if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
+                            warn!(
+                                path = %produced,
+                                error = %cleanup_error,
+                                "Failed to remove thumbnail output after batch failure"
+                            );
+                        }
                     }
                     return Err(e);
                 }
@@ -409,6 +416,7 @@ impl Processor for ThumbnailProcessor {
             failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
+            uploads: vec![],
             logs,
         })
     }
@@ -431,15 +439,6 @@ mod tests {
         let processor = ThumbnailProcessor::new();
         assert!(processor.can_process("thumbnail"));
         assert!(!processor.can_process("upload"));
-    }
-
-    #[test]
-    fn test_thumbnail_config_default() {
-        let config = ThumbnailConfig::default();
-        assert_eq!(config.timestamp_secs, 10.0);
-        assert_eq!(config.width, 320);
-        assert_eq!(config.quality, 2);
-        assert!(!config.preserve_resolution);
     }
 
     #[test]

@@ -15,16 +15,18 @@ use crate::api::models::{
     UpdateGlobalConfigRequest, UpdatePriorityRequest, UpdateStreamerRequest, UpdateTemplateRequest,
 };
 use crate::api::routes::auth::{
-    ChangePasswordRequest, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
+    ApiKeyResponse, ChangePasswordRequest, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest,
+    LoginResponse, LogoutRequest, RefreshRequest,
+};
+use crate::api::routes::baidupcs::{
+    BaiduPcsLoginRequest, BaiduPcsLoginResponse, BaiduPcsLogoutResponse, BaiduPcsStatusResponse,
+    BaiduPcsToolRequest,
 };
 use crate::api::routes::credentials::{
     CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse,
     QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
 };
 use crate::api::routes::engines::{CreateEngineRequest, EngineTestResponse, UpdateEngineRequest};
-use crate::api::routes::export_import::{
-    ConfigExport, ImportMode, ImportRequest, ImportResult, ImportStats,
-};
 use crate::api::routes::job::{
     ClonePresetRequest, CreatePresetRequest, PresetListResponse, UpdatePresetRequest,
 };
@@ -41,6 +43,7 @@ use crate::api::routes::pipeline::{
     PipelinePresetListResponse, PipelinePresetResponse, PresetPreviewResponse,
     UpdatePipelinePresetRequest, ValidateDagRequest, ValidateDagResponse,
 };
+use crate::config::backup::{ConfigExport, ImportMode, ImportRequest, ImportResult, ImportStats};
 
 /// Liveness check response.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
@@ -90,13 +93,15 @@ pub struct MessageResponse {
         (name = "job", description = "Job preset management endpoints"),
         (name = "export_import", description = "Configuration backup and restore endpoints")
         ,
-        (name = "credentials", description = "Credential refresh and provenance endpoints")
+        (name = "credentials", description = "Credential refresh and provenance endpoints"),
+        (name = "tools", description = "External tool integration endpoints (BaiduPCS-Go)")
     ),
     paths(
         // Health endpoints
         crate::api::routes::health::health_check,
         crate::api::routes::health::readiness_check,
         crate::api::routes::health::liveness_check,
+        crate::api::routes::health::idle_check,
         // Auth endpoints
         crate::api::routes::auth::login,
         crate::api::routes::auth::refresh,
@@ -104,9 +109,13 @@ pub struct MessageResponse {
         crate::api::routes::auth::logout_all,
         crate::api::routes::auth::change_password,
         crate::api::routes::auth::list_sessions,
+        crate::api::routes::auth::list_api_keys,
+        crate::api::routes::auth::create_api_key,
+        crate::api::routes::auth::revoke_api_key,
         // Streamer endpoints
         crate::api::routes::streamers::create_streamer,
         crate::api::routes::streamers::list_streamers,
+        crate::api::routes::streamers::batch_streamers,
         crate::api::routes::streamers::get_streamer,
         crate::api::routes::streamers::update_streamer,
         crate::api::routes::streamers::delete_streamer,
@@ -133,35 +142,36 @@ pub struct MessageResponse {
         crate::api::routes::templates::update_template,
         crate::api::routes::templates::delete_template,
         // Pipeline endpoints
-        crate::api::routes::pipeline::list_jobs,
-        crate::api::routes::pipeline::list_jobs_page,
-        crate::api::routes::pipeline::get_job,
-        crate::api::routes::pipeline::list_job_logs,
-        crate::api::routes::pipeline::get_job_progress,
-        crate::api::routes::pipeline::retry_job,
-        crate::api::routes::pipeline::cancel_job,
-        crate::api::routes::pipeline::delete_job,
-        crate::api::routes::pipeline::cancel_pipeline,
-        crate::api::routes::pipeline::get_stats,
-        crate::api::routes::pipeline::list_outputs,
-        crate::api::routes::pipeline::create_pipeline,
-        crate::api::routes::pipeline::validate_dag,
+        crate::api::routes::pipeline::jobs::list_jobs,
+        crate::api::routes::pipeline::jobs::list_jobs_page,
+        crate::api::routes::pipeline::jobs::get_job,
+        crate::api::routes::pipeline::jobs::list_job_logs,
+        crate::api::routes::pipeline::jobs::get_job_progress,
+        crate::api::routes::pipeline::jobs::list_job_uploads,
+        crate::api::routes::pipeline::jobs::retry_job,
+        crate::api::routes::pipeline::jobs::cancel_job,
+        crate::api::routes::pipeline::jobs::delete_job,
+        crate::api::routes::pipeline::jobs::cancel_pipeline,
+        crate::api::routes::pipeline::jobs::get_stats,
+        crate::api::routes::pipeline::jobs::list_outputs,
+        crate::api::routes::pipeline::jobs::create_pipeline,
+        crate::api::routes::pipeline::dag::validate_dag,
         // Pipeline preset endpoints
-        crate::api::routes::pipeline::list_pipeline_presets,
-        crate::api::routes::pipeline::get_pipeline_preset_by_id,
-        crate::api::routes::pipeline::create_pipeline_preset,
-        crate::api::routes::pipeline::update_pipeline_preset,
-        crate::api::routes::pipeline::delete_pipeline_preset,
-        crate::api::routes::pipeline::preview_pipeline_preset,
+        crate::api::routes::pipeline::presets::list_pipeline_presets,
+        crate::api::routes::pipeline::presets::get_pipeline_preset_by_id,
+        crate::api::routes::pipeline::presets::create_pipeline_preset,
+        crate::api::routes::pipeline::presets::update_pipeline_preset,
+        crate::api::routes::pipeline::presets::delete_pipeline_preset,
+        crate::api::routes::pipeline::presets::preview_pipeline_preset,
         // DAG endpoints
-        crate::api::routes::pipeline::list_dags,
-        crate::api::routes::pipeline::retry_all_failed_dags,
-        crate::api::routes::pipeline::get_dag_status,
-        crate::api::routes::pipeline::get_dag_graph,
-        crate::api::routes::pipeline::get_dag_stats,
-        crate::api::routes::pipeline::retry_dag,
-        crate::api::routes::pipeline::cancel_dag,
-        crate::api::routes::pipeline::delete_dag,
+        crate::api::routes::pipeline::dag::list_dags,
+        crate::api::routes::pipeline::dag::retry_all_failed_dags,
+        crate::api::routes::pipeline::dag::get_dag_status,
+        crate::api::routes::pipeline::dag::get_dag_graph,
+        crate::api::routes::pipeline::dag::get_dag_stats,
+        crate::api::routes::pipeline::dag::retry_dag,
+        crate::api::routes::pipeline::dag::cancel_dag,
+        crate::api::routes::pipeline::dag::delete_dag,
         // Filter endpoints
         crate::api::routes::filters::list_filters,
         crate::api::routes::filters::create_filter,
@@ -219,6 +229,10 @@ pub struct MessageResponse {
         crate::api::routes::credentials::refresh_template_credentials,
         crate::api::routes::credentials::bilibili_qr_generate,
         crate::api::routes::credentials::bilibili_qr_poll,
+        // BaiduPCS-Go tool endpoints
+        crate::api::routes::baidupcs::baidupcs_status,
+        crate::api::routes::baidupcs::baidupcs_login,
+        crate::api::routes::baidupcs::baidupcs_logout,
     ),
     components(
         schemas(
@@ -226,6 +240,7 @@ pub struct MessageResponse {
             HealthResponse,
             ComponentHealth,
             LivenessResponse,
+            crate::api::routes::health::IdleResponse,
             // Auth schemas
             LoginRequest,
             LoginResponse,
@@ -234,6 +249,10 @@ pub struct MessageResponse {
             ChangePasswordRequest,
             MessageResponse,
             crate::api::auth_service::SessionInfo,
+            CreateApiKeyRequest,
+            CreateApiKeyResponse,
+            ApiKeyResponse,
+            crate::database::models::ApiKeyAccessLevel,
             // Error schema
             crate::api::error::ApiErrorResponse,
             // Streamer schemas
@@ -268,6 +287,9 @@ pub struct MessageResponse {
             JobResponse,
             PaginatedResponse<JobResponse>,
             PipelineStatsResponse,
+            crate::api::models::UploadRecordResponse,
+            crate::api::models::UploadRecordListResponse,
+            crate::api::models::MediaOutputUploadInfo,
             // Filter schemas
             CreateFilterRequest,
             UpdateFilterRequest,
@@ -321,6 +343,12 @@ pub struct MessageResponse {
             CredentialSaveScope,
             QrPollRequest,
             QrPollApiResponse,
+            // BaiduPCS-Go tool schemas
+            BaiduPcsToolRequest,
+            BaiduPcsStatusResponse,
+            BaiduPcsLoginRequest,
+            BaiduPcsLoginResponse,
+            BaiduPcsLogoutResponse,
             // Pipeline DAG schemas
             CreatePipelineRequest,
             CreatePipelineResponse,
@@ -349,7 +377,7 @@ pub struct MessageResponse {
 )]
 pub struct ApiDoc;
 
-/// Security scheme addon for Bearer JWT authentication.
+/// Security scheme addon for Bearer authentication with a JWT or API key.
 struct SecurityAddon;
 
 impl utoipa::Modify for SecurityAddon {
@@ -360,7 +388,10 @@ impl utoipa::Modify for SecurityAddon {
                 utoipa::openapi::security::SecurityScheme::Http(
                     utoipa::openapi::security::HttpBuilder::new()
                         .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
-                        .bearer_format("JWT")
+                        .bearer_format("JWT or srec_ API key")
+                        .description(Some(
+                            "JWT access token, or an API key (`srec_...`) created via /api/auth/api-keys",
+                        ))
                         .build(),
                 ),
             );

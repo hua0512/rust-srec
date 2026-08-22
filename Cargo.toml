@@ -27,12 +27,28 @@ members = [
     "crates/ts",
 ]
 
+default-members = [
+    "mesio-cli",
+    "strev-cli",
+    "rust-srec",
+]
+
 [workspace.package]
-version = "0.3.2"
+version = "0.5.1"
 authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
 license = "MIT OR Apache-2.0"
 edition = "2024"
+rust-version = "1.95"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
 
 [workspace.dependencies]
 arc-swap = "1"
@@ -48,6 +64,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json", "fm
 async-trait = "0.1.89"
 rand = "0.10.0"
 regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
+# Chinese/Japanese word segmentation for danmu word-frequency statistics.
+# `default-dict` (on by default) embeds the dictionary so no runtime file is
+# needed; `tfidf`/`textrank` stay off since only segmentation is used.
+jieba-rs = "0.10.3"
 futures = "0.3.32"
 chrono = { version = "0.4.44", features = ["serde"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
@@ -66,7 +86,10 @@ axum = { version = "0.8.4", features = ["ws"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
+rmcp = { version = "3.1.2", features = ["transport-streamable-http-server"] }
+schemars = "1.1"
+jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
+lettre = { version = "0.11.22", default-features = false, features = ["aws-lc-rs", "builder", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
 mimalloc = "0.1.50"
 argon2 = "0.5"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
@@ -76,10 +99,10 @@ cron = "0.17"
 dotenvy = "0.15"
 sysinfo = { version = "0.39" }
 tracing-appender = "0.2"
-tokio-tungstenite = { version = "0.29.0", default-features = false, features = ["connect"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.0"
 md-5 = "0.11.0"
-base64 = "0.22.1"
+base64 = "0.23.0"
 byteorder = "1.5"
 brotli = "8.0"
 openssl = { version = "0.10", features = ["vendored"] }
@@ -91,6 +114,12 @@ rustc-hash = "2.1"
 memchr = "2.7.6"
 criterion = "0.8.1"
 zlib-rs = "0.6.3"
+aes = "0.9.1"
+cbc = "0.2.1"
+cipher = "0.5.2"
+indicatif = "0.18"
+insta = "1.47"
+tracing-indicatif = "0.3"
 
 [profile.dev]
 incremental = true
@@ -114,5 +143,12 @@ lto = true
 codegen-units = 1
 strip = true
 opt-level = 3
-panic = "abort"   # Removes panic unwinding code
+# The daemon isolates panicking tasks and finalizes active recordings during
+# graceful shutdown, both of which require unwinding.
 debug = false
+
+# Standalone CLIs can opt back into aborting panics for smaller binaries, for
+# example: `cargo build -p strev --profile release-cli`.
+[profile.release-cli]
+inherits = "release"
+panic = "abort"

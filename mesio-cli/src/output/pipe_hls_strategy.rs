@@ -24,7 +24,10 @@ pub enum PipeHlsStrategyError {
 
 impl PipeHlsStrategyError {
     /// Check if this error is a broken pipe error
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for alternate output strategies and diagnostics"
+    )]
     pub fn is_broken_pipe(&self) -> bool {
         match self {
             PipeHlsStrategyError::BrokenPipe => true,
@@ -91,19 +94,34 @@ impl PipeHlsStrategy {
     }
 
     /// Get total bytes written
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for alternate output strategies and diagnostics"
+    )]
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
 
     /// Check if any data has been written
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for alternate output strategies and diagnostics"
+        )
+    )]
     pub fn has_written_data(&self) -> bool {
         self.has_written_data
     }
 
     /// Get the count of discontinuities encountered
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for alternate output strategies and diagnostics"
+        )
+    )]
     pub fn discontinuity_count(&self) -> u32 {
         self.discontinuity_count
     }
@@ -127,10 +145,10 @@ impl PipeHlsStrategy {
         let bytes_written = match item {
             HlsData::TsData(ts) => {
                 writer
-                    .write_all(&ts.data)
+                    .write_all(ts.data())
                     .map_err(PipeHlsStrategyError::from_io_error)?;
                 self.has_written_data = true;
-                ts.data.len() as u64
+                ts.data().len() as u64
             }
             HlsData::M4sData(m4s_data) => {
                 let bytes = match m4s_data {
@@ -271,7 +289,10 @@ mod tests {
             self.inner.lock().unwrap().clone()
         }
 
-        #[allow(dead_code)]
+        #[expect(
+            dead_code,
+            reason = "retained for alternate output strategies and diagnostics"
+        )]
         fn clear(&self) {
             self.inner.lock().unwrap().clear();
         }
@@ -288,9 +309,6 @@ mod tests {
             Ok(())
         }
     }
-
-    unsafe impl Send for SharedBuffer {}
-    unsafe impl Sync for SharedBuffer {}
 
     /// Create a test TS segment using HlsData::ts constructor
     fn create_test_ts_segment(discontinuity: bool, data: Vec<u8>) -> HlsData {

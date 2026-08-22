@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "API response models include fields not consumed by the extractor"
+)]
 
 use serde::Deserialize;
 
@@ -47,7 +50,8 @@ pub struct RoomPlayInfo {
     pub code: i32,
     pub message: String,
     pub ttl: i32,
-    pub data: RoomPlayInfoData,
+    // Absent when `code != 0`; callers must check `code` before unwrapping `data`.
+    pub data: Option<RoomPlayInfoData>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +70,8 @@ pub struct RoomPlayInfoData {
     pub live_time: i64,
     pub room_shield: i32,
     // pub all_special_types: Vec<i32>,
-    pub playurl_info: PlayUrlInfo,
+    // Null while the room is offline (`live_status == 0`) even though `code == 0`.
+    pub playurl_info: Option<PlayUrlInfo>,
 }
 
 #[derive(Debug, Deserialize)]

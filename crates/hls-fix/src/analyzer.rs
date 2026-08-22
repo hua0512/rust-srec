@@ -235,7 +235,7 @@ impl HlsAnalyzer {
                 self.stats.has_ts_segments = true;
                 self.stats.ts_segment_count += 1;
 
-                let segment_size = ts_data.data.len() as u64;
+                let segment_size = ts_data.data().len() as u64;
                 self.stats.ts_segments_size += segment_size;
                 self.stats.total_size += segment_size;
 
@@ -377,16 +377,17 @@ mod tests {
         data[0] = 0x47; // TS sync byte
         data[188] = 0x47; // Next packet sync byte
 
-        HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment {
-                uri: "segment.ts".to_string(),
-                duration,
-                ..MediaSegment::empty()
-            },
-            data: Bytes::from(data),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Disabled,
-        })
+        HlsData::TsData(
+            hls::TsSegmentData::new(
+                MediaSegment {
+                    uri: "segment.ts".to_string(),
+                    duration,
+                    ..MediaSegment::empty()
+                },
+                Bytes::from(data),
+            )
+            .with_continuity_mode(ts::ContinuityMode::Disabled),
+        )
     }
 
     fn create_test_mp4_init_segment() -> HlsData {

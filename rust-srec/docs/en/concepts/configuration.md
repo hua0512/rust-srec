@@ -46,7 +46,7 @@ Key fields (grouped by concern):
 
 - Output: `output_folder`, `output_filename_template`, `output_file_format`
 - Limits: `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- Danmu: `record_danmu`, `danmu_sampling_config`
+- Danmu: `record_danmu`, `danmu_statistics`
 - Network: `proxy_config`, `cookies`
 - Engine: `download_engine`, `download_retry_policy`, `engines_override`
 - Stream selection: `stream_selection`
@@ -67,7 +67,7 @@ builder actually read.
 - Global-only (base defaults + runtime knobs): `auto_thumbnail`, concurrency/job limits,
   scheduler delays, log filter directives
 - Platform-only: `fetch_delay_ms`, `download_delay_ms`, `platform_specific_config`
-- Template-only: `platform_overrides`, `engines_override`, `danmu_sampling_config`
+- Template-only: `platform_overrides`, `engines_override`
 - Streamer-only: `streamer_specific_config` (JSON object; see below)
 
 ::: tip Stream selection naming
@@ -83,6 +83,31 @@ The builder is intentionally conservative: most fields are "override if present"
 ### Scalars: higher layer overrides
 
 For most string/number/bool fields, a higher layer replaces the value when it provides one.
+
+### Offline detection and download failure recovery share one count
+
+`offline_check_count` is the single inherited tolerance for consecutive offline signals. The
+runtime uses the resolved per-streamer value for both:
+
+- consecutive offline status checks before confirming that a streamer has gone offline
+- consecutive download failures before placing the streamer into temporary cooldown
+
+The default is `3`. Download failures apply a minimum threshold of `2`, even when
+`offline_check_count` is set to `1`, to avoid entering cooldown after one transient CDN or
+network failure. Once the threshold is reached, cooldown starts at 60 seconds and doubles after
+each additional consecutive failure, up to one hour. A successful status check or sustained
+download progress clears the accumulated failure state.
+
+`offline_check_delay_ms` controls the interval between offline confirmation checks and the
+related session hysteresis window. It does not control the cooldown duration.
+
+::: warning Deprecated compatibility formats
+The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
+`effective_offline_check_delay_ms` are deprecated. Persisted `TransientError` events that omit
+`backoff_threshold` are also deprecated. These compatibility formats will be removed in a future
+version. New integrations must use `offline_check_count` and `offline_check_delay_ms`, and include
+`backoff_threshold` in every serialized transient-error event.
+:::
 
 ### Cookies: "present wins" (including empty strings)
 
@@ -103,11 +128,6 @@ Stream selection is merged with special semantics:
 - `min_bitrate`, `max_bitrate`: override only if non-zero
 
 This allows a template to specify only the parts it cares about without losing platform defaults.
-
-### Event hooks: merged key-by-key
-
-`event_hooks` is merged per field (e.g. `on_online`, `on_offline`, ...). A higher layer overrides
-only the hooks it sets; unset hooks fall back to lower layers.
 
 ### Pipelines: higher layer replaces the whole pipeline
 
@@ -172,12 +192,11 @@ Supported keys that affect `MergedConfig`:
 
 - `output_folder`, `output_filename_template`, `output_file_format`
 - `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- `record_danmu`, `cookies`, `download_engine`
+- `record_danmu`, `danmu_statistics`, `cookies`, `download_engine`, `offline_check_count`,
+  `offline_check_delay_ms`
 - `proxy_config` (JSON object)
 - `stream_selection_config` (JSON object)
-- `event_hooks` (JSON object)
 - `download_retry_policy` (JSON object)
-- `danmu_sampling_config` (JSON object)
 - `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline` (JSON objects)
 - `platform_extras` (JSON object)
 

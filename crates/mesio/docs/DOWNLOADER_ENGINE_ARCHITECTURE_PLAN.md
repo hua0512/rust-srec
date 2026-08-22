@@ -499,7 +499,7 @@ shared `BoxMediaStream` alias.
 **Coordinate (NOT dead):**
 
 - `FlvDownloadError::AllSourcesFailed` is matched by `rust-srec`'s production
-  `classify_flv_error` (`rust-srec/src/downloader/engine/mesio/mod.rs:82-88`) and a
+  `classify_flv_error` (`rust-srec/src/downloader/engine/mesio.rs:82-88`) and a
   test. Keep it, or remove it together with a coordinated edit to
   `classify_flv_error` (and the test) in the same change.
 
@@ -513,7 +513,7 @@ word "resume" until a raw engine actually exists.
 (`config.rs:199`) into per-request `HlsRequestOptions`, as a per-call override that
 falls back to a config default when `None` (do not delete the config default —
 `rust-srec` maps it per-target). This is low-risk: selection is consumed once
-before any task spawns (`engine/mod.rs:114-123`) and is never re-evaluated by the
+before any task spawns (`engine.rs:114-123`) and is never re-evaluated by the
 watcher, so it is a localized change to `engine::start`'s prelude. Leave
 `live_refresh_interval`/`adaptive_refresh_*` in static config — those are
 connection-scoped, not per-download.
@@ -624,7 +624,7 @@ idempotent, so multiple triggers coexist safely).
   reader drops (`flv_downloader.rs:306-332`). Give FLV's `items` a genuine drop
   guard so both protocols share one contract.
 - The session owns the three engine `JoinHandle`s (`EngineHandles`,
-  `engine/mod.rs:58-63`) instead of the current detached `tokio::spawn`
+  `engine.rs:58-63`) instead of the current detached `tokio::spawn`
   (`hls_downloader.rs:130-150`), which orphans them and swallows the reactor's
   `Terminal` outcome into a `debug!` log. Add an optional
   `DownloadHandle::join() -> Terminal` that surfaces the terminal reason
@@ -690,9 +690,9 @@ Removed dead/duplicated fields:
 `DownloadHandle::metrics()` accessor. It does not gate `DownloadEvent`
 telemetry; progress events remain best-effort renderer input.
 
-Verified **alive** (keep): `download_concurrency` (`engine/mod.rs:178`),
-`processed_segment_buffer_multiplier` (`engine/mod.rs:180`), `max_segment_retries`
-(`fetch.rs:230`), `offload_decryption_to_cpu_pool` (`engine/mod.rs:146`), and the
+Verified **alive** (keep): `download_concurrency` (`engine.rs:178`),
+`processed_segment_buffer_multiplier` (`engine.rs:180`), `max_segment_retries`
+(`fetch.rs:230`), `offload_decryption_to_cpu_pool` (`engine.rs:146`), and the
 whole `HlsEngineConfig`.
 
 Target hierarchy, cleanly separated: HTTP/client config (`MesioConfig` → pool);

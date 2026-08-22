@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react';
 import { FfmpegForm } from '../../engines/forms/ffmpeg-form';
 import { StreamlinkForm } from '../../engines/forms/streamlink-form';
 import { MesioForm } from '../../engines/forms/mesio-form';
+import { Trans } from '@lingui/react/macro';
 
 interface EngineOverrideCardProps {
   engineId: string;
@@ -32,7 +33,7 @@ export function EngineOverrideCard({
       default:
         return (
           <div className="text-muted-foreground p-4">
-            Unknown engine type: {engineType}
+            <Trans>Unknown engine type: {engineType}</Trans>
           </div>
         );
     }

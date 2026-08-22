@@ -1,6 +1,6 @@
 //! Per-session cancellation registry.
 //!
-//! The download pipeline runs in `tokio::spawn`'d tasks, one per
+//! The download pipeline runs in `TaskSupervisor::spawn` tasks, one per
 //! `StreamerLive` event. Those tasks may park for a long time waiting
 //! for a queue slot, then continue to engine bring-up and danmu
 //! collection. While they're parked, the streamer can go offline,
@@ -42,11 +42,13 @@ use tokio_util::sync::CancellationToken;
 
 /// Registry of per-session cancellation tokens.
 ///
-/// Cheap to clone — internally `Arc<DashMap>`-backed.
-#[derive(Debug, Clone, Default)]
-pub struct SessionCancelTokens {
+/// Shared as `Arc<SessionCancelTokens>` between `RuntimeCoordinator`
+/// and the download pipeline; handles keep the map alive through the
+/// inner `Arc<DashMap>`.
+#[derive(Debug)]
+pub(crate) struct SessionCancelTokens {
     inner: Arc<DashMap<String, TokenEntry>>,
-    next_id: Arc<AtomicU64>,
+    next_id: AtomicU64,
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +64,7 @@ struct TokenEntry {
 /// pipeline from accidentally removing a fresh token that was
 /// registered for the same session id after a cancel/restart race.
 #[derive(Debug)]
-pub struct SessionCancelHandle {
+pub(crate) struct SessionCancelHandle {
     registry: Arc<DashMap<String, TokenEntry>>,
     session_id: String,
     id: u64,
@@ -71,28 +73,24 @@ pub struct SessionCancelHandle {
 
 impl SessionCancelHandle {
     /// Cancellation token observed by the pipeline.
-    pub fn token(&self) -> CancellationToken {
+    pub(crate) fn token(&self) -> CancellationToken {
         self.token.clone()
     }
 }
 
 impl Drop for SessionCancelHandle {
     fn drop(&mut self) {
-        if let Some(entry) = self.registry.get(&self.session_id)
-            && entry.value().id == self.id
-        {
-            drop(entry);
-            self.registry.remove(&self.session_id);
-        }
+        self.registry
+            .remove_if(&self.session_id, |_, entry| entry.id == self.id);
     }
 }
 
 impl SessionCancelTokens {
     /// Create an empty registry.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(DashMap::new()),
-            next_id: Arc::new(AtomicU64::new(1)),
+            next_id: AtomicU64::new(1),
         }
     }
 
@@ -103,7 +101,7 @@ impl SessionCancelTokens {
     /// Otherwise inserts and returns a fresh token. The returned
     /// handle removes the entry on drop if it still owns the same
     /// token.
-    pub fn register(&self, session_id: &str) -> SessionCancelHandle {
+    pub(crate) fn register(&self, session_id: &str) -> SessionCancelHandle {
         let entry = match self.inner.entry(session_id.to_string()) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
@@ -131,7 +129,7 @@ impl SessionCancelTokens {
     /// returns a fresh, uncancelled token (useful when a session
     /// transitions Offline → Live with the same id, although in
     /// practice a fresh `StreamerLive` carries a new session_id).
-    pub fn cancel(&self, session_id: &str) {
+    pub(crate) fn cancel(&self, session_id: &str) {
         if let Some((_, entry)) = self.inner.remove(session_id) {
             entry.token.cancel();
         }
@@ -139,13 +137,8 @@ impl SessionCancelTokens {
 
     /// Number of currently-tracked sessions. Test-only.
     #[cfg(test)]
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.inner.len()
-    }
-
-    /// True when no sessions are tracked.
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
     }
 }
 
@@ -179,7 +172,7 @@ mod tests {
     fn cancel_unknown_is_noop() {
         let reg = SessionCancelTokens::new();
         reg.cancel("ghost");
-        assert!(reg.is_empty());
+        assert_eq!(reg.len(), 0);
     }
 
     #[test]

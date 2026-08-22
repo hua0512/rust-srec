@@ -10,6 +10,7 @@ import {
   TemplateFormValues,
 } from '@/components/config/templates/template-editor';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/config/templates/$templateId',
@@ -59,11 +60,9 @@ function EditTemplatePage() {
             <Skeleton key={i} className="h-10 w-32 shrink-0 rounded-lg" />
           ))}
         </div>
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-        </div>
+        {/* `defaultTab="general"` opens on `GeneralTab`'s single card, which holds only the
+            template name field. */}
+        <SettingsCardSkeleton sections={[1]} />
       </div>
     );
   }

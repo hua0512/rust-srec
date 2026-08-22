@@ -34,8 +34,11 @@ import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
+import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
 import { BackendApiError } from '@/lib/api-error';
+import type { MediaOutput } from '@/api/schemas/system';
+import type { SessionSegment } from '@/api/schemas/session';
 import { SessionHeader } from '@/components/sessions/session-header';
 import { OverviewTab } from '@/components/sessions/overview-tab';
 import { RecordingsTab } from '@/components/sessions/recordings-tab';
@@ -56,10 +59,58 @@ const PlayerCard = React.lazy(() =>
   })),
 );
 
+const SESSION_TIMELINE_PAGE_SIZE = 100;
+
+async function listAllSessionOutputs(
+  sessionId: string,
+): Promise<MediaOutput[]> {
+  const outputs: MediaOutput[] = [];
+  let offset = 0;
+  let total = 0;
+
+  do {
+    const page = await listPipelineOutputs({
+      data: {
+        session_id: sessionId,
+        limit: SESSION_TIMELINE_PAGE_SIZE,
+        offset,
+      },
+    });
+    outputs.push(...page.items);
+    total = page.total;
+    offset += page.items.length;
+    if (page.items.length === 0) break;
+  } while (offset < total);
+
+  return outputs;
+}
+
+async function listAllSessionSegments(
+  sessionId: string,
+): Promise<SessionSegment[]> {
+  const segments: SessionSegment[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await listSessionSegments({
+      data: {
+        session_id: sessionId,
+        limit: SESSION_TIMELINE_PAGE_SIZE,
+        offset,
+      },
+    });
+    segments.push(...page.items);
+    if (page.items.length < page.limit) break;
+    offset += page.items.length;
+  }
+
+  return segments;
+}
+
 function SessionDetailPage() {
   const { sessionId } = Route.useParams();
   const { user } = Route.useRouteContext();
-  const [playingOutput, setPlayingOutput] = useState<any>(null);
+  const [playingOutput, setPlayingOutput] = useState<MediaOutput | null>(null);
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -76,12 +127,18 @@ function SessionDetailPage() {
     queryFn: () => getSession({ data: sessionId }),
   });
 
+  // While the session is still live, the backend upserts an in-progress
+  // statistics snapshot every 60s (CollectionRunner's persist tick), so poll
+  // at the same cadence. Also recovers from the initial 404 emitted before
+  // the first snapshot lands.
+  const isSessionLive = Boolean(session) && !session?.end_time;
   const danmuStatsQuery = useQuery({
     queryKey: ['session', 'danmu-statistics', sessionId],
     queryFn: () => getSessionDanmuStatistics({ data: sessionId }),
     enabled: Boolean(sessionId),
     staleTime: 30000,
     retry: 1,
+    refetchInterval: isSessionLive ? 60_000 : false,
   });
 
   const isDanmuStatsUnavailable =
@@ -90,15 +147,12 @@ function SessionDetailPage() {
 
   const { data: outputsData, isLoading: isOutputsLoading } = useQuery({
     queryKey: ['pipeline', 'outputs', sessionId],
-    queryFn: () => listPipelineOutputs({ data: { session_id: sessionId } }),
+    queryFn: () => listAllSessionOutputs(sessionId),
   });
 
   const { data: segmentsData, isLoading: isSegmentsLoading } = useQuery({
     queryKey: ['sessions', sessionId, 'segments'],
-    queryFn: () =>
-      listSessionSegments({
-        data: { session_id: sessionId, limit: 100, offset: 0 },
-      }),
+    queryFn: () => listAllSessionSegments(sessionId),
     enabled: Boolean(sessionId),
   });
 
@@ -107,9 +161,9 @@ function SessionDetailPage() {
     queryFn: () => listPipelines({ data: { session_id: sessionId } }),
   });
 
-  const outputs = outputsData?.items || [];
+  const outputs = outputsData || [];
   const dags = dagsData?.dags || [];
-  const segments = segmentsData?.items || [];
+  const segments = segmentsData || [];
 
   const handleDownload = async (outputId: string, filename: string) => {
     try {
@@ -313,7 +367,7 @@ function SessionDetailPage() {
             className="mt-6 focus-visible:outline-none"
           >
             <RecordingsTab
-              isLoading={isOutputsLoading}
+              isLoading={isOutputsLoading || isSegmentsLoading}
               outputs={outputs}
               segments={segments}
               isSegmentsLoading={isSegmentsLoading}
@@ -358,7 +412,10 @@ function SessionDetailPage() {
                       user?.token?.access_token,
                     ) || ''
                   }
-                  title={playingOutput.file_path.split('/').pop()}
+                  title={
+                    playingOutput.file_path.split('/').pop() ??
+                    playingOutput.file_path
+                  }
                   onClose={() => setPlayingOutput(null)}
                 />
               ) : (
@@ -376,7 +433,17 @@ function SessionDetailPage() {
                         user?.token?.access_token,
                       ) || ''
                     }
-                    title={playingOutput.file_path.split('/').pop()}
+                    title={
+                      playingOutput.file_path.split('/').pop() ??
+                      playingOutput.file_path
+                    }
+                    mediaType={resolvePlayerMediaType(
+                      undefined,
+                      playingOutput.file_path,
+                    )}
+                    isLive={false}
+                    mediaDurationSecs={playingOutput.duration_secs}
+                    mediaFileSizeBytes={playingOutput.file_size_bytes}
                     className="w-full h-full border-0 rounded-none bg-black"
                     contentClassName="min-h-0"
                     defaultWebFullscreen

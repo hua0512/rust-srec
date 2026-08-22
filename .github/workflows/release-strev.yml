@@ -26,12 +26,10 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
@@ -54,6 +52,7 @@ jobs:
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p strev'
+      profile: 'release-cli'
       binaries: '["strev"]'
       need_protoc: true
 

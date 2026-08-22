@@ -9,6 +9,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
 import { Zap } from 'lucide-react';
+import { ConfigSectionHeading } from '@/components/config/shared/config-field';
 
 interface TikTokConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -23,12 +24,9 @@ export function TikTokConfigFields({
     <div className="space-y-12">
       {/* Extraction Settings Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Zap className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Extraction Settings</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Zap} accent="indigo">
+          <Trans>Extraction Settings</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <FormField

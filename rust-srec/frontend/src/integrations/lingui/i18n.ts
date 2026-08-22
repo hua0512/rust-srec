@@ -4,6 +4,17 @@ export const locales = ['en', 'zh-CN'] as const;
 export type Locale = (typeof locales)[number];
 export const defaultLocale: Locale = 'en';
 
+/**
+ * Each locale's name in its own language.
+ *
+ * Deliberately not run through the catalog: someone looking for their language scans for the
+ * word as they write it, so "简体中文" stays "简体中文" whatever the interface is set to.
+ */
+export const localeNativeNames: Record<Locale, string> = {
+  en: 'English',
+  'zh-CN': '简体中文',
+};
+
 export const localeStorageKey = 'app-locale';
 
 export function isLocaleValid(locale: string): locale is Locale {

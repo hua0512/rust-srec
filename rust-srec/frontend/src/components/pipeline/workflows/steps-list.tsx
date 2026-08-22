@@ -7,6 +7,7 @@ import {
   Settings,
   ArrowRight,
   AlertTriangle,
+  Replace,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,10 +33,18 @@ interface StepsListProps {
   onRemove?: (index: number) => void;
   onUpdate?: (index: number, newStep: DagStepDefinition) => void;
   onEdit?: (index: number) => void;
+  onReplace?: (index: number) => void;
 }
 
 export const StepsList = memo(
-  ({ steps, onReorder, onRemove, onUpdate, onEdit }: StepsListProps) => {
+  ({
+    steps,
+    onReorder,
+    onRemove,
+    onUpdate,
+    onEdit,
+    onReplace,
+  }: StepsListProps) => {
     const { i18n } = useLingui();
     // Fetch available job presets to get metadata (icons, colors, desc)
     const { data: presetsData } = useQuery({
@@ -184,6 +193,21 @@ export const StepsList = memo(
                       </div>
 
                       <div className="flex items-center opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        {onReplace && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground hover:bg-background/40 rounded-lg mr-0.5"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onReplace(index);
+                            }}
+                            title={i18n._(msg`Replace Step`)}
+                          >
+                            <Replace className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                          </Button>
+                        )}
                         {onUpdate && (
                           <Button
                             type="button"

@@ -1,14 +1,14 @@
 //! Session repository.
 
-use async_trait::async_trait;
-use sqlx::SqlitePool;
-
+use crate::database::begin_immediate;
 use crate::database::models::{
     DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
     SessionFilters, SessionSegmentDbModel,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
+use async_trait::async_trait;
+use sqlx::SqlitePool;
 
 /// Session repository trait.
 #[async_trait]
@@ -46,6 +46,16 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Vec<MediaOutputDbModel>>;
+    async fn get_media_outputs_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<MediaOutputDbModel>> {
+        let mut outputs = Vec::new();
+        for session_id in session_ids {
+            outputs.extend(self.get_media_outputs_for_session(session_id).await?);
+        }
+        Ok(outputs)
+    }
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
@@ -79,17 +89,94 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Option<DanmuStatisticsDbModel>>;
+    async fn get_danmu_statistics_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<DanmuStatisticsDbModel>> {
+        let mut statistics = Vec::new();
+        for session_id in session_ids {
+            if let Some(session_statistics) = self.get_danmu_statistics(session_id).await? {
+                statistics.push(session_statistics);
+            }
+        }
+        Ok(statistics)
+    }
+    /// Message totals only, for callers that need a per-session count rather than
+    /// the full statistics.
+    ///
+    /// Exists because the aggregate JSON columns are large — the activity
+    /// timeseries alone is tens of kilobytes per row — and a session list that
+    /// only renders a count should not read them.
+    async fn get_danmu_counts_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<(String, i64)>> {
+        let statistics = self.get_danmu_statistics_for_sessions(session_ids).await?;
+        Ok(statistics
+            .into_iter()
+            .map(|stats| (stats.session_id, stats.total_danmus))
+            .collect())
+    }
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
-    async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
-    async fn upsert_danmu_statistics(
+    /// Insert or replace the statistics row for `stats.session_id`
+    /// (`danmu_statistics.session_id` is UNIQUE; `stats.id` is only used when
+    /// the row does not exist yet).
+    async fn upsert_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
+
+    // Danmu aggregator checkpoints. Kept apart from the statistics accessors
+    // because the blob is large and only read when a collection starts.
+
+    /// Compressed `AggregatorState` for `session_id`, if a checkpoint exists.
+    async fn get_danmu_aggregator_state(&self, session_id: &str) -> Result<Option<Vec<u8>>> {
+        let _ = session_id;
+        Ok(None)
+    }
+    /// Store the latest checkpoint for `session_id`, replacing any previous one.
+    async fn upsert_danmu_aggregator_state(
         &self,
         session_id: &str,
-        total_danmus: i64,
-        danmu_rate_timeseries: Option<&str>,
-        top_talkers: Option<&str>,
-        word_frequency: Option<&str>,
-    ) -> Result<()>;
+        version: i64,
+        state: &[u8],
+    ) -> Result<()> {
+        let _ = (session_id, version, state);
+        Ok(())
+    }
+    /// Discard the checkpoint for `session_id`.
+    async fn delete_danmu_aggregator_state(&self, session_id: &str) -> Result<()> {
+        let _ = session_id;
+        Ok(())
+    }
 }
+
+/// Danmu-statistics writes. Both statements list the same columns in the same
+/// order; `create_danmu_statistics` and `upsert_danmu_statistics` bind in that
+/// order, so the three must be edited together.
+const DANMU_STATISTICS_INSERT: &str = "INSERT INTO danmu_statistics (\
+     id, session_id, total_danmus, unique_talkers, chat_count, gift_count, \
+     duration_secs, start_time, end_time, rate_bucket_secs, \
+     danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency\
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+/// `id` is only used when the row does not exist yet; `session_id` is UNIQUE.
+const DANMU_STATISTICS_UPSERT: &str = "INSERT INTO danmu_statistics (\
+     id, session_id, total_danmus, unique_talkers, chat_count, gift_count, \
+     duration_secs, start_time, end_time, rate_bucket_secs, \
+     danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency\
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+     ON CONFLICT(session_id) DO UPDATE SET \
+     total_danmus = excluded.total_danmus, \
+     unique_talkers = excluded.unique_talkers, \
+     chat_count = excluded.chat_count, \
+     gift_count = excluded.gift_count, \
+     duration_secs = excluded.duration_secs, \
+     start_time = excluded.start_time, \
+     end_time = excluded.end_time, \
+     rate_bucket_secs = excluded.rate_bucket_secs, \
+     danmu_rate_timeseries = excluded.danmu_rate_timeseries, \
+     top_talkers = excluded.top_talkers, \
+     top_gifters = excluded.top_gifters, \
+     top_gifts = excluded.top_gifts, \
+     word_frequency = excluded.word_frequency";
 
 /// SQLx implementation of SessionRepository.
 pub struct SqlxSessionRepository {
@@ -145,8 +232,8 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_session", || async {
             sqlx::query(
                 r#"
-                INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&session.id)
@@ -154,7 +241,6 @@ impl SessionRepository for SqlxSessionRepository {
             .bind(session.start_time)
             .bind(session.end_time)
             .bind(&session.titles)
-            .bind(&session.danmu_statistics_id)
             .bind(session.total_size_bytes)
             .execute(&self.write_pool)
             .await?;
@@ -259,106 +345,101 @@ impl SessionRepository for SqlxSessionRepository {
         Ok(outputs)
     }
 
+    async fn get_media_outputs_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<MediaOutputDbModel>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT * FROM media_outputs WHERE session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for session_id in session_ids {
+            separated.push_bind(session_id);
+        }
+        separated.push_unseparated(") ORDER BY session_id, created_at");
+
+        Ok(builder
+            .build_query_as::<MediaOutputDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_media_output", || async {
-            let mut conn = self.write_pool.acquire().await?;
-            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
 
-            let result: Result<()> = async {
-                sqlx::query(
-                    r#"
-                    INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&output.id)
-                .bind(&output.session_id)
-                .bind(&output.parent_media_output_id)
-                .bind(&output.file_path)
-                .bind(&output.file_type)
-                .bind(output.size_bytes)
-                .bind(output.created_at)
-                .execute(&mut *conn)
-                .await?;
+            sqlx::query(
+                r#"
+                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&output.id)
+            .bind(&output.session_id)
+            .bind(&output.parent_media_output_id)
+            .bind(&output.file_path)
+            .bind(&output.file_type)
+            .bind(output.size_bytes)
+            .bind(output.created_at)
+            .execute(&mut *tx)
+            .await?;
 
-                // Update session total size
-                sqlx::query(
-                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
-                )
-                .bind(output.size_bytes)
-                .bind(&output.session_id)
-                .execute(&mut *conn)
-                .await?;
+            // Update session total size
+            sqlx::query(
+                "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
+            )
+            .bind(output.size_bytes)
+            .bind(&output.session_id)
+            .execute(&mut *tx)
+            .await?;
 
-                Ok(())
-            }
-            .await;
-
-            match result {
-                Ok(()) => {
-                    sqlx::query("COMMIT").execute(&mut *conn).await?;
-                    Ok(())
-                }
-                Err(err) => {
-                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-                    Err(err)
-                }
-            }
+            tx.commit().await?;
+            Ok(())
         })
         .await
     }
 
     async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_session_segment", || async {
-            let mut conn = self.write_pool.acquire().await?;
-            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
 
-            let result: Result<()> = async {
-                sqlx::query(
-                    r#"
-                    INSERT INTO session_segments (
-                        id,
-                        session_id,
-                        segment_index,
-                        file_path,
-                        duration_secs,
-                        size_bytes,
-                        split_reason_code,
-                        split_reason_details_json,
-                        created_at,
-                        completed_at,
-                        persisted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&segment.id)
-                .bind(&segment.session_id)
-                .bind(segment.segment_index)
-                .bind(&segment.file_path)
-                .bind(segment.duration_secs)
-                .bind(segment.size_bytes)
-                .bind(&segment.split_reason_code)
-                .bind(&segment.split_reason_details_json)
-                .bind(segment.created_at)
-                .bind(segment.completed_at)
-                .bind(segment.persisted_at)
-                .execute(&mut *conn)
-                .await?;
+            sqlx::query(
+                r#"
+                INSERT INTO session_segments (
+                    id,
+                    session_id,
+                    segment_index,
+                    file_path,
+                    duration_secs,
+                    size_bytes,
+                    split_reason_code,
+                    split_reason_details_json,
+                    created_at,
+                    completed_at,
+                    persisted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&segment.id)
+            .bind(&segment.session_id)
+            .bind(segment.segment_index)
+            .bind(&segment.file_path)
+            .bind(segment.duration_secs)
+            .bind(segment.size_bytes)
+            .bind(&segment.split_reason_code)
+            .bind(&segment.split_reason_details_json)
+            .bind(segment.created_at)
+            .bind(segment.completed_at)
+            .bind(segment.persisted_at)
+            .execute(&mut *tx)
+            .await?;
 
-                Ok(())
-            }
-            .await;
-
-            match result {
-                Ok(()) => {
-                    sqlx::query("COMMIT").execute(&mut *conn).await?;
-                    Ok(())
-                }
-                Err(err) => {
-                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-                    Err(err)
-                }
-            }
+            tx.commit().await?;
+            Ok(())
         })
         .await
     }
@@ -420,38 +501,24 @@ impl SessionRepository for SqlxSessionRepository {
         let output = self.get_media_output(id).await?;
 
         retry_on_sqlite_busy("delete_media_output", || async {
-            let mut conn = self.write_pool.acquire().await?;
-            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
 
-            let result: Result<()> = async {
-                sqlx::query("DELETE FROM media_outputs WHERE id = ?")
-                    .bind(id)
-                    .execute(&mut *conn)
-                    .await?;
-
-                // Update session total size
-                sqlx::query(
-                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
-                )
-                .bind(output.size_bytes)
-                .bind(&output.session_id)
-                .execute(&mut *conn)
+            sqlx::query("DELETE FROM media_outputs WHERE id = ?")
+                .bind(id)
+                .execute(&mut *tx)
                 .await?;
 
-                Ok(())
-            }
-            .await;
+            // Update session total size
+            sqlx::query(
+                "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
+            )
+            .bind(output.size_bytes)
+            .bind(&output.session_id)
+            .execute(&mut *tx)
+            .await?;
 
-            match result {
-                Ok(()) => {
-                    sqlx::query("COMMIT").execute(&mut *conn).await?;
-                    Ok(())
-                }
-                Err(err) => {
-                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-                    Err(err)
-                }
-            }
+            tx.commit().await?;
+            Ok(())
         })
         .await
     }
@@ -469,79 +536,143 @@ impl SessionRepository for SqlxSessionRepository {
         Ok(stats)
     }
 
+    async fn get_danmu_statistics_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<DanmuStatisticsDbModel>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT * FROM danmu_statistics WHERE session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for session_id in session_ids {
+            separated.push_bind(session_id);
+        }
+        separated.push_unseparated(") ORDER BY session_id");
+
+        Ok(builder
+            .build_query_as::<DanmuStatisticsDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_danmu_statistics", || async {
-            sqlx::query(
-                r#"
-                INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
-                VALUES (?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&stats.id)
-            .bind(&stats.session_id)
-            .bind(stats.total_danmus)
-            .bind(&stats.danmu_rate_timeseries)
-            .bind(&stats.top_talkers)
-            .bind(&stats.word_frequency)
-            .execute(&self.write_pool)
-            .await?;
+            sqlx::query(DANMU_STATISTICS_INSERT)
+                .bind(&stats.id)
+                .bind(&stats.session_id)
+                .bind(stats.total_danmus)
+                .bind(stats.unique_talkers)
+                .bind(stats.chat_count)
+                .bind(stats.gift_count)
+                .bind(stats.duration_secs)
+                .bind(stats.start_time)
+                .bind(stats.end_time)
+                .bind(stats.rate_bucket_secs)
+                .bind(&stats.danmu_rate_timeseries)
+                .bind(&stats.top_talkers)
+                .bind(&stats.top_gifters)
+                .bind(&stats.top_gifts)
+                .bind(&stats.word_frequency)
+                .execute(&self.write_pool)
+                .await?;
             Ok(())
         })
         .await
     }
 
-    async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
-        retry_on_sqlite_busy("update_danmu_statistics", || async {
-            sqlx::query(
-                r#"
-                UPDATE danmu_statistics SET
-                    total_danmus = ?,
-                    danmu_rate_timeseries = ?,
-                    top_talkers = ?,
-                    word_frequency = ?
-                WHERE id = ?
-                "#,
-            )
-            .bind(stats.total_danmus)
-            .bind(&stats.danmu_rate_timeseries)
-            .bind(&stats.top_talkers)
-            .bind(&stats.word_frequency)
-            .bind(&stats.id)
-            .execute(&self.write_pool)
-            .await?;
+    async fn upsert_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
+        retry_on_sqlite_busy("upsert_danmu_statistics", || async {
+            sqlx::query(DANMU_STATISTICS_UPSERT)
+                .bind(&stats.id)
+                .bind(&stats.session_id)
+                .bind(stats.total_danmus)
+                .bind(stats.unique_talkers)
+                .bind(stats.chat_count)
+                .bind(stats.gift_count)
+                .bind(stats.duration_secs)
+                .bind(stats.start_time)
+                .bind(stats.end_time)
+                .bind(stats.rate_bucket_secs)
+                .bind(&stats.danmu_rate_timeseries)
+                .bind(&stats.top_talkers)
+                .bind(&stats.top_gifters)
+                .bind(&stats.top_gifts)
+                .bind(&stats.word_frequency)
+                .execute(&self.write_pool)
+                .await?;
             Ok(())
         })
         .await
     }
 
-    async fn upsert_danmu_statistics(
+    async fn get_danmu_counts_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<(String, i64)>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT session_id, total_danmus FROM danmu_statistics WHERE session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for session_id in session_ids {
+            separated.push_bind(session_id);
+        }
+        separated.push_unseparated(") ORDER BY session_id");
+
+        Ok(builder
+            .build_query_as::<(String, i64)>()
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
+    async fn get_danmu_aggregator_state(&self, session_id: &str) -> Result<Option<Vec<u8>>> {
+        let state: Option<(Vec<u8>,)> =
+            sqlx::query_as("SELECT state FROM danmu_aggregator_state WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(state.map(|(state,)| state))
+    }
+
+    async fn upsert_danmu_aggregator_state(
         &self,
         session_id: &str,
-        total_danmus: i64,
-        danmu_rate_timeseries: Option<&str>,
-        top_talkers: Option<&str>,
-        word_frequency: Option<&str>,
+        version: i64,
+        state: &[u8],
     ) -> Result<()> {
-        retry_on_sqlite_busy("upsert_danmu_statistics", || async {
+        retry_on_sqlite_busy("upsert_danmu_aggregator_state", || async {
             sqlx::query(
-                r#"
-                INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
-                    total_danmus = excluded.total_danmus,
-                    danmu_rate_timeseries = excluded.danmu_rate_timeseries,
-                    top_talkers = excluded.top_talkers,
-                    word_frequency = excluded.word_frequency
-                "#,
+                "INSERT INTO danmu_aggregator_state (session_id, version, updated_at, state) \
+                 VALUES (?, ?, ?, ?) \
+                 ON CONFLICT(session_id) DO UPDATE SET \
+                 version = excluded.version, \
+                 updated_at = excluded.updated_at, \
+                 state = excluded.state",
             )
-            .bind(uuid::Uuid::new_v4().to_string())
             .bind(session_id)
-            .bind(total_danmus)
-            .bind(danmu_rate_timeseries)
-            .bind(top_talkers)
-            .bind(word_frequency)
+            .bind(version)
+            .bind(chrono::Utc::now().timestamp_millis())
+            .bind(state)
             .execute(&self.write_pool)
             .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn delete_danmu_aggregator_state(&self, session_id: &str) -> Result<()> {
+        retry_on_sqlite_busy("delete_danmu_aggregator_state", || async {
+            sqlx::query("DELETE FROM danmu_aggregator_state WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&self.write_pool)
+                .await?;
             Ok(())
         })
         .await
@@ -769,7 +900,9 @@ impl SessionRepository for SqlxSessionRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::{LiveSessionDbModel, Pagination, StreamerDbModel};
+    use crate::database::models::{
+        LiveSessionDbModel, MediaFileType, MediaOutputDbModel, Pagination, StreamerDbModel,
+    };
     use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
     use crate::database::{init_pool_with_size, run_migrations};
 
@@ -884,5 +1017,76 @@ mod tests {
         let next = repo.next_session_segment_index("session-1").await.unwrap();
 
         assert_eq!(next, 4);
+    }
+
+    #[tokio::test]
+    async fn batch_session_metadata_queries_return_requested_rows() {
+        let repo = setup_test_repo().await;
+        let mut second_streamer = StreamerDbModel::new(
+            "Streamer Two",
+            "https://example.com/streamer-2",
+            "platform-twitch",
+        );
+        second_streamer.id = "streamer-2".to_string();
+        SqlxStreamerRepository::new(repo.pool.clone(), repo.write_pool.clone())
+            .create_streamer(&second_streamer)
+            .await
+            .unwrap();
+
+        let mut second_session = LiveSessionDbModel::new("streamer-2");
+        second_session.id = "session-2".to_string();
+        repo.create_session(&second_session).await.unwrap();
+
+        // A session outside `session_ids`: its rows must be filtered out, so a
+        // batch query missing its `WHERE session_id IN (...)` fails the counts.
+        // Ended, because live_sessions allows one active session per streamer.
+        let mut excluded_session = LiveSessionDbModel::new("streamer-2");
+        excluded_session.id = "session-3".to_string();
+        excluded_session.end_time = Some(1_700_000_100_000);
+        repo.create_session(&excluded_session).await.unwrap();
+
+        for output in [
+            MediaOutputDbModel::new("session-1", "/video.mp4", MediaFileType::Video, 10),
+            MediaOutputDbModel::new("session-1", "/thumbnail.jpg", MediaFileType::Thumbnail, 2),
+            MediaOutputDbModel::new("session-2", "/audio.m4a", MediaFileType::Audio, 3),
+            MediaOutputDbModel::new("session-3", "/excluded.mp4", MediaFileType::Video, 4),
+        ] {
+            repo.create_media_output(&output).await.unwrap();
+        }
+
+        let mut statistics = DanmuStatisticsDbModel::new("session-1");
+        statistics.total_danmus = 42;
+        repo.create_danmu_statistics(&statistics).await.unwrap();
+
+        let mut excluded_statistics = DanmuStatisticsDbModel::new("session-3");
+        excluded_statistics.total_danmus = 7;
+        repo.create_danmu_statistics(&excluded_statistics)
+            .await
+            .unwrap();
+
+        let session_ids = vec!["session-1".to_string(), "session-2".to_string()];
+        let outputs = repo
+            .get_media_outputs_for_sessions(&session_ids)
+            .await
+            .unwrap();
+        let statistics = repo
+            .get_danmu_statistics_for_sessions(&session_ids)
+            .await
+            .unwrap();
+
+        assert_eq!(outputs.len(), 3);
+        assert!(
+            outputs
+                .iter()
+                .all(|output| output.session_id != "session-3")
+        );
+        assert_eq!(statistics.len(), 1);
+        assert_eq!(statistics[0].total_danmus, 42);
+        assert!(
+            repo.get_media_outputs_for_sessions(&[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

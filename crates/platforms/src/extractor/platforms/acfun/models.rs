@@ -1,14 +1,20 @@
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "API response models include fields not consumed by the extractor"
+)]
 
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct VisitorLoginResponse {
     pub result: i32,
+    pub error_msg: Option<String>,
+    // Present only when result == 0; error payloads omit these, so they must be
+    // Option for deserialization to reach the result check in Acfun::extract.
     #[serde(rename = "userId")]
-    pub user_id: i64,
+    pub user_id: Option<i64>,
     #[serde(rename = "acfun.api.visitor_st")]
-    pub visitor_st: String,
+    pub visitor_st: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

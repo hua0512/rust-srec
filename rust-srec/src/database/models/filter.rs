@@ -1,5 +1,6 @@
 //! Filter database model.
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::borrow::Cow;
@@ -59,6 +60,66 @@ impl FilterDbModel {
             streamer_id: streamer_id.into(),
             filter_type: filter_type.as_str().to_string(),
             config: config.into(),
+        }
+    }
+}
+
+fn parse_filter_config<T: DeserializeOwned>(raw: &str, label: &'static str) -> crate::Result<T> {
+    serde_json::from_str(raw).map_err(|error| {
+        crate::Error::validation(format!("Failed to parse {label} filter config: {error}"))
+    })
+}
+
+impl TryFrom<&FilterDbModel> for crate::domain::filter::Filter {
+    type Error = crate::Error;
+
+    fn try_from(model: &FilterDbModel) -> Result<Self, Self::Error> {
+        use crate::domain::filter::{
+            CategoryFilter, CronFilter, Filter, KeywordFilter, RegexFilter, TimeBasedFilter,
+        };
+
+        let filter_type = FilterType::parse(&model.filter_type).ok_or_else(|| {
+            crate::Error::validation(format!("Unknown filter type: {}", model.filter_type))
+        })?;
+
+        match filter_type {
+            FilterType::TimeBased => {
+                let config: TimeBasedFilterConfig =
+                    parse_filter_config(&model.config, "time-based")?;
+                Ok(Filter::TimeBased(TimeBasedFilter {
+                    days_of_week: config.days_of_week,
+                    start_time: config.start_time,
+                    end_time: config.end_time,
+                }))
+            }
+            FilterType::Keyword => {
+                let config: KeywordFilterConfig = parse_filter_config(&model.config, "keyword")?;
+                Ok(Filter::Keyword(KeywordFilter {
+                    include: config.include,
+                    exclude: config.exclude,
+                }))
+            }
+            FilterType::Category => {
+                let config: CategoryFilterConfig = parse_filter_config(&model.config, "category")?;
+                Ok(Filter::Category(CategoryFilter {
+                    categories: config.categories,
+                }))
+            }
+            FilterType::Cron => {
+                let config: CronFilterConfig = parse_filter_config(&model.config, "cron")?;
+                Ok(Filter::Cron(CronFilter {
+                    expression: config.expression,
+                    timezone: config.timezone,
+                }))
+            }
+            FilterType::Regex => {
+                let config: RegexFilterConfig = parse_filter_config(&model.config, "regex")?;
+                Ok(Filter::Regex(RegexFilter {
+                    pattern: config.pattern,
+                    case_insensitive: config.case_insensitive,
+                    exclude: config.exclude,
+                }))
+            }
         }
     }
 }
@@ -640,5 +701,36 @@ mod tests {
         };
         assert_eq!(config1, config2);
         assert_ne!(config1, config3);
+    }
+
+    #[test]
+    fn database_model_converts_to_typed_domain_filter() {
+        let model = FilterDbModel::new(
+            "streamer-1",
+            FilterType::Regex,
+            r#"{"pattern":"live","case_insensitive":true,"exclude":false}"#,
+        );
+
+        let filter = crate::domain::filter::Filter::try_from(&model).unwrap();
+        let crate::domain::filter::Filter::Regex(filter) = filter else {
+            panic!("expected regex filter");
+        };
+
+        assert_eq!(filter.pattern, "live");
+        assert!(filter.case_insensitive);
+        assert!(!filter.exclude);
+    }
+
+    #[test]
+    fn database_model_conversion_rejects_unknown_type() {
+        let model = FilterDbModel {
+            id: "filter-1".to_string(),
+            streamer_id: "streamer-1".to_string(),
+            filter_type: "UNKNOWN".to_string(),
+            config: "{}".to_string(),
+        };
+
+        let error = crate::domain::filter::Filter::try_from(&model).unwrap_err();
+        assert!(error.to_string().contains("Unknown filter type"));
     }
 }

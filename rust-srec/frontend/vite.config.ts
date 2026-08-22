@@ -1,23 +1,71 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+import { lingui, linguiTransformerBabelPreset } from '@lingui/vite-plugin';
+import babel from '@rolldown/plugin-babel';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
-import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
 import { nitro } from 'nitro/vite';
 
-import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
 
+import { computeThemeCacheId } from './theme-cache-id.ts';
+
+const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const PUBLIC_LOGO_CACHE_CONTROL =
+  'public, max-age=604800, stale-while-revalidate=86400';
+
+function previewCacheHeaders(): Plugin {
+  return {
+    name: 'preview-cache-headers',
+    enforce: 'pre',
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.startsWith('/assets/')) {
+          res.setHeader('Cache-Control', IMMUTABLE_ASSET_CACHE_CONTROL);
+        } else if (
+          req.url?.startsWith('/stream-rec.svg') ||
+          req.url?.startsWith('/stream-rec-white.svg')
+        ) {
+          res.setHeader('Cache-Control', PUBLIC_LOGO_CACHE_CONTROL);
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig(() => ({
+  define: {
+    __THEME_CACHE_ID__: JSON.stringify(computeThemeCacheId()),
+  },
   plugins: [
     lingui(),
     devtools(),
-    nitro(),
+    previewCacheHeaders(),
+    nitro({
+      routeRules: {
+        '/assets/**': {
+          headers: {
+            'cache-control': IMMUTABLE_ASSET_CACHE_CONTROL,
+          },
+        },
+        '/stream-rec.svg': {
+          headers: {
+            'cache-control': PUBLIC_LOGO_CACHE_CONTROL,
+          },
+        },
+        '/stream-rec-white.svg': {
+          headers: {
+            'cache-control': PUBLIC_LOGO_CACHE_CONTROL,
+          },
+        },
+      },
+    }),
     tailwindcss(),
     tanstackStart({}),
-    react({
-      plugins: [['@lingui/swc-plugin', {}]],
-    }),
+    react(),
+    babel({ presets: [linguiTransformerBabelPreset()] }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],
@@ -34,33 +82,5 @@ export default defineConfig(() => ({
   },
   build: {
     chunkSizeWarningLimit: 600,
-    rollupOptions: {
-      output: {
-        codeSplitting: {
-          groups: [
-            { name: 'vendor-player-art', test: /node_modules[\\/]artplayer/ },
-            { name: 'vendor-player-hls', test: /node_modules[\\/]hls\\.js/ },
-            {
-              name: 'vendor-player-mpegts',
-              test: /node_modules[\\/]mpegts\\.js/,
-            },
-            { name: 'vendor-radix', test: /node_modules[\\/]@radix-ui/ },
-            { name: 'vendor-motion', test: /node_modules[\\/]motion/ },
-            { name: 'vendor-xyflow', test: /node_modules[\\/]@xyflow/ },
-            { name: 'vendor-date-fns', test: /node_modules[\\/]date-fns/ },
-            {
-              name: 'vendor-react-hook-form',
-              test: /node_modules[\\/]react-hook-form/,
-            },
-            { name: 'vendor-protobuf', test: /node_modules[\\/]@bufbuild/ },
-            {
-              name: 'vendor-tanstack',
-              test: /node_modules[\\/]@tanstack[\\/]react-query/,
-            },
-            { name: 'vendor-zod', test: /node_modules[\\/]zod/ },
-          ],
-        },
-      },
-    },
   },
 }));

@@ -10,7 +10,7 @@
 //!
 //! ## Locale selection
 //!
-//! At startup, [`crate::services::container`] reads the `RUST_SREC_LOCALE`
+//! At startup, [`crate::backend::ServiceContainer`] reads the `RUST_SREC_LOCALE`
 //! environment variable (default `"en"`) and calls [`set_locale`]. Supported
 //! locales are determined by the YAML files under `rust-srec/locales/`.
 //!
@@ -31,7 +31,8 @@ pub use rust_i18n::t;
 /// Localize a message and return it as an owned `String`.
 ///
 /// Wraps [`rust_i18n::t!`] and unwraps the returned `Cow<'static, str>` via
-/// [`Cow::into_owned`], so interpolated results (the common case for our
+/// [`Cow::into_owned`](std::borrow::Cow::into_owned), so interpolated results
+/// (the common case for our
 /// keys, which all carry `%{...}` placeholders) are moved out directly and
 /// only the rare static-fallback path clones.
 ///
@@ -54,11 +55,43 @@ macro_rules! t_str {
     };
 }
 
+/// Localize a message in an explicit locale, ignoring the process-wide one.
+///
+/// Used where the reader's language is not a property of the process: a
+/// notification channel carries its own locale, and two channels can be
+/// delivering the same event in different languages at the same time, so
+/// [`set_locale`] cannot express it.
+///
+/// ```ignore
+/// let title: String = crate::t_str_in!("zh-CN", "notification.stream_online.title",
+///     streamer_name = name.as_str());
+/// ```
+///
+/// `locale` is a fixed leading argument rather than a `locale = …` pair so the
+/// expansion writes that pair itself; forwarding it as a captured fragment
+/// relies on how `rust_i18n::t!` parses its arguments.
+#[macro_export]
+macro_rules! t_str_in {
+    ($locale:expr, $key:expr $(,)?) => {
+        ::rust_i18n::t!($key, locale = $locale).into_owned()
+    };
+    ($locale:expr, $key:expr, $($k:ident = $v:expr),+ $(,)?) => {
+        ::rust_i18n::t!($key, locale = $locale, $($k = $v),+).into_owned()
+    };
+}
+
 // Re-export so the `crate::t_str!(...)` form works from any module without
 // an explicit `use`. `#[macro_export]` alone places the macro at the crate
 // root; this re-export keeps the `crate::i18n::t_str` path working too for
 // callers that prefer module-qualified paths.
-pub use crate::t_str;
+pub use crate::{t_str, t_str_in};
+
+/// The locale currently applied by [`set_locale`].
+///
+/// The fallback for anything that has not been given a locale of its own.
+pub fn current_locale() -> String {
+    rust_i18n::locale().to_string()
+}
 
 /// Set the active locale for backend-emitted notification strings.
 ///

@@ -276,7 +276,10 @@ impl SpliceInfoSection {
 /// Zero-copy SCTE-35 splice info section reference.
 #[derive(Debug, Clone)]
 pub struct SpliceInfoSectionRef {
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     data: Bytes,
     pub inner: SpliceInfoSection,
 }

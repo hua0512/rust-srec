@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -39,6 +39,18 @@ use super::actor::{
     ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
     TaskCompletionAction,
 };
+
+/// Read-only scheduler state for health and diagnostics consumers.
+#[derive(Clone)]
+pub(crate) struct SchedulerHandle {
+    stats_rx: watch::Receiver<super::actor::SupervisorStats>,
+}
+
+impl SchedulerHandle {
+    pub(crate) fn stats(&self) -> super::actor::SupervisorStats {
+        self.stats_rx.borrow().clone()
+    }
+}
 
 /// Default check interval (60 seconds).
 const DEFAULT_CHECK_INTERVAL_MS: u64 = 60_000;
@@ -120,6 +132,8 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     cancellation_token: CancellationToken,
     /// Supervisor for managing actor lifecycle.
     supervisor: Supervisor,
+    /// Latest supervisor snapshot for read-only runtime consumers.
+    stats_tx: watch::Sender<super::actor::SupervisorStats>,
     /// Platform mapping for config routing.
     platform_mapping: PlatformMapping,
     /// Platform actor handles for batch coordination.
@@ -215,6 +229,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config.supervisor_config.clone(),
             metadata_store,
         );
+        let (stats_tx, _) = watch::channel(supervisor.stats());
 
         Self {
             streamer_manager,
@@ -223,6 +238,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config_repo: None,
             cancellation_token,
             supervisor,
+            stats_tx,
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -315,7 +331,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// Pass `history_writer = None` to disable persistence (the polling path
     /// is unaffected either way; the writer is purely diagnostic).
-    pub fn with_monitor_history_and_config<SR, FR, SSR, CR>(
+    pub(crate) fn with_monitor_history_and_config<SR, FR, SSR, CR>(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
         monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
@@ -347,6 +363,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             status_checker,
             batch_checker,
         );
+        let (stats_tx, _) = watch::channel(supervisor.stats());
 
         Self {
             streamer_manager,
@@ -355,6 +372,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config_repo: None,
             cancellation_token,
             supervisor,
+            stats_tx,
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -373,6 +391,17 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Get the cancellation token for this scheduler.
     pub fn cancellation_token(&self) -> CancellationToken {
         self.cancellation_token.clone()
+    }
+
+    /// Create a cheap read-only handle for scheduler diagnostics.
+    pub(crate) fn handle(&self) -> SchedulerHandle {
+        SchedulerHandle {
+            stats_rx: self.stats_tx.subscribe(),
+        }
+    }
+
+    fn publish_stats(&self) {
+        self.stats_tx.send_replace(self.supervisor.stats());
     }
 
     /// Set the download event receiver.
@@ -406,8 +435,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     fn create_streamer_config(&self, metadata: &StreamerMetadata) -> StreamerConfig {
         StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: metadata.effective_offline_check_delay_ms,
-            offline_check_count: metadata.effective_offline_check_count,
+            offline_check_interval_ms: metadata.offline_check_delay_ms,
+            offline_check_count: metadata.offline_check_count,
             priority: metadata.priority,
             batch_capable: self.is_batch_capable_platform(&metadata.platform_config_id),
         }
@@ -461,10 +490,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Check if a platform supports batch detection.
-    fn is_batch_capable_platform(&self, platform_id: &str) -> bool {
-        let platform = platform_id.strip_prefix("platform-").unwrap_or(platform_id);
-        // Platforms that support batch API detection
-        matches!(platform, "youtube")
+    ///
+    /// No platform has a batch API implementation
+    /// (`BatchDetector::check_batch_internal` errors unconditionally), so no
+    /// streamer routes checks through `PlatformMessage::RequestCheck`
+    /// delegation; every check runs individually via `perform_check`.
+    fn is_batch_capable_platform(&self, _platform_id: &str) -> bool {
+        false
     }
 
     /// Start the scheduler event loop.
@@ -482,6 +514,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         // Initial actor spawning for all active streamers
         self.spawn_initial_actors().await?;
+        self.publish_stats();
 
         info!(
             "Scheduler started with {} streamer actors and {} platform actors",
@@ -562,10 +595,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     }
                 }
             }
+            self.publish_stats();
         }
 
         // Graceful shutdown
         let report = self.shutdown().await;
+        self.publish_stats();
         info!(
             "Scheduler stopped: {} graceful, {} forced",
             report.graceful_stops, report.forced_terminations
@@ -596,8 +631,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Spawn initial actors for all active streamers.
+    ///
+    /// Uses `get_all_active` so streamers still inside their `disabled_until`
+    /// error backoff also get an actor; the actor's `initiate_check` guard
+    /// defers the first real check until the backoff expires, which keeps
+    /// them monitored once it does.
     async fn spawn_initial_actors(&mut self) -> Result<()> {
-        let streamers = self.streamer_manager.get_ready_for_check();
+        let streamers = self.streamer_manager.get_all_active();
         info!("Spawning actors for {} streamers", streamers.len());
 
         // First, spawn platform actors for batch-capable platforms
@@ -706,8 +746,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
                 // Filters can affect OutOfSchedule smart-wake hints. Force a fresh check soon so
                 // the StreamerActor picks up the new filter behavior immediately.
-                if let Some(handle) = self.supervisor.registry().get_streamer(streamer_id) {
-                    let _ = handle.send(StreamerMessage::CheckStatus).await;
+                if let Some(handle) = self.supervisor.registry().get_streamer(streamer_id)
+                    && let Err(error) = handle.send(StreamerMessage::CheckStatus).await
+                {
+                    debug!(streamer_id, %error, "Streamer actor stopped before forced check");
                 }
             }
             ConfigUpdateEvent::GlobalUpdated => match self.refresh_timing_config_from_db().await {
@@ -801,11 +843,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         // when no metadata is registered yet.
         let offline_check_interval_ms = metadata
             .as_ref()
-            .map(|m| m.effective_offline_check_delay_ms)
+            .map(|m| m.offline_check_delay_ms)
             .unwrap_or(self.config.offline_check_interval_ms);
         let offline_check_count = metadata
             .as_ref()
-            .map(|m| m.effective_offline_check_count)
+            .map(|m| m.offline_check_count)
             .unwrap_or(self.config.offline_check_count);
 
         StreamerConfig {
@@ -893,8 +935,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 && !self.supervisor.registry().has_streamer(streamer_id)
             {
                 // Ensure platform actor exists for batch-capable platforms.
-                if self.is_batch_capable_platform(&metadata.platform_config_id) {
-                    let _ = self.spawn_platform_actor(&metadata.platform_config_id);
+                if self.is_batch_capable_platform(&metadata.platform_config_id)
+                    && let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id)
+                {
+                    warn!(
+                        platform_id = %metadata.platform_config_id,
+                        error = %e,
+                        "Failed to spawn platform actor during state sync"
+                    );
                 }
 
                 info!(
@@ -1074,6 +1122,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                         retry_after_secs: retry_secs,
                         session_id,
                     },
+                    crate::downloader::DownloadRejectedKind::StreamerBackoff => {
+                        DownloadEndPolicy::StreamerBackoffBlocked {
+                            reason,
+                            retry_after_secs: retry_secs,
+                            session_id,
+                        }
+                    }
                 };
                 send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
@@ -1215,11 +1270,25 @@ mod tests {
     }
 
     #[test]
-    fn test_is_batch_capable_platform() {
-        // We can't easily test this without a full Scheduler instance,
-        // but we can verify the logic is correct by checking the match arms
-        assert!(matches!("twitch", "twitch" | "youtube"));
-        assert!(matches!("youtube", "twitch" | "youtube"));
-        assert!(!matches!("bilibili", "twitch" | "youtube"));
+    fn scheduler_handle_reads_latest_stats_snapshot() {
+        fn stats(streamer_count: usize) -> crate::scheduler::actor::SupervisorStats {
+            crate::scheduler::actor::SupervisorStats {
+                streamer_count,
+                platform_count: 0,
+                pending_restarts: 0,
+                restart_stats: crate::scheduler::actor::RestartTrackerStats {
+                    total_actors: streamer_count,
+                    actors_with_failures: 0,
+                    total_restarts: 0,
+                },
+            }
+        }
+
+        let (stats_tx, stats_rx) = watch::channel(stats(1));
+        let handle = SchedulerHandle { stats_rx };
+        assert_eq!(handle.stats().streamer_count, 1);
+
+        stats_tx.send_replace(stats(2));
+        assert_eq!(handle.stats().streamer_count, 2);
     }
 }

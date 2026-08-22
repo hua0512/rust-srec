@@ -8,7 +8,11 @@ macro_rules! range_check {
     ($n:expr, $lower:expr, $upper:expr) => {{
         let n = $n;
 
-        #[allow(unused_comparisons, clippy::manual_range_contains)]
+        #[allow(
+            unused_comparisons,
+            clippy::manual_range_contains,
+            reason = "exported macro must support signed, unsigned, and non-RangeBounds-compatible values"
+        )]
         if n < $lower || n > $upper {
             ::std::result::Result::Err(::std::io::Error::new(
                 ::std::io::ErrorKind::InvalidData,

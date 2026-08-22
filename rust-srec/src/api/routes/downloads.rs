@@ -8,7 +8,7 @@ use std::time::Duration;
 use axum::{
     Router,
     extract::{
-        Query, State,
+        FromRef, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
@@ -32,20 +32,44 @@ const SNAPSHOT_ON_SUBSCRIBE: bool = true;
 use crate::api::error::ApiError;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
-    EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_error_message,
-    create_snapshot_message, download_progress::client_message::Action,
-    download_progress::ws_message::Payload,
+    EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_snapshot_message,
+    download_progress::client_message::Action, download_progress::ws_message::Payload,
+    upload_progress_to_proto,
 };
 use crate::api::server::AppState;
+use crate::database::repositories::config::SqlxConfigRepository;
+use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::domain::streamer::{CheckOutcome, CheckRecord};
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
-use crate::monitor::check_history_writer::BroadcastEnvelope;
+use crate::pipeline::{ActiveUploadInfo, PipelineManager, UploadStatusEvent, UploadTerminalStatus};
+
+#[derive(Clone)]
+pub struct DownloadRouteState {
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
+    download_manager: std::sync::Arc<crate::downloader::DownloadManager>,
+    check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
+    upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
+    /// Source of the snapshot's `uploads` slice (`list_active_uploads`).
+    pipeline_manager: std::sync::Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+}
+
+impl FromRef<AppState> for DownloadRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+            download_manager: state.download_manager.clone(),
+            check_history_broadcaster: state.check_history_broadcaster.clone(),
+            upload_status_broadcaster: state.upload_status_broadcaster.clone(),
+            pipeline_manager: state.pipeline_manager.clone(),
+        }
+    }
+}
 
 /// Query parameters for WebSocket connection (JWT token).
 #[derive(Debug, Deserialize)]
 pub struct WsAuthParams {
     /// JWT token for authentication
-    pub token: String,
+    pub token: Option<String>,
 }
 
 /// Create the downloads router.
@@ -76,45 +100,64 @@ pub fn router() -> Router<AppState> {
 /// - `unsubscribe`: Receive all updates (remove filter)
 async fn download_progress_ws(
     ws: WebSocketUpgrade,
-    State(state): State<AppState>,
+    State(state): State<DownloadRouteState>,
     Query(auth): Query<WsAuthParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Validate JWT token using existing JwtService
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
-
-    jwt_service
-        .validate_token(&auth.token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+    if let Some(auth_service) = &state.auth_service {
+        let token = auth
+            .token
+            .as_deref()
+            .ok_or_else(|| ApiError::unauthorized("Missing token"))?;
+        auth_service
+            .authorize_access_token(token, false)
+            .await
+            .map_err(ApiError::from)?;
+    }
 
     Ok(ws.on_upgrade(|socket| handle_socket(socket, state)))
 }
 
+/// Active upload jobs for the snapshot, optionally filtered to one streamer.
+/// Best-effort: a repository error degrades to an empty slice rather than
+/// failing the snapshot — download state is still worth delivering.
+async fn snapshot_uploads(
+    pipeline_manager: &PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>,
+    filter: &Option<String>,
+) -> Vec<ActiveUploadInfo> {
+    let mut uploads = pipeline_manager
+        .list_active_uploads()
+        .await
+        .unwrap_or_else(|e| {
+            warn!("Failed to list active uploads for WS snapshot: {}", e);
+            Vec::new()
+        });
+    if let Some(streamer_id) = filter {
+        uploads.retain(|u| u.streamer_id.as_deref() == Some(streamer_id.as_str()));
+    }
+    uploads
+}
+
 /// Handle an established WebSocket connection.
-async fn handle_socket(socket: WebSocket, state: AppState) {
+async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     // debug!("New WebSocket connection established");
-    let download_manager = match &state.download_manager {
-        Some(dm) => dm.clone(),
-        None => {
-            // Send error as protobuf and close
-            let (mut sender, _) = socket.split();
-            let error_msg =
-                create_error_message("SERVICE_UNAVAILABLE", "Download manager is not available");
-            let bytes = error_msg.encode_to_vec();
-            let _ = sender.send(Message::Binary(Bytes::from(bytes))).await;
-            let _ = sender.close().await;
-            return;
-        }
-    };
+    let download_manager = state.download_manager.clone();
 
     let (mut sender, mut receiver) = socket.split();
 
-    // 1. Send initial snapshot as protobuf binary
+    // 1. Subscribe to the broadcasts BEFORE building the snapshot: receivers
+    // buffer from subscription time, so events that fire while the snapshot
+    // is assembled are delivered afterwards instead of being lost in the
+    // snapshot/subscribe gap (the snapshot is the only recovery path for a
+    // missed UploadStarted).
+    let mut event_rx = download_manager.subscribe();
+    let mut check_history_rx = state.check_history_broadcaster.subscribe();
+    let mut upload_rx = state.upload_status_broadcaster.subscribe();
+
+    // 2. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
     let queued = download_manager.snapshot_pending();
-    let snapshot_msg = create_snapshot_message(downloads, queued);
+    let uploads = snapshot_uploads(&state.pipeline_manager, &None).await;
+    let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
     let bytes = snapshot_msg.encode_to_vec();
 
     if sender
@@ -125,23 +168,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         debug!("Failed to send initial snapshot, client disconnected");
         return;
     }
-    // debug!("Sent initial snapshot with {} downloads", downloads.len());
-
-    // 2. Subscribe to broadcast
-    let mut event_rx = download_manager.subscribe();
-    // Per-poll check-history events. When the broadcaster isn't wired
-    // (test harnesses), we hold both sides of a tiny no-op channel — the
-    // sender keeps the receiver open without ever firing, so the select!
-    // arm below never returns Closed and falls back to download-only
-    // streaming naturally.
-    let (_check_history_keepalive, mut check_history_rx) =
-        match state.check_history_broadcaster.as_ref() {
-            Some(b) => (None, b.subscribe()),
-            None => {
-                let (tx, rx) = broadcast::channel::<BroadcastEnvelope>(1);
-                (Some(tx), rx)
-            }
-        };
 
     // 3. Track filter state and heartbeat
     let mut filter: Option<String> = None;
@@ -172,7 +198,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 downloads.retain(|d| &d.streamer_id == streamer_id);
                                                 queued.retain(|q| &q.streamer_id == streamer_id);
                                             }
-                                            let snapshot_msg = create_snapshot_message(downloads, queued);
+                                            let uploads = snapshot_uploads(&state.pipeline_manager, &filter).await;
+                                            let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
                                                 break;
@@ -186,7 +213,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         if SNAPSHOT_ON_SUBSCRIBE {
                                             let downloads = download_manager.get_active_downloads();
                                             let queued = download_manager.snapshot_pending();
-                                            let snapshot_msg = create_snapshot_message(downloads, queued);
+                                            let uploads = snapshot_uploads(&state.pipeline_manager, &None).await;
+                                            let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
                                                 break;
@@ -281,6 +309,41 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         // shutdown — fall through to heartbeat / client
                         // close.
                         debug!("check-history broadcast closed");
+                    }
+                }
+            }
+
+            // Upload status events (started/progress/terminal), pre-encoded
+            // once by the UploadStatusBroadcaster's encoder. Filtered against
+            // the same per-connection streamer subscription as download
+            // events; streamer-less uploads pass only when no filter is set.
+            envelope = upload_rx.recv() => {
+                match envelope {
+                    Ok(envelope) => {
+                        let passes = match (&filter, envelope.event.streamer_id()) {
+                            (None, _) => true,
+                            (Some(f), Some(streamer_id)) => f == streamer_id,
+                            // Streamer-scoped subscription never sees
+                            // streamer-less uploads (manual jobs).
+                            (Some(_), None) => false,
+                        };
+                        if passes
+                            && let Err(e) = sender
+                                .send(Message::Binary(envelope.ws_bytes.clone()))
+                                .await
+                        {
+                            debug!("Failed to send upload status message: {}", e);
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        // Lag is tolerable: progress is periodic, and a missed
+                        // terminal event is reconciled by the snapshot sent on
+                        // the next subscribe/unsubscribe or by the frontend's
+                        // staleness guard on its uploads store.
+                        warn!("upload-status broadcast lagged by {} messages", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        debug!("upload-status broadcast closed");
                     }
                 }
             }
@@ -414,8 +477,6 @@ fn map_event_to_protobuf(
             completed_at,
             duration_secs,
             size_bytes,
-            split_reason_code: _,
-            split_reason_details_json: _,
             ..
         }) => {
             let payload = SegmentCompleted {
@@ -598,6 +659,80 @@ pub fn map_check_record_to_protobuf(record: &CheckRecord) -> WsMessage {
     }
 }
 
+/// Map an [`UploadStatusEvent`] to the WebSocket envelope.
+///
+/// `pub` for the same reason as [`map_check_record_to_protobuf`]: the
+/// [`crate::services::container`] wraps it as the
+/// [`crate::pipeline::UploadWsEncoder`] handed to the
+/// `UploadStatusBroadcaster`, keeping proto knowledge out of the pipeline
+/// module. Absent `streamer_id`/`session_id` become empty strings (proto3
+/// scalar-default convention, same as check-history fields).
+pub fn map_upload_event_to_protobuf(event: &UploadStatusEvent) -> WsMessage {
+    match event {
+        UploadStatusEvent::Started {
+            job_id,
+            streamer_id,
+            session_id,
+            uploader,
+            files_total,
+            started_at_ms,
+        } => WsMessage {
+            event_type: EventType::UploadStarted as i32,
+            payload: Some(Payload::UploadStarted(crate::api::proto::UploadStarted {
+                job_id: job_id.clone(),
+                streamer_id: streamer_id.clone().unwrap_or_default(),
+                session_id: session_id.clone().unwrap_or_default(),
+                uploader: uploader.to_string(),
+                files_total: *files_total,
+                started_at_ms: *started_at_ms,
+            })),
+        },
+        UploadStatusEvent::Progress {
+            job_id,
+            streamer_id,
+            snapshot,
+        } => WsMessage {
+            event_type: EventType::UploadProgress as i32,
+            payload: Some(Payload::UploadProgress(upload_progress_to_proto(
+                job_id,
+                streamer_id.as_deref(),
+                snapshot,
+            ))),
+        },
+        UploadStatusEvent::Terminal {
+            job_id,
+            streamer_id,
+            status,
+            files_succeeded,
+            files_failed,
+            files_skipped,
+            error,
+        } => {
+            let proto_status = match status {
+                UploadTerminalStatus::Completed => {
+                    crate::api::proto::UploadTerminalStatus::Completed
+                }
+                UploadTerminalStatus::Failed => crate::api::proto::UploadTerminalStatus::Failed,
+                UploadTerminalStatus::Cancelled => {
+                    crate::api::proto::UploadTerminalStatus::Cancelled
+                }
+            };
+            WsMessage {
+                event_type: EventType::UploadTerminal as i32,
+                payload: Some(Payload::UploadTerminal(crate::api::proto::UploadTerminal {
+                    job_id: job_id.clone(),
+                    streamer_id: streamer_id.clone().unwrap_or_default(),
+                    status: proto_status as i32,
+                    files_succeeded: *files_succeeded,
+                    files_failed: *files_failed,
+                    files_skipped: *files_skipped,
+                    error: error.clone().unwrap_or_default(),
+                })),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -608,7 +743,7 @@ mod tests {
     fn test_ws_auth_params_deserialize() {
         let json = r#"{"token": "test-jwt-token"}"#;
         let params: WsAuthParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.token, "test-jwt-token");
+        assert_eq!(params.token.as_deref(), Some("test-jwt-token"));
     }
 
     #[test]
@@ -834,7 +969,7 @@ mod tests {
 
     #[test]
     fn test_client_message_subscribe_decode() {
-        use crate::api::proto::{SubscribeRequest, download_progress::client_message::Action};
+        use crate::api::proto::download_progress::{SubscribeRequest, client_message::Action};
 
         let client_msg = ClientMessage {
             action: Some(Action::Subscribe(SubscribeRequest {
@@ -857,7 +992,7 @@ mod tests {
 
     #[test]
     fn test_client_message_unsubscribe_decode() {
-        use crate::api::proto::{UnsubscribeRequest, download_progress::client_message::Action};
+        use crate::api::proto::download_progress::{UnsubscribeRequest, client_message::Action};
 
         let client_msg = ClientMessage {
             action: Some(Action::Unsubscribe(UnsubscribeRequest {})),

@@ -25,6 +25,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { priorityLabel } from '@/lib/priority';
+import { eventTypeLabel } from '@/lib/notification-event-types';
 import {
   Loader2,
   BellRing,
@@ -295,11 +296,16 @@ export function SubscriptionManager({
 
   const isLoading = isLoadingTypes || isLoadingSubs;
 
-  const filteredEventTypes = eventTypes?.filter(
-    (type) =>
-      type.event_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      type.label.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  // Matches against the translated label as well as the API's English one, so searching works
+  // both in the language on screen and by the term someone read in the docs or logs.
+  const filteredEventTypes = eventTypes?.filter((type) => {
+    const needle = searchQuery.toLowerCase();
+    return (
+      type.event_type.toLowerCase().includes(needle) ||
+      type.label.toLowerCase().includes(needle) ||
+      i18n._(eventTypeLabel(type.event_type)).toLowerCase().includes(needle)
+    );
+  });
 
   const isAllSelected =
     filteredEventTypes &&
@@ -415,13 +421,13 @@ export function SubscriptionManager({
                             <Label
                               className={`font-medium cursor-pointer transition-colors ${isSelected ? 'text-primary' : 'text-foreground'}`}
                             >
-                              {type.label}
+                              {i18n._(eventTypeLabel(type.event_type))}
                             </Label>
                             <Badge
                               variant="outline"
                               className={`text-[10px] h-5 transition-colors ${isSelected ? 'bg-primary/10 border-primary/20 text-primary' : 'text-muted-foreground'}`}
                             >
-                              {priorityLabel(type.priority)}
+                              {i18n._(priorityLabel(type.priority))}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground/80 leading-relaxed font-mono">

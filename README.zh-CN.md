@@ -31,17 +31,27 @@ Bilibili、抖音、斗鱼、虎牙、Twitch、TikTok、AcFun、Picarto、小红
 
 ## 快速上手（Docker）
 
-最推荐的部署方式：
+最推荐的部署方式 —— Linux 与 macOS：
 
 ```bash
-# 下载 compose 文件，按需修改 VERSION 与挂载目录
-curl -O https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docker-compose.yml
-docker compose up -d
+curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh bash
 ```
 
-启动后打开 Web 界面，按照[快速上手指南](https://docs.srec.rs/zh/getting-started/)继续配置即可。
+Windows PowerShell：
 
-> 镜像 tag 以 `v` 开头，需要写成 `VERSION=v0.3.1`，而不是 `0.3.1`。
+```powershell
+$env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
+```
+
+安装脚本会下载 compose 与环境变量文件、生成所需密钥、检测 NVIDIA 支持，并询问是否直接启动服务。启动后打开 Web 界面，按照[快速上手指南](https://docs.srec.rs/zh/getting-started/)继续配置即可。
+
+若不想跟随 `latest`，可用 `VERSION` 指定版本；镜像 tag 以 `v` 开头：
+
+```bash
+curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.5.1 bash
+```
+
+> 将远程脚本直接管道给 shell，执行的是服务器当次返回的内容。如需先行审阅，可下载 [install.sh](https://docs.srec.rs/install.sh) 检查后再运行本地副本，或参考 [Docker 部署文档](https://docs.srec.rs/zh/getting-started/docker)中的手动步骤。
 
 想直接下载二进制或自行编译，请参考[安装指南](https://docs.srec.rs/zh/getting-started/installation)。
 

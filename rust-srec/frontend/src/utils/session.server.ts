@@ -1,5 +1,10 @@
 import type { SessionData } from './session';
 import { isDesktopBuild } from '@/utils/desktop';
+import {
+  BROWSER_SESSION_STORAGE_KEY,
+  isBrowserRuntime,
+  parseStoredSession,
+} from './session-storage';
 
 type SessionLike<T> = {
   data: Partial<T>;
@@ -7,27 +12,18 @@ type SessionLike<T> = {
   clear: () => Promise<void>;
 };
 
-const BROWSER_SESSION_STORAGE_KEY = 'rust_srec_session_v1';
-
-function isBrowserRuntime(): boolean {
-  return (
-    typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
-  );
-}
-
-function parseStoredSession(raw: string | null): Partial<SessionData> {
-  if (!raw) return {};
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null) return {};
-    return parsed as Partial<SessionData>;
-  } catch {
-    return {};
-  }
-}
-
 let browserSessionSingleton: SessionLike<SessionData> | null = null;
+
+export function resolveSessionSecret(
+  sessionSecret = process.env.SESSION_SECRET,
+  nodeEnv = process.env.NODE_ENV,
+): string {
+  if (sessionSecret) return sessionSecret;
+  if (nodeEnv === 'production') {
+    throw new Error('SESSION_SECRET must be set in production');
+  }
+  return 'dev_secret_must_be_at_least_32_chars_long_and_random';
+}
 
 function getBrowserSession(): SessionLike<SessionData> {
   if (browserSessionSingleton) return browserSessionSingleton;
@@ -108,9 +104,7 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
 
   const session = await useSession<SessionData>({
     name: 'srec_session',
-    password:
-      process.env.SESSION_SECRET ||
-      'dev_secret_must_be_at_least_32_chars_long_and_random',
+    password: resolveSessionSecret(),
     cookie: {
       secure: isSecureCookie(),
       sameSite: 'lax',

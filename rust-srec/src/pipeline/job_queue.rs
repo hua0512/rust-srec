@@ -13,14 +13,18 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use super::progress::{JobProgressSnapshot, JobProgressUpdate, ProgressReporter};
+use super::processors::{UploadItemStatus, UploadResultItem};
+use super::progress::{JobProgressSnapshot, JobProgressUpdate, ProgressKind, ProgressReporter};
+use super::upload_events::{UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus};
 use crate::database::models::JobExecutionProgressDbModel;
 use crate::database::models::job::LogEntry as DbLogEntry;
 use crate::database::models::{
     JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus, MediaFileType, MediaOutputDbModel,
-    Pagination, TitleEntry,
+    Pagination, TitleEntry, UploadRecordDbModel,
 };
-use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
+use crate::database::repositories::{
+    JobRepository, SessionRepository, StreamerRepository, UploadRecordRepository,
+};
 use crate::pipeline::processors::utils as processor_utils;
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
@@ -33,13 +37,52 @@ fn is_thumbnail_job_type(job_type: &str) -> bool {
     jt == "thumbnail" || jt.starts_with("thumbnail_")
 }
 
+/// Upload kind for a job type, or `None` when the job is not an upload.
+///
+/// Same convention as `is_thumbnail_job_type`: preset-driven DAG steps use
+/// `<processor>_<preset>` job types, so prefixes match too. The returned
+/// value is persisted as `upload_records.uploader` and broadcast as
+/// `UploadStatusEvent::Started.uploader`.
+pub(crate) fn upload_kind_for_job_type(job_type: &str) -> Option<&'static str> {
+    let jt = job_type.to_ascii_lowercase();
+    // "upload" is RcloneProcessor's legacy job-type alias.
+    if jt == "rclone" || jt.starts_with("rclone_") || jt == "upload" || jt.starts_with("upload_") {
+        return Some("rclone");
+    }
+    if jt == "baidupcs" || jt.starts_with("baidupcs_") {
+        return Some("baidupcs");
+    }
+    None
+}
+
+/// Empty-string-as-absent conversion for `Job.streamer_id` / `Job.session_id`
+/// (the `Job` struct uses `String` where the DB row has `Option<String>`).
+fn non_empty(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_string())
+}
+
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
 const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
+/// Ring-buffer bound on `job_execution_logs` rows per job run: once a run
+/// has this many rows, `persist_logs_to_db` trims the oldest via
+/// `JobRepository::trim_execution_logs` after each insert. Counted in
+/// `PersistedLogCursor::persisted_rows`, whose entry is removed on every
+/// terminal/retry path — so the cap bounds one run, and time-based
+/// retention (`database::maintenance`) remains the cross-run bound.
+const MAX_PERSISTED_LOG_ROWS_PER_JOB: usize = 5000;
 
 #[derive(Debug, Clone, Copy)]
 struct PersistedLogCursor {
     last_sig: u64,
     last_ts_ms: i64,
+    /// Rows this run has inserted into `job_execution_logs`, saturated at
+    /// `MAX_PERSISTED_LOG_ROWS_PER_JOB` once trimming keeps the table there.
+    persisted_rows: usize,
+}
+
+/// Oldest rows to delete so `already + incoming` stays within `cap`.
+fn excess_log_rows(already: usize, incoming: usize, cap: usize) -> usize {
+    already.saturating_add(incoming).saturating_sub(cap)
 }
 
 fn log_level_to_db(level: LogLevel) -> &'static str {
@@ -501,8 +544,33 @@ pub struct JobResult {
     pub duration_secs: f64,
     /// Additional metadata.
     pub metadata: Option<String>,
+    /// Per-file upload results (from `ProcessorOutput::uploads`); persisted
+    /// to `upload_records` by `JobQueue::complete` for upload job types.
+    pub uploads: Vec<UploadResultItem>,
     /// Execution logs.
     pub logs: Vec<JobLogEntry>,
+}
+
+/// One in-flight upload job, as reported by [`JobQueue::list_active_uploads`].
+/// Feeds the WebSocket `DownloadSnapshot.uploads` slice so reconnecting
+/// clients recover uploads that started before they subscribed.
+#[derive(Debug, Clone)]
+pub struct ActiveUploadInfo {
+    pub job_id: String,
+    pub streamer_id: Option<String>,
+    pub session_id: Option<String>,
+    pub uploader: &'static str,
+    pub files_total: u32,
+    pub started_at: Option<DateTime<Utc>>,
+    /// Latest in-memory progress snapshot, when the processor has reported one.
+    pub progress: Option<JobProgressSnapshot>,
+}
+
+struct FailedUploadContext {
+    job_type: String,
+    streamer_id: Option<String>,
+    session_id: Option<String>,
+    inputs: Vec<String>,
 }
 
 /// The job queue service.
@@ -519,12 +587,24 @@ pub struct JobQueue {
     session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
     /// Streamer repository for looking up streamer metadata (e.g., name).
     streamer_repo: std::sync::OnceLock<Arc<dyn StreamerRepository>>,
+    /// Upload record repository for persisting per-file upload results.
+    upload_repo: std::sync::OnceLock<Arc<dyn UploadRecordRepository>>,
+    /// Fan-out for live upload status events. Shared (`Arc`) with the
+    /// progress aggregator task, which publishes `Progress` events on its
+    /// flush tick; installed once via `set_upload_broadcaster`.
+    upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>>,
     /// In-memory cache of jobs (for quick lookups).
-    jobs_cache: DashMap<String, Job>,
-    /// Cancellation tokens for processing jobs.
-    cancellation_tokens: DashMap<String, CancellationToken>,
-    /// Latest progress snapshot per job (in-memory).
-    progress_cache: DashMap<String, JobProgressSnapshot>,
+    ///
+    /// `Arc`-shared with the progress aggregator task: `DashMap::clone`
+    /// deep-copies the map, so handing the aggregator a bare clone would
+    /// freeze it at the (empty) construction-time contents.
+    jobs_cache: Arc<DashMap<String, Job>>,
+    /// Cancellation tokens for processing jobs. `Arc`-shared with the
+    /// progress aggregator, whose liveness check reads it (see `jobs_cache`).
+    cancellation_tokens: Arc<DashMap<String, CancellationToken>>,
+    /// Latest progress snapshot per job (in-memory). `Arc`-shared with the
+    /// progress aggregator, which writes it (see `jobs_cache`).
+    progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
     /// Progress update sender for async persistence/coalescing.
     progress_tx: tokio::sync::mpsc::Sender<JobProgressUpdate>,
     /// Cursor used to dedupe/append logs into `job_execution_logs`.
@@ -539,51 +619,43 @@ impl JobQueue {
 
     /// Create a new job queue with custom configuration.
     pub fn with_config(config: JobQueueConfig) -> Self {
-        let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
-        let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
-        let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
-        spawn_progress_aggregator(
-            None,
-            progress_rx,
-            cancellation_tokens.clone(),
-            progress_cache.clone(),
-        );
-
-        Self {
-            config,
-            depth: AtomicUsize::new(0),
-            notify: Arc::new(Notify::new()),
-            job_repository: None,
-            session_repo: std::sync::OnceLock::new(),
-            streamer_repo: std::sync::OnceLock::new(),
-            jobs_cache: DashMap::new(),
-            cancellation_tokens,
-            progress_cache,
-            progress_tx,
-            persisted_log_cursor: DashMap::new(),
-        }
+        Self::build(config, None)
     }
 
     /// Create a new job queue with a job repository for database persistence.
     pub fn with_repository(config: JobQueueConfig, repository: Arc<dyn JobRepository>) -> Self {
+        Self::build(config, Some(repository))
+    }
+
+    fn build(config: JobQueueConfig, repository: Option<Arc<dyn JobRepository>>) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
-        let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
-        let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
+        // These maps are Arc-shared with the aggregator task: DashMap::clone
+        // deep-copies contents, so a bare clone would permanently detach the
+        // aggregator's view from the queue's.
+        let jobs_cache: Arc<DashMap<String, Job>> = Arc::new(DashMap::new());
+        let cancellation_tokens: Arc<DashMap<String, CancellationToken>> = Arc::new(DashMap::new());
+        let progress_cache: Arc<DashMap<String, JobProgressSnapshot>> = Arc::new(DashMap::new());
+        let upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>> =
+            Arc::new(std::sync::OnceLock::new());
         spawn_progress_aggregator(
-            Some(repository.clone()),
+            repository.clone(),
             progress_rx,
+            jobs_cache.clone(),
             cancellation_tokens.clone(),
             progress_cache.clone(),
+            upload_broadcaster.clone(),
         );
 
         Self {
             config,
             depth: AtomicUsize::new(0),
             notify: Arc::new(Notify::new()),
-            job_repository: Some(repository),
+            job_repository: repository,
             session_repo: std::sync::OnceLock::new(),
             streamer_repo: std::sync::OnceLock::new(),
-            jobs_cache: DashMap::new(),
+            upload_repo: std::sync::OnceLock::new(),
+            upload_broadcaster,
+            jobs_cache,
             cancellation_tokens,
             progress_cache,
             progress_tx,
@@ -591,21 +663,163 @@ impl JobQueue {
         }
     }
 
-    /// Set the job repository for database persistence.
-    pub fn set_repository(&mut self, repository: Arc<dyn JobRepository>) {
-        self.job_repository = Some(repository);
-    }
-
     /// Set the session repository for persisting media outputs (e.g., thumbnails).
     /// This can only be called once.
-    pub fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
-        let _ = self.session_repo.set(repo);
+    pub(crate) fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
+        if self.session_repo.set(repo).is_err() {
+            tracing::warn!("Job queue session repository was already installed");
+        }
     }
 
     /// Set the streamer repository for looking up streamer metadata.
     /// This can only be called once.
-    pub fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
-        let _ = self.streamer_repo.set(repo);
+    pub(crate) fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
+        if self.streamer_repo.set(repo).is_err() {
+            tracing::warn!("Job queue streamer repository was already installed");
+        }
+    }
+
+    /// Set the upload record repository for persisting per-file upload results.
+    /// This can only be called once.
+    pub(crate) fn set_upload_repo(&self, repo: Arc<dyn UploadRecordRepository>) {
+        if self.upload_repo.set(repo).is_err() {
+            tracing::warn!("Job queue upload record repository was already installed");
+        }
+    }
+
+    /// Install the live upload-status broadcaster. This can only be called once.
+    pub(crate) fn set_upload_broadcaster(&self, broadcaster: UploadStatusBroadcaster) {
+        if self.upload_broadcaster.set(broadcaster).is_err() {
+            tracing::warn!("Job queue upload broadcaster was already installed");
+        }
+    }
+
+    fn emit_upload_event(&self, event: UploadStatusEvent) {
+        if let Some(broadcaster) = self.upload_broadcaster.get() {
+            broadcaster.send(event);
+        }
+    }
+
+    /// Publish `UploadStatusEvent::Started` when `job` is an upload job.
+    /// Called from `dequeue` right after the claim succeeds.
+    fn emit_upload_started(&self, job: &Job) {
+        let Some(uploader) = upload_kind_for_job_type(&job.job_type) else {
+            return;
+        };
+        self.emit_upload_event(UploadStatusEvent::Started {
+            job_id: job.id.clone(),
+            streamer_id: non_empty(&job.streamer_id),
+            session_id: non_empty(&job.session_id),
+            uploader,
+            files_total: job.inputs.len() as u32,
+            started_at_ms: job.started_at.unwrap_or_else(Utc::now).timestamp_millis(),
+        });
+    }
+
+    /// Publish `Terminal { Cancelled }` when the job is an upload job.
+    /// Cancellation produces no per-file records (the job's CANCELLED status
+    /// is the durable truth), so the file counters are zero by construction.
+    fn emit_upload_cancelled(&self, job_id: &str, job_type: &str, streamer_id: &str) {
+        if upload_kind_for_job_type(job_type).is_none() {
+            return;
+        }
+        self.emit_upload_event(UploadStatusEvent::Terminal {
+            job_id: job_id.to_string(),
+            streamer_id: non_empty(streamer_id),
+            status: UploadTerminalStatus::Cancelled,
+            files_succeeded: 0,
+            files_failed: 0,
+            files_skipped: 0,
+            error: None,
+        });
+    }
+
+    /// Persist per-file upload results to `upload_records`.
+    ///
+    /// Best-effort, same policy as `persist_thumbnail_output`: a bookkeeping
+    /// failure is logged and swallowed so it can never fail the job whose
+    /// transfer already succeeded. No-op for non-upload job types and when
+    /// no repository is installed (in-memory queues in tests).
+    pub(crate) async fn persist_upload_records(
+        &self,
+        job_id: &str,
+        job_type: &str,
+        streamer_id: Option<&str>,
+        session_id: Option<&str>,
+        items: &[UploadResultItem],
+    ) {
+        let Some(uploader) = upload_kind_for_job_type(job_type) else {
+            return;
+        };
+        if items.is_empty() {
+            return;
+        }
+        let Some(repo) = self.upload_repo.get() else {
+            return;
+        };
+
+        let now = crate::database::time::now_ms();
+        let records: Vec<UploadRecordDbModel> = items
+            .iter()
+            .map(|item| UploadRecordDbModel {
+                id: uuid::Uuid::new_v4().to_string(),
+                job_id: Some(job_id.to_string()),
+                streamer_id: streamer_id.filter(|s| !s.is_empty()).map(str::to_string),
+                session_id: session_id.filter(|s| !s.is_empty()).map(str::to_string),
+                uploader: uploader.to_string(),
+                local_path: item.local_path.clone(),
+                remote_path: item.remote_path.clone(),
+                status: item.status.as_str().to_string(),
+                size_bytes: item.size_bytes.map(|s| s as i64),
+                error: item.error.clone(),
+                created_at: now,
+                updated_at: now,
+                completed_at: matches!(item.status, UploadItemStatus::Completed).then_some(now),
+            })
+            .collect();
+
+        if let Err(e) = repo.upsert_records(&records).await {
+            warn!(job_id, error = %e, "Failed to persist upload records");
+        }
+    }
+
+    /// In-flight upload jobs with their latest progress snapshots. Feeds the
+    /// WebSocket `DownloadSnapshot.uploads` slice.
+    pub async fn list_active_uploads(&self) -> Result<Vec<ActiveUploadInfo>> {
+        let mut infos = Vec::new();
+        if let Some(repo) = &self.job_repository {
+            for db_job in repo.list_jobs_by_status(JobStatus::Processing).await? {
+                let Some(uploader) = upload_kind_for_job_type(&db_job.job_type) else {
+                    continue;
+                };
+                let job = db_model_to_job(&db_job);
+                infos.push(self.active_upload_info(&job, uploader));
+            }
+        } else {
+            for entry in self.jobs_cache.iter() {
+                let job = entry.value();
+                if job.status != JobStatus::Processing {
+                    continue;
+                }
+                let Some(uploader) = upload_kind_for_job_type(&job.job_type) else {
+                    continue;
+                };
+                infos.push(self.active_upload_info(job, uploader));
+            }
+        }
+        Ok(infos)
+    }
+
+    fn active_upload_info(&self, job: &Job, uploader: &'static str) -> ActiveUploadInfo {
+        ActiveUploadInfo {
+            job_id: job.id.clone(),
+            streamer_id: non_empty(&job.streamer_id),
+            session_id: non_empty(&job.session_id),
+            uploader,
+            files_total: job.inputs.len() as u32,
+            started_at: job.started_at,
+            progress: self.progress_cache.get(&job.id).map(|s| s.clone()),
+        }
     }
 
     /// Persist thumbnail output to media_outputs table.
@@ -673,7 +887,7 @@ impl JobQueue {
     }
 
     pub async fn append_log_entry(&self, job_id: &str, logs: &[JobLogEntry]) -> Result<()> {
-        let _ = self.persist_logs_to_db(job_id, logs).await?;
+        self.persist_logs_to_db(job_id, logs).await?;
         Ok(())
     }
 
@@ -708,6 +922,8 @@ impl JobQueue {
             }
         }
 
+        let already_persisted = cursor.map(|c| c.persisted_rows).unwrap_or(0);
+
         let new_logs: Vec<JobLogEntry> = logs[start_index..].to_vec();
         if !new_logs.is_empty() {
             let db_logs: Vec<JobExecutionLogDbModel> = new_logs
@@ -730,6 +946,21 @@ impl JobQueue {
                 })
                 .collect();
             repo.add_execution_logs(&db_logs).await?;
+
+            // Insert first, trim after: the newest lines (a failing run's
+            // tail) always land, and the oldest rows leave once the run
+            // exceeds MAX_PERSISTED_LOG_ROWS_PER_JOB. Trim failure is
+            // logged, not propagated — the log write itself succeeded.
+            let excess = excess_log_rows(
+                already_persisted,
+                new_logs.len(),
+                MAX_PERSISTED_LOG_ROWS_PER_JOB,
+            );
+            if excess > 0
+                && let Err(error) = repo.trim_execution_logs(job_id, excess).await
+            {
+                warn!(job_id, %error, "Failed to trim oldest execution log rows");
+            }
         }
 
         if let Some(last) = logs.last() {
@@ -738,6 +969,9 @@ impl JobQueue {
                 PersistedLogCursor {
                     last_sig: log_signature(last),
                     last_ts_ms: last.timestamp.timestamp_millis(),
+                    persisted_rows: already_persisted
+                        .saturating_add(new_logs.len())
+                        .min(MAX_PERSISTED_LOG_ROWS_PER_JOB),
                 },
             );
         }
@@ -885,8 +1119,7 @@ impl JobQueue {
 
         info!("Enqueued job {} of type {}", job_id, job_type);
 
-        // Notify waiting workers
-        self.notify.notify_one();
+        self.wake_workers();
 
         Ok(job_id)
     }
@@ -905,8 +1138,7 @@ impl JobQueue {
 
         info!("Enqueued existing job {} of type {}", job_id, job_type);
 
-        // Notify waiting workers
-        self.notify.notify_one();
+        self.wake_workers();
 
         Ok(job_id)
     }
@@ -936,6 +1168,7 @@ impl JobQueue {
                 // e.g. if a cancellation raced with dequeue).
                 self.cancellation_tokens.entry(job.id.clone()).or_default();
 
+                self.emit_upload_started(&job);
                 return Ok(Some(job));
             }
         } else {
@@ -981,6 +1214,7 @@ impl JobQueue {
                 drop(job_ref);
 
                 self.cancellation_tokens.entry(job.id.clone()).or_default();
+                self.emit_upload_started(&job);
                 return Ok(Some(job));
             }
         }
@@ -1023,6 +1257,7 @@ impl JobQueue {
         let outputs_for_persist = result.outputs.clone();
         let mut completed_job_type: Option<String> = None;
         let mut completed_session_id: Option<String> = None;
+        let mut completed_streamer_id: Option<String> = None;
 
         // Update database if repository is available.
         if let Some(repo) = &self.job_repository {
@@ -1030,6 +1265,7 @@ impl JobQueue {
 
             completed_job_type = Some(db_job.job_type.clone());
             completed_session_id = db_job.session_id.clone();
+            completed_streamer_id = db_job.streamer_id.clone();
 
             if db_job.get_status() != Some(JobStatus::Processing) {
                 self.finalize_cancelled_job(job_id);
@@ -1086,6 +1322,9 @@ impl JobQueue {
             if completed_session_id.is_none() && !job.session_id.is_empty() {
                 completed_session_id = Some(job.session_id.clone());
             }
+            if completed_streamer_id.is_none() && !job.streamer_id.is_empty() {
+                completed_streamer_id = Some(job.streamer_id.clone());
+            }
 
             if job.status != JobStatus::Cancelled {
                 transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
@@ -1127,6 +1366,45 @@ impl JobQueue {
             for output_path in &outputs_for_persist {
                 self.persist_thumbnail_output(session_id, output_path).await;
             }
+        }
+
+        // Persist per-file upload results and broadcast the terminal event
+        // for upload job types (persist_upload_records itself no-ops for
+        // everything else). Gated on `transitioned`, matching fail_internal
+        // and cancel_job: in the repository-less queue a complete() racing a
+        // cancel must not persist COMPLETED records or emit
+        // Terminal{Completed} after Terminal{Cancelled}.
+        if transitioned
+            && let Some(job_type) = completed_job_type
+                .as_deref()
+                .filter(|jt| upload_kind_for_job_type(jt).is_some())
+        {
+            self.persist_upload_records(
+                job_id,
+                job_type,
+                completed_streamer_id.as_deref(),
+                completed_session_id.as_deref(),
+                &result.uploads,
+            )
+            .await;
+
+            let (mut succeeded, mut failed, mut skipped) = (0u32, 0u32, 0u32);
+            for item in &result.uploads {
+                match item.status {
+                    UploadItemStatus::Completed => succeeded += 1,
+                    UploadItemStatus::Failed => failed += 1,
+                    UploadItemStatus::Skipped => skipped += 1,
+                }
+            }
+            self.emit_upload_event(UploadStatusEvent::Terminal {
+                job_id: job_id.to_string(),
+                streamer_id: completed_streamer_id.clone(),
+                status: UploadTerminalStatus::Completed,
+                files_succeeded: succeeded,
+                files_failed: failed,
+                files_skipped: skipped,
+                error: None,
+            });
         }
 
         // Cleanup in-memory tracking for this job.
@@ -1368,7 +1646,7 @@ impl JobQueue {
             self.jobs_cache.remove(id);
 
             self.depth.fetch_add(1, Ordering::SeqCst);
-            self.notify.notify_one();
+            self.wake_workers();
 
             let updated_job = db_model_to_job(&repo.get_job(id).await?);
             info!("Job {} retried (attempt {})", id, updated_job.retry_count);
@@ -1396,7 +1674,7 @@ impl JobQueue {
         drop(cached_job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
-        self.notify.notify_one();
+        self.wake_workers();
 
         info!("Job {} retried (attempt {})", id, updated_job.retry_count);
         Ok(updated_job)
@@ -1468,6 +1746,10 @@ impl JobQueue {
 
         if updated > 0 {
             self.decrement_depth(1);
+
+            // job was fetched before the transition, so its type/streamer
+            // fields are intact even though the cache entry is gone now.
+            self.emit_upload_cancelled(id, &job.job_type, &job.streamer_id);
         }
 
         info!("Job {} cancelled", id);
@@ -1623,6 +1905,10 @@ impl JobQueue {
             self.decrement_depth(reduction);
         }
 
+        for job in &cancelled_jobs {
+            self.emit_upload_cancelled(&job.id, &job.job_type, &job.streamer_id);
+        }
+
         info!(
             "Cancelled {} jobs in pipeline {}",
             cancelled_jobs.len(),
@@ -1758,16 +2044,28 @@ impl JobQueue {
                 split_job = split_job.with_session_start(session_start);
             }
 
-            let job_id = self.enqueue(split_job).await?;
-            created_job_ids.push(job_id);
+            match self.enqueue(split_job).await {
+                Ok(job_id) => created_job_ids.push(job_id),
+                Err(error) => {
+                    self.rollback_split_jobs(&created_job_ids).await;
+                    return Err(error);
+                }
+            }
         }
 
         // Mark the original job as completed (it was split)
         if let Some(repo) = &self.job_repository {
-            let mut db_job = repo.get_job(&job.id).await?;
-            db_job.mark_completed();
-            db_job.set_outputs(&[]); // No outputs, job was split
-            repo.update_job(&db_job).await?;
+            let result = async {
+                let mut db_job = repo.get_job(&job.id).await?;
+                db_job.mark_completed();
+                db_job.set_outputs(&[]); // No outputs, job was split
+                repo.update_job(&db_job).await
+            }
+            .await;
+            if let Err(error) = result {
+                self.rollback_split_jobs(&created_job_ids).await;
+                return Err(error);
+            }
         }
 
         // Update cache for original job
@@ -1796,6 +2094,18 @@ impl JobQueue {
         );
 
         Ok(created_job_ids)
+    }
+
+    async fn rollback_split_jobs(&self, job_ids: &[String]) {
+        for job_id in job_ids {
+            if let Err(error) = self.cancel_job(job_id).await {
+                warn!(
+                    %job_id,
+                    %error,
+                    "Failed to cancel a split job after fan-out failed"
+                );
+            }
+        }
     }
 
     /// Track partial outputs for a job (used for cleanup on failure).
@@ -1959,6 +2269,18 @@ impl JobQueue {
         self.notify.clone()
     }
 
+    /// Wake workers after a job becomes runnable.
+    ///
+    /// `notify_waiters` wakes every currently parked worker, so both the CPU
+    /// and I/O pools (which share this notifier but accept different job
+    /// types) re-check the queue. It stores no permit, so `notify_one` also
+    /// runs for a worker that is mid-iteration and re-enters
+    /// `Notify::notified` only after this call.
+    fn wake_workers(&self) {
+        self.notify.notify_waiters();
+        self.notify.notify_one();
+    }
+
     async fn fail_internal(
         &self,
         job_id: &str,
@@ -1970,6 +2292,17 @@ impl JobQueue {
     ) -> Result<()> {
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
         let mut transitioned = false;
+
+        // Capture everything needed to persist failed per-file results and
+        // emit the terminal event before cache cleanup evicts the job.
+        let failed_upload_ctx = self.jobs_cache.get(job_id).and_then(|job| {
+            upload_kind_for_job_type(&job.job_type).map(|_| FailedUploadContext {
+                job_type: job.job_type.clone(),
+                streamer_id: non_empty(&job.streamer_id),
+                session_id: non_empty(&job.session_id),
+                inputs: job.inputs.clone(),
+            })
+        });
 
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
@@ -2003,8 +2336,7 @@ impl JobQueue {
             extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
             update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
 
-            let _ = self
-                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
+            self.persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
                 .await?;
 
             let exec_info_json = serde_json::to_string(&exec_info)?;
@@ -2041,6 +2373,31 @@ impl JobQueue {
             return Err(Error::not_found("Job", job_id));
         }
 
+        // Synthesize failed rows only after this failure transition wins.
+        // A concurrent cancellation that wins first returns above without
+        // leaving FAILED upload records on a CANCELLED job.
+        if transitioned && let Some(context) = &failed_upload_ctx {
+            let items: Vec<UploadResultItem> = context
+                .inputs
+                .iter()
+                .map(|path| UploadResultItem {
+                    local_path: path.clone(),
+                    remote_path: None,
+                    size_bytes: None,
+                    status: UploadItemStatus::Failed,
+                    error: Some(error.to_string()),
+                })
+                .collect();
+            self.persist_upload_records(
+                job_id,
+                &context.job_type,
+                context.streamer_id.as_deref(),
+                context.session_id.as_deref(),
+                &items,
+            )
+            .await;
+        }
+
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
@@ -2052,6 +2409,18 @@ impl JobQueue {
 
         if transitioned {
             self.decrement_depth(1);
+
+            if let Some(context) = failed_upload_ctx {
+                self.emit_upload_event(UploadStatusEvent::Terminal {
+                    job_id: job_id.to_string(),
+                    streamer_id: context.streamer_id,
+                    status: UploadTerminalStatus::Failed,
+                    files_succeeded: 0,
+                    files_failed: context.inputs.len() as u32,
+                    files_skipped: 0,
+                    error: Some(error.to_string()),
+                });
+            }
         }
         Ok(())
     }
@@ -2096,8 +2465,10 @@ impl JobQueue {
 fn spawn_progress_aggregator(
     repo: Option<Arc<dyn JobRepository>>,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
-    cancellation_tokens: DashMap<String, CancellationToken>,
-    progress_cache: DashMap<String, JobProgressSnapshot>,
+    jobs_cache: Arc<DashMap<String, Job>>,
+    cancellation_tokens: Arc<DashMap<String, CancellationToken>>,
+    progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
+    upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>>,
 ) {
     if tokio::runtime::Handle::try_current().is_err() {
         // Some unit tests construct JobQueue outside a Tokio runtime. Progress persistence
@@ -2116,14 +2487,57 @@ fn spawn_progress_aggregator(
                     if pending.is_empty() {
                         continue;
                     }
-                    let Some(repo) = &repo else {
-                        pending.clear();
-                        continue;
-                    };
                     for (job_id, snapshot) in pending.drain() {
+                        // A job can reach a terminal state between receive and
+                        // this flush tick. The terminal status transition fires
+                        // trg_job_terminal_clears_progress and broadcasts the
+                        // terminal WS event, so this snapshot must be dropped.
+                        // This check narrows the race; the DB write is closed
+                        // for good by upsert_job_execution_progress, which
+                        // inserts only while job.status is still PROCESSING.
+                        // cancel_job cancels the token before the worker
+                        // finalizes, hence the is_cancelled check on top of
+                        // plain presence.
+                        let job_is_live = cancellation_tokens
+                            .get(&job_id)
+                            .is_some_and(|token| !token.is_cancelled());
+                        if !job_is_live {
+                            continue;
+                        }
+
+                        // Upload processor snapshots double as live
+                        // upload-status WS events.
+                        // Publishing on the flush tick reuses this loop's
+                        // coalescing instead of adding a second throttle.
+                        // has_subscribers first: without it the jobs_cache
+                        // lookup and snapshot clone (including its raw JSON
+                        // tree) would run on every flush of an idle deployment.
+                        if matches!(
+                            snapshot.kind,
+                            ProgressKind::Rclone | ProgressKind::BaiduPcs
+                        )
+                            && let Some(broadcaster) = upload_broadcaster.get()
+                            && broadcaster.has_subscribers()
+                        {
+                            let streamer_id = jobs_cache
+                                .get(&job_id)
+                                .and_then(|job| non_empty(&job.streamer_id));
+                            broadcaster.send(UploadStatusEvent::Progress {
+                                job_id: job_id.clone(),
+                                streamer_id,
+                                snapshot: snapshot.clone(),
+                            });
+                        }
+
+                        let Some(repo) = &repo else {
+                            continue;
+                        };
                         let progress = match serde_json::to_string(&snapshot) {
                             Ok(s) => s,
-                            Err(_) => continue,
+                            Err(error) => {
+                                warn!(job_id, %error, "Failed to serialize job progress");
+                                continue;
+                            }
                         };
                         let row = JobExecutionProgressDbModel {
                             job_id: job_id.clone(),
@@ -2131,15 +2545,22 @@ fn spawn_progress_aggregator(
                             progress,
                             updated_at: snapshot.updated_at.timestamp_millis(),
                         };
-                        let _ = repo.upsert_job_execution_progress(&row).await;
+                        if let Err(error) = repo.upsert_job_execution_progress(&row).await {
+                            warn!(job_id, %error, "Failed to persist job progress");
+                        }
                     }
                 }
                 update = rx.recv() => {
                     let Some(update) = update else { break; };
                     // Only retain/persist progress for actively-processing jobs. This prevents
                     // late progress messages (after completion/cancellation) from reintroducing
-                    // entries into the in-memory cache.
-                    if !cancellation_tokens.contains_key(&update.job_id) {
+                    // entries into the in-memory cache. The token is also checked for
+                    // cancellation: cancel_job cancels it but leaves it in the map until the
+                    // worker calls finalize_cancelled_job.
+                    let job_is_live = cancellation_tokens
+                        .get(&update.job_id)
+                        .is_some_and(|token| !token.is_cancelled());
+                    if !job_is_live {
                         continue;
                     }
                     progress_cache.insert(update.job_id.clone(), update.snapshot.clone());
@@ -2390,11 +2811,54 @@ impl Default for JobQueue {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn baidupcs_progress_reports_are_broadcast_as_upload_progress() {
+        let queue = JobQueue::new();
+        let broadcaster =
+            UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
+                bytes::Bytes::new()
+            }));
+        queue.set_upload_broadcaster(broadcaster.clone());
+        let mut rx = broadcaster.subscribe();
+
+        // The aggregator publishes only for live jobs; a processing job owns
+        // a cancellation token (created on dequeue), which is all the
+        // liveness check reads.
+        queue
+            .cancellation_tokens
+            .insert("job-1".to_string(), CancellationToken::new());
+
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
+        snapshot.percent = Some(42.0);
+        snapshot.bytes_done = Some(4200);
+        queue.progress_reporter("job-1").report(snapshot);
+
+        let envelope = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
+            .await
+            .expect("aggregator publishes within one flush interval")
+            .expect("broadcast channel stays open");
+        match envelope.event.as_ref() {
+            UploadStatusEvent::Progress {
+                job_id, snapshot, ..
+            } => {
+                assert_eq!(job_id, "job-1");
+                assert_eq!(snapshot.percent, Some(42.0));
+                assert_eq!(snapshot.bytes_done, Some(4200));
+            }
+            other => panic!("expected Progress event, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn test_job_queue_config_default() {
-        let config = JobQueueConfig::default();
-        assert_eq!(config.warning_threshold, 100);
-        assert_eq!(config.critical_threshold, 500);
+    fn excess_log_rows_trims_only_past_the_cap() {
+        assert_eq!(excess_log_rows(0, 10, 100), 0);
+        assert_eq!(excess_log_rows(90, 10, 100), 0);
+        assert_eq!(excess_log_rows(95, 10, 100), 5);
+        // At-cap runs trim exactly what each new batch adds.
+        assert_eq!(excess_log_rows(100, 10, 100), 10);
+        assert_eq!(excess_log_rows(100, 0, 100), 0);
+        // A single oversized batch trims down to the cap.
+        assert_eq!(excess_log_rows(0, 150, 100), 50);
     }
 
     #[test]
@@ -2509,6 +2973,299 @@ mod tests {
             state.get("session_start_ms").and_then(|v| v.as_i64()),
             Some(session_start_ms)
         );
+    }
+
+    /// A failed parent finalization must not leave runnable split jobs:
+    /// split_job_for_single_input rolls back already-created jobs through
+    /// cancel_job when marking the original job completed fails.
+    #[tokio::test]
+    async fn split_rollback_cancels_created_jobs_when_parent_finalization_fails() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("job_queue_split_rollback.db");
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        // Satisfy the live_sessions -> streamers -> platform_config FK chain.
+        sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES ('p1', 'test')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state) \
+             VALUES ('streamer-1', 'Streamer', 'https://example.com/s1', 'p1', 'NOT_LIVE')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO live_sessions (id, streamer_id, start_time) \
+             VALUES ('session-1', 'streamer-1', 1704152700000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
+
+        // The parent is never enqueued, so repo.get_job(&job.id) in the
+        // finalization step fails after both split jobs were created.
+        let job = Job::new(
+            "remux",
+            vec!["/input-a.flv".to_string(), "/input-b.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+
+        let result = queue.split_job_for_single_input(&job).await;
+        assert!(result.is_err());
+
+        let pending = job_repo
+            .list_jobs_by_status(JobStatus::Pending)
+            .await
+            .unwrap();
+        assert!(pending.is_empty(), "split jobs must not stay runnable");
+        let cancelled = job_repo
+            .list_jobs_by_status(JobStatus::Cancelled)
+            .await
+            .unwrap();
+        assert_eq!(cancelled.len(), 2);
+    }
+
+    #[test]
+    fn test_upload_kind_for_job_type() {
+        // Bare processor names and their "<type>_<preset>" DAG-step variants.
+        assert_eq!(upload_kind_for_job_type("rclone"), Some("rclone"));
+        assert_eq!(upload_kind_for_job_type("RCLONE"), Some("rclone"));
+        assert_eq!(upload_kind_for_job_type("rclone_default"), Some("rclone"));
+        assert_eq!(upload_kind_for_job_type("upload"), Some("rclone"));
+        assert_eq!(upload_kind_for_job_type("upload_gdrive"), Some("rclone"));
+        assert_eq!(upload_kind_for_job_type("baidupcs"), Some("baidupcs"));
+        assert_eq!(upload_kind_for_job_type("BaiduPCS"), Some("baidupcs"));
+        assert_eq!(
+            upload_kind_for_job_type("baidupcs_default"),
+            Some("baidupcs")
+        );
+        assert_eq!(upload_kind_for_job_type("remux"), None);
+        assert_eq!(upload_kind_for_job_type("thumbnail"), None);
+        // "uploader" would prefix-match "upload_" only with the underscore.
+        assert_eq!(upload_kind_for_job_type("uploader"), None);
+        assert_eq!(upload_kind_for_job_type("baidu"), None);
+    }
+
+    /// `complete()` must persist `JobResult.uploads` to upload_records for
+    /// upload job types and leave the table untouched for everything else.
+    #[tokio::test]
+    async fn test_complete_persists_upload_records_for_upload_jobs() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let upload_repo = Arc::new(
+            crate::database::repositories::upload_record::SqlxUploadRecordRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo);
+        queue.set_upload_repo(upload_repo.clone());
+
+        let uploads = vec![UploadResultItem {
+            local_path: "/videos/a.mp4".to_string(),
+            remote_path: Some("remote:bucket/a.mp4".to_string()),
+            size_bytes: Some(2048),
+            status: UploadItemStatus::Completed,
+            error: None,
+        }];
+
+        // Upload job type → rows persisted.
+        let rclone_job = Job::new("rclone", vec!["/videos/a.mp4".to_string()], vec![], "", "");
+        let rclone_id = queue.enqueue(rclone_job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue
+            .complete(
+                &rclone_id,
+                JobResult {
+                    outputs: vec![],
+                    duration_secs: 1.0,
+                    metadata: None,
+                    uploads: uploads.clone(),
+                    logs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        let rows = upload_repo.list_by_job(&rclone_id).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].uploader, "rclone");
+        assert_eq!(rows[0].status, "COMPLETED");
+        assert_eq!(rows[0].remote_path.as_deref(), Some("remote:bucket/a.mp4"));
+        assert!(rows[0].completed_at.is_some());
+
+        // Non-upload job type → uploads on the result are ignored.
+        let remux_job = Job::new("remux", vec!["/videos/a.mp4".to_string()], vec![], "", "");
+        let remux_id = queue.enqueue(remux_job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue
+            .complete(
+                &remux_id,
+                JobResult {
+                    outputs: vec![],
+                    duration_secs: 1.0,
+                    metadata: None,
+                    uploads,
+                    logs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        assert!(upload_repo.list_by_job(&remux_id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_failed_upload_records_follow_winning_terminal_transition() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let upload_repo = Arc::new(
+            crate::database::repositories::upload_record::SqlxUploadRecordRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo);
+        queue.set_upload_repo(upload_repo.clone());
+
+        let failed_job = Job::new(
+            "rclone",
+            vec!["/videos/failed.mp4".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let failed_id = queue.enqueue(failed_job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.fail(&failed_id, "connection reset").await.unwrap();
+
+        let rows = upload_repo.list_by_job(&failed_id).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "FAILED");
+        assert_eq!(rows[0].error.as_deref(), Some("connection reset"));
+
+        let cancelled_job = Job::new(
+            "rclone",
+            vec!["/videos/cancelled.mp4".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let cancelled_id = queue.enqueue(cancelled_job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.cancel_job(&cancelled_id).await.unwrap();
+        queue
+            .fail(&cancelled_id, "late processor error")
+            .await
+            .unwrap();
+
+        assert!(
+            upload_repo
+                .list_by_job(&cancelled_id)
+                .await
+                .unwrap()
+                .is_empty(),
+            "a cancellation that wins the transition must not leave failed upload rows"
+        );
+    }
+
+    /// Every terminal status transition must clear the job's persisted
+    /// progress row via `trg_job_terminal_clears_progress` — a snapshot only
+    /// means anything while the job is PROCESSING, and a leftover row would
+    /// otherwise linger until job retention prunes the job itself.
+    #[tokio::test]
+    async fn test_terminal_transition_clears_persisted_progress() {
+        async fn progress_count(pool: &sqlx::SqlitePool, job_id: &str) -> i64 {
+            sqlx::query_scalar("SELECT COUNT(*) FROM job_execution_progress WHERE job_id = ?")
+                .bind(job_id)
+                .fetch_one(pool)
+                .await
+                .unwrap()
+        }
+
+        async fn seed_progress(repo: &Arc<dyn JobRepository>, job_id: &str) {
+            repo.upsert_job_execution_progress(&JobExecutionProgressDbModel {
+                job_id: job_id.to_string(),
+                kind: "ffmpeg".to_string(),
+                progress: "{}".to_string(),
+                updated_at: 1,
+            })
+            .await
+            .unwrap();
+        }
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
+
+        // COMPLETED clears the row.
+        let completed = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+        let completed_id = queue.enqueue(completed).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        seed_progress(&job_repo, &completed_id).await;
+        assert_eq!(progress_count(&pool, &completed_id).await, 1);
+        queue
+            .complete(
+                &completed_id,
+                JobResult {
+                    outputs: vec![],
+                    duration_secs: 1.0,
+                    metadata: None,
+                    uploads: vec![],
+                    logs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(progress_count(&pool, &completed_id).await, 0);
+
+        // A late aggregator flush cannot resurrect the row: the upsert
+        // inserts only while the job is still PROCESSING.
+        seed_progress(&job_repo, &completed_id).await;
+        assert_eq!(progress_count(&pool, &completed_id).await, 0);
+
+        // FAILED clears the row.
+        let failed = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+        let failed_id = queue.enqueue(failed).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        seed_progress(&job_repo, &failed_id).await;
+        queue.fail(&failed_id, "boom").await.unwrap();
+        assert_eq!(progress_count(&pool, &failed_id).await, 0);
+
+        // CANCELLED clears the row.
+        let cancelled = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+        let cancelled_id = queue.enqueue(cancelled).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        seed_progress(&job_repo, &cancelled_id).await;
+        queue.cancel_job(&cancelled_id).await.unwrap();
+        assert_eq!(progress_count(&pool, &cancelled_id).await, 0);
     }
 
     #[test]
@@ -2659,6 +3416,7 @@ mod tests {
                     outputs: vec!["/final.mp4".to_string()],
                     duration_secs: 1.0,
                     metadata: None,
+                    uploads: vec![],
                     logs: vec![],
                 },
             )

@@ -24,10 +24,6 @@ pub trait RefreshTokenRepository: Send + Sync {
     /// Revoke all tokens for a specific user.
     async fn revoke_all_for_user(&self, user_id: &str) -> Result<()>;
 
-    /// Clean up expired tokens from the database.
-    /// Returns the number of tokens deleted.
-    async fn cleanup_expired(&self) -> Result<u64>;
-
     /// Count active tokens for a user.
     async fn count_active_by_user(&self, user_id: &str) -> Result<i64>;
 }
@@ -116,15 +112,6 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         .execute(&self.write_pool)
         .await?;
         Ok(())
-    }
-
-    async fn cleanup_expired(&self) -> Result<u64> {
-        let now = crate::database::time::now_ms();
-        let result = sqlx::query("DELETE FROM refresh_tokens WHERE expires_at < ?")
-            .bind(now)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(result.rows_affected())
     }
 
     async fn count_active_by_user(&self, user_id: &str) -> Result<i64> {

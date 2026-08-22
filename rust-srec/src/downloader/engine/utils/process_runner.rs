@@ -6,7 +6,7 @@
 use tokio::process::Child;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 /// Spawn a task that waits for a process to exit and sends the result
 /// through a oneshot channel.
@@ -31,7 +31,9 @@ pub fn spawn_process_waiter(
     tokio::spawn(async move {
         let exit_code = tokio::select! {
             _ = cancellation_token.cancelled() => {
-                let _ = child.kill().await;
+                if let Err(e) = child.kill().await {
+                    warn!(error = %e, "Failed to kill cancelled process");
+                }
                 None
             }
             status = child.wait() => {
@@ -52,7 +54,9 @@ pub fn spawn_process_waiter(
                 }
             }
         };
-        let _ = tx.send(exit_code);
+        if tx.send(exit_code).is_err() {
+            debug!("Process exit receiver dropped before waiter completed");
+        }
     });
 
     rx
@@ -83,12 +87,18 @@ pub fn spawn_piped_process_waiter(
     tokio::spawn(async move {
         let exit_code = tokio::select! {
             _ = cancellation_token.cancelled() => {
-                let _ = first.kill().await;
-                let _ = second.kill().await;
+                if let Err(e) = first.kill().await {
+                    warn!(error = %e, "Failed to kill cancelled producer process");
+                }
+                if let Err(e) = second.kill().await {
+                    warn!(error = %e, "Failed to kill cancelled consumer process");
+                }
                 None
             }
             result = async {
-                let _ = first.wait().await;
+                if let Err(e) = first.wait().await {
+                    warn!(error = %e, "Failed to reap producer process");
+                }
                 second.wait().await
             } => {
                 match result {
@@ -108,7 +118,9 @@ pub fn spawn_piped_process_waiter(
                 }
             }
         };
-        let _ = tx.send(exit_code);
+        if tx.send(exit_code).is_err() {
+            debug!("Piped process exit receiver dropped before waiter completed");
+        }
     });
 
     rx

@@ -123,12 +123,6 @@ where
             );
         }
 
-        // Start purge service background task if enabled
-        if let Some(purge_service) = &self.purge_service {
-            info!("Starting job purge service");
-            purge_service.start_background_task(self.cancellation_token.clone());
-        }
-
         info!("Pipeline Manager started");
     }
     pub async fn stop(&self) {

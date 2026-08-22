@@ -14,13 +14,6 @@ export const PipelineConfigAdapter = memo(
     const currentVal = useWatch({ control: form.control, name });
     const [steps, setSteps] = useState<DagStepDefinition[]>([]);
     useEffect(() => {
-      // Debug log
-      console.log('PipelineConfigAdapter: input changed', {
-        currentVal,
-        type: typeof currentVal,
-        currentStepCount: steps.length,
-      });
-
       if (currentVal) {
         try {
           const parsed =
@@ -39,10 +32,6 @@ export const PipelineConfigAdapter = memo(
             const newJson = JSON.stringify(parsed.steps);
 
             if (currentJson !== newJson) {
-              console.log('PipelineConfigAdapter: updating steps', {
-                from: steps.length,
-                to: parsed.steps.length,
-              });
               setSteps(parsed.steps);
             }
           }

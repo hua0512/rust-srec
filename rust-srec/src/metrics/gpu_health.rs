@@ -1,8 +1,9 @@
-//! GPU health monitor (issue #555).
+//! GPU health monitor.
 //!
 //! Background poller that probes `nvidia-smi` on a configurable cadence and
 //! exposes a single `gpu` [`ComponentHealth`] entry through the
-//! [`HealthChecker`]. Designed to surface the well-known **NVIDIA Container
+//! [`HealthChecker`](crate::metrics::HealthChecker). Designed to surface the
+//! well-known **NVIDIA Container
 //! Toolkit + cgroup-v2 reconciliation** failure pattern: the host's
 //! `systemd` reloads the device cgroup (often during a Docker daemon
 //! reload or `nvidia-ctk` reconfigure) and silently strips the running
@@ -37,7 +38,6 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use chrono::Utc;
-use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
@@ -75,14 +75,14 @@ const COMPONENT_NAME: &str = "gpu";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuErrorKind {
     /// `Failed to initialize NVML: Unknown Error` — the cgroup-wipe
-    /// signature from issue #555.
+    /// signature described in the module docs.
     NvmlUnknownError,
     /// `Driver/library version mismatch` — host driver was upgraded
     /// without restarting `nvidia-uvm` or the container.
     DriverMismatch,
     /// `No devices were found` / `No CUDA-capable device is detected`.
     NoDevice,
-    /// Our [`PROBE_TIMEOUT_SECS`] timeout fired before `nvidia-smi`
+    /// Our `PROBE_TIMEOUT_SECS` timeout fired before `nvidia-smi`
     /// returned. Often indicates a hung NVML call.
     TimedOut,
     /// `nvidia-smi` not found at exec time. Defensive: registration
@@ -200,7 +200,7 @@ impl GpuHealthMonitor {
 
         let probe = tokio::time::timeout(
             Duration::from_secs(STARTUP_GATE_TIMEOUT_SECS),
-            Command::new("nvidia-smi")
+            process_utils::tokio_command("nvidia-smi")
                 .arg("--version")
                 .kill_on_drop(true)
                 .output(),
@@ -243,7 +243,7 @@ impl GpuHealthMonitor {
 
     /// Update the probe interval. The change applies on the next tick;
     /// no restart required. Sub-second values are clamped to
-    /// [`MIN_INTERVAL_SECS`].
+    /// `MIN_INTERVAL_SECS`.
     pub fn set_interval(&self, secs: u64) {
         let clamped = secs.max(MIN_INTERVAL_SECS);
         let prev = self.interval_secs.swap(clamped, Ordering::AcqRel);
@@ -312,7 +312,7 @@ impl GpuHealthMonitor {
         let started = std::time::Instant::now();
         let exec = tokio::time::timeout(
             Duration::from_secs(PROBE_TIMEOUT_SECS),
-            Command::new("nvidia-smi")
+            process_utils::tokio_command("nvidia-smi")
                 .args([
                     "--query-gpu=name,driver_version,utilization.gpu,memory.used,memory.total,temperature.gpu",
                     "--format=csv,noheader,nounits",
@@ -500,11 +500,13 @@ fn executable_candidates(name: &str) -> Vec<OsString> {
     vec![OsString::from(name)]
 }
 
-/// Build a `tokio::time::interval` configured to skip missed ticks (so a
-/// slow probe never queues up a backlog) and to skip its always-immediate
-/// first tick.
+/// Builds an interval whose first tick occurs after the full period.
+///
+/// Missed ticks are skipped so a slow probe never queues up a backlog.
 fn build_interval(secs: u64) -> tokio::time::Interval {
-    let mut ticker = tokio::time::interval(Duration::from_secs(secs.max(MIN_INTERVAL_SECS)));
+    let period = Duration::from_secs(secs.max(MIN_INTERVAL_SECS));
+    let start = tokio::time::Instant::now() + period;
+    let mut ticker = tokio::time::interval_at(start, period);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     ticker
 }
@@ -606,6 +608,22 @@ mod tests {
             DEFAULT_PROBE_INTERVAL_SECS,
             crate::downloader::DEFAULT_GATE_COOLDOWN_SECS
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn interval_waits_full_period_before_first_tick() {
+        let started = tokio::time::Instant::now();
+        let mut ticker = build_interval(30);
+        let tick = tokio::spawn(async move { ticker.tick().await });
+
+        tokio::task::yield_now().await;
+        assert!(!tick.is_finished());
+
+        tokio::time::advance(Duration::from_secs(29)).await;
+        assert!(!tick.is_finished());
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tick.await.unwrap().duration_since(started).as_secs(), 30);
     }
 
     #[test]

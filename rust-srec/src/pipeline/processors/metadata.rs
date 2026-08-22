@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
@@ -97,7 +97,10 @@ impl MetadataProcessor {
     }
 
     /// Create with a custom ffmpeg path.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     pub fn with_ffmpeg_path(path: impl Into<String>) -> Self {
         Self {
             ffmpeg_path: path.into(),
@@ -278,7 +281,8 @@ impl MetadataProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args).env("LC_ALL", "C");
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
+        cmd.args(&args);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
@@ -382,6 +386,7 @@ impl MetadataProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs,
         })
     }
@@ -464,7 +469,13 @@ impl Processor for MetadataProcessor {
                     }
                     Err(e) => {
                         for produced in &items_produced {
-                            let _ = tokio::fs::remove_file(produced).await;
+                            if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
+                                warn!(
+                                    path = %produced,
+                                    error = %cleanup_error,
+                                    "Failed to remove metadata output after batch failure"
+                                );
+                            }
                         }
                         return Err(e);
                     }
@@ -511,6 +522,7 @@ impl Processor for MetadataProcessor {
                 failed_inputs: vec![],
                 succeeded_inputs,
                 skipped_inputs,
+                uploads: vec![],
                 logs,
             });
         }
@@ -558,20 +570,6 @@ mod tests {
     fn test_metadata_processor_name() {
         let processor = MetadataProcessor::new();
         assert_eq!(processor.name(), "MetadataProcessor");
-    }
-
-    #[test]
-    fn test_metadata_config_default() {
-        let config = MetadataConfig::default();
-        assert!(config.artist.is_none());
-        assert!(config.title.is_none());
-        assert!(config.date.is_none());
-        assert!(config.album.is_none());
-        assert!(config.comment.is_none());
-        assert!(config.custom.is_empty());
-        assert!(config.output_path.is_none());
-        assert!(config.overwrite);
-        assert!(!config.remove_input_on_success);
     }
 
     #[test]

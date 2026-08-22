@@ -5,6 +5,10 @@ authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
 license.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 thiserror = { workspace = true }

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct ProxyConfig {
     /// Whether proxy is enabled.
     pub enabled: bool,
-    /// Proxy URL (e.g., "http://proxy.example.com:8080").
+    /// Proxy URL (e.g., <http://proxy.example.com:8080>).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     /// Username for proxy authentication.

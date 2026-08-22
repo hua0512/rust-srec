@@ -2,7 +2,11 @@
 name = "h265"
 version = "0.1.1"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -11,10 +15,5 @@ expgolomb = { path = "../expgolomb" }
 bytes-util = { path = "../bytes-util" }
 bitflags = "2.11.0"
 
-
 [dev-dependencies]
-insta = "1.47"
-
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+insta = { workspace = true }

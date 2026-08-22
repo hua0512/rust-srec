@@ -60,7 +60,10 @@ pub fn parse_time(time_str: &str) -> Result<f64, AppError> {
 }
 
 /// Convert seconds to a human-readable format
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for alternate output strategies and diagnostics"
+)]
 pub fn format_duration(seconds: f64) -> String {
     // Pre-allocate
     let mut result = String::with_capacity(10);

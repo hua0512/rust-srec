@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 use std::fs::File;
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 use tracing::{debug, error};
 
@@ -102,12 +102,12 @@ impl FlvParser {
                         FlvTagType::Video => video_tags += 1,
                         FlvTagType::Audio => audio_tags += 1,
                         FlvTagType::ScriptData => metadata_tags += 1,
-                        _ => debug!("Unknown tag type: {:?}", tag.tag_type),
+                        _ => debug!("Unknown tag type: {:?}", tag.tag_type()),
                     }
 
                     on_tag(&tag, tag_type, tag_position);
-                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data.len()) as u32;
-                    current_position += (framing::TAG_HEADER_SIZE + tag.data.len()) as u64;
+                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data().len()) as u32;
+                    current_position += (framing::TAG_HEADER_SIZE + tag.data().len()) as u64;
                 }
                 Ok(None) => break,
                 Err(e) => return Err(e),
@@ -140,7 +140,7 @@ impl FlvParser {
                 FlvTagType::Video => video_tags += 1,
                 FlvTagType::Audio => audio_tags += 1,
                 FlvTagType::ScriptData => metadata_tags += 1,
-                _ => error!("Unknown tag type: {:?}", tag.tag_type),
+                _ => error!("Unknown tag type: {:?}", tag.tag_type()),
             },
             initial_position,
             PrevTagSizeMode::Ignore,
@@ -191,78 +191,16 @@ impl FlvParser {
             return Err(e);
         }
 
-        // Determine the tag type
         let tag_type = header.tag_type;
-
-        // Demux the tag
-        let tag = FlvTag::demux(&mut Cursor::new(tag_buffer.freeze()))?;
+        let tag_bytes = tag_buffer.freeze();
+        let tag = FlvTag::new(
+            header.timestamp_ms,
+            header.stream_id,
+            header.tag_type,
+            header.is_filtered,
+            tag_bytes.slice(framing::TAG_HEADER_SIZE..),
+        );
 
         Ok(Some((tag, tag_type)))
-    }
-}
-
-mod tests {
-    #[tokio::test]
-    #[ignore] // Ignore this test for now
-    async fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
-        let path = std::path::Path::new("D:/test/999/16_02_26-福州~ 主播恋爱脑！！！.flv");
-
-        // Skip the test if the file doesn't exist
-        if !path.exists() {
-            println!("Test file not found, skipping test");
-            return Ok(());
-        }
-
-        // Get file size before parsing
-        let file_size = std::fs::metadata(path)?.len();
-        let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
-
-        let start = std::time::Instant::now(); // Start timer
-        let tags_count = super::FlvParser::parse_file(path)?;
-        let duration = start.elapsed(); // Stop timer
-
-        // Calculate read speed
-        let seconds = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        let speed_mbps = file_size_mb / seconds;
-
-        println!("Parsed FLV file in {duration:?}");
-        println!("File size: {file_size_mb:.2} MB");
-        println!("Read speed: {speed_mbps:.2} MB/s");
-
-        println!("Successfully parsed FLV file with {tags_count} tags");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore] // Ignore this test for now
-    async fn test_read_file_ref() -> Result<(), Box<dyn std::error::Error>> {
-        let path = std::path::Path::new("D:/test/999/test.flv");
-
-        // Skip the test if the file doesn't exist
-        if !path.exists() {
-            println!("Test file not found, skipping test");
-            return Ok(());
-        }
-
-        // Get file size before parsing
-        let file_size = std::fs::metadata(path)?.len();
-        let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
-
-        let start = std::time::Instant::now(); // Start timer
-        let tags_count = super::FlvParser::parse_file(path)?;
-        let duration = start.elapsed(); // Stop timer
-
-        // Calculate read speed
-        let seconds = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        let speed_mbps = file_size_mb / seconds;
-
-        println!("Parsed FLV file (RefParser) in {duration:?}");
-        println!("File size: {file_size_mb:.2} MB");
-        println!("Read speed: {speed_mbps:.2} MB/s");
-
-        println!("Successfully parsed FLV file with {tags_count} tags");
-
-        Ok(())
     }
 }

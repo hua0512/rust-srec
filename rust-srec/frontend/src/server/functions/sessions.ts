@@ -15,7 +15,7 @@ const PaginatedSessionSchema = z.object({
 });
 
 export const listSessions = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     (
       d: {
         page?: number;
@@ -50,21 +50,21 @@ export const listSessions = createServerFn({ method: 'GET' })
   });
 
 export const getSession = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/sessions/${id}`);
     return SessionSchema.parse(json);
   });
 
 export const getSessionDanmuStatistics = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/sessions/${id}/danmu-statistics`);
     return SessionDanmuStatisticsSchema.parse(json);
   });
 
 export const deleteSession = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/sessions/${id}`, {
       method: 'DELETE',
@@ -72,7 +72,7 @@ export const deleteSession = createServerFn({ method: 'POST' })
   });
 
 export const deleteSessions = createServerFn({ method: 'POST' })
-  .inputValidator((ids: string[]) => ids)
+  .validator((ids: string[]) => ids)
   .handler(async ({ data: ids }) => {
     const json = await fetchBackend('/sessions/batch-delete', {
       method: 'POST',
@@ -83,9 +83,7 @@ export const deleteSessions = createServerFn({ method: 'POST' })
   });
 
 export const listSessionSegments = createServerFn({ method: 'GET' })
-  .inputValidator(
-    (d: { session_id: string; limit?: number; offset?: number }) => d,
-  )
+  .validator((d: { session_id: string; limit?: number; offset?: number }) => d)
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.limit !== undefined) params.set('limit', data.limit.toString());

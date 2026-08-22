@@ -2,7 +2,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
@@ -11,39 +10,41 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Globe, Hash, User, Shield, Mail } from 'lucide-react';
-import { priorityOptions } from '@/lib/priority';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useFormContext } from 'react-hook-form';
 import { IconInput } from '@/components/ui/icon-input';
+import {
+  ChannelEnabledField,
+  MinPriorityField,
+  ChannelLocaleField,
+} from './channel-delivery-fields';
 import { SwitchCard } from '@/components/ui/switch-card';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 export function EmailForm() {
   const { i18n } = useLingui();
   const form = useFormContext();
 
   return (
-    <div className="space-y-4 rounded-xl border border-primary/10 bg-primary/5 p-4">
+    <div className="space-y-4">
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2">
           <FormField
             control={form.control}
             name="settings.smtp_host"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>
+              <FormItem className="space-y-2">
+                <ConfigFieldLabel>
                   <Trans>SMTP Host</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <IconInput
                     icon={Globe}
                     placeholder={i18n._(msg`smtp.gmail.com`)}
-                    className="bg-background/50"
+                    className={CONFIG_INPUT}
                     {...field}
                   />
                 </FormControl>
@@ -56,16 +57,16 @@ export function EmailForm() {
           control={form.control}
           name="settings.smtp_port"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Port</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <IconInput
                   icon={Hash}
                   type="number"
                   placeholder={i18n._(msg`587`)}
-                  className="bg-background/50"
+                  className={CONFIG_INPUT}
                   {...field}
                   onChange={(e) => field.onChange(e.target.valueAsNumber)}
                 />
@@ -81,15 +82,15 @@ export function EmailForm() {
           control={form.control}
           name="settings.username"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Username</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <IconInput
                   icon={User}
                   placeholder={i18n._(msg`Username`)}
-                  className="bg-background/50"
+                  className={CONFIG_INPUT}
                   {...field}
                 />
               </FormControl>
@@ -101,16 +102,16 @@ export function EmailForm() {
           control={form.control}
           name="settings.password"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Password</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <IconInput
                   icon={Shield}
                   type="password"
                   placeholder={i18n._(msg`Password`)}
-                  className="bg-background/50"
+                  className={CONFIG_INPUT}
                   {...field}
                 />
               </FormControl>
@@ -124,15 +125,15 @@ export function EmailForm() {
         control={form.control}
         name="settings.from_address"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>From Address</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <IconInput
                 icon={Mail}
                 placeholder={i18n._(msg`notifier@example.com`)}
-                className="bg-background/50"
+                className={CONFIG_INPUT}
                 {...field}
               />
             </FormControl>
@@ -145,20 +146,20 @@ export function EmailForm() {
         control={form.control}
         name="settings.to_addresses"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>To Addresses</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <TagInput
                 {...field}
                 value={field.value || []}
                 onChange={field.onChange}
                 placeholder={i18n._(msg`Add email and press Enter`)}
-                className="bg-background/50"
+                className={CONFIG_INPUT}
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Press Enter to add recipient</Trans>
             </FormDescription>
             <FormMessage />
@@ -166,36 +167,11 @@ export function EmailForm() {
         )}
       />
 
-      <div className="grid grid-cols-3 gap-4">
-        <FormField
-          control={form.control}
-          name="settings.min_priority"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Min Priority</Trans>
-              </FormLabel>
-              <Select
-                onValueChange={(val) => field.onChange(Number(val))}
-                defaultValue={String(field.value)}
-              >
-                <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {priorityOptions().map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      <Trans>{opt.label}</Trans>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MinPriorityField />
+        <ChannelLocaleField />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
         <FormField
           control={form.control}
           name="settings.use_tls"
@@ -204,22 +180,11 @@ export function EmailForm() {
               label={<Trans>Use TLS</Trans>}
               checked={field.value}
               onCheckedChange={field.onChange}
-              className="border-primary/10 bg-background/50 h-full"
+              className="h-full"
             />
           )}
         />
-        <FormField
-          control={form.control}
-          name="settings.enabled"
-          render={({ field }) => (
-            <SwitchCard
-              label={<Trans>Enabled</Trans>}
-              checked={field.value}
-              onCheckedChange={field.onChange}
-              className="border-primary/10 bg-background/50 h-full"
-            />
-          )}
-        />
+        <ChannelEnabledField />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 use m3u8_rs::DateRange;
 use m3u8_rs::{MediaPlaylist, MediaSegment};
 use moka::sync::Cache;
-use tracing::debug;
+use tracing::{debug, warn};
 
 pub(super) struct ProcessedSegment<'a> {
     pub segment: &'a MediaSegment,
@@ -157,9 +157,12 @@ impl TwitchPlaylistProcessor {
         if let Some(min_pdt_ms) = min_pdt_ms {
             // Safe heuristic: if an ad ended before the earliest PDT in the current
             // playlist window, it cannot match any segment we'll consider again.
-            let _ = self
+            if let Err(error) = self
                 .ad_dateranges
-                .invalidate_entries_if(move |_id, dr| dr.end_ms < min_pdt_ms);
+                .invalidate_entries_if(move |_id, dr| dr.end_ms < min_pdt_ms)
+            {
+                warn!(%error, "failed to prune expired Twitch ad ranges");
+            }
         }
 
         let mut last_date_ms: Option<i64> = None;

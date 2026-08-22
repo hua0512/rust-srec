@@ -19,6 +19,12 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Tv } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+} from './config-field';
+import { cn } from '@/lib/utils';
 
 interface RecordDanmuCardProps {
   form: UseFormReturn<any>;
@@ -54,10 +60,10 @@ export const RecordDanmuCard = memo(
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border p-4 shadow-sm bg-muted/30">
                 <div className="space-y-0.5">
-                  <FormLabel className="text-base font-medium">
+                  <FormLabel className="text-sm font-semibold">
                     <Trans>Capture Mode</Trans>
                   </FormLabel>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Override global default.</Trans>
                   </FormDescription>
                 </div>
@@ -77,16 +83,24 @@ export const RecordDanmuCard = memo(
                     }}
                   >
                     <FormControl>
-                      <SelectTrigger className="w-[180px] bg-background">
+                      <SelectTrigger
+                        className={cn(CONFIG_SELECT_TRIGGER, 'w-[180px]')}
+                      >
                         <SelectValue
                           placeholder={i18n._(msg`Select behavior`)}
                         />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="null">Global Default</SelectItem>
-                      <SelectItem value="true">Enabled</SelectItem>
-                      <SelectItem value="false">Disabled</SelectItem>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
+                      <SelectItem value="null">
+                        <Trans>Global Default</Trans>
+                      </SelectItem>
+                      <SelectItem value="true">
+                        <Trans>Enabled</Trans>
+                      </SelectItem>
+                      <SelectItem value="false">
+                        <Trans>Disabled</Trans>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </FormControl>

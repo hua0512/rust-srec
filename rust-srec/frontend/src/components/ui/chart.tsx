@@ -58,7 +58,10 @@ function ChartContainer({
         data-slot="chart"
         data-chart={chartId}
         className={cn(
-          '[&_.recharts-cartesian-grid_line[stroke="#ccc"]]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-reference-line_line]:stroke-border [&_.recharts-sector[stroke="#fff"]]:stroke-transparent [&_.recharts-text]:fill-muted-foreground [&_.recharts-xAxis_.recharts-cartesian-axis-tick_line]:stroke-border [&_.recharts-yAxis_.recharts-cartesian-axis-tick_line]:stroke-border [&_.recharts-layer]:outline-none',
+          // `min-w-0`: a flex or grid item defaults to `min-width: auto`, so the chart's
+          // measured width becomes a floor for the track and the whole card overflows its
+          // column rather than the chart shrinking to fit.
+          'min-w-0 [&_.recharts-cartesian-grid_line[stroke="#ccc"]]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-reference-line_line]:stroke-border [&_.recharts-sector[stroke="#fff"]]:stroke-transparent [&_.recharts-text]:fill-muted-foreground [&_.recharts-xAxis_.recharts-cartesian-axis-tick_line]:stroke-border [&_.recharts-yAxis_.recharts-cartesian-axis-tick_line]:stroke-border [&_.recharts-layer]:outline-none',
           className,
         )}
         style={style}

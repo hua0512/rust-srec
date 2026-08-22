@@ -42,6 +42,7 @@ struct OriginState {
     playlists: Vec<String>,
     playlist_idx: usize,
     playlist_serves: u32,
+    playlist_failures_remaining: u32,
     /// After this many successful playlist serves, refreshes fail with 500.
     playlist_fail_after: Option<u32>,
     files: HashMap<String, FileEntry>,
@@ -86,6 +87,10 @@ impl Origin {
         self.0.lock().unwrap().playlist_fail_after = Some(successful_serves);
     }
 
+    fn fail_playlist_times(&self, failures: u32) {
+        self.0.lock().unwrap().playlist_failures_remaining = failures;
+    }
+
     fn hits(&self, path: &str) -> u64 {
         self.0.lock().unwrap().hits.get(path).copied().unwrap_or(0)
     }
@@ -116,6 +121,10 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     };
 
     if path == "live.m3u8" {
+        if state.playlist_failures_remaining > 0 {
+            state.playlist_failures_remaining -= 1;
+            return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+        }
         if let Some(after) = state.playlist_fail_after
             && state.playlist_serves >= after
         {
@@ -176,6 +185,24 @@ fn minimal_flv_bytes() -> Vec<u8> {
         0x00, 0x00, 0x00, // stream id
         0x17, // keyframe AVC header byte
         0x00, 0x00, 0x00, 0x0C, // previous tag size
+    ]);
+    bytes
+}
+
+fn av1_flv_bytes() -> Vec<u8> {
+    let mut bytes = vec![
+        b'F', b'L', b'V', 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00,
+    ];
+    bytes.extend_from_slice(&[
+        0x09, // video tag
+        0x00, 0x00, 0x09, // data size
+        0x00, 0x00, 0x00, // timestamp
+        0x00, // timestamp extended
+        0x00, 0x00, 0x00, // stream id
+        0x90, // enhanced keyframe + sequence start
+        b'a', b'v', b'0', b'1', // AV1 FourCC
+        0x81, 0x0D, 0x0C, 0x00, // minimal av1C configuration record
+        0x00, 0x00, 0x00, 0x14, // previous tag size
     ]);
     bytes
 }
@@ -886,6 +913,80 @@ async fn mesio_downloader_hls_sources_fail_over_with_discontinuity() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_hls_retries_sources_after_media_recovery() {
+    use futures::StreamExt;
+
+    let first_origin = Origin::new();
+    first_origin.push_playlist(playlist(0, &["recovered.ts"], true));
+    first_origin.add_file("recovered.ts", b"recovered".to_vec());
+    first_origin.fail_playlist_times(1);
+    let first_base = first_origin.clone().serve().await;
+
+    let second_origin = Origin::new();
+    second_origin.push_playlist(playlist(0, &["second0.ts"], false));
+    second_origin.add_file("second0.ts", b"second".to_vec());
+    second_origin.fail_playlist_after(1);
+    let second_base = second_origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        hls: fast_config(),
+        ..Default::default()
+    });
+    let request = DownloadRequest::from_url(&format!("{first_base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .add_source(ContentSource::new(format!("{first_base}/live.m3u8"), 0))
+        .add_source(ContentSource::new(format!("{second_base}/live.m3u8"), 1));
+    let session = downloader
+        .start_hls(request)
+        .await
+        .expect("source session starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    let mut item_types = Vec::new();
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        let data = item.expect("no stream error");
+        item_types.push(data.segment_type());
+        if matches!(
+            data,
+            hls::HlsData::EndMarker(Some(hls::SplitReason::EndOfStream))
+        ) {
+            break;
+        }
+    }
+
+    let mut selected = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        if let DownloadEvent::SourceSelected { url, attempt, .. } = event {
+            selected.push((url.to_string(), attempt));
+        }
+    }
+
+    assert_eq!(
+        item_types,
+        vec![
+            hls::SegmentType::Ts,
+            hls::SegmentType::EndMarker,
+            hls::SegmentType::Ts,
+            hls::SegmentType::EndMarker,
+        ]
+    );
+    assert_eq!(
+        selected,
+        vec![
+            (format!("{first_base}/live.m3u8"), 1),
+            (format!("{second_base}/live.m3u8"), 2),
+            (format!("{first_base}/live.m3u8"), 3),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn mesio_downloader_hls_source_exhaustion_does_not_emit_extra_discontinuity() {
     use futures::StreamExt;
 
@@ -966,6 +1067,43 @@ async fn mesio_downloader_flv_source_selection_emits_event() {
     }
 
     assert_eq!(selected, Some((format!("{base}/stream.flv"), 7, 1)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_downloader_streams_enhanced_av1_tags() {
+    use flv::video::{VideoCodec, VideoFourCC};
+    use futures::StreamExt;
+    use mesio_engine::flv::FlvDownloader;
+
+    let origin = Origin::new();
+    origin.add_file("stream.flv", av1_flv_bytes());
+    let base = origin.clone().serve().await;
+
+    let downloader = FlvDownloader::new().expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/stream.flv"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(Default::default()));
+    let mut items = downloader
+        .start_session(request)
+        .await
+        .expect("download starts")
+        .items;
+
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(1), items.next())
+        .await
+        .expect("stream item")
+    {
+        if let FlvData::Tag(tag) = item.expect("no stream error") {
+            assert!(tag.is_video_sequence_header());
+            assert_eq!(
+                tag.get_video_codec(),
+                Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+            );
+            return;
+        }
+    }
+
+    panic!("expected an AV1 video tag");
 }
 
 #[tokio::test(flavor = "multi_thread")]

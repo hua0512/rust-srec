@@ -25,6 +25,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
 import type { NotificationEventTypeInfo } from '@/api/schemas/notifications';
+import { eventTypeLabel } from '@/lib/notification-event-types';
 import type { DesktopNotificationConfig } from '@/desktop/desktop-notifications';
 
 interface DesktopChannelDialogProps {
@@ -199,7 +200,7 @@ export function DesktopChannelDialog({
                       />
                       <div className="min-w-0">
                         <div className="text-[11px] font-medium truncate">
-                          {e.label}
+                          {i18n._(eventTypeLabel(e.event_type))}
                         </div>
                         <div className="text-[10px] text-muted-foreground/70 truncate">
                           {e.event_type}

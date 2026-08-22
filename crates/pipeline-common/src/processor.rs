@@ -21,7 +21,7 @@ use std::sync::Arc;
 ///
 /// Runtime contract:
 /// - Implementations are expected to be synchronous and non-async.
-/// - `ChannelPipeline` runs each processor stage on a dedicated blocking task.
+/// - `spawn_pipeline` runs a complete `Pipeline` on one dedicated blocking task.
 /// - Do not hold long-lived locks or perform blocking network I/O in hot loops.
 pub trait Processor<T> {
     /// Process an input item and produce output.

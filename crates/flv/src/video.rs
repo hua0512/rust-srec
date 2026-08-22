@@ -80,6 +80,7 @@ use tracing::debug;
 
 use super::av1::Av1Packet;
 use super::hevc::HevcPacket;
+use crate::audio::AvMultitrackType;
 use crate::avc::AvcPacket;
 use crate::resolution::Resolution;
 
@@ -229,9 +230,65 @@ pub enum VideoFourCC {
     Av01,
 }
 
+/// Video codec identifier used by legacy and enhanced FLV tags.
+///
+/// Legacy FLV stores a numeric [`VideoCodecId`], while enhanced FLV stores a
+/// [`VideoFourCC`]. Keeping both representations prevents enhanced codecs such
+/// as AV1 from being flattened into an unknown legacy codec ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoCodec {
+    Legacy(VideoCodecId),
+    Enhanced(VideoFourCC),
+}
+
+impl VideoCodec {
+    /// Returns the numeric representation used by FLV `onMetaData`.
+    ///
+    /// Legacy codecs use their numeric codec ID. Enhanced codecs use the
+    /// big-endian numeric value of their FourCC, as required by Enhanced RTMP.
+    pub const fn as_u32(&self) -> u32 {
+        match self {
+            Self::Legacy(codec_id) => *codec_id as u8 as u32,
+            Self::Enhanced(four_cc) => four_cc.as_u32(),
+        }
+    }
+}
+
+impl From<VideoCodecId> for VideoCodec {
+    fn from(codec: VideoCodecId) -> Self {
+        Self::Legacy(codec)
+    }
+}
+
+impl From<VideoFourCC> for VideoCodec {
+    fn from(codec: VideoFourCC) -> Self {
+        Self::Enhanced(codec)
+    }
+}
+
+impl TryFrom<u32> for VideoCodec {
+    type Error = io::Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if let Ok(value) = u8::try_from(value)
+            && let Ok(codec_id) = VideoCodecId::try_from(value)
+        {
+            return Ok(Self::Legacy(codec_id));
+        }
+
+        VideoFourCC::try_from(value).map(Self::Enhanced)
+    }
+}
+
+impl From<VideoCodec> for u32 {
+    fn from(codec: VideoCodec) -> Self {
+        codec.as_u32()
+    }
+}
+
 impl VideoFourCC {
     /// Returns the 32-bit integer representation of the FourCC
-    pub fn as_u32(&self) -> u32 {
+    pub const fn as_u32(&self) -> u32 {
         match self {
             Self::Avc1 => 0x61766331, // "avc1"
             Self::Hvc1 => 0x68766331, // "hvc1"
@@ -333,14 +390,29 @@ pub enum VideoTagBody {
     /// Enhanced Packet (AV1, H.265, etc.)
     /// When [`VideoPacketType::Enhanced`] is used
     Enhanced(EnhancedPacket),
+    /// Multitrack Packet (E-RTMP v2)
+    /// When the effective packet type is [`EnhancedPacketType::MULTITRACK`]
+    Multitrack(Vec<VideoTrack>),
     /// Command Frame (VideoInfo or Command)
-    /// When [`VideoFrameType::VideoInfoOrCommandFrame`] is used
+    /// When [`VideoFrameType::VideoInfoFrame`] is used
     Command(VideoCommand),
     /// Data we don't know how to parse
     Unknown {
         codec_id: u8,
         data: Bytes,
     },
+}
+
+/// One track of an E-RTMP multitrack video tag.
+///
+/// `VideoTagBody::demux` bounds each track body by the tag's
+/// `sizeOfVideoTrack` field, except for `AvMultitrackType::OneTrack`, whose
+/// single body consumes the rest of the payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoTrack {
+    pub track_id: u8,
+    pub video_codec: VideoFourCC,
+    pub body: EnhancedPacket,
 }
 
 impl VideoTagBody {
@@ -352,14 +424,9 @@ impl VideoTagBody {
             VideoTagBody::Hevc(hevc_data) => {
                 matches!(hevc_data, HevcPacket::SequenceStart(_))
             }
-            VideoTagBody::Enhanced(EnhancedPacket::Av1(av1_data)) => {
-                matches!(av1_data, Av1Packet::SequenceStart(_))
-            }
-            VideoTagBody::Enhanced(EnhancedPacket::Avc(avc_data)) => {
-                matches!(avc_data, AvcPacket::SequenceHeader(_))
-            }
-            VideoTagBody::Enhanced(EnhancedPacket::Hevc(hevc_data)) => {
-                matches!(hevc_data, HevcPacket::SequenceStart(_))
+            VideoTagBody::Enhanced(packet) => packet.is_sequence_header(),
+            VideoTagBody::Multitrack(tracks) => {
+                tracks.iter().any(|track| track.body.is_sequence_header())
             }
             _ => false,
         }
@@ -409,6 +476,12 @@ impl EnhancedPacketType {
     pub const METADATA: Self = Self(4);
     /// MPEG-2 Sequence Start
     pub const MPEG2_SEQUENCE_START: Self = Self(5);
+    /// Multitrack (E-RTMP v2): the byte after the tag header carries the
+    /// `AvMultitrackType` nibble and the per-track packet type nibble.
+    pub const MULTITRACK: Self = Self(6);
+    /// ModEx (E-RTMP v2): sized side-band records precede the real packet
+    /// type, which is carried in the low nibble of the byte after each record.
+    pub const MOD_EX: Self = Self(7);
 }
 
 impl From<u8> for EnhancedPacketType {
@@ -426,6 +499,8 @@ impl std::fmt::Display for EnhancedPacketType {
             3 => write!(f, "CodedFramesX"),
             4 => write!(f, "Metadata"),
             5 => write!(f, "Mpeg2SequenceStart"),
+            6 => write!(f, "Multitrack"),
+            7 => write!(f, "ModEx"),
             _ => write!(f, "Unknown({})", self.0),
         }
     }
@@ -460,6 +535,29 @@ pub enum EnhancedPacket {
         video_codec: VideoFourCC,
         data: Bytes,
     },
+}
+
+impl EnhancedPacket {
+    /// Whether this packet carries a decoder configuration record.
+    pub fn is_sequence_header(&self) -> bool {
+        matches!(
+            self,
+            EnhancedPacket::Av1(Av1Packet::SequenceStart(_))
+                | EnhancedPacket::Avc(AvcPacket::SequenceHeader(_))
+                | EnhancedPacket::Hevc(HevcPacket::SequenceStart(_))
+        )
+    }
+
+    /// Resolution from this packet's decoder configuration record, when it
+    /// carries one.
+    pub fn get_video_resolution(&self) -> Option<Resolution> {
+        match self {
+            EnhancedPacket::Av1(av1_data) => av1_data.get_video_resolution(),
+            EnhancedPacket::Avc(avc_data) => avc_data.get_video_resolution(),
+            EnhancedPacket::Hevc(hevc_data) => hevc_data.get_video_resolution(),
+            _ => None,
+        }
+    }
 }
 
 /// FLV Tag Video Header
@@ -509,101 +607,169 @@ impl VideoTagBody {
                 }),
             },
 
-            VideoPacketType::Enhanced(packet_type) => {
+            VideoPacketType::Enhanced(mut packet_type) => {
+                // ModEx records carry side-band data ahead of the real packet
+                // type; skip each `[size][data]` record and take the packet
+                // type from the low nibble of its trailing byte.
+                while packet_type == EnhancedPacketType::MOD_EX {
+                    let mut size = reader.read_u8()? as usize + 1;
+                    if size == 256 {
+                        size = reader.read_u16::<BigEndian>()? as usize + 1;
+                    }
+                    reader.extract_bytes(size)?;
+                    packet_type = EnhancedPacketType::from(reader.read_u8()? & 0x0F);
+                }
+
+                if packet_type == EnhancedPacketType::MULTITRACK {
+                    let multitrack_byte = reader.read_u8()?;
+                    let multitrack_type = AvMultitrackType::try_from(multitrack_byte >> 4)?;
+                    packet_type = EnhancedPacketType::from(multitrack_byte & 0x0F);
+                    if packet_type == EnhancedPacketType::MULTITRACK {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "nested multitrack is not allowed",
+                        ));
+                    }
+
+                    // OneTrack/ManyTracks share one FourCC ahead of the track
+                    // loop; ManyTracksManyCodecs repeats it per track.
+                    let shared_codec = if multitrack_type != AvMultitrackType::ManyTracksManyCodecs
+                    {
+                        let mut bytes = [0; 4];
+                        reader.read_exact(&mut bytes)?;
+                        Some(VideoFourCC::try_from(bytes)?)
+                    } else {
+                        None
+                    };
+
+                    let mut tracks = Vec::new();
+                    while (reader.position() as usize) < reader.get_ref().len() {
+                        let video_codec = match shared_codec {
+                            Some(codec) => codec,
+                            None => {
+                                let mut bytes = [0; 4];
+                                reader.read_exact(&mut bytes)?;
+                                VideoFourCC::try_from(bytes)?
+                            }
+                        };
+                        let track_id = reader.read_u8()?;
+                        let body = if multitrack_type == AvMultitrackType::OneTrack {
+                            Self::demux_enhanced_packet(video_codec, packet_type, reader)?
+                        } else {
+                            let size = reader.read_u24::<BigEndian>()? as usize;
+                            let mut track_reader = io::Cursor::new(reader.extract_bytes(size)?);
+                            Self::demux_enhanced_packet(
+                                video_codec,
+                                packet_type,
+                                &mut track_reader,
+                            )?
+                        };
+                        tracks.push(VideoTrack {
+                            track_id,
+                            video_codec,
+                            body,
+                        });
+                        if multitrack_type == AvMultitrackType::OneTrack {
+                            break;
+                        }
+                    }
+
+                    return Ok(VideoTagBody::Multitrack(tracks));
+                }
+
                 let mut video_codec = [0; 4];
                 reader.read_exact(&mut video_codec)?;
                 let video_codec = VideoFourCC::try_from(video_codec)?;
 
-                match packet_type {
-                    EnhancedPacketType::SEQUENCE_END => {
-                        return Ok(VideoTagBody::Enhanced(match video_codec {
-                            VideoFourCC::Avc1 => EnhancedPacket::Avc(AvcPacket::EndOfSequence),
-                            VideoFourCC::Av01 => EnhancedPacket::Av1(Av1Packet::EndOfSequence),
-                            VideoFourCC::Hvc1 => EnhancedPacket::Hevc(HevcPacket::EndOfSequence),
-                            _ => EnhancedPacket::SequenceEnd { video_codec },
-                        }));
-                    }
-                    EnhancedPacketType::METADATA => {
-                        return Ok(VideoTagBody::Enhanced(EnhancedPacket::Metadata {
-                            video_codec,
-                            data: reader.extract_remaining(),
-                        }));
-                    }
-                    _ => {}
-                }
-
-                debug!("Video codec: {:?}", video_codec);
-                debug!("Packet type: {:?}", packet_type);
-
-                match (video_codec, packet_type) {
-                    (VideoFourCC::Avc1, EnhancedPacketType::SEQUENCE_START) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::SequenceHeader(
-                            AVCDecoderConfigurationRecord::parse(reader)?,
-                        ))),
-                    ),
-                    (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
-                            composition_time: reader.read_i24::<BigEndian>()?,
-                            data: reader.extract_remaining(),
-                        })),
-                    ),
-                    (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES_X) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
-                            composition_time: 0,
-                            data: reader.extract_remaining(),
-                        })),
-                    ),
-                    (VideoFourCC::Hvc1, EnhancedPacketType::SEQUENCE_START) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(
-                            HEVCDecoderConfigurationRecord::demux(reader)?,
-                        ))),
-                    ),
-                    (VideoFourCC::Hvc1, EnhancedPacketType::CODED_FRAMES) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {
-                            composition_time: Some(reader.read_i24::<BigEndian>()?),
-                            data: reader.extract_remaining(),
-                        })),
-                    ),
-                    (VideoFourCC::Hvc1, EnhancedPacketType::CODED_FRAMES_X) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {
-                            composition_time: None,
-                            data: reader.extract_remaining(),
-                        })),
-                    ),
-                    (VideoFourCC::Av01, EnhancedPacketType::SEQUENCE_START) => {
-                        Ok(VideoTagBody::Enhanced(EnhancedPacket::Av1(
-                            Av1Packet::SequenceStart(AV1CodecConfigurationRecord::demux(reader)?),
-                        )))
-                    }
-                    (VideoFourCC::Av01, EnhancedPacketType::CODED_FRAMES) => {
-                        Ok(VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(
-                            reader.extract_remaining(),
-                        ))))
-                    }
-                    (VideoFourCC::Av01, EnhancedPacketType::CODED_FRAMES_X) => {
-                        Ok(VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(
-                            reader.extract_remaining(),
-                        ))))
-                    }
-                    (VideoFourCC::Av01, EnhancedPacketType::METADATA) => {
-                        Ok(VideoTagBody::Enhanced(EnhancedPacket::Metadata {
-                            video_codec,
-                            data: reader.extract_remaining(),
-                        }))
-                    }
-                    (VideoFourCC::Av01, EnhancedPacketType::MPEG2_SEQUENCE_START) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
-                            AV1VideoDescriptor::demux(reader)?.codec_configuration_record,
-                        ))),
-                    ),
-
-                    _ => Ok(VideoTagBody::Enhanced(EnhancedPacket::Unknown {
-                        packet_type,
-                        video_codec,
-                        data: reader.extract_remaining(),
-                    })),
-                }
+                Ok(VideoTagBody::Enhanced(Self::demux_enhanced_packet(
+                    video_codec,
+                    packet_type,
+                    reader,
+                )?))
             }
+        }
+    }
+
+    /// Demux the body of one enhanced packet whose FourCC and effective
+    /// packet type are already known: the single-codec path of `demux` and
+    /// each track of a Multitrack tag share this.
+    fn demux_enhanced_packet(
+        video_codec: VideoFourCC,
+        packet_type: EnhancedPacketType,
+        reader: &mut io::Cursor<Bytes>,
+    ) -> io::Result<EnhancedPacket> {
+        match packet_type {
+            EnhancedPacketType::SEQUENCE_END => {
+                return Ok(match video_codec {
+                    VideoFourCC::Avc1 => EnhancedPacket::Avc(AvcPacket::EndOfSequence),
+                    VideoFourCC::Av01 => EnhancedPacket::Av1(Av1Packet::EndOfSequence),
+                    VideoFourCC::Hvc1 => EnhancedPacket::Hevc(HevcPacket::EndOfSequence),
+                    _ => EnhancedPacket::SequenceEnd { video_codec },
+                });
+            }
+            EnhancedPacketType::METADATA => {
+                return Ok(EnhancedPacket::Metadata {
+                    video_codec,
+                    data: reader.extract_remaining(),
+                });
+            }
+            _ => {}
+        }
+
+        debug!("Video codec: {:?}", video_codec);
+        debug!("Packet type: {:?}", packet_type);
+
+        match (video_codec, packet_type) {
+            (VideoFourCC::Avc1, EnhancedPacketType::SEQUENCE_START) => Ok(EnhancedPacket::Avc(
+                AvcPacket::SequenceHeader(AVCDecoderConfigurationRecord::parse(reader)?),
+            )),
+            (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES) => {
+                Ok(EnhancedPacket::Avc(AvcPacket::Nalu {
+                    composition_time: reader.read_i24::<BigEndian>()?,
+                    data: reader.extract_remaining(),
+                }))
+            }
+            (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES_X) => {
+                Ok(EnhancedPacket::Avc(AvcPacket::Nalu {
+                    composition_time: 0,
+                    data: reader.extract_remaining(),
+                }))
+            }
+            (VideoFourCC::Hvc1, EnhancedPacketType::SEQUENCE_START) => Ok(EnhancedPacket::Hevc(
+                HevcPacket::SequenceStart(HEVCDecoderConfigurationRecord::demux(reader)?),
+            )),
+            (VideoFourCC::Hvc1, EnhancedPacketType::CODED_FRAMES) => {
+                Ok(EnhancedPacket::Hevc(HevcPacket::Nalu {
+                    composition_time: Some(reader.read_i24::<BigEndian>()?),
+                    data: reader.extract_remaining(),
+                }))
+            }
+            (VideoFourCC::Hvc1, EnhancedPacketType::CODED_FRAMES_X) => {
+                Ok(EnhancedPacket::Hevc(HevcPacket::Nalu {
+                    composition_time: None,
+                    data: reader.extract_remaining(),
+                }))
+            }
+            (VideoFourCC::Av01, EnhancedPacketType::SEQUENCE_START) => Ok(EnhancedPacket::Av1(
+                Av1Packet::SequenceStart(AV1CodecConfigurationRecord::demux(reader)?),
+            )),
+            (VideoFourCC::Av01, EnhancedPacketType::CODED_FRAMES) => Ok(EnhancedPacket::Av1(
+                Av1Packet::Raw(reader.extract_remaining()),
+            )),
+            (VideoFourCC::Av01, EnhancedPacketType::CODED_FRAMES_X) => Ok(EnhancedPacket::Av1(
+                Av1Packet::Raw(reader.extract_remaining()),
+            )),
+            (VideoFourCC::Av01, EnhancedPacketType::MPEG2_SEQUENCE_START) => {
+                Ok(EnhancedPacket::Av1(Av1Packet::SequenceStart(
+                    AV1VideoDescriptor::demux(reader)?.codec_configuration_record,
+                )))
+            }
+
+            _ => Ok(EnhancedPacket::Unknown {
+                packet_type,
+                video_codec,
+                data: reader.extract_remaining(),
+            }),
         }
     }
 
@@ -611,15 +777,10 @@ impl VideoTagBody {
         match self {
             VideoTagBody::Avc(avc_data) => avc_data.get_video_resolution(),
             VideoTagBody::Hevc(hevc_data) => hevc_data.get_video_resolution(),
-            VideoTagBody::Enhanced(EnhancedPacket::Av1(av1_data)) => {
-                av1_data.get_video_resolution()
-            }
-            VideoTagBody::Enhanced(EnhancedPacket::Avc(avc_data)) => {
-                avc_data.get_video_resolution()
-            }
-            VideoTagBody::Enhanced(EnhancedPacket::Hevc(hevc_data)) => {
-                hevc_data.get_video_resolution()
-            }
+            VideoTagBody::Enhanced(packet) => packet.get_video_resolution(),
+            VideoTagBody::Multitrack(tracks) => tracks
+                .iter()
+                .find_map(|track| track.body.get_video_resolution()),
             _ => None,
         }
     }
@@ -649,6 +810,17 @@ impl std::fmt::Display for VideoTagBody {
             VideoTagBody::Avc(packet) => write!(f, "AVC {packet}"),
             VideoTagBody::Hevc(packet) => write!(f, "HEVC {packet}"),
             VideoTagBody::Enhanced(packet) => write!(f, "{packet}"),
+            VideoTagBody::Multitrack(tracks) => {
+                write!(f, "Multitrack [{} tracks]", tracks.len())?;
+                for track in tracks {
+                    write!(
+                        f,
+                        " #{} [{}] {}",
+                        track.track_id, track.video_codec, track.body
+                    )?;
+                }
+                Ok(())
+            }
             VideoTagBody::Command(cmd) => write!(f, "Command: {cmd:?}"),
             VideoTagBody::Unknown { codec_id, data } => {
                 write!(
@@ -697,6 +869,7 @@ mod tests {
     fn test_video_fourcc() {
         let cases = [
             (VideoFourCC::Av01, *b"av01", "Av01"),
+            (VideoFourCC::Vp08, *b"vp08", "Vp08"),
             (VideoFourCC::Vp09, *b"vp09", "Vp09"),
             (VideoFourCC::Hvc1, *b"hvc1", "Hvc1"),
             (VideoFourCC::Avc1, *b"avc1", "Avc1"),
@@ -712,6 +885,24 @@ mod tests {
     }
 
     #[test]
+    fn test_video_codec_numeric_representation() {
+        let cases = [
+            (VideoCodec::Legacy(VideoCodecId::Avc), 7),
+            (VideoCodec::Enhanced(VideoFourCC::Avc1), 0x6176_6331),
+            (VideoCodec::Enhanced(VideoFourCC::Hvc1), 0x6876_6331),
+            (VideoCodec::Enhanced(VideoFourCC::Vp08), 0x7670_3038),
+            (VideoCodec::Enhanced(VideoFourCC::Vp09), 0x7670_3039),
+            (VideoCodec::Enhanced(VideoFourCC::Av01), 0x6176_3031),
+        ];
+
+        for (codec, value) in cases {
+            assert_eq!(codec.as_u32(), value);
+            assert_eq!(VideoCodec::try_from(value).unwrap(), codec);
+        }
+        assert!(VideoCodec::try_from(0).is_err());
+    }
+
+    #[test]
     fn test_enhanced_packet_type() {
         let cases = [
             (EnhancedPacketType::SEQUENCE_START, 0, "SequenceStart"),
@@ -724,8 +915,9 @@ mod tests {
                 5,
                 "Mpeg2SequenceStart",
             ),
-            (EnhancedPacketType(6), 6, "Unknown(6)"),
-            (EnhancedPacketType(7), 7, "Unknown(7)"),
+            (EnhancedPacketType::MULTITRACK, 6, "Multitrack"),
+            (EnhancedPacketType::MOD_EX, 7, "ModEx"),
+            (EnhancedPacketType(8), 8, "Unknown(8)"),
         ];
 
         for (expected, value, name) in cases {
@@ -966,6 +1158,139 @@ mod tests {
                 ))),
             }
         );
+    }
+
+    #[test]
+    fn test_multitrack_one_track_av1_sequence_start() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            0b10010110, // enhanced + keyframe + multitrack
+            0x00,       // OneTrack + SequenceStart
+            b'a', b'v', b'0', b'1', // shared video codec
+            0x01, // track id
+            129, 13, 12, 0, 10, 15, 0, 0, 0, 106, 239, 191, 225, 188, 2, 25, 144, 16, 16, 16, 64,
+        ]));
+
+        let video = VideoData::demux(&mut reader).unwrap();
+        assert_eq!(video.frame_type, VideoFrameType::KeyFrame);
+        let VideoTagBody::Multitrack(tracks) = &video.body else {
+            panic!("expected multitrack body, got {:?}", video.body);
+        };
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].track_id, 1);
+        assert_eq!(tracks[0].video_codec, VideoFourCC::Av01);
+        assert!(tracks[0].body.is_sequence_header());
+        assert!(video.body.is_sequence_header());
+        let resolution = video.body.get_video_resolution().unwrap();
+        assert!(resolution.width > 0.0);
+        assert!(resolution.height > 0.0);
+    }
+
+    #[test]
+    fn test_multitrack_many_tracks_bounded_bodies() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            0b10010110, // enhanced + keyframe + multitrack
+            0x11,       // ManyTracks + CodedFrames
+            b'a', b'v', b'c', b'1', // shared video codec
+            0x00, // track id 0
+            0x00, 0x00, 0x05, // track size
+            0x00, 0x00, 0x0A, // composition time
+            0xAA, 0xBB, // NALU data
+            0x01, // track id 1
+            0x00, 0x00, 0x05, // track size
+            0x00, 0x00, 0x14, // composition time
+            0xCC, 0xDD, // NALU data
+        ]));
+
+        let video = VideoData::demux(&mut reader).unwrap();
+        assert_eq!(
+            video.body,
+            VideoTagBody::Multitrack(vec![
+                VideoTrack {
+                    track_id: 0,
+                    video_codec: VideoFourCC::Avc1,
+                    body: EnhancedPacket::Avc(AvcPacket::Nalu {
+                        composition_time: 0x0A,
+                        data: Bytes::from_static(&[0xAA, 0xBB]),
+                    }),
+                },
+                VideoTrack {
+                    track_id: 1,
+                    video_codec: VideoFourCC::Avc1,
+                    body: EnhancedPacket::Avc(AvcPacket::Nalu {
+                        composition_time: 0x14,
+                        data: Bytes::from_static(&[0xCC, 0xDD]),
+                    }),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn test_multitrack_many_codecs_reads_per_track_four_cc() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            0b10010110, // enhanced + keyframe + multitrack
+            0x21,       // ManyTracksManyCodecs + CodedFrames
+            b'a', b'v', b'0', b'1', // track 0 codec
+            0x00, // track id 0
+            0x00, 0x00, 0x02, // track size
+            0xDE, 0xAD, // raw OBU data
+            b'h', b'v', b'c', b'1', // track 1 codec
+            0x01, // track id 1
+            0x00, 0x00, 0x05, // track size
+            0x00, 0x00, 0x05, // composition time
+            0xEE, 0xFF, // NALU data
+        ]));
+
+        let video = VideoData::demux(&mut reader).unwrap();
+        assert_eq!(
+            video.body,
+            VideoTagBody::Multitrack(vec![
+                VideoTrack {
+                    track_id: 0,
+                    video_codec: VideoFourCC::Av01,
+                    body: EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(&[0xDE, 0xAD]))),
+                },
+                VideoTrack {
+                    track_id: 1,
+                    video_codec: VideoFourCC::Hvc1,
+                    body: EnhancedPacket::Hevc(HevcPacket::Nalu {
+                        composition_time: Some(0x05),
+                        data: Bytes::from_static(&[0xEE, 0xFF]),
+                    }),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn test_mod_ex_records_are_skipped_during_demux() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            0b10010111, // enhanced + keyframe + ModEx
+            0x02,       // record size byte: three bytes of ModEx data
+            0x00, 0x00, 0x01, // TimestampOffsetNano payload
+            0x01, // TimestampOffsetNano + CodedFrames
+            b'a', b'v', b'0', b'1', // video codec
+            0xDE, 0xAD, // raw OBU data
+        ]));
+
+        let video = VideoData::demux(&mut reader).unwrap();
+        assert_eq!(
+            video.body,
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(&[
+                0xDE, 0xAD
+            ]))))
+        );
+    }
+
+    #[test]
+    fn test_nested_multitrack_demux_is_rejected() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            0b10010110, // enhanced + keyframe + multitrack
+            0x06,       // OneTrack + Multitrack: forbidden nesting
+            b'a', b'v', b'0', b'1',
+        ]));
+
+        assert!(VideoData::demux(&mut reader).is_err());
     }
 
     #[test]

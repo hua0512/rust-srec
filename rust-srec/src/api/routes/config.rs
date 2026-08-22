@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{FromRef, Path, State},
     routing::{get, patch, put},
 };
 use tracing::debug;
@@ -10,7 +10,25 @@ use tracing::debug;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest};
 use crate::api::server::AppState;
-use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
+use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays};
+
+#[derive(Clone)]
+pub struct ConfigRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for ConfigRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+        }
+    }
+}
 
 /// Helper trait for apply_updates macro to handle Option wrapping/unwrapping
 trait ApplyUpdate<Source> {
@@ -65,6 +83,25 @@ macro_rules! apply_updates {
     (@val $val:ident,) => { $val };
 }
 
+pub(super) fn validate_retention_days(field: &'static str, days: i64) -> ApiResult<()> {
+    RetentionDays::try_from(days)
+        .map(|_| ())
+        .map_err(|_| ApiError::bad_request(format!("{field} must be between 0 and {}", i32::MAX)))
+}
+
+fn validate_optional_retention_days(
+    field: &'static str,
+    value: Option<&serde_json::Value>,
+) -> ApiResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let Some(days) = value.as_i64() else {
+        return Err(ApiError::bad_request(format!("{field} must be an integer")));
+    };
+    validate_retention_days(field, days)
+}
+
 /// Create the config router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -76,8 +113,24 @@ pub fn router() -> Router<AppState> {
 }
 
 /// Map GlobalConfigDbModel to GlobalConfigResponse.
-fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigResponse {
-    GlobalConfigResponse {
+fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<GlobalConfigResponse> {
+    let job_history_retention_days = RetentionDays::try_from(config.job_history_retention_days)
+        .map_err(|error| {
+            ApiError::internal(format!(
+                "Invalid job_history_retention_days in database: {error}"
+            ))
+        })?
+        .as_u32();
+    let notification_event_log_retention_days =
+        RetentionDays::try_from(config.notification_event_log_retention_days)
+            .map_err(|error| {
+                ApiError::internal(format!(
+                    "Invalid notification_event_log_retention_days in database: {error}"
+                ))
+            })?
+            .as_u32();
+
+    Ok(GlobalConfigResponse {
         output_folder: config.output_folder,
         output_filename_template: config.output_filename_template,
         output_file_format: config.output_file_format,
@@ -93,9 +146,11 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         offline_check_delay_ms: config.offline_check_delay_ms as u64,
         offline_check_count: config.offline_check_count as u32,
         default_download_engine: config.default_download_engine,
+        default_extractor: config.default_extractor,
         record_danmu: config.record_danmu,
-        job_history_retention_days: config.job_history_retention_days as u32,
-        notification_event_log_retention_days: config.notification_event_log_retention_days as u32,
+        danmu_statistics: config.danmu_statistics,
+        job_history_retention_days,
+        notification_event_log_retention_days,
         pipeline: config.pipeline,
         session_complete_pipeline: config.session_complete_pipeline,
         paired_segment_pipeline: config.paired_segment_pipeline,
@@ -107,7 +162,8 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         pipeline_execute_timeout_secs: config.pipeline_execute_timeout_secs.max(0) as u64,
         queue_freshness_threshold_ms: config.queue_freshness_threshold_ms.max(0) as u64,
         gpu_health_probe_interval_secs: config.gpu_health_probe_interval_secs.max(0) as u64,
-    }
+        stream_proxy_allow_private_targets: config.stream_proxy_allow_private_targets,
+    })
 }
 
 /// Map PlatformConfigDbModel to PlatformConfigResponse.
@@ -118,19 +174,20 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
         fetch_delay_ms: config.fetch_delay_ms.map(|v| v as u64),
         download_delay_ms: config.download_delay_ms.map(|v| v as u64),
         record_danmu: config.record_danmu,
+        danmu_statistics: config.danmu_statistics,
         cookies: config.cookies,
         platform_specific_config: config.platform_specific_config,
         proxy_config: config.proxy_config,
         output_folder: config.output_folder,
         output_filename_template: config.output_filename_template,
         download_engine: config.download_engine,
+        extractor: config.extractor,
         stream_selection_config: config.stream_selection_config,
         output_file_format: config.output_file_format,
         min_segment_size_bytes: config.min_segment_size_bytes.map(|v| v as u64),
         max_download_duration_secs: config.max_download_duration_secs.map(|v| v as u64),
         max_part_size_bytes: config.max_part_size_bytes.map(|v| v as u64),
         download_retry_policy: config.download_retry_policy,
-        event_hooks: config.event_hooks,
         pipeline: config.pipeline,
         session_complete_pipeline: config.session_complete_pipeline,
         paired_segment_pipeline: config.paired_segment_pipeline,
@@ -171,19 +228,16 @@ fn validate_offline_check_overrides(
     security(("bearer_auth" = []))
 )]
 pub async fn get_global_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let config = config_service
         .get_global_config()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to get global config: {}", e)))?;
 
-    Ok(Json(map_global_config_to_response(config)))
+    Ok(Json(map_global_config_to_response(config)?))
 }
 
 #[utoipa::path(
@@ -197,13 +251,19 @@ pub async fn get_global_config(
     security(("bearer_auth" = []))
 )]
 pub async fn update_global_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
     Json(request): Json<UpdateGlobalConfigRequest>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    validate_optional_retention_days(
+        "job_history_retention_days",
+        request.job_history_retention_days.as_ref(),
+    )?;
+    validate_optional_retention_days(
+        "notification_event_log_retention_days",
+        request.notification_event_log_retention_days.as_ref(),
+    )?;
+
+    let config_service = &state.config_service;
 
     tracing::info!(
         ?request,
@@ -240,7 +300,17 @@ pub async fn update_global_config(
         job_history_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
         notification_event_log_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
         default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
+        // `Option<String>` target: JSON `null` clears the override back to auto.
+        default_extractor: |v: serde_json::Value| v.as_str().map(String::from),
         record_danmu: |v: serde_json::Value| v.as_bool(),
+        // JSON-TEXT column: the object is stored verbatim and parsed at resolve
+        // time, matching how the pipeline definitions are handled below. An object
+        // is re-serialized; a string is taken as already-serialized JSON.
+        danmu_statistics: |v: serde_json::Value| match v {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(text) => Some(text),
+            other => serde_json::to_string(&other).ok(),
+        },
         proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
         pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
@@ -257,6 +327,7 @@ pub async fn update_global_config(
         // probe is a `nvidia-smi` fork+exec (~50–200 ms); sub-second polling
         // would waste CPU. The UI hint discourages going below 30 s.
         gpu_health_probe_interval_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
+        stream_proxy_allow_private_targets: |v: serde_json::Value| v.as_bool(),
     ]);
 
     debug!(
@@ -289,7 +360,7 @@ pub async fn update_global_config(
         "Global configuration updated successfully via API"
     );
 
-    Ok(Json(map_global_config_to_response(config)))
+    Ok(Json(map_global_config_to_response(config)?))
 }
 
 #[utoipa::path(
@@ -302,12 +373,9 @@ pub async fn update_global_config(
     security(("bearer_auth" = []))
 )]
 pub async fn list_platform_configs(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
 ) -> ApiResult<Json<Vec<PlatformConfigResponse>>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let configs = config_service
         .list_platform_configs()
@@ -334,13 +402,10 @@ pub async fn list_platform_configs(
     security(("bearer_auth" = []))
 )]
 pub async fn get_platform_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let config = config_service.get_platform_config(&id).await.map_err(|e| {
         if e.to_string().contains("not found") {
@@ -366,7 +431,7 @@ pub async fn get_platform_config(
     security(("bearer_auth" = []))
 )]
 pub async fn replace_platform_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
     Path(id): Path<String>,
     Json(request): Json<PlatformConfigResponse>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
@@ -385,10 +450,7 @@ pub async fn replace_platform_config(
         request.offline_check_delay_ms.map(|v| v as i64),
     )?;
 
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     // Build the full config model from request
     let config = PlatformConfigDbModel {
@@ -397,19 +459,20 @@ pub async fn replace_platform_config(
         fetch_delay_ms: request.fetch_delay_ms.map(|v| v as i64),
         download_delay_ms: request.download_delay_ms.map(|v| v as i64),
         record_danmu: request.record_danmu,
+        danmu_statistics: request.danmu_statistics,
         cookies: request.cookies,
         platform_specific_config: request.platform_specific_config,
         proxy_config: request.proxy_config,
         output_folder: request.output_folder,
         output_filename_template: request.output_filename_template,
         download_engine: request.download_engine,
+        extractor: request.extractor,
         stream_selection_config: request.stream_selection_config,
         output_file_format: request.output_file_format,
         min_segment_size_bytes: request.min_segment_size_bytes.map(|v| v as i64),
         max_download_duration_secs: request.max_download_duration_secs.map(|v| v as i64),
         max_part_size_bytes: request.max_part_size_bytes.map(|v| v as i64),
         download_retry_policy: request.download_retry_policy,
-        event_hooks: request.event_hooks,
         pipeline: request.pipeline,
         session_complete_pipeline: request.session_complete_pipeline,
         paired_segment_pipeline: request.paired_segment_pipeline,
@@ -441,7 +504,28 @@ pub async fn replace_platform_config(
 #[cfg(test)]
 mod tests {
 
+    use axum::http::StatusCode;
+
+    use super::{validate_optional_retention_days, validate_retention_days};
     use crate::api::models::GlobalConfigResponse;
+
+    #[test]
+    fn retention_validation_accepts_zero_and_positive_integers() {
+        assert!(validate_retention_days("retention", 0).is_ok());
+        assert!(validate_retention_days("retention", 30).is_ok());
+    }
+
+    #[test]
+    fn retention_validation_rejects_negative_or_non_integer_values() {
+        let error = validate_retention_days("retention", -1)
+            .expect_err("negative retention must be rejected");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+
+        let value = serde_json::json!(1.5);
+        let error = validate_optional_retention_days("retention", Some(&value))
+            .expect_err("fractional retention must be rejected");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
 
     #[test]
     fn test_global_config_response_serialization() {
@@ -453,6 +537,7 @@ mod tests {
             max_download_duration_secs: 0,
             max_part_size_bytes: 8589934592,
             record_danmu: false,
+            danmu_statistics: None,
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,
@@ -460,6 +545,7 @@ mod tests {
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
             default_download_engine: "mesio".to_string(),
+            default_extractor: None,
             max_concurrent_cpu_jobs: 0,
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
@@ -475,6 +561,7 @@ mod tests {
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000,
             gpu_health_probe_interval_secs: 30,
+            stream_proxy_allow_private_targets: false,
         };
 
         let json = serde_json::to_string(&response).unwrap();

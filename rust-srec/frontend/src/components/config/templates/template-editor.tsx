@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import { motion } from 'motion/react';
 import { Form } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
+import { SaveFab } from '@/components/shared/save-fab';
 import { useQuery } from '@tanstack/react-query';
 import {
   Settings,
@@ -57,18 +58,19 @@ export function TemplateEditor({
           max_download_duration_secs: template.max_download_duration_secs,
           max_part_size_bytes: template.max_part_size_bytes,
           record_danmu: template.record_danmu,
+          danmu_statistics: template.danmu_statistics,
           cookies: template.cookies,
           platform_overrides: template.platform_overrides,
           download_retry_policy: template.download_retry_policy,
-          danmu_sampling_config: template.danmu_sampling_config,
           download_engine: template.download_engine,
           engines_override: template.engines_override ?? undefined,
           proxy_config: template.proxy_config,
-          event_hooks: template.event_hooks,
           stream_selection_config: template.stream_selection_config,
           pipeline: template.pipeline,
           session_complete_pipeline: template.session_complete_pipeline,
           paired_segment_pipeline: template.paired_segment_pipeline,
+          offline_check_count: template.offline_check_count,
+          offline_check_delay_ms: template.offline_check_delay_ms,
         }
       : {
           name: '',
@@ -79,18 +81,19 @@ export function TemplateEditor({
           max_download_duration_secs: null,
           max_part_size_bytes: null,
           record_danmu: null,
+          danmu_statistics: null,
           cookies: null,
           platform_overrides: null,
           download_retry_policy: null,
-          danmu_sampling_config: null,
           download_engine: null,
           engines_override: undefined,
           proxy_config: null,
-          event_hooks: null,
           stream_selection_config: null,
           pipeline: null,
           session_complete_pipeline: null,
           paired_segment_pipeline: null,
+          offline_check_count: null,
+          offline_check_delay_ms: null,
         },
   });
   const { reset } = form;
@@ -107,18 +110,19 @@ export function TemplateEditor({
         max_download_duration_secs: template.max_download_duration_secs,
         max_part_size_bytes: template.max_part_size_bytes,
         record_danmu: template.record_danmu,
+        danmu_statistics: template.danmu_statistics,
         cookies: template.cookies,
         platform_overrides: template.platform_overrides,
         download_retry_policy: template.download_retry_policy,
-        danmu_sampling_config: template.danmu_sampling_config,
         download_engine: template.download_engine,
         engines_override: template.engines_override ?? undefined,
         proxy_config: template.proxy_config,
-        event_hooks: template.event_hooks,
         stream_selection_config: template.stream_selection_config,
         pipeline: template.pipeline,
         session_complete_pipeline: template.session_complete_pipeline,
         paired_segment_pipeline: template.paired_segment_pipeline,
+        offline_check_count: template.offline_check_count,
+        offline_check_delay_ms: template.offline_check_delay_ms,
       });
     }
   }, [template, reset]);
@@ -138,10 +142,8 @@ export function TemplateEditor({
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit((data) => {
-          console.log('Submitting template form data:', data);
-          onSubmit(data);
-        })}
+        id="template-form"
+        onSubmit={form.handleSubmit((data) => onSubmit(data))}
         className="min-h-screen pb-20"
       >
         <motion.div
@@ -226,8 +228,6 @@ export function TemplateEditor({
               output: '',
               limits: '',
               danmu: '',
-              danmuSampling: 'danmu_sampling_config',
-              hooks: 'event_hooks',
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
@@ -280,26 +280,16 @@ export function TemplateEditor({
               'proxy',
               'danmu',
               'pipeline',
-              'hooks',
             ]}
           />
         </motion.div>
 
-        {/* Floating Save Button - Only show if dirty and not already shown in header (mobile optimization) */}
-        <div className="fixed bottom-6 right-6 z-50 md:hidden">
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            size="lg"
-            className="shadow-xl rounded-full h-12 w-12 p-0"
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Save className="w-5 h-5" />
-            )}
-          </Button>
-        </div>
+        {/* Mobile only: on wider screens the header carries its own save button. */}
+        <SaveFab
+          isSaving={isSubmitting}
+          formId="template-form"
+          className="md:hidden"
+        />
       </form>
     </Form>
   );

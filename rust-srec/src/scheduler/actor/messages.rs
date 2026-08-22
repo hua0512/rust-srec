@@ -168,7 +168,7 @@ pub enum DownloadEndPolicy {
     /// `ensure_output_dir` failed, the engine stderr reader observed a
     /// runtime ENOSPC signature, or the startup probe flagged it. The actor
     /// should transition the streamer to
-    /// [`crate::domain::streamer::state::StreamerState::OutOfSpace`] and
+    /// [`crate::domain::StreamerState::OutOfSpace`] and
     /// schedule the next check after `retry_after_secs` (the gate cooldown).
     OutputRootBlocked {
         /// Resolved root path in Degraded state (e.g. `/rec`).
@@ -176,6 +176,27 @@ pub enum DownloadEndPolicy {
         /// Classified io::ErrorKind of the failure that tripped the gate.
         io_kind: crate::downloader::IoErrorKindSer,
         /// Seconds to wait before retrying (gate cooldown).
+        retry_after_secs: u64,
+        /// Session ID of the download that was blocked.
+        session_id: String,
+    },
+
+    /// Download start was refused because the streamer is inside its
+    /// error-backoff window (`disabled_until`, written by
+    /// `MonitorService::handle_error`).
+    ///
+    /// Emitted by the container's download-start gate when a `StreamerLive`
+    /// (typically a hysteresis-resume) races the backoff commit: the live
+    /// check passed the monitor's `is_disabled` guard before the disable
+    /// landed, so the actor is parked in Live with no download running.
+    /// The backoff is already persisted — the actor only needs to fix its
+    /// local scheduling: leave Live (otherwise the `(Live, Live)` arm of
+    /// `HysteresisState::should_emit` suppresses every future check) and
+    /// re-check once the window expires.
+    StreamerBackoffBlocked {
+        /// Human-readable reason from the rejecting gate.
+        reason: String,
+        /// Seconds until `disabled_until` expires (plus a small buffer).
         retry_after_secs: u64,
         /// Session ID of the download that was blocked.
         session_id: String,

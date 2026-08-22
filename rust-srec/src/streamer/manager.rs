@@ -14,10 +14,7 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::{Priority, StreamerState};
 
-use super::metadata::StreamerMetadata;
-
-/// Default error threshold before applying backoff.
-const DEFAULT_ERROR_THRESHOLD: i32 = 3;
+use super::metadata::{DEFAULT_OFFLINE_CHECK_COUNT, StreamerMetadata, download_failure_threshold};
 
 /// Base backoff duration (doubles with each error).
 const BASE_BACKOFF_SECS: u64 = 60;
@@ -41,8 +38,6 @@ where
     repo: Arc<R>,
     /// Event broadcaster for config updates.
     broadcaster: ConfigEventBroadcaster,
-    /// Error threshold before backoff.
-    error_threshold: i32,
 }
 
 /// Parameters for partially updating a streamer.
@@ -50,6 +45,8 @@ pub struct StreamerUpdateParams {
     pub id: String,
     pub name: Option<String>,
     pub url: Option<String>,
+    /// Derived from `url` by the API layer, never supplied by clients.
+    pub platform_config_id: Option<String>,
     pub template_config_id: Option<Option<String>>,
     pub priority: Option<Priority>,
     pub state: Option<StreamerState>,
@@ -67,22 +64,6 @@ where
             url_index: Arc::new(DashMap::new()),
             repo,
             broadcaster,
-            error_threshold: DEFAULT_ERROR_THRESHOLD,
-        }
-    }
-
-    /// Create a new StreamerManager with custom error threshold.
-    pub fn with_error_threshold(
-        repo: Arc<R>,
-        broadcaster: ConfigEventBroadcaster,
-        error_threshold: i32,
-    ) -> Self {
-        Self {
-            metadata: Arc::new(DashMap::new()),
-            url_index: Arc::new(DashMap::new()),
-            repo,
-            broadcaster,
-            error_threshold,
         }
     }
 
@@ -274,20 +255,36 @@ where
     /// This method emits a `ConfigUpdateEvent::StreamerStateSyncedFromDb` event
     /// ONLY if the streamer's active status or state actually changed.
     /// This prevents unnecessary event spam when no real change occurred.
+    /// Resolved offline-check values are preserved because they live only in
+    /// the runtime cache rather than on the streamer database row.
     pub async fn reload_from_repo(&self, id: &str) -> Result<Option<StreamerMetadata>> {
-        // Capture old state before reload
-        let old_state = self.metadata.get(id).map(|e| (e.state, e.is_active()));
+        // Preserve resolved runtime-only configuration, which is not stored
+        // on the streamer row being reloaded.
+        let old_state = self.metadata.get(id).map(|e| {
+            (
+                e.state,
+                e.is_active(),
+                e.offline_check_count,
+                e.offline_check_delay_ms,
+            )
+        });
 
         match self.repo.get_streamer(id).await {
             Ok(model) => {
-                let metadata = StreamerMetadata::from_db_model(&model);
+                let mut metadata = StreamerMetadata::from_db_model(&model);
+                if let Some((_, _, offline_check_count, offline_check_delay_ms)) = old_state {
+                    metadata.offline_check_count = offline_check_count;
+                    metadata.offline_check_delay_ms = offline_check_delay_ms;
+                }
                 let new_is_active = metadata.is_active();
                 let new_state = metadata.state;
                 self.metadata.insert(id.to_string(), metadata.clone());
 
                 // Only emit event if state or active status actually changed
                 let should_emit = match old_state {
-                    Some((old_s, old_active)) => old_s != new_state || old_active != new_is_active,
+                    Some((old_s, old_active, _, _)) => {
+                        old_s != new_state || old_active != new_is_active
+                    }
                     None => true, // New entry, always emit
                 };
 
@@ -295,7 +292,7 @@ where
                     debug!(
                         "Streamer {} state changed: {:?} -> {:?} (active: {})",
                         id,
-                        old_state.map(|(s, _)| s),
+                        old_state.map(|(state, _, _, _)| state),
                         new_state,
                         new_is_active
                     );
@@ -359,12 +356,21 @@ where
     ///
     /// Persists to database first, then updates in-memory cache.
     /// This method allows updating all mutable fields of a streamer.
-    pub async fn update_streamer(&self, metadata: StreamerMetadata) -> Result<()> {
+    ///
+    /// A `state` of [`StreamerState::Disabled`] carries no error bookkeeping: the
+    /// supplied `consecutive_error_count`, `disabled_until` and `last_error` are
+    /// dropped via [`StreamerMetadata::clear_error_tracking`], matching
+    /// [`Self::partial_update_streamer`].
+    pub async fn update_streamer(&self, mut metadata: StreamerMetadata) -> Result<()> {
         debug!("Updating streamer: {}", metadata.id);
 
         // Check if streamer exists
         if !self.metadata.contains_key(&metadata.id) {
             return Err(crate::Error::not_found("Streamer", &metadata.id));
+        }
+
+        if metadata.state == StreamerState::Disabled {
+            metadata.clear_error_tracking();
         }
 
         // Convert to DB model and persist
@@ -396,6 +402,10 @@ where
     /// Only updates the fields that are provided (Some values).
     /// Persists to database first, then updates in-memory cache.
     ///
+    /// A `state` of [`StreamerState::Disabled`] additionally applies
+    /// [`StreamerMetadata::clear_error_tracking`] in the same write, so a re-enable
+    /// starts from a clean error history.
+    ///
     /// # Events
     /// Always emits `ConfigUpdateEvent::StreamerMetadataUpdated`, including when the update changes
     /// the streamer's state (e.g., user disables a streamer). `StreamerStateSyncedFromDb` is reserved
@@ -408,6 +418,7 @@ where
             id,
             name,
             url,
+            platform_config_id,
             template_config_id,
             priority,
             state,
@@ -435,6 +446,9 @@ where
             }
             metadata.url = new_url;
         }
+        if let Some(new_platform) = platform_config_id {
+            metadata.platform_config_id = new_platform;
+        }
         if let Some(new_template) = template_config_id {
             metadata.template_config_id = new_template;
         }
@@ -443,6 +457,12 @@ where
         }
         if let Some(new_state) = state {
             metadata.state = new_state;
+
+            // A user-initiated disable retires the error bookkeeping accumulated by
+            // `record_error`, so re-enabling the streamer starts from a clean slate.
+            if new_state == StreamerState::Disabled {
+                metadata.clear_error_tracking();
+            }
         }
         if let Some(new_config) = streamer_specific_config {
             metadata.streamer_specific_config = new_config;
@@ -488,18 +508,14 @@ where
         Ok(())
     }
 
-    /// Refresh the cached `effective_offline_check_*` values on a streamer's
-    /// metadata from a freshly resolved [`crate::domain::config::MergedConfig`].
+    /// Refresh the cached `offline_check_*` values on a streamer's metadata
+    /// from a freshly resolved [`crate::config::MergedConfig`].
     /// No-op if the streamer is not currently registered.
     ///
     /// Called from the scheduler's config-update fan-out so per-streamer
     /// overrides flow into both the StreamerActor's `StreamerConfig` and the
     /// SessionLifecycle's hysteresis backstop without an extra DB hit.
-    pub fn apply_resolved_config(
-        &self,
-        streamer_id: &str,
-        merged: &crate::domain::config::MergedConfig,
-    ) {
+    pub fn apply_resolved_config(&self, streamer_id: &str, merged: &crate::config::MergedConfig) {
         if let Some(mut entry) = self.metadata.get_mut(streamer_id) {
             entry.apply_resolved_config(merged);
         }
@@ -567,17 +583,6 @@ where
             .collect()
     }
 
-    /// Get streamers ready for live checking.
-    ///
-    /// Returns active streamers that are not currently disabled.
-    pub fn get_ready_for_check(&self) -> Vec<StreamerMetadata> {
-        self.metadata
-            .iter()
-            .filter(|entry| entry.is_ready_for_check())
-            .map(|entry| entry.value().clone())
-            .collect()
-    }
-
     /// Get streamers sorted by priority (High first, then Normal, then Low).
     pub fn get_all_sorted_by_priority(&self) -> Vec<StreamerMetadata> {
         let mut streamers: Vec<_> = self.get_all();
@@ -596,11 +601,18 @@ where
 
         let (new_count, disabled_until) = {
             let entry = self.metadata.get(id);
-            let current_count = entry.map(|e| e.consecutive_error_count).unwrap_or(0);
+            let (current_count, error_threshold) = entry
+                .map(|e| {
+                    (
+                        e.consecutive_error_count,
+                        download_failure_threshold(e.offline_check_count),
+                    )
+                })
+                .unwrap_or_else(|| (0, download_failure_threshold(DEFAULT_OFFLINE_CHECK_COUNT)));
             let new_count = current_count + 1;
 
-            let disabled_until = if new_count >= self.error_threshold {
-                Some(self.calculate_backoff(new_count))
+            let disabled_until = if new_count >= error_threshold {
+                Some(self.calculate_backoff(new_count, error_threshold))
             } else {
                 None
             };
@@ -636,11 +648,16 @@ where
 
     /// Compute the disabled-until timestamp for a given consecutive error count.
     ///
-    /// Returns `Some(timestamp)` when the error threshold is reached and the streamer
-    /// should enter exponential backoff, otherwise `None`.
-    pub fn disabled_until_for_error_count(&self, error_count: i32) -> Option<DateTime<Utc>> {
-        if error_count >= self.error_threshold {
-            Some(self.calculate_backoff(error_count))
+    /// Derives the threshold from `offline_check_count` and returns a timestamp
+    /// when the streamer should enter exponential backoff, otherwise `None`.
+    pub fn disabled_until_for_error_count(
+        &self,
+        error_count: i32,
+        offline_check_count: u32,
+    ) -> Option<DateTime<Utc>> {
+        let error_threshold = download_failure_threshold(offline_check_count);
+        if error_count >= error_threshold {
+            Some(self.calculate_backoff(error_count, error_threshold))
         } else {
             None
         }
@@ -749,8 +766,8 @@ where
     // ========== Private Helpers ==========
 
     /// Calculate backoff duration based on error count.
-    fn calculate_backoff(&self, error_count: i32) -> DateTime<Utc> {
-        let exponent = (error_count - self.error_threshold).max(0) as u32;
+    fn calculate_backoff(&self, error_count: i32, error_threshold: i32) -> DateTime<Utc> {
+        let exponent = (error_count - error_threshold).max(0) as u32;
         let backoff_secs = (BASE_BACKOFF_SECS * 2u64.pow(exponent)).min(MAX_BACKOFF_SECS);
         Utc::now() + chrono::Duration::seconds(backoff_secs as i64)
     }
@@ -1005,8 +1022,8 @@ mod tests {
             last_live_time: None,
             last_error: None,
             streamer_specific_config: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1111,8 +1128,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -1160,23 +1177,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_reload_from_repo_preserves_resolved_offline_check_config() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        {
+            let mut metadata = manager.metadata.get_mut("s1").unwrap();
+            metadata.offline_check_count = 7;
+            metadata.offline_check_delay_ms = 45_000;
+        }
+
+        let reloaded = manager.reload_from_repo("s1").await.unwrap().unwrap();
+        assert_eq!(reloaded.offline_check_count, 7);
+        assert_eq!(reloaded.offline_check_delay_ms, 45_000);
+    }
+
+    #[tokio::test]
     async fn test_record_error_with_backoff() {
         let repo =
             MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 2);
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
+        manager.metadata.get_mut("s1").unwrap().offline_check_count = 4;
 
-        // First error - no backoff
-        manager.record_error("s1", "Error 1").await.unwrap();
-        let metadata = manager.get_streamer("s1").unwrap();
-        assert_eq!(metadata.consecutive_error_count, 1);
-        assert!(metadata.disabled_until.is_none());
+        for error_number in 1..4 {
+            manager
+                .record_error("s1", &format!("Error {error_number}"))
+                .await
+                .unwrap();
+            assert!(!manager.is_disabled("s1"));
+        }
 
-        // Second error - triggers backoff
-        manager.record_error("s1", "Error 2").await.unwrap();
+        manager.record_error("s1", "Error 4").await.unwrap();
         let metadata = manager.get_streamer("s1").unwrap();
-        assert_eq!(metadata.consecutive_error_count, 2);
+        assert_eq!(metadata.consecutive_error_count, 4);
         assert!(metadata.disabled_until.is_some());
         assert!(metadata.is_disabled());
     }
@@ -1186,8 +1224,9 @@ mod tests {
         let repo =
             MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 2);
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
+        manager.metadata.get_mut("s1").unwrap().offline_check_count = 2;
 
         // Record two errors so backoff is active and last_error is set
         manager.record_error("s1", "Error 1").await.unwrap();
@@ -1213,11 +1252,12 @@ mod tests {
         let repo =
             MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 1);
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
+        manager.metadata.get_mut("s1").unwrap().offline_check_count = 2;
 
-        // Record error to trigger backoff
-        manager.record_error("s1", "Error").await.unwrap();
+        manager.record_error("s1", "Error 1").await.unwrap();
+        manager.record_error("s1", "Error 2").await.unwrap();
         assert!(manager.is_disabled("s1"));
 
         // Record success
@@ -1234,10 +1274,12 @@ mod tests {
         let repo =
             MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 1);
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
+        manager.metadata.get_mut("s1").unwrap().offline_check_count = 2;
 
-        manager.record_error("s1", "Error").await.unwrap();
+        manager.record_error("s1", "Error 1").await.unwrap();
+        manager.record_error("s1", "Error 2").await.unwrap();
         manager
             .update_state("s1", StreamerState::TemporalDisabled)
             .await
@@ -1311,8 +1353,8 @@ mod tests {
             last_error: None,
             last_live_time: None,
             streamer_specific_config: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -1335,6 +1377,7 @@ mod tests {
                 id: "s1".to_string(),
                 name: Some("New Name".to_string()),
                 url: None,                // Don't change URL
+                platform_config_id: None, // Don't change platform
                 template_config_id: None, // Don't change template
                 priority: Some(Priority::High),
                 state: None, // Don't change state
@@ -1369,6 +1412,7 @@ mod tests {
                 id: "s1".to_string(),
                 name: None,
                 url: None,                      // Don't change URL
+                platform_config_id: None,       // Don't change platform
                 template_config_id: Some(None), // Set template to None
                 priority: None,
                 state: None,
@@ -1378,5 +1422,207 @@ mod tests {
             .unwrap();
 
         assert_eq!(updated.template_config_id, None);
+    }
+
+    /// The API layer re-derives `platform_config_id` from the URL and passes it here; moving a
+    /// streamer to another platform must land on the metadata that `config::resolver` reads.
+    #[tokio::test]
+    async fn test_partial_update_applies_platform_config_id() {
+        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model(
+            "s1",
+            "platform-douyin",
+        )]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: Some("https://live.bilibili.com/4063253".to_string()),
+                platform_config_id: Some("platform-bilibili".to_string()),
+                template_config_id: None,
+                priority: None,
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.platform_config_id, "platform-bilibili");
+        assert_eq!(
+            manager.get_streamer("s1").unwrap().platform_config_id,
+            "platform-bilibili"
+        );
+    }
+
+    /// Updates that carry no URL (batch priority/template changes) must leave the platform alone.
+    #[tokio::test]
+    async fn test_partial_update_leaves_platform_config_id_when_none() {
+        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model(
+            "s1",
+            "platform-douyin",
+        )]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: Some(Priority::High),
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.platform_config_id, "platform-douyin");
+    }
+
+    /// Disabling a streamer through the API must retire the backoff written by
+    /// `record_error`, otherwise `is_ready_for_check` keeps suppressing checks
+    /// once the user re-enables it.
+    #[tokio::test]
+    async fn test_partial_update_to_disabled_clears_error_backoff() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        // Drive the streamer into backoff: the threshold derives from
+        // `offline_check_count` (3 by default).
+        for _ in 0..3 {
+            manager.record_error("s1", "boom").await.unwrap();
+        }
+        let errored = manager.get_streamer("s1").unwrap();
+        assert!(errored.disabled_until.is_some());
+        assert!(errored.is_disabled());
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: Some(StreamerState::Disabled),
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.state, StreamerState::Disabled);
+        assert_eq!(updated.consecutive_error_count, 0);
+        assert_eq!(updated.disabled_until, None);
+        assert_eq!(updated.last_error, None);
+
+        // Re-enabling must land on a streamer that is immediately checkable.
+        let reenabled = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: Some(StreamerState::NotLive),
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert!(reenabled.is_ready_for_check());
+    }
+
+    /// The full-metadata write path enforces the same invariant as
+    /// `partial_update_streamer`: a `Disabled` streamer carries no error bookkeeping,
+    /// whatever the caller put in the struct.
+    #[tokio::test]
+    async fn test_update_streamer_to_disabled_clears_error_backoff() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        let mut metadata = manager.get_streamer("s1").unwrap();
+        metadata.state = StreamerState::Disabled;
+        metadata.consecutive_error_count = 4;
+        metadata.disabled_until = Some(Utc::now() + chrono::Duration::minutes(30));
+        metadata.last_error = Some("boom".to_string());
+
+        manager.update_streamer(metadata).await.unwrap();
+
+        let stored = manager.get_streamer("s1").unwrap();
+        assert_eq!(stored.state, StreamerState::Disabled);
+        assert_eq!(stored.consecutive_error_count, 0);
+        assert_eq!(stored.disabled_until, None);
+        assert_eq!(stored.last_error, None);
+    }
+
+    /// A full update that is not a disable must write the caller's error fields
+    /// through untouched.
+    #[tokio::test]
+    async fn test_update_streamer_preserves_error_backoff_for_other_states() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        let backoff_until = Utc::now() + chrono::Duration::minutes(30);
+        let mut metadata = manager.get_streamer("s1").unwrap();
+        metadata.state = StreamerState::TemporalDisabled;
+        metadata.consecutive_error_count = 4;
+        metadata.disabled_until = Some(backoff_until);
+        metadata.last_error = Some("boom".to_string());
+
+        manager.update_streamer(metadata).await.unwrap();
+
+        let stored = manager.get_streamer("s1").unwrap();
+        assert_eq!(stored.consecutive_error_count, 4);
+        assert_eq!(stored.disabled_until, Some(backoff_until));
+        assert_eq!(stored.last_error.as_deref(), Some("boom"));
+    }
+
+    /// Only a transition to `Disabled` clears the error history; other partial
+    /// updates (rename, priority, template) must leave the backoff intact.
+    #[tokio::test]
+    async fn test_partial_update_preserves_error_backoff_for_other_states() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        for _ in 0..3 {
+            manager.record_error("s1", "boom").await.unwrap();
+        }
+
+        let updated = manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: Some("New Name".to_string()),
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: Some(Priority::High),
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.consecutive_error_count, 3);
+        assert!(updated.disabled_until.is_some());
+        assert_eq!(updated.last_error.as_deref(), Some("boom"));
     }
 }

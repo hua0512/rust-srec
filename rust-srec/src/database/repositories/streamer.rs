@@ -12,6 +12,13 @@ use chrono::{DateTime, Utc};
 #[async_trait]
 pub trait StreamerRepository: Send + Sync {
     async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel>;
+    async fn get_streamers_by_ids(&self, ids: &[String]) -> Result<Vec<StreamerDbModel>> {
+        let mut streamers = Vec::new();
+        for id in ids {
+            streamers.push(self.get_streamer(id).await?);
+        }
+        Ok(streamers)
+    }
     async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel>;
     async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>>;
     async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>>;
@@ -68,6 +75,25 @@ impl StreamerRepository for SqlxStreamerRepository {
             .fetch_optional(&self.pool)
             .await?
             .ok_or_else(|| Error::not_found("Streamer", id))
+    }
+
+    async fn get_streamers_by_ids(&self, ids: &[String]) -> Result<Vec<StreamerDbModel>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder =
+            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM streamers WHERE id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+
+        Ok(builder
+            .build_query_as::<StreamerDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel> {

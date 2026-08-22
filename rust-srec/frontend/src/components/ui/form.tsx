@@ -78,7 +78,10 @@ function FormItem({ className, ...props }: React.ComponentProps<'div'>) {
     <FormItemContext.Provider value={{ id }}>
       <div
         data-slot="form-item"
-        className={cn('grid gap-2', className)}
+        // `content-start` keeps the label/control/message rows packed at the top. Side-by-side
+        // fields stretch to the tallest one, and without this the spare height is spread across
+        // the rows, so a field with no `FormDescription` sits lower than the one beside it.
+        className={cn('grid content-start gap-2', className)}
         {...props}
       />
     </FormItemContext.Provider>

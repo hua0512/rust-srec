@@ -377,8 +377,14 @@ impl WebPushService {
 
         let status = response.status();
         if status.is_success() {
-            if sub.next_attempt_at.is_some() || sub.last_429_at.is_some() {
-                let _ = self.clear_backoff(&sub.endpoint).await;
+            if (sub.next_attempt_at.is_some() || sub.last_429_at.is_some())
+                && let Err(e) = self.clear_backoff(&sub.endpoint).await
+            {
+                tracing::warn!(
+                    endpoint = %sub.endpoint,
+                    error = %e,
+                    "Failed to clear web push backoff after successful delivery"
+                );
             }
             if let Some(metrics) = self.metrics.read().as_ref().cloned() {
                 metrics.record_web_push_sent(started.elapsed().as_millis() as u64);
@@ -388,9 +394,16 @@ impl WebPushService {
 
         if status.as_u16() == 429 {
             let delay = retry_after_delay(&response).unwrap_or(Duration::from_secs(60));
-            let _ = self
+            if let Err(e) = self
                 .mark_throttled(&sub.endpoint, delay.min(Duration::from_secs(3600)))
-                .await;
+                .await
+            {
+                tracing::warn!(
+                    endpoint = %sub.endpoint,
+                    error = %e,
+                    "Failed to persist web push throttling state"
+                );
+            }
             if let Some(metrics) = self.metrics.read().as_ref().cloned() {
                 metrics.record_web_push_throttled();
             }

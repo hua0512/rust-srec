@@ -96,12 +96,22 @@ pub struct StreamerActor {
     /// Mailbox for receiving high-priority messages (checked first).
     priority_mailbox: Option<mpsc::Receiver<StreamerMessage>>,
     /// Handle for sending messages to self (for self-scheduling).
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     self_handle: mpsc::Sender<StreamerMessage>,
     /// Platform actor handle (if on batch-capable platform).
     platform_actor: Option<mpsc::Sender<PlatformMessage>>,
     /// Current actor state (runtime scheduling state only).
     state: StreamerActorState,
+    /// Floor for the next Live watchdog wake after a failed watchdog check.
+    ///
+    /// `perform_check` sets this when `is_live_watchdog` is true and the check
+    /// errors; the Live scheduling branch of `run` clamps its computed wake up
+    /// to this instant so a failing check does not busy-retry against the stall
+    /// timer. Cleared on the next successful check.
+    live_watchdog_backoff_until: Option<Instant>,
     /// Shared metadata store for fetching fresh streamer data.
     metadata_store: Arc<DashMap<String, StreamerMetadata>>,
     /// Configuration.
@@ -156,6 +166,7 @@ impl StreamerActor {
             self_handle: tx,
             platform_actor: None,
             state,
+            live_watchdog_backoff_until: None,
             metadata_store,
             config,
             cancellation_token,
@@ -205,6 +216,7 @@ impl StreamerActor {
             self_handle: tx,
             platform_actor: None,
             state,
+            live_watchdog_backoff_until: None,
             metadata_store,
             config,
             cancellation_token,
@@ -340,6 +352,15 @@ impl StreamerActor {
                     }
                 }
 
+                // Hold off the watchdog after a failed check: overrides the stall/hint
+                // ZERO wake so an unreachable download does not drive a tight retry loop.
+                if let Some(backoff_until) = self.live_watchdog_backoff_until {
+                    next = std::cmp::max(
+                        next,
+                        backoff_until.saturating_duration_since(Instant::now()),
+                    );
+                }
+
                 sleep_duration = Some(next);
             }
             let check_timer = Self::create_check_timer(sleep_duration);
@@ -463,6 +484,12 @@ impl StreamerActor {
         Duration::from_secs(5 * 60)
     }
 
+    fn live_watchdog_error_backoff(&self) -> Duration {
+        // Minimum spacing between Live watchdog re-checks after one failed while the
+        // download is unreachable; caps the stall-timer-driven retry cadence.
+        Duration::from_secs(60)
+    }
+
     fn time_until_live_stall_watchdog(&self) -> Duration {
         let stall = self.live_stall_watchdog_interval();
         let Some(last) = self.state.last_download_activity_at else {
@@ -475,6 +502,64 @@ impl StreamerActor {
         } else {
             stall - elapsed
         }
+    }
+
+    /// Whether a timer-driven check right now is the "live watchdog": the
+    /// actor believes the streamer is Live and no check is scheduled (Live
+    /// scheduling parks `next_check`; only the 2h watchdog / stall timers
+    /// wake the loop). Watchdog checks must not mutate DB error/backoff
+    /// state — the download may still be healthy.
+    fn is_live_watchdog(&self) -> bool {
+        self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none()
+    }
+
+    /// Whether no download heartbeat has arrived for the stall window.
+    ///
+    /// While Live, `last_download_activity_at` is fed by
+    /// `handle_download_heartbeat`; a healthy download keeps it fresh. When
+    /// it goes stale the download is gone but no `DownloadEnded` was
+    /// delivered (e.g. the start was dropped by a container gate after the
+    /// session had already resumed).
+    fn download_heartbeats_stale(&self) -> bool {
+        self.state
+            .last_download_activity_at
+            .is_none_or(|t| t.elapsed() >= self.live_stall_watchdog_interval())
+    }
+
+    /// Stall-watchdog reconciliation shared by `perform_check` and
+    /// `handle_batch_result`: a watchdog check that still sees Live while
+    /// download heartbeats have been silent for the stall window means the
+    /// download is dead but the actor was never told. The `(Live, Live)`
+    /// arm of `HysteresisState::should_emit` would suppress the result and
+    /// park this actor forever; resetting the local state makes the check
+    /// register as a NotLive→Live transition so `process_status` re-drives
+    /// the download. Safe when a download is alive but silent: the
+    /// container dedups via `has_active_download` before starting another.
+    ///
+    /// Must run before the caller refreshes `last_download_activity_at`
+    /// from a Live check result — that refresh would mask the staleness.
+    fn force_live_reemit_if_stalled(&mut self, next_state: StreamerState, context: &'static str) {
+        if self.is_live_watchdog()
+            && self.download_heartbeats_stale()
+            && next_state == StreamerState::Live
+        {
+            info!(
+                streamer_id = %self.id,
+                context,
+                "live watchdog: no download heartbeats for the stall window; forcing live re-emit"
+            );
+            self.state.streamer_state = StreamerState::NotLive;
+        }
+    }
+
+    /// Park the actor after a rejected download start: adopt the rejecting
+    /// subsystem's state locally and re-check once its cooldown expires
+    /// (that check re-detects Live and retries the download through the
+    /// normal monitor path). `handle_download_ended` has already cleared
+    /// `last_download_activity_at`.
+    fn schedule_blocked_retry(&mut self, state: StreamerState, retry_after_secs: u64) {
+        self.state.streamer_state = state;
+        self.state.next_check = Some(Instant::now() + Duration::from_secs(retry_after_secs));
     }
 
     fn handle_suppressed_live_status(
@@ -521,10 +606,7 @@ impl StreamerActor {
             .get_metadata()
             .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
         if metadata.is_disabled() {
-            let remaining = metadata
-                .remaining_backoff()
-                .and_then(|d| d.to_std().ok())
-                .unwrap_or(Duration::ZERO);
+            let remaining = metadata.remaining_backoff_std().unwrap_or(Duration::ZERO);
 
             self.state.next_check = Some(Instant::now() + remaining);
             debug!(
@@ -573,6 +655,11 @@ impl StreamerActor {
             // Wait for acknowledgment (not the result - that comes via BatchResult message)
             match tokio::time::timeout(Duration::from_secs(5), reply_rx).await {
                 Ok(Ok(())) => {
+                    // The result arrives asynchronously via handle_batch_result; park
+                    // next_check so the run loop does not re-fire this timer and issue a
+                    // duplicate RequestCheck before that result lands.
+                    self.state
+                        .schedule_next_check(&self.config, self.get_error_count());
                     debug!("StreamerActor {} check delegated to platform", self.id);
                     Ok(())
                 }
@@ -589,12 +676,10 @@ impl StreamerActor {
     /// This method connects to the actual monitoring infrastructure via the
     /// StatusChecker trait, which abstracts the status checking operation.
     async fn perform_check(&mut self) -> Result<(), ActorError> {
-        // If we're currently Live and no check is scheduled, any timer-driven check is the
-        // "live watchdog" (used only to avoid getting stuck when DownloadEnded is missed).
-        // For watchdog checks, failures should not mutate DB error/backoff state because the
-        // download may still be healthy; treat them as recoverable and keep the actor Live.
-        let is_live_watchdog =
-            self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+        // Captured before the check so the result application below cannot
+        // change the answer mid-function; see `is_live_watchdog` for why
+        // watchdog failures must stay side-effect free.
+        let is_live_watchdog = self.is_live_watchdog();
 
         // Fetch fresh metadata from the store
         let metadata = self
@@ -604,9 +689,15 @@ impl StreamerActor {
         // Perform the actual status check using the status checker
         match self.status_checker.check_status(&metadata).await {
             Ok((result, status)) => {
+                // A successful check clears any watchdog re-check floor set by a prior
+                // failed Live watchdog check.
+                self.live_watchdog_backoff_until = None;
+
                 let previous_runtime_state = self.state.clone();
                 let next_state = result.state;
                 let error_count = self.get_error_count();
+
+                self.force_live_reemit_if_stalled(next_state, "check");
 
                 if next_state == StreamerState::Live {
                     self.state.last_download_activity_at = Some(Instant::now());
@@ -669,6 +760,10 @@ impl StreamerActor {
                     // Do not call status_checker.handle_error() and do not record an Error state:
                     // this would increment consecutive error counts, potentially set disabled_until,
                     // and would also switch scheduling away from the Live watchdog cadence.
+                    // Arm a re-check floor so the Live scheduling branch of `run` does not
+                    // busy-retry against the stall timer while the download is unreachable.
+                    self.live_watchdog_backoff_until =
+                        Some(Instant::now() + self.live_watchdog_error_backoff());
                     return Err(ActorError::recoverable(format!(
                         "Live watchdog status check failed (ignored while download active): {}",
                         e.message
@@ -689,8 +784,7 @@ impl StreamerActor {
 
                 // Record the error in state
                 let error_result = CheckResult::failure(&e.message);
-                let _ = self
-                    .state
+                self.state
                     .record_check(error_result, &self.config, self.get_error_count());
 
                 if e.transient {
@@ -824,8 +918,7 @@ impl StreamerActor {
         // Batch failures are handled as errors, not as offline transitions.
         // This matches perform_check() behavior and avoids incorrectly ending sessions.
         if is_error {
-            let is_live_watchdog =
-                self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+            let is_live_watchdog = self.is_live_watchdog();
             if is_live_watchdog {
                 let msg = error_message.as_deref().unwrap_or("Batch check failed");
                 warn!(
@@ -836,8 +929,7 @@ impl StreamerActor {
             }
 
             // Record the check result so scheduling/backoff can proceed normally when not Live.
-            let _ = self
-                .state
+            self.state
                 .record_check(result.result, &self.config, error_count);
 
             if let Some(metadata) = self.get_metadata() {
@@ -852,7 +944,10 @@ impl StreamerActor {
             return Ok(());
         }
 
-        // Record the check result and get hysteresis decision
+        // Record the check result and get hysteresis decision.
+        // Reconciliation must precede the Live-result refresh below.
+        self.force_live_reemit_if_stalled(next_state, "batch");
+
         if next_state == StreamerState::Live {
             self.state.last_download_activity_at = Some(Instant::now());
         }
@@ -1034,7 +1129,6 @@ impl StreamerActor {
                 // the race: two `Session ended` rows, two
                 // `SessionTransition::Ended` broadcasts, two
                 // session-complete pipeline DAG fires for one stream.
-                // (Surfaced by the 柔柔 / 2026-04-28 logs.)
                 //
                 // The actor still updates its own scheduling state below —
                 // those touches are local to this struct and don't race
@@ -1068,9 +1162,8 @@ impl StreamerActor {
                 // If we did, the monitor would emit `StreamerOffline` and the
                 // lifecycle's `on_offline_detected` would override the
                 // in-flight hysteresis (it always wins because StreamerOffline
-                // is authoritative). That race produced 0-byte session rows
-                // for connection blips on Douyin and similar platforms (see
-                // 沈心 / 2026-05-01 logs and the Minana / 2026-04-29 case).
+                // is authoritative). That race yields 0-byte session rows
+                // for connection blips on Douyin and similar platforms.
                 // Same precedent as the DanmuStreamClosed arm above:
                 // separate paths must not double-end the session.
                 //
@@ -1205,12 +1298,7 @@ impl StreamerActor {
                     );
                 }
 
-                self.state.streamer_state = StreamerState::TemporalDisabled;
-                // Schedule check after the circuit breaker cooldown period
-                // The next check will re-detect Live and try to start download again
-                self.state.next_check = Some(
-                    std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
-                );
+                self.schedule_blocked_retry(StreamerState::TemporalDisabled, retry_after_secs);
             }
             DownloadEndPolicy::OutputRootBlocked {
                 path,
@@ -1256,10 +1344,31 @@ impl StreamerActor {
                     );
                 }
 
-                self.state.streamer_state = StreamerState::OutOfSpace;
-                self.state.next_check = Some(
-                    std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
+                self.schedule_blocked_retry(StreamerState::OutOfSpace, retry_after_secs);
+            }
+            DownloadEndPolicy::StreamerBackoffBlocked {
+                reason,
+                retry_after_secs,
+                ..
+            } => {
+                // The download-start gate refused to start because the
+                // streamer is inside its `disabled_until` error backoff. The
+                // backoff was already persisted by
+                // `MonitorService::handle_error`, so unlike the
+                // CircuitBreakerBlocked arm there is no `set_infra_blocked`
+                // write to make. Only local scheduling needs correcting: the
+                // live check that raced the backoff commit left this actor
+                // in Live with no download, where the `(Live, Live)` arm of
+                // `HysteresisState::should_emit` would keep `process_status`
+                // from ever firing again.
+                info!(
+                    streamer_id = %self.id,
+                    reason = %reason,
+                    retry_after_secs,
+                    "download blocked by streamer error backoff; rescheduling check at expiry"
                 );
+
+                self.schedule_blocked_retry(StreamerState::TemporalDisabled, retry_after_secs);
             }
         }
 
@@ -1576,8 +1685,8 @@ mod tests {
             last_live_time: None,
             last_error: None,
             streamer_specific_config: None,
-            effective_offline_check_count: 3,
-            effective_offline_check_delay_ms: 20_000,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -2318,6 +2427,162 @@ mod tests {
         assert!(actor.state.hysteresis.was_live());
     }
 
+    /// A live-watchdog check that still sees Live while download heartbeats
+    /// have been silent for the stall window must NOT be swallowed by the
+    /// `(Live, Live)` hysteresis suppression — it must call `process_status`
+    /// so the monitor can re-drive the download (a dead session otherwise
+    /// stays unrecovered: no download → no DownloadEnded → no transition).
+    #[tokio::test]
+    async fn test_live_watchdog_stall_forces_live_reemit() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Stalled Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                    candidates: vec![],
+                },
+            )],
+            vec![ProcessStatusResult::Applied],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker.clone() as Arc<dyn StatusChecker>,
+        );
+
+        // Wedged shape: Live with no scheduled check (watchdog mode) and no
+        // download heartbeat ever observed.
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+        actor.state.last_download_activity_at = None;
+
+        actor.perform_check().await.unwrap();
+
+        // process_status consumed its queued outcome — the Live result was
+        // re-emitted instead of suppressed.
+        assert!(
+            checker.outcomes.lock().unwrap().is_empty(),
+            "stalled live watchdog must call process_status"
+        );
+        assert_eq!(actor.state.streamer_state, StreamerState::Live);
+        assert!(actor.state.last_download_activity_at.is_some());
+        assert!(actor.state.hysteresis.was_live());
+    }
+
+    /// The reconciliation must not fire while a download is healthy: fresh
+    /// heartbeats mean the `(Live, Live)` suppression is doing its intended
+    /// job (avoiding redundant monitor writes on the 2h watchdog).
+    #[tokio::test]
+    async fn test_live_watchdog_with_fresh_heartbeats_keeps_suppression() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Healthy Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                    candidates: vec![],
+                },
+            )],
+            vec![ProcessStatusResult::Applied],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker.clone() as Arc<dyn StatusChecker>,
+        );
+
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+        // Heartbeat just arrived — download is alive.
+        actor.state.last_download_activity_at = Some(Instant::now());
+
+        actor.perform_check().await.unwrap();
+
+        assert_eq!(
+            checker.outcomes.lock().unwrap().len(),
+            1,
+            "healthy live watchdog must keep the (Live, Live) suppression"
+        );
+        assert_eq!(actor.state.streamer_state, StreamerState::Live);
+        assert!(actor.state.next_check.is_none());
+    }
+
+    /// `StreamerBackoffBlocked` (container refused the download start because
+    /// the streamer is inside its `disabled_until` error backoff) must move
+    /// the actor out of Live and schedule a re-check at backoff expiry —
+    /// otherwise the actor sits in watchdog mode where `(Live, Live)`
+    /// suppression never lets `process_status` restart the download.
+    #[tokio::test]
+    async fn test_download_ended_streamer_backoff_blocked_schedules_expiry_check() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            create_noop_checker(),
+        );
+
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+        actor.state.last_download_activity_at = Some(Instant::now());
+
+        actor
+            .handle_download_ended(
+                super::super::messages::DownloadEndPolicy::StreamerBackoffBlocked {
+                    reason: "streamer temporarily disabled (error backoff)".to_string(),
+                    retry_after_secs: 30,
+                    session_id: "session-1".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(actor.state.streamer_state, StreamerState::TemporalDisabled);
+        assert!(actor.state.last_download_activity_at.is_none());
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(until <= Duration::from_secs(30));
+        assert!(until > Duration::from_secs(20));
+        // TemporalDisabled → Live is an emitting transition in
+        // `HysteresisState::should_emit`, so the expiry check re-drives the
+        // download through the normal monitor path.
+    }
+
     #[tokio::test]
     async fn test_suppressed_live_restores_notlive_grace_hysteresis_context() {
         let metadata_store = create_test_metadata_store();
@@ -2459,8 +2724,7 @@ mod tests {
     /// would race the observer at the `streamer.state == Live` gate inside
     /// `handle_offline_with_session`, ending whichever session the actor's
     /// snapshot saw as active (frequently a different `session_id` than
-    /// the one the observer is closing). Surfaced by the 柔柔 / 2026-04-28
-    /// production logs.
+    /// the one the observer is closing).
     #[derive(Debug, Default)]
     struct AssertNotCalledStatusChecker;
 

@@ -80,12 +80,10 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
@@ -167,9 +165,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
-          targets: ${{ contains(matrix.args, '--target') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          target: ${{ contains(matrix.args, '--target') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: ./.github/actions/setup-protoc
 
@@ -194,9 +192,9 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 10.28.1
+          version: 11.11.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'pnpm'

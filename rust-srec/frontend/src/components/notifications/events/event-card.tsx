@@ -4,10 +4,12 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Globe, Activity, Link2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { Button } from '@/components/ui/button';
 import { EventIcon } from './event-icon';
 import { PayloadPreview } from './payload-preview';
 import { priorityLabel } from '@/lib/priority';
+import { eventTypeLabel } from '@/lib/notification-event-types';
 
 export const getPriorityStyles = (priority: number) => {
   if (priority >= 10) {
@@ -76,11 +78,12 @@ interface EventCardProps {
 }
 
 export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
+  const { i18n } = useLingui();
   const styles = useMemo(
     () => getPriorityStyles(event.priority),
     [event.priority],
   );
-  const displayTitle = event.event_type.replace(/_/g, ' ');
+  const displayTitle = i18n._(eventTypeLabel(event.event_type));
 
   return (
     <div
@@ -128,7 +131,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
                   styles.badge,
                 )}
               >
-                {priorityLabel(event.priority)}
+                {i18n._(priorityLabel(event.priority))}
               </Badge>
             </div>
             <h4 className="text-[13px] font-bold leading-none tracking-tight text-foreground/90 group-hover:text-primary transition-colors">

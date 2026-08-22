@@ -1,8 +1,7 @@
 import * as React from 'react';
 
 import { Link, useLocation } from '@tanstack/react-router';
-import { Ellipsis, LogOut, LucideIcon } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Ellipsis, LucideIcon } from 'lucide-react';
 import { useLingui } from '@lingui/react';
 
 import { cn } from '@/lib/utils';
@@ -10,6 +9,7 @@ import { getMenuList } from '@/lib/menu-list';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CollapseMenuButton } from '@/components/sidebar/collapse-menu-button';
+import { UserMenu } from '@/components/sidebar/user-menu';
 import { useNotificationDot } from '@/hooks/use-notification-dot';
 import {
   Tooltip,
@@ -17,7 +17,6 @@ import {
   TooltipContent,
   TooltipProvider,
 } from '@/components/ui/tooltip';
-import { motion } from 'motion/react';
 
 interface MenuProps {
   isOpen: boolean | undefined;
@@ -69,18 +68,7 @@ const MenuItem = React.memo(function MenuItem({
                 <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
                 {showDot && (
                   <div className="absolute -top-1 -right-1 flex items-center justify-center">
-                    <motion.div
-                      animate={{
-                        scale: [1, 1.8, 1],
-                        opacity: [0.5, 0, 0.5],
-                      }}
-                      transition={{
-                        duration: 2,
-                        repeat: Infinity,
-                        ease: 'easeInOut',
-                      }}
-                      className="absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]"
-                    />
+                    <div className="rs-notification-ping absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]" />
                     <div className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
                   </div>
                 )}
@@ -103,57 +91,6 @@ const MenuItem = React.memo(function MenuItem({
         )}
       </Tooltip>
     </div>
-  );
-});
-
-interface SignOutButtonProps {
-  isOpen: boolean | undefined;
-}
-
-const SignOutButton = React.memo(function SignOutButton({
-  isOpen,
-}: SignOutButtonProps) {
-  return (
-    <li className="w-full grow flex items-end pb-10">
-      <Tooltip delayDuration={100}>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            className={cn(
-              'w-full h-11 mt-5 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive transition-all duration-200 border-none group relative overflow-hidden',
-              isOpen === false ? 'justify-center' : 'justify-start px-4',
-            )}
-            asChild
-          >
-            <Link to="/logout">
-              <span
-                className={cn(
-                  'transition-transform duration-200 group-hover:scale-110 shrink-0',
-                  isOpen === false ? '' : 'mr-4',
-                )}
-              >
-                <LogOut size={18} />
-              </span>
-              <p
-                className={cn(
-                  'whitespace-nowrap font-medium transition-all duration-300',
-                  isOpen === false
-                    ? 'opacity-0 w-0 pointer-events-none'
-                    : 'opacity-100 translate-x-0 w-auto',
-                )}
-              >
-                <Trans>Sign out</Trans>
-              </p>
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        {isOpen === false && (
-          <TooltipContent side="right">
-            <Trans>Sign out</Trans>
-          </TooltipContent>
-        )}
-      </Tooltip>
-    </li>
   );
 });
 
@@ -240,7 +177,7 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                 )}
               </li>
             ))}
-            <SignOutButton isOpen={isOpen} />
+            <UserMenu isOpen={isOpen} />
           </TooltipProvider>
         </ul>
       </nav>

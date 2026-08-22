@@ -2,7 +2,11 @@
 name = "flv-fix"
 version = "0.1.8"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -12,14 +16,21 @@ futures = { workspace = true }
 flv = { path = "../flv" }
 amf0 = { path = "../amf0" }
 pipeline-common = { path = "../pipeline-common" }
-zlib-rs = { workspace = true }
 time = { version = "0.3.46", features = ["macros", "formatting", "parsing"] }
 tracing = { workspace = true }
-tracing-indicatif = "0.3"
+tracing-indicatif = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
 
+[features]
+default = ["progress"]
+# Decorate the FlvFormatStrategy writer span with a tracing-indicatif progress
+# bar. Disable (default-features = false) in headless library builds so
+# consumers do not pull in the terminal-UI dependency.
+progress = ["dep:tracing-indicatif"]
+
 [dev-dependencies]
+tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
@@ -28,6 +39,3 @@ tokio = { workspace = true, features = [
     "macros",
     "rt-multi-thread",
 ] }
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

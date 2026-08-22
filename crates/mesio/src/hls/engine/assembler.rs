@@ -419,12 +419,16 @@ impl SequenceAssembler {
                             "live stream stalled beyond {:?} with no input; terminating",
                             max_stall
                         );
-                        let _ = self
+                        if self
                             .event_tx
                             .send(Err(HlsDownloaderError::Timeout {
                                 reason: "Stalled: No input received for max duration.".to_string(),
                             }))
-                            .await;
+                            .await
+                            .is_err()
+                        {
+                            debug!("consumer closed before receiving stall timeout");
+                        }
                         self.finish_summaries();
                         return;
                     }
@@ -486,7 +490,9 @@ impl SequenceAssembler {
                             // Pipeline error: buffered payloads are dropped,
                             // the error is the stream's terminal item.
                             warn!(error = %err, "fatal pipeline error; dropping reorder buffer");
-                            let _ = self.event_tx.send(Err(err)).await;
+                            if self.event_tx.send(Err(err)).await.is_err() {
+                                debug!("consumer closed before receiving fatal pipeline error");
+                            }
                             self.finish_summaries();
                             return;
                         }
@@ -497,7 +503,14 @@ impl SequenceAssembler {
                                 return;
                             }
                             self.finish_summaries();
-                            let _ = self.event_tx.send(Ok(HlsStreamEvent::StreamEnded)).await;
+                            if self
+                                .event_tx
+                                .send(Ok(HlsStreamEvent::StreamEnded))
+                                .await
+                                .is_err()
+                            {
+                                debug!("consumer closed before receiving end-of-stream event");
+                            }
                             return;
                         }
                         None => {
@@ -623,12 +636,16 @@ impl SequenceAssembler {
                 // it as a fatal stream error rather than spin.
                 if run_end == u64::MAX {
                     error!("dead range extends to u64::MAX; aborting stream");
-                    let _ = self
+                    if self
                         .event_tx
                         .send(Err(HlsDownloaderError::Playlist {
                             reason: "media sequence reached u64::MAX".to_string(),
                         }))
-                        .await;
+                        .await
+                        .is_err()
+                    {
+                        debug!("consumer closed before receiving invalid sequence error");
+                    }
                     self.finish_summaries();
                     return EmitOutcome::DownstreamClosed;
                 }

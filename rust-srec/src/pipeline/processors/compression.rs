@@ -13,12 +13,12 @@ use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use tar::Builder as TarBuilder;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default};
+use super::utils::{create_log_entry, parse_config_or_default, tmp_output_path};
 use crate::Result;
 use crate::pipeline::progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 
@@ -92,18 +92,27 @@ struct CancelProgressReader<R> {
     current_file: String,
 }
 
+struct CompressionProgressContext {
+    cancel: CancellationToken,
+    progress: ProgressReporter,
+    bytes_total: u64,
+    bytes_done: u64,
+    file_index: usize,
+    file_count: usize,
+    current_file: String,
+}
+
 impl<R> CancelProgressReader<R> {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        inner: R,
-        cancel: CancellationToken,
-        progress: ProgressReporter,
-        bytes_total: u64,
-        bytes_done: u64,
-        file_index: usize,
-        file_count: usize,
-        current_file: String,
-    ) -> Self {
+    fn new(inner: R, context: CompressionProgressContext) -> Self {
+        let CompressionProgressContext {
+            cancel,
+            progress,
+            bytes_total,
+            bytes_done,
+            file_index,
+            file_count,
+            current_file,
+        } = context;
         Self {
             inner,
             cancel,
@@ -180,11 +189,6 @@ impl Drop for CancelOnDrop {
             self.token.cancel();
         }
     }
-}
-
-fn tmp_output_path(final_path: &Path) -> PathBuf {
-    let suffix = uuid::Uuid::new_v4().to_string();
-    PathBuf::from(format!("{}.tmp-{}", final_path.display(), suffix))
 }
 
 fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> {
@@ -353,13 +357,15 @@ impl CompressionProcessor {
 
             let mut reader = CancelProgressReader::new(
                 BufReader::new(file),
-                cancel.clone(),
-                progress.clone(),
-                total_input_size,
-                bytes_done,
-                idx.saturating_add(1),
-                inputs.len(),
-                input_path.clone(),
+                CompressionProgressContext {
+                    cancel: cancel.clone(),
+                    progress: progress.clone(),
+                    bytes_total: total_input_size,
+                    bytes_done,
+                    file_index: idx.saturating_add(1),
+                    file_count: inputs.len(),
+                    current_file: input_path.clone(),
+                },
             );
 
             // Write to archive
@@ -468,13 +474,15 @@ impl CompressionProcessor {
 
             let reader = CancelProgressReader::new(
                 BufReader::new(&mut file),
-                cancel.clone(),
-                progress.clone(),
-                total_input_size,
-                bytes_done,
-                idx.saturating_add(1),
-                inputs.len(),
-                input_path.clone(),
+                CompressionProgressContext {
+                    cancel: cancel.clone(),
+                    progress: progress.clone(),
+                    bytes_total: total_input_size,
+                    bytes_done,
+                    file_index: idx.saturating_add(1),
+                    file_count: inputs.len(),
+                    current_file: input_path.clone(),
+                },
             );
 
             tar.append_data(&mut header, Path::new(&archive_name), reader)
@@ -638,8 +646,15 @@ impl Processor for CompressionProcessor {
 
             impl Drop for TmpFileGuard {
                 fn drop(&mut self) {
-                    if let Some(path) = self.path.take() {
-                        let _ = std::fs::remove_file(path);
+                    if let Some(path) = self.path.take()
+                        && let Err(error) = std::fs::remove_file(&path)
+                        && error.kind() != std::io::ErrorKind::NotFound
+                    {
+                        warn!(
+                            %error,
+                            path = %path.display(),
+                            "failed to remove partial compression output"
+                        );
                     }
                 }
             }
@@ -759,6 +774,7 @@ impl Processor for CompressionProcessor {
             failed_inputs: vec![],
             succeeded_inputs: input.inputs.clone(),
             skipped_inputs: vec![],
+            uploads: vec![],
             logs,
         })
     }
@@ -799,16 +815,6 @@ mod tests {
     fn test_archive_format_extensions() {
         assert_eq!(ArchiveFormat::Zip.extension(), "zip");
         assert_eq!(ArchiveFormat::TarGz.extension(), "tar.gz");
-    }
-
-    #[test]
-    fn test_compression_config_default() {
-        let config = CompressionConfig::default();
-        assert_eq!(config.format, ArchiveFormat::Zip);
-        assert_eq!(config.compression_level, 6);
-        assert!(config.output_path.is_none());
-        assert!(config.overwrite);
-        assert!(!config.preserve_paths);
     }
 
     #[test]

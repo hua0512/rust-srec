@@ -1,15 +1,11 @@
 import { UseFormReturn } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormItem,
-  FormLabel,
-} from '@/components/ui/form';
+import { FormControl, FormDescription, FormItem } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { useNestedFormState } from '@/hooks/use-form-field-update';
 import { SwitchCard } from '@/components/ui/switch-card';
+import { CONFIG_DESCRIPTION, ConfigFieldLabel } from './config-field';
 
 // Define the shape of the RetryPolicy object
 interface RetryPolicy {
@@ -51,10 +47,10 @@ export function RetryPolicyForm({
     <Card className="border-muted/40 shadow-none bg-muted/20">
       <CardContent className="p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Max Retries</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 type="number"
@@ -66,15 +62,15 @@ export function RetryPolicyForm({
                 className="bg-background/80"
               />
             </FormControl>
-            <FormDescription className="text-xs">
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Maximum number of retry attempts.</Trans>
             </FormDescription>
           </FormItem>
 
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Backoff Multiplier</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 type="number"
@@ -90,15 +86,15 @@ export function RetryPolicyForm({
                 className="bg-background/80"
               />
             </FormControl>
-            <FormDescription className="text-xs">
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Multiplier for exponential backoff.</Trans>
             </FormDescription>
           </FormItem>
 
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Initial Delay (ms)</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 type="number"
@@ -112,10 +108,10 @@ export function RetryPolicyForm({
             </FormControl>
           </FormItem>
 
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Max Delay (ms)</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Input
                 type="number"

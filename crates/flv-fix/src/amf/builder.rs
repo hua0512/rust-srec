@@ -2,7 +2,7 @@ use crate::amf::model::{AmfScriptData, KeyframeData};
 use crate::analyzer::FlvStats;
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError};
 use byteorder::{BigEndian, WriteBytesExt};
-use flv::{audio::SoundFormat, video::VideoCodecId};
+use flv::{audio::AudioCodec, video::VideoCodec};
 use std::borrow::Cow;
 use tracing::debug;
 
@@ -36,7 +36,30 @@ const NATURAL_METADATA_KEY_ORDER: &[&str] = &[
 ];
 
 /// A fluent builder for creating `onMetaData` script data.
-#[derive(Debug, Default)]
+const FIXED_PADDING_KEY: &str = "__srec_padding";
+const FIXED_PADDING_OVERHEAD: usize = 2 + FIXED_PADDING_KEY.len() + 1 + 4;
+const MAX_FLV_TAG_PAYLOAD_SIZE: usize = 0xFF_FFFF;
+
+#[derive(Debug, thiserror::Error)]
+pub enum FixedSizeMetadataError {
+    #[error(transparent)]
+    Amf0(#[from] Amf0WriteError),
+    #[error("metadata requires at least {minimum} bytes, target is {target} bytes")]
+    TooLarge { target: usize, minimum: usize },
+    #[error("cannot pad metadata from {actual} to exactly {target} bytes")]
+    CannotPad { target: usize, actual: usize },
+    #[error("metadata target exceeds the FLV 24-bit payload limit: {0} bytes")]
+    TargetTooLarge(usize),
+}
+
+#[derive(Debug)]
+pub struct FixedSizeMetadata {
+    pub bytes: Vec<u8>,
+    pub keyframes_written: usize,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct OnMetaDataBuilder {
     data: AmfScriptData,
 }
@@ -64,7 +87,14 @@ impl OnMetaDataBuilder {
                 self.data.height = Some(res.height as f64);
             }
             self.data.framerate = Some(video_stats.video_frame_rate as f64);
-            self.data.videocodecid = video_stats.video_codec;
+            // `FlvAnalyzer::analyze_video_tag` only records `video_codec` from
+            // sequence-header tags, so keep the `videocodecid` that
+            // `from_script_data` parsed from the source `onMetaData` when the
+            // analyzer saw none; `get_amf_value_for_key` would otherwise emit
+            // its 0.0 fallback.
+            if video_stats.video_codec.is_some() {
+                self.data.videocodecid = video_stats.video_codec;
+            }
             self.data.videosize = Some(video_stats.video_data_size);
             self.data.lastkeyframetimestamp = Some(video_stats.last_keyframe_timestamp);
             self.data.lastkeyframelocation = Some(video_stats.last_keyframe_position);
@@ -72,7 +102,12 @@ impl OnMetaDataBuilder {
             self.data.can_seek_to_end =
                 Some(video_stats.last_keyframe_timestamp == stats.last_timestamp);
         }
-        self.data.audiocodecid = stats.audio_codec;
+        // Same as `videocodecid`: `FlvAnalyzer::analyze_audio_tag` only records
+        // `audio_codec` from sequence-header tags, so preserve the value parsed
+        // from the source metadata when the analyzer saw none.
+        if stats.audio_codec.is_some() {
+            self.data.audiocodecid = stats.audio_codec;
+        }
         self.data.filesize = Some(stats.file_size);
         self.data.audiosize = Some(stats.audio_data_size);
         self.data.lasttimestamp = Some(stats.last_timestamp);
@@ -106,15 +141,15 @@ impl OnMetaDataBuilder {
         self
     }
 
-    /// Sets the video codec ID.
-    pub fn with_video_codec(mut self, codec: VideoCodecId) -> Self {
-        self.data.videocodecid = Some(codec);
+    /// Sets the legacy or enhanced video codec identifier.
+    pub fn with_video_codec(mut self, codec: impl Into<VideoCodec>) -> Self {
+        self.data.videocodecid = Some(codec.into());
         self
     }
 
-    /// Sets the audio codec ID.
-    pub fn with_audio_codec(mut self, codec: SoundFormat) -> Self {
-        self.data.audiocodecid = Some(codec);
+    /// Sets the legacy or enhanced audio codec identifier.
+    pub fn with_audio_codec(mut self, codec: impl Into<AudioCodec>) -> Self {
+        self.data.audiocodecid = Some(codec.into());
         self
     }
 
@@ -148,6 +183,126 @@ impl OnMetaDataBuilder {
         self.data
     }
 
+    pub fn build_fixed_size(
+        mut self,
+        target_size: usize,
+    ) -> Result<FixedSizeMetadata, FixedSizeMetadataError> {
+        if target_size > MAX_FLV_TAG_PAYLOAD_SIZE {
+            return Err(FixedSizeMetadataError::TargetTooLarge(target_size));
+        }
+        let target_u32 = target_size as u32;
+        self.data.custom_properties.remove(FIXED_PADDING_KEY);
+        if self.data.metadatadate.is_none() {
+            self.data.metadatadate = Some(time::OffsetDateTime::now_utc());
+        }
+
+        let requested_keyframes = self.final_keyframe_count();
+        let mut max_keyframes = requested_keyframes;
+        if let Some(spacer_size) = self.data.spacer_size {
+            max_keyframes = max_keyframes.min(spacer_size / 2);
+        }
+
+        let mut low = 0usize;
+        let mut high = max_keyframes;
+        let mut best = None;
+        while low <= high {
+            let candidate_count = low + (high - low) / 2;
+            let candidate = self.clone().with_keyframe_limit(candidate_count);
+            let (bytes, _) = candidate.build_bytes_inner(target_u32, true, Some(0))?;
+            if bytes.len() <= target_size {
+                best = Some((candidate_count, bytes.len()));
+                low = candidate_count.saturating_add(1);
+            } else if candidate_count == 0 {
+                break;
+            } else {
+                high = candidate_count - 1;
+            }
+        }
+
+        let Some((keyframes_written, minimum_size)) = best else {
+            let (bytes, _) =
+                self.clone()
+                    .with_keyframe_limit(0)
+                    .build_bytes_inner(target_u32, true, Some(0))?;
+            return Err(FixedSizeMetadataError::TooLarge {
+                target: target_size,
+                minimum: bytes.len(),
+            });
+        };
+
+        let mut candidate = self.with_keyframe_limit(keyframes_written);
+        let (mut bytes, _) = candidate
+            .clone()
+            .build_bytes_inner(target_u32, true, Some(0))?;
+        if bytes.len() < target_size {
+            candidate = candidate.with_fixed_padding(target_size - bytes.len())?;
+            (bytes, _) = candidate.build_bytes_inner(target_u32, true, Some(0))?;
+        }
+        if bytes.len() != target_size {
+            return Err(FixedSizeMetadataError::CannotPad {
+                target: target_size,
+                actual: bytes.len().max(minimum_size),
+            });
+        }
+
+        Ok(FixedSizeMetadata {
+            bytes,
+            keyframes_written,
+            truncated: keyframes_written < requested_keyframes,
+        })
+    }
+
+    fn final_keyframe_count(&self) -> usize {
+        match &self.data.keyframes {
+            Some(KeyframeData::Final {
+                times,
+                filepositions,
+            }) => times.len().min(filepositions.len()),
+            _ => 0,
+        }
+    }
+
+    fn with_keyframe_limit(mut self, limit: usize) -> Self {
+        if let Some(KeyframeData::Final {
+            times,
+            filepositions,
+        }) = &mut self.data.keyframes
+        {
+            times.truncate(limit);
+            filepositions.truncate(limit);
+        }
+        self
+    }
+
+    fn with_fixed_padding(mut self, padding_bytes: usize) -> Result<Self, FixedSizeMetadataError> {
+        let mut creator = self
+            .data
+            .metadatacreator
+            .take()
+            .unwrap_or_else(|| concat!("Mesio v", env!("CARGO_PKG_VERSION")).to_string());
+        if creator.len().saturating_add(padding_bytes) <= u16::MAX as usize {
+            creator.extend(std::iter::repeat_n(' ', padding_bytes));
+            self.data.metadatacreator = Some(creator);
+            return Ok(self);
+        }
+
+        if padding_bytes < FIXED_PADDING_OVERHEAD {
+            return Err(FixedSizeMetadataError::CannotPad {
+                target: padding_bytes,
+                actual: 0,
+            });
+        }
+
+        self.data.metadatacreator = Some(creator);
+        self.data.custom_properties.insert(
+            FIXED_PADDING_KEY.to_string(),
+            Amf0Value::LongString(Cow::Owned(
+                " ".repeat(padding_bytes - FIXED_PADDING_OVERHEAD),
+            )),
+        );
+        Ok(self)
+    }
+
     /// Builds the AMF0 byte payload, ready for writing to a file.
     ///
     /// # Arguments
@@ -161,9 +316,18 @@ impl OnMetaDataBuilder {
     ///
     /// A tuple containing the new byte payload and the size difference.
     pub fn build_bytes(
+        self,
+        original_payload_size: u32,
+        low_latency_mode: bool,
+    ) -> Result<(Vec<u8>, i64), Amf0WriteError> {
+        self.build_bytes_inner(original_payload_size, low_latency_mode, None)
+    }
+
+    fn build_bytes_inner(
         mut self,
         original_payload_size: u32,
         low_latency_mode: bool,
+        file_position_offset: Option<i64>,
     ) -> Result<(Vec<u8>, i64), Amf0WriteError> {
         // arbitrary buffer size
         let estimated_size = original_payload_size as usize + 128;
@@ -252,13 +416,19 @@ impl OnMetaDataBuilder {
 
         // encode the keyframes object with the correct offsets
         if let Some(keyframes) = self.data.keyframes.take() {
-            self.write_keyframes_section(&mut buf, keyframes, size_diff, low_latency_mode)?;
+            self.write_keyframes_section(
+                &mut buf,
+                keyframes,
+                file_position_offset.unwrap_or(size_diff),
+                low_latency_mode,
+            )?;
         }
 
         // finalize the main object
         Amf0Encoder::object_eof(&mut buf)?;
 
-        Ok((buf, size_diff))
+        let actual_size_diff = buf.len() as i64 - original_payload_size as i64;
+        Ok((buf, actual_size_diff))
     }
 
     /// Returns the AMF0 value for a given key.
@@ -289,7 +459,7 @@ impl OnMetaDataBuilder {
             "videocodecid" => self
                 .data
                 .videocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .map(|codec| Amf0Value::Number(codec.as_u32() as f64))
                 .or(Some(Amf0Value::Number(0.0))),
             "videodatarate" => self
                 .data
@@ -299,7 +469,7 @@ impl OnMetaDataBuilder {
             "audiocodecid" => self
                 .data
                 .audiocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .map(|codec| Amf0Value::Number(codec.as_u32() as f64))
                 .or(Some(Amf0Value::Number(0.0))),
             "audiodatarate" => self
                 .data
@@ -496,14 +666,11 @@ impl OnMetaDataBuilder {
                     let remaining_spacer_size =
                         spacer_size - current_filepositions_size - current_times_size;
                     debug!("Remaining spacer size: {remaining_spacer_size}");
-                    if remaining_spacer_size > 0 {
-                        // Write spacer array
-                        Amf0Encoder::write_property_key(buf, "spacer")?;
-                        buf.write_u8(Amf0Marker::StrictArray as u8)?;
-                        buf.write_u32::<BigEndian>(remaining_spacer_size as u32)?;
-                        for _ in 0..remaining_spacer_size {
-                            Amf0Encoder::encode_number(buf, 0.0)?;
-                        }
+                    Amf0Encoder::write_property_key(buf, "spacer")?;
+                    buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                    buf.write_u32::<BigEndian>(remaining_spacer_size as u32)?;
+                    for _ in 0..remaining_spacer_size {
+                        Amf0Encoder::encode_number(buf, 0.0)?;
                     }
                 }
             }
@@ -539,7 +706,105 @@ impl OnMetaDataBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::VideoStats;
     use amf0::Amf0Decoder;
+    use flv::audio::AudioFourCC;
+    use flv::script::ScriptData;
+    use flv::video::{VideoCodec, VideoCodecId, VideoFourCC};
+
+    #[test]
+    fn preserves_numeric_av1_fourcc_metadata() {
+        let properties = [(
+            Cow::Borrowed("videocodecid"),
+            Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64),
+        )];
+        let model = AmfScriptData::from_amf_object_ref(&properties).unwrap();
+
+        assert_eq!(
+            model.videocodecid,
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "videocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(
+            codec,
+            Some(&Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64))
+        );
+    }
+
+    #[test]
+    fn preserves_numeric_opus_fourcc_metadata() {
+        let properties = [(
+            Cow::Borrowed("audiocodecid"),
+            Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64),
+        )];
+        let model = AmfScriptData::from_amf_object_ref(&properties).unwrap();
+
+        assert_eq!(
+            model.audiocodecid,
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "audiocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(
+            codec,
+            Some(&Amf0Value::Number(AudioFourCC::Opus.as_u32() as f64))
+        );
+    }
+
+    #[test]
+    fn with_stats_keeps_source_video_codec_when_analyzer_recorded_none() {
+        let model = AmfScriptData {
+            videocodecid: Some(VideoCodec::Legacy(VideoCodecId::SorensonH263)),
+            ..AmfScriptData::default()
+        };
+        // VideoStats::default() leaves video_codec as None, matching a stream
+        // whose codec never emits sequence headers.
+        let stats = FlvStats {
+            video_stats: Some(VideoStats::default()),
+            ..FlvStats::default()
+        };
+
+        let (bytes, _) = OnMetaDataBuilder::from_script_data(model)
+            .with_stats(&stats)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut decoder = Amf0Decoder::new(&bytes);
+        decoder.decode().unwrap();
+        let metadata = decoder.decode().unwrap();
+        let codec = metadata
+            .as_object_properties()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == "videocodecid")
+            .map(|(_, value)| value);
+
+        assert_eq!(codec, Some(&Amf0Value::Number(2.0)));
+    }
 
     #[test]
     fn test_on_meta_data_builder_final_keyframes() {
@@ -677,5 +942,70 @@ mod tests {
         } else {
             panic!("Expected object for metadata");
         }
+    }
+
+    #[test]
+    fn fixed_size_metadata_reuses_reserved_keyframe_space() {
+        let (placeholder, _) = OnMetaDataBuilder::new()
+            .with_placeholder_keyframes(20)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut cursor = std::io::Cursor::new(bytes::Bytes::from(placeholder.clone()));
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let props = script.data[0].as_object_properties().unwrap();
+        let model = AmfScriptData::from_amf_object_ref(props).unwrap();
+
+        let fixed = OnMetaDataBuilder::from_script_data(model)
+            .with_final_keyframes(vec![0.0, 1.0, 2.0], vec![100, 200, 300])
+            .build_fixed_size(placeholder.len())
+            .unwrap();
+
+        assert_eq!(fixed.bytes.len(), placeholder.len());
+        assert_eq!(fixed.keyframes_written, 3);
+        assert!(!fixed.truncated);
+    }
+
+    #[test]
+    fn fixed_size_metadata_truncates_keyframes_to_reservation() {
+        let (placeholder, _) = OnMetaDataBuilder::new()
+            .with_placeholder_keyframes(6)
+            .build_bytes(0, false)
+            .unwrap();
+        let mut cursor = std::io::Cursor::new(bytes::Bytes::from(placeholder.clone()));
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let model =
+            AmfScriptData::from_amf_object_ref(script.data[0].as_object_properties().unwrap())
+                .unwrap();
+
+        let fixed = OnMetaDataBuilder::from_script_data(model)
+            .with_final_keyframes(vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![10, 20, 30, 40, 50])
+            .build_fixed_size(placeholder.len())
+            .unwrap();
+
+        assert_eq!(fixed.bytes.len(), placeholder.len());
+        assert_eq!(fixed.keyframes_written, 3);
+        assert!(fixed.truncated);
+    }
+
+    #[test]
+    fn fixed_size_metadata_pads_payload_without_keyframe_spacer() {
+        let builder = OnMetaDataBuilder::new().with_duration(12.0);
+        let (unpadded, _) = builder.clone().build_bytes(0, false).unwrap();
+
+        let fixed = builder.build_fixed_size(unpadded.len() + 17).unwrap();
+
+        assert_eq!(fixed.bytes.len(), unpadded.len() + 17);
+        let mut decoder = Amf0Decoder::new(&fixed.bytes);
+        assert!(decoder.decode().is_ok());
+        assert!(decoder.decode().is_ok());
+    }
+
+    #[test]
+    fn fixed_size_metadata_rejects_payload_above_flv_limit() {
+        let error = OnMetaDataBuilder::new()
+            .build_fixed_size(MAX_FLV_TAG_PAYLOAD_SIZE + 1)
+            .unwrap_err();
+
+        assert!(matches!(error, FixedSizeMetadataError::TargetTooLarge(_)));
     }
 }

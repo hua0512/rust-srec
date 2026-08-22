@@ -15,8 +15,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Zap, Activity } from 'lucide-react';
 import { HuyaPlatformValues } from '@/api/schemas/platform-configs';
+import {
+  ConfigFieldLabel,
+  ConfigSectionHeading,
+} from '@/components/config/shared/config-field';
 
 const HUYA_PLATFORM_LABELS: Record<
   (typeof HuyaPlatformValues)[number],
@@ -39,16 +45,14 @@ interface HuyaConfigFieldsProps {
 }
 
 export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
+  const { i18n } = useLingui();
   return (
     <div className="space-y-12">
       {/* Protocol Settings Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Zap className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Protocol Settings</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Zap} accent="indigo">
+          <Trans>Protocol Settings</Trans>
+        </ConfigSectionHeading>
 
         <div className="space-y-6">
           <FormField
@@ -56,19 +60,16 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
             name={`${fieldName}.api_mode`}
             render={({ field }) => (
               <FormItem>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>Extraction API Mode</Trans>
-                  </FormLabel>
-                </div>
+                <ConfigFieldLabel accent="indigo" className="mb-3">
+                  <Trans>Extraction API Mode</Trans>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Select
                     onValueChange={field.onChange}
                     value={field.value || 'WEB'}
                   >
                     <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
-                      <SelectValue placeholder="Select API Mode" />
+                      <SelectValue placeholder={i18n._(msg`Select API Mode`)} />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl border-border/50 shadow-xl">
                       <SelectItem value="WEB">
@@ -108,19 +109,18 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
             name={`${fieldName}.platform`}
             render={({ field }) => (
               <FormItem>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>Client Type (ctype)</Trans>
-                  </FormLabel>
-                </div>
+                <ConfigFieldLabel accent="indigo" className="mb-3">
+                  <Trans>Client Type (ctype)</Trans>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Select
                     onValueChange={field.onChange}
                     value={field.value || 'huya_pc_exe'}
                   >
                     <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
-                      <SelectValue placeholder="Select Client Type" />
+                      <SelectValue
+                        placeholder={i18n._(msg`Select Client Type`)}
+                      />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl border-border/50 shadow-xl">
                       {HuyaPlatformValues.map((value) => (
@@ -150,12 +150,9 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
 
       {/* Quality Settings Section */}
       <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-          <Activity className="w-5 h-5 text-indigo-500" />
-          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-            <Trans>Quality Settings</Trans>
-          </h4>
-        </div>
+        <ConfigSectionHeading icon={Activity} accent="indigo">
+          <Trans>Quality Settings</Trans>
+        </ConfigSectionHeading>
 
         <div className="grid gap-6">
           <FormField

@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{delete, get, post, put},
 };
 
@@ -15,6 +15,30 @@ use crate::api::server::AppState;
 use crate::database::models::TemplateConfigDbModel;
 use crate::utils::json::{self, JsonContext};
 use tracing::info;
+
+#[derive(Clone)]
+pub struct TemplateRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    streamer_manager: std::sync::Arc<
+        crate::streamer::StreamerManager<
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for TemplateRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+            streamer_manager: state.streamer_manager.clone(),
+        }
+    }
+}
 
 /// Request to clone a template.
 #[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
@@ -43,7 +67,9 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         output_filename_template: model.output_filename_template.clone(),
         output_file_format: model.output_file_format.clone(),
         download_engine: model.download_engine.clone(),
+        extractor: model.extractor.clone(),
         record_danmu: model.record_danmu,
+        danmu_statistics: model.danmu_statistics.clone(),
         platform_overrides: json::parse_optional_value_non_null(
             model.platform_overrides.as_deref(),
             JsonContext::TemplateField {
@@ -66,9 +92,7 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         max_download_duration_secs: model.max_download_duration_secs,
         max_part_size_bytes: model.max_part_size_bytes,
         download_retry_policy: model.download_retry_policy.clone(),
-        danmu_sampling_config: model.danmu_sampling_config.clone(),
         proxy_config: model.proxy_config.clone(),
-        event_hooks: model.event_hooks.clone(),
         pipeline: model.pipeline.clone(),
         session_complete_pipeline: model.session_complete_pipeline.clone(),
         paired_segment_pipeline: model.paired_segment_pipeline.clone(),
@@ -112,7 +136,7 @@ fn validate_offline_check_overrides(
     security(("bearer_auth" = []))
 )]
 pub async fn create_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Json(request): Json<CreateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // Validate name
@@ -123,10 +147,7 @@ pub async fn create_template(
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
 
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Create the template config model
     let mut template = TemplateConfigDbModel::new(&request.name);
@@ -134,7 +155,9 @@ pub async fn create_template(
     template.output_filename_template = request.output_filename_template;
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
+    template.extractor = request.extractor;
     template.record_danmu = request.record_danmu;
+    template.danmu_statistics = request.danmu_statistics;
 
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
@@ -156,9 +179,7 @@ pub async fn create_template(
     template.max_download_duration_secs = request.max_download_duration_secs;
     template.max_part_size_bytes = request.max_part_size_bytes;
     template.download_retry_policy = request.download_retry_policy;
-    template.danmu_sampling_config = request.danmu_sampling_config;
     template.proxy_config = request.proxy_config;
-    template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
@@ -185,17 +206,14 @@ pub async fn create_template(
     security(("bearer_auth" = []))
 )]
 pub async fn list_templates(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<TemplateResponse>>> {
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to count usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Get all templates
     let templates = config_service
@@ -216,9 +234,7 @@ pub async fn list_templates(
         .take(limit)
         .map(|t| {
             // Count streamers using this template
-            let usage_count = streamer_manager
-                .map(|sm| sm.get_by_template(&t.id).len() as u32)
-                .unwrap_or(0);
+            let usage_count = streamer_manager.get_by_template(&t.id).len() as u32;
             db_model_to_response(&t, usage_count)
         })
         .collect();
@@ -239,17 +255,14 @@ pub async fn list_templates(
     security(("bearer_auth" = []))
 )]
 pub async fn get_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to count usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Get the template
     let template = config_service.get_template_config(&id).await.map_err(|e| {
@@ -261,9 +274,7 @@ pub async fn get_template(
     })?;
 
     // Count streamers using this template
-    let usage_count = streamer_manager
-        .map(|sm| sm.get_by_template(&id).len() as u32)
-        .unwrap_or(0);
+    let usage_count = streamer_manager.get_by_template(&id).len() as u32;
 
     Ok(Json(db_model_to_response(&template, usage_count)))
 }
@@ -281,20 +292,17 @@ pub async fn get_template(
     security(("bearer_auth" = []))
 )]
 pub async fn update_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
 
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to count usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Get the existing template
     let mut template = config_service.get_template_config(&id).await.map_err(|e| {
@@ -318,7 +326,9 @@ pub async fn update_template(
     template.output_filename_template = request.output_filename_template;
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
+    template.extractor = request.extractor;
     template.record_danmu = request.record_danmu;
+    template.danmu_statistics = request.danmu_statistics;
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
         Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
@@ -339,9 +349,7 @@ pub async fn update_template(
     template.max_download_duration_secs = request.max_download_duration_secs;
     template.max_part_size_bytes = request.max_part_size_bytes;
     template.download_retry_policy = request.download_retry_policy;
-    template.danmu_sampling_config = request.danmu_sampling_config;
     template.proxy_config = request.proxy_config;
-    template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
@@ -357,9 +365,7 @@ pub async fn update_template(
     info!("Updated template '{}' (id: {})", template.name, id);
 
     // Count streamers using this template
-    let usage_count = streamer_manager
-        .map(|sm| sm.get_by_template(&id).len() as u32)
-        .unwrap_or(0);
+    let usage_count = streamer_manager.get_by_template(&id).len() as u32;
 
     Ok(Json(db_model_to_response(&template, usage_count)))
 }
@@ -377,17 +383,14 @@ pub async fn update_template(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to check usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Check if template exists
     config_service.get_template_config(&id).await.map_err(|e| {
@@ -399,15 +402,13 @@ pub async fn delete_template(
     })?;
 
     // Check if any streamers are using this template
-    if let Some(sm) = streamer_manager {
-        let streamers_using = sm.get_by_template(&id);
-        if !streamers_using.is_empty() {
-            return Err(ApiError::conflict(format!(
-                "Cannot delete template '{}': {} streamer(s) are using it",
-                id,
-                streamers_using.len()
-            )));
-        }
+    let streamers_using = streamer_manager.get_by_template(&id);
+    if !streamers_using.is_empty() {
+        return Err(ApiError::conflict(format!(
+            "Cannot delete template '{}': {} streamer(s) are using it",
+            id,
+            streamers_using.len()
+        )));
     }
 
     // Delete the template
@@ -436,7 +437,7 @@ pub async fn delete_template(
     security(("bearer_auth" = []))
 )]
 pub async fn clone_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
     Json(request): Json<CloneTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
@@ -446,10 +447,7 @@ pub async fn clone_template(
     }
 
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get the existing template
     let existing = config_service.get_template_config(&id).await.map_err(|e| {
@@ -478,7 +476,9 @@ pub async fn clone_template(
     cloned.output_filename_template = existing.output_filename_template;
     cloned.output_file_format = existing.output_file_format;
     cloned.download_engine = existing.download_engine;
+    cloned.extractor = existing.extractor;
     cloned.record_danmu = existing.record_danmu;
+    cloned.danmu_statistics = existing.danmu_statistics.clone();
     cloned.platform_overrides = existing.platform_overrides;
     cloned.engines_override = existing.engines_override;
     cloned.stream_selection_config = existing.stream_selection_config;
@@ -487,9 +487,7 @@ pub async fn clone_template(
     cloned.max_download_duration_secs = existing.max_download_duration_secs;
     cloned.max_part_size_bytes = existing.max_part_size_bytes;
     cloned.download_retry_policy = existing.download_retry_policy;
-    cloned.danmu_sampling_config = existing.danmu_sampling_config;
     cloned.proxy_config = existing.proxy_config;
-    cloned.event_hooks = existing.event_hooks;
     cloned.pipeline = existing.pipeline;
     cloned.session_complete_pipeline = existing.session_complete_pipeline;
     cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
@@ -523,7 +521,9 @@ mod tests {
             output_filename_template: None,
             output_file_format: Some("mp4".to_string()),
             download_engine: None,
+            extractor: None,
             record_danmu: Some(true),
+            danmu_statistics: None,
             platform_overrides: None,
             engines_override: None,
             stream_selection_config: None,
@@ -532,9 +532,7 @@ mod tests {
             max_download_duration_secs: None,
             max_part_size_bytes: None,
             download_retry_policy: None,
-            danmu_sampling_config: None,
             proxy_config: None,
-            event_hooks: None,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,

@@ -1,8 +1,84 @@
 //! Configuration database models.
 
+use std::num::NonZeroU32;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+
+const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
+
+/// Validated retention duration stored as a number of days.
+///
+/// Zero days means data is retained forever. Positive values produce a
+/// cutoff relative to the start time of a maintenance sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetentionDays {
+    /// Retain data indefinitely.
+    Forever,
+    /// Delete data older than this number of days.
+    Days(NonZeroU32),
+}
+
+impl RetentionDays {
+    /// Returns the persisted numeric representation, where zero means forever.
+    pub fn as_u32(self) -> u32 {
+        match self {
+            Self::Forever => 0,
+            Self::Days(days) => days.get(),
+        }
+    }
+
+    /// Returns the oldest retained timestamp relative to `now_ms`.
+    ///
+    /// [`None`] indicates that retention is disabled and data should be kept
+    /// indefinitely.
+    pub fn cutoff_ms(self, now_ms: i64) -> Option<i64> {
+        match self {
+            Self::Forever => None,
+            Self::Days(days) => {
+                Some(now_ms.saturating_sub(i64::from(days.get()).saturating_mul(MILLIS_PER_DAY)))
+            }
+        }
+    }
+}
+
+/// Error returned when a retention value cannot be represented by [`RetentionDays`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("retention days must be between 0 and 2147483647 (found {value})")]
+pub struct InvalidRetentionDays {
+    value: i64,
+}
+
+impl InvalidRetentionDays {
+    /// Returns the rejected numeric value.
+    pub fn value(self) -> i64 {
+        self.value
+    }
+}
+
+impl TryFrom<i64> for RetentionDays {
+    type Error = InvalidRetentionDays;
+
+    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+        if !(0..=i64::from(i32::MAX)).contains(&value) {
+            return Err(InvalidRetentionDays { value });
+        }
+
+        Ok(match NonZeroU32::new(value as u32) {
+            Some(days) => Self::Days(days),
+            None => Self::Forever,
+        })
+    }
+}
+
+impl TryFrom<i32> for RetentionDays {
+    type Error = InvalidRetentionDays;
+
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        Self::try_from(i64::from(value))
+    }
+}
 
 /// Global configuration database model.
 /// A singleton table for application-wide default settings.
@@ -16,6 +92,8 @@ pub struct GlobalConfigDbModel {
     pub max_download_duration_secs: i64,
     pub max_part_size_bytes: i64,
     pub record_danmu: bool,
+    /// JSON `DanmuStatisticsConfig`; NULL resolves to its defaults.
+    pub danmu_statistics: Option<String>,
     pub max_concurrent_downloads: i32,
     pub max_concurrent_uploads: i32,
     pub streamer_check_delay_ms: i64,
@@ -25,11 +103,13 @@ pub struct GlobalConfigDbModel {
     pub offline_check_count: i32,
     /// Name of the default engine configuration
     pub default_download_engine: String,
+    /// Default extractor selection ("auto" or "streamlink"); `None` resolves to auto.
+    pub default_extractor: Option<String>,
     pub max_concurrent_cpu_jobs: i32,
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
     pub notification_event_log_retention_days: i32,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -58,13 +138,20 @@ pub struct GlobalConfigDbModel {
     /// download without a restart.
     pub queue_freshness_threshold_ms: i64,
 
-    /// Seconds between probes by the GPU health monitor (issue #555).
+    /// Seconds between probes by the GPU health monitor.
     /// The monitor shells out to `nvidia-smi` on this cadence and emits
     /// a single `GpuUnavailable` notification on Healthy → Unhealthy
     /// transitions. Runtime-mutable; the monitor re-reads the value
     /// before each tick, so changes apply within at most one previous
     /// interval and never require a restart.
     pub gpu_health_probe_interval_secs: i64,
+
+    /// Whether the stream proxy may fetch targets on private networks.
+    /// When false, `validate_target_url` in the stream-proxy route rejects
+    /// localhost, non-public IP literals, and hostnames resolving to any
+    /// non-public address. Runtime-mutable; `stream_proxy_get` reads it per
+    /// request, so no restart is required.
+    pub stream_proxy_allow_private_targets: bool,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -78,6 +165,7 @@ impl Default for GlobalConfigDbModel {
             max_download_duration_secs: 0,   // No limit
             max_part_size_bytes: 8589934592, // 8GB
             record_danmu: false,
+            danmu_statistics: None,
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,
@@ -85,6 +173,7 @@ impl Default for GlobalConfigDbModel {
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
             default_download_engine: "mesio".to_string(),
+            default_extractor: None,
             max_concurrent_cpu_jobs: 0, // Auto
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
@@ -102,6 +191,7 @@ impl Default for GlobalConfigDbModel {
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000, // 1 minute
             gpu_health_probe_interval_secs: 30,   // matches DEFAULT_GATE_COOLDOWN_SECS
+            stream_proxy_allow_private_targets: false,
         }
     }
 }
@@ -120,11 +210,15 @@ pub struct PlatformConfigDbModel {
     /// JSON serialized ProxyConfig
     pub proxy_config: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; NULL inherits the global layer.
+    pub danmu_statistics: Option<String>,
 
     // Explicit overrides
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the global default.
+    pub extractor: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
@@ -133,9 +227,7 @@ pub struct PlatformConfigDbModel {
     pub max_part_size_bytes: Option<i64>,
     /// JSON serialized RetryPolicy
     pub download_retry_policy: Option<String>,
-    /// JSON serialized EventHooks
-    pub event_hooks: Option<String>,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -159,23 +251,23 @@ pub struct TemplateConfigDbModel {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; NULL inherits the platform layer.
+    pub danmu_statistics: Option<String>,
     /// JSON map of platform names to their specific configuration overrides
     pub platform_overrides: Option<String>,
     /// JSON serialized RetryPolicy
     pub download_retry_policy: Option<String>,
-    /// JSON serialized DanmuSamplingConfig
-    pub danmu_sampling_config: Option<String>,
     /// Name of the engine configuration to use
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform/global value.
+    pub extractor: Option<String>,
     /// JSON map for template-specific engine configurations
     pub engines_override: Option<String>,
     /// JSON serialized ProxyConfig
     pub proxy_config: Option<String>,
-    /// JSON serialized EventHooks
-    pub event_hooks: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -200,13 +292,13 @@ impl TemplateConfigDbModel {
             max_download_duration_secs: None,
             max_part_size_bytes: None,
             record_danmu: None,
+            danmu_statistics: None,
             platform_overrides: None,
             download_retry_policy: None,
-            danmu_sampling_config: None,
             download_engine: None,
+            extractor: None,
             engines_override: None,
             proxy_config: None,
-            event_hooks: None,
             stream_selection_config: None,
             pipeline: None,
             session_complete_pipeline: None,
@@ -229,6 +321,22 @@ mod tests {
         assert_eq!(config.output_folder, "/app/output");
         assert_eq!(config.max_concurrent_downloads, 6);
         assert!(!config.record_danmu);
+    }
+
+    #[test]
+    fn retention_days_validates_and_calculates_cutoffs() {
+        let forever = RetentionDays::try_from(0_i32).expect("zero retention");
+        assert_eq!(forever, RetentionDays::Forever);
+        assert_eq!(forever.as_u32(), 0);
+        assert_eq!(forever.cutoff_ms(10_000), None);
+
+        let one_day = RetentionDays::try_from(1_i32).expect("one day retention");
+        assert_eq!(one_day.as_u32(), 1);
+        assert_eq!(one_day.cutoff_ms(MILLIS_PER_DAY + 1), Some(1));
+        assert_eq!(
+            RetentionDays::try_from(-1_i32).expect_err("negative retention"),
+            InvalidRetentionDays { value: -1 }
+        );
     }
 
     #[test]

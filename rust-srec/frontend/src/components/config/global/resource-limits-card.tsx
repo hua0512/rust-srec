@@ -5,14 +5,17 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { HardDrive } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { ConfigFieldLabel } from '@/components/config/shared/config-field';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 export const ResourceLimitsCard = memo(() => {
+  const { i18n } = useLingui();
   return (
     <SettingsCard
       title={<Trans>Resource Limits</Trans>}
@@ -25,10 +28,10 @@ export const ResourceLimitsCard = memo(() => {
         <FormField
           name="min_segment_size_bytes"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Min Segment Size</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <InputWithUnit
                   unitType="size"
@@ -44,16 +47,16 @@ export const ResourceLimitsCard = memo(() => {
         <FormField
           name="max_download_duration_secs"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Max Duration</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <InputWithUnit
                   unitType="duration"
                   value={field.value}
                   onChange={field.onChange}
-                  placeholder="Unlimited"
+                  placeholder={i18n._(msg`Unlimited`)}
                 />
               </FormControl>
               <FormDescription className="text-xs">
@@ -66,10 +69,10 @@ export const ResourceLimitsCard = memo(() => {
         <FormField
           name="max_part_size_bytes"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Max Part Size</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <InputWithUnit
                   unitType="size"

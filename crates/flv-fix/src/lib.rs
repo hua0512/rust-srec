@@ -26,7 +26,6 @@
 pub mod amf;
 mod analyzer;
 mod constants;
-mod crc32;
 mod operators;
 mod pipeline;
 mod script_modifier;

@@ -29,6 +29,17 @@ pub struct DagExecutionMetadata {
     pub segment_source: Option<String>,
 }
 
+/// Session and streamer metadata propagated to every job in a DAG run.
+#[derive(Debug, Clone, Default)]
+pub struct DagRunContext {
+    pub streamer_id: Option<String>,
+    pub session_id: Option<String>,
+    pub streamer_name: Option<String>,
+    pub session_title: Option<String>,
+    pub platform: Option<String>,
+    pub session_start: Option<DateTime<Utc>>,
+}
+
 /// Notification emitted when a DAG reaches a terminal state.
 #[derive(Debug, Clone)]
 pub struct DagCompletionInfo {
@@ -144,46 +155,23 @@ impl DagScheduler {
     /// 1. A DAG execution record
     /// 2. Step execution records for all steps
     /// 3. Jobs for all root steps (steps with no dependencies)
-    #[allow(clippy::too_many_arguments)]
     pub async fn create_dag_pipeline(
         &self,
         dag_definition: DagPipelineDefinition,
         input_paths: &[String],
-        streamer_id: Option<String>,
-        session_id: Option<String>,
-        streamer_name: Option<String>,
-        session_title: Option<String>,
-        platform: Option<String>,
-        session_start: Option<DateTime<Utc>>,
+        context: DagRunContext,
     ) -> Result<DagCreationResult> {
-        self.create_dag_pipeline_with_hook(
-            dag_definition,
-            input_paths,
-            streamer_id,
-            session_id,
-            streamer_name,
-            session_title,
-            platform,
-            session_start,
-            None,
-            None,
-        )
-        .await
+        self.create_dag_pipeline_with_hook(dag_definition, input_paths, context, None, None)
+            .await
     }
 
     /// Create a new DAG pipeline execution with an optional hook called after step execution
     /// records are created but before any root jobs are enqueued.
-    #[allow(clippy::too_many_arguments)]
     pub async fn create_dag_pipeline_with_hook(
         &self,
         dag_definition: DagPipelineDefinition,
         input_paths: &[String],
-        streamer_id: Option<String>,
-        session_id: Option<String>,
-        streamer_name: Option<String>,
-        session_title: Option<String>,
-        platform: Option<String>,
-        session_start: Option<DateTime<Utc>>,
+        context: DagRunContext,
         metadata: Option<DagExecutionMetadata>,
         before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
@@ -191,8 +179,11 @@ impl DagScheduler {
         dag_definition.validate()?;
 
         // 2. Create DAG execution record
-        let mut dag_exec =
-            DagExecutionDbModel::new(&dag_definition, streamer_id.clone(), session_id.clone());
+        let mut dag_exec = DagExecutionDbModel::new(
+            &dag_definition,
+            context.streamer_id.clone(),
+            context.session_id.clone(),
+        );
         if let Some(meta) = metadata {
             dag_exec.segment_index = meta.segment_index.map(i64::from);
             dag_exec.segment_source = meta.segment_source;
@@ -238,12 +229,7 @@ impl DagScheduler {
                     &step_exec.id,
                     root_step,
                     input_paths.to_vec(),
-                    streamer_id.clone(),
-                    session_id.clone(),
-                    streamer_name.clone(),
-                    session_title.clone(),
-                    platform.clone(),
-                    session_start,
+                    &context,
                 )
                 .await?;
 
@@ -272,7 +258,13 @@ impl DagScheduler {
             .fail_dag_and_cancel_steps(dag_id, error)
             .await?;
         for job_id in &cancelled {
-            let _ = self.job_queue.cancel_job(job_id).await;
+            if let Err(cancel_error) = self.job_queue.cancel_job(job_id).await {
+                warn!(
+                    job_id,
+                    error = %cancel_error,
+                    "Failed to cancel job while failing DAG"
+                );
+            }
         }
 
         let dag = self.dag_repository.get_dag(dag_id).await?;
@@ -378,12 +370,14 @@ impl DagScheduler {
                         &ready_step.id,
                         dag_step,
                         merged_inputs,
-                        dag.streamer_id.clone(),
-                        dag.session_id.clone(),
-                        streamer_name.clone(),
-                        session_title.clone(),
-                        platform.clone(),
-                        session_start,
+                        &DagRunContext {
+                            streamer_id: dag.streamer_id.clone(),
+                            session_id: dag.session_id.clone(),
+                            streamer_name: streamer_name.clone(),
+                            session_title: session_title.clone(),
+                            platform: platform.clone(),
+                            session_start,
+                        },
                     )
                     .await
                 {
@@ -508,7 +502,13 @@ impl DagScheduler {
             "DAG failed, cancelled pending work"
         );
 
-        let updated_dag = self.dag_repository.get_dag(&step.dag_id).await.ok();
+        let updated_dag = match self.dag_repository.get_dag(&step.dag_id).await {
+            Ok(dag) => Some(dag),
+            Err(error) => {
+                warn!(dag_id = %step.dag_id, %error, "Failed to reload failed DAG");
+                None
+            }
+        };
         let completion = if let Some(dag) = updated_dag
             && dag.get_status().map(|s| s.is_terminal()).unwrap_or(false)
         {
@@ -531,19 +531,13 @@ impl DagScheduler {
     }
 
     /// Create a job for a DAG step.
-    #[allow(clippy::too_many_arguments)]
     async fn create_step_job(
         &self,
         dag_id: &str,
         step_execution_id: &str,
         dag_step: &crate::database::models::DagStep,
         inputs: Vec<String>,
-        streamer_id: Option<String>,
-        session_id: Option<String>,
-        streamer_name: Option<String>,
-        session_title: Option<String>,
-        platform: Option<String>,
-        session_start: Option<DateTime<Utc>>,
+        context: &DagRunContext,
     ) -> Result<String> {
         // Get processor and config from the step
         let (processor, config) = match &dag_step.step {
@@ -569,11 +563,15 @@ impl DagScheduler {
             inputs_json,
             "[]".to_string(),
             0, // priority
-            streamer_id.clone(),
-            session_id.clone(),
+            context.streamer_id.clone(),
+            context.session_id.clone(),
         );
         job_db.config = config;
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
+        // delete_jobs_by_pipeline / cancel_jobs_by_pipeline and the JobFilters
+        // pipeline_id filter all match on this column, so it must be set on the
+        // inserted row, not only on the in-memory Job built below.
+        job_db.pipeline_id = Some(dag_id.to_string());
 
         // Build the in-memory Job before persisting so job_state_json is the
         // single source of the state shape (its inverse parse_job_state is
@@ -587,10 +585,10 @@ impl DagScheduler {
             status: JobStatus::Pending,
             streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
             session_id: job_db.session_id.clone().unwrap_or_default(),
-            streamer_name,
-            session_title,
-            platform,
-            session_start,
+            streamer_name: context.streamer_name.clone(),
+            session_title: context.session_title.clone(),
+            platform: context.platform.clone(),
+            session_start: context.session_start,
             config: Some(job_db.config.clone()),
             created_at: chrono::Utc::now(),
             started_at: None,
@@ -687,7 +685,13 @@ impl DagScheduler {
             }
         }
 
-        let updated_dag = self.dag_repository.get_dag(dag_id).await.ok();
+        let updated_dag = match self.dag_repository.get_dag(dag_id).await {
+            Ok(dag) => Some(dag),
+            Err(error) => {
+                warn!(dag_id, %error, "Failed to reload cancelled DAG");
+                None
+            }
+        };
         let completion = if let Some(dag) = updated_dag
             && dag.get_status().map(|s| s.is_terminal()).unwrap_or(false)
         {
@@ -815,12 +819,14 @@ impl DagScheduler {
                     &step_exec.id,
                     dag_step,
                     merged_inputs,
-                    dag.streamer_id.clone(),
-                    dag.session_id.clone(),
-                    streamer_name.clone(),
-                    session_title.clone(),
-                    platform.clone(),
-                    session_start,
+                    &DagRunContext {
+                        streamer_id: dag.streamer_id.clone(),
+                        session_id: dag.session_id.clone(),
+                        streamer_name: streamer_name.clone(),
+                        session_title: session_title.clone(),
+                        platform: platform.clone(),
+                        session_start,
+                    },
                 )
                 .await?;
             new_job_ids.push(job_id);
@@ -1018,19 +1024,7 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
-            unimplemented!("not needed for these tests")
-        }
-
         async fn delete_job(&self, _id: &str) -> Result<()> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -1179,12 +1173,14 @@ mod tests {
             .create_dag_pipeline(
                 dag_def,
                 &["/input.flv".to_string()],
-                Some("streamer-1".to_string()),
-                Some("session-1".to_string()),
-                Some("Streamer".to_string()),
-                Some("Title".to_string()),
-                Some("Platform".to_string()),
-                Some(session_start),
+                DagRunContext {
+                    streamer_id: Some("streamer-1".to_string()),
+                    session_id: Some("session-1".to_string()),
+                    streamer_name: Some("Streamer".to_string()),
+                    session_title: Some("Title".to_string()),
+                    platform: Some("Platform".to_string()),
+                    session_start: Some(session_start),
+                },
             )
             .await
             .unwrap();
@@ -1220,6 +1216,57 @@ mod tests {
                 .and_then(|value| value.as_i64()),
             Some(session_start.timestamp_millis())
         );
+    }
+
+    /// delete_dag removes job rows via JobRepository::delete_jobs_by_pipeline,
+    /// which matches on the job.pipeline_id column — so create_step_job must
+    /// persist pipeline_id on the inserted row, not just on the in-memory Job.
+    #[tokio::test]
+    async fn test_delete_dag_deletes_job_rows() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo, job_repo.clone());
+        let dag_def = DagPipelineDefinition::new(
+            "delete removes jobs",
+            vec![DagStep {
+                id: "A".to_string(),
+                step: PipelineStep::inline("noop", serde_json::json!({})),
+                depends_on: vec![],
+            }],
+        );
+
+        let created = scheduler
+            .create_dag_pipeline(
+                dag_def,
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+
+        let root_job = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
+        assert_eq!(
+            root_job.pipeline_id.as_deref(),
+            Some(created.dag_id.as_str())
+        );
+
+        job_repo
+            .mark_job_failed(&root_job.id, "boom")
+            .await
+            .unwrap();
+
+        scheduler.delete_dag(&created.dag_id).await.unwrap();
+
+        assert!(job_repo.get_job(&root_job.id).await.is_err());
+        let counts = job_repo.get_job_counts_by_status().await.unwrap();
+        assert_eq!(counts.failed, 0);
     }
 
     /// The retry fan-out path (reset_dag_for_retry -> enqueue_now_ready_steps)
@@ -1260,12 +1307,14 @@ mod tests {
             .create_dag_pipeline(
                 dag_def,
                 &["/input.flv".to_string()],
-                Some("streamer-1".to_string()),
-                Some("session-1".to_string()),
-                Some("Streamer".to_string()),
-                Some("Title".to_string()),
-                Some("Platform".to_string()),
-                Some(session_start),
+                DagRunContext {
+                    streamer_id: Some("streamer-1".to_string()),
+                    session_id: Some("session-1".to_string()),
+                    streamer_name: Some("Streamer".to_string()),
+                    session_title: Some("Title".to_string()),
+                    platform: Some("Platform".to_string()),
+                    session_start: Some(session_start),
+                },
             )
             .await
             .unwrap();

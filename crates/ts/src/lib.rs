@@ -9,7 +9,6 @@ pub mod crc32;
 pub mod descriptor;
 pub mod error;
 pub mod packet;
-pub mod parser_owned;
 pub mod parser_zero_copy;
 pub mod pat;
 pub mod pes;
@@ -21,7 +20,6 @@ pub use crc32::{mpeg2_crc32, validate_section_crc32};
 pub use descriptor::{Ac3Descriptor, DescriptorIterator, DescriptorRef, LanguageEntry};
 pub use error::TsError;
 pub use packet::{ContinuityMode, ContinuityStatus, PID_CAT, PID_NULL, PID_PAT, TsPacket};
-pub use parser_owned::OwnedTsParser;
 pub use parser_zero_copy::{
     PatProgramIterator, PatProgramRef, PatRef, PmtRef, PmtStreamIterator, PmtStreamRef,
     TsPacketRef, TsParser,

@@ -75,7 +75,7 @@ impl Processor<FlvData> for ScriptFilterOperator {
                 // Forward the header
                 output(input)
             } // Check if this is a script tag
-            FlvData::Tag(tag) if tag.tag_type == FlvTagType::ScriptData => {
+            FlvData::Tag(tag) if tag.tag_type() == FlvTagType::ScriptData => {
                 self.script_tag_count += 1;
                 if !self.seen_script_tag {
                     // First script tag, keep it and mark as seen
@@ -185,7 +185,7 @@ mod tests {
         for item in &output_items {
             match item {
                 FlvData::Header(_) => tag_types.push("Header"),
-                FlvData::Tag(tag) => match tag.tag_type {
+                FlvData::Tag(tag) => match tag.tag_type() {
                     FlvTagType::ScriptData => tag_types.push("ScriptData"),
                     FlvTagType::Video => tag_types.push("Video"),
                     FlvTagType::Audio => tag_types.push("Audio"),
@@ -269,7 +269,7 @@ mod tests {
                 FlvData::Header(_) => {
                     in_first_segment = false; // Switch to second segment after seeing second header
                 }
-                FlvData::Tag(tag) if tag.tag_type == FlvTagType::ScriptData => {
+                FlvData::Tag(tag) if tag.tag_type() == FlvTagType::ScriptData => {
                     if in_first_segment {
                         first_segment_script_count += 1;
                     } else {

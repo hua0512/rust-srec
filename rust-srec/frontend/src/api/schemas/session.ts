@@ -100,18 +100,39 @@ export const DanmuTopTalkerSchema = z.object({
   user_id: z.string(),
   username: z.string(),
   message_count: z.number(),
+  // Overestimate bound; the true count is at least message_count - error.
+  // Zero means exact. Absent on statistics stored before the field existed.
+  error: z.number().optional().default(0),
 });
 
 export const DanmuWordFrequencySchema = z.object({
   word: z.string(),
+  count: z.number(),
+  error: z.number().optional().default(0),
+});
+
+export const DanmuGiftTallySchema = z.object({
+  name: z.string(),
   count: z.number(),
 });
 
 export const SessionDanmuStatisticsSchema = z.object({
   session_id: z.string(),
   total_danmus: z.number(),
+  // Null on statistics rows persisted before the metric existed.
+  unique_talkers: z.number().nullable().optional(),
+  chat_count: z.number().nullable().optional(),
+  gift_count: z.number().nullable().optional(),
+  duration_secs: z.number().nullable().optional(),
+  start_time: z.string().nullable().optional(),
+  end_time: z.string().nullable().optional(),
+  // Width of one timeline bucket. The backend halves the resolution of long
+  // sessions, so this varies and must not be assumed to be a minute.
+  rate_bucket_secs: z.number().nullable().optional(),
   danmu_rate_timeseries: z.array(DanmuRatePointSchema),
   top_talkers: z.array(DanmuTopTalkerSchema),
+  top_gifters: z.array(DanmuTopTalkerSchema).optional().default([]),
+  top_gifts: z.array(DanmuGiftTallySchema).optional().default([]),
   word_frequency: z.array(DanmuWordFrequencySchema),
 });
 
@@ -130,7 +151,14 @@ export const SessionSegmentSchema = z.object({
 });
 export type SessionSegment = z.infer<typeof SessionSegmentSchema>;
 
-export const JobProgressKindSchema = z.enum(['ffmpeg', 'rclone']);
+// Must cover every backend `ProgressKind` variant (pipeline/progress.rs) —
+// an unknown kind fails the zod parse and silently hides the progress tiles.
+export const JobProgressKindSchema = z.enum([
+  'ffmpeg',
+  'rclone',
+  'baidupcs',
+  'compression',
+]);
 export type JobProgressKind = z.infer<typeof JobProgressKindSchema>;
 
 export type SessionDanmuStatistics = z.infer<

@@ -45,6 +45,7 @@ export function PlatformEditor({
       fetch_delay_ms: platform.fetch_delay_ms,
       download_delay_ms: platform.download_delay_ms,
       record_danmu: platform.record_danmu,
+      danmu_statistics: platform.danmu_statistics,
       cookies: platform.cookies,
       platform_specific_config: platform.platform_specific_config,
       proxy_config: platform.proxy_config,
@@ -57,10 +58,11 @@ export function PlatformEditor({
       max_download_duration_secs: platform.max_download_duration_secs,
       max_part_size_bytes: platform.max_part_size_bytes,
       download_retry_policy: platform.download_retry_policy,
-      event_hooks: platform.event_hooks,
       pipeline: platform.pipeline,
       session_complete_pipeline: platform.session_complete_pipeline,
       paired_segment_pipeline: platform.paired_segment_pipeline,
+      offline_check_count: platform.offline_check_count,
+      offline_check_delay_ms: platform.offline_check_delay_ms,
     },
   });
   const { reset } = form;
@@ -71,6 +73,7 @@ export function PlatformEditor({
       fetch_delay_ms: platform.fetch_delay_ms,
       download_delay_ms: platform.download_delay_ms,
       record_danmu: platform.record_danmu,
+      danmu_statistics: platform.danmu_statistics,
       cookies: platform.cookies,
       platform_specific_config: platform.platform_specific_config,
       proxy_config: platform.proxy_config,
@@ -83,10 +86,11 @@ export function PlatformEditor({
       max_download_duration_secs: platform.max_download_duration_secs,
       max_part_size_bytes: platform.max_part_size_bytes,
       download_retry_policy: platform.download_retry_policy,
-      event_hooks: platform.event_hooks,
       pipeline: platform.pipeline,
       session_complete_pipeline: platform.session_complete_pipeline,
       paired_segment_pipeline: platform.paired_segment_pipeline,
+      offline_check_count: platform.offline_check_count,
+      offline_check_delay_ms: platform.offline_check_delay_ms,
     });
   }, [platform, reset]);
 
@@ -173,7 +177,6 @@ export function PlatformEditor({
               output: '',
               limits: '',
               danmu: '',
-              hooks: 'event_hooks',
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
@@ -219,7 +222,6 @@ export function PlatformEditor({
               'proxy',
               'danmu',
               'pipeline',
-              'hooks',
             ]}
           />
         </motion.div>

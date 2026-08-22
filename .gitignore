@@ -2,7 +2,6 @@
 /target/
 *.rs.bk
 rust-toolchain
-rust-toolchain.toml
 
 # Logs
 *.log
@@ -47,3 +46,4 @@ desktop.ini
 *.db
 *.db-wal
 *.db-shm
+mesio.log*

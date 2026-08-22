@@ -273,20 +273,11 @@ impl Decoder for FlvDecoder {
                 "Invalid tag type encountered: {}. Attempting resync.",
                 src[0]
             );
-            // Discard the single invalid byte and try resyncing
-            // src.advance(1);
-            // Now attempt resync on the rest
-            if !self.try_resync(src) {
-                // Resync advanced the buffer. Return None to signal progress
-                // but no complete frame yet from *this* specific call point.
-                // The next call to decode will attempt parsing from the new position.
-                return Ok(None);
-            } else {
-                // Resync cleared the buffer or couldn't find anything.
-                // Need more data. try_resync already reserved space.
-                trace!("Resync failed or cleared buffer, returning None for more data.");
-                return Ok(None);
-            }
+            // try_resync either advances the buffer to the next candidate tag start or
+            // clears it and reserves space for more data; both outcomes yield here so the
+            // next decode call re-parses from the updated position.
+            self.try_resync(src);
+            return Ok(None);
         }
 
         if data_size > MAX_TAG_DATA_SIZE {
@@ -316,90 +307,56 @@ impl Decoder for FlvDecoder {
             return Ok(None); // Need more data for the tag body
         }
 
-        // --- 6. Demux Tag ---
-        // We have the full tag. Create a Bytes slice containing the *entire* tag.
+        // --- 6. Construct Tag ---
         let tag_bytes = src.split_to(total_tag_size).freeze();
         self.position += total_tag_size as u64;
-        // Cursor now owns the tag's Bytes
-        let mut cursor = Cursor::new(tag_bytes);
-
-        match FlvTag::demux(&mut cursor) {
-            Ok(tag) => {
-                trace!(
-                    "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
-                    tag.tag_type, tag.timestamp_ms, data_size
-                );
-                // Store the *full* size of the tag (header + data) for the next PreviousTagSize check
-                self.last_tag_size = total_tag_size as u32;
-                // After a successful tag, we expect the PreviousTagSize field next
-                self.expecting_tag_header = false;
-                Ok(Some(FlvData::Tag(tag))) // Successfully decoded a tag
-            }
-            Err(e) => {
-                // Demux failed (e.g., bad data *within* the tag body, or unexpected EOF *within* demux)
-                warn!(
-                    "Failed to demux FLV tag (type: {}, data_size: {}): {:?}. Discarded {} bytes.",
-                    tag_type, data_size, e, total_tag_size
-                );
-                // `split_to` already removed the bytes from `src`.
-                // We failed parsing, so the next item should be PreviousTagSize, but we don't trust the stream.
-                self.expecting_tag_header = false; // Expect PreviousTagSize next, potentially bad one
-                self.last_tag_size = 0; // Can't trust the size
-                // Return None to signal progress (discarded bad tag)
-                // without producing a full item. Let the next call handle PreviousTagSize.
-                trace!("Demux failed, returning None to yield after discarding tag.");
-                Ok(None)
-            }
-        }
+        let tag = FlvTag::new(
+            header.timestamp_ms,
+            header.stream_id,
+            header.tag_type,
+            header.is_filtered,
+            tag_bytes.slice(TAG_HEADER_SIZE..),
+        );
+        trace!(
+            "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
+            tag.tag_type(),
+            tag.timestamp_ms,
+            data_size
+        );
+        self.last_tag_size = total_tag_size as u32;
+        self.expecting_tag_header = false;
+        Ok(Some(FlvData::Tag(tag)))
     }
 
     fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // At EOF, we attempt to decode all remaining complete frames in the buffer.
-        let mut first_frame = None;
-
+        // FramedRead keeps calling decode_eof until it returns Ok(None) with an
+        // empty buffer, so we must return each buffered frame one at a time —
+        // returning only the first of several would drop the stream's tail tags.
         loop {
             let initial_len = src.len();
             if initial_len == 0 {
-                break;
+                return Ok(None);
             }
 
-            match self.decode(src) {
-                Ok(Some(frame)) => {
-                    if first_frame.is_none() {
-                        first_frame = Some(frame);
-                    } else {
-                        // We already have a frame to return. The trait doesn't allow more.
-                        // We've consumed this frame from the buffer, so it's "processed" but will be dropped.
-                        warn!(
-                            "Additional frame decoded at EOF was discarded due to Decoder trait limitations."
-                        );
-                    }
-                }
-                Ok(None) => {
-                    // Incomplete frame, this is the remainder to be discarded.
-                    if !src.is_empty() {
+            match self.decode(src)? {
+                Some(frame) => return Ok(Some(frame)),
+                None => {
+                    if src.len() == initial_len {
+                        // decode() made no progress: the remainder is a partial
+                        // tag that can never complete at EOF. Discard it so the
+                        // next call terminates the stream.
                         warn!(
                             "{} bytes remaining in buffer at EOF, discarding final partial tag.",
                             src.len()
                         );
                         src.clear();
+                        return Ok(None);
                     }
-                    break;
+                    // decode() consumed bytes without producing a frame
+                    // (resync / skipped garbage); try again on the remainder.
                 }
-                Err(e) => {
-                    // On error, we should probably stop and return the error.
-                    // Any frame we found before this will be lost.
-                    return Err(e);
-                }
-            }
-
-            // Safeguard against infinite loops if decode succeeds but doesn't consume.
-            if src.len() == initial_len {
-                break;
             }
         }
-
-        Ok(first_frame)
     }
 }
 
@@ -454,10 +411,7 @@ mod tests {
     use super::*;
     use crate::tag::FlvTagType;
     use bytes::BytesMut;
-    use futures::TryStreamExt;
-    use std::collections::HashMap;
     use std::io::Cursor;
-    use std::time::Instant;
 
     // Helper to initialize tracing for tests
     fn init_tracing() {
@@ -511,6 +465,75 @@ mod tests {
         assert!(result.unwrap().is_none()); // Expect None (need more data)
         assert!(!decoder.header_parsed);
         assert!(buffer.capacity() >= FLV_HEADER_SIZE); // Should have reserved
+    }
+
+    #[test]
+    fn test_decode_eof_returns_all_buffered_tags() {
+        init_tracing();
+        let mut decoder = FlvDecoder::default();
+
+        // FLV header + first PreviousTagSize, consumed by a normal decode call.
+        let mut buffer = BytesMut::from(
+            &[
+                0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, // header
+                0x00, 0x00, 0x00, 0x00, // PreviousTagSize0
+            ][..],
+        );
+        assert!(matches!(
+            decoder.decode(&mut buffer).unwrap(),
+            Some(FlvData::Header(_))
+        ));
+        assert!(buffer.is_empty());
+
+        // Two complete 2-byte video tags separated by a PreviousTagSize field.
+        let tag = |ts: u8| {
+            [
+                0x09, // video
+                0x00, 0x00, 0x02, // data size 2
+                0x00, 0x00, ts, 0x00, // timestamp
+                0x00, 0x00, 0x00, // stream id
+                0x17, 0x01, // payload
+            ]
+        };
+        buffer.extend_from_slice(&tag(1));
+        buffer.extend_from_slice(&[0x00, 0x00, 0x00, 0x0D]); // PreviousTagSize = 11 + 2
+        buffer.extend_from_slice(&tag(2));
+
+        // FramedRead calls decode_eof repeatedly; every buffered tag must be
+        // yielded across calls, not just the first.
+        match decoder.decode_eof(&mut buffer).unwrap() {
+            Some(FlvData::Tag(t)) => assert_eq!(t.timestamp_ms, 1),
+            other => panic!("expected first tag, got {other:?}"),
+        }
+        match decoder.decode_eof(&mut buffer).unwrap() {
+            Some(FlvData::Tag(t)) => assert_eq!(t.timestamp_ms, 2),
+            other => panic!("expected second tag, got {other:?}"),
+        }
+        assert!(decoder.decode_eof(&mut buffer).unwrap().is_none());
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_decode_eof_discards_partial_tag() {
+        init_tracing();
+        let mut decoder = FlvDecoder::default();
+        let mut buffer = BytesMut::from(
+            &[
+                0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, // header
+                0x00, 0x00, 0x00, 0x00, // PreviousTagSize0
+            ][..],
+        );
+        assert!(matches!(
+            decoder.decode(&mut buffer).unwrap(),
+            Some(FlvData::Header(_))
+        ));
+
+        // A tag header claiming 100 bytes of data with only 2 present.
+        buffer.extend_from_slice(&[
+            0x09, 0x00, 0x00, 0x64, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x17, 0x01,
+        ]);
+        assert!(decoder.decode_eof(&mut buffer).unwrap().is_none());
+        assert!(buffer.is_empty());
     }
 
     #[test]
@@ -602,9 +625,9 @@ mod tests {
 
         match tag1_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::ScriptData);
+                assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
                 assert_eq!(tag.timestamp_ms, 0);
-                assert_eq!(tag.data.len(), 15);
+                assert_eq!(tag.data().len(), 15);
                 assert_eq!(decoder.last_tag_size, 11 + 15); // Header + Data
             }
             _ => panic!("Expected Tag"),
@@ -654,9 +677,9 @@ mod tests {
 
         match tag2_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::Video);
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
                 assert_eq!(tag.timestamp_ms, 100);
-                assert_eq!(tag.data.len(), 5);
+                assert_eq!(tag.data().len(), 5);
                 assert_eq!(decoder.last_tag_size, 11 + 5); // Header + Data
             }
             _ => panic!("Expected Tag"),
@@ -711,9 +734,9 @@ mod tests {
 
         match tag_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::Video);
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
                 assert_eq!(tag.timestamp_ms, 200);
-                assert_eq!(tag.data.len(), 5);
+                assert_eq!(tag.data().len(), 5);
                 assert_eq!(decoder.last_tag_size, 11 + 5);
             }
             _ => panic!("Expected Tag"),
@@ -807,11 +830,11 @@ mod tests {
         // 4. Verify the tag was parsed correctly
         match tag_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::Video);
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
                 assert_eq!(tag.timestamp_ms, 256);
-                assert_eq!(tag.data.len(), expected_data_size);
+                assert_eq!(tag.data().len(), expected_data_size);
                 // Verify the data content combines the partial arrivals
-                assert_eq!(&tag.data[..], &[0x01, 0x02, 0x03, 0x04, 0x05]);
+                assert_eq!(&tag.data()[..], &[0x01, 0x02, 0x03, 0x04, 0x05]);
                 assert_eq!(
                     decoder.last_tag_size, total_tag_size as u32,
                     "Last tag size mismatch"
@@ -830,319 +853,6 @@ mod tests {
             !decoder.expecting_tag_header,
             "Should be expecting prev tag size next"
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_read_file_async() -> Result<(), Box<dyn std::error::Error>> {
-        init_tracing(); // Initialize tracing
-        let path = Path::new("D:/test/999/testHEVC.flv");
-
-        if !path.exists() {
-            println!(
-                "Test file not found, skipping test_read_file_async: {}",
-                path.display()
-            );
-            return Ok(());
-        }
-
-        let file_size = std::fs::metadata(path)?.len();
-        let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
-        println!("Starting async parse. File size: {file_size_mb:.2} MB");
-
-        let start = Instant::now();
-        let stream = FlvDecoderStream::with_capacity(
-            tokio::io::BufReader::new(tokio::fs::File::open(path).await?),
-            32 * 1024,
-        );
-
-        // Consume the stream using try_fold for aggregation
-        struct ParseStats {
-            has_header: bool,
-            tags_count: u64,
-            video_tags: u64,
-            audio_tags: u64,
-            metadata_tags: u64,
-            last_timestamp: u32,
-        }
-
-        let initial_stats = ParseStats {
-            has_header: false,
-            tags_count: 0,
-            video_tags: 0,
-            audio_tags: 0,
-            metadata_tags: 0,
-            last_timestamp: 0,
-        };
-
-        let final_stats = stream
-            .try_fold(initial_stats, |mut stats, item| async {
-                match item {
-                    FlvData::Header(_) => {
-                        stats.has_header = true;
-                    }
-                    FlvData::Tag(tag) => {
-                        stats.tags_count += 1;
-                        stats.last_timestamp = tag.timestamp_ms; // Track last timestamp
-                        match tag.tag_type {
-                            FlvTagType::Video => stats.video_tags += 1,
-                            FlvTagType::Audio => stats.audio_tags += 1,
-                            FlvTagType::ScriptData => stats.metadata_tags += 1,
-                            FlvTagType::Unknown(_) => {}
-                        }
-                        if stats.tags_count % 50000 == 0 {
-                            // Log progress less frequently
-                            debug!(
-                                "Processed {} tags... Last timestamp: {}",
-                                stats.tags_count, stats.last_timestamp
-                            );
-                        }
-                    }
-                    FlvData::EndOfSequence(_) => {
-                        // Handle end of sequence if needed
-                    }
-                    FlvData::Split(_) => {
-                        // Split markers are informational only
-                    }
-                }
-                Ok(stats)
-            })
-            .await; // Handle potential stream error here
-
-        let duration = start.elapsed();
-        let seconds = duration.as_secs_f64();
-        let speed_mbps = if seconds > 0.0 {
-            file_size_mb / seconds
-        } else {
-            0.0
-        };
-
-        println!("-----------------------------------------");
-        println!("Async Parse Results:");
-        println!("Parsed FLV file asynchronously in {duration:?}");
-        println!("File size: {file_size_mb:.2} MB");
-        println!("Read speed: {speed_mbps:.2} MB/s");
-
-        match final_stats {
-            Ok(stats) => {
-                println!("Header found: {}", stats.has_header);
-                println!("Total tags parsed: {}", stats.tags_count);
-                println!(
-                    "Tag Types: Audio={}, Video={}, Metadata={}",
-                    stats.audio_tags, stats.video_tags, stats.metadata_tags
-                );
-                println!("Last tag timestamp: {} ms", stats.last_timestamp);
-                println!("Errors encountered during fold: 0"); // try_fold stops on first Err
-
-                assert!(stats.has_header, "Expected to parse an FLV header");
-                // Allow zero tags only if file is truly empty/corrupt
-                if file_size > (FLV_HEADER_SIZE as u64) {
-                    assert!(
-                        stats.tags_count > 0,
-                        "Expected to parse tags from non-empty file"
-                    );
-                }
-            }
-            Err(e) => {
-                println!("Stream processing stopped due to error: {e:?}");
-                // You might want to assert the error type or context depending on needs
-                return Err(e.into()); // Propagate the error
-            }
-        }
-        println!("-----------------------------------------");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore] // This test requires a specific file to be present
-    async fn test_compare_parsers() -> Result<(), Box<dyn std::error::Error>> {
-        init_tracing(); // Initialize tracing
-        let path = Path::new("D:/test/999/test.flv");
-
-        // Skip the test if the file doesn't exist
-        if !path.exists() {
-            println!("Test file not found, skipping test");
-            return Ok(());
-        }
-
-        // Parse using the synchronous parser
-        let sync_start = Instant::now();
-        let sync_tags_count = crate::parser::FlvParser::parse_file(path)?;
-        let sync_duration = sync_start.elapsed();
-
-        // Parse using the async parser and collect detailed tag information
-        let async_start = Instant::now();
-        let mut stream = FlvParser::create_decoder_stream(path).await?;
-
-        // Track all tags with their timestamps - we'll use these to compare
-        let mut async_tag_counts = HashMap::new();
-        let mut async_tag_timestamps = Vec::new();
-        let mut async_tags_count = 0;
-
-        // Process each item in the stream
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(FlvData::Tag(tag)) => {
-                    async_tags_count += 1;
-
-                    println!(
-                        "Async parser: Tag Type: {}, Timestamp: {}, Size: {}",
-                        tag.tag_type,
-                        tag.timestamp_ms,
-                        tag.data.len()
-                    );
-
-                    // Categorize the tag by type
-                    let tag_type = if tag.is_video_tag() {
-                        "video"
-                    } else if tag.is_audio_tag() {
-                        "audio"
-                    } else if tag.is_script_tag() {
-                        "metadata"
-                    } else {
-                        "unknown"
-                    };
-
-                    // Count by type and timestamp
-                    *async_tag_counts.entry(tag_type).or_insert(0) += 1;
-
-                    // Store timestamp for pattern analysis
-                    if async_tags_count % 1000 == 0 {
-                        // Sample every 1000th tag to avoid excessive memory use
-                        async_tag_timestamps.push((tag.timestamp_ms, tag_type.to_string()));
-                    }
-                }
-                Ok(FlvData::Header(_)) => {}
-                Ok(FlvData::EndOfSequence(_)) => {}
-                Ok(FlvData::Split(_)) => {}
-                Err(e) => {
-                    println!("Error processing tag: {e:?}");
-                    // Don't break - continue processing
-                }
-            }
-        }
-        let async_duration = async_start.elapsed();
-
-        // Now run a separate sync parser to collect timestamps
-        let mut sync_tag_timestamps = Vec::new();
-        let file = std::fs::File::open(path)?;
-        let mut reader = std::io::BufReader::new(file);
-        let mut buffer = BytesMut::with_capacity(9);
-
-        // Read and skip header
-        buffer.resize(9, 0);
-        std::io::Read::read_exact(&mut reader, &mut buffer)?;
-
-        // Create buffer for reading tags
-        let mut tag_buffer = BytesMut::with_capacity(4 * 1024);
-        let mut sync_tag_counter = 0;
-
-        loop {
-            // Skip previous tag size
-            tag_buffer.resize(4, 0);
-            if let Err(e) = std::io::Read::read_exact(&mut reader, &mut tag_buffer) {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    break;
-                }
-                return Err(e.into());
-            }
-
-            // Read tag header
-            tag_buffer.resize(11, 0);
-            if let Err(e) = std::io::Read::read_exact(&mut reader, &mut tag_buffer) {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    break;
-                }
-                return Err(e.into());
-            }
-
-            // Get tag type and size
-            let tag_type = tag_buffer[0];
-            let data_size = ((tag_buffer[1] as u32) << 16)
-                | ((tag_buffer[2] as u32) << 8)
-                | (tag_buffer[3] as u32);
-
-            // Get timestamp
-            let timestamp = ((tag_buffer[7] as u32) << 24)
-                | ((tag_buffer[4] as u32) << 16)
-                | ((tag_buffer[5] as u32) << 8)
-                | (tag_buffer[6] as u32);
-
-            // Record timestamp for sampled tags
-            sync_tag_counter += 1;
-            if sync_tag_counter % 1000 == 0 {
-                let tag_type_str = match tag_type {
-                    8 => "audio",
-                    9 => "video",
-                    18 => "metadata",
-                    _ => "unknown",
-                };
-                sync_tag_timestamps.push((timestamp, tag_type_str.to_string()));
-            }
-
-            // Skip the tag data
-            let mut data_buffer = vec![0; data_size as usize];
-            if let Err(e) = std::io::Read::read_exact(&mut reader, &mut data_buffer) {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    break;
-                }
-                return Err(e.into());
-            }
-        }
-
-        // Print comparison results
-        println!("\n=== PARSER COMPARISON RESULTS ===");
-        println!("Sync parser: {sync_tags_count} tags in {sync_duration:?}");
-        println!("Async parser: {async_tags_count} tags in {async_duration:?}");
-        println!(
-            "Difference: {} tags",
-            sync_tags_count as i64 - async_tags_count as i64
-        );
-        println!("\nAsync parser tag types:");
-        for (tag_type, count) in &async_tag_counts {
-            println!("  {tag_type}: {count}");
-        }
-
-        // Find timestamp discrepancies
-        println!("\nTimestamp comparison (sample of every 1000th tag):");
-        let min_samples = std::cmp::min(sync_tag_timestamps.len(), async_tag_timestamps.len());
-        let mut first_discrepancy = None;
-
-        for i in 0..min_samples {
-            if sync_tag_timestamps[i] != async_tag_timestamps[i] {
-                first_discrepancy = Some(i);
-                break;
-            }
-        }
-
-        if let Some(idx) = first_discrepancy {
-            println!("First timestamp discrepancy at tag #{}:", idx * 1000);
-            println!("  Sync: {:?}", sync_tag_timestamps[idx]);
-            println!("  Async: {:?}", async_tag_timestamps[idx]);
-
-            // Print surrounding context
-            let start = idx.saturating_sub(2);
-            let end = if idx + 3 < min_samples {
-                idx + 3
-            } else {
-                min_samples
-            };
-
-            println!("\nContext around discrepancy:");
-            for i in start..end {
-                println!(
-                    "  Tag #{}: Sync {:?}, Async {:?}",
-                    i * 1000,
-                    sync_tag_timestamps[i],
-                    async_tag_timestamps[i]
-                );
-            }
-        } else {
-            println!("No timestamp discrepancies found in sampled tags");
-        }
-
-        Ok(())
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use flv::{
-    audio::{AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
+    audio::{AudioCodec, AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
     header::FlvHeader,
     resolution::Resolution,
     tag::FlvTag,
-    video::VideoCodecId,
+    video::{VideoCodec, VideoCodecId},
 };
 
 use std::fmt;
@@ -38,7 +38,7 @@ pub struct Keyframe {
 
 #[derive(Debug, Clone, Default)]
 pub struct VideoStats {
-    pub video_codec: Option<VideoCodecId>,
+    pub video_codec: Option<VideoCodec>,
     pub video_tag_count: u32,
     pub video_tags_size: u64,
     pub video_data_size: u64,
@@ -90,7 +90,7 @@ pub struct FlvStats {
     pub has_video: bool,
     pub has_audio: bool,
     pub video_stats: Option<VideoStats>,
-    pub audio_codec: Option<SoundFormat>,
+    pub audio_codec: Option<AudioCodec>,
 
     pub tag_count: u32,
     pub audio_tag_count: u32,
@@ -261,7 +261,9 @@ impl FlvStats {
             writeln!(
                 f,
                 "    Video codec: {:?}",
-                video_stats.video_codec.unwrap_or(VideoCodecId::Avc)
+                video_stats
+                    .video_codec
+                    .unwrap_or(VideoCodec::Legacy(VideoCodecId::Avc))
             )?;
             if let Some(resolution) = &video_stats.resolution {
                 writeln!(
@@ -283,7 +285,8 @@ impl FlvStats {
             writeln!(
                 f,
                 "    Audio codec: {:?}",
-                self.audio_codec.unwrap_or(SoundFormat::Aac)
+                self.audio_codec
+                    .unwrap_or(AudioCodec::Legacy(SoundFormat::Aac))
             )?;
             writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
             writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
@@ -464,7 +467,7 @@ impl FlvAnalyzer {
             self.has_audio_sequence_header = true;
 
             if self.stats.audio_codec.is_none() {
-                let audio_tag_utils = AudioTagUtils::new(tag.data.clone());
+                let audio_tag_utils = AudioTagUtils::new(tag.data().clone());
                 debug!(
                     "Audio properties detected: codec={:?}, rate={:?}, size={:?}, type={:?}",
                     audio_tag_utils.sound_format(),
@@ -472,7 +475,6 @@ impl FlvAnalyzer {
                     audio_tag_utils.sound_size(),
                     audio_tag_utils.sound_type()
                 );
-                let sound_format = audio_tag_utils.sound_format().unwrap_or(SoundFormat::Aac);
                 let sample_rate = audio_tag_utils
                     .sound_rate()
                     .map(|s| match s {
@@ -499,7 +501,10 @@ impl FlvAnalyzer {
                 self.stats.audio_sample_rate = sample_rate;
                 self.stats.audio_sample_size = sample_size;
                 self.stats.audio_stereo = stereo;
-                self.stats.audio_codec = Some(sound_format);
+                // `get_audio_codec` resolves enhanced (ExHeader) tags to their
+                // FourCC; `AudioTagUtils::sound_format` alone would record the
+                // `SoundFormat::ExHeader` marker instead of the codec.
+                self.stats.audio_codec = tag.get_audio_codec();
             }
         }
 
@@ -508,7 +513,7 @@ impl FlvAnalyzer {
             self.stats.first_audio_timestamp = Some(tag.timestamp_ms);
         }
 
-        let data_size = tag.data.len() as u64;
+        let data_size = tag.data().len() as u64;
         self.stats.audio_tag_count += 1;
         self.stats.audio_tags_size +=
             data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
@@ -537,20 +542,19 @@ impl FlvAnalyzer {
                 } else {
                     debug!(
                         ts_ms = tag.timestamp_ms,
-                        len = tag.data.len(),
+                        len = tag.data().len(),
                         "Video sequence header present but resolution could not be parsed"
                     );
                 }
             }
 
             if video_stats.video_codec.is_none() {
-                // parse the codec id
-                if let Some(codec_id) = tag.get_video_codec_id() {
-                    video_stats.video_codec = Some(codec_id);
+                if let Some(codec) = tag.get_video_codec() {
+                    video_stats.video_codec = Some(codec);
                 } else {
                     debug!(
                         ts_ms = tag.timestamp_ms,
-                        len = tag.data.len(),
+                        len = tag.data().len(),
                         "Video sequence header present but codec id could not be parsed"
                     );
                 }
@@ -591,7 +595,7 @@ impl FlvAnalyzer {
             }
         }
 
-        let data_size = tag.data.len() as u64;
+        let data_size = tag.data().len() as u64;
         video_stats.video_tag_count += 1;
         video_stats.video_tags_size +=
             data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
@@ -607,10 +611,10 @@ impl FlvAnalyzer {
         } else if tag.is_script_tag() {
             self.stats.script_tag_count += 1;
         } else {
-            return Err(AnalyzerError::UnknownTagType(tag.tag_type.into()));
+            return Err(AnalyzerError::UnknownTagType(tag.tag_type().into()));
         }
 
-        let data_size = tag.data.len() as u64;
+        let data_size = tag.data().len() as u64;
 
         self.stats.tag_count += 1;
         self.stats.tags_size += data_size;
@@ -647,7 +651,10 @@ impl FlvAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
     use flv::header::FlvHeader;
+    use flv::tag::FlvTagType;
+    use flv::video::VideoFourCC;
 
     #[test]
     fn test_analyze_header() {
@@ -655,5 +662,86 @@ mod tests {
         let header = FlvHeader::new(true, true);
         assert!(analyzer.analyze_header(&header).is_ok());
         assert_eq!(analyzer.stats.file_size, 13); // 9 bytes for header + 4 bytes for previous tag size
+    }
+
+    #[test]
+    fn detects_enhanced_av1_codec() {
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(false, true))
+            .unwrap();
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(b"\x90av01\x81\r\x0c\0"),
+        );
+
+        analyzer.analyze_tag(&tag).unwrap();
+
+        assert_eq!(
+            analyzer
+                .build_stats()
+                .unwrap()
+                .video_stats
+                .as_ref()
+                .and_then(|stats| stats.video_codec),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
+    }
+
+    #[test]
+    fn detects_enhanced_opus_codec() {
+        use flv::audio::AudioFourCC;
+
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(true, false))
+            .unwrap();
+        // ExHeader + SequenceStart with the Opus FourCC.
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Audio,
+            false,
+            Bytes::from_static(b"\x90Opus\x01"),
+        );
+
+        analyzer.analyze_tag(&tag).unwrap();
+
+        assert_eq!(
+            analyzer.build_stats().unwrap().audio_codec,
+            Some(AudioCodec::Enhanced(AudioFourCC::Opus))
+        );
+    }
+
+    #[test]
+    fn detects_multitrack_av1_codec() {
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(false, true))
+            .unwrap();
+        // Multitrack wrapper: 0x96 = ExHeader + KeyFrame + Multitrack, then
+        // OneTrack + SequenceStart, the FourCC, track id, and the av1C record.
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(b"\x96\0av01\0\x81\r\x0c\0"),
+        );
+
+        analyzer.analyze_tag(&tag).unwrap();
+
+        assert_eq!(
+            analyzer
+                .build_stats()
+                .unwrap()
+                .video_stats
+                .as_ref()
+                .and_then(|stats| stats.video_codec),
+            Some(VideoCodec::Enhanced(VideoFourCC::Av01))
+        );
     }
 }

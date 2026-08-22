@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { TdlProcessorConfigSchema } from '@/api/schemas/tdl';
 
 // --- Remux Processor ---
 export const VideoCodecSchema = z.enum([
@@ -98,6 +97,24 @@ export const RcloneConfigSchema = z.object({
   tpslimit_burst: z.number().int().nonnegative().optional(),
   multi_thread_streams: z.number().int().nonnegative().optional(),
   multi_thread_cutoff: z.string().optional(),
+});
+
+// --- BaiduPCS-Go Processor ---
+export const BaiduPcsPolicySchema = z.enum(['skip', 'overwrite', 'rsync']);
+
+// Mirrors `BaiduPcsConfig` in `src/pipeline/processors/baidupcs.rs`;
+// defaults must match the Rust `Default` impl so a fresh form round-trips
+// to the same JSON the backend assumes for missing fields.
+export const BaiduPcsConfigSchema = z.object({
+  binary_path: z.string().optional(),
+  config_dir: z.string().optional(),
+  destination_root: z.string().optional(),
+  time_anchor: TimeAnchorSchema.default('job_created'),
+  policy: BaiduPcsPolicySchema.default('skip'),
+  norapid: z.boolean().default(false),
+  args: z.array(z.string()).default([]),
+  max_retries: z.number().int().min(1).max(10).default(3),
+  remove_source_after_upload: z.boolean().default(false),
 });
 
 // --- Thumbnail Processor ---
@@ -203,6 +220,3 @@ export const AssBurninConfigSchema = z.object({
   delete_source_videos_on_success: z.boolean().default(false),
   delete_source_ass_on_success: z.boolean().default(false),
 });
-
-// --- TDL Processor ---
-export const TdlConfigSchema = TdlProcessorConfigSchema;

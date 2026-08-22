@@ -1,6 +1,5 @@
 use pipeline_common::{
-    PipelineError, ProgressConfig, ProtocolWriter, SplitReason, WriterError, WriterProgress,
-    WriterStats,
+    ProgressConfig, ProtocolWriter, SplitReason, WriterError, WriterProgress, WriterStats,
 };
 
 use crate::writer_task::{FlvFormatStrategy, FlvWriterConfig};
@@ -16,7 +15,7 @@ impl FlvWriter {
     pub fn new(config: FlvWriterConfig) -> Self {
         let writer_config =
             WriterConfig::new(config.output_dir, config.base_name, "flv".to_string());
-        let strategy = FlvFormatStrategy::new(config.enable_low_latency);
+        let strategy = FlvFormatStrategy::new();
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }
     }
@@ -74,7 +73,7 @@ impl ProtocolWriter for FlvWriter {
 
     fn run(
         &mut self,
-        input: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+        input: pipeline_common::PipelineReceiver<Self::Item>,
     ) -> Result<WriterStats, WriterError> {
         self.writer_task.run_from_channel(input, |_, _| true)
     }

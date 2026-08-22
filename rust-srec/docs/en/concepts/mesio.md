@@ -7,7 +7,7 @@ Mesio is rust-srec's **in-process Rust download engine**. Unlike `FFMPEG` and `S
 A single `MesioDownloader` picks the protocol (HLS or FLV) and the source, then produces one **download session** regardless of protocol. The session exposes two streams — a guaranteed **items** stream of media data and terminal markers, and a best-effort **events** stream of progress/telemetry — plus a control handle for cancellation and optional metrics.
 
 ```mermaid
-flowchart TB
+flowchart LR
   SRC[Stream source<br/>playlist / FLV URL] --> MD[MesioDownloader<br/>protocol detection + source selection]
   FLV[FLV downloader<br/>streaming download]
 
@@ -31,7 +31,7 @@ flowchart TB
   MD -->|FLV| FLV
   AS --> SESS
   FLV --> SESS
-  ITEMS --> REC[Recorder<br/>writes segment files]
+  ITEMS --> REC[Recorder<br/>optional media repair + segment writing]
   EVENTS --> UI[Progress &amp; stats in the UI]
 ```
 
@@ -49,12 +49,22 @@ Decryption runs on a separate **crypto pool**, off the scheduling loop, so a bur
 
 Mesio's HLS and FLV downloaders share this single session model, so progress reporting, retry handling, and cancellation behave consistently across both protocols. The **items** stream is authoritative — it carries the media and terminal markers the recorder relies on — while the **events** stream is best-effort telemetry used to render progress and statistics in the UI. The **handle** carries cancellation and the optional performance metrics.
 
+## Media-fix pipelines
+
+The download session and media repair are separate layers. When stream processing and the matching Mesio fix setting are enabled, downloaded items are repaired before they reach the writer. Otherwise, they go directly to the writer.
+
+- **FLV repair** fixes missing container structure and timestamp discontinuities, filters configured duplicates, starts a new output file when stream headers become incompatible, and maintains seek metadata. Processing buffers are bounded so malformed or unusual streams cannot grow them indefinitely.
+- **HLS repair** preserves fragmented-MP4 initialization order, checks delivered TS and fMP4 segments for incompatible format changes, starts a new output file when needed, and enforces file-size or duration limits. Memory use is bounded by data size rather than only by the number of queued segments.
+
+The HLS download reactor reports or skips unavailable media according to the configured gap policy. The fix pipeline receives only delivered media and explicit split or terminal markers; it cannot reconstruct bytes that the source never delivered and it does not transcode media payloads.
+
 ## Mesio-exclusive features
 
-Two recording features only Mesio provides are documented on the [Engines](./engines.md) page:
+Mesio-specific processing options are documented on the [Engines](./engines.md) page:
 
+- [FLV Consistency Fix](./engines.md#_2-flv-consistency-fix) — repair FLV structure and timing, and finalize AMF metadata without moving the file tail.
 - [Raw Data Mode](./engines.md#_3-raw-data-mode) — write stream bytes straight to disk with no packet parsing, for the absolute minimum CPU/memory overhead.
-- [HLS Consistency Fix](./engines.md#_4-hls-consistency-fix-mesio-exclusive) — detect and resolve timestamp discontinuities and missing segments before data is written.
+- [HLS Consistency Fix](./engines.md#_4-hls-consistency-fix-mesio-exclusive) — guard segment structure and rotate output at discontinuities or meaningful stream changes before writing.
 
 > [!NOTE]
 > The full engine design lives alongside the source at [`crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md) and [`crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md).

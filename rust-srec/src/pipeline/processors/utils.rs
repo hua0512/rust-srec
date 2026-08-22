@@ -2,13 +2,14 @@
 
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command;
 use tracing::{debug, warn};
 
@@ -17,6 +18,13 @@ use process_utils::NoWindowExt;
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;
+/// Hard per-line byte cap for child stdout/stderr readers (`CappedLines`).
+/// Bounds the line buffer against streams that never emit a newline —
+/// e.g. rclone's `--progress` display redraws with control codes instead
+/// of `\n`, which would otherwise grow a single String for the entire
+/// transfer. Generous enough for any real log or `--use-json-log` stats
+/// line (a few KiB even with a full `transferring` array).
+const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// Video file extensions that support processing.
 pub const VIDEO_EXTENSIONS: &[&str] = &[
@@ -103,6 +111,20 @@ pub struct CommandOutput {
     pub logs: Vec<JobLogEntry>,
 }
 
+async fn wait_for_reader_task(
+    stream_name: &'static str,
+    handle: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
+) -> crate::Result<()> {
+    let Some(handle) = handle else {
+        return Ok(());
+    };
+
+    handle
+        .await
+        .map_err(|error| crate::Error::Other(format!("{stream_name} reader task failed: {error}")))?
+        .map_err(|error| crate::Error::Other(format!("Failed to read {stream_name}: {error}")))
+}
+
 fn push_log_with_cap(
     logs: &mut VecDeque<JobLogEntry>,
     entry: JobLogEntry,
@@ -136,6 +158,150 @@ pub fn create_log_entry(level: LogLevel, message: impl Into<String>) -> JobLogEn
     JobLogEntry::new(level, message)
 }
 
+/// Line reader over a child process stream holding at most `MAX_LINE_BYTES`
+/// of an unterminated line: once a line crosses the cap its buffered prefix
+/// is dropped, input is discarded up to the next newline, and reading
+/// resumes with the following line. Each skipped line is counted in
+/// `overlong_count` so callers can surface one summary warning next to the
+/// `dropped_count` backpressure summary. (A codec-based reader is unsuitable
+/// here: `FramedRead` treats a decode error as terminal, so a single
+/// overlong line would silently end the stream instead of being skipped.)
+struct CappedLines<R> {
+    reader: BufReader<R>,
+    partial: Vec<u8>,
+    skipping_to_newline: bool,
+    overlong_count: Arc<AtomicUsize>,
+    /// Treat `\r` as a line terminator alongside `\n`. Needed for
+    /// BaiduPCS-Go, whose upload progress bar redraws via bare `\r`
+    /// (`run_baidupcs_with_logs`): without CR splitting an entire
+    /// transfer's redraws accumulate into one overlong "line" that gets
+    /// skipped wholesale. `\r\n` then yields an empty line for the `\n`,
+    /// which callers must skip.
+    split_cr: bool,
+}
+
+impl<R: AsyncRead + Unpin> CappedLines<R> {
+    fn new(reader: R, overlong_count: Arc<AtomicUsize>) -> Self {
+        Self {
+            reader: BufReader::new(reader),
+            partial: Vec::new(),
+            skipping_to_newline: false,
+            overlong_count,
+            split_cr: false,
+        }
+    }
+
+    fn with_cr_splitting(reader: R, overlong_count: Arc<AtomicUsize>) -> Self {
+        Self {
+            split_cr: true,
+            ..Self::new(reader, overlong_count)
+        }
+    }
+
+    fn mark_overlong(&mut self) {
+        self.partial.clear();
+        self.skipping_to_newline = true;
+        self.overlong_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn take_line(&mut self) -> String {
+        if self.partial.last() == Some(&b'\r') {
+            self.partial.pop();
+        }
+        let line = String::from_utf8_lossy(&self.partial).into_owned();
+        self.partial.clear();
+        line
+    }
+
+    /// Next complete line (newline and trailing `\r` stripped), `Ok(None)`
+    /// at EOF. A final unterminated line is returned as-is.
+    async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+        let split_cr = self.split_cr;
+        loop {
+            let chunk = self.reader.fill_buf().await?;
+            if chunk.is_empty() {
+                if self.partial.is_empty() {
+                    return Ok(None);
+                }
+                return Ok(Some(self.take_line()));
+            }
+
+            match chunk
+                .iter()
+                .position(|&byte| byte == b'\n' || (split_cr && byte == b'\r'))
+            {
+                Some(newline_index) => {
+                    if self.skipping_to_newline {
+                        // Tail of a line already counted overlong.
+                        self.skipping_to_newline = false;
+                    } else if self.partial.len() + newline_index > MAX_LINE_BYTES {
+                        self.partial.clear();
+                        self.overlong_count.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        self.partial.extend_from_slice(&chunk[..newline_index]);
+                        self.reader.consume(newline_index + 1);
+                        return Ok(Some(self.take_line()));
+                    }
+                    self.reader.consume(newline_index + 1);
+                }
+                None => {
+                    let chunk_len = chunk.len();
+                    if !self.skipping_to_newline {
+                        if self.partial.len() + chunk_len > MAX_LINE_BYTES {
+                            self.mark_overlong();
+                        } else {
+                            self.partial.extend_from_slice(chunk);
+                        }
+                    }
+                    self.reader.consume(chunk_len);
+                }
+            }
+        }
+    }
+}
+
+/// One capped warn entry summarizing lines skipped for exceeding
+/// `MAX_LINE_BYTES`; mirrors the `dropped_count` backpressure summary each
+/// spawn helper emits after its wait loop.
+fn push_overlong_summary(
+    logs: &mut VecDeque<JobLogEntry>,
+    overlong_count: &AtomicUsize,
+    truncated_count: &mut usize,
+) {
+    let overlong = overlong_count.load(Ordering::Relaxed);
+    if overlong > 0 {
+        push_log_with_cap(
+            logs,
+            JobLogEntry::warn(format!(
+                "Skipped {} output lines longer than {} bytes",
+                overlong, MAX_LINE_BYTES
+            )),
+            MAX_LOG_ENTRIES,
+            truncated_count,
+        );
+    }
+}
+
+/// Child-process settings shared by every spawn helper in this module:
+/// hide the console window on Windows and kill the child when the owning
+/// future is dropped, because worker cancellation and job timeouts drop
+/// the processor future mid-run and the child must not outlive its job.
+fn configure_child_process(command: &mut Command) {
+    command.no_window();
+    command.kill_on_drop(true);
+}
+
+/// Build a sibling temp path for `final_path` (`<name>.tmp-<uuid>`).
+/// Writing to this path and renaming into place keeps a crashed or
+/// cancelled job from leaving a partial file under the final name.
+pub(super) fn tmp_output_path(final_path: &Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!(
+        "{}.tmp-{}",
+        final_path.display(),
+        uuid::Uuid::new_v4()
+    ))
+}
+
 /// Run a command and capture its output (stdout/stderr) as logs.
 /// This helper handles spawning the process, reading output streams asynchronously,
 /// and collecting them into a structured log format.
@@ -145,7 +311,7 @@ pub async fn run_command_with_logs(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
-    command.no_window();
+    configure_child_process(command);
 
     // Ensure pipes are set up
     command.stdout(Stdio::piped());
@@ -157,20 +323,21 @@ pub async fn run_command_with_logs(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
     let dropped_count = Arc::new(AtomicUsize::new(0));
+    let overlong_count = Arc::new(AtomicUsize::new(0));
 
     // Handle stdout
     let stdout_handle = if let Some(stdout) = child.stdout.take() {
         let tx = tx.clone();
         let dropped_count = dropped_count.clone();
+        let mut lines = CappedLines::new(stdout, overlong_count.clone());
         Some(tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 debug!("stdout: {}", line);
                 if tx.try_send(create_log_entry(LogLevel::Info, line)).is_err() {
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -180,10 +347,9 @@ pub async fn run_command_with_logs(
     let stderr_handle = if let Some(stderr) = child.stderr.take() {
         let tx = tx.clone();
         let dropped_count = dropped_count.clone();
+        let mut lines = CappedLines::new(stderr, overlong_count.clone());
         Some(tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 // FFmpeg outputs progress to stderr, so we check for error indicators
                 // Use more specific patterns to avoid false positives
                 let level = if line.starts_with("[error]")
@@ -203,6 +369,7 @@ pub async fn run_command_with_logs(
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -250,12 +417,10 @@ pub async fn run_command_with_logs(
     }
 
     // Wait for reader tasks to complete to ensure streams are fully consumed.
-    if let Some(handle) = stdout_handle {
-        let _ = handle.await;
-    }
-    if let Some(handle) = stderr_handle {
-        let _ = handle.await;
-    }
+    let stdout_result = wait_for_reader_task("command stdout", stdout_handle).await;
+    let stderr_result = wait_for_reader_task("command stderr", stderr_handle).await;
+    stdout_result?;
+    stderr_result?;
 
     let duration = start.elapsed().as_secs_f64();
     let status =
@@ -273,6 +438,7 @@ pub async fn run_command_with_logs(
             &mut truncated_count,
         );
     }
+    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
     if truncated_count > 0 {
         push_log_with_cap(
             &mut logs,
@@ -337,9 +503,13 @@ fn parse_ffmpeg_kv_line(
 
 fn parse_size_to_bytes(s: &str) -> Option<u64> {
     let s = s.trim();
-    let mut parts = s.split_whitespace();
-    let number = parts.next()?;
-    let unit = parts.next().unwrap_or("B");
+    let unit_start = s
+        .find(|ch: char| ch.is_ascii_alphabetic())
+        .unwrap_or(s.len());
+    let (number, unit) = s.split_at(unit_start);
+    let number = number.trim();
+    let unit = unit.trim();
+    let unit = if unit.is_empty() { "B" } else { unit };
     let value = number.replace(',', "").parse::<f64>().ok()?;
     let multiplier = match unit.to_ascii_lowercase().as_str() {
         "b" => 1.0,
@@ -413,8 +583,10 @@ fn parse_rclone_stats_line(line: &str) -> Option<JobProgressSnapshot> {
     snapshot.percent = percent;
     snapshot.speed_bytes_per_sec = speed_bytes_per_sec;
     snapshot.eta_secs = eta_secs;
+    // Parsed fields only — never the source line. The snapshot is cloned per
+    // aggregator flush into progress_cache, the WS broadcast, and the
+    // job_execution_progress row, so raw must stay small and fixed-shape.
     snapshot.raw = serde_json::json!({
-        "line": line,
         "bytes_done": bytes_done,
         "bytes_total": bytes_total,
         "percent": percent,
@@ -422,6 +594,114 @@ fn parse_rclone_stats_line(line: &str) -> Option<JobProgressSnapshot> {
         "eta_secs": eta_secs,
     });
     Some(snapshot)
+}
+
+/// One stderr line from rclone under `--use-json-log`. Only the fields this
+/// module consumes are declared; serde drops the rest at parse time —
+/// deliberately including `stats.transferring`, whose per-file entries would
+/// otherwise ride along on every snapshot clone.
+#[derive(Deserialize)]
+struct RcloneJsonLine {
+    #[serde(default)]
+    level: Option<String>,
+    #[serde(default)]
+    msg: Option<String>,
+    #[serde(default)]
+    stats: Option<RcloneJsonStats>,
+}
+
+#[derive(Deserialize)]
+struct RcloneJsonStats {
+    #[serde(default)]
+    bytes: Option<u64>,
+    #[serde(default, rename = "totalBytes")]
+    total_bytes: Option<u64>,
+    #[serde(default)]
+    speed: Option<f64>,
+    /// JSON `null` while rclone has no estimate yet.
+    #[serde(default)]
+    eta: Option<f64>,
+    #[serde(default)]
+    transfers: Option<u64>,
+    #[serde(default, rename = "totalTransfers")]
+    total_transfers: Option<u64>,
+}
+
+/// Maps rclone's JSON `level` values onto [`LogLevel`]. Error mapping
+/// matters downstream: `RcloneProcessor` extracts its failure message from
+/// the last `LogLevel::Error` entry in the captured logs.
+fn map_rclone_json_level(level: Option<&str>) -> LogLevel {
+    let Some(level) = level else {
+        return LogLevel::Info;
+    };
+    if level.eq_ignore_ascii_case("error")
+        || level.eq_ignore_ascii_case("critical")
+        || level.eq_ignore_ascii_case("alert")
+        || level.eq_ignore_ascii_case("emergency")
+    {
+        LogLevel::Error
+    } else if level.eq_ignore_ascii_case("warning") {
+        LogLevel::Warn
+    } else if level.eq_ignore_ascii_case("debug") {
+        LogLevel::Debug
+    } else {
+        LogLevel::Info
+    }
+}
+
+fn snapshot_from_json_stats(stats: RcloneJsonStats) -> JobProgressSnapshot {
+    let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
+    snapshot.bytes_done = stats.bytes;
+    // totalBytes is 0 until rclone has sized the transfer; map that to None
+    // so UploadProgress's optional bytes_total keeps meaning "unknown".
+    snapshot.bytes_total = stats.total_bytes.filter(|total| *total > 0);
+    snapshot.percent = match (snapshot.bytes_done, snapshot.bytes_total) {
+        (Some(done), Some(total)) => {
+            Some((done as f64 / total as f64 * 100.0).clamp(0.0, 100.0) as f32)
+        }
+        _ => None,
+    };
+    snapshot.speed_bytes_per_sec = stats.speed;
+    snapshot.eta_secs = stats.eta;
+    // File counters only — see the raw-size note on parse_rclone_stats_line.
+    snapshot.raw = serde_json::json!({
+        "transfers": stats.transfers,
+        "totalTransfers": stats.total_transfers,
+    });
+    snapshot
+}
+
+enum ParsedRcloneLine {
+    Progress(JobProgressSnapshot),
+    Log(JobLogEntry),
+}
+
+/// Classifies one rclone stderr line. JSON entries (the `--use-json-log`
+/// contract set up by `RcloneProcessor`) carrying a `stats` object become
+/// progress snapshots; other JSON entries become log entries using their own
+/// `level`/`msg` fields. Non-JSON lines (user `extra_args` overriding the
+/// log flags) fall back to the legacy `Transferred:` stats parser and the
+/// keyword-based level heuristic.
+fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
+    let trimmed = line.trim();
+    if trimmed.starts_with('{')
+        && let Ok(parsed) = serde_json::from_str::<RcloneJsonLine>(trimmed)
+    {
+        if let Some(stats) = parsed.stats {
+            return ParsedRcloneLine::Progress(snapshot_from_json_stats(stats));
+        }
+        let level = map_rclone_json_level(parsed.level.as_deref());
+        let message = match parsed.msg.map(|msg| msg.trim().to_string()) {
+            Some(msg) if !msg.is_empty() => msg,
+            _ => trimmed.to_string(),
+        };
+        return ParsedRcloneLine::Log(create_log_entry(level, message));
+    }
+
+    if let Some(snapshot) = parse_rclone_stats_line(line) {
+        return ParsedRcloneLine::Progress(snapshot);
+    }
+    ParsedRcloneLine::Log(create_log_entry(determine_rclone_log_level(line), line))
 }
 
 /// Determine log level from an FFmpeg stderr line.
@@ -459,7 +739,7 @@ pub async fn run_ffmpeg_with_progress(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
-    command.no_window();
+    configure_child_process(command);
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -470,18 +750,19 @@ pub async fn run_ffmpeg_with_progress(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
     let dropped_count = Arc::new(AtomicUsize::new(0));
+    let overlong_count = Arc::new(AtomicUsize::new(0));
 
     let stdout_handle = if let Some(stdout) = child.stdout.take() {
         let progress = progress.clone();
+        let mut lines = CappedLines::new(stdout, overlong_count.clone());
         Some(tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
             let mut state = FfmpegProgressState::default();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 if let Some(snapshot) = parse_ffmpeg_kv_line(&line, &mut state) {
                     progress.report(snapshot);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -490,16 +771,16 @@ pub async fn run_ffmpeg_with_progress(
     let stderr_handle = if let Some(stderr) = child.stderr.take() {
         let tx = tx.clone();
         let dropped_count = dropped_count.clone();
+        let mut lines = CappedLines::new(stderr, overlong_count.clone());
         Some(tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 // Determine log level based on content
                 let level = determine_ffmpeg_log_level(&line);
                 if tx.try_send(create_log_entry(level, line)).is_err() {
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -536,12 +817,10 @@ pub async fn run_ffmpeg_with_progress(
         }
     }
 
-    if let Some(handle) = stdout_handle {
-        let _ = handle.await;
-    }
-    if let Some(handle) = stderr_handle {
-        let _ = handle.await;
-    }
+    let stdout_result = wait_for_reader_task("ffmpeg progress", stdout_handle).await;
+    let stderr_result = wait_for_reader_task("ffmpeg stderr", stderr_handle).await;
+    stdout_result?;
+    stderr_result?;
 
     let duration = start.elapsed().as_secs_f64();
     let status =
@@ -559,6 +838,7 @@ pub async fn run_ffmpeg_with_progress(
             &mut truncated_count,
         );
     }
+    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
 
     Ok(CommandOutput {
         status,
@@ -567,8 +847,35 @@ pub async fn run_ffmpeg_with_progress(
     })
 }
 
-/// Run an rclone-style command configured with `--stats-one-line --stats=1s`.
-/// This parses progress snapshots and emits them via `progress` while capturing only stderr logs.
+/// Reads rclone stderr to EOF, routing each line through
+/// [`parse_rclone_line`]: stats entries go to `progress`, everything else to
+/// the bounded log channel (`dropped_count` tracks `try_send` overflow).
+/// Overlong lines are skipped and counted by [`CappedLines`].
+async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
+    reader: R,
+    progress: ProgressReporter,
+    tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    dropped_count: Arc<AtomicUsize>,
+    overlong_count: Arc<AtomicUsize>,
+) -> std::io::Result<()> {
+    let mut lines = CappedLines::new(reader, overlong_count);
+    while let Some(line) = lines.next_line().await? {
+        match parse_rclone_line(&line) {
+            ParsedRcloneLine::Progress(snapshot) => progress.report(snapshot),
+            ParsedRcloneLine::Log(entry) => {
+                if tx.try_send(entry).is_err() {
+                    dropped_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Run an rclone command configured by `RcloneProcessor` with
+/// `--use-json-log --stats 1s --stats-log-level NOTICE`, so stderr is one
+/// JSON object per line. Lines carrying a `stats` object are reported via
+/// `progress`; all other lines become captured log entries.
 pub async fn run_rclone_with_progress(
     command: &mut Command,
     progress: &ProgressReporter,
@@ -576,7 +883,7 @@ pub async fn run_rclone_with_progress(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
-    command.no_window();
+    configure_child_process(command);
 
     command.stdout(Stdio::null());
     command.stderr(Stdio::piped());
@@ -587,29 +894,17 @@ pub async fn run_rclone_with_progress(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
     let dropped_count = Arc::new(AtomicUsize::new(0));
+    let overlong_count = Arc::new(AtomicUsize::new(0));
 
-    let stderr_handle = if let Some(stderr) = child.stderr.take() {
-        let tx = tx.clone();
-        let dropped_count = dropped_count.clone();
-        let progress = progress.clone();
-        Some(tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(snapshot) = parse_rclone_stats_line(&line) {
-                    progress.report(snapshot);
-                    continue;
-                }
-                // Determine log level based on rclone output patterns
-                let level = determine_rclone_log_level(&line);
-                if tx.try_send(create_log_entry(level, line)).is_err() {
-                    dropped_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        }))
-    } else {
-        None
-    };
+    let stderr_handle = child.stderr.take().map(|stderr| {
+        tokio::spawn(consume_rclone_stderr(
+            stderr,
+            progress.clone(),
+            tx.clone(),
+            dropped_count.clone(),
+            overlong_count.clone(),
+        ))
+    });
 
     drop(tx);
 
@@ -642,9 +937,7 @@ pub async fn run_rclone_with_progress(
         }
     }
 
-    if let Some(handle) = stderr_handle {
-        let _ = handle.await;
-    }
+    wait_for_reader_task("rclone stderr", stderr_handle).await?;
 
     let duration = start.elapsed().as_secs_f64();
     let status =
@@ -662,6 +955,215 @@ pub async fn run_rclone_with_progress(
             &mut truncated_count,
         );
     }
+    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
+
+    Ok(CommandOutput {
+        status,
+        duration,
+        logs: logs.into_iter().collect(),
+    })
+}
+
+/// Minimum seconds between progress-bar lines forwarded to the live log
+/// sink by [`run_baidupcs_with_logs`]; the bar redraws many times per
+/// second.
+const BAIDUPCS_NOISE_INTERVAL_SECS: u64 = 5;
+
+/// True for BaiduPCS-Go upload progress-bar redraws
+/// (`[<id>] ↑ <done>/<total> <speed>/s in <elapsed> ...`). Outcome marker
+/// lines (加入上传队列 / 上传文件成功 / 跳过 / 上传结束 / failure table)
+/// never contain the `↑` glyph, so shape alone identifies the bar.
+fn is_baidupcs_progress_noise(line: &str) -> bool {
+    line.contains('↑') && line.contains("/s")
+}
+
+fn parse_baidupcs_progress_line(line: &str) -> Option<JobProgressSnapshot> {
+    let mut parts = line.split_once('↑')?.1.split_whitespace();
+    let (done, total) = parts.next()?.split_once('/')?;
+    let speed = parts.next()?;
+    let bytes_done = parse_size_to_bytes(done)?;
+    let bytes_total = parse_size_to_bytes(total)?;
+    let speed_bytes_per_sec = parse_speed_to_bytes_per_sec(speed);
+    let percent = (bytes_total > 0)
+        .then(|| (bytes_done as f64 / bytes_total as f64 * 100.0).clamp(0.0, 100.0) as f32);
+    let eta_secs = speed_bytes_per_sec
+        .filter(|speed| *speed > 0.0)
+        .map(|speed| bytes_total.saturating_sub(bytes_done) as f64 / speed);
+
+    let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
+    snapshot.bytes_done = Some(bytes_done);
+    snapshot.bytes_total = Some(bytes_total);
+    snapshot.percent = percent;
+    snapshot.speed_bytes_per_sec = speed_bytes_per_sec;
+    snapshot.eta_secs = eta_secs;
+    snapshot.raw = serde_json::json!({
+        "bytes_done": bytes_done,
+        "bytes_total": bytes_total,
+        "percent": percent,
+        "speed_bytes_per_sec": speed_bytes_per_sec,
+        "eta_secs": eta_secs,
+    });
+    Some(snapshot)
+}
+
+/// Log level for a BaiduPCS-Go output line. Cosmetic for the job-log UI
+/// only; `BaiduPcsProcessor` re-parses the captured lines with precise
+/// markers to resolve per-file outcomes, so mislevelled lines (e.g. the
+/// benign `跳过秒传失败, 开始秒传` note) cannot flip an upload status.
+fn determine_baidupcs_log_level(line: &str) -> LogLevel {
+    if line.contains("失败") || line.contains("错误") || line.contains("ERROR") {
+        LogLevel::Error
+    } else if line.contains("警告") || line.contains("WARNING") {
+        LogLevel::Warn
+    } else {
+        LogLevel::Info
+    }
+}
+
+/// Reads one BaiduPCS-Go output stream to EOF through a CR-splitting
+/// [`CappedLines`]: progress-bar redraws update the progress reporter and
+/// go straight to `noise_sink` at most once per
+/// [`BAIDUPCS_NOISE_INTERVAL_SECS`]. They are never captured; empty
+/// segments produced by `\r\n` are dropped, and every other line is sent
+/// to the bounded log channel for capture.
+async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
+    reader: R,
+    progress: ProgressReporter,
+    noise_sink: Option<super::traits::JobLogSink>,
+    tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    dropped_count: Arc<AtomicUsize>,
+    overlong_count: Arc<AtomicUsize>,
+) -> std::io::Result<()> {
+    let mut lines = CappedLines::with_cr_splitting(reader, overlong_count);
+    let mut last_noise: Option<std::time::Instant> = None;
+    while let Some(line) = lines.next_line().await? {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if is_baidupcs_progress_noise(line) {
+            let now = std::time::Instant::now();
+            if last_noise.is_none_or(|prev| {
+                now.duration_since(prev).as_secs() >= BAIDUPCS_NOISE_INTERVAL_SECS
+            }) {
+                last_noise = Some(now);
+                if let Some(snapshot) = parse_baidupcs_progress_line(line) {
+                    progress.report(snapshot);
+                }
+                if let Some(sink) = &noise_sink {
+                    sink.try_send(create_log_entry(LogLevel::Info, line));
+                }
+            }
+            continue;
+        }
+        let level = determine_baidupcs_log_level(line);
+        if tx.try_send(create_log_entry(level, line)).is_err() {
+            dropped_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}
+
+/// Run a BaiduPCS-Go `upload` command, capturing stdout and stderr as logs.
+/// Both streams are split on `\r` as well as `\n` because the upload
+/// progress bar redraws with bare `\r`; bar redraws are throttled to the
+/// live `log_sink` and excluded from `CommandOutput::logs`, so hours of
+/// redraws cannot evict the per-file outcome markers that
+/// `BaiduPcsProcessor` resolves upload statuses from.
+pub async fn run_baidupcs_with_logs(
+    command: &mut Command,
+    progress: &ProgressReporter,
+    log_sink: Option<super::traits::JobLogSink>,
+) -> crate::Result<CommandOutput> {
+    let start = std::time::Instant::now();
+
+    configure_child_process(command);
+
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
+    let dropped_count = Arc::new(AtomicUsize::new(0));
+    let overlong_count = Arc::new(AtomicUsize::new(0));
+
+    let stdout_handle = child.stdout.take().map(|stdout| {
+        tokio::spawn(consume_baidupcs_stream(
+            stdout,
+            progress.clone(),
+            log_sink.clone(),
+            tx.clone(),
+            dropped_count.clone(),
+            overlong_count.clone(),
+        ))
+    });
+    let stderr_handle = child.stderr.take().map(|stderr| {
+        tokio::spawn(consume_baidupcs_stream(
+            stderr,
+            progress.clone(),
+            log_sink.clone(),
+            tx.clone(),
+            dropped_count.clone(),
+            overlong_count.clone(),
+        ))
+    });
+
+    drop(tx);
+
+    let mut logs = VecDeque::new();
+    let mut truncated_count = 0usize;
+    let mut status: Option<std::process::ExitStatus> = None;
+    let mut wait_fut = Box::pin(child.wait());
+
+    loop {
+        tokio::select! {
+            res = &mut wait_fut, if status.is_none() => {
+                status = Some(res.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
+            }
+            entry = rx.recv() => {
+                match entry {
+                    Some(entry) => {
+                        if let Some(sink) = &log_sink {
+                            sink.try_send(entry.clone());
+                        }
+                        push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
+                    },
+                    None => {
+                        if status.is_none() {
+                            status = Some(wait_fut.await.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let stdout_result = wait_for_reader_task("BaiduPCS-Go stdout", stdout_handle).await;
+    let stderr_result = wait_for_reader_task("BaiduPCS-Go stderr", stderr_handle).await;
+    stdout_result?;
+    stderr_result?;
+
+    let duration = start.elapsed().as_secs_f64();
+    let status =
+        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
+
+    let dropped = dropped_count.load(Ordering::Relaxed);
+    if dropped > 0 {
+        push_log_with_cap(
+            &mut logs,
+            JobLogEntry::warn(format!(
+                "Dropped {} log lines due to backpressure (capacity={})",
+                dropped, LOG_CHANNEL_CAPACITY
+            )),
+            MAX_LOG_ENTRIES,
+            &mut truncated_count,
+        );
+    }
+    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
 
     Ok(CommandOutput {
         status,
@@ -673,6 +1175,249 @@ pub async fn run_rclone_with_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Captured from rclone v1.72.1 stderr under the flag set built by
+    // RcloneProcessor (`--use-json-log --stats 1s --stats-log-level NOTICE`),
+    // including the `transferring` array the parser must drop.
+    const RCLONE_JSON_STATS_LINE: &str = r#"{"time":"2026-07-26T14:06:28.7986513+02:00","level":"notice","msg":"50.059 MiB / 100 MiB, 50%, 25.090 MiB/s, ETA 1s","stats":{"bytes":229376,"checks":0,"deletedDirs":0,"deletes":0,"elapsedTime":1.999943,"errors":0,"eta":2,"fatalError":false,"listed":1,"renames":0,"retryError":false,"speed":131072,"totalBytes":508811,"totalChecks":0,"totalTransfers":1,"transferTime":1.999943,"transferring":[{"bytes":229376,"eta":2,"group":"global_stats","name":"clip.mp4","percentage":45,"size":508811,"speed":114720.5,"speedAvg":131072}],"transfers":0},"source":"slog/logger.go:256"}"#;
+
+    #[test]
+    fn parse_rclone_line_json_stats_becomes_progress() {
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(RCLONE_JSON_STATS_LINE) else {
+            panic!("stats JSON line should parse as progress");
+        };
+
+        assert_eq!(snapshot.kind, ProgressKind::Rclone);
+        assert_eq!(snapshot.bytes_done, Some(229376));
+        assert_eq!(snapshot.bytes_total, Some(508811));
+        let percent = snapshot.percent.expect("percent computed from totals");
+        assert!((percent - 45.08).abs() < 0.05, "got {percent}");
+        assert_eq!(snapshot.speed_bytes_per_sec, Some(131072.0));
+        assert_eq!(snapshot.eta_secs, Some(2.0));
+        // Only the file counters survive into raw; `transferring` and the
+        // human msg must not.
+        assert_eq!(
+            snapshot.raw,
+            serde_json::json!({"transfers": 0, "totalTransfers": 1})
+        );
+    }
+
+    #[test]
+    fn parse_rclone_line_json_stats_with_unknown_totals() {
+        let line = r#"{"level":"notice","msg":"early tick","stats":{"bytes":0,"totalBytes":0,"speed":0,"eta":null,"transfers":0,"totalTransfers":0}}"#;
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+            panic!("stats JSON line should parse as progress");
+        };
+
+        assert_eq!(snapshot.bytes_done, Some(0));
+        assert_eq!(snapshot.bytes_total, None, "totalBytes=0 means unknown");
+        assert_eq!(snapshot.percent, None);
+        assert_eq!(snapshot.eta_secs, None);
+    }
+
+    #[test]
+    fn parse_rclone_line_json_log_maps_levels() {
+        for (json_level, expected) in [
+            ("error", LogLevel::Error),
+            ("critical", LogLevel::Error),
+            ("warning", LogLevel::Warn),
+            ("notice", LogLevel::Info),
+            ("info", LogLevel::Info),
+            ("debug", LogLevel::Debug),
+            ("something-new", LogLevel::Info),
+        ] {
+            let line = format!(r#"{{"level":"{json_level}","msg":"the message"}}"#);
+            let ParsedRcloneLine::Log(entry) = parse_rclone_line(&line) else {
+                panic!("JSON line without stats should parse as log");
+            };
+            assert_eq!(entry.level, expected, "level {json_level}");
+            assert_eq!(entry.message, "the message");
+        }
+    }
+
+    #[test]
+    fn parse_rclone_line_json_log_without_msg_keeps_line() {
+        let line = r#"{"level":"error"}"#;
+        let ParsedRcloneLine::Log(entry) = parse_rclone_line(line) else {
+            panic!("JSON line without stats should parse as log");
+        };
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.message, line);
+    }
+
+    #[test]
+    fn parse_rclone_line_legacy_transferred_text() {
+        let line = "Transferred:   1.500 MiB / 3 MiB, 50%, 512 KiB/s, ETA 3s";
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+            panic!("Transferred: text should parse as progress");
+        };
+
+        assert_eq!(snapshot.bytes_done, Some(1_572_864));
+        assert_eq!(snapshot.bytes_total, Some(3_145_728));
+        assert_eq!(snapshot.percent, Some(50.0));
+        assert_eq!(snapshot.speed_bytes_per_sec, Some(524_288.0));
+        assert_eq!(snapshot.eta_secs, Some(3.0));
+        assert!(
+            snapshot.raw.get("line").is_none(),
+            "raw must not embed the source line"
+        );
+    }
+
+    #[test]
+    fn parse_rclone_line_plain_text_is_log() {
+        let ParsedRcloneLine::Log(entry) =
+            parse_rclone_line("2026/07/26 12:00:00 ERROR : clip.mp4: Failed to copy")
+        else {
+            panic!("plain text should parse as log");
+        };
+        assert_eq!(entry.level, LogLevel::Error);
+
+        let ParsedRcloneLine::Log(entry) = parse_rclone_line("just some output") else {
+            panic!("plain text should parse as log");
+        };
+        assert_eq!(entry.level, LogLevel::Info);
+    }
+
+    #[tokio::test]
+    async fn consume_rclone_stderr_skips_overlong_lines_and_resumes() {
+        let mut input = vec![b'x'; MAX_LINE_BYTES + 1024];
+        input.push(b'\n');
+        input.extend_from_slice(RCLONE_JSON_STATS_LINE.as_bytes());
+        input.push(b'\n');
+        input.extend_from_slice(b"plain log line\n");
+
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(8);
+        let progress = ProgressReporter::new("job-1", progress_tx);
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel::<JobLogEntry>(8);
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let overlong = Arc::new(AtomicUsize::new(0));
+
+        consume_rclone_stderr(
+            input.as_slice(),
+            progress,
+            log_tx,
+            dropped.clone(),
+            overlong.clone(),
+        )
+        .await
+        .expect("reader completes after skipping the overlong line");
+
+        let update = progress_rx.try_recv().expect("one progress snapshot");
+        assert_eq!(update.snapshot.bytes_done, Some(229376));
+        assert!(progress_rx.try_recv().is_err());
+
+        let entry = log_rx.try_recv().expect("one log entry");
+        assert_eq!(entry.message, "plain log line");
+        assert!(log_rx.try_recv().is_err());
+
+        assert_eq!(overlong.load(Ordering::Relaxed), 1);
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn capped_lines_cr_splitting_separates_bar_redraws() {
+        let overlong = Arc::new(AtomicUsize::new(0));
+        let input =
+            "[1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s\r[1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s\r\n[1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n"
+                .as_bytes();
+        let mut lines = CappedLines::with_cr_splitting(input, overlong.clone());
+
+        let mut collected = Vec::new();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            collected.push(line);
+        }
+
+        // The `\r\n` after the second redraw yields one empty segment,
+        // which consume_baidupcs_stream drops.
+        assert_eq!(
+            collected,
+            vec![
+                "[1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s".to_string(),
+                "[1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s".to_string(),
+                String::new(),
+                "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv".to_string(),
+            ]
+        );
+        assert_eq!(overlong.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn consume_baidupcs_stream_throttles_bar_and_keeps_markers() {
+        let input = "[1] 加入上传队列: D:\\rec\\a.flv\n\
+                     [1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s\r\
+                     [1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s\r\
+                     [1] ↑ 3.00MB/9.00MB 1.00MB/s in 3s\r\n\
+                     [1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n"
+            .as_bytes();
+
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel::<JobLogEntry>(16);
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let overlong = Arc::new(AtomicUsize::new(0));
+
+        consume_baidupcs_stream(
+            input,
+            ProgressReporter::noop("baidupcs-test"),
+            None,
+            log_tx,
+            dropped.clone(),
+            overlong.clone(),
+        )
+        .await
+        .expect("stream drains");
+
+        let mut messages = Vec::new();
+        while let Ok(entry) = log_rx.try_recv() {
+            messages.push(entry.message);
+        }
+
+        // Bar redraws never reach the captured-log channel; markers do.
+        assert_eq!(
+            messages,
+            vec![
+                "[1] 加入上传队列: D:\\rec\\a.flv".to_string(),
+                "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv".to_string(),
+            ]
+        );
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn baidupcs_noise_and_level_classification() {
+        assert!(is_baidupcs_progress_noise(
+            "[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............"
+        ));
+        assert!(!is_baidupcs_progress_noise(
+            "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv"
+        ));
+        assert!(!is_baidupcs_progress_noise("[1] 加入上传队列: /rec/a.flv"));
+
+        assert_eq!(
+            determine_baidupcs_log_level("[1] 上传文件失败, 上传文件错误"),
+            LogLevel::Error
+        );
+        assert_eq!(
+            determine_baidupcs_log_level("警告: 遍历错误: xx"),
+            LogLevel::Error
+        );
+        assert_eq!(
+            determine_baidupcs_log_level("[1] 上传文件成功, 保存到网盘路径: /a"),
+            LogLevel::Info
+        );
+    }
+
+    #[test]
+    fn baidupcs_progress_bar_becomes_progress_snapshot() {
+        let snapshot =
+            parse_baidupcs_progress_line("[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............")
+                .expect("progress bar should parse");
+
+        assert_eq!(snapshot.kind, ProgressKind::BaiduPcs);
+        assert_eq!(snapshot.bytes_done, Some(12 * 1024 * 1024));
+        assert_eq!(snapshot.bytes_total, Some(120 * 1024 * 1024));
+        assert_eq!(snapshot.percent, Some(10.0));
+        assert_eq!(snapshot.speed_bytes_per_sec, Some(3.5 * 1024.0 * 1024.0));
+        assert_eq!(snapshot.eta_secs, Some(108.0 / 3.5));
+    }
 
     #[test]
     fn test_determine_ffmpeg_log_level() {

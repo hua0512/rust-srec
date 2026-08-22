@@ -38,26 +38,52 @@ export const ChannelTypeSchema = z.enum([
 ]);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
+/**
+ * Language a channel renders its notifications in. Empty means "follow the server", which is
+ * what the backend's `parse_channel_locale` normalizes to no override.
+ */
+export const NotificationLocaleSchema = z
+  .enum(['', 'en', 'zh-CN'])
+  .default('')
+  .catch('');
+
 // Settings schemas
 export const DiscordSettingsSchema = z.object({
   webhook_url: z.url(),
   username: z.string().optional(),
   avatar_url: z.url().optional(),
   min_priority: z.number().int().min(0).max(10).default(5),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
 });
 
-export const EmailSettingsSchema = z.object({
-  smtp_host: z.string().min(1),
-  smtp_port: z.number().int().positive(),
-  username: z.string().min(1),
-  password: z.string().min(1),
-  from_address: z.email(),
-  to_addresses: z.array(z.email()).min(1),
-  use_tls: z.boolean().default(true),
-  min_priority: z.number().int().min(0).max(10).default(8),
-  enabled: z.boolean().default(true),
-});
+export const EmailSettingsSchema = z
+  .object({
+    smtp_host: z.string().min(1),
+    smtp_port: z.number().int().positive().max(65535),
+    // Always sent, empty when the relay needs no credentials: `EmailChannelSettings` declares
+    // both as plain `String`, and `NotificationService::build_channel` maps "" to `None`.
+    username: z.string(),
+    password: z.string(),
+    from_address: z.email(),
+    to_addresses: z.array(z.email()).min(1),
+    use_tls: z.boolean().default(true),
+    min_priority: z.number().int().min(0).max(10).default(8),
+    locale: NotificationLocaleSchema,
+    enabled: z.boolean().default(true),
+  })
+  // `EmailChannel::build_transport` rejects a half-configured credential pair, so catch it here
+  // instead of letting the channel fail at delivery time.
+  .superRefine((data, ctx) => {
+    const hasUsername = data.username.trim().length > 0;
+    const hasPassword = data.password.length > 0;
+    if (hasUsername === hasPassword) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: [hasUsername ? 'password' : 'username'],
+      message: 'Set both a username and a password, or leave both empty',
+    });
+  });
 
 export const WebhookAuthTypeSchema = z.enum([
   'None',
@@ -84,6 +110,7 @@ export const WebhookSettingsSchema = z.object({
   method: z.string().default('POST'),
   auth: WebhookAuthSchema.optional(),
   min_priority: z.number().int().min(0).max(10).default(2),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
   timeout_secs: z.number().int().positive().default(30),
 });
@@ -93,6 +120,7 @@ export const TelegramSettingsSchema = z.object({
   chat_id: z.string().min(1),
   parse_mode: z.enum(['HTML', 'Markdown', 'MarkdownV2']).default('HTML'),
   min_priority: z.number().int().min(0).max(10).default(5),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
 });
 
@@ -100,6 +128,7 @@ export const GotifySettingsSchema = z.object({
   server_url: z.string().url(),
   app_token: z.string().min(1),
   min_priority: z.number().int().min(0).max(10).default(5),
+  locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
   timeout_secs: z.number().int().positive().default(30),
 });

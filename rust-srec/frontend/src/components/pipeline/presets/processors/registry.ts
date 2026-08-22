@@ -3,6 +3,7 @@ import { lazy, ComponentType } from 'react';
 import {
   RemuxConfigSchema,
   RcloneConfigSchema,
+  BaiduPcsConfigSchema,
   ThumbnailConfigSchema,
   AudioExtractConfigSchema,
   CompressionConfigSchema,
@@ -21,6 +22,11 @@ const RemuxConfigForm = lazy(() =>
 const RcloneConfigForm = lazy(() =>
   import('./rclone-config-form').then((m) => ({ default: m.RcloneConfigForm })),
 );
+const BaiduPcsConfigForm = lazy(() =>
+  import('./baidupcs-config-form').then((m) => ({
+    default: m.BaiduPcsConfigForm,
+  })),
+);
 const DanmakuFactoryConfigForm = lazy(() =>
   import('./danmaku-factory-config-form').then((m) => ({
     default: m.DanmakuFactoryConfigForm,
@@ -31,10 +37,6 @@ const AssBurninConfigForm = lazy(() =>
     default: m.AssBurninConfigForm,
   })),
 );
-// const TdlConfigForm = lazy(() =>
-//   import('./tdl-config-form').then((m) => ({ default: m.TdlConfigForm })),
-// );
-
 // Smaller forms can be imported directly
 import { ThumbnailConfigForm } from './thumbnail-config-form';
 import { AudioExtractConfigForm } from './audio-extract-config-form';
@@ -64,6 +66,11 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     schema: RcloneConfigSchema,
     component: RcloneConfigForm,
     label: msg`Rclone Transfer`,
+  },
+  baidupcs: {
+    schema: BaiduPcsConfigSchema,
+    component: BaiduPcsConfigForm,
+    label: msg`Baidu Netdisk Upload`,
   },
   thumbnail: {
     schema: ThumbnailConfigSchema,
@@ -125,11 +132,6 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     component: CopyMoveConfigForm,
     label: msg`Copy / Move`,
   },
-  // tdl: {
-  //   schema: TdlConfigSchema,
-  //   component: TdlConfigForm,
-  //   label: msg`TDL Upload`,
-  // }
 };
 
 export const getProcessorDefinition = (

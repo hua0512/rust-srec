@@ -8,14 +8,14 @@ import {
 import { z } from 'zod';
 
 export const listFilters = createServerFn({ method: 'GET' })
-  .inputValidator((streamerId: string) => streamerId)
+  .validator((streamerId: string) => streamerId)
   .handler(async ({ data: streamerId }) => {
     const json = await fetchBackend(`/streamers/${streamerId}/filters`);
     return z.array(FilterSchema).parse(json);
   });
 
 export const createFilter = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: {
       streamerId: string;
       data: z.infer<typeof CreateFilterRequestSchema>;
@@ -30,7 +30,7 @@ export const createFilter = createServerFn({ method: 'POST' })
   });
 
 export const updateFilter = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: {
       streamerId: string;
       filterId: string;
@@ -49,7 +49,7 @@ export const updateFilter = createServerFn({ method: 'POST' })
   });
 
 export const deleteFilter = createServerFn({ method: 'POST' })
-  .inputValidator((d: { streamerId: string; filterId: string }) => d)
+  .validator((d: { streamerId: string; filterId: string }) => d)
   .handler(async ({ data: { streamerId, filterId } }) => {
     await fetchBackend(`/streamers/${streamerId}/filters/${filterId}`, {
       method: 'DELETE',

@@ -254,20 +254,26 @@ impl PlatformExtractor for Huya {
     }
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
-        // MP based api requires no extra anticode computation
+        // MP api-mode URLs are CDN-usable as parsed. Every other path — WUP, Web,
+        // and MP with force_origin_quality — must re-sign through
+        // `get_anticode_url`/getCdnTokenInfo (the `flv_url`/`ua` extras it reads
+        // are empty outside WUP mode, which the token call accepts): the web
+        // page's anti-code is rejected by Huya's CDN as-is.
         if self.api_mode == HuyaApiMode::Mp && !self.force_origin_quality {
             return Ok(());
         }
 
+        // Without extras there is nothing to feed getCdnTokenInfo; keep the
+        // parsed URL instead of failing the candidate.
+        let Some(extras) = stream_info.extras.as_ref() else {
+            return Ok(());
+        };
+
+        let flv_url = Self::extract_flv_url_from_extras(extras);
+
         debug!("Getting WUP URL for stream: {}", stream_info.url);
 
-        // Extract WUP request parameters from stream extras
-        let extras = stream_info.extras.as_ref().ok_or_else(|| {
-            ExtractorError::ValidationError("Stream extras not found for WUP request".to_string())
-        })?;
-
         // Compute anticode
-        let flv_url = Self::extract_flv_url_from_extras(extras);
         let stream_name = Self::extract_stream_name_from_extras(extras)?;
         let presenter_uid = Self::extract_presenter_uid_from_extras(extras);
         let ua = crate::extractor::utils::extras_get_str(Some(extras), "ua")
@@ -292,6 +298,43 @@ mod tests {
         d.push("src/extractor/tests/test_data/huya/");
         d.push(file_name);
         std::fs::read_to_string(d).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_get_url_keeps_signed_url_when_extras_absent() {
+        let extractor = Huya::new(
+            "https://www.huya.com/660000".to_string(),
+            default_client(),
+            None,
+            None,
+        );
+        let signed_url = "https://al.flv.huya.com/src/stream.flv?wsSecret=abc&wsTime=123";
+        let mut stream_info =
+            StreamInfo::builder(signed_url.to_string(), StreamFormat::Flv, MediaFormat::Flv)
+                .build();
+
+        extractor.get_url(&mut stream_info).await.unwrap();
+
+        assert_eq!(stream_info.url, signed_url);
+    }
+
+    #[tokio::test]
+    async fn test_get_url_keeps_mp_url_without_force_origin() {
+        let extractor = Huya::new(
+            "https://www.huya.com/660000".to_string(),
+            default_client(),
+            None,
+            Some(serde_json::json!({ "api_mode": "MP" })),
+        );
+        let signed_url = "https://al.flv.huya.com/src/stream.flv?wsSecret=abc&wsTime=123";
+        let mut stream_info =
+            StreamInfo::builder(signed_url.to_string(), StreamFormat::Flv, MediaFormat::Flv)
+                .extras(serde_json::json!({ "stream_name": "some-stream" }))
+                .build();
+
+        extractor.get_url(&mut stream_info).await.unwrap();
+
+        assert_eq!(stream_info.url, signed_url);
     }
 
     #[test]

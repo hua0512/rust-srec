@@ -8,6 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PipelineStep, DagStepDefinition } from '@/api/schemas';
 import { WorkflowFlowEditor } from '@/components/pipeline/workflows/flow-editor/workflow-flow-editor';
+import {
+  createStepId,
+  removeStep,
+  replaceStep,
+} from '@/components/pipeline/workflows/step-operations';
 
 interface PipelineWorkflowEditorProps {
   steps: DagStepDefinition[];
@@ -24,15 +29,37 @@ export const PipelineWorkflowEditor = memo(
 
     const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [libraryOpen, setLibraryOpen] = useState(false);
+    const [replacingStepId, setReplacingStepId] = useState<string | null>(null);
 
     const handleAddStep = (step: PipelineStep) => {
-      const stepName = step.type === 'inline' ? step.processor : step.name;
       const newNode: DagStepDefinition = {
-        id: `${stepName}-${steps.length}`,
+        id: createStepId(step, steps),
         step: step,
         depends_on: steps.length > 0 ? [steps[steps.length - 1].id] : [],
       };
       onChange([...steps, newNode]);
+    };
+
+    const handleSelectStep = (step: PipelineStep) => {
+      if (replacingStepId === null) {
+        handleAddStep(step);
+        return;
+      }
+
+      const replacementIndex = steps.findIndex(
+        (candidate) => candidate.id === replacingStepId,
+      );
+      if (replacementIndex === -1) return;
+
+      onChange(replaceStep(steps, replacementIndex, step));
+      setLibraryOpen(false);
+      setReplacingStepId(null);
+    };
+
+    const handleReplaceStep = (id: string) => {
+      setReplacingStepId(id);
+      setLibraryOpen(true);
     };
 
     const handleUpdateStep = (index: number, newStep: DagStepDefinition) => {
@@ -49,8 +76,12 @@ export const PipelineWorkflowEditor = memo(
     };
 
     const handleRemoveStep = (index: number) => {
-      const updatedSteps = steps.filter((_, i) => i !== index);
-      onChange(updatedSteps);
+      const step = steps[index];
+      if (step) onChange(removeStep(steps, step.id));
+    };
+
+    const handleRemoveStepById = (id: string) => {
+      onChange(removeStep(steps, id));
     };
 
     return (
@@ -93,13 +124,19 @@ export const PipelineWorkflowEditor = memo(
             </Tabs>
 
             <StepLibrary
-              onAddStep={handleAddStep}
+              onAddStep={handleSelectStep}
               currentSteps={steps.map((s) => {
                 if (typeof s.step === 'string') return s.step;
                 const anyStep = s.step as any;
                 if (anyStep.type === 'inline') return anyStep.processor;
                 return anyStep.name || '';
               })}
+              open={libraryOpen}
+              onOpenChange={(open) => {
+                setLibraryOpen(open);
+                if (!open) setReplacingStepId(null);
+              }}
+              selectionMode={replacingStepId === null ? 'add' : 'replace'}
               trigger={
                 <Button
                   type="button"
@@ -117,13 +154,17 @@ export const PipelineWorkflowEditor = memo(
 
         <div className="h-[400px] sm:h-[500px] border rounded-lg overflow-hidden bg-background/50 relative">
           {viewMode === 'list' ? (
-            <div className="p-4 h-full">
+            <div className="h-full min-h-0 overflow-y-auto overscroll-contain p-4">
               <StepsList
                 steps={steps}
                 onReorder={onChange}
                 onRemove={handleRemoveStep}
                 onUpdate={handleUpdateStep}
                 onEdit={setEditingIndex}
+                onReplace={(index) => {
+                  const step = steps[index];
+                  if (step) handleReplaceStep(step.id);
+                }}
               />
             </div>
           ) : (
@@ -131,6 +172,8 @@ export const PipelineWorkflowEditor = memo(
               steps={steps}
               onUpdateSteps={onChange}
               onEditStep={handleEditStepById}
+              onRemoveStep={handleRemoveStepById}
+              onReplaceStep={handleReplaceStep}
             />
           )}
         </div>

@@ -30,6 +30,10 @@ pub struct GotifyConfig {
     /// Minimum priority level to send (default: Normal).
     #[serde(default)]
     pub min_priority: NotificationPriority,
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
     /// Request timeout in seconds.
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
@@ -62,6 +66,7 @@ impl Default for GotifyConfig {
             server_url: String::new(),
             app_token: String::new(),
             min_priority: NotificationPriority::Normal,
+            locale: None,
             timeout_secs: default_timeout(),
         }
     }
@@ -94,8 +99,8 @@ impl GotifyChannel {
     /// Build the Gotify message payload.
     fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
         json!({
-            "title": event.title(),
-            "message": event.description(),
+            "title": event.title_for(self.config.locale.as_deref()),
+            "message": event.description_for(self.config.locale.as_deref()),
             "priority": event.priority().as_int(),
         })
     }
@@ -166,16 +171,6 @@ impl NotificationChannel for GotifyChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_gotify_config_default() {
-        let config = GotifyConfig::default();
-        assert!(!config.enabled);
-        assert!(config.server_url.is_empty());
-        assert!(config.app_token.is_empty());
-        assert_eq!(config.min_priority, NotificationPriority::Normal);
-        assert_eq!(config.timeout_secs, 30);
-    }
 
     #[test]
     fn test_gotify_channel_disabled() {

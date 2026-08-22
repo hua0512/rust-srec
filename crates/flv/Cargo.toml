@@ -2,7 +2,11 @@
 name = "flv"
 version = "0.1.2"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -15,12 +19,9 @@ amf0 = { path = "../amf0" }
 av1 = { path = "../av1" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
-pipeline-common = { path = "../pipeline-common" }
+media-types = { path = "../media-types" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

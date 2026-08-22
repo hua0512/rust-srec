@@ -3,7 +3,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -16,6 +15,10 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 
 import { InputWithUnit } from '@/components/ui/input-with-unit';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 interface StreamlinkFormProps {
   basePath?: string;
@@ -30,10 +33,9 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
           name={`${basePath}.binary_path`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                <Terminal className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={Terminal}>
                 <Trans>Binary Path</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <Input
                   {...field}
@@ -41,7 +43,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
                   className="bg-background/50"
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>Absolute path or 'streamlink' in PATH</Trans>
               </FormDescription>
               <FormMessage />
@@ -52,10 +54,9 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
           name={`${basePath}.quality`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                <Settings className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={Settings}>
                 <Trans>Quality</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <Input
                   {...field}
@@ -63,7 +64,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
                   className="bg-background/50"
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>e.g. 'best', 'worst', '720p', 'audio_only'</Trans>
               </FormDescription>
               <FormMessage />
@@ -74,10 +75,9 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
           name={`${basePath}.graceful_stop_timeout_secs`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                <TimerOff className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={TimerOff}>
                 <Trans>Graceful Stop Timeout</Trans>
-              </FormLabel>
+              </ConfigFieldLabel>
               <FormControl>
                 <InputWithUnit
                   value={field.value}
@@ -86,7 +86,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
                   className="bg-background/50"
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Time to wait for ffmpeg to finalize the file before
                   force-killing it
@@ -112,9 +112,9 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
             name={`${basePath}.twitch_proxy_playlist`}
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-[10px] uppercase font-semibold text-muted-foreground">
+                <ConfigFieldLabel size="sm">
                   <Trans>Twitch Proxy Playlist</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     {...field}
@@ -122,7 +122,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
                     className="bg-background/50"
                   />
                 </FormControl>
-                <FormDescription className="text-[10px]">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>Custom proxy URL for Twitch playlists</Trans>
                 </FormDescription>
                 <FormMessage />
@@ -133,9 +133,9 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
             name={`${basePath}.twitch_proxy_playlist_exclude`}
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-[10px] uppercase font-semibold text-muted-foreground">
+                <ConfigFieldLabel size="sm">
                   <Trans>Twitch Proxy Playlist Exclude</Trans>
-                </FormLabel>
+                </ConfigFieldLabel>
                 <FormControl>
                   <Input
                     {...field}
@@ -143,7 +143,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
                     className="bg-background/50"
                   />
                 </FormControl>
-                <FormDescription className="text-[10px]">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Comma-separated list of channels to exclude from proxy
                   </Trans>
@@ -175,7 +175,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
                     className="bg-background/50"
                   />
                 </FormControl>
-                <FormDescription className="text-[10px]">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Any additional command line arguments to pass to Streamlink
                   </Trans>

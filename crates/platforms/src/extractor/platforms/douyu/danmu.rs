@@ -6,13 +6,14 @@
 use bytes::Bytes;
 use chrono::Utc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_referer_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyu::stt;
@@ -88,7 +89,13 @@ impl DouyuDanmuProtocol {
     }
 
     /// Parse gift messages from STT payload.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for protocol variants and forward-compatible response handling"
+        )
+    )]
     fn parse_gift_message(map: &rustc_hash::FxHashMap<String, String>) -> Option<DanmuMessage> {
         let gift = DouyuGiftMessage::from_map(map)?;
 
@@ -107,7 +114,9 @@ impl DouyuDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for DouyuDanmuProtocol {
+impl DanmuProtocolFactory for DouyuDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "douyu"
     }
@@ -120,7 +129,13 @@ impl DanmuProtocol for DouyuDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, _room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        self.clone()
+    }
+}
+
+impl DanmuProtocol for DouyuDanmuProtocol {
+    async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
         Ok(DOUYU_WS_URL.to_string())
     }
 
@@ -132,7 +147,7 @@ impl DanmuProtocol for DouyuDanmuProtocol {
         self.cookies.clone()
     }
 
-    async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         // Create login and join group messages
         let login_msg = create_login_message(room_id);
         let join_group_msg = create_join_group_message(room_id, DEFAULT_GROUP_ID);
@@ -159,11 +174,10 @@ impl DanmuProtocol for DouyuDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        _tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
                 let packets = parse_packets(data);
@@ -199,25 +213,25 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                     }
                 }
 
-                Ok(items)
+                Ok(items.into())
             }
             Message::Text(text) => {
                 debug!("Received text message: {}", text);
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Ping(_) => {
                 debug!("Received ping");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Pong(_) => {
                 debug!("Received pong");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Close(frame) => {
                 debug!("Received close frame: {:?}", frame);
                 Err(DanmakuError::connection("Connection closed by server"))
             }
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -227,7 +241,7 @@ pub type DouyuDanmuProvider = WebSocketDanmuProvider<DouyuDanmuProtocol>;
 
 /// Creates a new Douyu danmu provider.
 pub fn create_douyu_danmu_provider() -> DouyuDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(DouyuDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(DouyuDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]
@@ -291,7 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handshake_messages() {
-        let protocol = DouyuDanmuProtocol::default();
+        let mut protocol = DouyuDanmuProtocol::default();
         let messages = protocol.handshake_messages("123456").await.unwrap();
 
         assert_eq!(messages.len(), 2); // Login + JoinGroup
@@ -308,7 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_websocket_url() {
-        let protocol = DouyuDanmuProtocol::default();
+        let mut protocol = DouyuDanmuProtocol::default();
         let url = protocol.websocket_url("123456").await.unwrap();
 
         assert!(url.starts_with("wss://"));
@@ -363,10 +377,12 @@ mod tests {
         let provider = create_douyu_danmu_provider();
         let room_id = "178432";
 
-        let mut connection = provider
+        let stream = provider
             .connect(room_id, ConnectionConfig::default())
             .await
             .expect("Failed to connect");
+        let mut connection = stream.connection;
+        let mut items = stream.items;
 
         // Receive messages
         let mut message_count = 0;
@@ -375,8 +391,8 @@ mod tests {
 
         let result = tokio::time::timeout(timeout, async {
             loop {
-                match provider.receive(&connection).await {
-                    Ok(Some(item)) => match item {
+                match items.recv().await {
+                    Some(item) => match item {
                         crate::danmaku::DanmuItem::Message(danmu) => {
                             println!(
                                 "[{}] {}: {}",
@@ -390,12 +406,8 @@ mod tests {
                             println!("[control] {:?}", control);
                         }
                     },
-                    Ok(None) => {
-                        // Provider uses a short poll timeout; yield.
-                        tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
-                    }
-                    Err(e) => {
-                        println!("Receive error: {e}");
+                    None => {
+                        println!("Stream closed by provider");
                         break;
                     }
                 }

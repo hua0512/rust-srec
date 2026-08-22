@@ -6,48 +6,54 @@ type HandlerContext<TInput> = {
   data: TInput;
 };
 
-type ServerFn<TInput, TOutput> = (data?: TInput) => Promise<TOutput>;
+type ServerFn<TInput, TOutput> = (
+  opts?: { data: TInput } | TInput,
+) => Promise<TOutput>;
 
-type InputValidator<TInput> = (data: TInput) => TInput;
+type ValidatorFn<TInput, TOutput = TInput> =
+  | ((data: TInput) => TOutput)
+  | { parse: (data: TInput) => TOutput };
 
-type ServerFnBuilder<TInput, TOutput> = {
-  inputValidator: <TNextInput>(
-    validator: InputValidator<TNextInput>,
-  ) => ServerFnBuilder<TNextInput, TOutput>;
-  handler: (
-    handler:
-      | ((ctx: HandlerContext<TInput>) => Promise<TOutput> | TOutput)
-      | (() => Promise<TOutput> | TOutput),
-  ) => ServerFn<TInput, TOutput>;
-};
+export interface ServerFnBuilder<TInput = void, TOutput = unknown> {
+  validator<TNextInput>(
+    validator: ValidatorFn<TNextInput, any>,
+  ): ServerFnBuilder<TNextInput, TOutput>;
+  handler<TResult extends TOutput>(
+    fn: (ctx: HandlerContext<TInput>) => Promise<TResult> | TResult,
+  ): ServerFn<TInput, TResult>;
+  handler<TResult extends TOutput>(
+    fn: () => Promise<TResult> | TResult,
+  ): ServerFn<TInput, TResult>;
+}
 
 export function createServerFn<TInput = void, TOutput = unknown>(
-  _opts: CreateServerFnOptions,
+  _opts?: CreateServerFnOptions,
 ): ServerFnBuilder<TInput, TOutput> {
-  let validator: ((data: unknown) => unknown) | null = null;
+  let activeValidator: ((data: any) => any) | null = null;
 
   const builder: ServerFnBuilder<any, any> = {
-    inputValidator(next) {
-      validator = next as unknown as (data: unknown) => unknown;
+    validator(fn) {
+      activeValidator =
+        typeof fn === 'function'
+          ? fn
+          : (data: any) => ('parse' in fn ? fn.parse(data) : data);
       return builder;
     },
-    handler(fn) {
-      return (async (data?: any) => {
-        const input =
-          data && typeof data === 'object' && 'data' in data
-            ? (data as any).data
-            : data;
-        const validated = validator ? validator(input) : input;
-        // Allow handlers with either `(ctx) => ...` or `() => ...`.
+    handler(fn: any) {
+      return (async (payload?: any) => {
+        const rawData =
+          payload && typeof payload === 'object' && 'data' in payload
+            ? payload.data
+            : payload;
+        const validated = activeValidator ? activeValidator(rawData) : rawData;
+
         if (typeof fn === 'function' && fn.length === 0) {
-          return await (fn as () => Promise<any>)();
+          return await fn();
         }
-        return await (fn as (ctx: HandlerContext<any>) => Promise<any>)({
-          data: validated,
-        });
+        return await fn({ data: validated });
       }) as ServerFn<any, any>;
     },
   };
 
-  return builder as unknown as ServerFnBuilder<TInput, TOutput>;
+  return builder;
 }

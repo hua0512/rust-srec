@@ -25,14 +25,14 @@ export const listChannels = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getChannel = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/notifications/channels/${id}`);
     return NotificationChannelSchema.parse(json);
   });
 
 export const createChannel = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof CreateChannelRequestSchema>) => data)
+  .validator((data: z.infer<typeof CreateChannelRequestSchema>) => data)
   .handler(async ({ data }) => {
     const json = await fetchBackend('/notifications/channels', {
       method: 'POST',
@@ -42,7 +42,7 @@ export const createChannel = createServerFn({ method: 'POST' })
   });
 
 export const updateChannel = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: { id: string; data: z.infer<typeof UpdateChannelRequestSchema> }) => d,
   )
   .handler(async ({ data: { id, data } }) => {
@@ -54,13 +54,13 @@ export const updateChannel = createServerFn({ method: 'POST' })
   });
 
 export const deleteChannel = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/notifications/channels/${id}`, { method: 'DELETE' });
   });
 
 export const getSubscriptions = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       `/notifications/channels/${id}/subscriptions`,
@@ -69,7 +69,7 @@ export const getSubscriptions = createServerFn({ method: 'GET' })
   });
 
 export const updateSubscriptions = createServerFn({ method: 'POST' })
-  .inputValidator((d: { id: string; events: string[] }) => d)
+  .validator((d: { id: string; events: string[] }) => d)
   .handler(async ({ data: { id, events } }) => {
     const json = await fetchBackend(
       `/notifications/channels/${id}/subscriptions`,
@@ -82,7 +82,7 @@ export const updateSubscriptions = createServerFn({ method: 'POST' })
   });
 
 export const testChannel = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/notifications/channels/${id}/test`, {
       method: 'POST',
@@ -90,7 +90,7 @@ export const testChannel = createServerFn({ method: 'POST' })
   });
 
 export const listEvents = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     (
       q: {
         limit?: number;
@@ -147,7 +147,7 @@ const WebPushSubscriptionJsonSchema = z.object({
 });
 
 export const subscribeWebPush = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     (d: {
       subscription: z.infer<typeof WebPushSubscriptionJsonSchema>;
       min_priority?: number;
@@ -166,7 +166,7 @@ export const subscribeWebPush = createServerFn({ method: 'POST' })
   });
 
 export const unsubscribeWebPush = createServerFn({ method: 'POST' })
-  .inputValidator((d: { endpoint: string }) => d)
+  .validator((d: { endpoint: string }) => d)
   .handler(async ({ data }) => {
     await fetchBackend('/notifications/web-push/unsubscribe', {
       method: 'POST',

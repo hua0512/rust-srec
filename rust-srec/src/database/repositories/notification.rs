@@ -37,7 +37,6 @@ pub trait NotificationRepository: Send + Sync {
     ) -> Result<Vec<NotificationDeadLetterDbModel>>;
     async fn get_dead_letter(&self, id: &str) -> Result<NotificationDeadLetterDbModel>;
     async fn delete_dead_letter(&self, id: &str) -> Result<()>;
-    async fn cleanup_old_dead_letters(&self, retention_days: i32) -> Result<i32>;
 
     // Event log
     async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()>;
@@ -258,18 +257,6 @@ impl NotificationRepository for SqlxNotificationRepository {
             .execute(&self.write_pool)
             .await?;
         Ok(())
-    }
-
-    async fn cleanup_old_dead_letters(&self, retention_days: i32) -> Result<i32> {
-        let cutoff_ms = crate::database::time::now_ms()
-            - chrono::Duration::days(retention_days as i64).num_milliseconds();
-
-        let result = sqlx::query("DELETE FROM notification_dead_letter WHERE created_at < ?")
-            .bind(cutoff_ms)
-            .execute(&self.write_pool)
-            .await?;
-
-        Ok(result.rows_affected() as i32)
     }
 
     async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {

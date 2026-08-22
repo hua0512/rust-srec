@@ -112,7 +112,6 @@ impl JsEngineManager {
 
     /// Clear the thread-local runtime cache.
     /// This is useful for testing or to free memory.
-    #[allow(dead_code)]
     pub fn clear_cache() {
         THREAD_RUNTIME.with(|cell| {
             *cell.borrow_mut() = None;

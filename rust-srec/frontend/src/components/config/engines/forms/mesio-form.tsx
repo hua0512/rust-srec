@@ -5,7 +5,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -30,40 +29,50 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { MesioHlsForm } from './mesio-hls-form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { cn } from '@/lib/utils';
 
 interface SubFormProps {
   basePath: string;
 }
 
 const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
+  const { i18n } = useLingui();
   const duplicateTagFiltering = useWatch({
     name: `${basePath}.flv_fix.duplicate_tag_filtering`,
   });
 
   return (
-    <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-      <Card className="border-border/40 bg-background/20 shadow-none overflow-hidden">
+    <div className="space-y-4">
+      <Card className="border-border/50 shadow-sm">
         <CardContent className="p-4 space-y-6">
           {/* Header/Mode Section */}
           <div className="space-y-4">
             <FormField
               name={`${basePath}.flv_fix.sequence_header_change_mode`}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs font-semibold flex items-center gap-2 mb-2 text-orange-500/80 uppercase tracking-tighter">
-                    <RefreshCw className="w-3.5 h-3.5" />
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel icon={RefreshCw} className="mb-2">
                     <Trans>Stream Splitting Strategy</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value || 'crc32'}
+                    value={field.value || 'crc32'}
                   >
                     <FormControl>
-                      <SelectTrigger className="bg-background/50 border-border/40 h-10 transition-all hover:border-orange-500/30">
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="crc32" className="py-2.5">
                         <div className="flex flex-col gap-0.5">
                           <span className="font-medium text-xs">
@@ -112,10 +121,10 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-xs font-medium">
+                    <ConfigFieldLabel>
                       <Trans>Optimize Stream Headers</Trans>
-                    </FormLabel>
-                    <FormDescription className="text-[10px]">
+                    </ConfigFieldLabel>
+                    <FormDescription className={CONFIG_DESCRIPTION}>
                       <Trans>
                         Suppress redundant headers to reduce player
                         micro-stutter
@@ -138,8 +147,7 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-xs font-medium flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5 text-blue-500" />
+                    <ConfigFieldLabel icon={Layers}>
                       <Trans>Loop Protection</Trans>
                       <Badge
                         variant="secondary"
@@ -147,8 +155,8 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
                       >
                         <Trans>BETA</Trans>
                       </Badge>
-                    </FormLabel>
-                    <FormDescription className="text-[10px]">
+                    </ConfigFieldLabel>
+                    <FormDescription className={CONFIG_DESCRIPTION}>
                       <Trans>
                         Filter repeated tags and detect stream replay loops
                       </Trans>
@@ -166,21 +174,21 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
             />
 
             {duplicateTagFiltering && (
-              <div className="grid gap-3 pt-1 animate-in fade-in slide-in-from-left-2 duration-300">
+              <div className="grid gap-3 pt-1">
                 <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 grid gap-4 sm:grid-cols-2">
                   <FormField
                     name={`${basePath}.flv_fix.duplicate_tag_filter_config.window_capacity_tags`}
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-[10px] font-semibold text-blue-500/80 uppercase tracking-tight mb-1">
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel size="sm" className="mb-1">
                           <Trans>Filter Window Size</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <FormControl>
                           <Input
                             type="number"
                             {...field}
-                            className="h-8 text-xs bg-background/50 border-blue-500/20 focus-visible:ring-blue-500/30 font-mono"
-                            placeholder="Tags"
+                            className={cn(CONFIG_INPUT, 'font-mono')}
+                            placeholder={i18n._(msg`Tags`)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -190,15 +198,15 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
                   <FormField
                     name={`${basePath}.flv_fix.duplicate_tag_filter_config.replay_backjump_threshold_ms`}
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-[10px] font-semibold text-blue-500/80 uppercase tracking-tight mb-1">
+                      <FormItem className="space-y-2">
+                        <ConfigFieldLabel size="sm" className="mb-1">
                           <Trans>Backjump Threshold</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <FormControl>
                           <Input
                             type="number"
                             {...field}
-                            className="h-8 text-xs bg-background/50 border-blue-500/20 focus-visible:ring-blue-500/30 font-mono"
+                            className={cn(CONFIG_INPUT, 'font-mono')}
                             placeholder="ms"
                           />
                         </FormControl>
@@ -211,9 +219,9 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
                       name={`${basePath}.flv_fix.duplicate_tag_filter_config.enable_replay_offset_matching`}
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-center justify-between space-y-0">
-                          <FormLabel className="text-[10px] font-medium text-blue-500/80 uppercase tracking-tight">
+                          <ConfigFieldLabel size="sm">
                             <Trans>Offset Consistency Check</Trans>
-                          </FormLabel>
+                          </ConfigFieldLabel>
                           <FormControl>
                             <Switch
                               checked={field.value}
@@ -288,7 +296,7 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
         value="general"
         className="space-y-6 mt-0 focus-visible:outline-none"
       >
-        <Card className="border-border/40 bg-background/40 shadow-sm">
+        <Card className="border-border/50 shadow-sm">
           <CardHeader className="pb-3 pt-4 px-4">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Database className="w-4 h-4 text-primary" />
@@ -299,10 +307,10 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
             <FormField
               name={`${basePath}.buffer_size`}
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                <FormItem className="space-y-2">
+                  <ConfigFieldLabel>
                     <Trans>Global Buffer Size</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <div className="flex items-center gap-2">
                       <Input
@@ -315,7 +323,7 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
                       </span>
                     </div>
                   </FormControl>
-                  <FormDescription className="text-[10px]">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Recommended: 8388608 (8 MiB)</Trans>
                   </FormDescription>
                   <FormMessage />
@@ -331,11 +339,10 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-orange-500/5 p-4 shadow-sm transition-all hover:border-orange-500/20">
                 <div className="space-y-0.5">
-                  <FormLabel className="text-sm font-medium flex items-center gap-2">
-                    <Film className="w-4 h-4 text-orange-500" />
+                  <ConfigFieldLabel icon={Film}>
                     <Trans>Fix FLV Streams</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-[10px]">
+                  </ConfigFieldLabel>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Enable advanced FLV timestamp repairing</Trans>
                   </FormDescription>
                 </div>
@@ -353,11 +360,10 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-blue-500/5 p-4 shadow-sm transition-all hover:border-blue-500/20">
                 <div className="space-y-0.5">
-                  <FormLabel className="text-sm font-medium flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-blue-500" />
+                  <ConfigFieldLabel icon={Wrench}>
                     <Trans>Fix HLS Discontinuities</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-[10px]">
+                  </ConfigFieldLabel>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>Enable advanced HLS segment reconstruction</Trans>
                   </FormDescription>
                 </div>

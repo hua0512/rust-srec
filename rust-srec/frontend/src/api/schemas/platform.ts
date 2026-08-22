@@ -1,12 +1,15 @@
 import { z } from 'zod';
 import {
   StreamSelectionConfigObjectSchema,
+  DanmuStatisticsObjectSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
-  EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
-import { AllPlatformConfigsSchema } from './platform-configs';
+import {
+  AllPlatformConfigsSchema,
+  ExtractorSelectionSchema,
+} from './platform-configs';
 
 // --- Platform Config ---
 export const PlatformConfigSchema = z.object({
@@ -33,6 +36,7 @@ export const PlatformConfigSchema = z.object({
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   output_file_format: z.string().nullable().optional(),
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
@@ -46,6 +50,12 @@ export const PlatformConfigSchema = z.object({
     .nullable()
     .optional(),
 
+  danmu_statistics: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(DanmuStatisticsObjectSchema.nullable().optional())
+    .nullable()
+    .optional(),
   download_retry_policy: z
     .string()
     .transform((str) => JSON.parse(str))
@@ -57,13 +67,6 @@ export const PlatformConfigSchema = z.object({
     .string()
     .transform((str) => JSON.parse(str))
     .pipe(ProxyConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-
-  event_hooks: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(EventHooksSchema.nullable().optional())
     .nullable()
     .optional(),
 
@@ -99,9 +102,9 @@ export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
+  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
-  event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

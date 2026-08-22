@@ -1,6 +1,15 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
 /* Tailwind v4: ensure desktop build (Vite root=frontend/desktop) still scans frontend sources. */
 @source './**/*.{ts,tsx,js,jsx}';
 
@@ -9,6 +18,7 @@
 body {
   @apply m-0;
   font-family:
+    'Inter Variable',
     'Inter',
     -apple-system,
     BlinkMacSystemFont,
@@ -50,6 +60,7 @@ code {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -85,6 +96,7 @@ code {
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
@@ -119,6 +131,7 @@ code {
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.552 0.016 285.938);
@@ -180,6 +193,17 @@ html {
   }
 }
 
+/* Hides the scrollbar on horizontally-scrolling rails (tab strips, filter bars) while keeping
+   them scrollable by wheel, touch and keyboard. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Animations */
 @keyframes blob {
   0% {
@@ -211,24 +235,235 @@ html {
   animation-delay: 4s;
 }
 
+@keyframes rs-connection-ping {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes rs-connection-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+
+  to {
+    opacity: 0.4;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes rs-connection-error-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.2;
+    transform: scale(1.3);
+  }
+}
+
+@keyframes rs-connection-dot-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rs-tooltip-status-dot-enter {
+  from {
+    transform: scale(0.8);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes rs-tooltip-status-label-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes rs-notification-ping {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes rs-dashboard-grid-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rs-dashboard-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rs-connection-ping {
+  animation: rs-connection-ping 1.5s ease-in-out infinite;
+}
+
+.rs-connection-glow {
+  animation: rs-connection-glow 300ms ease-out both;
+}
+
+.rs-connection-error-pulse {
+  animation: rs-connection-error-pulse 2s ease-in-out infinite;
+}
+
+.rs-connection-dot {
+  animation: rs-connection-dot-enter 200ms ease-out both;
+}
+
+.rs-tooltip-status-dot {
+  animation: rs-tooltip-status-dot-enter 200ms ease-out both;
+}
+
+.rs-tooltip-status-label {
+  animation: rs-tooltip-status-label-enter 200ms ease-out both;
+}
+
+.rs-notification-ping {
+  animation: rs-notification-ping 2s ease-in-out infinite;
+}
+
+.rs-dashboard-grid {
+  animation: rs-dashboard-grid-enter 300ms ease-out both;
+}
+
+.rs-dashboard-grid-item {
+  animation: rs-dashboard-item-enter 150ms ease-out both;
+}
+
+.rs-dashboard-grid-item:nth-child(1) {
+  animation-delay: 20ms;
+}
+
+.rs-dashboard-grid-item:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.rs-dashboard-grid-item:nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.rs-dashboard-grid-item:nth-child(4) {
+  animation-delay: 140ms;
+}
+
+.rs-dashboard-empty-enter {
+  animation: rs-dashboard-grid-enter 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rs-connection-ping,
+  .rs-connection-glow,
+  .rs-connection-error-pulse,
+  .rs-connection-dot,
+  .rs-tooltip-status-dot,
+  .rs-tooltip-status-label,
+  .rs-notification-ping,
+  .rs-dashboard-grid,
+  .rs-dashboard-grid-item,
+  .rs-dashboard-empty-enter {
+    animation: none;
+  }
+}
+
+/* Theme-mode circular reveal (use-circular-transition.ts).
+   The animations are defined here, not via element.animate() after
+   viewTransition.ready: a JS-attached animation leaves a window where the
+   top snapshot paints unclipped (the theme appears to flip instantly, then
+   the reveal plays). CSS animations on the pseudos apply from the first
+   transition frame. --reveal-x/--reveal-y/--reveal-r are set inline on
+   <html> by the hook before startViewTransition. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
 
-::view-transition-old(root) {
-  z-index: 9999;
-}
-
-::view-transition-new(root) {
-  z-index: 1;
-}
-
+/* Light -> dark: the incoming dark snapshot sits on top and grows from the
+   click point; the old light snapshot stays static underneath. */
 .dark::view-transition-old(root) {
   z-index: 1;
 }
 
 .dark::view-transition-new(root) {
   z-index: 9999;
+  animation: rs-theme-reveal-in 400ms ease-in forwards;
+}
+
+/* Dark -> light: the outgoing dark snapshot sits on top and shrinks into the
+   click point, uncovering the new light snapshot underneath. */
+html:not(.dark)::view-transition-old(root) {
+  z-index: 9999;
+  animation: rs-theme-reveal-out 400ms ease-in forwards;
+}
+
+html:not(.dark)::view-transition-new(root) {
+  z-index: 1;
+}
+
+@keyframes rs-theme-reveal-in {
+  from {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+@keyframes rs-theme-reveal-out {
+  from {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
 }

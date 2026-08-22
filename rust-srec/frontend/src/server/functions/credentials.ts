@@ -8,7 +8,7 @@ import {
 } from '../../api/schemas';
 
 export const getStreamerCredentialSource = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     try {
       const json = await fetchBackend(`/credentials/streamers/${id}/source`);
@@ -22,7 +22,7 @@ export const getStreamerCredentialSource = createServerFn({ method: 'GET' })
   });
 
 export const getPlatformCredentialSource = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     try {
       const json = await fetchBackend(`/credentials/platforms/${id}/source`);
@@ -36,7 +36,7 @@ export const getPlatformCredentialSource = createServerFn({ method: 'GET' })
   });
 
 export const getTemplateCredentialSource = createServerFn({ method: 'GET' })
-  .inputValidator((input: { id: string; platform?: string }) => input)
+  .validator((input: { id: string; platform?: string }) => input)
   .handler(async ({ data }) => {
     const { id, platform } = data;
     try {
@@ -54,7 +54,7 @@ export const getTemplateCredentialSource = createServerFn({ method: 'GET' })
   });
 
 export const refreshStreamerCredentials = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/credentials/streamers/${id}/refresh`, {
       method: 'POST',
@@ -63,7 +63,7 @@ export const refreshStreamerCredentials = createServerFn({ method: 'POST' })
   });
 
 export const refreshPlatformCredentials = createServerFn({ method: 'POST' })
-  .inputValidator((id: string) => id)
+  .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/credentials/platforms/${id}/refresh`, {
       method: 'POST',
@@ -72,7 +72,7 @@ export const refreshPlatformCredentials = createServerFn({ method: 'POST' })
   });
 
 export const refreshTemplateCredentials = createServerFn({ method: 'POST' })
-  .inputValidator((input: { id: string; platform?: string }) => input)
+  .validator((input: { id: string; platform?: string }) => input)
   .handler(async ({ data }) => {
     const { id, platform } = data;
     const qs = platform ? `?platform=${encodeURIComponent(platform)}` : '';
@@ -107,7 +107,7 @@ export interface PollBilibiliQrInput {
 }
 
 export const pollBilibiliQr = createServerFn({ method: 'POST' })
-  .inputValidator((input: PollBilibiliQrInput) => input)
+  .validator((input: PollBilibiliQrInput) => input)
   .handler(async ({ data }) => {
     const json = await fetchBackend('/credentials/bilibili/qr/poll', {
       method: 'POST',

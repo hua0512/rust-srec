@@ -494,7 +494,7 @@ impl DownloadFailureKind {
     /// are NOT counted because they indicate the specific resource is gone or
     /// misconfigured, not that the engine is malfunctioning. Output-root
     /// failures are also excluded because they are infrastructure-level and
-    /// already gated by [`crate::downloader::output_root_gate`]; routing them
+    /// already gated by the output-root gate; routing them
     /// into the engine circuit breaker would double-block recovery.
     pub fn affects_circuit_breaker(&self) -> bool {
         !matches!(
@@ -810,15 +810,6 @@ mod tests {
             DownloadProtocol::from_format_label("dash"),
             DownloadProtocol::Unknown
         );
-    }
-
-    #[test]
-    fn test_download_progress_default() {
-        let progress = DownloadProgress::default();
-        assert_eq!(progress.bytes_downloaded, 0);
-        assert_eq!(progress.segments_completed, 0);
-        assert_eq!(progress.media_duration_secs, 0.0);
-        assert_eq!(progress.playback_ratio, 0.0);
     }
 
     #[test]

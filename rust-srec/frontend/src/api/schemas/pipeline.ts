@@ -98,6 +98,35 @@ export const JobLogsResponseSchema = z.object({
 });
 export type JobLogsResponse = z.infer<typeof JobLogsResponseSchema>;
 
+// Durable per-file upload result (upload_records row) from
+// GET /pipeline/jobs/{id}/uploads.
+export const UploadRecordStatusSchema = z.enum([
+  'COMPLETED',
+  'FAILED',
+  'SKIPPED',
+]);
+export type UploadRecordStatus = z.infer<typeof UploadRecordStatusSchema>;
+
+export const UploadRecordSchema = z.object({
+  id: z.string(),
+  job_id: z.string().nullable().optional(),
+  uploader: z.string(),
+  local_path: z.string(),
+  remote_path: z.string().nullable().optional(),
+  status: UploadRecordStatusSchema,
+  size_bytes: z.number().nullable().optional(),
+  error: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+});
+export type UploadRecord = z.infer<typeof UploadRecordSchema>;
+
+export const UploadRecordListSchema = z.object({
+  items: z.array(UploadRecordSchema),
+});
+export type UploadRecordList = z.infer<typeof UploadRecordListSchema>;
+
 export const JobPresetSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -120,6 +149,7 @@ export type JobPreset = z.infer<typeof JobPresetSchema>;
 export const VALID_PROCESSORS = [
   'remux',
   'rclone',
+  'baidupcs',
   'thumbnail',
   'execute',
   'audio_extract',
@@ -129,8 +159,6 @@ export const VALID_PROCESSORS = [
   'metadata',
   'danmaku_factory',
   'ass_burnin',
-  'tdl',
-  'telegram',
 ] as const;
 export type ProcessorType = (typeof VALID_PROCESSORS)[number];
 

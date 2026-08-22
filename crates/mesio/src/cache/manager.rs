@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use tokio::io;
+use tracing::warn;
 
 use crate::cache::providers::file::FileCache;
 use crate::cache::providers::memory::MemoryCache;
 use crate::cache::providers::provider::CacheProvider;
 use crate::cache::types::{
     CacheConfig, CacheKey, CacheLookupResult, CacheMetadata, CacheResourceType, CacheResult,
+    CacheStatus,
 };
 
 /// Cache manager handling both memory and file caching
@@ -76,17 +78,26 @@ impl CacheManager {
         }
 
         // Check memory cache first
-        if let Some((data, metadata, status)) = self.memory_cache.get(key).await? {
+        if let Some((data, metadata, status)) = self.memory_cache.get(key).await?
+            && status != CacheStatus::Expired
+        {
             return Ok(Some((data, metadata, status)));
         }
 
         // Try file cache if memory cache misses
         if let Some((data, metadata, status)) = self.file_cache.get(key).await? {
+            if status == CacheStatus::Expired {
+                return Ok(None);
+            }
+
             // Store in memory cache for faster access next time
-            let _ = self
+            if let Err(error) = self
                 .memory_cache
                 .put(key.clone(), data.clone(), metadata.clone())
-                .await;
+                .await
+            {
+                warn!(%error, "failed to promote file-cache entry to memory cache");
+            }
 
             return Ok(Some((data, metadata, status)));
         }
@@ -105,14 +116,15 @@ impl CacheManager {
             return Ok(());
         }
 
-        // Store in memory cache
-        let _ = self
+        let memory_result = self
             .memory_cache
             .put(key.clone(), data.clone(), metadata.clone())
             .await;
 
-        // Store in file cache
-        self.file_cache.put(key, data, metadata).await
+        let file_result = self.file_cache.put(key, data, metadata).await;
+
+        // Prefer the durable cache error, otherwise report a memory-cache failure.
+        file_result.or(memory_result)
     }
 
     /// Remove a key from cache
@@ -249,6 +261,8 @@ impl CacheManager {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+
     use super::*;
 
     #[test]
@@ -271,5 +285,29 @@ mod tests {
             Ok(_) => panic!("expected CacheManager::from_config to error inside Tokio runtime"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::Other),
         }
+    }
+
+    #[tokio::test]
+    async fn get_does_not_return_or_promote_expired_entries() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = CacheManager::new(CacheConfig {
+            disk_cache_path: Some(temp_dir.path().to_path_buf()),
+            max_disk_cache_size: 1024,
+            max_memory_cache_size: 1024,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let key = CacheKey::new(CacheResourceType::Content, "expired", None);
+        let data = Bytes::from_static(b"stale");
+        let mut metadata = CacheMetadata::new(data.len() as u64);
+        metadata.expires_at = Some(0);
+
+        manager.put(key.clone(), data, metadata).await.unwrap();
+
+        assert!(manager.get(&key).await.unwrap().is_none());
+        manager.memory_cache.sweep().await.unwrap();
+        assert!(!manager.memory_cache.contains(&key).await.unwrap());
+        assert!(manager.get(&key).await.unwrap().is_none());
     }
 }

@@ -1,15 +1,15 @@
 {
     "name": "rust-srec-docs",
     "type": "module",
-    "packageManager": "pnpm@10.28.1",
+    "packageManager": "pnpm@11.11.0",
     "scripts": {
         "docs:dev": "vitepress dev",
         "docs:build": "vitepress build",
         "docs:preview": "vitepress preview"
     },
     "devDependencies": {
-        "mermaid": "^11.15.0",
-        "vitepress": "2.0.0-alpha.17",
+        "mermaid": "^11.16.1",
+        "vitepress": "2.0.0-alpha.19",
         "vitepress-mermaid-preview": "^0.2.1"
     }
 }

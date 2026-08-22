@@ -1,6 +1,7 @@
 //! Shared helpers for FLV and HLS download orchestrators.
 
 use std::fmt::Display;
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -8,8 +9,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use pipeline_common::{
-    PipelineError, RunCompletionError, SplitReason, WriterError, WriterProgress, WriterStats,
-    settle_run,
+    PipelineError, PipelineSender, RunCompletionError, SplitReason, WriterError, WriterProgress,
+    WriterStats, settle_run,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -18,6 +19,7 @@ use tracing::{debug, error, info, warn};
 use crate::downloader::engine::traits::{
     DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo,
 };
+use crate::downloader::engine::utils::observe_segment_event_send;
 
 // ---------------------------------------------------------------------------
 // DownloadStats (moved from hls_downloader)
@@ -134,7 +136,9 @@ pub(super) fn setup_writer_callbacks(
             sequence,
             started_at,
         };
-        let _ = event_tx_start.blocking_send(event);
+        if let Err(error) = event_tx_start.blocking_send(event) {
+            debug!(%error, "segment-start event receiver closed");
+        }
     });
 
     writer.set_on_segment_complete_callback(
@@ -167,7 +171,9 @@ pub(super) fn setup_writer_callbacks(
                 split_reason_code,
                 split_reason_details_json,
             });
-            let _ = event_tx_complete.blocking_send(event);
+            if let Err(error) = event_tx_complete.blocking_send(event) {
+                debug!(%error, "segment-complete event receiver closed");
+            }
         },
     );
 
@@ -181,7 +187,12 @@ pub(super) fn setup_writer_callbacks(
             media_duration_secs: progress.media_duration_secs_total,
             playback_ratio: progress.playback_ratio,
         };
-        let _ = event_tx_progress.try_send(SegmentEvent::Progress(download_progress));
+        match event_tx_progress.try_send(SegmentEvent::Progress(download_progress)) {
+            Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
+            Err(error @ mpsc::error::TrySendError::Closed(_)) => {
+                debug!(%error, "progress event receiver closed");
+            }
+        }
     });
 }
 
@@ -254,6 +265,32 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
 // consume_stream
 // ---------------------------------------------------------------------------
 
+pub(super) trait StreamSender<T> {
+    fn send_item(
+        &self,
+        item: std::result::Result<T, PipelineError>,
+    ) -> impl Future<Output = Result<(), ()>> + Send;
+}
+
+impl<T: Send> StreamSender<T> for mpsc::Sender<std::result::Result<T, PipelineError>> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        self.send(item).await.map_err(|_| ())
+    }
+}
+
+impl<T: Send> StreamSender<T> for PipelineSender<T> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        self.send(item).await.map_err(|_| ())
+    }
+}
+
+pub(super) struct StreamConsumeContext<'a> {
+    pub parent_token: &'a CancellationToken,
+    pub child_token: &'a CancellationToken,
+    pub streamer_id: &'a str,
+    pub protocol: &'a str,
+}
+
 /// Consume a protocol stream, forwarding items to a channel.
 ///
 /// Returns `Some((kind, message))` if the stream yielded an error, or `None`
@@ -263,14 +300,10 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
 /// can tap protocol-specific signals (e.g. HLS observing
 /// `HlsData::EndMarker(Some(SplitReason::EndOfStream))` to surface
 /// `EngineEndSignal::HlsEndlist`). FLV callers pass a no-op closure.
-#[allow(clippy::too_many_arguments)]
-pub(super) async fn consume_stream<T, E: Display>(
+pub(super) async fn consume_stream<T: Send, E: Display>(
     stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
-    tx: &mpsc::Sender<std::result::Result<T, PipelineError>>,
-    parent_token: &CancellationToken,
-    child_token: &CancellationToken,
-    streamer_id: &str,
-    protocol: &str,
+    tx: &impl StreamSender<T>,
+    context: StreamConsumeContext<'_>,
     classify: impl Fn(&E) -> DownloadFailureKind,
     mut inspect: impl FnMut(&T),
 ) -> Option<(DownloadFailureKind, String)> {
@@ -278,29 +311,49 @@ pub(super) async fn consume_stream<T, E: Display>(
     let mut stream_error: Option<(DownloadFailureKind, String)> = None;
 
     while let Some(result) = stream.next().await {
-        if parent_token.is_cancelled() || child_token.is_cancelled() {
-            debug!("{} download cancelled for {}", protocol, streamer_id);
+        if context.parent_token.is_cancelled() || context.child_token.is_cancelled() {
+            debug!(
+                protocol = context.protocol,
+                streamer_id = context.streamer_id,
+                "Download cancelled"
+            );
             break;
         }
 
         match result {
             Ok(item) => {
                 inspect(&item);
-                if tx.send(Ok(item)).await.is_err() {
-                    warn!("Channel closed, stopping {} download", protocol);
+                if tx.send_item(Ok(item)).await.is_err() {
+                    warn!(
+                        protocol = context.protocol,
+                        "Channel closed, stopping download"
+                    );
                     break;
                 }
             }
             Err(e) => {
-                error!("{} stream error for {}: {}", protocol, streamer_id, e);
+                error!(
+                    protocol = context.protocol,
+                    streamer_id = context.streamer_id,
+                    error = %e,
+                    "Stream failed"
+                );
                 let kind = classify(&e);
                 let msg = e.to_string();
                 stream_error = Some((kind, msg.clone()));
-                let _ = tx
-                    .send(Err(PipelineError::Strategy(Box::new(
+                if tx
+                    .send_item(Err(PipelineError::Strategy(Box::new(
                         std::io::Error::other(msg.clone()),
                     ))))
-                    .await;
+                    .await
+                    .is_err()
+                {
+                    debug!(
+                        protocol = context.protocol,
+                        streamer_id = context.streamer_id,
+                        "Stream error receiver already closed"
+                    );
+                }
                 break;
             }
         }
@@ -342,26 +395,32 @@ pub(super) async fn handle_writer_result(
             };
 
             if let Some((kind, msg)) = stream_error {
-                let _ = event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind,
-                        message: msg.clone(),
-                    })
-                    .await;
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            kind,
+                            message: msg.clone(),
+                        })
+                        .await,
+                    streamer_id,
+                );
                 return Err(crate::Error::Other(format!(
                     "{} stream error: {}",
                     protocol, msg
                 )));
             }
 
-            let _ = event_tx
-                .send(SegmentEvent::DownloadCompleted {
-                    total_bytes: download_stats.total_bytes,
-                    total_duration_secs: download_stats.total_duration_secs,
-                    total_segments: download_stats.files_created,
-                    engine_signal,
-                })
-                .await;
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadCompleted {
+                        total_bytes: download_stats.total_bytes,
+                        total_duration_secs: download_stats.total_duration_secs,
+                        total_segments: download_stats.files_created,
+                        engine_signal,
+                    })
+                    .await,
+                streamer_id,
+            );
 
             info!(
                 "{} download completed for {}: {} items, {} files",
@@ -372,23 +431,29 @@ pub(super) async fn handle_writer_result(
         }
         Err(RunCompletionError::Writer(e)) => {
             if let Some((kind, msg)) = stream_error {
-                let _ = event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind,
-                        message: msg.clone(),
-                    })
-                    .await;
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            kind,
+                            message: msg.clone(),
+                        })
+                        .await,
+                    streamer_id,
+                );
                 return Err(crate::Error::Other(format!(
                     "{} stream error: {}",
                     protocol, msg
                 )));
             }
-            let _ = event_tx
-                .send(SegmentEvent::DownloadFailed {
-                    kind: DownloadFailureKind::Processing,
-                    message: e.to_string(),
-                })
-                .await;
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        kind: DownloadFailureKind::Processing,
+                        message: e.to_string(),
+                    })
+                    .await,
+                streamer_id,
+            );
             Err(crate::Error::Other(format!(
                 "{} writer error: {}",
                 protocol, e
@@ -396,24 +461,30 @@ pub(super) async fn handle_writer_result(
         }
         Err(RunCompletionError::Pipeline(e)) => {
             if let Some((kind, msg)) = stream_error {
-                let _ = event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind,
-                        message: msg.clone(),
-                    })
-                    .await;
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            kind,
+                            message: msg.clone(),
+                        })
+                        .await,
+                    streamer_id,
+                );
                 return Err(crate::Error::Other(format!(
                     "{} stream error: {}",
                     protocol, msg
                 )));
             }
             warn!("Pipeline processing task error: {}", e);
-            let _ = event_tx
-                .send(SegmentEvent::DownloadFailed {
-                    kind: DownloadFailureKind::Processing,
-                    message: e.to_string(),
-                })
-                .await;
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        kind: DownloadFailureKind::Processing,
+                        message: e.to_string(),
+                    })
+                    .await,
+                streamer_id,
+            );
             Err(crate::Error::Other(format!(
                 "{} pipeline error: {}",
                 protocol, e

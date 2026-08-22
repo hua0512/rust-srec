@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "API response models include fields not consumed by the extractor"
+)]
 
 use serde::Deserialize;
 
@@ -58,32 +61,36 @@ pub struct PandaTvPlayTime {
     pub total: String,
 }
 
+/// Only `result` is guaranteed on every `/v1/live/play` reply. Error responses
+/// (e.g. `castEnd`, region blocks, wrong password) carry `result == false` and
+/// `message` but omit the success payload, so every other field is `Option` to
+/// keep the `result`/`message` check in `PandaTV::get_live_info` reachable.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PandaTvLiveResponse {
     // pub room_blind_info: PandaTvLiveRoomBlindInfo,
     // pub room_freeze_info: PandaTvLiveRoomFreezeInfo,
-    pub token: String,
-    pub enter_chat: Vec<serde_json::Value>,
-    pub html5: bool,
-    pub channel: String,
-    pub media: PandaTvLiveMedia,
-    pub mode: String,
-    pub chat_mode: String,
-    pub play_mode: String,
+    pub token: Option<String>,
+    pub enter_chat: Option<Vec<serde_json::Value>>,
+    pub html5: Option<bool>,
+    pub channel: Option<String>,
+    pub media: Option<PandaTvLiveMedia>,
+    pub mode: Option<String>,
+    pub chat_mode: Option<String>,
+    pub play_mode: Option<String>,
     #[serde(rename = "PlayList")]
-    pub play_list: PandaTvLivePlayList,
-    pub ie_play_mode: String,
-    pub is_bookmark: bool,
-    pub adult_out: bool,
-    pub chat_server: PandaTvLiveChatServer,
-    pub room_info: String,
-    pub ranking: i32,
-    pub chat_message: PandaTvLiveChatMessage,
-    pub vip_deco: i32,
+    pub play_list: Option<PandaTvLivePlayList>,
+    pub ie_play_mode: Option<String>,
+    pub is_bookmark: Option<bool>,
+    pub adult_out: Option<bool>,
+    pub chat_server: Option<PandaTvLiveChatServer>,
+    pub room_info: Option<String>,
+    pub ranking: Option<i32>,
+    pub chat_message: Option<PandaTvLiveChatMessage>,
+    pub vip_deco: Option<i32>,
     pub result: bool,
-    pub message: String,
-    pub login_info: PandaTvLiveLoginInfo,
+    pub message: Option<String>,
+    pub login_info: Option<PandaTvLiveLoginInfo>,
     // pub user_ip: String,
 }
 

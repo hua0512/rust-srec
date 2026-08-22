@@ -64,7 +64,7 @@ impl UserDbModel {
         }
     }
 
-    /// Get the roles as a Vec<String>.
+    /// Get the roles as a `Vec<String>`.
     pub fn get_roles(&self) -> Vec<String> {
         json::parse_or_default(
             &self.roles,
@@ -76,7 +76,7 @@ impl UserDbModel {
         )
     }
 
-    /// Set the roles from a Vec<String>.
+    /// Set the roles from a `Vec<String>`.
     pub fn set_roles(&mut self, roles: Vec<String>) {
         self.roles = json::to_string_or_fallback(
             &roles,

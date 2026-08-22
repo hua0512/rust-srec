@@ -12,13 +12,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_referer_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
 use chrono::{TimeZone, Utc};
@@ -50,7 +51,10 @@ const HEARTBEAT: &[u8] = &[
 ];
 
 /// Operation codes
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for protocol variants and forward-compatible response handling"
+)]
 mod op {
     pub const HEARTBEAT_REPLY: u32 = 3;
     pub const NOTIFICATION: u32 = 5;
@@ -336,7 +340,9 @@ impl BilibiliDanmuProtocol {
             let version = BigEndian::read_u16(&data[offset + 6..offset + 8]);
             let operation = BigEndian::read_u32(&data[offset + 8..offset + 12]);
 
-            if offset + packet_len > data.len() {
+            // Every frame has a 16-byte header. Validate the relative length
+            // before slicing, and avoid overflowing `offset + packet_len`.
+            if packet_len < 16 || packet_len > data.len() - offset {
                 break;
             }
 
@@ -592,7 +598,9 @@ impl BilibiliDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for BilibiliDanmuProtocol {
+impl DanmuProtocolFactory for BilibiliDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "bilibili"
     }
@@ -605,7 +613,18 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        Self {
+            client: self.client.clone(),
+            cookies: self.cookies.clone(),
+            uid: None,
+            connection_cookies: None,
+        }
+    }
+}
+
+impl DanmuProtocol for BilibiliDanmuProtocol {
+    async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // First get real room ID
         let real_room_id = self.get_real_room_id(room_id).await?;
 
@@ -651,7 +670,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         self.connection_cookies = cookies.map(ToString::to_string);
     }
 
-    async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         // Get real room ID and danmu info
         let real_room_id = self.get_real_room_id(room_id).await?;
         let (_ws_url, token) = self.get_danmu_info(real_room_id).await?;
@@ -671,11 +690,10 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        _tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
                 let packets = Self::decode_packets(data);
@@ -700,9 +718,9 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                     }
                 }
 
-                Ok(items)
+                Ok(items.into())
             }
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -748,7 +766,7 @@ pub type BilibiliDanmuProvider = WebSocketDanmuProvider<BilibiliDanmuProtocol>;
 
 /// Create a new Bilibili danmu provider.
 pub fn create_bilibili_danmu_provider() -> BilibiliDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(BilibiliDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(BilibiliDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]
@@ -782,6 +800,24 @@ mod tests {
         assert_eq!(BigEndian::read_u32(&packet[8..12]), op::AUTH);
         assert_eq!(BigEndian::read_u32(&packet[12..16]), 1);
         assert_eq!(&packet[16..], body);
+    }
+
+    #[test]
+    fn decode_packets_rejects_lengths_shorter_than_the_header() {
+        for packet_len in [0_u32, 15] {
+            let mut packet = vec![0_u8; 16];
+            BigEndian::write_u32(&mut packet[0..4], packet_len);
+
+            assert!(BilibiliDanmuProtocol::decode_packets(&packet).is_empty());
+        }
+    }
+
+    #[test]
+    fn decode_packets_rejects_lengths_beyond_the_frame() {
+        let mut packet = vec![0_u8; 16];
+        BigEndian::write_u32(&mut packet[0..4], 17);
+
+        assert!(BilibiliDanmuProtocol::decode_packets(&packet).is_empty());
     }
 
     #[test]
@@ -991,8 +1027,8 @@ mod tests {
         let room_id = "1721766859";
 
         println!("Connecting to Bilibili room: {}", room_id);
-        let connection = match provider.connect(room_id, ConnectionConfig::default()).await {
-            Ok(conn) => conn,
+        let mut items = match provider.connect(room_id, ConnectionConfig::default()).await {
+            Ok(stream) => stream.items,
             Err(e) => {
                 eprintln!("Failed to connect: {}", e);
                 return;
@@ -1004,7 +1040,7 @@ mod tests {
         let mut message_count = 0;
 
         while start.elapsed() < Duration::from_secs(60) {
-            match provider.receive(&connection).await {
+            match tokio::time::timeout(Duration::from_millis(500), items.recv()).await {
                 Ok(Some(item)) => match item {
                     crate::danmaku::DanmuItem::Message(msg) => {
                         println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
@@ -1015,11 +1051,12 @@ mod tests {
                     }
                 },
                 Ok(None) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Stream closed by provider");
                     break;
+                }
+                Err(_) => {
+                    // No message within the window; keep waiting until the 60s
+                    // budget is spent.
                 }
             }
         }

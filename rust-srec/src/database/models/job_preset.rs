@@ -10,8 +10,7 @@ use crate::utils::json::{self, JsonContext};
 pub const VALID_PROCESSORS: &[&str] = &[
     "remux",
     "rclone",
-    "tdl",
-    "telegram",
+    "baidupcs",
     "thumbnail",
     "execute",
     "audio_extract",

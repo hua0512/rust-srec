@@ -2,8 +2,9 @@
 name = "media-types"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 description = "Shared media domain types"
 license.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+[lints]
+workspace = true

@@ -13,8 +13,9 @@ Build / lint / test
 
 Rust (run from repo root; match CI by adding `--locked`)
 
-- Build (debug): `cargo build`
-- Build (release): `cargo build --release`
+- Build default applications (debug, excludes desktop): `cargo build`
+- Build default applications (release, excludes desktop): `cargo build --release`
+- Build the full workspace: `cargo build --workspace`
 - Build specific package: `cargo build -p rust-srec` (or `-p strev`, `-p mesio`)
 - Format: `cargo fmt --all`
 - Lint (CI): `cargo clippy --locked --all-targets --all-features -- -D warnings`
@@ -92,7 +93,7 @@ Code style / engineering conventions
 
 Authoritative local rules
 
-- Cursor rules: `.cursorrules` points to `.rules` (treat `.rules` as the enforced policy).
+- This `AGENTS.md` and any more-specific nested `AGENTS.md` files are the enforced policy.
 - Copilot instructions: none found (`.github/copilot-instructions.md` is absent).
 
 Rust style
@@ -101,9 +102,7 @@ Rust style
 - Imports: group as `std` -> external crates -> `crate`/`super` modules; keep imports explicit.
   Example: `rust-srec/src/credentials/service.rs`.
 - Modules/files: do not introduce `mod.rs` modules; prefer `src/foo.rs` / `src/foo/` layout.
-  Policy is in `.rules`.
 - Comments/doc: avoid “organizational” comments; only write comments explaining non-obvious "why".
-  Policy is in `.rules`.
 - Collapsible ifs: always collapse nested `if` statements using `if let ... && condition` syntax.
   Example: prefer `if let Some(x) = opt && !x.is_empty() { ... }` over nested `if let` + `if`.
 
@@ -116,10 +115,9 @@ Naming / API shape
 Error handling
 
 - Avoid panics: do not add `unwrap()` / `expect()` in production code.
-  Policy is in `.rules` (and the repo currently appears to avoid them).
 - Never silently discard errors:
   avoid `let _ = fallible_call()?;` or `let _ = fallible_call();`.
-  If ignoring errors is required, do it explicitly and with visibility (log/metrics) per `.rules`.
+  If ignoring errors is required, do it explicitly and with visibility (log/metrics).
 - App-wide errors (`rust-srec`): prefer `rust-srec/src/error.rs` (thiserror enum + `Result<T>` alias).
 - Prefer adding context instead of flattening errors into `String` too early; use targeted variants.
 - For path-related IO, prefer `Error::io_path(op, path, source)` (see `rust-srec/src/error.rs`).
@@ -151,7 +149,7 @@ Performance / runtime conventions
 
 When adding new code
 
-- Prefer extending existing modules over creating lots of tiny files (.rules).
+- Prefer extending existing modules over creating lots of tiny files.
 - Follow existing abstraction boundaries: app orchestration in `rust-srec/src/main.rs` and services in `rust-srec/src/services/`.
 - Add/adjust tests close to the crate you changed; use nextest to verify quickly.
 

@@ -138,9 +138,9 @@ pub struct CreateStreamerRequest {
     /// Streamer name
     pub name: String,
     /// Streamer URL
+    ///
+    /// The platform configuration is derived from this; there is no `platform_config_id` input.
     pub url: String,
-    /// Platform configuration ID
-    pub platform_config_id: String,
     /// Template ID (optional)
     pub template_id: Option<String>,
     /// Priority (default: Normal)
@@ -181,6 +181,57 @@ pub struct UpdatePriorityRequest {
     pub priority: Priority,
 }
 
+/// Mutation applied to every streamer in a batch request.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BatchStreamerAction {
+    /// Enable or disable monitoring.
+    SetEnabled { enabled: bool },
+    /// Assign a template, or clear it with `null`.
+    SetTemplate { template_id: Option<String> },
+    /// Set the scheduling priority.
+    SetPriority { priority: Priority },
+    /// Delete the streamer.
+    Delete,
+}
+
+/// Request to mutate multiple streamers.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct BatchStreamerRequest {
+    /// Unique streamer IDs to process.
+    pub ids: Vec<String>,
+    /// Mutation applied to each streamer.
+    pub action: BatchStreamerAction,
+}
+
+/// Result of a batch mutation for one streamer.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct BatchStreamerItemResult {
+    /// Streamer ID supplied in the request.
+    pub id: String,
+    /// Whether the mutation succeeded.
+    pub success: bool,
+    /// Stable error code when the mutation failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Human-readable error when the mutation failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Summary of a batch streamer mutation.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct BatchStreamerResponse {
+    /// Number of unique streamers requested.
+    pub requested: usize,
+    /// Number of successful mutations.
+    pub succeeded: usize,
+    /// Number of failed mutations.
+    pub failed: usize,
+    /// Per-streamer mutation results.
+    pub results: Vec<BatchStreamerItemResult>,
+}
+
 /// Streamer response.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct StreamerResponse {
@@ -207,6 +258,10 @@ pub struct StreamerResponse {
 pub struct StreamerFilterParams {
     /// Filter by platform
     pub platform: Option<String>,
+    /// Filter by configuration template
+    pub template: Option<String>,
+    /// Filter by whether no configuration template is assigned
+    pub template_unassigned: Option<bool>,
     /// Filter by state (comma-separated for multiple)
     pub state: Option<String>,
     /// Filter by priority
@@ -235,6 +290,8 @@ pub struct GlobalConfigResponse {
     pub max_download_duration_secs: u64,
     pub max_part_size_bytes: u64,
     pub record_danmu: bool,
+    /// JSON `DanmuStatisticsConfig`; absent resolves to its defaults.
+    pub danmu_statistics: Option<String>,
     pub max_concurrent_downloads: u32,
     pub max_concurrent_uploads: u32,
     pub streamer_check_delay_ms: u64,
@@ -242,6 +299,8 @@ pub struct GlobalConfigResponse {
     pub offline_check_delay_ms: u64,
     pub offline_check_count: u32,
     pub default_download_engine: String,
+    /// Extractor selection ("auto" or "streamlink"); `None` resolves to auto.
+    pub default_extractor: Option<String>,
     pub max_concurrent_cpu_jobs: u32,
     pub max_concurrent_io_jobs: u32,
     pub job_history_retention_days: u32,
@@ -268,6 +327,11 @@ pub struct GlobalConfigResponse {
     /// Seconds between probes of nvidia-smi for the GPU health monitor
     /// (issue #555). Hot-reloaded by the monitor on the next tick.
     pub gpu_health_probe_interval_secs: u64,
+
+    /// Whether the stream proxy may fetch targets on private networks.
+    /// Read per request by the stream-proxy route, so changes apply
+    /// without a restart.
+    pub stream_proxy_allow_private_targets: bool,
 }
 
 /// Request to update global configuration.
@@ -289,16 +353,16 @@ pub struct UpdateGlobalConfigRequest {
     pub job_history_retention_days: Option<serde_json::Value>,
     pub notification_event_log_retention_days: Option<serde_json::Value>,
     pub default_download_engine: Option<serde_json::Value>,
+    pub default_extractor: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
+    pub danmu_statistics: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
-    /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
+    /// Global pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<serde_json::Value>,
     /// Session-complete pipeline configuration (JSON serialized DagPipelineDefinition)
     pub session_complete_pipeline: Option<serde_json::Value>,
     /// Paired-segment pipeline configuration (JSON serialized DagPipelineDefinition)
     pub paired_segment_pipeline: Option<serde_json::Value>,
-    /// Log filter directive for dynamic logging
-    pub log_filter_directive: Option<serde_json::Value>,
     /// Whether to automatically generate thumbnails for new sessions
     pub auto_thumbnail: Option<serde_json::Value>,
 
@@ -311,6 +375,8 @@ pub struct UpdateGlobalConfigRequest {
     /// Seconds between GPU health probes (issue #555). Clamped server-side to
     /// at least 1 second; the UI hint discourages going below 30 s.
     pub gpu_health_probe_interval_secs: Option<serde_json::Value>,
+    /// Whether the stream proxy may fetch targets on private networks.
+    pub stream_proxy_allow_private_targets: Option<serde_json::Value>,
 }
 
 /// Platform configuration response.
@@ -321,20 +387,23 @@ pub struct PlatformConfigResponse {
     pub fetch_delay_ms: Option<u64>,
     pub download_delay_ms: Option<u64>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub cookies: Option<String>,
     pub platform_specific_config: Option<String>,
     pub proxy_config: Option<String>,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the global default.
+    pub extractor: Option<String>,
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<u64>,
     pub max_download_duration_secs: Option<u64>,
     pub max_part_size_bytes: Option<u64>,
     pub download_retry_policy: Option<String>,
-    pub event_hooks: Option<String>,
-    /// Platform-specific pipeline configuration (JSON serialized Vec<PipelineStep>)
+    /// Platform-specific pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -356,7 +425,11 @@ pub struct CreateTemplateRequest {
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
+    pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -365,9 +438,7 @@ pub struct CreateTemplateRequest {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
-    pub danmu_sampling_config: Option<String>,
     pub proxy_config: Option<String>,
-    pub event_hooks: Option<String>,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -383,7 +454,11 @@ pub struct UpdateTemplateRequest {
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
+    pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -392,9 +467,7 @@ pub struct UpdateTemplateRequest {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
-    pub danmu_sampling_config: Option<String>,
     pub proxy_config: Option<String>,
-    pub event_hooks: Option<String>,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -411,7 +484,11 @@ pub struct TemplateResponse {
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
     pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
+    pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -420,9 +497,7 @@ pub struct TemplateResponse {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
-    pub danmu_sampling_config: Option<String>,
     pub proxy_config: Option<String>,
-    pub event_hooks: Option<String>,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -678,6 +753,47 @@ pub struct MediaOutputResponse {
     pub duration_secs: Option<f64>,
     pub format: String,
     pub created_at: DateTime<Utc>,
+    /// Upload results whose `local_path` matches `file_path` — one entry
+    /// per uploader, newest record wins (DAG retries produce rows under
+    /// fresh job ids). Empty (and omitted from JSON) when the file was
+    /// never part of an upload job.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub uploads: Vec<MediaOutputUploadInfo>,
+}
+
+/// Upload annotation attached to a media output on the outputs page.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct MediaOutputUploadInfo {
+    /// Producing processor kind (`upload_records.uploader`, e.g. "rclone").
+    pub uploader: String,
+    pub remote_path: Option<String>,
+    /// `COMPLETED` | `FAILED` | `SKIPPED`.
+    pub status: String,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// One durable per-file upload result (`upload_records` row).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct UploadRecordResponse {
+    pub id: String,
+    pub job_id: Option<String>,
+    /// Producing processor kind (e.g. "rclone").
+    pub uploader: String,
+    pub local_path: String,
+    pub remote_path: Option<String>,
+    /// `COMPLETED` | `FAILED` | `SKIPPED`.
+    pub status: String,
+    pub size_bytes: Option<i64>,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Response for `GET /api/pipeline/jobs/{id}/uploads`.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct UploadRecordListResponse {
+    pub items: Vec<UploadRecordResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -834,9 +950,39 @@ pub struct StreamerCheckHistoryResponse {
 pub struct SessionDanmuStatisticsResponse {
     pub session_id: String,
     pub total_danmus: u64,
+    /// Approximate distinct senders (HyperLogLog estimate). `None` for
+    /// statistics rows persisted before the metric existed.
+    pub unique_talkers: Option<u64>,
+    /// Messages that were not gifts or super chats.
+    pub chat_count: Option<u64>,
+    /// Gift and super-chat messages.
+    pub gift_count: Option<u64>,
+    /// Seconds from the first message to the end of collection. Together with
+    /// `total_danmus` this gives an average rate over wall-clock time, which the
+    /// timeseries alone cannot provide because silent buckets are absent.
+    pub duration_secs: Option<u64>,
+    /// First message time.
+    pub start_time: Option<DateTime<Utc>>,
+    /// Collection end time; `None` while the session is still recording.
+    pub end_time: Option<DateTime<Utc>>,
+    /// Width of one `danmu_rate_timeseries` bucket. Long sessions are coarsened,
+    /// so this varies within a session and must be read rather than assumed.
+    pub rate_bucket_secs: Option<u64>,
     pub danmu_rate_timeseries: Vec<DanmuRatePoint>,
     pub top_talkers: Vec<DanmuTopTalker>,
+    /// Top gift senders; `message_count` holds total gift items.
+    pub top_gifters: Vec<DanmuTopTalker>,
+    /// Most-sent gifts by name.
+    #[schema(inline)]
+    pub top_gifts: Vec<DanmuGiftTally>,
     pub word_frequency: Vec<DanmuWordFrequency>,
+}
+
+/// Gift tally entry (gift name -> total items sent).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct DanmuGiftTally {
+    pub name: String,
+    pub count: i64,
 }
 
 /// Danmu rate datapoint.
@@ -853,6 +999,10 @@ pub struct DanmuTopTalker {
     pub user_id: String,
     pub username: String,
     pub message_count: i64,
+    /// Overestimate bound; the true count is at least `message_count - error`.
+    /// Zero means exact, which is the case for every entry in a room with fewer
+    /// distinct senders than the tracking capacity.
+    pub error: i64,
 }
 
 /// Word frequency entry.
@@ -860,6 +1010,8 @@ pub struct DanmuTopTalker {
 pub struct DanmuWordFrequency {
     pub word: String,
     pub count: i64,
+    /// Overestimate bound; the true count is at least `count - error`.
+    pub error: i64,
 }
 
 /// Title change entry representing a stream title update.
@@ -1038,13 +1190,6 @@ pub struct UpdateFilterRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_pagination_defaults() {
-        let params = PaginationParams::default();
-        assert_eq!(params.limit, 20);
-        assert_eq!(params.offset, 0);
-    }
 
     #[test]
     fn test_paginated_response() {

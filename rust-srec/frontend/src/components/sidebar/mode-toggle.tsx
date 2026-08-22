@@ -12,8 +12,8 @@ import { useTheme } from '@/components/providers/theme-provider';
 import { useCircularTransition } from '@/hooks/use-circular-transition';
 
 export function ModeToggle() {
-  const { setMode, mode } = useTheme();
-  const { startTransition } = useCircularTransition();
+  const { resolvedMode } = useTheme();
+  const { setModeWithReveal } = useCircularTransition();
 
   return (
     <TooltipProvider disableHoverableContent>
@@ -24,9 +24,12 @@ export function ModeToggle() {
             variant="outline"
             size="icon"
             onClick={(event) => {
-              const newMode = mode === 'dark' ? 'light' : 'dark';
-              startTransition({ x: event.clientX, y: event.clientY }, () => {
-                setMode(newMode);
+              // Toggle from the resolved appearance: with mode 'system' the
+              // preference itself never equals 'dark', so comparing `mode`
+              // would set the appearance the user already sees.
+              setModeWithReveal(resolvedMode === 'dark' ? 'light' : 'dark', {
+                x: event.clientX,
+                y: event.clientY,
               });
             }}
           >

@@ -1,4 +1,4 @@
-import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
   useMutation,
@@ -6,7 +6,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import {
   listPipelinePresets,
   deletePipelinePreset,
@@ -14,16 +14,17 @@ import {
 } from '@/server/functions/pipeline';
 
 import { Button } from '@/components/ui/button';
-import { Plus, Workflow, Search } from 'lucide-react';
+import { Plus, Workflow } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { WorkflowCard } from '@/components/pipeline/workflows/workflow-card';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -53,22 +54,17 @@ export const Route = createLazyFileRoute(
 const PAGE_SIZES = [12, 24, 48, 96];
 
 function WorkflowsPage() {
-  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const updateSearch = useUpdateSearch<typeof search>();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [pageSize, setPageSize] = useState(24);
-  const [currentPage, setCurrentPage] = useState(0);
 
-  // Proper debounce with useEffect
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setCurrentPage(0);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  // Search + pagination live in the URL so they persist across navigation into
+  // workflows/$workflowId and reloads.
+  const debouncedSearch = search.q ?? '';
+  const pageSize = search.size ?? 24;
+  const currentPage = search.page ?? 0;
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['pipeline', 'workflows', debouncedSearch, pageSize, currentPage],
@@ -165,16 +161,14 @@ function WorkflowsPage() {
         }
         actions={
           <>
-            {/* Search Input */}
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={i18n._(msg`Search workflows...`)}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
+            <SearchInput
+              defaultValue={debouncedSearch}
+              onSearch={(value) =>
+                updateSearch({ q: value || undefined, page: undefined })
+              }
+              placeholder={i18n._(msg`Search workflows...`)}
+              className="flex-1 md:w-64"
+            />
             <Badge
               variant="secondary"
               className="h-9 px-3 text-sm whitespace-nowrap"
@@ -282,8 +276,7 @@ function WorkflowsPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
-                  setPageSize(Number(value));
-                  setCurrentPage(0);
+                  updateSearch({ size: Number(value), page: undefined });
                 }}
               >
                 <SelectTrigger className="w-20 h-8">
@@ -303,7 +296,9 @@ function WorkflowsPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                    onClick={() =>
+                      updateSearch({ page: Math.max(0, currentPage - 1) })
+                    }
                     className={
                       currentPage === 0
                         ? 'pointer-events-none opacity-50'
@@ -321,7 +316,7 @@ function WorkflowsPage() {
                     <PaginationItem key={page}>
                       <PaginationLink
                         isActive={currentPage === page}
-                        onClick={() => setCurrentPage(page)}
+                        onClick={() => updateSearch({ page })}
                         className="cursor-pointer"
                       >
                         {page + 1}
@@ -333,7 +328,9 @@ function WorkflowsPage() {
                 <PaginationItem>
                   <PaginationNext
                     onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+                      updateSearch({
+                        page: Math.min(totalPages - 1, currentPage + 1),
+                      })
                     }
                     className={
                       currentPage >= totalPages - 1

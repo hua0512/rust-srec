@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{FromRef, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     response::IntoResponse,
     routing::get,
@@ -12,21 +12,43 @@ use crate::api::error::ApiResult;
 use crate::api::models::{ComponentHealth, HealthResponse};
 use crate::api::server::AppState;
 
+#[derive(Clone)]
+pub struct HealthRouteState {
+    start_time: std::time::Instant,
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
+    health_checker: std::sync::Arc<crate::metrics::HealthChecker>,
+    download_manager: std::sync::Arc<crate::downloader::DownloadManager>,
+    pipeline_manager: std::sync::Arc<crate::pipeline::PipelineManager>,
+}
+
+impl FromRef<AppState> for HealthRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            start_time: state.start_time,
+            auth_service: state.auth_service.clone(),
+            health_checker: state.health_checker.clone(),
+            download_manager: state.download_manager.clone(),
+            pipeline_manager: state.pipeline_manager.clone(),
+        }
+    }
+}
+
 /// Create the health router.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(health_check))
         .route("/ready", get(readiness_check))
         .route("/live", get(liveness_check))
+        .route("/idle", get(idle_check))
 }
 
-fn validate_health_auth(
+async fn validate_health_auth(
     headers: &HeaderMap,
-    state: &AppState,
+    state: &HealthRouteState,
 ) -> Result<(), crate::api::error::ApiError> {
-    let jwt_service = state.jwt_service.as_ref().ok_or_else(|| {
-        crate::api::error::ApiError::unauthorized("Authentication not configured")
-    })?;
+    let Some(auth_service) = &state.auth_service else {
+        return Ok(());
+    };
 
     let token = headers
         .get(AUTHORIZATION)
@@ -36,9 +58,10 @@ fn validate_health_auth(
             crate::api::error::ApiError::unauthorized("Missing or invalid Authorization header")
         })?;
 
-    jwt_service
-        .validate_token(token)
-        .map_err(|_| crate::api::error::ApiError::unauthorized("Invalid or expired token"))?;
+    auth_service
+        .authorize_access_token(token, false)
+        .await
+        .map_err(crate::api::error::ApiError::from)?;
 
     Ok(())
 }
@@ -54,49 +77,33 @@ fn validate_health_auth(
     )
 )]
 pub async fn health_check(
-    State(state): State<AppState>,
+    State(state): State<HealthRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<HealthResponse>> {
-    validate_health_auth(&headers, &state)?;
+    validate_health_auth(&headers, &state).await?;
     let uptime = state.start_time.elapsed().as_secs();
 
-    // Use HealthChecker if available, otherwise return fallback response
-    if let Some(health_checker) = &state.health_checker {
-        let system_health = health_checker.current();
+    let system_health = state.health_checker.current();
+    let components: Vec<ComponentHealth> = system_health
+        .components
+        .iter()
+        .map(|(name, health)| ComponentHealth {
+            name: name.clone(),
+            status: health.status.to_string(),
+            message: health.message.clone(),
+            last_check: health.last_check.clone(),
+            check_duration_ms: health.check_duration_ms,
+        })
+        .collect();
 
-        let components: Vec<ComponentHealth> = system_health
-            .components
-            .iter()
-            .map(|(name, health)| ComponentHealth {
-                name: name.clone(),
-                status: health.status.to_string(),
-                message: health.message.clone(),
-                last_check: health.last_check.clone(),
-                check_duration_ms: health.check_duration_ms,
-            })
-            .collect();
-
-        let response = HealthResponse {
-            status: system_health.status.to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime_secs: uptime,
-            components,
-            cpu_usage: system_health.cpu_usage,
-            memory_usage: system_health.memory_usage,
-        };
-
-        Ok(Json(response))
-    } else {
-        // Fallback for testing without full service setup
-        Ok(Json(HealthResponse {
-            status: "healthy".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime_secs: uptime,
-            components: vec![],
-            cpu_usage: 0.0,
-            memory_usage: 0.0,
-        }))
-    }
+    Ok(Json(HealthResponse {
+        status: system_health.status.to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        uptime_secs: uptime,
+        components,
+        cpu_usage: system_health.cpu_usage,
+        memory_usage: system_health.memory_usage,
+    }))
 }
 
 #[utoipa::path(
@@ -111,20 +118,15 @@ pub async fn health_check(
     )
 )]
 pub async fn readiness_check(
-    State(state): State<AppState>,
+    State(state): State<HealthRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if let Err(err) = validate_health_auth(&headers, &state) {
+    if let Err(err) = validate_health_auth(&headers, &state).await {
         return err.into_response();
     }
 
-    if let Some(health_checker) = &state.health_checker {
-        let is_ready = health_checker.check_ready();
-        if is_ready {
-            (StatusCode::OK, "ready").into_response()
-        } else {
-            (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
-        }
+    if state.health_checker.check_ready() {
+        (StatusCode::OK, "ready").into_response()
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
     }
@@ -138,7 +140,7 @@ pub async fn readiness_check(
         (status = 200, description = "Service is alive", body = crate::api::openapi::LivenessResponse)
     )
 )]
-pub async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn liveness_check(State(state): State<HealthRouteState>) -> impl IntoResponse {
     let uptime = state.start_time.elapsed().as_secs();
     (
         StatusCode::OK,
@@ -149,9 +151,125 @@ pub async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse 
     )
 }
 
+/// Idle-state response for the container auto-update gate.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct IdleResponse {
+    /// True when no recording is active or queued and no pipeline job is processing.
+    pub idle: bool,
+    /// Downloads currently writing to disk (`DownloadManager::active_count`).
+    pub active_recordings: usize,
+    /// Downloads queued for a slot (`DownloadManager::pending_count`).
+    pub pending_recordings: usize,
+    /// Pipeline jobs in `Processing` status: uploads, remux, danmaku conversion, etc.
+    pub processing_jobs: u64,
+}
+
+/// Restart-safety gate for container auto-updaters (e.g. a Watchtower
+/// pre-update hook): 200 means a restart interrupts nothing, 503 means a
+/// recording or pipeline job would be cut short. Pipeline jobs in `Pending`
+/// do not block: `JobQueue::recover_jobs` re-runs them after a restart.
+///
+/// Unauthenticated like `liveness_check` — in-container hook scripts have
+/// no JWT, and the body only discloses coarse counts.
+#[utoipa::path(
+    get,
+    path = "/api/health/idle",
+    tag = "health",
+    responses(
+        (status = 200, description = "System is idle; safe to restart for an update", body = IdleResponse),
+        (status = 503, description = "Recording or pipeline processing in progress", body = IdleResponse)
+    )
+)]
+pub async fn idle_check(State(state): State<HealthRouteState>) -> ApiResult<impl IntoResponse> {
+    let active_recordings = state.download_manager.active_count();
+    let pending_recordings = state.download_manager.pending_count();
+    let processing_jobs = state.pipeline_manager.get_stats().await?.processing;
+
+    let idle = active_recordings == 0 && pending_recordings == 0 && processing_jobs == 0;
+    let status = if idle {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    Ok((
+        status,
+        Json(IdleResponse {
+            idle,
+            active_recordings,
+            pending_recordings,
+            processing_jobs,
+        }),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn build_idle_test_state(
+        pipeline_manager: crate::pipeline::PipelineManager,
+    ) -> HealthRouteState {
+        HealthRouteState {
+            start_time: std::time::Instant::now(),
+            auth_service: None,
+            health_checker: std::sync::Arc::new(crate::metrics::HealthChecker::new()),
+            download_manager: std::sync::Arc::new(crate::downloader::DownloadManager::new()),
+            pipeline_manager: std::sync::Arc::new(pipeline_manager),
+        }
+    }
+
+    async fn read_json(response: axum::response::Response) -> serde_json::Value {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body should be readable");
+        serde_json::from_slice(&body).expect("body should be valid JSON")
+    }
+
+    #[tokio::test]
+    async fn test_idle_check_ok_when_nothing_active() {
+        let state = build_idle_test_state(crate::pipeline::PipelineManager::new());
+
+        let response = idle_check(State(state))
+            .await
+            .expect("idle_check should succeed")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json = read_json(response).await;
+        assert_eq!(json["idle"], serde_json::Value::Bool(true));
+        assert_eq!(json["active_recordings"], 0);
+        assert_eq!(json["pending_recordings"], 0);
+        assert_eq!(json["processing_jobs"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_idle_check_busy_when_job_processing() {
+        let pipeline_manager = crate::pipeline::PipelineManager::new();
+        let mut job = crate::pipeline::Job::new(
+            "remux",
+            vec!["input.mp4".to_string()],
+            vec!["output.mp4".to_string()],
+            "streamer-1",
+            "session-1",
+        );
+        job.status = crate::database::models::JobStatus::Processing;
+        pipeline_manager
+            .enqueue(job)
+            .await
+            .expect("enqueue should succeed");
+
+        let state = build_idle_test_state(pipeline_manager);
+        let response = idle_check(State(state))
+            .await
+            .expect("idle_check should succeed")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let json = read_json(response).await;
+        assert_eq!(json["idle"], serde_json::Value::Bool(false));
+        assert_eq!(json["processing_jobs"], 1);
+    }
 
     #[test]
     fn test_health_response_serialization() {

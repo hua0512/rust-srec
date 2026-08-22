@@ -2,52 +2,124 @@
 
 ## `unreleased`
 
-This update rebuilds the **Mesio** HLS recording engine for robustness and unifies how Mesio downloads HLS and FLV streams. Encrypted HLS streams are handled more reliably, memory use stays bounded on busy or encrypted streams, and segment de-duplication now survives playlist refreshes that rotate auth tokens such as Twitch signed URLs. A few Mesio engine settings that no longer affected recording were removed, and existing configurations are migrated automatically.
+## Recording
 
-## HLS recording engine
+- **Fixed Unicode filenames in FFmpeg segment recording**
 
-- **Rebuilt HLS engine for more predictable recording**
+  FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale.
 
-  The Mesio HLS engine was rebuilt around a single control loop that owns all download state — which segments to fetch, retry deadlines, and completion tracking — instead of spreading it across several cooperating tasks. Recording behavior is now deterministic under load: in-flight downloads, decryption work, and output buffers are each bounded by explicit memory budgets, so a fast or encrypted stream can no longer grow memory without limit.
+## API and integrations
 
-- **More reliable encrypted (AES-128 / fMP4) HLS**
+- **API keys for programmatic access**
 
-  Decryption now runs off the main scheduling loop and is memory-gated, so a burst of encrypted segments stays responsive instead of piling up. For fragmented-MP4 streams, the engine guarantees the init segment is written before the media that depends on it, avoiding codec-mismatch corruption, and a terminally failed init is surfaced as a visible gap instead of stalling the recording.
+  You can now create long-lived API keys as an alternative to short-lived JWT session tokens. Keys belong to the user who created them, carry an optional expiration timestamp, and can be scoped to either `read_only` (access to non-sensitive queries such as sessions, danmu, aggregate statistics, notification events, and system health) or `full` access (all requests including configuration changes and mutations). Keys are stored as SHA-256 hashes and displayed only once at creation. Revoking a key invalidates it immediately across the server and clears any authorization cache. API keys cannot manage other keys or change passwords, and WebSocket media/download streams continue to require JWT tokens to prevent keys from leaking into URLs or access logs. See [API Keys & MCP](../api/api-keys-mcp.md).
 
-- **Segment de-duplication survives rotating auth tokens**
+- **Built-in Model Context Protocol (MCP) server**
 
-  Segments are no longer re-downloaded when a playlist refresh rotates query parameters such as signatures or tokens. For sources with known token schemes (for example Twitch signed URLs), the engine can strip the rotating parameters so the same segment is recognized across refreshes, and a signed URL that expires mid-download is retried transparently against a newer one.
+  The backend now exposes a built-in MCP server using the streamable HTTP transport at `/api/mcp`. AI assistants such as Claude Code, Claude Desktop, and Cursor can connect directly using an API key to inspect recording sessions, analyze danmu activity and word frequency, read raw chat XML with byte pagination, observe pipeline jobs, manage streamers, and update configuration. Tools execute in-process against existing application services, sharing the same validations and dynamic updates. Read-only keys are restricted to safe inspection tools and cannot access configuration or credentials. See [API Keys & MCP](../api/api-keys-mcp.md).
 
-- **Skipped segments and gaps are explicit**
+- **Dedicated API key management in the Web UI**
 
-  When the live window slides and segments drop out before they can be fetched, the engine emits a clear gap signal instead of silently stalling, so missing data is observable rather than appearing as a frozen recording.
+  A new **Settings → API Keys** page lets you create, inspect, and revoke API keys with custom names and expiry dates. The page also generates ready-to-copy MCP configuration snippets for Claude Code, Cursor, and standard MCP clients.
 
-## Mesio downloader
+## Pipeline and uploads
 
-- **Unified HLS and FLV download sessions**
+- **Upload recordings to Baidu Netdisk**
 
-  Mesio's HLS and FLV downloaders now share a single session model, so progress reporting, retry handling, and cancellation behave consistently across both protocols.
+  A new `baidupcs` pipeline processor uploads recordings to Baidu Netdisk through the BaiduPCS-Go command-line tool, which is now bundled in the Docker image. Add it to a pipeline like any other upload step: the destination folder supports the usual streamer/title/date placeholders, same-name files can be skipped or overwritten, and uploads appear in the same live progress, per-file records and streamer-card indicators as rclone transfers. Log in from the preset editor — paste your netdisk cookies (or BDUSS and STOKEN) once and the account card shows who is signed in and how much space is left. Tick **Remember for automatic re-login** and upload jobs log in again by themselves when the session expires, so a recording made at night still lands in the netdisk without anyone clicking Login; leave it unticked and the credentials are handed to BaiduPCS-Go without the app keeping them. If the remembered credentials themselves stop working, a notification tells you to log in again and further attempts pause for an hour instead of hammering Baidu. Logging out forgets the remembered credentials. Because BaiduPCS-Go's exit code does not reflect upload results, rust-srec reads the tool's per-file output instead, and a retried job re-sends only the files that did not make it. See [DAG Pipeline](../concepts/pipeline.md#baidu-netdisk-baidupcs).
 
-- **Simplified Mesio engine settings**
+## Danmu
 
-  Several Mesio HLS settings that no longer affected recording were removed from the engine settings form, including the **Performance** tab (the batch-scheduler and zero-copy toggles) along with the streaming-threshold and raw-segment-cache fields. Stored configurations are cleaned up automatically by a database migration — no action is required, and the remaining timeout, retry, decryption-key, and gap-skip settings continue to work as before.
+- **Chat recording now survives network interruptions**
 
-## Pipeline uploads
+  If the connection to a platform's chat server dropped and could not be re-established within a few minutes, chat recording used to stop for the rest of the stream — the video kept recording, but every later part had no chat file, and nothing said so. Chat now keeps reconnecting for as long as the recording lasts, and picks up again by itself when the connection comes back. Each part of the recording still gets its own chat file even if the connection is down while that part is recorded, and the statistics carry on from where they left off instead of restarting. A chat connection that stays down is reported on the system health page, so an outage is visible rather than silent.
 
-- **Session-start date anchors for upload destinations**
+- **Post-processing no longer stalls when chat recording fails**
 
-  Rclone pipeline steps now include a `time_anchor` setting. Keep the default `job_created` behavior, or choose `session_start` so date placeholders such as `%Y/%m/%d` use the live session's start time and a stream crossing midnight stays in one dated remote folder. Copy/move steps can also opt into `job_created` or `session_start` anchoring while preserving their existing execution-time behavior by default.
+  When chat recording ended unexpectedly, the session's post-processing steps — uploads, transcodes, anything configured to run after a recording finishes — were never started for that session. They now run as normal.
 
-- **Upload destination dates use server local time**
+- **The last messages of a stream are no longer dropped**
 
-  Time placeholders in upload destination paths now render in the server's local time zone when an explicit reference timestamp is used. They previously rendered in UTC, which could put uploads in a different dated directory than local recording filenames on non-UTC deployments. The time zone offset is taken from the moment being rendered, so recordings around daylight-saving transitions keep the date their filenames carry, and retried uploads land in the same dated folder as the original run.
+  When a recording stopped, chat messages the platform had already delivered but that were still queued were discarded — up to a hundred of the stream's final messages, missing from both the statistics and the last chat file. They are now collected before the recording closes.
 
-## Pipeline step forms
+- **Chat files are no longer left incomplete**
 
-- **Placeholder names show up in help texts again**
+  A chat recording that ended because of a connection failure left its file unterminated and unregistered, so it did not appear among the session's files and could not be used by the danmaku conversion step. The file is now closed properly and recorded like any other, and chat belonging to a recording part that gets discarded for being too small is now removed from the session's file list along with it.
 
-  Some pipeline step forms rendered placeholder help text with the names missing — for example the danmaku conversion step showed "Use  and  placeholders." instead of naming `{input}` and `{output}`. The rclone and copy/move destination fields now also document the supported placeholders directly in the form.
+- **Danmu statistics are configurable per streamer**
 
-- **Clearer error for invalid copy/move step configuration**
+  How chat activity is summarised is no longer fixed. A new **Danmu Statistics** section in Global Config — and an override on every platform, template and streamer — sets how many chatters and words are ranked, how fine the activity timeline is, how many distinct chatters are tracked before counts become estimates, and extra words to ignore in the frequent-words chart. You can also turn the summary off entirely while still recording the chat files, which skips storing viewer names. See [Configuration](../getting-started/configuration.md#danmu-statistics).
 
-  A copy/move step whose saved configuration fails to parse (for example a mistyped option value) now reports the actual parse error instead of a misleading "no destination directory specified" message.
+- **Frequent-word counts are no longer inflated**
+
+  The frequent-words chart could report counts far above the truth on busy streams — a word sent a handful of times could appear with a count in the thousands, and the lower half of the chart filled with unrelated words all showing near-identical figures. Counts are now accurate, and any entry that is still an estimate is marked with `≈`.
+
+- **Activity chart rates were six times too high**
+
+  The timeline, its peak and its average were labelled per minute but counted per ten-second bucket, so all three read about six times the real rate — more on long streams, where the chart's resolution is reduced automatically. They now show true per-minute rates. The average is also taken across the whole stream rather than only the moments with chat, and quiet stretches are drawn as gaps at zero instead of a straight line at the surrounding rate.
+
+- **Statistics survive a restart mid-recording**
+
+  If the app restarted while a stream was being recorded, its chat statistics started over from zero and the lower numbers replaced what was already saved. Counting now resumes where it left off.
+
+- **More detail on the session page**
+
+  The danmu panel now shows the average messages per minute and, for streams that received gifts, how the total splits between chat and gifts.
+
+- **Live danmu statistics while recording**
+
+  Danmu statistics no longer wait for the stream to end: while a recording is running, a snapshot is saved about once a minute, so the session page's danmu panel (totals, activity timeline, top talkers, frequent words) fills in while the stream is still live. If the app crashes or the host reboots mid-recording, at most the last minute of statistics is lost instead of the whole session's.
+
+- **Activity timeline covers the whole stream on long sessions**
+
+  The danmu activity chart used to keep only the most recent six hours at full detail and silently dropped the oldest points on longer sessions. Once the limit is reached it now halves the chart's resolution instead, so a 12-hour recording still charts from the first minute to the last — just at a coarser granularity.
+
+- **Expandable Top Talkers**
+
+  The Top Talkers card on the session page shows the six most active chatters by default and can be expanded to the full ranking, which is scrollable. How many chatters are ranked is configurable and defaults to 100.
+
+- **Chinese and Japanese chat is now split into real words**
+
+  The frequent-words statistic used to split only on punctuation, symbols and emoji. Chinese and Japanese are written without spaces, so a message with no punctuation still ended up counted as one long "word" and the chart filled with whole sentences instead of words. Chat in those languages now goes through proper word segmentation, including common livestream vocabulary that general-purpose dictionaries miss, so `主播今天好厉害啊` counts `主播`, `今天` and `厉害`. Other languages are unaffected.
+
+- **Unique chatters metric**
+
+  The session danmu panel now shows how many distinct users chatted during the stream (a memory-bounded estimate, typically within about 2%), alongside the total message count. Sessions recorded before this release show a dash.
+
+- **Gift rankings**
+
+  For platforms that report gifts in chat (Bilibili, Douyu, Bigo, SOOP, ...), the session page now shows two extra charts: the top gift senders and the most-sent gifts, both weighted by the number of gift items rather than messages. The charts only appear when the stream actually received gifts.
+
+- **Removed the `danmu_sampling_config` setting**
+
+  This template/streamer setting never had any effect — statistics have always counted every message. The field has been removed from the REST API (`/api/templates`) and the database; existing configurations are cleaned up automatically, and older exports that still contain the field import fine.
+
+## Web interface
+
+- **Sidebar user menu**
+
+  User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
+
+## Deployment
+
+- **Optional automatic container updates**
+
+  The Docker Compose file now ships an opt-in `watchtower` service (`docker compose --profile autoupdate up -d`) that pulls new images and restarts the containers on its own — but only while the system is idle. A new unauthenticated `GET /api/health/idle` endpoint reports whether anything is recording, queued to record, or being processed by a pipeline job (upload, remux, danmaku conversion, ...); while it reports busy, the update is postponed to the next check, so a restart never cuts a recording or an upload short. Automatic updates require a mutable image tag (`VERSION=latest`). See [Upgrade and Rollback](../operations/upgrading.md#automatic-updates-watchtower).
+
+## Installation
+
+- **Locale-aware installation script**
+
+  The `install.sh` bootstrap script now automatically detects the system locale (or respects `SREC_LANG`) and redirects to the English or Chinese interactive installer accordingly. The script verifies downloaded contents before execution to avoid running captive-portal error pages, and secret generation fails closed if secure random generation fails.
+
+## Desktop
+
+- **Fixed SQLite lock on first launch**
+
+  The desktop application now establishes SQLite WAL mode through a dedicated bootstrap connection before opening the read and write connection pools. Previously, concurrent initialization of both pools caused transient `SQLITE_BUSY` errors when opening fresh database files on first launch, because SQLite requires an exclusive lock when switching journal modes that cannot wait for a busy timeout. Reusable connection pool options also no longer repeat the journal-mode pragma during pool growth.
+
+- **Actionable boot failure and recovery screen**
+
+  When the desktop application encounters an unrecoverable startup error (such as a locked database, permission denial, full storage, or a corrupted database image), it now displays a dedicated safe-mode recovery screen instead of silently crashing or failing to launch. The interface highlights the exact failure stage and error kind, provides actionable troubleshooting guidance, lets you open the data and log folders directly, and allows one-click copying of full diagnostic details.
+
+

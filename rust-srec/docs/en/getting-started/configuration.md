@@ -17,9 +17,11 @@ Rust-Srec uses a **4-layer configuration hierarchy** for flexible control. See [
 3. Navigate to **Streamers** → **Add Streamer**
 4. Enter:
    - **Name**: Display name
-   - **URL**: Stream URL (e.g., `https://www.bilibili.com/xxxx`)
+   - **URL**: Direct channel URL (e.g., `https://live.bilibili.com/<room-id>`)
    - **Platform**: Auto-detected from URL
-5. Click **Save**
+5. Keep **Enable monitoring** on and click **Create streamer**
+
+For a complete success check, follow [Make Your First Recording](./first-recording.md).
 
 ### Global Settings
 
@@ -29,10 +31,34 @@ Access via **Settings** → **Global Config**. The settings are organized into s
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `record_danmu` | Enable danmaku (live chat) recording | `false` |
+| `danmu_statistics` | How chat activity is summarised per session (see below) | defaults |
 | `auto_thumbnail` | Automatically generate video thumbnails | `true` |
 | `output_folder` | Base directory for recordings (supports templates) | `/app/output` |
 | `output_filename_template` | Filename pattern for recorded files | (see below) |
 | `output_file_format` | Default container format (mp4, flv, etc.) | `flv` |
+
+#### Danmu Statistics
+
+Every recording with `record_danmu` on gets a per-session chat summary: totals, an
+activity timeline, the most active chatters, the most frequent words and — where the
+platform reports them — gift rankings. `danmu_statistics` tunes that summary, and can
+be set globally or overridden per platform, per template and per streamer. Any field
+you leave out keeps its default, so `{"top_talkers": 200}` is a complete override.
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `enabled` | Compute the summary at all. Turning it off still records the chat files; it only stops the summary, which stores viewer names, from being computed and saved. | `true` |
+| `top_talkers` | Chatters and gift senders listed per session (1–500) | `100` |
+| `top_words` | Frequent words listed per session (1–500) | `50` |
+| `top_gifts` | Gift names listed per session (1–500) | `20` |
+| `rate_bucket_secs` | Activity-timeline granularity in seconds. Very long streams are automatically coarsened, so the session page reads the width back rather than assuming it. | `10` |
+| `talker_capacity` | Distinct chatters tracked (64–8192). While a stream has fewer than this, counts are exact; above it they become close estimates and the session page marks them with `≈`. | `2048` |
+| `word_capacity` | Distinct words tracked (64–8192), same trade-off | `2048` |
+| `gift_capacity` | Distinct gift names tracked | `256` |
+| `extra_stop_words` | Words to exclude from the frequent-words chart, on top of the built-in list | none |
+
+Out-of-range values are clamped rather than rejected, and a reported list is never
+longer than what is tracked.
 
 #### Resource Limits
 | Setting | Description | Default |
@@ -56,7 +82,7 @@ Access via **Settings** → **Global Config**. The settings are organized into s
 |---------|-------------|---------|
 | `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
 | `offline_check_interval` | Interval between checking offline status | `20 Secs` |
-| `offline_detection_count` | Retries before marking streamer as offline | `3` |
+| `offline_detection_count` | Consecutive offline checks before confirming the streamer is offline. The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
 | `retention_period` | Number of days to keep recordings in history | `30 Days` |
 | `enable_proxy` | Route traffic through an intermediate server | `false` |
 
@@ -91,6 +117,7 @@ The following environment variables can be configured in your <a :href="withBase
 ### Network
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `API_BIND_ADDRESS` | IP address the backend API binds to | `0.0.0.0` |
 | `API_PORT` | External port for the backend API | `12555` |
 | `FRONTEND_PORT` | External port for the web interface | `15275` |
 | `BACKEND_URL` | Internal URL for the frontend to reach the backend | `http://rust-srec:8080` |
@@ -101,12 +128,15 @@ The following environment variables can be configured in your <a :href="withBase
 ### Security & Auth
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JWT_SECRET` | Secret key for JWT signing (**Required**) | - |
+| `JWT_SECRET` | Secret key for JWT signing (**Required** unless using the local-only opt-out below) | - |
+| `AUTH_DISABLED` | Disable backend authentication for loopback-only local development | `false` |
 | `JWT_ISSUER` | JWT issuer identifier | `rust-srec` |
 | `JWT_AUDIENCE` | JWT audience identifier | `rust-srec-api` |
 | `SESSION_SECRET` | Frontend session encryption secret (**Required**, min 32 chars) | - |
 | `COOKIE_SECURE` | Set to `true` to force HTTPS-only cookies | (auto) |
 | `MIN_PASSWORD_LENGTH` | Minimum length for user passwords | `8` |
+
+The backend refuses to start without a non-empty `JWT_SECRET`. For local development only, authentication can be disabled by setting both `AUTH_DISABLED=true` and `API_BIND_ADDRESS=127.0.0.1` (or `::1`). The backend rejects this opt-out for wildcard, hostname, and non-loopback bind addresses.
 
 ### Token Expiration
 | Variable | Description | Default |

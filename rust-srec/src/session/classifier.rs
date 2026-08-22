@@ -7,7 +7,8 @@
 //! - **mesio HLS / mesio FLV + `Network` failures** — accumulate per
 //!   streamer; reaching the threshold inside the trailing window is treated
 //!   as a definitive offline. Returns
-//!   [`OfflineSignal::ConsecutiveFailures(threshold)`]. Counter resets when a
+//!   [`OfflineSignal::ConsecutiveFailures`] with the threshold. Counter resets
+//!   when a
 //!   successful segment is observed (preserves Bilibili-style mid-stream
 //!   RST reconnects).
 //! - **ffmpeg / streamlink** — subprocess errors are too fuzzy to
@@ -58,12 +59,7 @@ use tracing::{debug, info};
 use crate::downloader::engine::EngineType;
 use crate::downloader::{DownloadFailureKind, DownloadProtocol};
 use crate::session::state::OfflineSignal;
-
-/// Floor for the classifier threshold. Operators who set
-/// `offline_check_count = 1` for very aggressive offline polling still get a
-/// safety margin against mid-stream RST reconnects, which the
-/// `note_successful_segment` reset covers but only after the segment lands.
-const MIN_CONSECUTIVE_FAILURE_THRESHOLD: usize = 2;
+use crate::streamer::download_failure_threshold;
 
 /// A classifier inspects an engine failure and decides whether it is a
 /// definitive offline signal worth bypassing the slower hysteresis path.
@@ -75,8 +71,7 @@ pub struct OfflineClassifier {
     /// Trailing window for the consecutive-failures rule.
     window: Duration,
     /// Number of failures inside [`Self::window`] that trips the
-    /// definitive-offline signal. Floored at
-    /// [`MIN_CONSECUTIVE_FAILURE_THRESHOLD`].
+    /// definitive-offline signal. Uses the shared download-failure floor.
     threshold: usize,
 }
 
@@ -101,7 +96,7 @@ impl OfflineClassifier {
         let count = offline_check_count.max(1);
         let interval = offline_check_interval_ms.max(1_000);
         let window = Duration::from_millis(count as u64 * interval);
-        let threshold = (count as usize).max(MIN_CONSECUTIVE_FAILURE_THRESHOLD);
+        let threshold = download_failure_threshold(count) as usize;
         Self {
             failure_log: DashMap::new(),
             window,
@@ -112,13 +107,14 @@ impl OfflineClassifier {
     /// Construct directly from explicit window/threshold values. Used by
     /// the test-only [`OfflineClassifier::new`] / [`Default`] path so test
     /// fixtures get the historical `(60 s, 2)` defaults regardless of
-    /// changes to [`SchedulerConfig::default`]. Production code goes
+    /// changes to [`SchedulerConfig::default`](crate::scheduler::SchedulerConfig::default).
+    /// Production code goes
     /// through [`Self::from_scheduler`].
     pub fn from_window_threshold(window: Duration, threshold: usize) -> Self {
         Self {
             failure_log: DashMap::new(),
             window,
-            threshold: threshold.max(MIN_CONSECUTIVE_FAILURE_THRESHOLD),
+            threshold: threshold.max(download_failure_threshold(1) as usize),
         }
     }
 
@@ -268,11 +264,8 @@ mod tests {
     fn classic_classifier() -> OfflineClassifier {
         OfflineClassifier::new()
     }
-
-    // ---- C2 — single Network failure does not classify ----------------
-
     #[test]
-    fn c2_single_network_failure_does_not_classify() {
+    fn single_network_failure_does_not_classify() {
         let c = classic_classifier();
         let result = c.classify_failure("s1", &EngineKind::MesioHls, &DownloadFailureKind::Network);
         assert_eq!(result, None);
@@ -297,11 +290,8 @@ mod tests {
             EngineKind::Ffmpeg
         );
     }
-
-    // ---- C3 — two consecutive Network failures within window → Some ----
-
     #[test]
-    fn c3_two_consecutive_network_failures_classify_as_definitive_offline() {
+    fn two_consecutive_network_failures_classify_as_definitive_offline() {
         let c = classic_classifier();
 
         let first = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
@@ -314,11 +304,8 @@ mod tests {
             "second Network inside window must classify"
         );
     }
-
-    // ---- C4 — window expiry resets the counter ------------------------
-
     #[test]
-    fn c4_expired_window_resets_counter() {
+    fn expired_window_resets_counter() {
         let c = classic_classifier();
 
         // Manually seed the log with a timestamp just past the window so we
@@ -334,11 +321,8 @@ mod tests {
             "stale entries must be pruned before threshold check"
         );
     }
-
-    // ---- C5 — successful segment resets the counter -------------------
-
     #[test]
-    fn c5_successful_segment_resets_counter() {
+    fn successful_segment_resets_counter() {
         let c = classic_classifier();
 
         // First failure primes the counter.
@@ -352,11 +336,8 @@ mod tests {
         let after = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(after, None, "counter must reset after successful segment");
     }
-
-    // ---- C6 / C7 — ffmpeg / streamlink subprocess errors → None -------
-
     #[test]
-    fn c6_ffmpeg_http_404_does_not_classify() {
+    fn ffmpeg_http_404_does_not_classify() {
         let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
@@ -367,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn c6_ffmpeg_subprocess_error_is_none() {
+    fn ffmpeg_subprocess_error_is_none() {
         let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
@@ -378,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn c7_streamlink_subprocess_error_is_none() {
+    fn streamlink_subprocess_error_is_none() {
         let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
@@ -389,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn c7_streamlink_network_never_accumulates() {
+    fn streamlink_network_never_accumulates() {
         let c = classic_classifier();
         // Accumulate many Network failures on a streamlink engine; counter
         // should never fire because streamlink failures are not classified.
@@ -402,8 +383,8 @@ mod tests {
 
     // ---- Additional coverage ------------------------------------------
 
-    /// Mesio 404 (the previously-classified case) now returns `None` — the
-    /// FLV initial-request CDN race is not a definitive offline signal.
+    /// Mesio 404 returns `None` — the FLV initial-request CDN race is
+    /// not a definitive offline signal.
     #[test]
     fn mesio_404_no_longer_classifies() {
         let c = classic_classifier();

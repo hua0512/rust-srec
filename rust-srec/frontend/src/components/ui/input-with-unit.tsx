@@ -8,28 +8,35 @@ import {
   SelectValue,
 } from './select';
 import { cn } from '../../lib/utils';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 export type UnitType = 'size' | 'duration';
 
 interface UnitOption {
-  label: string;
+  /**
+   * Message descriptor rather than a string: these live at module scope, so they cannot be
+   * resolved until a component renders and has the active locale.
+   */
+  label: MessageDescriptor;
   value: number;
 }
 
 const SIZE_UNITS: UnitOption[] = [
-  { label: 'Bytes', value: 1 },
-  { label: 'KB', value: 1024 },
-  { label: 'MB', value: 1024 * 1024 },
-  { label: 'GB', value: 1024 * 1024 * 1024 },
-  { label: 'TB', value: 1024 * 1024 * 1024 * 1024 },
+  { label: msg`Bytes`, value: 1 },
+  { label: msg`KB`, value: 1024 },
+  { label: msg`MB`, value: 1024 * 1024 },
+  { label: msg`GB`, value: 1024 * 1024 * 1024 },
+  { label: msg`TB`, value: 1024 * 1024 * 1024 * 1024 },
 ];
 
 const DURATION_UNITS: UnitOption[] = [
-  { label: 'ms', value: 0.001 },
-  { label: 'Secs', value: 1 },
-  { label: 'Mins', value: 60 },
-  { label: 'Hours', value: 3600 },
-  { label: 'Days', value: 86400 },
+  { label: msg`ms`, value: 0.001 },
+  { label: msg`Secs`, value: 1 },
+  { label: msg`Mins`, value: 60 },
+  { label: msg`Hours`, value: 3600 },
+  { label: msg`Days`, value: 86400 },
 ];
 
 function getUnits(unitType: UnitType): UnitOption[] {
@@ -62,6 +69,7 @@ export function InputWithUnit({
   step,
   ...props
 }: InputWithUnitProps) {
+  const { i18n } = useLingui();
   const units = getUnits(unitType);
 
   // If value is null/undefined, treat it as null (empty input)
@@ -149,7 +157,7 @@ export function InputWithUnit({
   return (
     <div
       className={cn(
-        'flex items-center rounded-md border border-input bg-transparent shadow-sm ring-offset-background focus-within:ring-1 focus-within:ring-ring focus-within:border-primary',
+        'flex h-11 items-center rounded-xl border border-input bg-transparent shadow-sm ring-offset-background focus-within:border-primary focus-within:ring-1 focus-within:ring-ring',
         className,
       )}
       {...props}
@@ -157,7 +165,7 @@ export function InputWithUnit({
       <Input
         type="number"
         className={cn(
-          'flex-1 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent rounded-r-none h-9',
+          'h-full min-w-0 flex-1 rounded-r-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
           inputClassName,
         )}
         value={inputValue}
@@ -169,13 +177,13 @@ export function InputWithUnit({
       />
       <div className="h-4 w-[1px] bg-border shrink-0" />
       <Select value={currentUnitValue} onValueChange={handleUnitChange}>
-        <SelectTrigger className="w-[85px] border-0 shadow-none focus:ring-0 focus:ring-offset-0 rounded-l-none h-9 px-3 gap-1 hover:bg-muted/50">
-          <SelectValue placeholder="Unit" />
+        <SelectTrigger className="h-full w-auto shrink-0 gap-1 rounded-l-none border-0 px-2.5 shadow-none hover:bg-muted/50 focus:ring-0 focus:ring-offset-0">
+          <SelectValue placeholder={i18n._(msg`Unit`)} />
         </SelectTrigger>
         <SelectContent align="end">
           {units.map((u) => (
-            <SelectItem key={u.label} value={u.value.toString()}>
-              {u.label}
+            <SelectItem key={u.value} value={u.value.toString()}>
+              {i18n._(u.label)}
             </SelectItem>
           ))}
         </SelectContent>

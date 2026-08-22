@@ -23,16 +23,16 @@
 
 use crate::operators::{
     ContinuityMode, DefragmentOperator, DuplicateTagFilterConfig, DuplicateTagFilterOperator,
-    GopSortOperator, HeaderCheckOperator, LimitConfig, LimitOperator, RepairStrategy,
-    ScriptFillerConfig, ScriptFilterOperator, ScriptKeyframesFillerOperator,
-    SequenceHeaderChangeMode, SplitOperator, TimeConsistencyOperator, TimingRepairConfig,
-    TimingRepairOperator,
+    GopSortOperator, HeaderCheckOperator, LimitConfig, LimitOperator,
+    MIN_INTERVAL_BETWEEN_KEYFRAMES_MS, RepairStrategy, ScriptFillerConfig, ScriptFilterOperator,
+    ScriptKeyframesFillerOperator, SequenceHeaderChangeMode, SplitOperator,
+    TimeConsistencyOperator, TimingRepairConfig, TimingRepairOperator,
 };
 use flv::data::FlvData;
 use flv::error::FlvError;
 use futures::stream::Stream;
 use pipeline_common::config::PipelineConfig;
-use pipeline_common::{ChannelPipeline, PipelineProvider, StreamerContext};
+use pipeline_common::{Pipeline, PipelineProvider, StreamerContext};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -69,8 +69,6 @@ pub struct FlvPipelineConfig {
     /// Configuration for keyframe index injection
     pub keyframe_index_config: Option<ScriptFillerConfig>,
 
-    pub enable_low_latency: bool,
-
     pub pipe_mode: bool,
 }
 
@@ -81,10 +79,9 @@ impl Default for FlvPipelineConfig {
             duplicate_tag_filter_config: DuplicateTagFilterConfig::default(),
             sequence_header_change_mode: SequenceHeaderChangeMode::Crc32,
             drop_duplicate_sequence_headers: false,
-            repair_strategy: RepairStrategy::Strict,
+            repair_strategy: RepairStrategy::Relaxed,
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
-            enable_low_latency: true,
             pipe_mode: false,
         }
     }
@@ -94,6 +91,13 @@ impl FlvPipelineConfig {
     /// Create a new builder for FlvPipelineConfig
     pub fn builder() -> FlvPipelineConfigBuilder {
         FlvPipelineConfigBuilder::new()
+    }
+
+    fn timing_repair_config(&self) -> TimingRepairConfig {
+        TimingRepairConfig {
+            strategy: self.repair_strategy,
+            ..TimingRepairConfig::default()
+        }
     }
 }
 
@@ -155,11 +159,6 @@ impl FlvPipelineConfigBuilder {
         self
     }
 
-    pub fn enable_low_latency(mut self, enable_low_latency: bool) -> Self {
-        self.config.enable_low_latency = enable_low_latency;
-        self
-    }
-
     /// Set pipe mode for the keyframe index config.
     /// When true, AMF0 processing is skipped since keyframe injection is not needed for pipe output.
     pub fn pipe_mode(mut self, pipe_mode: bool) -> Self {
@@ -202,7 +201,7 @@ impl PipelineProvider for FlvPipeline {
     }
 
     /// Create and configure the pipeline with all necessary operators
-    fn build_pipeline(&self) -> ChannelPipeline<FlvData> {
+    fn build_pipeline(&self) -> Pipeline<FlvData> {
         let context = Arc::clone(&self.context);
         let config = self.config.clone();
 
@@ -211,16 +210,17 @@ impl PipelineProvider for FlvPipeline {
         let header_check_operator = HeaderCheckOperator::new(context.clone(), true, true);
 
         // Configure the limit operator
+        let max_duration_ms = self
+            .common_config
+            .max_duration
+            .map(|duration| u32::try_from(duration.as_millis()).unwrap_or(u32::MAX));
         let limit_config = LimitConfig {
             max_size_bytes: if self.common_config.max_file_size > 0 {
                 Some(self.common_config.max_file_size)
             } else {
                 None
             },
-            max_duration_ms: self
-                .common_config
-                .max_duration
-                .map(|d| d.as_millis() as u32),
+            max_duration_ms,
             split_at_keyframes_only: true,
             on_split: None,
         };
@@ -229,7 +229,7 @@ impl PipelineProvider for FlvPipeline {
         // Create remaining operators
         let gop_sort_operator = GopSortOperator::new(context.clone());
         let timing_repair_operator =
-            TimingRepairOperator::new(context.clone(), TimingRepairConfig::default());
+            TimingRepairOperator::new(context.clone(), config.timing_repair_config());
         let split_operator = SplitOperator::with_config(
             context.clone(),
             config.sequence_header_change_mode,
@@ -255,9 +255,13 @@ impl PipelineProvider for FlvPipeline {
 
         // Create the KeyframeIndexInjector operator if enabled and not in pipe mode
         let keyframe_index_operator = if !is_pipe_mode && config.keyframe_index_config.is_some() {
-            config
-                .keyframe_index_config
-                .map(|c| ScriptKeyframesFillerOperator::new(context.clone(), c))
+            config.keyframe_index_config.map(|mut filler_config| {
+                if let Some(max_duration_ms) = max_duration_ms {
+                    filler_config.keyframe_duration_ms =
+                        max_duration_ms.max(MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
+                }
+                ScriptKeyframesFillerOperator::new(context.clone(), filler_config)
+            })
         } else {
             None
         };
@@ -292,14 +296,11 @@ impl PipelineProvider for FlvPipeline {
         }
 
         // Add script filter
-        let sync_pipeline = if let Some(script_filter_op) = script_filter_operator {
+        if let Some(script_filter_op) = script_filter_operator {
             sync_pipeline.add_processor(script_filter_op)
         } else {
             sync_pipeline
-        };
-
-        // Wrap it in a ChannelPipeline to offload processing to a dedicated thread
-        ChannelPipeline::new(context).add_processor(sync_pipeline)
+        }
     }
 }
 
@@ -307,144 +308,22 @@ impl PipelineProvider for FlvPipeline {
 /// Tests for the FLV processing pipeline
 mod test {
     use super::*;
-    use crate::writer::FlvWriter;
-    use crate::writer_task::FlvWriterConfig;
 
-    use flv::data::FlvData;
-    use flv::parser_async::FlvDecoderStream;
-    use futures::StreamExt;
-    use pipeline_common::{
-        CancellationToken, PipelineError, ProtocolWriter, WriterError, WriterStats,
-        init_test_tracing,
-    };
-
-    use std::path::Path;
-    use tracing::info;
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_process() -> Result<(), Box<dyn std::error::Error>> {
-        init_test_tracing!();
-
-        // Source and destination paths
-        let input_path = Path::new("D:/test/999/16_02_26-福州~ 主播恋爱脑！！！.flv");
-
-        // Skip if test file doesn't exist
-        if !input_path.exists() {
-            info!(path = %input_path.display(), "Test file not found, skipping test");
-            return Ok(());
-        }
-
-        let output_dir = input_path.parent().ok_or("Invalid input path")?.join("fix");
-        tokio::fs::create_dir_all(&output_dir)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = ?e, "Output directory creation failed or already exists");
-            });
-        let base_name = input_path
-            .file_stem()
-            .ok_or("No file stem")?
-            .to_string_lossy()
-            .to_string();
-
-        let start_time = std::time::Instant::now(); // Start timer
-        info!(path = %input_path.display(), "Starting FLV processing pipeline test");
-
-        // Create the context
-        let context = Arc::new(StreamerContext::new(CancellationToken::new()));
-
-        // Create the pipeline with default configuration
-        let pipeline = FlvPipeline::with_config(
-            context,
-            &PipelineConfig::default(),
-            FlvPipelineConfig::default(),
+    #[test]
+    fn repair_strategy_defaults_to_relaxed_and_forwards_overrides() {
+        let default_config = FlvPipelineConfig::default();
+        assert_eq!(default_config.repair_strategy, RepairStrategy::Relaxed);
+        assert_eq!(
+            default_config.timing_repair_config().strategy,
+            RepairStrategy::Relaxed
         );
 
-        // Start a task to parse the input file using async Decoder
-        let file_reader = tokio::io::BufReader::new(tokio::fs::File::open(input_path).await?);
-        let mut decoder_stream = FlvDecoderStream::with_capacity(
-            file_reader,
-            32 * 1024, // Input buffer capacity
+        let strict_config = FlvPipelineConfig::builder()
+            .repair_strategy(RepairStrategy::Strict)
+            .build();
+        assert_eq!(
+            strict_config.timing_repair_config().strategy,
+            RepairStrategy::Strict
         );
-
-        // Use tokio channel for input to allow blocking_recv which is Sync friendly
-        let (sender, mut receiver) =
-            tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
-
-        let (output_tx, output_rx) =
-            tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
-
-        let process_task = Some(tokio::task::spawn_blocking(move || {
-            let pipeline = pipeline.build_pipeline();
-
-            let input =
-                std::iter::from_fn(move || receiver.blocking_recv().map(Some).unwrap_or(None));
-
-            let mut output = |result: Result<FlvData, PipelineError>| {
-                if output_tx.blocking_send(result).is_err() {
-                    tracing::warn!("Output channel closed, stopping processing");
-                }
-            };
-
-            if let Err(err) = pipeline.run(input, &mut output)
-                && !matches!(err, PipelineError::Cancelled)
-            {
-                output_tx
-                    .blocking_send(Err(PipelineError::Strategy(Box::new(
-                        std::io::Error::other(format!("Pipeline error: {err}")),
-                    ))))
-                    .ok();
-            }
-        }));
-
-        // Run the writer task with the receiver
-        let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriter::new(FlvWriterConfig {
-                output_dir,
-                base_name,
-                enable_low_latency: true,
-            });
-
-            let stats = writer_task.run(output_rx)?;
-
-            Ok::<_, WriterError>(stats)
-        });
-
-        // Ensure the forwarding task completes
-        while let Some(result) = decoder_stream.next().await {
-            if sender
-                .send(result.map_err(|e| PipelineError::Strategy(Box::new(e))))
-                .await
-                .is_err()
-            {
-                break;
-            }
-        }
-        drop(sender); // Close the channel to signal completion
-
-        let stats: WriterStats = writer_handle.await??;
-
-        // Wait for the processing task to finish
-        if let Some(p) = process_task {
-            p.await?;
-        }
-
-        let elapsed = start_time.elapsed();
-
-        info!(
-            duration = ?elapsed,
-            total_tags = stats.items_written,
-            files_written = stats.files_created,
-            "Pipeline finished processing"
-        );
-
-        // Basic assertions (optional, but good for tests)
-        assert!(
-            stats.files_created > 0,
-            "Expected at least one output file to be created"
-        );
-        assert!(stats.items_written > 0, "Expected tags to be processed");
-
-        Ok(())
     }
 }

@@ -5,9 +5,27 @@ use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::database::models::{
-    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
+    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays,
+    TemplateConfigDbModel,
 };
 use crate::{Error, Result};
+
+fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {
+    for (field, days) in [
+        (
+            "job_history_retention_days",
+            config.job_history_retention_days,
+        ),
+        (
+            "notification_event_log_retention_days",
+            config.notification_event_log_retention_days,
+        ),
+    ] {
+        RetentionDays::try_from(days)
+            .map_err(|error| Error::config(format!("{field}: {error}")))?;
+    }
+    Ok(())
+}
 
 /// Configuration repository trait.
 #[async_trait]
@@ -72,6 +90,7 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        validate_global_retention(config)?;
         sqlx::query(
             r#"
             UPDATE global_config SET
@@ -82,6 +101,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 record_danmu = ?,
+                danmu_statistics = ?,
                 max_concurrent_downloads = ?,
                 max_concurrent_uploads = ?,
                 streamer_check_delay_ms = ?,
@@ -89,6 +109,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 offline_check_delay_ms = ?,
                 offline_check_count = ?,
                 default_download_engine = ?,
+                default_extractor = ?,
                 max_concurrent_cpu_jobs = ?,
                 max_concurrent_io_jobs = ?,
                 job_history_retention_days = ?,
@@ -102,7 +123,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 pipeline_io_job_timeout_secs = ?,
                 pipeline_execute_timeout_secs = ?,
                 queue_freshness_threshold_ms = ?,
-                gpu_health_probe_interval_secs = ?
+                gpu_health_probe_interval_secs = ?,
+                stream_proxy_allow_private_targets = ?
             WHERE id = ?
             "#,
         )
@@ -113,6 +135,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(config.max_concurrent_downloads)
         .bind(config.max_concurrent_uploads)
         .bind(config.streamer_check_delay_ms)
@@ -120,6 +143,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.offline_check_delay_ms)
         .bind(config.offline_check_count)
         .bind(&config.default_download_engine)
+        .bind(&config.default_extractor)
         .bind(config.max_concurrent_cpu_jobs)
         .bind(config.max_concurrent_io_jobs)
         .bind(config.job_history_retention_days)
@@ -134,6 +158,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_execute_timeout_secs)
         .bind(config.queue_freshness_threshold_ms)
         .bind(config.gpu_health_probe_interval_secs)
+        .bind(config.stream_proxy_allow_private_targets)
         .bind(&config.id)
         .execute(&self.write_pool)
         .await?;
@@ -141,14 +166,15 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        validate_global_retention(config)?;
         sqlx::query(
             r#"
             INSERT INTO global_config (
                 id, output_folder, output_filename_template, output_file_format,
                 min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                record_danmu, max_concurrent_downloads, max_concurrent_uploads,
+                record_danmu, danmu_statistics, max_concurrent_downloads, max_concurrent_uploads,
                 streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
-                offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
+                offline_check_count, default_download_engine, default_extractor, max_concurrent_cpu_jobs,
                 max_concurrent_io_jobs, job_history_retention_days, notification_event_log_retention_days,
                 pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive,
                 auto_thumbnail,
@@ -156,8 +182,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 pipeline_io_job_timeout_secs,
                 pipeline_execute_timeout_secs,
                 queue_freshness_threshold_ms,
-                gpu_health_probe_interval_secs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                gpu_health_probe_interval_secs,
+                stream_proxy_allow_private_targets
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -168,6 +195,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(config.max_concurrent_downloads)
         .bind(config.max_concurrent_uploads)
         .bind(config.streamer_check_delay_ms)
@@ -175,6 +203,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.offline_check_delay_ms)
         .bind(config.offline_check_count)
         .bind(&config.default_download_engine)
+        .bind(&config.default_extractor)
         .bind(config.max_concurrent_cpu_jobs)
         .bind(config.max_concurrent_io_jobs)
         .bind(config.job_history_retention_days)
@@ -189,6 +218,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_execute_timeout_secs)
         .bind(config.queue_freshness_threshold_ms)
         .bind(config.gpu_health_probe_interval_secs)
+        .bind(config.stream_proxy_allow_private_targets)
         .execute(&self.write_pool)
         .await?;
         Ok(())
@@ -226,12 +256,12 @@ impl ConfigRepository for SqlxConfigRepository {
             r#"
             INSERT INTO platform_config (
                 id, platform_name, fetch_delay_ms, download_delay_ms,
-                cookies, platform_specific_config, proxy_config, record_danmu,
-                output_folder, output_filename_template, download_engine, stream_selection_config,
+                cookies, platform_specific_config, proxy_config, record_danmu, danmu_statistics,
+                output_folder, output_filename_template, download_engine, extractor, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                download_retry_policy, event_hooks, pipeline, session_complete_pipeline, paired_segment_pipeline,
+                download_retry_policy, pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -242,16 +272,17 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.platform_specific_config)
         .bind(&config.proxy_config)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
         .bind(&config.download_engine)
+        .bind(&config.extractor)
         .bind(&config.stream_selection_config)
         .bind(&config.output_file_format)
         .bind(config.min_segment_size_bytes)
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(&config.download_retry_policy)
-        .bind(&config.event_hooks)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
@@ -273,16 +304,17 @@ impl ConfigRepository for SqlxConfigRepository {
                 platform_specific_config = ?,
                 proxy_config = ?,
                 record_danmu = ?,
+                danmu_statistics = ?,
                 output_folder = ?,
                 output_filename_template = ?,
                 download_engine = ?,
+                extractor = ?,
                 stream_selection_config = ?,
                 output_file_format = ?,
                 min_segment_size_bytes = ?,
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 download_retry_policy = ?,
-                event_hooks = ?,
                 pipeline = ?,
                 session_complete_pipeline = ?,
                 paired_segment_pipeline = ?,
@@ -298,16 +330,17 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.platform_specific_config)
         .bind(&config.proxy_config)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
         .bind(&config.download_engine)
+        .bind(&config.extractor)
         .bind(&config.stream_selection_config)
         .bind(&config.output_file_format)
         .bind(config.min_segment_size_bytes)
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(&config.download_retry_policy)
-        .bind(&config.event_hooks)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
@@ -358,9 +391,9 @@ impl ConfigRepository for SqlxConfigRepository {
             INSERT INTO template_config (
                 id, name, output_folder, output_filename_template,
                 cookies, output_file_format, min_segment_size_bytes,
-                max_download_duration_secs, max_part_size_bytes, record_danmu,
-                platform_overrides, download_retry_policy, danmu_sampling_config,
-                download_engine, engines_override, proxy_config, event_hooks, stream_selection_config,
+                max_download_duration_secs, max_part_size_bytes, record_danmu, danmu_statistics,
+                platform_overrides, download_retry_policy,
+                download_engine, extractor, engines_override, proxy_config, stream_selection_config,
                 pipeline, session_complete_pipeline, paired_segment_pipeline,
                 offline_check_count, offline_check_delay_ms,
                 created_at, updated_at
@@ -378,13 +411,13 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.platform_overrides)
         .bind(&config.download_retry_policy)
-        .bind(&config.danmu_sampling_config)
         .bind(&config.download_engine)
+        .bind(&config.extractor)
         .bind(&config.engines_override)
         .bind(&config.proxy_config)
-        .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
@@ -411,13 +444,13 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 record_danmu = ?,
+                danmu_statistics = ?,
                 platform_overrides = ?,
                 download_retry_policy = ?,
-                danmu_sampling_config = ?,
                 download_engine = ?,
+                extractor = ?,
                 engines_override = ?,
                 proxy_config = ?,
-                event_hooks = ?,
                 stream_selection_config = ?,
                 pipeline = ?,
                 session_complete_pipeline = ?,
@@ -437,13 +470,13 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_download_duration_secs)
         .bind(config.max_part_size_bytes)
         .bind(config.record_danmu)
+        .bind(&config.danmu_statistics)
         .bind(&config.platform_overrides)
         .bind(&config.download_retry_policy)
-        .bind(&config.danmu_sampling_config)
         .bind(&config.download_engine)
+        .bind(&config.extractor)
         .bind(&config.engines_override)
         .bind(&config.proxy_config)
-        .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
@@ -530,5 +563,16 @@ impl ConfigRepository for SqlxConfigRepository {
 
 #[cfg(test)]
 mod tests {
-    // Integration tests would go here with a test database
+    use super::*;
+
+    #[test]
+    fn global_retention_validation_rejects_negative_values() {
+        let config = GlobalConfigDbModel {
+            job_history_retention_days: -1,
+            ..GlobalConfigDbModel::default()
+        };
+
+        let error = validate_global_retention(&config).expect_err("negative retention");
+        assert!(error.to_string().contains("job_history_retention_days"));
+    }
 }

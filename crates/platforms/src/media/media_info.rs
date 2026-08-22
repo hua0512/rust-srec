@@ -78,7 +78,10 @@ impl MediaInfo {
     }
 
     /// Creates a new `MediaInfo` instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "compatibility constructor mirrors all MediaInfo fields; new code should use the builder"
+    )]
     pub fn new(
         site_url: String,
         title: String,

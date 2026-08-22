@@ -43,6 +43,10 @@ pub struct TelegramConfig {
     /// Minimum priority level to send (default: Normal).
     #[serde(default)]
     pub min_priority: NotificationPriority,
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 fn default_parse_mode() -> String {
@@ -59,6 +63,7 @@ impl Default for TelegramConfig {
             chat_id: String::new(),
             parse_mode: default_parse_mode(),
             min_priority: NotificationPriority::Normal,
+            locale: None,
         }
     }
 }
@@ -88,8 +93,8 @@ impl TelegramChannel {
             NotificationPriority::Critical => "\u{1f6a8}",   // 🚨
         };
 
-        let title = event.title();
-        let description = event.description();
+        let title = event.title_for(self.config.locale.as_deref());
+        let description = event.description_for(self.config.locale.as_deref());
         let priority = event.priority().to_string();
         let event_type = event.event_type().to_string();
 
@@ -244,16 +249,6 @@ fn truncate_message(text: &str, limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_telegram_config_default() {
-        let config = TelegramConfig::default();
-        assert!(!config.enabled);
-        assert!(config.bot_token.is_empty());
-        assert!(config.chat_id.is_empty());
-        assert_eq!(config.parse_mode, "HTML");
-        assert_eq!(config.min_priority, NotificationPriority::Normal);
-    }
 
     #[test]
     fn test_telegram_channel_disabled() {

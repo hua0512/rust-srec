@@ -1,4 +1,4 @@
-import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
   useMutation,
@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { z } from 'zod';
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import {
   listJobPresets,
   deleteJobPreset,
@@ -16,12 +16,14 @@ import {
 import { JobPresetSchema } from '@/api/schemas';
 
 import { Button } from '@/components/ui/button';
-import { Plus, Settings2, Search } from 'lucide-react';
+import { Plus, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { PresetCard } from '@/components/pipeline/presets/preset-card';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -81,33 +83,31 @@ const PAGE_SIZES = [12, 24, 48, 96];
 
 function PresetsPage() {
   const { i18n } = useLingui();
-  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [pageSize, setPageSize] = useState(24);
-  const [currentPage, setCurrentPage] = useState(0);
+
+  // Category, committed search, and pagination live in the URL so they persist
+  // across navigation into presets/$presetId and page reloads.
+  const selectedCategory = search.category ?? null;
+  const debouncedSearch = search.q ?? '';
+  const pageSize = search.size ?? 24;
+  const currentPage = search.page ?? 0;
+
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [presetToClone, setPresetToClone] = useState<z.infer<
     typeof JobPresetSchema
   > | null>(null);
   const [cloneName, setCloneName] = useState('');
 
-  // Proper debounce with useEffect
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setCurrentPage(0);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const updateSearch = useUpdateSearch<typeof search>();
 
-  // Reset page when category changes
-  const handleCategoryChange = useCallback((category: string | null) => {
-    setSelectedCategory(category);
-    setCurrentPage(0);
-  }, []);
+  const handleCategoryChange = useCallback(
+    (category: string | null) => {
+      updateSearch({ category: category ?? undefined, page: undefined });
+    },
+    [updateSearch],
+  );
 
   // Server-side filtered query with pagination
   const { data, isLoading, isError, error } = useQuery({
@@ -251,16 +251,14 @@ function PresetsPage() {
         }
         actions={
           <>
-            {/* Search Input */}
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={i18n._(msg`Search presets...`)}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
+            <SearchInput
+              defaultValue={debouncedSearch}
+              onSearch={(value) =>
+                updateSearch({ q: value || undefined, page: undefined })
+              }
+              placeholder={i18n._(msg`Search presets...`)}
+              className="flex-1 md:w-64"
+            />
             <Badge
               variant="secondary"
               className="h-9 px-3 text-sm whitespace-nowrap"
@@ -397,8 +395,7 @@ function PresetsPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
-                  setPageSize(Number(value));
-                  setCurrentPage(0);
+                  updateSearch({ size: Number(value), page: undefined });
                 }}
               >
                 <SelectTrigger className="w-20 h-8">
@@ -418,7 +415,9 @@ function PresetsPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                    onClick={() =>
+                      updateSearch({ page: Math.max(0, currentPage - 1) })
+                    }
                     className={
                       currentPage === 0
                         ? 'pointer-events-none opacity-50'
@@ -436,7 +435,7 @@ function PresetsPage() {
                     <PaginationItem key={page}>
                       <PaginationLink
                         isActive={currentPage === page}
-                        onClick={() => setCurrentPage(page)}
+                        onClick={() => updateSearch({ page })}
                         className="cursor-pointer"
                       >
                         {page + 1}
@@ -448,7 +447,9 @@ function PresetsPage() {
                 <PaginationItem>
                   <PaginationNext
                     onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+                      updateSearch({
+                        page: Math.min(totalPages - 1, currentPage + 1),
+                      })
                     }
                     className={
                       currentPage >= totalPages - 1

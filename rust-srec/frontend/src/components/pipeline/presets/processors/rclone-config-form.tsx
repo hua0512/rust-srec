@@ -158,9 +158,8 @@ export function RcloneConfigForm({
                     <Trans>Operation</Trans>
                   </FormLabel>
                   <Select
-                    key={field.value ?? 'initial'}
                     onValueChange={field.onChange}
-                    defaultValue={field.value ?? 'copy'}
+                    value={field.value ?? 'copy'}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50">

@@ -10,6 +10,96 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
+/// Build the `WHERE ...` clause (empty string when no filter is set) shared by
+/// `list_jobs_filtered` and `list_jobs_page_filtered`. The placeholder order here must match the
+/// bind order in `bind_job_filters!` exactly.
+fn job_filter_where_clause(filters: &JobFilters) -> String {
+    let mut conditions: Vec<String> = Vec::new();
+
+    if filters.status.is_some() {
+        conditions.push("status = ?".to_string());
+    }
+    if filters.streamer_id.is_some() {
+        conditions.push("streamer_id = ?".to_string());
+    }
+    if filters.session_id.is_some() {
+        conditions.push("session_id = ?".to_string());
+    }
+    if filters.pipeline_id.is_some() {
+        conditions.push("pipeline_id = ?".to_string());
+    }
+    if filters.from_date.is_some() {
+        conditions.push("created_at >= ?".to_string());
+    }
+    if filters.to_date.is_some() {
+        conditions.push("created_at <= ?".to_string());
+    }
+    if filters.job_type.is_some() {
+        conditions.push("job_type = ?".to_string());
+    }
+    if let Some(job_types) = &filters.job_types
+        && !job_types.is_empty()
+    {
+        let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        conditions.push(format!("job_type IN ({})", placeholders));
+    }
+    if filters.search.is_some() {
+        conditions.push(
+            "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)".to_string(),
+        );
+    }
+
+    if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    }
+}
+
+/// Apply the `JobFilters` binds to a query builder in the exact order the placeholders appear in
+/// `job_filter_where_clause`. A macro (rather than a function) is used so it works for both
+/// `query_scalar` (count) and `query_as` (data) builders without a shared trait bound.
+macro_rules! bind_job_filters {
+    ($query:expr, $filters:expr) => {{
+        let mut query = $query;
+        if let Some(status) = &$filters.status {
+            query = query.bind(status.as_str());
+        }
+        if let Some(streamer_id) = &$filters.streamer_id {
+            query = query.bind(streamer_id);
+        }
+        if let Some(session_id) = &$filters.session_id {
+            query = query.bind(session_id);
+        }
+        if let Some(pipeline_id) = &$filters.pipeline_id {
+            query = query.bind(pipeline_id);
+        }
+        if let Some(from_date) = &$filters.from_date {
+            query = query.bind(from_date.timestamp_millis());
+        }
+        if let Some(to_date) = &$filters.to_date {
+            query = query.bind(to_date.timestamp_millis());
+        }
+        if let Some(job_type) = &$filters.job_type {
+            query = query.bind(job_type);
+        }
+        if let Some(job_types) = &$filters.job_types {
+            for jt in job_types {
+                query = query.bind(jt);
+            }
+        }
+        if let Some(search) = &$filters.search {
+            let pattern = format!("%{}%", search);
+            query = query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
+        query
+    }};
+}
+
 /// Job repository trait.
 #[async_trait]
 pub trait JobRepository: Send + Sync {
@@ -63,18 +153,7 @@ pub trait JobRepository: Send + Sync {
     ) -> Result<u64>;
     /// Reset processing jobs to pending (for recovery on startup).
     async fn reset_processing_jobs(&self) -> Result<i32>;
-    async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
     async fn delete_job(&self, id: &str) -> Result<()>;
-
-    // Purge methods
-    /// Purge completed/failed jobs older than the specified number of days.
-    /// Deletes jobs in batches to avoid long-running transactions.
-    /// Returns the number of jobs deleted.
-    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64>;
-
-    /// Get IDs of jobs that are eligible for purging.
-    /// Returns job IDs for completed/failed jobs older than the specified days.
-    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>>;
 
     // Execution logs
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()>;
@@ -87,6 +166,14 @@ pub trait JobRepository: Send + Sync {
         job_id: &str,
         pagination: &Pagination,
     ) -> Result<(Vec<JobExecutionLogDbModel>, u64)>;
+    /// Delete the `excess` oldest execution-log rows for a job (by
+    /// `created_at`, insertion order as tiebreaker). `JobQueue`'s
+    /// `persist_logs_to_db` calls this to keep a run's rows at
+    /// `MAX_PERSISTED_LOG_ROWS_PER_JOB`, ring-buffer style. Default no-op so
+    /// test doubles that never persist logs need not implement it.
+    async fn trim_execution_logs(&self, _job_id: &str, _excess: usize) -> Result<()> {
+        Ok(())
+    }
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()>;
 
     // Filtering and pagination
@@ -343,10 +430,17 @@ impl JobRepository for SqlxJobRepository {
         progress: &JobExecutionProgressDbModel,
     ) -> Result<()> {
         retry_on_sqlite_busy("upsert_job_execution_progress", || async {
+            // Guarded on the job still being PROCESSING, atomically with the
+            // write: the progress aggregator flushes asynchronously, so a
+            // snapshot can arrive here after the job's terminal transition
+            // already fired trg_job_terminal_clears_progress — an
+            // unconditional upsert would re-insert the row it just deleted
+            // and orphan it until job retention.
             sqlx::query(
                 r#"
                 INSERT INTO job_execution_progress (job_id, kind, progress, updated_at)
-                VALUES (?, ?, ?, ?)
+                SELECT ?, ?, ?, ?
+                WHERE (SELECT status FROM job WHERE id = ?) = 'PROCESSING'
                 ON CONFLICT(job_id) DO UPDATE SET
                     kind = excluded.kind,
                     progress = excluded.progress,
@@ -357,6 +451,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(&progress.kind)
             .bind(&progress.progress)
             .bind(progress.updated_at)
+            .bind(&progress.job_id)
             .execute(&self.write_pool)
             .await?;
             Ok(())
@@ -627,41 +722,6 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32> {
-        retry_on_sqlite_busy("cleanup_old_jobs", || async {
-            // First delete execution logs for old completed/failed jobs
-            let cutoff_ms = crate::database::time::now_ms()
-                - chrono::Duration::days(retention_days as i64).num_milliseconds();
-
-            sqlx::query(
-                r#"
-                DELETE FROM job_execution_logs 
-                WHERE job_id IN (
-                    SELECT id FROM job 
-                    WHERE status IN (?, ?)
-                    AND updated_at < ?
-                )
-                "#,
-            )
-            .bind(JobStatus::Completed.as_str())
-            .bind(JobStatus::Failed.as_str())
-            .bind(cutoff_ms)
-            .execute(&self.write_pool)
-            .await?;
-
-            // Then delete the jobs
-            let result = sqlx::query("DELETE FROM job WHERE status IN (?, ?) AND updated_at < ?")
-                .bind(JobStatus::Completed.as_str())
-                .bind(JobStatus::Failed.as_str())
-                .bind(cutoff_ms)
-                .execute(&self.write_pool)
-                .await?;
-
-            Ok(result.rows_affected() as i32)
-        })
-        .await
-    }
-
     async fn delete_job(&self, id: &str) -> Result<()> {
         retry_on_sqlite_busy("delete_job", || async {
             // Execution logs are deleted via CASCADE
@@ -768,6 +828,30 @@ impl JobRepository for SqlxJobRepository {
         Ok((full, total as u64))
     }
 
+    async fn trim_execution_logs(&self, job_id: &str, excess: usize) -> Result<()> {
+        if excess == 0 {
+            return Ok(());
+        }
+
+        retry_on_sqlite_busy("trim_execution_logs", || async {
+            // `id` is a random UUID, so insertion order lives in `created_at`
+            // (entry timestamp) with rowid breaking same-millisecond ties;
+            // idx_job_execution_logs_job_id_created_at drives the subquery.
+            sqlx::query(
+                "DELETE FROM job_execution_logs WHERE rowid IN ( \
+                     SELECT rowid FROM job_execution_logs WHERE job_id = ? \
+                     ORDER BY created_at ASC, rowid ASC LIMIT ? \
+                 )",
+            )
+            .bind(job_id)
+            .bind(excess as i64)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()> {
         retry_on_sqlite_busy("delete_execution_logs_for_job", || async {
             sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
@@ -784,49 +868,7 @@ impl JobRepository for SqlxJobRepository {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<JobDbModel>, u64)> {
-        // Build dynamic WHERE clause
-        let mut conditions: Vec<String> = Vec::new();
-
-        if filters.status.is_some() {
-            conditions.push("status = ?".to_string());
-        }
-        if filters.streamer_id.is_some() {
-            conditions.push("streamer_id = ?".to_string());
-        }
-        if filters.session_id.is_some() {
-            conditions.push("session_id = ?".to_string());
-        }
-        if filters.pipeline_id.is_some() {
-            conditions.push("pipeline_id = ?".to_string());
-        }
-        if filters.from_date.is_some() {
-            conditions.push("created_at >= ?".to_string());
-        }
-        if filters.to_date.is_some() {
-            conditions.push("created_at <= ?".to_string());
-        }
-        if filters.job_type.is_some() {
-            conditions.push("job_type = ?".to_string());
-        }
-        if let Some(job_types) = &filters.job_types
-            && !job_types.is_empty()
-        {
-            let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            conditions.push(format!("job_type IN ({})", placeholders));
-        }
-
-        if filters.search.is_some() {
-            conditions.push(
-                "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
-                    .to_string(),
-            );
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
+        let where_clause = job_filter_where_clause(filters);
 
         // Count query
         let count_sql = format!("SELECT COUNT(*) as count FROM job {}", where_clause);
@@ -838,86 +880,13 @@ impl JobRepository for SqlxJobRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-
-        // Bind parameters for count query
-        if let Some(status) = &filters.status {
-            count_query = count_query.bind(status.as_str());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            count_query = count_query.bind(streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            count_query = count_query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &filters.pipeline_id {
-            count_query = count_query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            count_query = count_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            count_query = count_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &filters.job_type {
-            count_query = count_query.bind(job_type);
-        }
-        if let Some(job_types) = &filters.job_types {
-            for jt in job_types {
-                count_query = count_query.bind(jt);
-            }
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            count_query = count_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
+        let count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
+        let count_query = bind_job_filters!(count_query, filters);
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
-
-        // Bind parameters for data query
-        if let Some(status) = &filters.status {
-            data_query = data_query.bind(status.as_str());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            data_query = data_query.bind(streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            data_query = data_query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &filters.pipeline_id {
-            data_query = data_query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &filters.job_type {
-            data_query = data_query.bind(job_type);
-        }
-        if let Some(job_types) = &filters.job_types {
-            for jt in job_types {
-                data_query = data_query.bind(jt);
-            }
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            data_query = data_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
-        // Bind pagination parameters
+        let data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
+        let mut data_query = bind_job_filters!(data_query, filters);
         data_query = data_query.bind(pagination.limit as i64);
         data_query = data_query.bind(pagination.offset as i64);
 
@@ -931,92 +900,16 @@ impl JobRepository for SqlxJobRepository {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<Vec<JobDbModel>> {
-        // Build dynamic WHERE clause (matches list_jobs_filtered).
-        let mut conditions: Vec<String> = Vec::new();
-
-        if filters.status.is_some() {
-            conditions.push("status = ?".to_string());
-        }
-        if filters.streamer_id.is_some() {
-            conditions.push("streamer_id = ?".to_string());
-        }
-        if filters.session_id.is_some() {
-            conditions.push("session_id = ?".to_string());
-        }
-        if filters.pipeline_id.is_some() {
-            conditions.push("pipeline_id = ?".to_string());
-        }
-        if filters.from_date.is_some() {
-            conditions.push("created_at >= ?".to_string());
-        }
-        if filters.to_date.is_some() {
-            conditions.push("created_at <= ?".to_string());
-        }
-        if filters.job_type.is_some() {
-            conditions.push("job_type = ?".to_string());
-        }
-        if let Some(job_types) = &filters.job_types
-            && !job_types.is_empty()
-        {
-            let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            conditions.push(format!("job_type IN ({})", placeholders));
-        }
-
-        if filters.search.is_some() {
-            conditions.push(
-                "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
-                    .to_string(),
-            );
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
+        // Shares the clause/bind construction with list_jobs_filtered's data query.
+        let where_clause = job_filter_where_clause(filters);
 
         let data_sql = format!(
             "SELECT * FROM job {} ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?",
             where_clause
         );
 
-        let mut data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
-
-        if let Some(status) = &filters.status {
-            data_query = data_query.bind(status.as_str());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            data_query = data_query.bind(streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            data_query = data_query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &filters.pipeline_id {
-            data_query = data_query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &filters.job_type {
-            data_query = data_query.bind(job_type);
-        }
-        if let Some(job_types) = &filters.job_types {
-            for jt in job_types {
-                data_query = data_query.bind(jt);
-            }
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            data_query = data_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
+        let data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
+        let mut data_query = bind_job_filters!(data_query, filters);
         data_query = data_query.bind(pagination.limit as i64);
         data_query = data_query.bind(pagination.offset as i64);
 
@@ -1132,129 +1025,6 @@ impl JobRepository for SqlxJobRepository {
             Ok(result.rows_affected())
         })
         .await
-    }
-
-    /// Purge completed/failed jobs older than the specified number of days.
-    /// Deletes jobs in batches to avoid long-running transactions.
-    /// Returns the number of jobs deleted.
-    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64> {
-        let cutoff_ms = crate::database::time::now_ms()
-            - chrono::Duration::days(days as i64).num_milliseconds();
-
-        let mut total_deleted: u64 = 0;
-
-        loop {
-            let purge_statuses = [JobStatus::Completed, JobStatus::Failed];
-            let mut builder =
-                sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id FROM job WHERE status IN (");
-            {
-                let mut separated = builder.separated(", ");
-                for status in &purge_statuses {
-                    separated.push_bind(status.as_str());
-                }
-            }
-            builder.push(") AND (completed_at < ");
-            builder.push_bind(cutoff_ms);
-            builder.push(" OR (completed_at IS NULL AND updated_at < ");
-            builder.push_bind(cutoff_ms);
-            builder.push(")) LIMIT ");
-            builder.push_bind(batch_size as i64);
-
-            let job_ids: Vec<String> = builder
-                .build_query_scalar()
-                .persistent(false)
-                .fetch_all(&self.pool)
-                .await?;
-
-            if job_ids.is_empty() {
-                break;
-            }
-
-            let batch_count = job_ids.len() as u64;
-
-            const MAX_IDS_PER_IN: usize = 900;
-
-            retry_on_sqlite_busy("purge_jobs_older_than_delete_execution_logs", || async {
-                for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
-                    let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-                        "DELETE FROM job_execution_logs WHERE job_id IN (",
-                    );
-                    let mut separated = builder.separated(", ");
-                    for id in chunk {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-
-                    builder
-                        .build()
-                        .persistent(false)
-                        .execute(&self.write_pool)
-                        .await?;
-                }
-                Ok(())
-            })
-            .await?;
-
-            retry_on_sqlite_busy("purge_jobs_older_than_delete_jobs", || async {
-                for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
-                    let mut builder =
-                        sqlx::QueryBuilder::<sqlx::Sqlite>::new("DELETE FROM job WHERE id IN (");
-                    let mut separated = builder.separated(", ");
-                    for id in chunk {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-
-                    builder
-                        .build()
-                        .persistent(false)
-                        .execute(&self.write_pool)
-                        .await?;
-                }
-                Ok(())
-            })
-            .await?;
-
-            total_deleted += batch_count;
-
-            // If we deleted less than batch_size, we're done
-            if batch_count < batch_size as u64 {
-                break;
-            }
-        }
-
-        Ok(total_deleted)
-    }
-
-    /// Get IDs of jobs that are eligible for purging.
-    /// Returns job IDs for completed/failed jobs older than the specified days.
-    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>> {
-        let cutoff_ms = crate::database::time::now_ms()
-            - chrono::Duration::days(days as i64).num_milliseconds();
-
-        let purge_statuses = [JobStatus::Completed, JobStatus::Failed];
-        let mut builder =
-            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id FROM job WHERE status IN (");
-        {
-            let mut separated = builder.separated(", ");
-            for status in &purge_statuses {
-                separated.push_bind(status.as_str());
-            }
-        }
-        builder.push(") AND (completed_at < ");
-        builder.push_bind(cutoff_ms);
-        builder.push(" OR (completed_at IS NULL AND updated_at < ");
-        builder.push_bind(cutoff_ms);
-        builder.push(")) ORDER BY completed_at ASC, updated_at ASC LIMIT ");
-        builder.push_bind(limit as i64);
-
-        let job_ids: Vec<String> = builder
-            .build_query_scalar()
-            .persistent(false)
-            .fetch_all(&self.pool)
-            .await?;
-
-        Ok(job_ids)
     }
 }
 

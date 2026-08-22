@@ -32,17 +32,27 @@ Bilibili · Douyin · Douyu · Huya · Twitch · TikTok · AcFun · Picarto · R
 
 ## Quick start (Docker)
 
-The fastest way to try it:
+The fastest way to try it — Linux and macOS:
 
 ```bash
-# grab the compose file and edit VERSION / volumes as needed
-curl -O https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docker-compose.yml
-docker compose up -d
+curl -fsSL https://docs.srec.rs/install.sh | bash
 ```
 
-Then open the web UI and follow the [getting-started guide](https://docs.srec.rs/en/getting-started/).
+Windows PowerShell:
 
-> Image tags use a leading `v` — set `VERSION=v0.3.1`, not `0.3.1`.
+```powershell
+irm https://docs.srec.rs/install.ps1 | iex
+```
+
+The installer downloads the Compose and environment files, generates the required secrets, detects optional NVIDIA support, and offers to start the services. Then open the web UI and follow the [getting-started guide](https://docs.srec.rs/en/getting-started/).
+
+To pin a release instead of tracking `latest`, pass `VERSION` — image tags use a leading `v`:
+
+```bash
+curl -fsSL https://docs.srec.rs/install.sh | VERSION=v0.5.1 bash
+```
+
+> Piping a remote script to a shell runs whatever the server returns. To review it first, download [install.sh](https://docs.srec.rs/install.sh) and run your local copy, or follow the manual Compose steps in the [Docker guide](https://docs.srec.rs/en/getting-started/docker).
 
 Prefer a binary or to build from source? See the [installation guide](https://docs.srec.rs/en/getting-started/installation).
 

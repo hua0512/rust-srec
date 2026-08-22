@@ -7,6 +7,11 @@ on:
         description: 'Cargo package/binary args, e.g. "-p mesio" or "-p mesio -p strev -p rust-srec --bins"'
         required: true
         type: string
+      profile:
+        description: 'Cargo build profile and matching target subdirectory'
+        required: false
+        type: string
+        default: 'release'
       features_normal:
         description: 'Features for non-musl targets'
         required: false
@@ -62,18 +67,18 @@ jobs:
         run: |
           "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: mozilla-actions/sccache-action@v0.0.11
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
-          targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
       - uses: ./.github/actions/setup-protoc
         if: ${{ inputs.need_protoc }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          shared-key: binaries
           key: ${{ matrix.target }}
       - name: Install build dependencies on Linux
         if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')
@@ -87,18 +92,18 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build --locked --release --target ${{ matrix.target }} ${{ inputs.packages }} --features ${{ inputs.features_normal }}
+        run: cargo build --locked --profile ${{ inputs.profile }} --target ${{ matrix.target }} ${{ inputs.packages }} --features ${{ inputs.features_normal }}
       - name: Build (musl)
         if: contains(matrix.target, 'musl')
         env:
           CC: musl-gcc
-        run: cargo build --locked --release --target ${{ matrix.target }} ${{ inputs.packages }} --features ${{ inputs.features_musl }}
+        run: cargo build --locked --profile ${{ inputs.profile }} --target ${{ matrix.target }} ${{ inputs.packages }} --features ${{ inputs.features_musl }}
       - name: Rename binaries
         shell: bash
         run: |
           mkdir -p upload
           for bin in $(echo '${{ inputs.binaries }}' | jq -r '.[]' | tr -d '\r'); do
-            src="target/${{ matrix.target }}/release/${bin}"
+            src="target/${{ matrix.target }}/${{ inputs.profile }}/${bin}"
             if [[ "${{ matrix.target }}" == *windows* ]]; then
               src="${src}.exe"
               dest="upload/${bin}-${{ matrix.target }}.exe"

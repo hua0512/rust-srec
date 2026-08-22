@@ -20,6 +20,8 @@ import {
   TwitchConfigSchema,
   TikTokConfigSchema,
   TwitcastingConfigSchema,
+  SoopConfigSchema,
+  BigoConfigSchema,
 } from '@/api/schemas';
 import { HuyaConfigFields } from './specific-configs/huya-config-fields';
 import { DouyinConfigFields } from './specific-configs/douyin-config-fields';
@@ -28,6 +30,8 @@ import { DouyuConfigFields } from './specific-configs/douyu-config-fields';
 import { TwitchConfigFields } from './specific-configs/twitch-config-fields';
 import { TikTokConfigFields } from './specific-configs/tiktok-config-fields';
 import { TwitcastingConfigFields } from './specific-configs/twitcasting-config-fields';
+import { SoopConfigFields } from './specific-configs/soop-config-fields';
+import { BigoConfigFields } from './specific-configs/bigo-config-fields';
 
 const PLATFORM_SCHEMAS: Record<string, any> = {
   huya: HuyaConfigSchema,
@@ -37,6 +41,8 @@ const PLATFORM_SCHEMAS: Record<string, any> = {
   twitch: TwitchConfigSchema,
   tiktok: TikTokConfigSchema,
   twitcasting: TwitcastingConfigSchema,
+  soop: SoopConfigSchema,
+  bigo: BigoConfigSchema,
 };
 
 const SPECIFIC_CONFIG_COMPONENTS: Record<string, any> = {
@@ -47,22 +53,29 @@ const SPECIFIC_CONFIG_COMPONENTS: Record<string, any> = {
   twitch: TwitchConfigFields,
   tiktok: TikTokConfigFields,
   twitcasting: TwitcastingConfigFields,
+  soop: SoopConfigFields,
+  bigo: BigoConfigFields,
 };
 
 interface PlatformSpecificTabProps {
   form: UseFormReturn<any>;
   basePath?: string;
   platformName?: string;
+  /**
+   * Field under `basePath` holding the options. Defaults to `platform_specific_config`, which is
+   * what the platform and template rows use; a streamer stores the same shape under
+   * `platform_extras`, which is the key its config resolver reads.
+   */
+  field?: string;
 }
 
 export function PlatformSpecificTab({
   form,
   basePath,
   platformName,
+  field: fieldKey = 'platform_specific_config',
 }: PlatformSpecificTabProps) {
-  const fieldName = basePath
-    ? `${basePath}.platform_specific_config`
-    : 'platform_specific_config';
+  const fieldName = basePath ? `${basePath}.${fieldKey}` : fieldKey;
 
   const [viewMode, setViewMode] = useState<'form' | 'json'>('form');
 
@@ -234,7 +247,7 @@ export function PlatformSpecificTab({
                           />
                           {error && (
                             <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs font-semibold text-destructive animate-in shake duration-300">
-                              Invalid JSON: {error}
+                              <Trans>Invalid JSON: {error}</Trans>
                             </div>
                           )}
                         </div>

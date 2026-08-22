@@ -3,6 +3,7 @@ import {
   Upload,
   Image as ImageIcon,
   Cloud,
+  CloudUpload,
   Terminal,
   Copy,
   Scissors,
@@ -17,6 +18,7 @@ import {
   Camera,
   Flame,
   Type,
+  Tv,
 } from 'lucide-react';
 import {
   SiBilibili,
@@ -33,6 +35,7 @@ export const STEP_ICONS: Record<string, React.ElementType> = {
   thumbnail: ImageIcon,
   upload: Upload,
   rclone: Cloud,
+  baidupcs: CloudUpload,
   execute: Terminal,
   copy_move: Copy,
   audio_extract: Scissors,
@@ -50,6 +53,7 @@ export const STEP_COLORS: Record<string, string> = {
   upload: 'from-green-500/10 to-green-500/5 text-green-500 border-green-500/20',
   rclone:
     'from-emerald-500/10 to-emerald-500/5 text-emerald-500 border-emerald-500/20',
+  baidupcs: 'from-sky-500/10 to-sky-500/5 text-sky-500 border-sky-500/20',
   execute: 'from-gray-500/10 to-gray-500/5 text-gray-500 border-gray-500/20',
   audio_extract:
     'from-pink-500/10 to-pink-500/5 text-pink-500 border-pink-500/20',
@@ -101,6 +105,8 @@ export const PLATFORM_ICONS: Record<string, React.ElementType> = {
   redbook: SiXiaohongshu, // Xiaohongshu
   twitcasting: Radio,
   weibo: SiSinaweibo,
+  soop: Tv,
+  bigo: Radio,
 };
 
 export const PLATFORM_COLORS: Record<string, string> = {
@@ -117,6 +123,8 @@ export const PLATFORM_COLORS: Record<string, string> = {
   redbook: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
   twitcasting: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
   weibo: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  soop: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+  bigo: 'bg-sky-500/10 text-sky-500 border-sky-500/20',
 };
 
 export function getPlatformIcon(platform: string): React.ElementType {

@@ -1,12 +1,15 @@
 import { z } from 'zod';
 import {
   StreamSelectionConfigObjectSchema,
+  DanmuStatisticsObjectSchema,
   DownloadRetryPolicyObjectSchema,
-  DanmuSamplingConfigObjectSchema,
-  EventHooksSchema,
   PrioritySchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
+import {
+  AllPlatformConfigsSchema,
+  ExtractorSelectionSchema,
+} from './platform-configs';
 
 // --- Streamer Schemas ---
 export const StreamerStateSchema = z.enum([
@@ -42,26 +45,18 @@ export const StreamerSpecificConfigSchema = z.object({
     .nullable()
     .optional(),
 
+  danmu_statistics: z
+    .preprocess(
+      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      DanmuStatisticsObjectSchema.nullable().optional(),
+    )
+    .nullable()
+    .optional(),
+
   download_retry_policy: z
     .preprocess(
       (val) => (typeof val === 'string' ? JSON.parse(val) : val),
       DownloadRetryPolicyObjectSchema.nullable().optional(),
-    )
-    .nullable()
-    .optional(),
-
-  danmu_sampling_config: z
-    .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-      DanmuSamplingConfigObjectSchema.nullable().optional(),
-    )
-    .nullable()
-    .optional(),
-
-  event_hooks: z
-    .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-      EventHooksSchema.nullable().optional(),
     )
     .nullable()
     .optional(),
@@ -130,10 +125,18 @@ export const StreamerSpecificConfigSchema = z.object({
     .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
     .nullable()
     .optional(),
-  engines_override: z
-    .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
+  // Which extractor resolves the stream URL. Independent of `download_engine`, which only
+  // decides how the resolved URL is downloaded.
+  extractor: z
+    .preprocess(
+      (v) => (v === '' ? null : v),
+      ExtractorSelectionSchema.nullable().optional(),
+    )
     .nullable()
     .optional(),
+  // Platform-specific extractor options for this streamer's own platform, merged over the
+  // platform row's. Shallow merge: a nested object replaces its counterpart wholesale.
+  platform_extras: AllPlatformConfigsSchema.nullable().optional(),
   // Per-streamer override for the offline-confirmation cadence.
   offline_check_count: z
     .preprocess(
@@ -156,9 +159,8 @@ export const StreamerSpecificConfigFormSchema = z.object({
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   proxy_config: z.any().nullable().optional(),
+  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
-  danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
-  event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
@@ -171,7 +173,8 @@ export const StreamerSpecificConfigFormSchema = z.object({
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
-  engines_override: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
+  platform_extras: AllPlatformConfigsSchema.nullable().optional(),
   offline_check_count: z.number().int().min(1).nullable().optional(),
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
@@ -195,10 +198,10 @@ export const StreamerSchema = z.object({
   streamer_specific_config: StreamerSpecificConfigSchema.nullable().optional(),
 });
 
+// `platform_config_id` is absent by design: the backend derives it from `url`.
 export const CreateStreamerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   url: z.url('Invalid URL'),
-  platform_config_id: z.string().min(1, 'Platform configuration is required'),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean(),
@@ -207,11 +210,49 @@ export const CreateStreamerSchema = z.object({
 
 export const UpdateStreamerSchema = CreateStreamerSchema.partial();
 
+export const BatchStreamerActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('set_enabled'), enabled: z.boolean() }),
+  z.object({
+    type: z.literal('set_template'),
+    template_id: z.string().nullable(),
+  }),
+  z.object({
+    type: z.literal('set_priority'),
+    priority: z.enum(['HIGH', 'NORMAL', 'LOW']),
+  }),
+  z.object({ type: z.literal('delete') }),
+]);
+
+export type BatchStreamerAction = z.infer<typeof BatchStreamerActionSchema>;
+
+export const BatchStreamerRequestSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(100),
+    action: BatchStreamerActionSchema,
+  })
+  .refine((data) => new Set(data.ids).size === data.ids.length, {
+    message: 'Streamer IDs must be unique',
+    path: ['ids'],
+  });
+
+export const BatchStreamerResponseSchema = z.object({
+  requested: z.number(),
+  succeeded: z.number(),
+  failed: z.number(),
+  results: z.array(
+    z.object({
+      id: z.string(),
+      success: z.boolean(),
+      code: z.string().optional(),
+      error: z.string().optional(),
+    }),
+  ),
+});
+
 // Form schema without preprocessors for proper type inference with react-hook-form
 export const StreamerFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   url: z.url('Invalid URL'),
-  platform_config_id: z.string().min(1, 'Platform configuration is required'),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean(),

@@ -3,7 +3,7 @@
 //! Orchestrates credential checking, refreshing, and persistence.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use chrono::Utc;
 use tokio::sync::Mutex;
@@ -33,7 +33,7 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
     /// Per-scope locks to prevent concurrent refreshes
     refresh_locks: dashmap::DashMap<String, Arc<Mutex<()>>>,
     /// Optional notification service for broadcasting credential events.
-    notification_service: Option<Arc<NotificationService>>,
+    notification_service: OnceLock<Arc<NotificationService>>,
 }
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
@@ -46,13 +46,20 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             daily_tracker: Arc::new(DailyCheckTracker::new()),
             failure_tracker: Arc::new(RefreshFailureTracker::new()),
             refresh_locks: dashmap::DashMap::new(),
-            notification_service: None,
+            notification_service: OnceLock::new(),
         }
     }
 
     /// Wire a NotificationService to emit CredentialEvents as NotificationEvents.
-    pub fn set_notification_service(&mut self, service: Arc<NotificationService>) {
-        self.notification_service = Some(service);
+    pub fn set_notification_service(&self, service: Arc<NotificationService>) {
+        if self.notification_service.set(service).is_err() {
+            warn!("Credential notification service is already configured");
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_notification_service(&self) -> bool {
+        self.notification_service.get().is_some()
     }
 
     /// Register a credential manager for a platform.
@@ -107,7 +114,10 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         source: &CredentialSource,
     ) -> Result<Option<String>, CredentialError> {
         // Skip platforms without a registered credential manager (unsupported for auto-refresh).
-        if !self.managers.contains_key(&source.platform_name) {
+        let platform_key = source.platform_name.to_ascii_lowercase();
+        if !self.managers.contains_key(&platform_key)
+            && !self.managers.contains_key(&source.platform_name)
+        {
             // debug!(
             //     platform = %source.platform_name,
             //     "Platform does not support credential auto-refresh; skipping"
@@ -255,7 +265,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     }
 
     fn maybe_notify_credential_event(&self, event: CredentialEvent) {
-        let Some(service) = self.notification_service.as_ref().cloned() else {
+        let Some(service) = self.notification_service.get().cloned() else {
             return;
         };
 
@@ -272,14 +282,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             }
         }
 
-        tokio::spawn(async move {
-            if let Err(e) = service
-                .notify(NotificationEvent::Credential { event })
-                .await
-            {
-                warn!(error = %e, "Failed to dispatch credential notification");
-            }
-        });
+        service.dispatch_notification(NotificationEvent::Credential { event });
     }
 
     /// Perform credential refresh.
@@ -290,9 +293,10 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     ) -> Result<Option<String>, CredentialError> {
         let manager = self.get_manager(&source.platform_name)?;
 
-        // Check for refresh token
-        if !source.has_refresh_token() {
-            warn!("Missing refresh_token - cannot auto-refresh");
+        // Refresh token is required for OAuth-style platforms. Password re-login
+        // platforms (SOOP) use reauth_extra instead.
+        if !source.has_refresh_token() && !source.has_reauth_extra() {
+            warn!("Missing refresh_token / reauth credentials - cannot auto-refresh");
             let _failure_count = self
                 .failure_tracker
                 .record_failure(&source.scope, "Missing refresh token");
@@ -302,11 +306,21 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         info!("Starting credential refresh");
 
         let mut state = RefreshState::new(source.cookies.clone(), source.refresh_token.clone());
-        // Pass access_token through extra JSON for platform-specific managers.
+        // Pass access_token and/or password reauth material through extra JSON.
+        let mut extra = serde_json::Map::new();
         if let Some(ref access_token) = source.access_token {
-            state.extra = Some(serde_json::json!({
-                "access_token": access_token
-            }));
+            extra.insert(
+                "access_token".to_string(),
+                serde_json::Value::String(access_token.clone()),
+            );
+        }
+        if let Some(serde_json::Value::Object(map)) = source.reauth_extra.clone() {
+            for (k, v) in map {
+                extra.insert(k, v);
+            }
+        }
+        if !extra.is_empty() {
+            state.extra = Some(serde_json::Value::Object(extra));
         }
 
         match manager.refresh(&state).await {
@@ -381,8 +395,13 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         &self,
         platform_name: &str,
     ) -> Result<&Arc<dyn CredentialManager>, CredentialError> {
+        if let Some(manager) = self.managers.get(platform_name) {
+            return Ok(manager);
+        }
+        // Platform ids are stored lowercase (e.g. "soop"); display names may differ.
+        let key = platform_name.to_ascii_lowercase();
         self.managers
-            .get(platform_name)
+            .get(&key)
             .ok_or_else(|| CredentialError::UnsupportedPlatform(platform_name.to_string()))
     }
 
@@ -399,6 +418,46 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     pub fn invalidate(&self, scope: &CredentialScope) {
         self.daily_tracker.invalidate(scope);
         self.failure_tracker.clear(scope);
+    }
+
+    /// Persist session cookies minted during extract (e.g. SOOP reactive login).
+    ///
+    /// Updates the same configuration layer that supplied the credential source
+    /// and marks today's check status as valid.
+    pub async fn persist_session_cookies(
+        &self,
+        source: &CredentialSource,
+        cookies: String,
+    ) -> Result<(), CredentialError> {
+        if cookies.trim().is_empty() {
+            return Ok(());
+        }
+
+        let new_creds = RefreshedCredentials {
+            cookies,
+            refresh_token: source.refresh_token.clone(),
+            access_token: source.access_token.clone(),
+            expires_at: None,
+        };
+
+        self.store.update_credentials(source, &new_creds).await?;
+        self.daily_tracker
+            .record_check(&source.scope, CredentialStatus::Valid);
+        self.failure_tracker.clear(&source.scope);
+        if let Err(e) = self.store.update_check_result(&source.scope, "valid").await {
+            warn!(
+                platform = %source.platform_name,
+                scope = %source.scope.describe(),
+                error = %e,
+                "Failed to persist credential check status"
+            );
+        }
+        info!(
+            platform = %source.platform_name,
+            scope = %source.scope.describe(),
+            "Persisted session cookies from extract"
+        );
+        Ok(())
     }
 
     /// Create a credential event for notification.
@@ -431,5 +490,34 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             expires_at: credentials.expires_at,
             timestamp: Utc::now(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    use super::*;
+    use crate::database::repositories::{SqlxCredentialStore, config::SqlxConfigRepository};
+
+    #[tokio::test]
+    async fn notification_service_is_installed_once() {
+        let pool = SqlitePoolOptions::new()
+            .connect_lazy("sqlite::memory:")
+            .expect("in-memory SQLite URL should be valid");
+        let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let resolver = Arc::new(CredentialResolver::new(repository));
+        let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool));
+        let service = CredentialRefreshService::new(resolver, store);
+        let first = Arc::new(NotificationService::new());
+
+        service.set_notification_service(Arc::clone(&first));
+        service.set_notification_service(Arc::new(NotificationService::new()));
+
+        let installed = service
+            .notification_service
+            .get()
+            .expect("notification service should be installed");
+        assert!(Arc::ptr_eq(installed, &first));
     }
 }

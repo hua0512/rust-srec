@@ -259,25 +259,19 @@ impl TimingState {
 
         if tag.is_audio_tag() {
             if let Some(ref last) = self.last_audio_tag {
-                if last.is_audio_sequence_header() {
-                    expected < last.timestamp_ms
-                } else {
-                    let min_expected = last.timestamp_ms;
-
-                    expected <= min_expected
-                }
+                // Treat equal timestamps as valid: an audio tag sharing the previous
+                // audio tag's timestamp is not a backwards jump, so only a strictly
+                // smaller `expected` is a rebound.
+                expected < last.timestamp_ms
             } else {
                 false
             }
         } else if tag.is_video_tag() {
             if let Some(ref last) = self.last_video_tag {
-                if last.is_video_sequence_header() {
-                    expected < last.timestamp_ms
-                } else {
-                    let min_expected = last.timestamp_ms;
-
-                    expected <= min_expected
-                }
+                // Treat equal timestamps as valid: an enhanced METADATA video packet
+                // (tag type 9) legitimately shares its coded frame's timestamp, so only
+                // a strictly smaller `expected` is a rebound.
+                expected < last.timestamp_ms
             } else {
                 false
             }
@@ -302,7 +296,7 @@ impl TimingState {
         let diff: i64 = (expected as i64) - (last.timestamp_ms as i64);
 
         // Determine threshold based on media type, considering rounding errors
-        let base_threshold = match tag.tag_type {
+        let base_threshold = match tag.tag_type() {
             FlvTagType::Video => self.video_frame_interval,
             FlvTagType::Audio => self.audio_sample_interval,
             _ => {
@@ -339,18 +333,23 @@ impl TimingState {
         let last_ts = self.last_tag.as_ref().map(|t| t.timestamp_ms).unwrap_or(0);
 
         if let Some(last_video) = self.last_video_tag.as_ref().filter(|_| tag.is_video_tag()) {
-            // Calculate ideal next frame timestamp
-            let ideal_next_ts = last_video.timestamp_ms + self.video_frame_interval;
+            // Calculate ideal next frame timestamp; saturating_add keeps the u32 timeline
+            // from wrapping near u32::MAX after ~49.7 days accumulated in one segment.
+            let ideal_next_ts = last_video
+                .timestamp_ms
+                .saturating_add(self.video_frame_interval);
 
             new_delta = ideal_next_ts as i64 - current as i64;
         } else if let Some(last_audio) = self.last_audio_tag.as_ref().filter(|_| tag.is_audio_tag())
         {
-            let ideal_next_ts = last_audio.timestamp_ms + self.audio_sample_interval;
+            let ideal_next_ts = last_audio
+                .timestamp_ms
+                .saturating_add(self.audio_sample_interval);
             new_delta = ideal_next_ts as i64 - current as i64;
         } else if let Some(last) = &self.last_tag {
             // No type-specific last tag, use generic last tag
             let interval = max(self.video_frame_interval, self.audio_sample_interval);
-            new_delta = (last.timestamp_ms + interval) as i64 - current as i64;
+            new_delta = last.timestamp_ms.saturating_add(interval) as i64 - current as i64;
         }
 
         let expected = Self::apply_delta(current, new_delta);
@@ -360,7 +359,7 @@ impl TimingState {
             // to avoid negative timestamps or rebounding
             // in those cases, we use the last timestamp as a reference to calculate the delta
             if tag.is_video_tag() {
-                let adjusted_ts = last_ts + self.video_frame_interval;
+                let adjusted_ts = last_ts.saturating_add(self.video_frame_interval);
                 new_delta = if adjusted_ts >= current {
                     (adjusted_ts - current) as i64
                 } else {
@@ -368,7 +367,7 @@ impl TimingState {
                 };
             } else if tag.is_audio_tag() {
                 // calculate ideal next audio timestamp
-                let adjusted_ts = last_ts + self.audio_sample_interval;
+                let adjusted_ts = last_ts.saturating_add(self.audio_sample_interval);
                 new_delta = if adjusted_ts >= current {
                     (adjusted_ts - current) as i64
                 } else {
@@ -426,7 +425,11 @@ impl TimingRepairOperator {
         tag: &mut FlvTag,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        if tag.is_filtered() {
+            return output(FlvData::Tag(tag.clone()));
+        }
+
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
         if let Ok(amf_data) = ScriptData::demux(&mut cursor)
             && amf_data.name == crate::AMF0_ON_METADATA
             && !amf_data.data.is_empty()
@@ -729,13 +732,127 @@ mod tests {
 
         if let FlvData::Tag(tag1) = &results[10]
             && let FlvData::Tag(tag2) = &results[11]
-            && tag2.tag_type == FlvTagType::Video
+            && tag2.tag_type() == FlvTagType::Video
         {
             assert!(
                 tag2.timestamp_ms > tag1.timestamp_ms,
                 "Rebounded timestamp should be corrected to maintain forward progress"
             );
         }
+    }
+
+    #[test]
+    fn equal_timestamps_are_not_rebounds() {
+        // Consecutive tags of the same type sharing a timestamp (e.g. an enhanced
+        // METADATA video packet emitted alongside its coded frame) must pass through
+        // is_timestamp_rebounded without triggering a delta correction.
+        let input_tags = vec![
+            create_test_header(),
+            create_video_tag(1000, false),
+            create_video_tag(1000, false),
+            create_audio_tag(1005),
+            create_audio_tag(1005),
+        ];
+
+        let results = process_tags_through_operator(TimingRepairConfig::default(), input_tags);
+
+        let timestamps: Vec<u32> = results
+            .iter()
+            .filter_map(|item| match item {
+                FlvData::Tag(tag) => Some(tag.timestamp_ms),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            timestamps,
+            vec![1000, 1000, 1005, 1005],
+            "tags sharing their predecessor's timestamp must pass through unchanged"
+        );
+    }
+
+    #[test]
+    fn video_rebound_near_u32_max_saturates_instead_of_overflowing() {
+        // calculate_delta_correction adds video_frame_interval to the previous video
+        // timestamp; near u32::MAX that sum must saturate rather than wrap (or panic
+        // in debug builds).
+        let input_tags = vec![
+            create_test_header(),
+            create_video_tag(u32::MAX - 10, false),
+            create_video_tag(1000, false),
+        ];
+
+        let results = process_tags_through_operator(TimingRepairConfig::default(), input_tags);
+
+        let timestamps: Vec<u32> = results
+            .iter()
+            .filter_map(|item| match item {
+                FlvData::Tag(tag) => Some(tag.timestamp_ms),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(timestamps[0], u32::MAX - 10);
+        assert!(
+            timestamps[1] >= timestamps[0],
+            "corrected rebound timestamp must not go backwards (got {})",
+            timestamps[1]
+        );
+    }
+
+    #[test]
+    fn audio_rebound_near_u32_max_saturates_instead_of_overflowing() {
+        // Same as the video case, but through the last_audio_tag branch of
+        // calculate_delta_correction and audio_sample_interval.
+        let input_tags = vec![
+            create_test_header(),
+            create_audio_tag(u32::MAX - 5),
+            create_audio_tag(2000),
+        ];
+
+        let results = process_tags_through_operator(TimingRepairConfig::default(), input_tags);
+
+        let timestamps: Vec<u32> = results
+            .iter()
+            .filter_map(|item| match item {
+                FlvData::Tag(tag) => Some(tag.timestamp_ms),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(timestamps[0], u32::MAX - 5);
+        assert!(
+            timestamps[1] >= timestamps[0],
+            "corrected rebound timestamp must not go backwards (got {})",
+            timestamps[1]
+        );
+    }
+
+    #[test]
+    fn filtered_script_payload_does_not_change_timing_parameters() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            TimingRepairOperator::new(Arc::clone(&context), TimingRepairConfig::default());
+        let initial_video_interval = operator.state.video_frame_interval;
+        let (payload, _) = crate::amf::builder::OnMetaDataBuilder::new()
+            .with_framerate(120.0)
+            .build_bytes(0, false)
+            .unwrap();
+        let filtered_tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::ScriptData,
+            true,
+            bytes::Bytes::from(payload),
+        );
+        let mut output = Vec::new();
+
+        operator
+            .process(&context, FlvData::Tag(filtered_tag), &mut |item| {
+                output.push(item);
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(operator.state.video_frame_interval, initial_video_interval);
+        assert!(matches!(&output[..], [FlvData::Tag(tag)] if tag.is_filtered()));
     }
 
     #[test]
@@ -814,9 +931,9 @@ mod tests {
 
         for item in &results {
             if let FlvData::Tag(tag) = item {
-                if tag.tag_type == FlvTagType::Audio {
+                if tag.tag_type() == FlvTagType::Audio {
                     audio_ts.push(tag.timestamp_ms);
-                } else if tag.tag_type == FlvTagType::Video {
+                } else if tag.tag_type() == FlvTagType::Video {
                     video_ts.push(tag.timestamp_ms);
                 }
             }

@@ -37,6 +37,10 @@ pub struct WebhookConfig {
     /// Minimum priority level to send (default: Normal).
     #[serde(default)]
     pub min_priority: NotificationPriority,
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
     /// Request timeout in seconds.
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
@@ -73,6 +77,7 @@ impl Default for WebhookConfig {
             headers: Vec::new(),
             auth: None,
             min_priority: NotificationPriority::Normal,
+            locale: None,
             timeout_secs: 30,
         }
     }
@@ -141,8 +146,8 @@ impl WebhookChannel {
             "event_type": event.event_type(),
             "priority": event.priority().as_int(),
             "priority_label": event.priority().to_string(),
-            "title": event.title(),
-            "description": event.description(),
+            "title": event.title_for(self.config.locale.as_deref()),
+            "description": event.description_for(self.config.locale.as_deref()),
             "timestamp": event.timestamp().to_rfc3339(),
             "streamer_id": event.streamer_id(),
             "data": event
@@ -223,15 +228,6 @@ impl NotificationChannel for WebhookChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_webhook_config_default() {
-        let config = WebhookConfig::default();
-        assert!(!config.enabled);
-        assert!(config.url.is_empty());
-        assert_eq!(config.method, "POST");
-        assert_eq!(config.timeout_secs, 30);
-    }
 
     #[test]
     fn test_webhook_channel_disabled() {

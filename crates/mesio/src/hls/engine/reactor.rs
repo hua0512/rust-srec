@@ -87,7 +87,9 @@ pub async fn run_reactor(
             &mut ending,
         ) {
             let reason: Arc<str> = Arc::from(err.to_string());
-            let _ = assembler_tx.send(AssemblerInput::Fatal(err)).await;
+            if assembler_tx.send(AssemblerInput::Fatal(err)).await.is_err() {
+                debug!("Assembler closed before initial playlist error was delivered");
+            }
             return Terminal::PipelineError(reason);
         }
     }
@@ -251,7 +253,9 @@ pub async fn run_reactor(
         let reason: Arc<str> = Arc::from(err.to_string());
         // Buffered output is dropped, not drained, on the error path.
         pending.clear();
-        let _ = assembler_tx.send(AssemblerInput::Fatal(err)).await;
+        if assembler_tx.send(AssemblerInput::Fatal(err)).await.is_err() {
+            debug!("Assembler closed before terminal pipeline error was delivered");
+        }
         return Terminal::PipelineError(reason);
     }
 

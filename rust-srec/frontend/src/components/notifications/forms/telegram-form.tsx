@@ -2,14 +2,12 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { KeyRound, Hash } from 'lucide-react';
-import { priorityOptions } from '@/lib/priority';
 import {
   Select,
   SelectContent,
@@ -19,28 +17,38 @@ import {
 } from '@/components/ui/select';
 import { useFormContext } from 'react-hook-form';
 import { IconInput } from '@/components/ui/icon-input';
-import { SwitchCard } from '@/components/ui/switch-card';
+import {
+  ChannelEnabledField,
+  MinPriorityField,
+  ChannelLocaleField,
+} from './channel-delivery-fields';
+import {
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 export function TelegramForm() {
   const { i18n } = useLingui();
   const form = useFormContext();
 
   return (
-    <div className="space-y-4 rounded-xl border border-primary/10 bg-primary/5 p-4">
+    <div className="space-y-4">
       <FormField
         control={form.control}
         name="settings.bot_token"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Bot Token</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <IconInput
                 icon={KeyRound}
                 type="password"
                 placeholder={i18n._(msg`123456:ABC-DEF...`)}
-                className="bg-background/50"
+                className={CONFIG_INPUT}
                 {...field}
               />
             </FormControl>
@@ -52,15 +60,15 @@ export function TelegramForm() {
         control={form.control}
         name="settings.chat_id"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Chat ID</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <IconInput
                 icon={Hash}
                 placeholder={i18n._(msg`-1001234567890`)}
-                className="bg-background/50"
+                className={CONFIG_INPUT}
                 {...field}
               />
             </FormControl>
@@ -68,22 +76,25 @@ export function TelegramForm() {
           </FormItem>
         )}
       />
-      <div className="pt-2 grid grid-cols-3 gap-4">
+      <div className="grid items-start gap-4 pt-2 sm:grid-cols-2">
         <FormField
           control={form.control}
           name="settings.parse_mode"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
                 <Trans>Parse Mode</Trans>
-              </FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              </ConfigFieldLabel>
+              <Select
+                onValueChange={field.onChange}
+                value={field.value ?? 'HTML'}
+              >
                 <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue />
+                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                    <SelectValue placeholder={i18n._(msg`Select parse mode`)} />
                   </SelectTrigger>
                 </FormControl>
-                <SelectContent>
+                <SelectContent className={CONFIG_SELECT_CONTENT}>
                   <SelectItem value="HTML">HTML</SelectItem>
                   <SelectItem value="Markdown">Markdown</SelectItem>
                   <SelectItem value="MarkdownV2">MarkdownV2</SelectItem>
@@ -93,48 +104,10 @@ export function TelegramForm() {
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="settings.min_priority"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Min Priority</Trans>
-              </FormLabel>
-              <Select
-                onValueChange={(val) => field.onChange(Number(val))}
-                defaultValue={String(field.value)}
-              >
-                <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {priorityOptions().map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      <Trans>{opt.label}</Trans>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="settings.enabled"
-          render={({ field }) => (
-            <SwitchCard
-              label={<Trans>Enabled</Trans>}
-              checked={field.value}
-              onCheckedChange={field.onChange}
-              className="border-primary/10 bg-background/50 h-full"
-            />
-          )}
-        />
+        <MinPriorityField />
       </div>
+      <ChannelLocaleField />
+      <ChannelEnabledField />
     </div>
   );
 }

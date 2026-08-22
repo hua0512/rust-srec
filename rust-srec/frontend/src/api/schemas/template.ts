@@ -1,10 +1,10 @@
 import { z } from 'zod';
+import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
+  DanmuStatisticsObjectSchema,
   DownloadRetryPolicyObjectSchema,
-  DanmuSamplingConfigObjectSchema,
   ProxyConfigObjectSchema,
-  EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { EngineConfigOverrideSchema } from './engine';
@@ -40,6 +40,7 @@ export const TemplateSchema = z.object({
   output_filename_template: z.string().nullable().optional(),
   output_file_format: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
   platform_overrides: z
     .preprocess((val) => {
@@ -66,28 +67,23 @@ export const TemplateSchema = z.object({
     .pipe(StreamSelectionConfigObjectSchema.nullable().optional())
     .nullable()
     .optional(),
+  danmu_statistics: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(DanmuStatisticsObjectSchema.nullable().optional())
+    .nullable()
+    .optional(),
+
   download_retry_policy: z
     .string()
     .transform((str) => JSON.parse(str))
     .pipe(DownloadRetryPolicyObjectSchema.nullable().optional())
     .nullable()
     .optional(),
-  danmu_sampling_config: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DanmuSamplingConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
   proxy_config: z
     .string()
     .transform((str) => JSON.parse(str))
     .pipe(ProxyConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  event_hooks: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(EventHooksSchema.nullable().optional())
     .nullable()
     .optional(),
   pipeline: z
@@ -148,14 +144,14 @@ export const CreateTemplateRequestSchema = z.object({
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   platform_overrides: z.any().nullable().optional(),
   engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
+  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
-  danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
-  event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

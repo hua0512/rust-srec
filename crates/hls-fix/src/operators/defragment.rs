@@ -32,7 +32,7 @@
 //!
 use std::sync::Arc;
 
-use hls::{HlsData, M4sData, SegmentType, SplitReason, StreamProfile, StreamProfileOptions};
+use hls::{HlsData, M4sData, SegmentType, SplitReason};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use tracing::{debug, info, warn};
 
@@ -40,139 +40,84 @@ pub struct DefragmentOperator {
     context: Arc<StreamerContext>,
     is_gathering: bool,
     buffer: Vec<HlsData>,
+    buffered_bytes: usize,
+    pre_init_buffer_limit: usize,
+    pre_init_overflowed: bool,
     segment_type: Option<SegmentType>,
     has_init_segment: bool,
-    last_stream_profile: Option<StreamProfile>,
-    ts_psi_seen: bool,
 }
 
 impl DefragmentOperator {
-    // The minimum number of tags required to consider a segment valid.
+    // The minimum number of fMP4 items (init + trailing media) buffered before a gathered
+    // segment is flushed mid-stream.
     const MIN_TAGS_NUM: usize = 5;
 
-    // The minimum number of tags for TS segments (PAT, PMT, and at least one IDR frame)
-    const MIN_TS_TAGS_NUM: usize = 3;
-
-    // Maximum buffer size to prevent indefinite growth
-    const MAX_BUFFER_SIZE: usize = 50;
+    const DEFAULT_PRE_INIT_BUFFER_LIMIT: usize = 64 * 1024 * 1024;
 
     pub fn new(context: Arc<StreamerContext>) -> Self {
+        Self::with_pre_init_buffer_limit(context, Self::DEFAULT_PRE_INIT_BUFFER_LIMIT)
+    }
+
+    fn with_pre_init_buffer_limit(
+        context: Arc<StreamerContext>,
+        pre_init_buffer_limit: usize,
+    ) -> Self {
         DefragmentOperator {
             context,
             is_gathering: false,
             buffer: Vec::with_capacity(Self::MIN_TAGS_NUM),
+            buffered_bytes: 0,
+            pre_init_buffer_limit: pre_init_buffer_limit.max(1),
+            pre_init_overflowed: false,
             segment_type: None,
             has_init_segment: false,
-            last_stream_profile: None,
-            ts_psi_seen: false,
         }
     }
 
     fn reset(&mut self) {
         self.is_gathering = false;
         self.buffer.clear();
-        // Don't reset has_init_segment or last_stream_profile as they're properties of the stream
+        self.buffered_bytes = 0;
+        self.pre_init_overflowed = false;
+    }
+
+    fn buffer_item(&mut self, data: HlsData) {
+        self.buffered_bytes = self.buffered_bytes.saturating_add(data.size());
+        self.buffer.push(data);
     }
 
     fn flush_buffer(
         &mut self,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        for item in self.buffer.drain(..) {
+        let items = std::mem::take(&mut self.buffer);
+        self.buffered_bytes = 0;
+        for item in items {
             output(item)?;
         }
         Ok(())
     }
 
-    fn process_ts_segment(
-        &mut self,
-        data: HlsData,
-        output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
-    ) -> Result<(), PipelineError> {
-        // NOTE: Some live streams may emit TS segments that don't contain PAT/PMT (PSI) tables,
-        // especially around join points or due to how segment boundaries are cut.
-        //
-        // Correctness policy: never drop those segments just because PSI is missing.
-        // We also deliberately do not emit `HlsData::EndMarker` purely because PSI is missing:
-        // absence of PSI is not a reliable boundary signal on live streams.
-        //
-        // Future option (not implemented): optionally split at the first PSI segment or inject PSI
-        // so that each output file starts with PAT/PMT for maximal standalone playability.
-        let has_psi_tables = data.ts_has_psi_tables();
-        if has_psi_tables {
-            debug!(
-                "{} Found PSI tables (PAT/PMT) in TS stream",
-                self.context.name
-            );
-
-            if let Some(profile) = data.get_stream_profile_with_options(StreamProfileOptions {
-                include_resolution: false,
-            }) {
-                debug!(
-                    "{} Stream profile: {} (complete: {})",
-                    self.context.name,
-                    profile.summary,
-                    profile.is_complete()
-                );
-                self.last_stream_profile = Some(profile);
-            }
-
-            self.ts_psi_seen = true;
-        }
-
-        output(data)?;
-        Ok(())
-    }
-
-    /// Validates if the buffered TS segment is complete using zero-copy stream analysis
-    fn validate_ts_segment_completeness(&self) -> bool {
-        if self.buffer.is_empty() {
-            return false;
-        }
-
-        // Check if we have any segments with PSI tables
-        let has_psi_segments = self.buffer.iter().any(|data| data.ts_has_psi_tables());
-
-        if !has_psi_segments {
-            debug!(
-                "{} TS segment lacks PSI tables, incomplete",
-                self.context.name
-            );
-            return false;
-        }
-
-        // For advanced validation, check if we have a complete stream profile
-        if let Some(ref profile) = self.last_stream_profile {
-            debug!(
-                "{} TS segment validation: {} - has_video: {}, has_audio: {}",
-                self.context.name, profile.summary, profile.has_video, profile.has_audio
-            );
-
-            // Consider segment complete if we have either video OR audio streams (more lenient)
-            // OR if we have enough buffer items regardless of stream completeness
-            return profile.has_video
-                || profile.has_audio
-                || self.buffer.len() >= Self::MIN_TAGS_NUM;
-        }
-
-        // Fallback: if we have PSI tables and minimum packets, consider complete
-        debug!("{} TS segment basic validation passed", self.context.name);
-        true
-    }
-
-    // Handle cases for FMP4s init segment
+    // Handle cases for FMP4s init segment.
+    //
+    // Any non-empty buffer is dropped when a new init arrives and gathering restarts
+    // from this init: pre-init media is encoded against an unknown configuration, and
+    // a still-gathering init+media group cut short by a config change loses its
+    // buffered items here too. handle_end_of_playlist still emits pre-init media if
+    // the stream ends before an init ever arrives.
     fn handle_new_header(&mut self, data: HlsData) {
         if !self.buffer.is_empty() {
             warn!(
                 "{} Discarded {} items, total size: {}",
                 self.context.name,
                 self.buffer.len(),
-                self.buffer.iter().map(|d| d.size()).sum::<usize>()
+                self.buffered_bytes
             );
             self.reset();
         }
         self.is_gathering = true;
-        self.buffer.push(data);
+        self.pre_init_overflowed = false;
+        self.buffer_item(data);
         self.has_init_segment = true;
         debug!(
             "{} Received init segment, start gathering...",
@@ -188,40 +133,17 @@ impl DefragmentOperator {
     ) -> Result<(), PipelineError> {
         debug!("{} End of playlist marker received", self.context.name);
 
-        // Flush any buffered data
+        // The buffer only ever holds fMP4 items; process_internal forwards TS directly.
+        // Flush everything gathered regardless of item count so a mid-stream discontinuity or
+        // recording end never drops a freshly re-gathered init segment or its trailing media.
         if !self.buffer.is_empty() {
-            let min_required = match self.segment_type {
-                Some(SegmentType::Ts) => Self::MIN_TS_TAGS_NUM,
-                Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => Self::MIN_TAGS_NUM,
-                Some(SegmentType::EndMarker) => 0,
-                None => Self::MIN_TAGS_NUM,
-            };
-
-            if matches!(self.segment_type, Some(SegmentType::Ts)) {
-                if self.buffer.len() < min_required {
-                    warn!(
-                        "{} Flushing short TS buffer on playlist end ({} < {} items) to preserve data",
-                        self.context.name,
-                        self.buffer.len(),
-                        min_required
-                    );
-                } else {
-                    debug!("{} Flushing TS buffer on playlist end", self.context.name);
-                }
-                self.flush_buffer(output)?;
-                self.reset();
-            } else if self.buffer.len() >= min_required {
-                debug!("{} Flushing buffer on playlist end", self.context.name);
-                self.flush_buffer(output)?;
-                self.reset();
-            } else {
-                warn!(
-                    "{} Discarding incomplete segment on playlist end ({} items)",
-                    self.context.name,
-                    self.buffer.len()
-                );
-                self.reset();
-            }
+            debug!(
+                "{} Flushing buffer on playlist end ({} items)",
+                self.context.name,
+                self.buffer.len()
+            );
+            self.flush_buffer(output)?;
+            self.reset();
         }
 
         // Output the end of playlist marker
@@ -250,9 +172,6 @@ impl DefragmentOperator {
                     self.context.name, tag_type
                 );
                 self.segment_type = Some(tag_type);
-                if tag_type == SegmentType::Ts {
-                    self.ts_psi_seen = false;
-                }
             }
             Some(current_type) if current_type != tag_type => {
                 // Special case: don't consider M4sInit to M4sMedia (or vice versa) as changing segment type
@@ -266,9 +185,6 @@ impl DefragmentOperator {
                         self.context.name, current_type, tag_type
                     );
                     self.segment_type = Some(tag_type);
-                    if tag_type == SegmentType::Ts {
-                        self.ts_psi_seen = false;
-                    }
 
                     // Consider it at end of playlist marker
                     self.handle_end_of_playlist(None, output)?;
@@ -282,12 +198,25 @@ impl DefragmentOperator {
             _ => {} // Type hasn't changed
         }
 
+        // TS segments are passed through untouched; only fMP4 data is ever buffered.
         if self.segment_type == Some(SegmentType::Ts) {
-            return self.process_ts_segment(data, output);
+            output(data)?;
+            return Ok(());
         }
 
         // Special handling for M4S initialization segments
         if data.is_init_segment() {
+            if self.pre_init_overflowed {
+                warn!(
+                    stream = %self.context.name,
+                    "Delayed fMP4 init arrived after pre-init overflow; rotating output before the init segment"
+                );
+                output(HlsData::end_marker_with_reason(
+                    SplitReason::StreamStructureChange {
+                        description: "fMP4 init arrived after pre-init media overflow".to_string(),
+                    },
+                ))?;
+            }
             self.handle_new_header(data);
             return Ok(());
         }
@@ -299,6 +228,11 @@ impl DefragmentOperator {
         {
             // If this is an M4S segment but we haven't seen an init segment yet
             if let HlsData::M4sData(M4sData::Segment(_)) = &data {
+                if self.pre_init_overflowed {
+                    output(data)?;
+                    return Ok(());
+                }
+
                 debug!(
                     "{} Buffering M4S segment while waiting for init segment",
                     self.context.name
@@ -308,91 +242,48 @@ impl DefragmentOperator {
                     self.is_gathering = true;
                 }
 
-                // Clean up the buffer if it's too large
-                if self.buffer.len() >= Self::MAX_BUFFER_SIZE {
+                let next_size = self.buffered_bytes.saturating_add(data.size());
+                if next_size > self.pre_init_buffer_limit {
                     warn!(
-                        "{} Buffer too large, discarding incomplete segment while waiting for init segment",
-                        self.context.name
+                        stream = %self.context.name,
+                        buffered_bytes = self.buffered_bytes,
+                        incoming_bytes = data.size(),
+                        limit_bytes = self.pre_init_buffer_limit,
+                        "Pre-init buffer limit reached; emitting buffered media without an init segment"
                     );
-                    self.buffer.clear();
+                    self.pre_init_overflowed = true;
+                    self.is_gathering = false;
+                    self.flush_buffer(output)?;
+                    output(data)?;
+                    return Ok(());
                 }
-                self.buffer.push(data);
+                self.buffer_item(data);
                 return Ok(());
             }
         }
 
         // For non-TS segments, add to buffer if we're gathering data
         if self.is_gathering {
-            self.buffer.push(data);
+            self.buffer_item(data);
         } else {
             // If we're not gathering, pass through the data
             output(data)?;
             return Ok(());
         }
 
-        // // Check buffer size and force emission if too large
-        // if self.buffer.len() >= Self::MAX_BUFFER_SIZE {
-        //     warn!(
-        //         "{} Buffer size limit reached ({}), force emitting",
-        //         self.context.name, Self::MAX_BUFFER_SIZE
-        //     );
+        // Only fMP4 data reaches here (TS returned above). Gathering can also start
+        // pre-init with media-only buffers, so the has_init_segment conjunct below is
+        // what guarantees an emitted group opens with its init. Emit the init plus its
+        // trailing media once MIN_TAGS_NUM items are buffered.
+        if self.is_gathering && self.has_init_segment && self.buffer.len() >= Self::MIN_TAGS_NUM {
+            debug!(
+                "{} Gathered complete segment ({} items), processing",
+                self.context.name,
+                self.buffer.len()
+            );
 
-        //     // Force emit all buffered items
-        //     for item in self.buffer.drain(..) {
-        //         output(item)?;
-        //     }
-        //     self.is_gathering = false;
-        //     return Ok(());
-        // }
-
-        // Check if we've gathered enough data and if gathering is active
-        if self.is_gathering && !self.buffer.is_empty() {
-            // Determine minimum number of tags based on segment type
-            let min_required = match self.segment_type {
-                Some(SegmentType::Ts) => Self::MIN_TS_TAGS_NUM,
-                Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => Self::MIN_TAGS_NUM,
-                Some(SegmentType::EndMarker) => 0,
-                None => Self::MIN_TAGS_NUM, // Default if type not yet determined
-            };
-
-            // Check if we've gathered enough tags to consider this a complete segment
-            if self.buffer.len() >= min_required {
-                // Enhanced completion check using stream profiling
-                let is_complete = match self.segment_type {
-                    Some(SegmentType::Ts) => {
-                        // Use advanced stream analysis for TS segments
-                        // self.validate_ts_segment_completeness()
-                        true
-                    }
-                    Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => {
-                        // For M4S, check if we have init segment for media segments
-                        if !self.has_init_segment
-                            && matches!(self.segment_type, Some(SegmentType::M4sMedia))
-                        {
-                            false
-                        } else {
-                            self.buffer.len() >= min_required
-                        }
-                    }
-                    Some(SegmentType::EndMarker) => false,
-                    None => false, // Can't complete if we don't know the type
-                };
-
-                if is_complete {
-                    debug!(
-                        "{} Gathered complete segment ({} items), processing",
-                        self.context.name,
-                        self.buffer.len()
-                    );
-
-                    // Output buffered items
-                    for item in self.buffer.drain(..) {
-                        output(item)?;
-                    }
-
-                    self.is_gathering = false;
-                }
-            }
+            self.flush_buffer(output)?;
+            self.is_gathering = false;
         }
 
         Ok(())
@@ -431,69 +322,25 @@ impl Processor<HlsData> for DefragmentOperator {
             self.buffer.len()
         );
 
-        // Determine minimum requirements based on segment type
-        let min_required = match self.segment_type {
-            Some(SegmentType::Ts) => Self::MIN_TS_TAGS_NUM,
-            Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => Self::MIN_TAGS_NUM,
-            Some(SegmentType::EndMarker) => 0,
-            None => Self::MIN_TAGS_NUM, // Default if type not yet determined
-        };
-
-        // Enhanced segment validation before flushing
-        let is_valid_segment = match self.segment_type {
-            Some(SegmentType::Ts) => {
-                if !self.ts_psi_seen {
-                    warn!(
-                        "{} Finishing TS stream without PSI; flushing {} buffered segment(s) to preserve data",
-                        self.context.name,
-                        self.buffer.len()
-                    );
-                    true
-                } else {
-                    // For TS segments in gathering mode, we've already validated the stream
-                    // and established it's valid, so we can be more lenient with the final flush
-                    if self.is_gathering {
-                        // Still validate completeness, but allow smaller buffers if we have PSI tables
-                        self.validate_ts_segment_completeness()
-                    } else {
-                        // Not yet gathering, need full validation
-                        self.buffer.len() >= min_required && self.validate_ts_segment_completeness()
-                    }
-                }
+        // The buffer only ever holds fMP4 items; flush whatever is gathered rather than
+        // dropping a short final segment (init + trailing media) at stream end.
+        let count = self.buffer.len();
+        for item in self.buffer.drain(..) {
+            if context.token.is_cancelled() {
+                warn!(
+                    "{} Cancellation occurred during flush, some data might be lost.",
+                    self.context.name
+                );
+                return Err(PipelineError::Cancelled);
             }
-            Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => {
-                self.buffer.len() >= min_required
-            }
-            _ => false,
-        };
-
-        if is_valid_segment {
-            let count = self.buffer.len();
-
-            for item in self.buffer.drain(..) {
-                if context.token.is_cancelled() {
-                    warn!(
-                        "{} Cancellation occurred during flush, some data might be lost.",
-                        self.context.name
-                    );
-                    return Err(PipelineError::Cancelled);
-                }
-                output(item)?;
-            }
-            self.reset();
-
-            info!(
-                "{} Flushed complete segment ({} items)",
-                self.context.name, count
-            );
-        } else {
-            warn!(
-                "{} Discarding incomplete segment on flush ({} items)",
-                self.context.name,
-                self.buffer.len()
-            );
-            self.reset();
+            output(item)?;
         }
+        self.reset();
+
+        info!(
+            "{} Flushed buffered segment ({} items)",
+            self.context.name, count
+        );
 
         Ok(())
     }
@@ -615,6 +462,93 @@ mod tests {
         HlsData::ts(MediaSegment::empty(), Bytes::from(data))
     }
 
+    fn make_m4s_media(size: usize) -> HlsData {
+        HlsData::mp4_segment(MediaSegment::empty(), Bytes::from(vec![0; size]))
+    }
+
+    fn make_m4s_init(size: usize) -> HlsData {
+        HlsData::mp4_init(MediaSegment::empty(), Bytes::from(vec![0; size]))
+    }
+
+    #[test]
+    fn pre_init_byte_limit_emits_buffer_and_switches_to_passthrough() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = DefragmentOperator::with_pre_init_buffer_limit(Arc::clone(&context), 6);
+        let mut out = Vec::new();
+        {
+            let mut output = |item: HlsData| -> Result<(), PipelineError> {
+                out.push(item);
+                Ok(())
+            };
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+        }
+        assert!(out.is_empty());
+
+        {
+            let mut output = |item: HlsData| -> Result<(), PipelineError> {
+                out.push(item);
+                Ok(())
+            };
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+        }
+        assert_eq!(out.len(), 2);
+
+        {
+            let mut output = |item: HlsData| -> Result<(), PipelineError> {
+                out.push(item);
+                Ok(())
+            };
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+        }
+        assert_eq!(out.len(), 3);
+        assert!(out.iter().all(HlsData::is_mp4_media));
+    }
+
+    #[test]
+    fn delayed_init_after_pre_init_overflow_starts_a_new_output_file() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = DefragmentOperator::with_pre_init_buffer_limit(Arc::clone(&context), 6);
+        let mut out = Vec::new();
+        let mut output = |item: HlsData| -> Result<(), PipelineError> {
+            out.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_init(4), &mut output)
+            .unwrap();
+        for _ in 0..4 {
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+        }
+
+        assert!(out[..3].iter().all(HlsData::is_mp4_media));
+        assert!(matches!(
+            &out[3],
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+        ));
+        assert!(out[4].is_mp4_init());
+        assert!(out[5..].iter().all(HlsData::is_mp4_media));
+    }
+
     #[test]
     fn passes_through_ts_without_psi_and_no_split_at_first_psi() {
         let token = CancellationToken::new();
@@ -683,5 +617,76 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert!(matches!(out[0], HlsData::TsData(_)));
         assert!(matches!(out[1], HlsData::EndMarker(_)));
+    }
+
+    #[test]
+    fn flushes_short_fmp4_buffer_on_playlist_end() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = DefragmentOperator::new(context.clone());
+
+        let mut out = Vec::new();
+        {
+            let mut output = |item: HlsData| -> Result<(), PipelineError> {
+                out.push(item);
+                Ok(())
+            };
+            // Init + two media items: fewer than MIN_TAGS_NUM, so still buffered.
+            operator
+                .process(&context, make_m4s_init(4), &mut output)
+                .unwrap();
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+        }
+        assert!(out.is_empty());
+
+        {
+            let mut output = |item: HlsData| -> Result<(), PipelineError> {
+                out.push(item);
+                Ok(())
+            };
+            operator
+                .process(&context, HlsData::end_marker(), &mut output)
+                .unwrap();
+        }
+
+        assert_eq!(out.len(), 4);
+        assert!(out[0].is_mp4_init());
+        assert!(out[1..3].iter().all(HlsData::is_mp4_media));
+        assert!(matches!(out[3], HlsData::EndMarker(_)));
+    }
+
+    #[test]
+    fn flushes_short_fmp4_buffer_on_finish() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = DefragmentOperator::new(context.clone());
+
+        let mut out = Vec::new();
+        let mut output = |item: HlsData| -> Result<(), PipelineError> {
+            out.push(item);
+            Ok(())
+        };
+
+        // Init + two media items: fewer than MIN_TAGS_NUM, so still buffered.
+        operator
+            .process(&context, make_m4s_init(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+
+        operator.finish(&context, &mut output).unwrap();
+
+        assert_eq!(out.len(), 3);
+        assert!(out[0].is_mp4_init());
+        assert!(out[1..].iter().all(HlsData::is_mp4_media));
     }
 }

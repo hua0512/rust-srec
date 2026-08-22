@@ -46,7 +46,10 @@ impl DouyuMessageType {
     }
 
     /// Get the string representation for encoding.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::LoginReq => "loginreq",

@@ -37,6 +37,15 @@ export const PRESET_TEMPLATES = {
       args: [],
     },
   },
+  baidupcs: {
+    label: msg`Baidu Netdisk`,
+    value: {
+      destination_root: '/rust-srec/{streamer}/%Y-%m',
+      policy: 'skip',
+      max_retries: 3,
+      args: [],
+    },
+  },
   audio_extract: {
     label: msg`Audio Extract`,
     value: {

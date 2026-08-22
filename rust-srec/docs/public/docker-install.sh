@@ -36,12 +36,11 @@ generate_secret() {
     elif [ -r /dev/urandom ]; then
         head -c "$length" /dev/urandom | od -An -tx1 | tr -d ' \n'
     else
-        # Fallback using $RANDOM (less secure, but works everywhere)
-        local secret=""
-        for _ in $(seq 1 "$length"); do
-            secret+=$(printf '%x' $((RANDOM % 16)))
-        done
-        echo "$secret"
+        error "Cannot generate secrets securely: openssl is missing and /dev/urandom is unreadable."
+        error "Install openssl, or generate two 32-byte hex values elsewhere, for example:"
+        error "  python3 -c 'import secrets; print(secrets.token_hex(32))'"
+        error "Then set JWT_SECRET and SESSION_SECRET by hand: https://docs.srec.rs/en/getting-started/docker#manual-setup"
+        return 1
     fi
 }
 

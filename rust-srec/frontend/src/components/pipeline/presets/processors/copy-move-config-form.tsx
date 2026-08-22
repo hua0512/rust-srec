@@ -73,7 +73,9 @@ export function CopyMoveConfigForm({
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                        <SelectValue placeholder="Select operation" />
+                        <SelectValue
+                          placeholder={i18n._(msg`Select operation`)}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

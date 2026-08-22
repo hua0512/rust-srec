@@ -432,7 +432,7 @@ impl<'a> DouyinRequest<'a> {
                 if let Some(ttwid) = &self.config.ttwid {
                     ttwid.clone()
                 } else {
-                    fetch_ttwid(&self.config.extractor.client).await
+                    fetch_ttwid(&self.config.extractor.client).await?
                 }
             }
         };
@@ -452,7 +452,7 @@ impl<'a> DouyinRequest<'a> {
 
     /// Ensures a valid `odin_ttid` is present.
     fn ensure_odin_ttid(&mut self) {
-        if self.params.contains_key("odin_ttid") {
+        if self.cookies.contains_key("odin_ttid") {
             return;
         }
         let odin_ttid = generate_odin_ttid();
@@ -461,7 +461,7 @@ impl<'a> DouyinRequest<'a> {
 
     /// Ensures a valid `__ac_nonce` is present.
     fn ensure_nonce(&mut self) {
-        if self.params.contains_key("__ac_nonce") {
+        if self.cookies.contains_key("__ac_nonce") {
             return;
         }
         let nonce = generate_nonce();
@@ -708,7 +708,13 @@ impl<'a> DouyinRequest<'a> {
             .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
         let streams = self.extract_streams(stream_url)?;
         let mut extras = FxHashMap::default();
-        extras.insert("id_str".to_string(), self.id_str.clone().unwrap());
+        if let Some(id) = self
+            .id_str
+            .clone()
+            .or_else(|| (!data.id_str.is_empty()).then(|| data.id_str.to_string()))
+        {
+            extras.insert("id_str".to_string(), id);
+        }
 
         Ok(MediaInfo::new(
             self.config.extractor.url.clone(),
@@ -1064,7 +1070,10 @@ impl<'a> DouyinRequest<'a> {
     }
 
     /// Helper to add a new `StreamInfo` to the list if the URL is not empty.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "arguments map directly to one extracted stream representation"
+    )]
     fn _add_stream_if_url_present(
         &self,
         url: &str,

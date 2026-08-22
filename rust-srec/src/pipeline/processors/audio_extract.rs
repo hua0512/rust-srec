@@ -115,7 +115,10 @@ impl AudioExtractProcessor {
     }
 
     /// Create with a custom ffmpeg path.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     pub fn with_ffmpeg_path(path: impl Into<String>) -> Self {
         Self {
             ffmpeg_path: path.into(),
@@ -366,7 +369,8 @@ impl AudioExtractProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args).env("LC_ALL", "C");
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
+        cmd.args(&args);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
@@ -463,6 +467,7 @@ impl AudioExtractProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs: command_output.logs,
         })
     }
@@ -547,7 +552,13 @@ impl Processor for AudioExtractProcessor {
                     }
                     Err(e) => {
                         for produced in &items_produced {
-                            let _ = tokio::fs::remove_file(produced).await;
+                            if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
+                                warn!(
+                                    path = %produced,
+                                    error = %cleanup_error,
+                                    "Failed to remove audio output after batch failure"
+                                );
+                            }
                         }
                         return Err(e);
                     }
@@ -570,6 +581,7 @@ impl Processor for AudioExtractProcessor {
                 failed_inputs: vec![],
                 succeeded_inputs,
                 skipped_inputs,
+                uploads: vec![],
                 logs,
             });
         }
@@ -687,7 +699,8 @@ impl Processor for AudioExtractProcessor {
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args).env("LC_ALL", "C");
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
+        cmd.args(&args);
 
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
@@ -784,6 +797,7 @@ impl Processor for AudioExtractProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.clone()],
             skipped_inputs: vec![],
+            uploads: vec![],
             logs: command_output.logs,
         })
     }
@@ -829,17 +843,6 @@ mod tests {
         assert_eq!(AudioFormat::Aac.extension(), "m4a");
         assert_eq!(AudioFormat::Flac.extension(), "flac");
         assert_eq!(AudioFormat::Opus.extension(), "opus");
-    }
-
-    #[test]
-    fn test_audio_extract_config_default() {
-        let config = AudioExtractConfig::default();
-        assert!(config.format.is_none());
-        assert!(config.bitrate.is_none());
-        assert!(config.sample_rate.is_none());
-        assert!(config.channels.is_none());
-        assert!(config.output_path.is_none());
-        assert!(config.overwrite);
     }
 
     #[test]

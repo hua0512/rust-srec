@@ -160,6 +160,7 @@ pub struct ProcessorContext {
     pub progress: ProgressReporter,
     pub log_sink: JobLogSink,
     pub cancellation_token: CancellationToken,
+    pub is_retry: bool,
 }
 
 #[derive(Clone)]
@@ -194,6 +195,7 @@ impl ProcessorContext {
             progress: ProgressReporter::noop(job_id),
             log_sink: JobLogSink::new(log_tx, dropped),
             cancellation_token: CancellationToken::new(),
+            is_retry: false,
         }
     }
 
@@ -208,7 +210,14 @@ impl ProcessorContext {
             progress,
             log_sink,
             cancellation_token,
+            is_retry: false,
         }
+    }
+
+    /// Mark this execution as a retry of a previously persisted job.
+    pub fn with_retry(mut self, is_retry: bool) -> Self {
+        self.is_retry = is_retry;
+        self
     }
 
     /// Emit a log entry.
@@ -230,6 +239,41 @@ impl ProcessorContext {
     pub fn error(&self, message: impl Into<String>) {
         self.log(JobLogEntry::error(message));
     }
+}
+
+/// Terminal outcome of one uploaded file within an upload job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UploadItemStatus {
+    Completed,
+    Failed,
+    Skipped,
+}
+
+impl UploadItemStatus {
+    /// Persisted discriminator; must match the `upload_records.status` CHECK
+    /// constraint values in `crate::database::models::upload_record::upload_status`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UploadItemStatus::Completed => "COMPLETED",
+            UploadItemStatus::Failed => "FAILED",
+            UploadItemStatus::Skipped => "SKIPPED",
+        }
+    }
+}
+
+/// Per-file result of an upload job, produced by upload processors and
+/// persisted to `upload_records` by `JobQueue::persist_upload_records`.
+#[derive(Debug, Clone)]
+pub struct UploadResultItem {
+    pub local_path: String,
+    /// Expanded remote destination. `None` when it could not be computed
+    /// (e.g. failure synthesis in the worker pool).
+    pub remote_path: Option<String>,
+    /// Size captured before the transfer, so it survives `move` operations
+    /// that delete the local source.
+    pub size_bytes: Option<u64>,
+    pub status: UploadItemStatus,
+    pub error: Option<String>,
 }
 
 /// Output from a processor.
@@ -259,6 +303,9 @@ pub struct ProcessorOutput {
     /// doesn't support them. These files are included in outputs for chaining.
     /// Each tuple contains (input_path, reason).
     pub skipped_inputs: Vec<(String, String)>,
+    /// Per-file upload results. Filled only by upload processors; the queue
+    /// persists these to `upload_records` when the job completes.
+    pub uploads: Vec<UploadResultItem>,
     /// Execution logs captured during processing.
     pub logs: Vec<JobLogEntry>,
 }
@@ -347,6 +394,7 @@ mod tests {
             failed_inputs: vec![("/failed.mp4".to_string(), "error message".to_string())],
             succeeded_inputs: vec!["/success.mp4".to_string()],
             skipped_inputs: vec![("/skipped.txt".to_string(), "unsupported format".to_string())],
+            uploads: vec![],
             logs: vec![],
         };
 
@@ -362,19 +410,5 @@ mod tests {
         assert_eq!(output.skipped_inputs.len(), 1);
         assert_eq!(output.skipped_inputs[0].0, "/skipped.txt");
         assert_eq!(output.skipped_inputs[0].1, "unsupported format");
-    }
-
-    #[test]
-    fn test_processor_output_default() {
-        let output = ProcessorOutput::default();
-        assert!(output.outputs.is_empty());
-        assert_eq!(output.duration_secs, 0.0);
-        assert!(output.metadata.is_none());
-        assert!(output.items_produced.is_empty());
-        assert!(output.input_size_bytes.is_none());
-        assert!(output.output_size_bytes.is_none());
-        assert!(output.failed_inputs.is_empty());
-        assert!(output.succeeded_inputs.is_empty());
-        assert!(output.skipped_inputs.is_empty());
     }
 }

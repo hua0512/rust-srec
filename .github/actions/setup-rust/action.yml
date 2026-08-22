@@ -1,0 +1,15 @@
+name: "Setup Rust"
+description: "Install the repository Rust toolchain and optional compilation target"
+inputs:
+  target:
+    description: "Additional Rust compilation target"
+    required: false
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        target: ${{ inputs.target }}
+        cache: false
+        rustflags: ""

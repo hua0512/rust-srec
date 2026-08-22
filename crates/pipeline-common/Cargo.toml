@@ -2,14 +2,18 @@
 name = "pipeline-common"
 version = "0.1.2"
 edition.workspace = true
+rust-version.workspace = true
 description = "Common traits and implementations for media processing pipelines"
 license.workspace = true
 
+[lints]
+workspace = true
 
 [dependencies]
+media-types = { path = "../media-types" }
 thiserror = { workspace = true }
+zlib-rs = { workspace = true }
 tracing = { workspace = true }
-tracing-indicatif = "0.3"
 time = { version = "0.3.46", features = ["local-offset"] }
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 tokio-util = { workspace = true }

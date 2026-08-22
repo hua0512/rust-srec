@@ -155,12 +155,25 @@ RUN pip3 install --break-system-packages streamlink \
     && unzip /tmp/danmaku.zip -d /tmp/danmaku \
     && mv /tmp/danmaku/DanmakuFactory /usr/local/bin/DanmakuFactory \
     && chmod +x /usr/local/bin/DanmakuFactory \
-    && rm -rf /tmp/danmaku.zip /tmp/danmaku
+    && rm -rf /tmp/danmaku.zip /tmp/danmaku \
+    && curl -L -o /tmp/baidupcs.zip "https://github.com/qjfoidnh/BaiduPCS-Go/releases/download/v4.0.1/BaiduPCS-Go-v4.0.1-linux-${arch}.zip" \
+    && unzip /tmp/baidupcs.zip -d /tmp/baidupcs \
+    && mv /tmp/baidupcs/*/BaiduPCS-Go /usr/local/bin/BaiduPCS-Go \
+    && chmod +x /usr/local/bin/BaiduPCS-Go \
+    && rm -rf /tmp/baidupcs.zip /tmp/baidupcs
+
+# Keep the BaiduPCS-Go login session inside the mounted config volume; the
+# default location under $HOME would be lost on container recreation. The
+# `baidupcs` pipeline processor and /api/tools/baidupcs both honor this.
+ENV BAIDUPCS_GO_CONFIG_DIR=/app/config/BaiduPCS-Go
 
 WORKDIR /app
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/target/release/rust-srec /app/rust-srec
+
+# Watchtower pre-update hook: gates container auto-updates on /api/health/idle.
+COPY --chmod=755 rust-srec/scripts/watchtower-pre-update.sh /app/watchtower-pre-update.sh
 
 # Expose the default port (adjust as needed)
 EXPOSE 8080

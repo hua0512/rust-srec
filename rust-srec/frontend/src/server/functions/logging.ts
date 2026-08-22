@@ -20,7 +20,7 @@ export const getLoggingConfig = createServerFn({ method: 'GET' }).handler(
 
 /** Update logging filter directive */
 export const updateLoggingFilter = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof UpdateLogFilterRequestSchema>) => data)
+  .validator((data: z.infer<typeof UpdateLogFilterRequestSchema>) => data)
   .handler(async ({ data }) => {
     if (!data || !data.filter) {
       throw new Error('Missing filter in request');
@@ -39,7 +39,7 @@ export const updateLoggingFilter = createServerFn({ method: 'POST' })
 
 /** List log files with optional date range filtering */
 export const listLogFiles = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     (data: { from?: string; to?: string; limit?: number; offset?: number }) =>
       data,
   )

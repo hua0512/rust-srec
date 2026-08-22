@@ -18,6 +18,20 @@ export const StreamSelectionConfigObjectSchema = z.object({
   max_bitrate: z.number().optional(),
 });
 
+// Every field is optional so a partial override round-trips: the backend fills
+// unspecified fields from its defaults.
+export const DanmuStatisticsObjectSchema = z.object({
+  enabled: z.boolean().optional(),
+  top_talkers: z.number().optional(),
+  top_words: z.number().optional(),
+  top_gifts: z.number().optional(),
+  talker_capacity: z.number().optional(),
+  word_capacity: z.number().optional(),
+  gift_capacity: z.number().optional(),
+  rate_bucket_secs: z.number().optional(),
+  extra_stop_words: z.array(z.string()).optional(),
+});
+
 export const DownloadRetryPolicyObjectSchema = z.object({
   max_retries: z.number(),
   initial_delay_ms: z.number(),
@@ -26,19 +40,6 @@ export const DownloadRetryPolicyObjectSchema = z.object({
   use_jitter: z.boolean(),
 });
 
-export const DanmuSamplingConfigObjectSchema = z.union([
-  z.object({
-    type: z.literal('fixed'),
-    interval_secs: z.number(),
-  }),
-  z.object({
-    type: z.literal('velocity'),
-    min_interval_secs: z.number(),
-    max_interval_secs: z.number(),
-    target_danmus_per_sample: z.number(),
-  }),
-]);
-
 export const ProxyConfigObjectSchema = z.object({
   enabled: z.boolean().default(false).optional(),
   url: z.string().optional(),
@@ -46,17 +47,6 @@ export const ProxyConfigObjectSchema = z.object({
   password: z.string().optional(),
   use_system_proxy: z.boolean().default(false).optional(),
 });
-
-// Event hooks for streamer lifecycle events
-export const EventHooksSchema = z.object({
-  on_online: z.string().optional(),
-  on_offline: z.string().optional(),
-  on_download_start: z.string().optional(),
-  on_download_complete: z.string().optional(),
-  on_download_error: z.string().optional(),
-  on_pipeline_complete: z.string().optional(),
-});
-export type EventHooks = z.infer<typeof EventHooksSchema>;
 
 // --- Pipeline Step Schemas ---
 // Preset step: references a job preset by name

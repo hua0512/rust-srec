@@ -1,11 +1,9 @@
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
-use pipeline_common::split_reason::SplitReason;
-use ts::StreamType;
+use media_types::split_reason::SplitReason;
 
 use crate::mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
 use crate::profile::{SegmentType, StreamProfile, StreamProfileOptions};
-use crate::resolution::ResolutionDetector;
 use crate::ts::{TsSegmentData, TsStreamInfo};
 use mp4::isobmff;
 
@@ -21,12 +19,7 @@ impl HlsData {
     /// Create a new TS segment
     #[inline]
     pub fn ts(segment: MediaSegment, data: Bytes) -> Self {
-        HlsData::TsData(TsSegmentData {
-            segment,
-            data,
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        })
+        HlsData::TsData(TsSegmentData::new(segment, data))
     }
 
     /// Create a new MP4 initialization segment
@@ -67,7 +60,7 @@ impl HlsData {
     #[inline]
     pub fn data(&self) -> Option<&Bytes> {
         match self {
-            HlsData::TsData(ts) => Some(&ts.data),
+            HlsData::TsData(ts) => Some(ts.data()),
             HlsData::M4sData(m4s) => Some(m4s.data()),
             HlsData::EndMarker(_) => None,
         }
@@ -77,7 +70,7 @@ impl HlsData {
     #[inline]
     pub fn data_mut(&mut self) -> Option<&mut Bytes> {
         match self {
-            HlsData::TsData(ts) => Some(&mut ts.data),
+            HlsData::TsData(ts) => Some(ts.data_mut()),
             HlsData::M4sData(M4sData::InitSegment(init)) => Some(&mut init.data),
             HlsData::M4sData(M4sData::Segment(seg)) => Some(&mut seg.data),
             HlsData::EndMarker(_) => None,
@@ -128,7 +121,7 @@ impl HlsData {
     #[inline]
     pub fn size(&self) -> usize {
         match self {
-            HlsData::TsData(ts) => ts.data.len(),
+            HlsData::TsData(ts) => ts.data().len(),
             HlsData::M4sData(m4s) => m4s.data().len(),
             HlsData::EndMarker(_) => 0,
         }
@@ -140,28 +133,11 @@ impl HlsData {
     #[inline]
     pub fn has_keyframe(&self) -> bool {
         match self {
-            HlsData::TsData(ts) => {
-                let mut parser = ts::TsParser::new();
-                let mut found_keyframe = false;
-
-                let parse_result = parser.parse_packets(
-                    ts.data.clone(),
-                    |_pat| Ok(()),
-                    |_pmt| Ok(()),
-                    Some(|packet: &ts::TsPacketRef| {
-                        if packet.has_random_access_indicator() {
-                            found_keyframe = true;
-                        }
-
-                        Ok(())
-                    }),
-                );
-
-                match parse_result {
-                    Ok(()) => found_keyframe,
-                    Err(_) => false,
-                }
-            }
+            HlsData::TsData(ts) => ts
+                .analysis(StreamProfileOptions {
+                    include_resolution: false,
+                })
+                .is_ok_and(|analysis| analysis.has_random_access),
             HlsData::M4sData(M4sData::Segment(seg)) => {
                 let bytes = seg.data.as_ref();
                 if bytes.len() >= 8 {
@@ -231,84 +207,6 @@ impl HlsData {
         }
     }
 
-    /// Get video streams from TS segments (only for TS data)
-    pub fn get_ts_video_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
-        match self {
-            HlsData::TsData(ts) => Some(ts.get_video_streams()),
-            _ => None,
-        }
-    }
-
-    /// Get audio streams from TS segments (only for TS data)
-    pub fn get_ts_audio_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
-        match self {
-            HlsData::TsData(ts) => Some(ts.get_audio_streams()),
-            _ => None,
-        }
-    }
-
-    /// Get all elementary streams from TS segments (only for TS data)
-    pub fn get_ts_all_streams(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
-        match self {
-            HlsData::TsData(ts) => Some(ts.get_all_streams()),
-            _ => None,
-        }
-    }
-
-    /// Check if TS segment contains specific stream type (only for TS data)
-    pub fn ts_contains_stream_type(&self, stream_type: StreamType) -> bool {
-        match self {
-            HlsData::TsData(ts) => ts.contains_stream_type(stream_type),
-            _ => false,
-        }
-    }
-
-    /// Get a summary of streams (works for TS segments)
-    pub fn get_stream_summary(&self) -> Option<String> {
-        match self {
-            HlsData::TsData(ts) => ts.get_stream_summary(),
-            _ => None,
-        }
-    }
-
-    /// Quick check if this TS segment contains video streams
-    pub fn has_video_streams(&self) -> bool {
-        match self.get_ts_video_streams() {
-            Some(Ok(streams)) => !streams.is_empty(),
-            _ => false,
-        }
-    }
-
-    /// Quick check if this TS segment contains audio streams
-    pub fn has_audio_streams(&self) -> bool {
-        match self.get_ts_audio_streams() {
-            Some(Ok(streams)) => !streams.is_empty(),
-            _ => false,
-        }
-    }
-
-    /// Quick check if this TS segment contains H.264 video
-    pub fn has_h264_video(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::H264)
-    }
-
-    /// Quick check if this TS segment contains H.265 video
-    pub fn has_h265_video(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::H265)
-    }
-
-    /// Quick check if this TS segment contains AAC audio
-    pub fn has_aac_audio(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::AdtsAac)
-            || self.ts_contains_stream_type(StreamType::LatmAac)
-    }
-
-    /// Quick check if this TS segment contains AC-3 audio
-    pub fn has_ac3_audio(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::Ac3)
-            || self.ts_contains_stream_type(StreamType::EAc3)
-    }
-
     /// Get a compact stream profile for this segment
     pub fn get_stream_profile(&self) -> Option<StreamProfile> {
         self.get_stream_profile_with_options(StreamProfileOptions::default())
@@ -332,82 +230,10 @@ impl HlsData {
         ts_data: &TsSegmentData,
         options: StreamProfileOptions,
     ) -> Option<StreamProfile> {
-        let (stream_info, packets) = match ts_data.parse_stream_and_packets() {
-            Ok(data) => data,
-            Err(_) => return None,
-        };
-
-        let mut has_video = false;
-        let mut has_audio = false;
-        let mut has_h264 = false;
-        let mut has_h265 = false;
-        let mut has_aac = false;
-        let mut has_ac3 = false;
-        let mut video_count = 0;
-        let mut audio_count = 0;
-
-        for program in &stream_info.programs {
-            if !program.video_streams.is_empty() {
-                has_video = true;
-                video_count += program.video_streams.len();
-                for stream in &program.video_streams {
-                    match stream.stream_type {
-                        StreamType::H264 => has_h264 = true,
-                        StreamType::H265 => has_h265 = true,
-                        _ => {}
-                    }
-                }
-            }
-            if !program.audio_streams.is_empty() {
-                has_audio = true;
-                audio_count += program.audio_streams.len();
-                for stream in &program.audio_streams {
-                    match stream.stream_type {
-                        StreamType::AdtsAac | StreamType::LatmAac => has_aac = true,
-                        StreamType::Ac3 | StreamType::EAc3 => has_ac3 = true,
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        let resolution = if has_video && options.include_resolution {
-            let video_streams: Vec<_> = stream_info
-                .programs
-                .iter()
-                .flat_map(|p| &p.video_streams)
-                .map(|s| (s.pid, s.stream_type))
-                .collect();
-            ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams)
-        } else {
-            None
-        };
-
-        let mut summary_parts = Vec::new();
-        if video_count > 0 {
-            summary_parts.push(format!("{video_count} video stream(s)"));
-        }
-        if audio_count > 0 {
-            summary_parts.push(format!("{audio_count} audio stream(s)"));
-        }
-
-        let summary = if summary_parts.is_empty() {
-            "No recognized streams".to_string()
-        } else {
-            summary_parts.join(", ")
-        };
-
-        Some(StreamProfile {
-            has_video,
-            has_audio,
-            has_h264,
-            has_h265,
-            has_av1: false,
-            has_aac,
-            has_ac3,
-            resolution,
-            summary,
-        })
+        ts_data
+            .analysis(options)
+            .ok()
+            .map(|analysis| analysis.stream_profile())
     }
 
     fn get_mp4_init_stream_profile(
@@ -466,7 +292,7 @@ impl AsRef<[u8]> for HlsData {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         match self {
-            HlsData::TsData(ts) => ts.data.as_ref(),
+            HlsData::TsData(ts) => ts.data().as_ref(),
             HlsData::M4sData(m4s) => m4s.data().as_ref(),
             HlsData::EndMarker(_) => &[],
         }

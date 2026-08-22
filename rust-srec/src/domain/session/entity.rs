@@ -3,8 +3,6 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::session::SessionEventPayload;
-
 /// A timestamped title entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TitleEntry {
@@ -22,6 +20,9 @@ impl TitleEntry {
 }
 
 /// Live session entity representing a single, continuous live stream event.
+///
+/// Danmu statistics are linked via `danmu_statistics.session_id` (UNIQUE), not
+/// from this side; see `SessionRepository::upsert_danmu_statistics`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveSession {
     pub id: String,
@@ -29,7 +30,6 @@ pub struct LiveSession {
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
     pub titles: Vec<TitleEntry>,
-    pub danmu_statistics_id: Option<String>,
 }
 
 impl LiveSession {
@@ -41,7 +41,6 @@ impl LiveSession {
             start_time: Utc::now(),
             end_time: None,
             titles: Vec::new(),
-            danmu_statistics_id: None,
         }
     }
 
@@ -74,22 +73,6 @@ impl LiveSession {
     pub fn current_title(&self) -> Option<&str> {
         self.titles.last().map(|t| t.title.as_str())
     }
-
-    /// Link danmu statistics to this session.
-    pub fn link_danmu_statistics(&mut self, stats_id: impl Into<String>) {
-        self.danmu_statistics_id = Some(stats_id.into());
-    }
-}
-
-/// Persisted lifecycle audit event for a recording session.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionEvent {
-    pub id: i64,
-    pub session_id: String,
-    pub streamer_id: String,
-    pub kind: String,
-    pub occurred_at: DateTime<Utc>,
-    pub payload: Option<SessionEventPayload>,
 }
 
 /// Media file types.

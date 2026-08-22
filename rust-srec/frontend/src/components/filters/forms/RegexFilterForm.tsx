@@ -12,6 +12,10 @@ import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import {
+  CONFIG_DESCRIPTION,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 
 export function RegexFilterForm() {
   const { i18n } = useLingui();
@@ -23,10 +27,10 @@ export function RegexFilterForm() {
         control={control}
         name="config.pattern"
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>
+          <FormItem className="space-y-2">
+            <ConfigFieldLabel>
               <Trans>Regex Pattern</Trans>
-            </FormLabel>
+            </ConfigFieldLabel>
             <FormControl>
               <Textarea
                 {...field}
@@ -34,7 +38,7 @@ export function RegexFilterForm() {
                 className="font-mono"
               />
             </FormControl>
-            <FormDescription>
+            <FormDescription className={CONFIG_DESCRIPTION}>
               <Trans>Rust regex syntax supported.</Trans>
             </FormDescription>
             <FormMessage />
@@ -51,7 +55,7 @@ export function RegexFilterForm() {
               <FormLabel className="text-base">
                 <Trans>Exclude</Trans>
               </FormLabel>
-              <FormDescription>
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   If enabled, streams matching this pattern will be ignored.
                 </Trans>

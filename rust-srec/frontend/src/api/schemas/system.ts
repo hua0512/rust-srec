@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { DanmuStatisticsObjectSchema } from './common';
+import { ExtractorSelectionSchema } from './platform-configs';
 import { DagPipelineDefinitionSchema } from './pipeline';
 
 // --- System Schemas ---
@@ -16,15 +18,20 @@ export const GlobalConfigSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
+  danmu_statistics: z.preprocess(
+    (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+    DanmuStatisticsObjectSchema.nullable().optional(),
+  ),
   proxy_config: z.any().optional(),
 
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
+  default_extractor: ExtractorSelectionSchema.nullable().optional(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
-  job_history_retention_days: z.number(),
-  notification_event_log_retention_days: z.number(),
+  job_history_retention_days: z.number().int().min(0),
+  notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -33,6 +40,7 @@ export const GlobalConfigSchema = z.object({
   pipeline_execute_timeout_secs: z.number(),
   queue_freshness_threshold_ms: z.number(),
   gpu_health_probe_interval_secs: z.number(),
+  stream_proxy_allow_private_targets: z.boolean().default(false),
   // Handle pipeline - backend sends JSON string, need to parse it
   pipeline: z
     .string()
@@ -91,15 +99,17 @@ export const GlobalConfigFormSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
+  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
   proxy_config: z.any().optional(),
 
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
+  default_extractor: ExtractorSelectionSchema.nullable().optional(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
-  job_history_retention_days: z.number(),
-  notification_event_log_retention_days: z.number(),
+  job_history_retention_days: z.number().int().min(0),
+  notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -108,6 +118,7 @@ export const GlobalConfigFormSchema = z.object({
   pipeline_execute_timeout_secs: z.number(),
   queue_freshness_threshold_ms: z.number().int().min(0),
   gpu_health_probe_interval_secs: z.number().int().min(1),
+  stream_proxy_allow_private_targets: z.boolean().default(false),
   // Form works with object directly (already parsed from API response)
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
@@ -127,15 +138,17 @@ export const GlobalConfigWriteSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
+  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
   proxy_config: z.any().optional(),
 
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
+  default_extractor: ExtractorSelectionSchema.nullable().optional(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
-  job_history_retention_days: z.number(),
-  notification_event_log_retention_days: z.number(),
+  job_history_retention_days: z.number().int().min(0),
+  notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -144,6 +157,7 @@ export const GlobalConfigWriteSchema = z.object({
   pipeline_execute_timeout_secs: z.number().int().min(1),
   queue_freshness_threshold_ms: z.number().int().min(0),
   gpu_health_probe_interval_secs: z.number().int().min(1),
+  stream_proxy_allow_private_targets: z.boolean().default(false),
 
   // Accept any object - will be stringified by config.ts when sending to backend
   pipeline: z.any().nullable().optional(),
@@ -177,6 +191,16 @@ export const PipelineStatsSchema = z.object({
   avg_processing_time_secs: z.number().nullable().optional(),
 });
 
+// Upload annotation attached to a media output (backend omits the array
+// entirely when empty, hence .default([])).
+export const MediaOutputUploadInfoSchema = z.object({
+  uploader: z.string(),
+  remote_path: z.string().nullable().optional(),
+  status: z.enum(['COMPLETED', 'FAILED', 'SKIPPED']),
+  completed_at: z.string().nullable().optional(),
+});
+export type MediaOutputUploadInfo = z.infer<typeof MediaOutputUploadInfoSchema>;
+
 export const MediaOutputSchema = z.object({
   id: z.string(),
   session_id: z.string(),
@@ -186,6 +210,7 @@ export const MediaOutputSchema = z.object({
   duration_secs: z.number().nullable().optional(),
   format: z.string(),
   created_at: z.string(),
+  uploads: z.array(MediaOutputUploadInfoSchema).default([]),
 });
 export type MediaOutput = z.infer<typeof MediaOutputSchema>;
 

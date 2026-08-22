@@ -1,14 +1,25 @@
-import { type ReactNode, memo, useCallback, useMemo, useRef } from 'react';
+import {
+  type ReactNode,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { motion } from 'motion/react';
 import {
   Activity,
+  ChevronDown,
+  ChevronUp,
   Clock,
+  Gift,
   MessageCircleMore,
   RotateCcw,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import {
   Area,
@@ -41,6 +52,16 @@ import { cn } from '@/lib/utils';
 // ---------------------------------------------------------------------------
 
 const MAX_CHART_POINTS = 150;
+// Talkers shown before expanding; the expanded list is scrolled rather than
+// grown, since the backend returns up to 100 and a bar per row would otherwise
+// make a chart thousands of pixels tall.
+const TOP_TALKERS_COLLAPSED = 6;
+const EXPANDED_TALKERS_MAX_HEIGHT = 320;
+// Fallback bucket width for statistics stored before the backend reported it.
+const ASSUMED_BUCKET_SECS = 10;
+// Cap on synthesised zero buckets, so a long silence cannot generate an
+// unbounded number of points before downsampling.
+const MAX_GAP_FILL_POINTS = 2000;
 const AREA_MARGIN = { top: 8, right: 8, left: 0, bottom: 8 } as const;
 const BAR_MARGIN = { top: 4, right: 8, left: 0, bottom: 4 } as const;
 const BAR_RADIUS_H: [number, number, number, number] = [0, 4, 4, 0];
@@ -52,10 +73,17 @@ const CURSOR_STYLE = {
   strokeDasharray: '4 4',
 };
 
+// Ranked counts come from a bounded heavy-hitter structure: an entry that was
+// evicted and readmitted carries an overestimate bound in `error`, so its count
+// is shown as approximate rather than implying it is exact.
 const CHART_TOOLTIP = (
   <ChartTooltipContent
     indicator="dot"
-    formatter={(value) => Number(value).toLocaleString()}
+    formatter={(value, _name, item) => {
+      const formatted = Number(value).toLocaleString();
+      const error = (item as { payload?: { error?: number } })?.payload?.error;
+      return error && error > 0 ? `≈${formatted}` : formatted;
+    }}
   />
 );
 
@@ -65,6 +93,41 @@ const TIMELINE_TOOLTIP = (
     formatter={(value) => Number(value).toLocaleString()}
   />
 );
+
+/**
+ * Insert zero-count buckets for gaps in the timeline.
+ *
+ * The backend only emits a bucket when a message lands in it, so a silent
+ * stretch is absent rather than zero. Without filling, the chart draws a
+ * straight line across the silence and an average taken over the points
+ * present overstates the real rate.
+ */
+function fillGaps(
+  points: { ts: number; count: number }[],
+  bucketSecs: number,
+): { ts: number; count: number }[] {
+  if (points.length < 2 || bucketSecs <= 0) return points;
+
+  const stepMs = bucketSecs * 1000;
+  const filled: { ts: number; count: number }[] = [points[0]];
+  let synthesised = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const previous = points[i - 1];
+    const current = points[i];
+    for (
+      let ts = previous.ts + stepMs;
+      ts < current.ts && synthesised < MAX_GAP_FILL_POINTS;
+      ts += stepMs
+    ) {
+      filled.push({ ts, count: 0 });
+      synthesised++;
+    }
+    filled.push(current);
+  }
+
+  return filled;
+}
 
 /**
  * Peak-preserving downsample: divides data into equal-sized buckets and keeps
@@ -198,34 +261,76 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
 
   // -- derived data --------------------------------------------------------
 
+  // Buckets are not minutes: the backend's width is configurable and is halved
+  // again for long sessions, so every rate shown has to be scaled by it.
+  const bucketSecs = stats.rate_bucket_secs || ASSUMED_BUCKET_SECS;
+  const perMinuteFactor = 60 / bucketSecs;
+
   const chartData = useMemo(() => {
     const sorted = [...stats.danmu_rate_timeseries].sort((a, b) => a.ts - b.ts);
-    return downsampleTimeseries(sorted, MAX_CHART_POINTS).map((point) => ({
+    const filled = fillGaps(sorted, bucketSecs);
+    return downsampleTimeseries(filled, MAX_CHART_POINTS).map((point) => ({
       label: i18n.date(new Date(point.ts), {
         hour: '2-digit',
         minute: '2-digit',
       }),
-      count: point.count,
+      count: Math.round(point.count * perMinuteFactor),
     }));
-  }, [i18n, stats]);
+  }, [i18n, stats, bucketSecs, perMinuteFactor]);
 
   const { peakPerMinute, averagePerMinute } = useMemo(() => {
     if (stats.danmu_rate_timeseries.length === 0) {
       return { peakPerMinute: 0, averagePerMinute: 0 };
     }
+
     let max = 0;
-    let sum = 0;
     for (const point of stats.danmu_rate_timeseries) {
       if (point.count > max) max = point.count;
-      sum += point.count;
     }
-    return {
-      peakPerMinute: max,
-      averagePerMinute: Math.round(sum / stats.danmu_rate_timeseries.length),
-    };
-  }, [stats]);
 
-  const topTalkers = useMemo(() => stats.top_talkers.slice(0, 6), [stats]);
+    // Averaged over the session's wall-clock span, not over the buckets that
+    // happen to be present: silent stretches emit no bucket, so dividing by the
+    // point count would report the average of only the busy moments.
+    const minutes = stats.duration_secs ? stats.duration_secs / 60 : 0;
+    const average =
+      minutes > 0
+        ? stats.total_danmus / minutes
+        : (stats.danmu_rate_timeseries.reduce(
+            (total, point) => total + point.count,
+            0,
+          ) /
+            stats.danmu_rate_timeseries.length) *
+          perMinuteFactor;
+
+    return {
+      peakPerMinute: Math.round(max * perMinuteFactor),
+      averagePerMinute: Math.round(average),
+    };
+  }, [stats, perMinuteFactor]);
+
+  // Only meaningful when the platform reports gifts; a chat-only room would show
+  // the whole total twice. Counts are bound to consts because the lingui macro
+  // needs simple identifiers in the template.
+  const splitHint = useMemo(() => {
+    if (stats.gift_count == null || stats.gift_count <= 0) return undefined;
+    const chat = (stats.chat_count ?? 0).toLocaleString();
+    const gift = stats.gift_count.toLocaleString();
+    return i18n._(msg`${chat} chat · ${gift} gift`);
+  }, [i18n, stats]);
+
+  const [showAllTalkers, setShowAllTalkers] = useState(false);
+  const toggleShowAllTalkers = useCallback(
+    () => setShowAllTalkers((prev) => !prev),
+    [],
+  );
+
+  const topTalkers = useMemo(
+    () =>
+      showAllTalkers
+        ? stats.top_talkers
+        : stats.top_talkers.slice(0, TOP_TALKERS_COLLAPSED),
+    [stats, showAllTalkers],
+  );
   const topWords = useMemo(() => stats.word_frequency.slice(0, 10), [stats]);
 
   const talkersChartData = useMemo(
@@ -233,9 +338,22 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       topTalkers.map((item) => ({
         name: item.username || item.user_id,
         message_count: item.message_count,
+        error: item.error,
       })),
     [topTalkers],
   );
+
+  const giftersChartData = useMemo(
+    () =>
+      stats.top_gifters.slice(0, 6).map((item) => ({
+        name: item.username || item.user_id,
+        message_count: item.message_count,
+        error: item.error,
+      })),
+    [stats],
+  );
+  const topGifts = useMemo(() => stats.top_gifts.slice(0, 10), [stats]);
+  const hasGiftData = giftersChartData.length > 0 || topGifts.length > 0;
 
   // -- chart configs -------------------------------------------------------
 
@@ -244,7 +362,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       ({
         count: {
           label: i18n._(msg`Danmu/min`),
-          color: 'hsl(var(--chart-1))',
+          color: 'var(--chart-1)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -255,7 +373,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       ({
         message_count: {
           label: i18n._(msg`Messages`),
-          color: 'hsl(var(--chart-2))',
+          color: 'var(--chart-2)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -266,7 +384,29 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
       ({
         count: {
           label: i18n._(msg`Count`),
-          color: 'hsl(var(--chart-3))',
+          color: 'var(--chart-3)',
+        },
+      }) satisfies ChartConfig,
+    [i18n],
+  );
+
+  const giftersChartConfig = useMemo(
+    () =>
+      ({
+        message_count: {
+          label: i18n._(msg`Gift items`),
+          color: 'var(--chart-4)',
+        },
+      }) satisfies ChartConfig,
+    [i18n],
+  );
+
+  const giftsChartConfig = useMemo(
+    () =>
+      ({
+        count: {
+          label: i18n._(msg`Gift items`),
+          color: 'var(--chart-5)',
         },
       }) satisfies ChartConfig,
     [i18n],
@@ -302,6 +442,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               icon={<MessageCircleMore className="h-4 w-4 text-blue-500" />}
               label={i18n._(msg`Total Danmu`)}
               value={stats.total_danmus.toLocaleString()}
+              hint={splitHint}
               accent="bg-blue-500/10"
             />
             <MetricBlock
@@ -312,14 +453,18 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
             />
             <MetricBlock
               icon={<Users className="h-4 w-4 text-purple-500" />}
-              label={i18n._(msg`Top Talkers`)}
-              value={topTalkers.length.toString()}
+              label={i18n._(msg`Avg / min`)}
+              value={averagePerMinute.toLocaleString()}
               accent="bg-purple-500/10"
             />
             <MetricBlock
-              icon={<MessageCircleMore className="h-4 w-4 text-emerald-500" />}
-              label={i18n._(msg`Tracked Words`)}
-              value={stats.word_frequency.length.toString()}
+              icon={<UsersRound className="h-4 w-4 text-emerald-500" />}
+              label={i18n._(msg`Unique Chatters`)}
+              value={
+                stats.unique_talkers != null
+                  ? stats.unique_talkers.toLocaleString()
+                  : '—'
+              }
               accent="bg-emerald-500/10"
             />
           </motion.div>
@@ -415,6 +560,29 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               barSize={20}
               rowHeight={36}
               shouldAnimate={shouldAnimate}
+              maxHeight={EXPANDED_TALKERS_MAX_HEIGHT}
+              footer={
+                stats.top_talkers.length > TOP_TALKERS_COLLAPSED && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-7 w-full text-xs text-muted-foreground"
+                    onClick={toggleShowAllTalkers}
+                  >
+                    {showAllTalkers ? (
+                      <>
+                        <ChevronUp className="mr-1 h-3.5 w-3.5" />
+                        <Trans>Show less</Trans>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="mr-1 h-3.5 w-3.5" />
+                        <Trans>Show all {stats.top_talkers.length}</Trans>
+                      </>
+                    )}
+                  </Button>
+                )
+              }
             />
             <RankBarChart
               icon={
@@ -432,6 +600,41 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               shouldAnimate={shouldAnimate}
             />
           </motion.div>
+
+          {/* ── Gift charts (only when the platform reported gifts) ── */}
+          {hasGiftData && (
+            <motion.div
+              variants={containerVariants}
+              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            >
+              <RankBarChart
+                icon={<Gift className="h-3.5 w-3.5 text-pink-500" />}
+                title={i18n._(msg`Top Gifters`)}
+                emptyLabel={i18n._(msg`No gift data`)}
+                config={giftersChartConfig}
+                data={giftersChartData}
+                dataKey="message_count"
+                categoryKey="name"
+                yAxisWidth={80}
+                barSize={20}
+                rowHeight={36}
+                shouldAnimate={shouldAnimate}
+              />
+              <RankBarChart
+                icon={<Gift className="h-3.5 w-3.5 text-amber-500" />}
+                title={i18n._(msg`Top Gifts`)}
+                emptyLabel={i18n._(msg`No gift data`)}
+                config={giftsChartConfig}
+                data={topGifts}
+                dataKey="count"
+                categoryKey="name"
+                yAxisWidth={72}
+                barSize={18}
+                rowHeight={32}
+                shouldAnimate={shouldAnimate}
+              />
+            </motion.div>
+          )}
         </CardContent>
       </PanelShell>
     </motion.div>
@@ -454,6 +657,9 @@ interface RankBarChartProps {
   barSize: number;
   rowHeight: number;
   shouldAnimate: boolean;
+  footer?: ReactNode;
+  /** Scroll the chart past this height instead of growing the card. */
+  maxHeight?: number;
 }
 
 const RankBarChart = memo(function RankBarChart({
@@ -468,14 +674,19 @@ const RankBarChart = memo(function RankBarChart({
   barSize,
   rowHeight,
   shouldAnimate,
+  footer,
+  maxHeight,
 }: RankBarChartProps) {
   const fillVar = `var(--color-${dataKey})`;
   const height = data.length * rowHeight + 16;
+  // One bar per row means an unbounded list becomes an unbounded SVG; the
+  // backend returns up to 100 talkers, so tall lists scroll instead.
+  const scrolls = maxHeight != null && height > maxHeight;
 
   return (
     <motion.div
       variants={itemVariants}
-      className="rounded-xl border border-border/50 bg-background/30 p-4 hover:border-border transition-colors"
+      className="min-w-0 rounded-xl border border-border/50 bg-background/30 p-4 hover:border-border transition-colors"
     >
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
         {icon}
@@ -484,31 +695,37 @@ const RankBarChart = memo(function RankBarChart({
       {data.length === 0 ? (
         <p className="text-xs text-muted-foreground">{emptyLabel}</p>
       ) : (
-        <ChartContainer config={config} className="w-full" style={{ height }}>
-          <BarChart data={data} layout="vertical" margin={BAR_MARGIN}>
-            <YAxis
-              dataKey={categoryKey}
-              type="category"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              width={yAxisWidth}
-              tick={TICK_SM}
-            />
-            <XAxis type="number" hide />
-            <ChartTooltip cursor={false} content={CHART_TOOLTIP} />
-            <Bar
-              dataKey={dataKey}
-              fill={fillVar}
-              radius={BAR_RADIUS_H}
-              isAnimationActive={shouldAnimate}
-              animationDuration={500}
-              animationEasing="ease-out"
-              barSize={barSize}
-            />
-          </BarChart>
-        </ChartContainer>
+        <div
+          className={cn(scrolls && 'overflow-y-auto pr-1')}
+          style={scrolls ? { maxHeight } : undefined}
+        >
+          <ChartContainer config={config} className="w-full" style={{ height }}>
+            <BarChart data={data} layout="vertical" margin={BAR_MARGIN}>
+              <YAxis
+                dataKey={categoryKey}
+                type="category"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                width={yAxisWidth}
+                tick={TICK_SM}
+              />
+              <XAxis type="number" hide />
+              <ChartTooltip cursor={false} content={CHART_TOOLTIP} />
+              <Bar
+                dataKey={dataKey}
+                fill={fillVar}
+                radius={BAR_RADIUS_H}
+                isAnimationActive={shouldAnimate}
+                animationDuration={500}
+                animationEasing="ease-out"
+                barSize={barSize}
+              />
+            </BarChart>
+          </ChartContainer>
+        </div>
       )}
+      {footer}
     </motion.div>
   );
 });
@@ -522,9 +739,10 @@ interface MetricBlockProps {
   label: string;
   value: string;
   accent: string;
+  hint?: string;
 }
 
-function MetricBlock({ icon, label, value, accent }: MetricBlockProps) {
+function MetricBlock({ icon, label, value, accent, hint }: MetricBlockProps) {
   return (
     <motion.div
       variants={itemVariants}
@@ -551,6 +769,11 @@ function MetricBlock({ icon, label, value, accent }: MetricBlockProps) {
         <p className="font-mono text-lg font-bold tracking-tight text-foreground">
           {value}
         </p>
+        {hint && (
+          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+            {hint}
+          </p>
+        )}
       </div>
     </motion.div>
   );

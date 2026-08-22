@@ -13,12 +13,14 @@ import {
   checkStreamer,
   updateStreamer,
   listPlatformConfigs,
+  listTemplates,
+  batchUpdateStreamers,
 } from '@/server/functions';
+import type { BatchStreamerAction } from '@/api/schemas';
 
 import { Button } from '@/components/ui/button';
 import {
   Plus,
-  Search,
   Users,
   Video,
   Wifi,
@@ -26,14 +28,19 @@ import {
   AlertTriangle,
   Ban,
   Radio,
+  LayoutTemplate,
+  ListFilter,
+  RotateCcw,
+  ListChecks,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -53,12 +60,30 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { StreamerBatchActionBar } from '@/components/streamers/streamer-batch-action-bar';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
 });
 
 const PAGE_SIZES = [12, 24, 48, 96];
+
+type PriorityFilter = 'all' | 'HIGH' | 'NORMAL' | 'LOW';
+type SortOption =
+  | 'default'
+  | 'name-asc'
+  | 'name-desc'
+  | 'priority-desc'
+  | 'priority-asc'
+  | 'state-asc'
+  | 'updated-desc';
 
 function StreamersPage() {
   const { i18n } = useLingui();
@@ -74,38 +99,107 @@ function StreamersPage() {
     { value: 'DISABLED', label: i18n._(msg`Disabled`), icon: Ban },
   ];
 
-  // State
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(24);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [platformFilter, setPlatformFilter] = useState('all');
-  const [stateFilter, setStateFilter] = useState('all');
+  const search = Route.useSearch();
+  const updateSearch = useUpdateSearch<typeof search>();
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
+  // Filters/search/pagination live in the URL so they survive navigation into a
+  // streamer detail/edit page and reloads. Selection state stays local.
+  const page = search.page ?? 1;
+  const pageSize = search.size ?? 24;
+  const debouncedSearch = search.q ?? '';
+  const platformFilter = search.platform ?? 'all';
+  const templateFilter = search.template ?? 'all';
+  const stateFilter = search.state ?? 'all';
+  const priorityFilter: PriorityFilter = search.priority ?? 'all';
+  const exceptionalStates = search.exceptional ?? [];
+  const sortOption: SortOption = search.sort ?? 'default';
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Handlers
-  const handleStateChange = useCallback((value: string) => {
-    setStateFilter(value);
-    setPage(1);
-  }, []);
+  const exceptionalStateOptions = [
+    { value: 'OUT_OF_SPACE', label: i18n._(msg`Out of space`) },
+    { value: 'FATAL_ERROR', label: i18n._(msg`Fatal error`) },
+    { value: 'NOT_FOUND', label: i18n._(msg`Not found`) },
+    {
+      value: 'TEMPORAL_DISABLED',
+      label: i18n._(msg`Temporarily disabled`),
+    },
+  ];
 
-  const handlePlatformChange = useCallback((value: string) => {
-    setPlatformFilter(value);
-    setPage(1);
-  }, []);
+  const activeSecondaryFilterCount =
+    Number(priorityFilter !== 'all') +
+    Number(exceptionalStates.length > 0) +
+    Number(sortOption !== 'default');
+
+  // Handlers — selecting a primary state clears exceptional-state checkboxes and
+  // vice versa (the two feed the same `state` query arg); every filter change
+  // resets to the first page via `page: undefined`.
+  const handleStateChange = useCallback(
+    (value: string) => {
+      updateSearch({
+        state: value === 'all' ? undefined : value,
+        exceptional: undefined,
+        page: undefined,
+      });
+    },
+    [updateSearch],
+  );
+
+  const handlePlatformChange = useCallback(
+    (value: string) => {
+      updateSearch({
+        platform: value === 'all' ? undefined : value,
+        page: undefined,
+      });
+    },
+    [updateSearch],
+  );
+
+  const handleTemplateChange = useCallback(
+    (value: string) => {
+      updateSearch({
+        template: value === 'all' ? undefined : value,
+        page: undefined,
+      });
+    },
+    [updateSearch],
+  );
+
+  const handleExceptionalStateChange = useCallback(
+    (value: string, checked: boolean) => {
+      const next = checked
+        ? exceptionalStates.includes(value)
+          ? exceptionalStates
+          : [...exceptionalStates, value]
+        : exceptionalStates.filter((state) => state !== value);
+      updateSearch({
+        exceptional: next.length > 0 ? next : undefined,
+        state: undefined,
+        page: undefined,
+      });
+    },
+    [exceptionalStates, updateSearch],
+  );
+
+  const clearSecondaryFilters = useCallback(() => {
+    updateSearch({
+      priority: undefined,
+      exceptional: undefined,
+      sort: undefined,
+      page: undefined,
+    });
+  }, [updateSearch]);
 
   // Fetch Platforms
   const { data: platforms = [] } = useQuery({
     queryKey: ['platforms'],
     queryFn: () => listPlatformConfigs(),
+    staleTime: 60000,
+  });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => listTemplates(),
     staleTime: 60000,
   });
 
@@ -122,18 +216,44 @@ function StreamersPage() {
       pageSize,
       debouncedSearch,
       platformFilter,
+      templateFilter,
       stateFilter,
+      priorityFilter,
+      exceptionalStates,
+      sortOption,
     ],
     queryFn: async () => {
       const platform = platformFilter === 'all' ? undefined : platformFilter;
-      const state = stateFilter === 'all' ? undefined : stateFilter;
+      const template =
+        templateFilter === 'all' || templateFilter === '__unassigned__'
+          ? undefined
+          : templateFilter;
+      const state =
+        exceptionalStates.length > 0
+          ? exceptionalStates.join(',')
+          : stateFilter === 'all'
+            ? undefined
+            : stateFilter;
+      const priority = priorityFilter === 'all' ? undefined : priorityFilter;
+      const [sortBy, sortDir] =
+        sortOption === 'default'
+          ? [undefined, undefined]
+          : (sortOption.split('-') as [
+              'name' | 'priority' | 'state' | 'updated',
+              'asc' | 'desc',
+            ]);
       return listStreamers({
         data: {
           page,
           limit: pageSize,
           search: debouncedSearch,
           platform,
+          template,
+          templateUnassigned: templateFilter === '__unassigned__',
           state,
+          priority,
+          sortBy: sortBy === 'updated' ? 'updated_at' : sortBy,
+          sortDir,
         },
       });
     },
@@ -144,13 +264,32 @@ function StreamersPage() {
   const streamers = streamersData?.items || [];
   const totalCount = streamersData?.total || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
+  const allPageSelected =
+    streamers.length > 0 &&
+    streamers.every((streamer) => selectedIds.has(streamer.id));
+
+  const selectionScope = [
+    page,
+    pageSize,
+    debouncedSearch,
+    platformFilter,
+    templateFilter,
+    stateFilter,
+    priorityFilter,
+    exceptionalStates.join(','),
+    sortOption,
+  ].join('|');
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [selectionScope]);
 
   // Page overflow protection: reset to last valid page when filters reduce results
   useEffect(() => {
     if (page > totalPages && totalPages > 0) {
-      setPage(totalPages);
+      updateSearch({ page: totalPages });
     }
-  }, [totalPages, page]);
+  }, [totalPages, page, updateSearch]);
 
   // Pagination logic
   const paginationPages = useMemo(() => {
@@ -206,11 +345,104 @@ function StreamersPage() {
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
-  const handleDelete = (id: string) => {
-    if (confirm(i18n._(msg`Are you sure you want to delete this streamer?`))) {
-      deleteMutation.mutate(id);
-    }
-  };
+  const batchMutation = useMutation({
+    mutationFn: ({
+      ids,
+      action,
+    }: {
+      ids: string[];
+      action: BatchStreamerAction;
+    }) => batchUpdateStreamers({ data: { ids, action } }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+
+      if (result.failed === 0) {
+        toast.success(
+          i18n._(msg`Successfully processed ${result.succeeded} streamers`),
+        );
+        setSelectedIds(new Set());
+        setSelectionMode(false);
+        return;
+      }
+
+      const failedResults = result.results.filter((item) => !item.success);
+      setSelectedIds(new Set(failedResults.map((item) => item.id)));
+      toast.warning(
+        i18n._(
+          msg`Processed ${result.succeeded} streamers; ${result.failed} failed`,
+        ),
+        {
+          description: failedResults
+            .slice(0, 3)
+            .map((item) => item.error)
+            .filter(Boolean)
+            .join('; '),
+        },
+      );
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to process selected streamers`),
+      );
+    },
+  });
+
+  const handleSelectionChange = useCallback((id: string, selected: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (selected) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode((current) => {
+      if (current) setSelectedIds(new Set());
+      return !current;
+    });
+  }, []);
+
+  const handleBatchAction = useCallback(
+    (action: BatchStreamerAction) => {
+      if (selectedIds.size === 0 || batchMutation.isPending) return;
+      batchMutation.mutate({ ids: Array.from(selectedIds), action });
+    },
+    [selectedIds, batchMutation],
+  );
+
+  // Depend on the stable `mutate` reference (React Query returns a fresh
+  // result object every render, so depending on the mutation object would
+  // recreate these callbacks each render and defeat StreamerCard's memo).
+  const deleteMutate = deleteMutation.mutate;
+  const toggleMutate = toggleMutation.mutate;
+  const checkMutate = checkMutation.mutate;
+
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (
+        confirm(i18n._(msg`Are you sure you want to delete this streamer?`))
+      ) {
+        deleteMutate(id);
+      }
+    },
+    [deleteMutate, i18n],
+  );
+
+  const handleToggle = useCallback(
+    (id: string, enabled: boolean) => toggleMutate({ id, enabled }),
+    [toggleMutate],
+  );
+
+  const handleCheck = useCallback(
+    (id: string) => checkMutate(id),
+    [checkMutate],
+  );
 
   if (isError) {
     return (
@@ -231,22 +463,65 @@ function StreamersPage() {
         subtitle={<Trans>Manage your monitored channels and downloads</Trans>}
         actions={
           <>
-            {/* Search */}
-            <div className="relative flex-1 md:w-56 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={i18n._(msg`Search streamers...`)}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
+            <SearchInput
+              defaultValue={debouncedSearch}
+              onSearch={(value) =>
+                updateSearch({ q: value || undefined, page: undefined })
+              }
+              placeholder={i18n._(msg`Search streamers...`)}
+              className="flex-1 md:w-56 min-w-[200px]"
+            />
 
-            {/* Platform Select */}
+            <Badge
+              variant="secondary"
+              className="h-9 px-3 text-sm whitespace-nowrap"
+            >
+              {totalCount} <Trans>total</Trans>
+            </Badge>
+          </>
+        }
+      >
+        <div className="flex w-full flex-col gap-1 rounded-2xl border border-border/60 bg-muted/30 p-1 shadow-xs sm:inline-flex sm:w-auto sm:flex-row sm:items-center sm:gap-0.5 sm:rounded-full">
+          <nav className="grid w-full grid-cols-5 gap-0.5 sm:flex sm:w-auto sm:items-center">
+            {STATE_FILTERS.map((filter) => {
+              const Icon = filter.icon;
+              const isActive =
+                exceptionalStates.length === 0 && stateFilter === filter.value;
+              return (
+                <button
+                  key={filter.value}
+                  onClick={() => handleStateChange(filter.value)}
+                  aria-pressed={isActive}
+                  className={`flex h-8 min-w-0 items-center justify-center gap-2 rounded-full px-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
+                    isActive
+                      ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                      : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="hidden h-3.5 w-3.5 shrink-0 sm:block" />
+                  <span className="truncate">{filter.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] gap-1 sm:contents">
             <Select value={platformFilter} onValueChange={handlePlatformChange}>
-              <SelectTrigger className="w-[200px] h-9 bg-background/50 border-input/60 hover:bg-accent/50 transition-colors">
-                <div className="flex items-center gap-2 truncate">
-                  <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <SelectTrigger
+                className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
+                  platformFilter === 'all'
+                    ? 'text-muted-foreground dark:bg-transparent'
+                    : 'bg-background text-foreground shadow-xs dark:bg-background'
+                }`}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Radio
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      platformFilter === 'all'
+                        ? 'text-muted-foreground'
+                        : 'text-primary'
+                    }`}
+                  />
                   <span className="truncate">
                     <SelectValue placeholder={i18n._(msg`Platform`)} />
                   </span>
@@ -264,35 +539,234 @@ function StreamersPage() {
               </SelectContent>
             </Select>
 
-            <Badge
-              variant="secondary"
-              className="h-9 px-3 text-sm whitespace-nowrap"
-            >
-              {totalCount} <Trans>total</Trans>
-            </Badge>
-          </>
-        }
-      >
-        <nav className="flex items-center gap-1">
-          {STATE_FILTERS.map((filter) => {
-            const Icon = filter.icon;
-            const isActive = stateFilter === filter.value;
-            return (
-              <button
-                key={filter.value}
-                onClick={() => handleStateChange(filter.value)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            <Select value={templateFilter} onValueChange={handleTemplateChange}>
+              <SelectTrigger
+                className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
+                  templateFilter === 'all'
+                    ? 'text-muted-foreground dark:bg-transparent'
+                    : 'bg-background text-foreground shadow-xs dark:bg-background'
                 }`}
               >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="relative z-10">{filter.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+                <div className="flex min-w-0 items-center gap-2">
+                  <LayoutTemplate
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      templateFilter === 'all'
+                        ? 'text-muted-foreground'
+                        : 'text-primary'
+                    }`}
+                  />
+                  <span className="truncate">
+                    <SelectValue placeholder={i18n._(msg`Template`)} />
+                  </span>
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <Trans>All Templates</Trans>
+                </SelectItem>
+                <SelectItem value="__unassigned__">
+                  <Trans>No template assigned</Trans>
+                </SelectItem>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={i18n._(msg`More filters`)}
+                  className={`h-8 rounded-full px-2.5 ${
+                    activeSecondaryFilterCount > 0
+                      ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                      : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+                  }`}
+                >
+                  <ListFilter className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">
+                    <Trans>Filters</Trans>
+                  </span>
+                  {activeSecondaryFilterCount > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                      {activeSecondaryFilterCount}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                className="w-[calc(100vw-2rem)] rounded-2xl p-0 sm:w-80"
+              >
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                  <div>
+                    <p className="font-semibold">
+                      <Trans>More filters</Trans>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>Refine and sort streamers</Trans>
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={activeSecondaryFilterCount === 0}
+                    onClick={clearSecondaryFilters}
+                    className="rounded-full text-muted-foreground"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <Trans>Clear</Trans>
+                  </Button>
+                </div>
+
+                <div className="space-y-5 p-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>
+                        <Trans>Priority</Trans>
+                      </Label>
+                      <Select
+                        value={priorityFilter}
+                        onValueChange={(value) => {
+                          updateSearch({
+                            priority:
+                              value === 'all'
+                                ? undefined
+                                : (value as Exclude<PriorityFilter, 'all'>),
+                            page: undefined,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-full rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">
+                            <Trans>Any priority</Trans>
+                          </SelectItem>
+                          <SelectItem value="HIGH">
+                            <Trans>High</Trans>
+                          </SelectItem>
+                          <SelectItem value="NORMAL">
+                            <Trans>Normal</Trans>
+                          </SelectItem>
+                          <SelectItem value="LOW">
+                            <Trans>Low</Trans>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>
+                        <Trans>Sort by</Trans>
+                      </Label>
+                      <Select
+                        value={sortOption}
+                        onValueChange={(value) => {
+                          updateSearch({
+                            sort:
+                              value === 'default'
+                                ? undefined
+                                : (value as Exclude<SortOption, 'default'>),
+                            page: undefined,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-full rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">
+                            <Trans>Default</Trans>
+                          </SelectItem>
+                          <SelectItem value="updated-desc">
+                            <Trans>Recently updated</Trans>
+                          </SelectItem>
+                          <SelectItem value="name-asc">
+                            <Trans>Name A-Z</Trans>
+                          </SelectItem>
+                          <SelectItem value="name-desc">
+                            <Trans>Name Z-A</Trans>
+                          </SelectItem>
+                          <SelectItem value="priority-desc">
+                            <Trans>Priority high-low</Trans>
+                          </SelectItem>
+                          <SelectItem value="priority-asc">
+                            <Trans>Priority low-high</Trans>
+                          </SelectItem>
+                          <SelectItem value="state-asc">
+                            <Trans>State</Trans>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 border-t pt-4">
+                    <Label>
+                      <Trans>Exceptional states</Trans>
+                    </Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {exceptionalStateOptions.map((option) => {
+                        const checked = exceptionalStates.includes(
+                          option.value,
+                        );
+                        const id = `exception-state-${option.value}`;
+                        return (
+                          <Label
+                            key={option.value}
+                            htmlFor={id}
+                            className="cursor-pointer font-normal"
+                          >
+                            <Checkbox
+                              id={id}
+                              checked={checked}
+                              onCheckedChange={(nextChecked) =>
+                                handleExceptionalStateChange(
+                                  option.value,
+                                  nextChecked === true,
+                                )
+                              }
+                            />
+                            <span className="truncate">{option.label}</span>
+                          </Label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <div
+              className="h-5 w-px shrink-0 self-center bg-border"
+              aria-hidden="true"
+            />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleSelectionMode}
+              aria-pressed={selectionMode}
+              aria-label={i18n._(msg`Select streamers`)}
+              className={`h-8 rounded-full px-2.5 ${
+                selectionMode
+                  ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                  : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+              }`}
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">
+                <Trans>Select</Trans>
+              </span>
+            </Button>
+          </div>
+        </div>
       </DashboardHeader>
 
       {/* Content Content */}
@@ -335,11 +809,12 @@ function StreamersPage() {
                 <motion.div key={streamer.id} variants={itemVariants}>
                   <StreamerCard
                     streamer={streamer}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(streamer.id)}
+                    onSelectionChange={handleSelectionChange}
                     onDelete={handleDelete}
-                    onToggle={(id, enabled) =>
-                      toggleMutation.mutate({ id, enabled })
-                    }
-                    onCheck={(id) => checkMutation.mutate(id)}
+                    onToggle={handleToggle}
+                    onCheck={handleCheck}
                   />
                 </motion.div>
               ))}
@@ -386,11 +861,12 @@ function StreamersPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(v) => {
-                  setPageSize(Number(v));
-                  setPage(1);
+                  updateSearch({ size: Number(v), page: undefined });
                 }}
               >
-                <SelectTrigger className="w-16 h-8">
+                {/* No fixed width: `w-16` was narrower than the trigger's own padding plus
+                    chevron, so the value was clipped. */}
+                <SelectTrigger className="h-8 w-auto">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -410,7 +886,7 @@ function StreamersPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => page > 1 && setPage((p) => p - 1)}
+                    onClick={() => page > 1 && updateSearch({ page: page - 1 })}
                     aria-label={i18n._(msg`Go to previous page`)}
                     aria-disabled={page === 1}
                     tabIndex={page === 1 ? -1 : 0}
@@ -430,7 +906,7 @@ function StreamersPage() {
                     <PaginationItem key={p}>
                       <PaginationLink
                         isActive={page === p}
-                        onClick={() => setPage(p)}
+                        onClick={() => updateSearch({ page: p })}
                         aria-label={i18n._(msg`Go to page ${p}`)}
                         aria-current={page === p ? 'page' : undefined}
                         className="cursor-pointer"
@@ -442,7 +918,9 @@ function StreamersPage() {
                 )}
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => page < totalPages && setPage((p) => p + 1)}
+                    onClick={() =>
+                      page < totalPages && updateSearch({ page: page + 1 })
+                    }
                     aria-label={i18n._(msg`Go to next page`)}
                     aria-disabled={page === totalPages}
                     tabIndex={page === totalPages ? -1 : 0}
@@ -458,23 +936,45 @@ function StreamersPage() {
           </div>
         )}
 
-        {/* FAB */}
-        <motion.div
-          className="fixed bottom-8 right-8 z-50"
-          initial={{ scale: 0.93, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-        >
-          <Button
-            onClick={() => navigate({ to: '/streamers/new' })}
-            size="icon"
-            className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
-          >
-            <Plus className="h-6 w-6" />
-          </Button>
-        </motion.div>
+        <AnimatePresence>
+          {!selectionMode && (
+            <motion.div
+              className="fixed bottom-8 right-8 z-50"
+              initial={{ scale: 0.93, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.93, opacity: 0 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Button
+                onClick={() => navigate({ to: '/streamers/new' })}
+                size="icon"
+                className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
+              >
+                <Plus className="h-6 w-6" />
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {selectionMode && (
+          <StreamerBatchActionBar
+            selectedCount={selectedIds.size}
+            pageCount={streamers.length}
+            allPageSelected={allPageSelected}
+            templates={templates}
+            isPending={batchMutation.isPending}
+            onSelectPage={() =>
+              setSelectedIds(new Set(streamers.map((streamer) => streamer.id)))
+            }
+            onClearSelection={() => setSelectedIds(new Set())}
+            onAction={handleBatchAction}
+            onExit={toggleSelectionMode}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

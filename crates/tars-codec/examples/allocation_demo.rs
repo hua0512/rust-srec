@@ -10,7 +10,10 @@ fn create_smallvec_list(size: usize) -> SmallVec<[Box<TarsValue>; 4]> {
     list
 }
 
-#[allow(clippy::vec_box)]
+#[expect(
+    clippy::vec_box,
+    reason = "example intentionally compares boxed Vec storage with SmallVec storage"
+)]
 fn create_vec_list(size: usize) -> Vec<Box<TarsValue>> {
     let mut list = Vec::new();
     for i in 0..size {

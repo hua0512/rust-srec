@@ -2,10 +2,11 @@
 name = "av1"
 version = "0.1.1"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -14,4 +15,4 @@ bytes-util = { path = "../bytes-util" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-insta = "1.47"
+insta = { workspace = true }

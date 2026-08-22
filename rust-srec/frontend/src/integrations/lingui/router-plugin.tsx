@@ -3,6 +3,8 @@ import { I18nProvider } from '@lingui/react';
 import type { AnyRouter } from '@tanstack/react-router';
 import { type I18n } from '@lingui/core';
 
+import { dynamicActivate, isLocaleValid } from './i18n';
+
 type AdditionalOptions = {
   WrapProvider?: (props: { children: ReactNode }) => ReactNode;
 };
@@ -56,7 +58,6 @@ export function routerWithLingui<TRouter extends AnyRouter>(
         ...ogDehydrated,
         dehydratedI18n: {
           locale: i18n.locale,
-          messages: i18n.messages,
         },
       };
     };
@@ -66,11 +67,12 @@ export function routerWithLingui<TRouter extends AnyRouter>(
       await ogHydrate?.(dehydrated);
 
       if (dehydrated.dehydratedI18n) {
-        // On the client, hydrate the i18n catalog with the dehydrated data
-        i18n.loadAndActivate({
-          locale: dehydrated.dehydratedI18n.locale,
-          messages: dehydrated.dehydratedI18n.messages,
-        });
+        const { locale } = dehydrated.dehydratedI18n;
+        if (!isLocaleValid(locale)) {
+          throw new Error(`Unsupported dehydrated locale: ${String(locale)}`);
+        }
+
+        await dynamicActivate(i18n, locale);
       }
     };
   }

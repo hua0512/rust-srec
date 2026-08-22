@@ -104,11 +104,13 @@
 
 mod config;
 mod enums;
-mod io;
 mod sps;
 
+/// Re-exported from `bytes_util` so `h264` callers keep a single import path.
+/// `h265::SpsRbsp::parse` uses the same type via `bytes_util` directly — both
+/// codecs share one emulation-prevention implementation.
+pub use bytes_util::nal_emulation_prevention::EmulationPreventionIo;
 pub use enums::*;
-pub use io::EmulationPreventionIo;
 pub use sps::*;
 
 pub use self::config::{AVCDecoderConfigurationRecord, AvccExtendedConfig};

@@ -10,7 +10,6 @@ import {
   Network,
   MessageSquare,
   Shield,
-  Webhook,
   Workflow,
   Combine,
   Clock,
@@ -27,9 +26,9 @@ import { StreamSelectionTab } from './shared/stream-selection-tab';
 import { LimitsCard } from './shared/limits-card';
 import { OutputSettingsCard } from './shared/output-settings-card';
 import { RecordDanmuCard } from './shared/record-danmu-card';
+import { DanmuStatisticsCard } from './shared/danmu-statistics-card';
 import { OfflineCheckCard } from './shared/offline-check-card';
 
-import { EventHooksForm } from './shared/event-hooks-form';
 const PipelineConfigAdapter = lazy(() =>
   import('./shared/pipeline-config-adapter').then((m) => ({
     default: m.PipelineConfigAdapter,
@@ -51,9 +50,6 @@ export interface SharedConfigPaths {
   limits: string;
   // Danmu settings base path (record_danmu)
   danmu: string;
-  // Danmu sampling config path
-  danmuSampling?: string;
-  hooks: string;
   pipeline: string;
   sessionCompletePipeline?: string;
   pairedSegmentPipeline?: string;
@@ -67,7 +63,6 @@ export type ConfigTabType =
   | 'output'
   | 'network'
   | 'proxy'
-  | 'hooks'
   | 'danmu'
   | 'pipeline';
 
@@ -119,7 +114,6 @@ export function SharedConfigEditor<T extends FieldValues>({
     'output',
     'network',
     'proxy',
-    'hooks',
     'danmu',
     'pipeline',
   ],
@@ -188,17 +182,6 @@ export function SharedConfigEditor<T extends FieldValues>({
               <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="text-xs sm:text-sm">
                 <Trans>Proxy</Trans>
-              </span>
-            </TabsTrigger>
-          )}
-          {showTab('hooks') && (
-            <TabsTrigger
-              value="hooks"
-              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
-            >
-              <Webhook className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="text-xs sm:text-sm">
-                <Trans>Hooks</Trans>
               </span>
             </TabsTrigger>
           )}
@@ -346,26 +329,6 @@ export function SharedConfigEditor<T extends FieldValues>({
           </TabsContent>
         )}
 
-        {showTab('hooks') && (
-          <TabsContent
-            value="hooks"
-            className="mt-0 focus-visible:outline-none"
-          >
-            <motion.div
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-            >
-              <EventHooksForm
-                form={form}
-                name={paths.hooks}
-                mode={configMode}
-              />
-            </motion.div>
-          </TabsContent>
-        )}
-
         {showTab('danmu') && (
           <TabsContent
             value="danmu"
@@ -379,6 +342,10 @@ export function SharedConfigEditor<T extends FieldValues>({
               className="space-y-6"
             >
               <RecordDanmuCard
+                form={form}
+                basePath={paths.danmu === '' ? undefined : paths.danmu}
+              />
+              <DanmuStatisticsCard
                 form={form}
                 basePath={paths.danmu === '' ? undefined : paths.danmu}
               />

@@ -38,7 +38,7 @@ export function FilterList({ filters, onEdit, onDelete }: FilterListProps) {
         <div
           key={filter.id}
           style={{ animationDelay: `${index * 50}ms` }}
-          className="animate-in fade-in slide-in-from-bottom-2 fill-mode-backwards"
+          className="h-full animate-in fade-in slide-in-from-bottom-2 fill-mode-backwards"
         >
           <FilterCard filter={filter} onEdit={onEdit} onDelete={onDelete} />
         </div>

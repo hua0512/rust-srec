@@ -33,16 +33,24 @@
 //!
 
 use flv::data::FlvData;
-use flv::header::FlvHeader;
-use flv::tag::FlvTag;
 use pipeline_common::split_reason::SplitReason;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
 
+use crate::operators::segment_reinject::SegmentInitCache;
+
 /// Optional callback for when a stream split occurs
 pub type SplitCallback = Box<dyn Fn(SplitReason, u64, u32) + Send + Sync>;
+
+/// Bytes of the FLV PreviousTagSize field that follows every tag on disk.
+const PREVIOUS_TAG_SIZE_FIELD: u32 = 4;
+
+/// Multiplier applied to a configured limit before `LimitOperator::limits_hard_exceeded`
+/// forces a split on a non-keyframe. Gives a keyframe this much slack past the limit to
+/// appear before output is bounded for streams whose keyframes never classify.
+const HARD_SPLIT_MARGIN: u64 = 2;
 
 /// Configuration options for the limit operator
 pub struct LimitConfig {
@@ -75,14 +83,11 @@ impl Default for LimitConfig {
 
 // Store stream state for re-emission after splits
 struct StreamState {
-    header: Option<FlvHeader>,
-    metadata: Option<FlvTag>,
-    audio_sequence_tag: Option<FlvTag>,
-    video_sequence_tag: Option<FlvTag>,
+    /// Cached header/metadata/sequence tags re-injected by `split_stream`.
+    cache: SegmentInitCache,
     accumulated_size: u64,
     start_timestamp: u32,
     max_timestamp: u32,
-    last_keyframe_position: Option<(u64, u32)>, // (size, timestamp) at last keyframe
     split_count: u32,
     first_content_tag_seen: bool,
 }
@@ -90,14 +95,10 @@ struct StreamState {
 impl StreamState {
     fn new() -> Self {
         Self {
-            header: None,
-            metadata: None,
-            audio_sequence_tag: None,
-            video_sequence_tag: None,
+            cache: SegmentInitCache::new(),
             accumulated_size: 0,
             start_timestamp: 0,
             max_timestamp: 0,
-            last_keyframe_position: None,
             split_count: 0,
             first_content_tag_seen: false,
         }
@@ -106,7 +107,6 @@ impl StreamState {
     fn reset_counters(&mut self) {
         self.accumulated_size = 0;
         self.start_timestamp = self.max_timestamp;
-        self.last_keyframe_position = None;
         self.split_count += 1;
     }
 
@@ -180,6 +180,27 @@ impl LimitOperator {
         false
     }
 
+    /// True when the current segment has grown far enough past a configured limit that a
+    /// split must be forced even on a non-keyframe tag. Mirrors the intent of
+    /// GopSortOperator::MAX_GOP_TAGS: bound output when the preferred boundary never arrives.
+    fn limits_hard_exceeded(&self) -> bool {
+        if let Some(max_size) = self.config.max_size_bytes
+            && self.state.accumulated_size >= max_size.saturating_mul(HARD_SPLIT_MARGIN)
+        {
+            return true;
+        }
+
+        if let Some(max_duration) = self.config.max_duration_ms
+            && self.state.first_content_tag_seen
+            && self.state.current_duration() as u64
+                >= (max_duration as u64).saturating_mul(HARD_SPLIT_MARGIN)
+        {
+            return true;
+        }
+
+        false
+    }
+
     fn split_stream(
         &mut self,
         reason: SplitReason,
@@ -196,29 +217,9 @@ impl LimitOperator {
         // Emit the Split marker before re-injecting the header.
         output(FlvData::Split(reason))?;
 
-        // Send each item with Arc cloning instead of full data cloning
-        if let Some(header) = &self.state.header {
-            output(FlvData::Header(header.clone()))?;
-            debug!("{} {}", self.context.name, "re-emit header after split");
-        }
-        if let Some(metadata) = &self.state.metadata {
-            output(FlvData::Tag(metadata.clone()))?;
-            debug!("{} {}", self.context.name, "re-emit metadata after split");
-        }
-        if let Some(video_seq) = &self.state.video_sequence_tag {
-            output(FlvData::Tag(video_seq.clone()))?;
-            debug!(
-                "{} {}",
-                self.context.name, "re-emit video sequence tag after split"
-            );
-        }
-        if let Some(audio_seq) = &self.state.audio_sequence_tag {
-            output(FlvData::Tag(audio_seq.clone()))?;
-            debug!(
-                "{} {}",
-                self.context.name, "re-emit audio sequence tag after split"
-            );
-        }
+        self.state
+            .cache
+            .reinject(output, Some(&self.context.name))?;
 
         // Reset accumulated counters for the new segment
         self.state.reset_counters();
@@ -241,28 +242,29 @@ impl Processor<FlvData> for LimitOperator {
             FlvData::Header(header) => {
                 // Reset state for a new stream
                 self.state = StreamState::new();
-                self.state.header = Some(header.clone());
+                self.state.cache.header = Some(header.clone());
                 self.last_split_time = Instant::now();
 
                 // Forward the header
                 output(FlvData::Header(header))?;
             }
             FlvData::Tag(tag) => {
-                // Update size counter
-                let tag_size = tag.size() as u64;
+                // Account for the tag plus the 4-byte PreviousTagSize field that follows
+                // every tag on disk. accumulated_size still excludes the file header and
+                // the tags split_stream re-injects, so it tracks slightly under the
+                // on-disk size.
+                let tag_size = tag.size() as u64 + PREVIOUS_TAG_SIZE_FIELD as u64;
                 self.state.accumulated_size += tag_size;
 
-                // Track key metadata
+                // Track key metadata. Sequence headers are cached with timestamp_ms
+                // zeroed so the tags re-injected by split_stream open the new segment
+                // at timestamp 0.
                 if tag.is_script_tag() {
-                    self.state.metadata = Some(tag.clone());
+                    self.state.cache.metadata = Some(tag.clone());
                 } else if tag.is_video_sequence_header() {
-                    let mut tag = tag.clone();
-                    tag.timestamp_ms = 0; // Reset timestamp for video sequence header
-                    self.state.video_sequence_tag = Some(tag);
+                    self.state.cache.store_video_sequence_tag(tag.clone(), true);
                 } else if tag.is_audio_sequence_header() {
-                    let mut tag = tag.clone();
-                    tag.timestamp_ms = 0; // Reset timestamp for audio sequence header
-                    self.state.audio_sequence_tag = Some(tag);
+                    self.state.cache.store_audio_sequence_tag(tag.clone(), true);
                 } else {
                     // This is actual content (not sequence header or metadata)
                     // Update timestamp tracking only for content tags
@@ -282,21 +284,28 @@ impl Processor<FlvData> for LimitOperator {
                     }
                 }
 
-                // Track keyframes for optimal split points
-                if tag.is_key_frame_nalu() {
-                    self.state.last_keyframe_position =
-                        Some((self.state.accumulated_size, self.state.max_timestamp));
-                }
-
                 // Check if any limit is exceeded
                 let should_split = self.check_limits();
 
-                // Inside the process method where split decisions are made
-                let has_video = self.state.header.as_ref().is_some_and(|h| h.has_video);
-                let can_split_on_tag = if has_video {
-                    tag.is_key_frame_nalu()
+                // Decide whether this tag is an acceptable split boundary.
+                // `split_at_keyframes_only` restricts video splits to keyframes so the new
+                // segment opens on a decodable frame; when disabled we split on any tag.
+                // The `limits_hard_exceeded` fallback forces a split on a non-keyframe once
+                // the segment has grown well past the limit, bounding output for video whose
+                // keyframes never classify via FlvTag::is_key_frame_nalu (filtered/encrypted
+                // payloads, unrecognized codec IDs). It also fires for streams whose GOP
+                // span exceeds the margin, so such a segment opens mid-GOP and its video
+                // is undecodable until the next keyframe.
+                let has_video = self
+                    .state
+                    .cache
+                    .header
+                    .as_ref()
+                    .is_some_and(|h| h.has_video);
+                let can_split_on_tag = if has_video && self.config.split_at_keyframes_only {
+                    tag.is_key_frame_nalu() || self.limits_hard_exceeded()
                 } else {
-                    // For audio-only, we can split on any tag
+                    // Audio-only streams, or keyframe-only splitting disabled: any tag works.
                     true
                 };
 
@@ -347,6 +356,7 @@ mod tests {
     use super::*;
     use crate::test_utils::{self, create_script_tag};
     use bytes::Bytes;
+    use flv::header::FlvHeader;
     use flv::tag::{FlvTag, FlvTagType};
     use pipeline_common::{CancellationToken, StreamerContext};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -769,13 +779,13 @@ mod tests {
         // Helper function to create audio tag
         let create_audio_tag = |timestamp: u32, size: usize| -> FlvData {
             let data = vec![0u8; size];
-            FlvData::Tag(FlvTag {
-                timestamp_ms: timestamp,
-                stream_id: 0,
-                tag_type: FlvTagType::Audio,
-                is_filtered: false,
-                data: Bytes::from(data),
-            })
+            FlvData::Tag(FlvTag::new(
+                timestamp,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from(data),
+            ))
         };
 
         // Send initial headers
@@ -954,13 +964,13 @@ mod tests {
         // Helper function to create audio tag
         let create_audio_tag = |timestamp: u32, size: usize| -> FlvData {
             let data = vec![0u8; size];
-            FlvData::Tag(FlvTag {
-                timestamp_ms: timestamp,
-                stream_id: 0,
-                tag_type: FlvTagType::Audio,
-                is_filtered: false,
-                data: Bytes::from(data),
-            })
+            FlvData::Tag(FlvTag::new(
+                timestamp,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from(data),
+            ))
         };
 
         // Process an audio-only header
@@ -1144,6 +1154,249 @@ mod tests {
 
         // Verify the actual duration tracked by the operator
         // (We can't directly access state, but we verified no split occurred which proves it)
+    }
+
+    /// Video tag whose payload never classifies as a keyframe via
+    /// `FlvTag::is_key_frame_nalu`: the tag is marked filtered, so
+    /// `TagClass::from_payload` returns the default class with
+    /// `keyframe_media` unset even though the frame-type nibble says keyframe.
+    fn create_unclassified_keyframe_tag(timestamp: u32, size: usize) -> FlvData {
+        let mut data = vec![0u8; size];
+        data[0] = 0x17; // keyframe + AVC nibbles, ignored for filtered tags
+        data[1] = 1;
+        FlvData::Tag(FlvTag::new(
+            timestamp,
+            0,
+            FlvTagType::Video,
+            true,
+            Bytes::from(data),
+        ))
+    }
+
+    #[test]
+    fn size_limit_forces_split_when_keyframes_never_classify() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let split_sizes = Arc::new(Mutex::new(Vec::new()));
+
+        let config = LimitConfig {
+            max_size_bytes: Some(10 * 1024),
+            max_duration_ms: None,
+            split_at_keyframes_only: true,
+            on_split: Some(Box::new({
+                let split_sizes = Arc::clone(&split_sizes);
+                move |_, size, _| {
+                    split_sizes.lock().unwrap().push(size);
+                }
+            })),
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
+            .unwrap();
+
+        // ~30 KiB of tags, none of which classifies as a keyframe. The split must
+        // fire once accumulated_size passes HARD_SPLIT_MARGIN * max_size_bytes.
+        for i in 0..30u32 {
+            operator
+                .process(
+                    &context,
+                    create_unclassified_keyframe_tag(i * 33, 1024),
+                    &mut output_fn,
+                )
+                .unwrap();
+        }
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        let sizes = split_sizes.lock().unwrap().clone();
+        assert_eq!(
+            sizes.len(),
+            1,
+            "hard margin should force exactly one split without classified keyframes"
+        );
+        assert!(
+            sizes[0] >= 2 * 10 * 1024,
+            "split should only fire past the hard margin, got {} bytes",
+            sizes[0]
+        );
+    }
+
+    #[test]
+    fn duration_limit_forces_split_when_keyframes_never_classify() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let split_durations = Arc::new(Mutex::new(Vec::new()));
+
+        let config = LimitConfig {
+            max_size_bytes: None,
+            max_duration_ms: Some(500),
+            split_at_keyframes_only: true,
+            on_split: Some(Box::new({
+                let split_durations = Arc::clone(&split_durations);
+                move |_, _, duration| {
+                    split_durations.lock().unwrap().push(duration);
+                }
+            })),
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
+            .unwrap();
+
+        // Timestamps run to 1500ms with no classified keyframe; the split must fire
+        // once current_duration passes HARD_SPLIT_MARGIN * max_duration_ms.
+        for ts in (0..=1500u32).step_by(100) {
+            operator
+                .process(
+                    &context,
+                    create_unclassified_keyframe_tag(ts, 64),
+                    &mut output_fn,
+                )
+                .unwrap();
+        }
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        let durations = split_durations.lock().unwrap().clone();
+        assert_eq!(
+            durations.len(),
+            1,
+            "hard margin should force exactly one split without classified keyframes"
+        );
+        assert!(
+            durations[0] >= 2 * 500,
+            "split should only fire past the hard margin, got {}ms",
+            durations[0]
+        );
+    }
+
+    #[test]
+    fn video_splits_on_any_tag_when_keyframes_only_disabled() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let split_counter = Arc::new(AtomicUsize::new(0));
+        let split_counter_clone = split_counter.clone();
+
+        let config = LimitConfig {
+            max_size_bytes: Some(1024),
+            max_duration_ms: None,
+            split_at_keyframes_only: false,
+            on_split: Some(Box::new(move |_, _, _| {
+                split_counter.fetch_add(1, Ordering::SeqCst);
+            })),
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
+            .unwrap();
+
+        // Only non-keyframe video tags: with split_at_keyframes_only disabled the
+        // split must still fire as soon as the size limit is crossed.
+        for i in 0..3u32 {
+            operator
+                .process(
+                    &context,
+                    test_utils::create_video_tag_with_size(i * 33, false, 500),
+                    &mut output_fn,
+                )
+                .unwrap();
+        }
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        assert_eq!(
+            split_counter_clone.load(Ordering::SeqCst),
+            1,
+            "split_at_keyframes_only=false must allow splitting on non-keyframe video tags"
+        );
+        let header_count = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Header(_)))
+            .count();
+        assert_eq!(
+            header_count, 2,
+            "initial header plus one re-injected header"
+        );
+    }
+
+    #[test]
+    fn accumulated_size_counts_previous_tag_size_field() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let split_counter = Arc::new(AtomicUsize::new(0));
+        let split_counter_clone = split_counter.clone();
+
+        let config = LimitConfig {
+            max_size_bytes: Some(1000),
+            max_duration_ms: None,
+            split_at_keyframes_only: false,
+            on_split: Some(Box::new(move |_, _, _| {
+                split_counter.fetch_add(1, Ordering::SeqCst);
+            })),
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        // Audio-only stream: any tag is a valid split boundary, so the split fires on
+        // the exact tag where accumulated_size crosses max_size_bytes.
+        operator
+            .process(
+                &context,
+                FlvData::Header(FlvHeader::new(true, false)),
+                &mut output_fn,
+            )
+            .unwrap();
+
+        // Each tag is 96 bytes (85-byte payload + 11-byte tag header) plus the 4-byte
+        // PreviousTagSize field = 100 bytes on disk. Ten tags reach the 1000-byte
+        // limit only when the PreviousTagSize field is counted (10 * 96 = 960).
+        for i in 0..10u32 {
+            let data = vec![0u8; 85];
+            operator
+                .process(
+                    &context,
+                    FlvData::Tag(FlvTag::new(
+                        i * 23,
+                        0,
+                        FlvTagType::Audio,
+                        false,
+                        Bytes::from(data),
+                    )),
+                    &mut output_fn,
+                )
+                .unwrap();
+        }
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        assert_eq!(
+            split_counter_clone.load(Ordering::SeqCst),
+            1,
+            "accumulated_size must include the PreviousTagSize field of each tag"
+        );
     }
 
     #[test]

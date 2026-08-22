@@ -80,7 +80,6 @@ impl SessionRepository for TestSessionRepository {
             start_time: chrono::Utc::now().timestamp_millis(),
             end_time: *self.end_time.lock().expect("lock poisoned"),
             titles: Some("[]".to_string()),
-            danmu_statistics_id: None,
             total_size_bytes: 0,
         })
     }
@@ -277,18 +276,7 @@ impl SessionRepository for TestSessionRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn upsert_danmu_statistics(
-        &self,
-        _session_id: &str,
-        _total_danmus: i64,
-        _danmu_rate_timeseries: Option<&str>,
-        _top_talkers: Option<&str>,
-        _word_frequency: Option<&str>,
-    ) -> Result<()> {
+    async fn upsert_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
 }
@@ -375,8 +363,23 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn mark_job_cancelled(&self, _id: &str) -> Result<u64> {
-        unimplemented!("not needed for these tests")
+    async fn mark_job_cancelled(&self, id: &str) -> Result<u64> {
+        let mut jobs = self.jobs.lock().expect("lock poisoned");
+        let job = jobs
+            .get_mut(id)
+            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+        if !matches!(
+            JobStatus::parse(&job.status),
+            Some(JobStatus::Pending | JobStatus::Processing)
+        ) {
+            return Ok(0);
+        }
+
+        let now = chrono::Utc::now().timestamp_millis();
+        job.status = JobStatus::Cancelled.as_str().to_string();
+        job.completed_at = Some(now);
+        job.updated_at = now;
+        Ok(1)
     }
 
     async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
@@ -456,19 +459,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn delete_job(&self, _id: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -535,14 +526,18 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
 
 struct TestDagRepositoryForRetry {
     dags: Mutex<HashMap<String, DagExecutionDbModel>>,
+    steps: HashMap<String, DagStepExecutionDbModel>,
     reset_calls: AtomicUsize,
+    cancel_calls: AtomicUsize,
 }
 
 impl TestDagRepositoryForRetry {
     fn new() -> Self {
         Self {
             dags: Mutex::new(HashMap::new()),
+            steps: HashMap::new(),
             reset_calls: AtomicUsize::new(0),
+            cancel_calls: AtomicUsize::new(0),
         }
     }
 
@@ -555,6 +550,15 @@ impl TestDagRepositoryForRetry {
 
     fn reset_calls(&self) -> usize {
         self.reset_calls.load(Ordering::SeqCst)
+    }
+
+    fn with_step(mut self, step: DagStepExecutionDbModel) -> Self {
+        self.steps.insert(step.id.clone(), step);
+        self
+    }
+
+    fn cancel_calls(&self) -> usize {
+        self.cancel_calls.load(Ordering::SeqCst)
     }
 }
 
@@ -616,8 +620,11 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_step(&self, _id: &str) -> Result<DagStepExecutionDbModel> {
-        unimplemented!("not needed for these tests")
+    async fn get_step(&self, id: &str) -> Result<DagStepExecutionDbModel> {
+        self.steps
+            .get(id)
+            .cloned()
+            .ok_or_else(|| crate::Error::not_found("DAG step execution", id))
     }
 
     async fn get_step_by_dag_and_step_id(
@@ -661,12 +668,18 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
-    async fn cancel_dag_and_cancel_steps(
-        &self,
-        _dag_id: &str,
-        _error: &str,
-    ) -> Result<Vec<String>> {
-        unimplemented!("not needed for these tests")
+    async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
+        self.cancel_calls.fetch_add(1, Ordering::SeqCst);
+        let mut dags = self.dags.lock().expect("lock poisoned");
+        let dag = dags
+            .get_mut(dag_id)
+            .ok_or_else(|| crate::Error::not_found("DAG execution", dag_id))?;
+        dag.status = crate::database::models::DagExecutionStatus::Cancelled
+            .as_str()
+            .to_string();
+        dag.completed_at = Some(chrono::Utc::now().timestamp_millis());
+        dag.error = Some(error.to_string());
+        Ok(Vec::new())
     }
 
     async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
@@ -905,10 +918,6 @@ fn test_pipeline_manager_config_default() {
     assert!(!config.throttle.enabled);
     assert_eq!(config.throttle.critical_threshold, 500);
     assert_eq!(config.throttle.warning_threshold, 100);
-    // Verify purge config defaults
-    assert_eq!(config.purge.retention_days, 30);
-    assert_eq!(config.purge.batch_size, 100);
-    assert!(config.purge.time_window.is_some());
 }
 
 #[test]
@@ -957,8 +966,7 @@ async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
     let job_id = job.id.clone();
     job_repo.insert(job);
 
-    let mut config = PipelineManagerConfig::default();
-    config.purge.retention_days = 0;
+    let config = PipelineManagerConfig::default();
 
     let manager: PipelineManager =
         PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
@@ -1014,8 +1022,7 @@ async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
     let job_id = job.id.clone();
     job_repo.insert(job);
 
-    let mut config = PipelineManagerConfig::default();
-    config.purge.retention_days = 0;
+    let config = PipelineManagerConfig::default();
 
     let manager: PipelineManager =
         PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
@@ -1023,6 +1030,154 @@ async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
     let retried = manager.retry_job(&job_id).await.unwrap();
     assert_eq!(retried.status, crate::pipeline::JobStatus::Pending);
     assert_eq!(dag_repo.reset_calls(), 1);
+}
+
+#[tokio::test]
+async fn test_cancel_dag_step_job_cancels_parent_dag() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+
+    let mut dag = DagExecutionDbModel::new(
+        &crate::database::models::DagPipelineDefinition::new(
+            "test",
+            vec![crate::database::models::DagStep::new(
+                "step-a",
+                crate::database::models::PipelineStep::Inline {
+                    processor: "remux".to_string(),
+                    config: serde_json::json!({}),
+                },
+            )],
+        ),
+        None,
+        None,
+    );
+    dag.status = crate::database::models::DagExecutionStatus::Processing
+        .as_str()
+        .to_string();
+    let dag_id = dag.id.clone();
+    dag_repo.insert(dag);
+
+    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+    job.pipeline_id = Some(dag_id.clone());
+    job.dag_step_execution_id = Some("step-exec-1".to_string());
+    let job_id = job.id.clone();
+    job_repo.insert(job);
+
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+    manager.cancel_job(&job_id).await.unwrap();
+
+    assert_eq!(
+        manager.get_job(&job_id).await.unwrap().unwrap().status,
+        JobStatus::Cancelled
+    );
+    assert_eq!(
+        dag_repo.get_dag(&dag_id).await.unwrap().get_status(),
+        Some(crate::database::models::DagExecutionStatus::Cancelled)
+    );
+    assert_eq!(dag_repo.cancel_calls(), 1);
+}
+
+#[tokio::test]
+async fn test_cancel_dag_step_job_resolves_parent_before_mutating_job() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+
+    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+    job.dag_step_execution_id = Some("missing-step-exec".to_string());
+    let job_id = job.id.clone();
+    job_repo.insert(job);
+
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            .with_dag_repository(dag_repo);
+
+    let error = manager.cancel_job(&job_id).await.unwrap_err();
+
+    assert!(matches!(error, crate::Error::NotFound { .. }));
+    assert_eq!(
+        manager.get_job(&job_id).await.unwrap().unwrap().status,
+        JobStatus::Pending
+    );
+}
+
+#[tokio::test]
+async fn test_cancel_dag_step_job_allows_terminal_parent() {
+    let job_repo = Arc::new(TestJobRepository::new());
+
+    let mut dag = DagExecutionDbModel::new(
+        &crate::database::models::DagPipelineDefinition::new("test", Vec::new()),
+        None,
+        None,
+    );
+    dag.status = crate::database::models::DagExecutionStatus::Failed
+        .as_str()
+        .to_string();
+    let dag_id = dag.id.clone();
+
+    let mut step = DagStepExecutionDbModel::new(&dag_id, "step-a", &[]);
+    let step_id = step.id.clone();
+    step.status = crate::database::models::DagStepStatus::Failed
+        .as_str()
+        .to_string();
+    let dag_repo = Arc::new(TestDagRepositoryForRetry::new().with_step(step));
+    dag_repo.insert(dag);
+
+    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+    job.dag_step_execution_id = Some(step_id);
+    let job_id = job.id.clone();
+    job_repo.insert(job);
+
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+    manager.cancel_job(&job_id).await.unwrap();
+
+    assert_eq!(
+        manager.get_job(&job_id).await.unwrap().unwrap().status,
+        JobStatus::Cancelled
+    );
+    assert_eq!(dag_repo.cancel_calls(), 0);
+}
+
+#[tokio::test]
+async fn test_cancel_terminal_dag_step_job_does_not_cancel_parent() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+
+    let mut dag = DagExecutionDbModel::new(
+        &crate::database::models::DagPipelineDefinition::new("test", Vec::new()),
+        None,
+        None,
+    );
+    dag.status = crate::database::models::DagExecutionStatus::Processing
+        .as_str()
+        .to_string();
+    let dag_id = dag.id.clone();
+    dag_repo.insert(dag);
+
+    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+    job.pipeline_id = Some(dag_id.clone());
+    job.dag_step_execution_id = Some("step-exec-1".to_string());
+    job.status = JobStatus::Failed.as_str().to_string();
+    let job_id = job.id.clone();
+    job_repo.insert(job);
+
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+    let error = manager.cancel_job(&job_id).await.unwrap_err();
+
+    assert!(matches!(error, crate::Error::InvalidStateTransition { .. }));
+    assert_eq!(
+        dag_repo.get_dag(&dag_id).await.unwrap().get_status(),
+        Some(crate::database::models::DagExecutionStatus::Processing)
+    );
+    assert_eq!(dag_repo.cancel_calls(), 0);
 }
 
 #[test]
@@ -1678,7 +1833,6 @@ fn test_session(id: &str, streamer_id: &str, end_time: Option<i64>) -> LiveSessi
         start_time: chrono::Utc::now().timestamp_millis(),
         end_time,
         titles: Some("[]".to_string()),
-        danmu_statistics_id: None,
         total_size_bytes: 1024,
     }
 }
@@ -1838,9 +1992,8 @@ async fn test_recovery_tracks_in_flight_ended_session_without_duplicate_dag() {
 }
 
 // -----------------------------------------------------------------------
-// Tests for #520 — session-complete pipeline firing on terminal download
-// events (regression guard: Completed *and* Failed should trigger it;
-// Cancelled and Rejected should not).
+// Session-complete pipeline firing on terminal download events:
+// Completed *and* Failed must trigger it; Cancelled and Rejected must not.
 // -----------------------------------------------------------------------
 
 use crate::downloader::engine::EngineType;
@@ -1956,10 +2109,10 @@ fn test_terminal_should_run_session_complete_policy() {
     );
 }
 
-/// Regression for #520: a recording that ends with `DownloadFailed` (e.g.
-/// HLS 404, stalled stream) must still fire the session-complete pipeline.
-/// Before the fix, the pipeline manager's `_ => {}` catch-all swallowed
-/// `DownloadFailed` and `on_video_complete` was never called.
+/// A recording that ends with `DownloadFailed` (e.g. HLS 404, stalled
+/// stream) must still fire the session-complete pipeline:
+/// `handle_session_transition` must treat an `Ended` with a `Failed`
+/// cause the same as one with `Completed`, not drop it in a catch-all.
 #[tokio::test]
 async fn test_handle_download_event_failed_triggers_session_complete() {
     let session_repo = Arc::new(TestSessionRepository::new(Some(
@@ -2060,8 +2213,8 @@ async fn test_handle_download_event_rejected_does_not_trigger_session_complete()
     );
 }
 
-/// Regression for #569: with global danmu recording enabled, the danmu XML can be
-/// registered before the final video SegmentCompleted event is processed. A
+/// With global danmu recording enabled, the danmu XML can be registered
+/// before the final video SegmentCompleted event is processed. A
 /// UserDisabled transition must not fire the session-complete pipeline with only
 /// danmu inputs (`video_outputs=0 danmu_outputs=1`).
 #[tokio::test]
@@ -2158,13 +2311,13 @@ async fn test_session_complete_waits_for_video_output_when_danmu_arrives_first()
 // in-flight per-segment DAGs.
 // =========================================================================
 
-/// F1 — Session-complete DAG waits for in-flight per-segment video DAGs.
+/// Session-complete DAG waits for in-flight per-segment video DAGs.
 /// Three in-flight video DAGs, observe `SessionTransition::Ended{Failed}`
 /// → session-complete is NOT yet scheduled (entry remains, coordinator
 /// still active). Complete the three DAGs; session-complete fires only
 /// after the last one drains.
 #[tokio::test]
-async fn f1_session_complete_waits_for_in_flight_video_dags() {
+async fn session_complete_waits_for_in_flight_video_dags() {
     let session_repo = Arc::new(TestSessionRepository::new(Some(
         chrono::Utc::now().timestamp_millis(),
     )));

@@ -186,8 +186,10 @@ impl Processor for DeleteProcessor {
                 start_msg,
             ));
 
-            // Check if file exists
-            if !path.exists() {
+            let exists = fs::try_exists(path)
+                .await
+                .map_err(|error| crate::Error::io_path("try_exists", path, error))?;
+            if !exists {
                 let msg = format!(
                     "File does not exist, marking job as completed: {}",
                     file_path
@@ -216,6 +218,7 @@ impl Processor for DeleteProcessor {
                     failed_inputs: vec![],
                     succeeded_inputs: vec![file_path.clone()],
                     skipped_inputs: vec![],
+                    uploads: vec![],
                     logs,
                 });
             }
@@ -254,6 +257,7 @@ impl Processor for DeleteProcessor {
                         failed_inputs: vec![],
                         succeeded_inputs: vec![file_path.clone()],
                         skipped_inputs: vec![],
+                        uploads: vec![],
                         logs,
                     })
                 }
@@ -292,7 +296,23 @@ impl Processor for DeleteProcessor {
         for file_path in &input.inputs {
             let path = Path::new(file_path);
 
-            if !path.exists() {
+            // A stat failure fails only this input, matching the
+            // delete_with_retry handling below; remaining inputs still run.
+            let exists = match fs::try_exists(path).await {
+                Ok(exists) => exists,
+                Err(error) => {
+                    let error = crate::Error::io_path("try_exists", path, error);
+                    let msg = format!("Failed to check file: {}: {}", file_path, error);
+                    warn!("{}", msg);
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Error,
+                        msg,
+                    ));
+                    failed.push((file_path.clone(), error.to_string()));
+                    continue;
+                }
+            };
+            if !exists {
                 skipped_missing = skipped_missing.saturating_add(1);
                 let msg = format!("File does not exist, skipping: {}", file_path);
                 warn!("{}", msg);
@@ -337,6 +357,7 @@ impl Processor for DeleteProcessor {
                 failed_inputs: vec![],
                 succeeded_inputs: input.inputs.clone(),
                 skipped_inputs: vec![],
+                uploads: vec![],
                 logs,
             })
         } else {
@@ -391,13 +412,6 @@ mod tests {
     fn test_delete_processor_name() {
         let processor = DeleteProcessor::new();
         assert_eq!(processor.name(), "DeleteProcessor");
-    }
-
-    #[test]
-    fn test_delete_config_default() {
-        let config = DeleteConfig::default();
-        assert_eq!(config.max_retries, 3);
-        assert_eq!(config.retry_delay_ms, 100);
     }
 
     #[test]

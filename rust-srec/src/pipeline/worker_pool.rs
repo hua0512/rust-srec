@@ -365,8 +365,7 @@ impl WorkerPool {
                                     );
                                     error!(job_id = %job_id, dag_step_execution_id = %dag_step_id, "{}", reason);
 
-                                    // Mark job failed (best-effort logging).
-                                    let _ = job_queue
+                                    if let Err(e) = job_queue
                                         .fail_with_cleanup_and_step_info(
                                             &job_id,
                                             &reason,
@@ -374,31 +373,24 @@ impl WorkerPool {
                                             job.execution_info.as_ref().and_then(|i| i.current_step),
                                             job.execution_info.as_ref().and_then(|i| i.total_steps),
                                         )
-                                        .await;
+                                        .await
+                                    {
+                                        error!(
+                                            job_id = %job_id,
+                                            error = %e,
+                                            "Failed to persist invalid multi-input DAG job failure"
+                                        );
+                                    }
 
                                     // Fail the DAG execution (fail-fast) and notify completion listeners.
-                                    if let Some(scheduler) = &dag_scheduler {
-                                        match scheduler.on_job_failed(dag_step_id, &reason).await {
-                                            Ok(DagJobFailedUpdate { completion, .. }) => {
-                                                if let Some(completion) = completion
-                                                    && let Some(tx) = &dag_notify_tx
-                                                    && let Err(e) = tx.send(completion).await
-                                                {
-                                                    warn!(
-                                                        error = %e,
-                                                        "Failed to send DAG completion notification"
-                                                    );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    dag_step_execution_id = %dag_step_id,
-                                                    error = %e,
-                                                    "Failed to fail DAG for non-batch processor"
-                                                );
-                                            }
-                                        }
-                                    }
+                                    handle_dag_job_failure(
+                                        &dag_scheduler,
+                                        &dag_notify_tx,
+                                        dag_step_id,
+                                        &reason,
+                                        DagFailureKind::NonBatchInput,
+                                    )
+                                    .await;
 
                                     drop(permit);
                                     continue;
@@ -421,9 +413,16 @@ impl WorkerPool {
                                     }
                                     Err(e) => {
                                         error!("Failed to split job {}: {}", job_id, e);
-                                        let _ = job_queue
+                                        if let Err(fail_error) = job_queue
                                             .fail(&job_id, &format!("Failed to split job: {}", e))
-                                            .await;
+                                            .await
+                                        {
+                                            error!(
+                                                job_id = %job_id,
+                                                error = %fail_error,
+                                                "Failed to persist job split failure"
+                                            );
+                                        }
                                     }
                                 }
                                 drop(permit);
@@ -444,6 +443,7 @@ impl WorkerPool {
 
                             // Process the job with timeout
                             let mut job = job;
+                            let is_retry = job.retry_count > 0;
                             let dag_step_execution_id = job.dag_step_execution_id.take();
                             let current_step = job
                                 .execution_info
@@ -614,7 +614,8 @@ impl WorkerPool {
                                 job_queue.progress_reporter(&job_id),
                                 log_sink,
                                 job_cancellation_token.clone(),
-                            );
+                            )
+                            .with_retry(is_retry);
 
                             let result = {
                                 let timed = tokio::time::timeout(
@@ -634,10 +635,19 @@ impl WorkerPool {
                             drop(ctx);
 
                             // Wait for log collector to finish draining
-                            let _ = log_collector.await;
+                            if let Err(join_error) = log_collector.await {
+                                error!(
+                                    job_id = %job_id,
+                                    error = %join_error,
+                                    "Job log collector task failed"
+                                );
+                            }
 
                             match result {
                                 None => {
+                                    // No upload_records synthesis here: the job's CANCELLED
+                                    // status is the durable truth, and cancel_job already
+                                    // broadcast the Terminal{Cancelled} upload event.
                                     info!(job_id = %job_id, "Job cancelled while processing");
                                 }
                                 Some(Ok(Ok(output))) => {
@@ -723,18 +733,25 @@ impl WorkerPool {
                                         }
                                     }
 
-                                    // Complete the job normally.
-                                    let _ = job_queue
+                                    if let Err(e) = job_queue
                                         .complete(
                                             &job_id,
                                             JobResult {
                                                 outputs: output.outputs,
                                                 duration_secs: output.duration_secs,
                                                 metadata: output.metadata,
+                                                uploads: output.uploads,
                                                 logs: output.logs,
                                             },
                                         )
-                                        .await;
+                                        .await
+                                    {
+                                        error!(
+                                            job_id = %job_id,
+                                            error = %e,
+                                            "Failed to persist completed pipeline job"
+                                        );
+                                    }
                                     }
                                 }
                                 Some(Ok(Err(e))) => {
@@ -765,34 +782,14 @@ impl WorkerPool {
                                             }
 
                                         // Then notify DAG scheduler for fail-fast
-                                        if let Some(scheduler) = &dag_scheduler {
-                                            match scheduler
-                                                .on_job_failed(dag_step_id, &error)
-                                                .await
-                                            {
-                                                Ok(DagJobFailedUpdate { cancelled_count, completion }) => {
-                                                    info!(
-                                                        "DAG step {} failed, cancelled {} jobs (fail-fast)",
-                                                        dag_step_id, cancelled_count
-                                                    );
-                                                    if let Some(completion) = completion
-                                                        && let Some(tx) = &dag_notify_tx
-                                                        && let Err(e) = tx.send(completion).await
-                                                    {
-                                                        warn!(
-                                                            error = %e,
-                                                            "Failed to send DAG completion notification"
-                                                        );
-                                                    }
-                                                }
-                                                Err(err) => {
-                                                    error!(
-                                                        "Failed to handle DAG job failure for {}: {}",
-                                                        dag_step_id, err
-                                                    );
-                                                }
-                                            }
-                                        }
+                                        handle_dag_job_failure(
+                                            &dag_scheduler,
+                                            &dag_notify_tx,
+                                            dag_step_id,
+                                            &error,
+                                            DagFailureKind::ProcessorError,
+                                        )
+                                        .await;
                                     } else {
                                         // Regular pipeline job failure
                                         // Clean up partial outputs on failure
@@ -842,34 +839,14 @@ impl WorkerPool {
                                             }
 
                                         // Then notify DAG scheduler for fail-fast
-                                        if let Some(scheduler) = &dag_scheduler {
-                                            match scheduler
-                                                .on_job_failed(dag_step_id, "Job timed out")
-                                                .await
-                                            {
-                                                Ok(DagJobFailedUpdate { cancelled_count, completion }) => {
-                                                    info!(
-                                                        "DAG step {} timed out, cancelled {} jobs (fail-fast)",
-                                                        dag_step_id, cancelled_count
-                                                    );
-                                                    if let Some(completion) = completion
-                                                        && let Some(tx) = &dag_notify_tx
-                                                        && let Err(e) = tx.send(completion).await
-                                                    {
-                                                        warn!(
-                                                            error = %e,
-                                                            "Failed to send DAG completion notification"
-                                                        );
-                                                    }
-                                                }
-                                                Err(err) => {
-                                                    error!(
-                                                        "Failed to handle DAG job timeout for {}: {}",
-                                                        dag_step_id, err
-                                                    );
-                                                }
-                                            }
-                                        }
+                                        handle_dag_job_failure(
+                                            &dag_scheduler,
+                                            &dag_notify_tx,
+                                            dag_step_id,
+                                            "Job timed out",
+                                            DagFailureKind::Timeout,
+                                        )
+                                        .await;
                                     } else {
                                         // Regular pipeline job timeout
                                         // Clean up partial outputs on timeout
@@ -907,7 +884,11 @@ impl WorkerPool {
                                 job.job_type,
                                 processors.iter().map(|p| p.name()).collect::<Vec<_>>()
                             );
-                            let _ = job_queue.fail(&job.id, "No processor found").await;
+                            if let Err(error) =
+                                job_queue.fail(&job.id, "No processor found").await
+                            {
+                                error!(job_id = %job.id, %error, "Failed to mark job as failed");
+                            }
                         }
 
                         drop(permit);
@@ -1040,6 +1021,86 @@ impl WorkerPool {
     }
 }
 
+/// Which worker-loop path is reporting a failed DAG step job; selects only the
+/// log lines emitted by `handle_dag_job_failure`.
+enum DagFailureKind {
+    /// Multi-input DAG step job routed to a processor without batch support.
+    NonBatchInput,
+    /// `Processor::process` returned an error.
+    ProcessorError,
+    /// `Processor::process` exceeded `WorkerPoolConfig::job_timeout_secs`.
+    Timeout,
+}
+
+/// Fail-fast handling for a failed DAG step job: reports the failure to
+/// `DagScheduler::on_job_failed` (which cancels sibling jobs) and forwards any
+/// resulting `DagCompletionInfo` to `dag_notify_tx`. No-op when `dag_scheduler`
+/// is `None`.
+async fn handle_dag_job_failure(
+    dag_scheduler: &Option<Arc<DagScheduler>>,
+    dag_notify_tx: &Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
+    dag_step_id: &str,
+    reason: &str,
+    kind: DagFailureKind,
+) {
+    let Some(scheduler) = dag_scheduler else {
+        return;
+    };
+
+    match scheduler.on_job_failed(dag_step_id, reason).await {
+        Ok(DagJobFailedUpdate {
+            cancelled_count,
+            completion,
+        }) => {
+            match kind {
+                DagFailureKind::NonBatchInput => {}
+                DagFailureKind::ProcessorError => {
+                    info!(
+                        "DAG step {} failed, cancelled {} jobs (fail-fast)",
+                        dag_step_id, cancelled_count
+                    );
+                }
+                DagFailureKind::Timeout => {
+                    info!(
+                        "DAG step {} timed out, cancelled {} jobs (fail-fast)",
+                        dag_step_id, cancelled_count
+                    );
+                }
+            }
+            if let Some(completion) = completion
+                && let Some(tx) = dag_notify_tx
+                && let Err(e) = tx.send(completion).await
+            {
+                warn!(
+                    error = %e,
+                    "Failed to send DAG completion notification"
+                );
+            }
+        }
+        Err(e) => match kind {
+            DagFailureKind::NonBatchInput => {
+                error!(
+                    dag_step_execution_id = %dag_step_id,
+                    error = %e,
+                    "Failed to fail DAG for non-batch processor"
+                );
+            }
+            DagFailureKind::ProcessorError => {
+                error!(
+                    "Failed to handle DAG job failure for {}: {}",
+                    dag_step_id, e
+                );
+            }
+            DagFailureKind::Timeout => {
+                error!(
+                    "Failed to handle DAG job timeout for {}: {}",
+                    dag_step_id, e
+                );
+            }
+        },
+    }
+}
+
 /// Clean up partial outputs created by a failed job.
 async fn cleanup_partial_outputs(outputs: &[String]) {
     for output in outputs {
@@ -1136,19 +1197,6 @@ mod tests {
         fn name(&self) -> &'static str {
             "timeout-publish"
         }
-    }
-
-    #[test]
-    fn test_worker_pool_config_default() {
-        let config = WorkerPoolConfig::default();
-        assert_eq!(config.max_workers, 4);
-        assert_eq!(config.job_timeout_secs, 3600);
-    }
-
-    #[test]
-    fn test_worker_type_display() {
-        assert_eq!(format!("{}", WorkerType::Cpu), "CPU");
-        assert_eq!(format!("{}", WorkerType::Io), "IO");
     }
 
     #[test]

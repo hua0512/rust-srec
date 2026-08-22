@@ -5,7 +5,6 @@ use tars_codec::{error::TarsError, types::TarsValue};
 
 // StreamInfo struct from JavaScript x.StreamInfo
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct StreamInfo {
     pub s_cdn_type: String,                     // tag 0
     pub i_is_master: i32,                       // tag 1
@@ -211,7 +210,6 @@ impl TryFrom<TarsValue> for StreamInfo {
 
 // MultiStreamInfo struct from JavaScript x.MultiStreamInfo
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct MultiStreamInfo {
     pub s_display_name: String, // tag 0
     pub i_bit_rate: i32,        // tag 1
@@ -297,7 +295,6 @@ impl TryFrom<TarsValue> for MultiStreamInfo {
 
 // BeginLiveNotice struct from JavaScript BeginLiveNotice
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct BeginLiveNotice {
     pub l_presenter_uid: i64,                      // tag 0
     pub i_game_id: i32,                            // tag 1

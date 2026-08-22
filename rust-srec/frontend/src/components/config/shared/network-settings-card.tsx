@@ -12,7 +12,6 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
@@ -44,6 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { BilibiliQrLoginDialog } from '@/components/credentials/bilibili-qr-login-dialog';
 import type { CredentialSaveScope } from '@/server/functions/credentials';
+import { CONFIG_DESCRIPTION, ConfigFieldLabel } from './config-field';
 
 interface NetworkSettingsCardProps {
   form: UseFormReturn<any>;
@@ -209,9 +209,9 @@ export const NetworkSettingsCard = memo(
               render={({ field }) => (
                 <FormItem>
                   <div className="flex items-center justify-between">
-                    <FormLabel>
+                    <ConfigFieldLabel>
                       <Trans>Cookies</Trans>
-                    </FormLabel>
+                    </ConfigFieldLabel>
                     {field.value && (
                       <Badge
                         variant="outline"
@@ -229,7 +229,7 @@ export const NetworkSettingsCard = memo(
                       className="font-mono text-sm bg-background/50 focus:bg-background min-h-[120px] resize-y rounded-xl"
                     />
                   </FormControl>
-                  <FormDescription className="text-xs">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       HTTP cookies for authentication. These are automatically
                       updated when refreshed.

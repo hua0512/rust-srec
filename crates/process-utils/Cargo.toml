@@ -2,7 +2,11 @@
 name = "process-utils"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 tokio = { workspace = true, optional = true, features = ["process"] }

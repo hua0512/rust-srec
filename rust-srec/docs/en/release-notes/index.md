@@ -4,13 +4,19 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — rebuilt Mesio HLS recording engine (memory-bounded behavior, more reliable encrypted HLS, de-duplication that survives rotating auth tokens like Twitch signed URLs) and unified Mesio HLS/FLV download sessions, plus a migration that drops a few unused Mesio engine settings
+- [`unreleased`](./unreleased.md) — no changes staged yet for the next release
 
 ## Latest release
 
-- [`v0.3.2`](./v0.3.2.md) — pipeline & recording reliability: end-of-session and paired post-processing wait for the files they need, resumed recordings keep consistent segment numbering, **Delete Source** no longer removes a converted video, and a temporary CDN failure no longer flips a live streamer offline
+- [`v0.5.1`](./v0.5.1.md) — event hooks removed in favor of notification channels, Bigo streamers picked up as soon as they go live, and turning a streamer off now clears its error and retry backoff
 
 ## Archive
+
+- [`v0.5.0`](./v0.5.0.md) — rebuilt add/edit streamer pages with the site derived from the link, per-streamer platform options and Streamlink stream lookup, visible uploads that record where files went, working email notifications, per-channel notification language, plus a broad reliability pass over recording, monitoring, pipelines, the database and the web interface
+
+- [`v0.4.0`](./v0.4.0.md) — two new platforms (SOOP and Bigo Live), a rebuilt Mesio HLS recording engine, streamer bulk actions and list filters, automatic database cleanup, and a flash-free theme system, plus recorded-playback and pipeline-editor fixes
+
+- [`v0.3.2`](./v0.3.2.md) — pipeline & recording reliability: end-of-session and paired post-processing wait for the files they need, resumed recordings keep consistent segment numbering, **Delete Source** no longer removes a converted video, and a temporary CDN failure no longer flips a live streamer offline
 
 - [`v0.3.1`](./v0.3.1.md) — recording-session reliability follow-ups (fewer false endings on transient failures, cleaner schedule-end transitions, quieter out-of-schedule checks) plus GPU health monitoring on the System Health page and a faster, lighter `/api/health`
 
