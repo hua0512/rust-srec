@@ -20,6 +20,11 @@ tokio = { workspace = true, features = [
     "macros",
     "fs",
     "process",
+    # `danmaku::provider::DanmuStream` hands an `mpsc::Receiver` across the crate
+    # boundary, so `sync` is a direct requirement rather than one inherited from
+    # whichever workspace member happens to enable it.
+    "sync",
+    "time",
 ] }
 reqwest = { workspace = true, features = [
     "json",
@@ -40,6 +45,7 @@ regex = { workspace = true, default-features = false, features = [
     "std",
     "unicode-perl",
 ] }
+jieba-rs = { workspace = true }
 
  # Logging
 tracing = { workspace = true }

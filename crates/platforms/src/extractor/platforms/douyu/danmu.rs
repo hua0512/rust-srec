@@ -377,10 +377,12 @@ mod tests {
         let provider = create_douyu_danmu_provider();
         let room_id = "178432";
 
-        let mut connection = provider
+        let stream = provider
             .connect(room_id, ConnectionConfig::default())
             .await
             .expect("Failed to connect");
+        let mut connection = stream.connection;
+        let mut items = stream.items;
 
         // Receive messages
         let mut message_count = 0;
@@ -389,8 +391,8 @@ mod tests {
 
         let result = tokio::time::timeout(timeout, async {
             loop {
-                match provider.receive(&connection).await {
-                    Ok(Some(item)) => match item {
+                match items.recv().await {
+                    Some(item) => match item {
                         crate::danmaku::DanmuItem::Message(danmu) => {
                             println!(
                                 "[{}] {}: {}",
@@ -404,12 +406,8 @@ mod tests {
                             println!("[control] {:?}", control);
                         }
                     },
-                    Ok(None) => {
-                        // Provider uses a short poll timeout; yield.
-                        tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
-                    }
-                    Err(e) => {
-                        println!("Receive error: {e}");
+                    None => {
+                        println!("Stream closed by provider");
                         break;
                     }
                 }

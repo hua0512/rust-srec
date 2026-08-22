@@ -1,12 +1,16 @@
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+use crate::config::ConfigService;
+use crate::danmu::DanmuService;
+use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
 use crate::downloader::{DownloadManager, OutputRootGate};
 use crate::metrics::{ComponentHealth, HealthChecker, HealthProbe, SystemMetricsSnapshot};
 use crate::pipeline::PipelineManager;
@@ -257,6 +261,102 @@ impl HealthProbe for SchedulerProbe {
         } else {
             ComponentHealth::healthy("scheduler")
         }
+    }
+}
+
+/// Reports sessions that are still recording while their danmu collector is
+/// gone.
+///
+/// `DanmuService` removes a session's entry as soon as its runner exits, for any
+/// reason including an unrecoverable transport failure. A live download whose
+/// resolved config has `record_danmu` set but which has no collector therefore
+/// means chat capture ended early and the rest of the recording will have none —
+/// a condition that is otherwise only visible as a single `warn!` at the moment
+/// it happens.
+struct DanmuServiceProbe {
+    danmu_service: Arc<DanmuService>,
+    download_manager: Arc<DownloadManager>,
+    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+    danmu_link_down: Arc<DashMap<String, Instant>>,
+}
+
+impl DanmuServiceProbe {
+    /// Downloads younger than this are ignored: `run_live_download_pipeline`
+    /// starts the engine before `DanmuService::start_collection`, so a brand-new
+    /// session legitimately has a download and no collector for a moment.
+    const STARTUP_GRACE: chrono::Duration = chrono::Duration::seconds(60);
+
+    /// A link must stay down this long before it is reported, so an ordinary
+    /// reconnect between two provider cycles does not flap the health status.
+    const OUTAGE_GRACE: Duration = Duration::from_secs(120);
+}
+
+#[async_trait]
+impl HealthProbe for DanmuServiceProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("danmu_service")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(30)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        let now = chrono::Utc::now();
+        let mut stopped_early = Vec::new();
+
+        for download in self.download_manager.get_active_downloads() {
+            if download.session_id.is_empty()
+                || now - download.started_at < Self::STARTUP_GRACE
+                || self.danmu_service.is_collecting(&download.session_id)
+            {
+                continue;
+            }
+
+            // Reads through `ConfigCache`, so this stays cheap at probe cadence.
+            let expects_danmu = self
+                .config_service
+                .get_config_for_streamer(&download.streamer_id)
+                .await
+                .is_ok_and(|config| config.record_danmu);
+
+            if expects_danmu {
+                stopped_early.push(download.session_id);
+            }
+        }
+
+        // A collector that is present but not receiving is invisible to
+        // `is_collecting`, since the runner reconnects for the life of the session
+        // rather than exiting.
+        let mut link_down: Vec<String> = self
+            .danmu_link_down
+            .iter()
+            .filter(|entry| entry.value().elapsed() >= Self::OUTAGE_GRACE)
+            .map(|entry| format!("{} ({}s)", entry.key(), entry.value().elapsed().as_secs()))
+            .collect();
+        link_down.sort();
+
+        if stopped_early.is_empty() && link_down.is_empty() {
+            return ComponentHealth::healthy("danmu_service");
+        }
+
+        let mut reasons = Vec::new();
+        if !stopped_early.is_empty() {
+            reasons.push(format!(
+                "collection stopped while recording continues for {} session(s): {}",
+                stopped_early.len(),
+                stopped_early.join(", ")
+            ));
+        }
+        if !link_down.is_empty() {
+            reasons.push(format!(
+                "chat link down for {} session(s): {}",
+                link_down.len(),
+                link_down.join(", ")
+            ));
+        }
+
+        ComponentHealth::degraded("danmu_service", format!("Danmu {}", reasons.join("; ")))
     }
 }
 
@@ -677,9 +777,11 @@ impl ServiceContainer {
             }));
 
         self.health_checker
-            .register_probe(Arc::new(StaticHealthyProbe {
-                name: "danmu_service",
-                cadence: Duration::from_secs(5),
+            .register_probe(Arc::new(DanmuServiceProbe {
+                danmu_service: self.danmu_service.clone(),
+                download_manager: self.download_manager.clone(),
+                config_service: self.config_service.clone(),
+                danmu_link_down: self.danmu_link_down.clone(),
             }));
 
         self.health_checker.register_probe(Arc::new(SchedulerProbe {

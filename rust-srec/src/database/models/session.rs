@@ -340,6 +340,20 @@ pub struct DanmuStatisticsDbModel {
     pub total_danmus: i64,
     /// Approximate distinct senders (NULL on rows written before the column existed)
     pub unique_talkers: Option<i64>,
+    /// Messages that were not gifts or super chats
+    pub chat_count: Option<i64>,
+    /// Gift and super-chat messages
+    pub gift_count: Option<i64>,
+    /// Seconds between the first message and the end of collection
+    pub duration_secs: Option<i64>,
+    /// First message time, Unix epoch milliseconds
+    pub start_time: Option<i64>,
+    /// Collection end time, Unix epoch milliseconds; NULL while in progress
+    pub end_time: Option<i64>,
+    /// Width of one `danmu_rate_timeseries` bucket. Varies within a session as
+    /// the aggregator coarsens long timelines, so consumers must read it rather
+    /// than assume the configured value.
+    pub rate_bucket_secs: Option<i64>,
     /// JSON array of timestamp-and-count pairs
     pub danmu_rate_timeseries: Option<String>,
     /// JSON array of top 10 most active users
@@ -359,6 +373,12 @@ impl DanmuStatisticsDbModel {
             session_id: session_id.into(),
             total_danmus: 0,
             unique_talkers: None,
+            chat_count: None,
+            gift_count: None,
+            duration_secs: None,
+            start_time: None,
+            end_time: None,
+            rate_bucket_secs: None,
             danmu_rate_timeseries: Some("[]".to_string()),
             top_talkers: Some("[]".to_string()),
             top_gifters: Some("[]".to_string()),
@@ -374,6 +394,10 @@ pub struct TopTalkerEntry {
     pub user_id: String,
     pub username: String,
     pub message_count: i64,
+    /// Overestimate bound; the true count is at least `message_count - error`.
+    /// Absent on rows written before the field existed.
+    #[serde(default)]
+    pub error: i64,
 }
 
 /// Gift tally entry for danmu statistics (gift name -> total items).
@@ -388,6 +412,10 @@ pub struct GiftTallyEntry {
 pub struct WordFrequencyEntry {
     pub word: String,
     pub count: i64,
+    /// Overestimate bound; the true count is at least `count - error`.
+    /// Absent on rows written before the field existed.
+    #[serde(default)]
+    pub error: i64,
 }
 
 /// Danmu rate entry for timeseries.

@@ -466,7 +466,9 @@ mod tests {
         .await;
 
         assert!(connect_result.is_ok(), "Connection timed out");
-        let mut connection = connect_result.unwrap().expect("Failed to connect");
+        let stream = connect_result.unwrap().expect("Failed to connect");
+        let mut connection = stream.connection;
+        let mut items = stream.items;
 
         assert!(connection.is_connected, "Connection should be connected");
 
@@ -475,12 +477,8 @@ mod tests {
         let start = std::time::Instant::now();
 
         while start.elapsed() < Duration::from_secs(600) {
-            match timeout(Duration::from_millis(500), async {
-                provider.receive(&connection).await
-            })
-            .await
-            {
-                Ok(Ok(Some(item))) => match item {
+            match timeout(Duration::from_millis(500), items.recv()).await {
+                Ok(Some(item)) => match item {
                     crate::danmaku::DanmuItem::Message(msg) => {
                         println!("{}: {}", msg.username, msg.content);
                         message_count += 1;
@@ -489,20 +487,14 @@ mod tests {
                         println!("[control] {:?}", control);
                     }
                 },
-                Ok(Ok(None)) => {
-                    // No message, continue
-                }
-                Ok(Err(e)) => {
-                    println!("Error receiving: {}", e);
+                Ok(None) => {
+                    println!("Stream closed by provider");
                     break;
                 }
                 Err(_) => {
                     // Timeout, continue
                 }
             }
-
-            // Give the connection time to receive messages
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
         println!("Received {} danmu messages", message_count);

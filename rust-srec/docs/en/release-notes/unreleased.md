@@ -30,6 +30,42 @@
 
 ## Danmu
 
+- **Chat recording now survives network interruptions**
+
+  If the connection to a platform's chat server dropped and could not be re-established within a few minutes, chat recording used to stop for the rest of the stream — the video kept recording, but every later part had no chat file, and nothing said so. Chat now keeps reconnecting for as long as the recording lasts, and picks up again by itself when the connection comes back. Each part of the recording still gets its own chat file even if the connection is down while that part is recorded, and the statistics carry on from where they left off instead of restarting. A chat connection that stays down is reported on the system health page, so an outage is visible rather than silent.
+
+- **Post-processing no longer stalls when chat recording fails**
+
+  When chat recording ended unexpectedly, the session's post-processing steps — uploads, transcodes, anything configured to run after a recording finishes — were never started for that session. They now run as normal.
+
+- **The last messages of a stream are no longer dropped**
+
+  When a recording stopped, chat messages the platform had already delivered but that were still queued were discarded — up to a hundred of the stream's final messages, missing from both the statistics and the last chat file. They are now collected before the recording closes.
+
+- **Chat files are no longer left incomplete**
+
+  A chat recording that ended because of a connection failure left its file unterminated and unregistered, so it did not appear among the session's files and could not be used by the danmaku conversion step. The file is now closed properly and recorded like any other, and chat belonging to a recording part that gets discarded for being too small is now removed from the session's file list along with it.
+
+- **Danmu statistics are configurable per streamer**
+
+  How chat activity is summarised is no longer fixed. A new **Danmu Statistics** section in Global Config — and an override on every platform, template and streamer — sets how many chatters and words are ranked, how fine the activity timeline is, how many distinct chatters are tracked before counts become estimates, and extra words to ignore in the frequent-words chart. You can also turn the summary off entirely while still recording the chat files, which skips storing viewer names. See [Configuration](../getting-started/configuration.md#danmu-statistics).
+
+- **Frequent-word counts are no longer inflated**
+
+  The frequent-words chart could report counts far above the truth on busy streams — a word sent a handful of times could appear with a count in the thousands, and the lower half of the chart filled with unrelated words all showing near-identical figures. Counts are now accurate, and any entry that is still an estimate is marked with `≈`.
+
+- **Activity chart rates were six times too high**
+
+  The timeline, its peak and its average were labelled per minute but counted per ten-second bucket, so all three read about six times the real rate — more on long streams, where the chart's resolution is reduced automatically. They now show true per-minute rates. The average is also taken across the whole stream rather than only the moments with chat, and quiet stretches are drawn as gaps at zero instead of a straight line at the surrounding rate.
+
+- **Statistics survive a restart mid-recording**
+
+  If the app restarted while a stream was being recorded, its chat statistics started over from zero and the lower numbers replaced what was already saved. Counting now resumes where it left off.
+
+- **More detail on the session page**
+
+  The danmu panel now shows the average messages per minute and, for streams that received gifts, how the total splits between chat and gifts.
+
 - **Live danmu statistics while recording**
 
   Danmu statistics no longer wait for the stream to end: while a recording is running, a snapshot is saved about once a minute, so the session page's danmu panel (totals, activity timeline, top talkers, frequent words) fills in while the stream is still live. If the app crashes or the host reboots mid-recording, at most the last minute of statistics is lost instead of the whole session's.
@@ -40,15 +76,15 @@
 
 - **Expandable Top Talkers**
 
-  The Top Talkers card on the session page shows the six most active chatters by default and can now be expanded to the full ranking (up to 32 users are tracked per session).
+  The Top Talkers card on the session page shows the six most active chatters by default and can be expanded to the full ranking, which is scrollable. How many chatters are ranked is configurable and defaults to 100.
 
-- **Better word splitting for Chinese chat**
+- **Chinese and Japanese chat is now split into real words**
 
-  The frequent-words statistic now treats full-width punctuation (`,` `。` `!` `?` ...), symbols and emoji as word separators. Previously only spaces and ASCII punctuation split words, so a Chinese message without spaces was counted as one giant "word".
+  The frequent-words statistic used to split only on punctuation, symbols and emoji. Chinese and Japanese are written without spaces, so a message with no punctuation still ended up counted as one long "word" and the chart filled with whole sentences instead of words. Chat in those languages now goes through proper word segmentation, including common livestream vocabulary that general-purpose dictionaries miss, so `主播今天好厉害啊` counts `主播`, `今天` and `厉害`. Other languages are unaffected.
 
 - **Unique chatters metric**
 
-  The session danmu panel now shows how many distinct users chatted during the stream (a memory-bounded estimate, accurate to about 1–2%), alongside the total message count. Sessions recorded before this release show a dash.
+  The session danmu panel now shows how many distinct users chatted during the stream (a memory-bounded estimate, typically within about 2%), alongside the total message count. Sessions recorded before this release show a dash.
 
 - **Gift rankings**
 

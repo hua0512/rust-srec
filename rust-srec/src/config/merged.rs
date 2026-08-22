@@ -2,7 +2,7 @@
 
 use crate::credentials::extractor_platform_extras;
 use crate::database::models::job::DagPipelineDefinition;
-use crate::domain::{ProxyConfig, RetryPolicy};
+use crate::domain::{DanmuStatisticsConfig, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use platforms_parser::extractor::factory::ExtractorSelection;
 use platforms_parser::extractor::platform_configs::merge_platform_extras;
@@ -27,6 +27,8 @@ pub struct MergedConfig {
 
     // Danmu settings
     pub record_danmu: bool,
+    /// How this streamer's danmu statistics are aggregated.
+    pub danmu_statistics: DanmuStatisticsConfig,
 
     // Network settings
     pub proxy_config: ProxyConfig,
@@ -83,6 +85,7 @@ pub struct MergedConfigBuilder {
     max_download_duration_secs: Option<i64>,
     max_part_size_bytes: Option<i64>,
     record_danmu: Option<bool>,
+    danmu_statistics: Option<DanmuStatisticsConfig>,
     proxy_config: Option<ProxyConfig>,
     cookies: Option<String>,
     download_engine: Option<String>,
@@ -110,6 +113,7 @@ pub struct GlobalConfigLayer {
     pub max_download_duration_secs: i64,
     pub max_part_size_bytes: i64,
     pub record_danmu: bool,
+    pub danmu_statistics: Option<DanmuStatisticsConfig>,
     pub proxy_config: ProxyConfig,
     pub download_engine: String,
     pub extractor: Option<ExtractorSelection>,
@@ -129,6 +133,7 @@ pub struct PlatformConfigLayer {
     pub cookies: Option<String>,
     pub proxy_config: Option<ProxyConfig>,
     pub record_danmu: Option<bool>,
+    pub danmu_statistics: Option<DanmuStatisticsConfig>,
     pub platform_specific_config: Option<serde_json::Value>,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
@@ -157,6 +162,7 @@ pub struct TemplateConfigLayer {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub record_danmu: Option<bool>,
+    pub danmu_statistics: Option<DanmuStatisticsConfig>,
     pub proxy_config: Option<ProxyConfig>,
     pub cookies: Option<String>,
     pub download_engine: Option<String>,
@@ -183,6 +189,7 @@ impl MergedConfigBuilder {
             max_download_duration_secs,
             max_part_size_bytes,
             record_danmu,
+            danmu_statistics,
             proxy_config,
             download_engine,
             extractor,
@@ -208,6 +215,9 @@ impl MergedConfigBuilder {
         self.max_download_duration_secs = Some(max_download_duration_secs);
         self.max_part_size_bytes = Some(max_part_size_bytes);
         self.record_danmu = Some(record_danmu);
+        // Absent at the global layer means "no explicit base", which `build`
+        // resolves to `DanmuStatisticsConfig::default()`.
+        self.danmu_statistics = danmu_statistics;
         self.proxy_config = Some(proxy_config);
         self.download_engine = Some(download_engine);
         // NULL at the global layer means "no preference", leaving the default `Auto`.
@@ -232,6 +242,7 @@ impl MergedConfigBuilder {
             cookies,
             proxy_config,
             record_danmu,
+            danmu_statistics,
             platform_specific_config,
             output_folder,
             output_filename_template,
@@ -273,6 +284,11 @@ impl MergedConfigBuilder {
         }
         if let Some(danmu) = record_danmu {
             self.record_danmu = Some(danmu);
+        }
+        // Whole-object replacement, like the pipeline definitions: a layer either
+        // states the statistics settings or inherits them entirely.
+        if let Some(statistics) = danmu_statistics {
+            self.danmu_statistics = Some(statistics);
         }
 
         if let Some(pipe) = pipeline {
@@ -362,6 +378,7 @@ impl MergedConfigBuilder {
             max_download_duration_secs,
             max_part_size_bytes,
             record_danmu,
+            danmu_statistics,
             proxy_config,
             cookies,
             download_engine,
@@ -414,6 +431,10 @@ impl MergedConfigBuilder {
         if let Some(v) = record_danmu {
             debug!("Template override: record_danmu = {}", v);
             self.record_danmu = Some(v);
+        }
+        if let Some(statistics) = danmu_statistics {
+            debug!("Template override: danmu_statistics");
+            self.danmu_statistics = Some(statistics);
         }
         if let Some(v) = proxy_config {
             debug!("Template override: proxy_config");
@@ -516,6 +537,15 @@ impl MergedConfigBuilder {
             if let Some(v) = config.get("record_danmu").and_then(|v| v.as_bool()) {
                 debug!("Streamer config override: record_danmu = {}", v);
                 self.record_danmu = Some(v);
+            }
+            // A malformed value means "inherit", matching how every other nested
+            // key behaves here: a bad streamer blob must not fail a recording.
+            if let Some(value) = config.get("danmu_statistics")
+                && let Ok(statistics) =
+                    serde_json::from_value::<DanmuStatisticsConfig>(value.clone())
+            {
+                debug!("Streamer config override: danmu_statistics");
+                self.danmu_statistics = Some(statistics);
             }
             if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
                 debug!("Streamer config override: cookies");
@@ -669,6 +699,9 @@ impl MergedConfigBuilder {
         // No layer expressed a preference: dispatch on the URL regex registry.
         let extractor = self.extractor.unwrap_or_default();
         let record_danmu = self.record_danmu.unwrap_or(false);
+        // Clamped here rather than at each write boundary, so every path into the
+        // config — API, import, streamer blob — lands on workable values.
+        let danmu_statistics = self.danmu_statistics.unwrap_or_default().sanitized();
         let stream_selection = self.stream_selection.unwrap_or_default();
         let pipeline = self.pipeline;
 
@@ -690,6 +723,7 @@ impl MergedConfigBuilder {
             max_download_duration_secs: self.max_download_duration_secs.unwrap_or(0),
             max_part_size_bytes: self.max_part_size_bytes.unwrap_or(8589934592),
             record_danmu,
+            danmu_statistics,
             proxy_config: self.proxy_config.unwrap_or_default(),
             cookies: self.cookies,
             download_engine,
@@ -725,6 +759,7 @@ mod tests {
             max_download_duration_secs: 0,
             max_part_size_bytes: 8_589_934_592,
             record_danmu: false,
+            danmu_statistics: None,
             proxy_config: ProxyConfig::disabled(),
             download_engine: download_engine.to_string(),
             extractor: None,
@@ -858,6 +893,82 @@ mod tests {
         assert!(
             matches!(&dag.steps[1].step, PipelineStep::Inline { processor, .. } if processor == "execute")
         );
+    }
+
+    /// Each layer replaces the whole statistics object, and the streamer layer —
+    /// the most specific — wins. Also checks that a partial JSON override inherits
+    /// the defaults for fields it does not name.
+    #[test]
+    fn danmu_statistics_precedence_runs_streamer_last() {
+        let streamer_config = serde_json::json!({
+            "danmu_statistics": { "top_words": 25 }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                danmu_statistics: Some(DanmuStatisticsConfig {
+                    top_talkers: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                danmu_statistics: Some(DanmuStatisticsConfig {
+                    top_talkers: 20,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        assert_eq!(config.danmu_statistics.top_words, 25);
+        assert_eq!(
+            config.danmu_statistics.top_talkers,
+            DanmuStatisticsConfig::default().top_talkers,
+            "the streamer layer replaces the whole object, so the template's \
+             top_talkers is not inherited"
+        );
+    }
+
+    /// With no layer stating anything, the resolved config is the default rather
+    /// than zeros, and `build` clamps whatever it is handed.
+    #[test]
+    fn danmu_statistics_defaults_and_clamps() {
+        let unset = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .build();
+        assert_eq!(unset.danmu_statistics, DanmuStatisticsConfig::default());
+
+        let clamped = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                danmu_statistics: Some(DanmuStatisticsConfig {
+                    top_talkers: 100_000,
+                    rate_bucket_secs: 0,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .build();
+        assert!(clamped.danmu_statistics.top_talkers <= 500);
+        assert_eq!(clamped.danmu_statistics.rate_bucket_secs, 1);
+    }
+
+    /// A malformed streamer blob means "inherit", never a failed resolve.
+    #[test]
+    fn danmu_statistics_ignores_malformed_streamer_override() {
+        let streamer_config = serde_json::json!({
+            "danmu_statistics": "not an object"
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        assert_eq!(config.danmu_statistics, DanmuStatisticsConfig::default());
     }
 
     #[test]

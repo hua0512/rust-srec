@@ -215,6 +215,22 @@ impl XmlDanmuWriter {
     }
 }
 
+/// `finalize` is async and cannot run here, so a writer dropped with its file
+/// still open leaves the XML without its closing `</i>`. Callers are expected
+/// to finalize on every exit path (as `CollectionRunner::shutdown` does); this
+/// makes the omission loud instead of producing a silently truncated file.
+impl Drop for XmlDanmuWriter {
+    fn drop(&mut self) {
+        if self.file.is_some() {
+            tracing::warn!(
+                path = %self.path.display(),
+                messages = self.message_count,
+                "XmlDanmuWriter dropped without finalize; the file is missing its closing tag"
+            );
+        }
+    }
+}
+
 /// Convert a message type to Bilibili danmu type.
 ///
 /// Bilibili danmu types:

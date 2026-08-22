@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
+  DanmuStatisticsObjectSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
 } from './common';
@@ -66,6 +67,13 @@ export const TemplateSchema = z.object({
     .pipe(StreamSelectionConfigObjectSchema.nullable().optional())
     .nullable()
     .optional(),
+  danmu_statistics: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(DanmuStatisticsObjectSchema.nullable().optional())
+    .nullable()
+    .optional(),
+
   download_retry_policy: z
     .string()
     .transform((str) => JSON.parse(str))
@@ -141,6 +149,7 @@ export const CreateTemplateRequestSchema = z.object({
   engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
+  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),

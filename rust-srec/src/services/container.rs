@@ -325,6 +325,11 @@ pub struct ServiceContainer {
     runtime_coordinator: Arc<RuntimeCoordinator>,
     /// Danmu service.
     pub(crate) danmu_service: Arc<DanmuService>,
+    /// Required, lossless danmu-event path used for runtime coordination.
+    danmu_coordination_sender: crate::danmu::events::DanmuCoordinationSender,
+    /// Single required danmu-event consumer, moved into its supervised task.
+    danmu_coordination_receiver:
+        parking_lot::Mutex<Option<crate::danmu::events::DanmuCoordinationReceiver>>,
     /// Notification service.
     pub(crate) notification_service: Arc<NotificationService>,
     /// Notification repository.
@@ -370,6 +375,14 @@ pub struct ServiceContainer {
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
+    /// Sessions whose danmu link is currently down, and when it went down.
+    ///
+    /// `CollectionRunner` keeps reconnecting for the life of the session, so a
+    /// down link still counts as an active collection; without this the
+    /// `danmu_service` health probe would report a silent outage as healthy.
+    /// Maintained from `DanmuEvent::Reconnecting`/`Reconnected` and cleared when
+    /// collection stops.
+    danmu_link_down: Arc<DashMap<String, Instant>>,
 }
 
 /// Wire the streamer-check-history pipeline:
@@ -600,7 +613,9 @@ impl ServiceContainer {
         info!("Shutting down services (timeout: {:?})", timeout);
         let deadline = tokio::time::Instant::now() + timeout;
 
-        // Stop accepting new work and signal all background tasks first.
+        // Stop accepting new work and signal cancellation-aware background tasks.
+        // The required danmu coordinator intentionally stays alive until its
+        // producers stop and its shutdown barrier is acknowledged below.
         self.cancellation_token.cancel();
         self.stream_monitor.stop();
         self.download_manager.shutdown_queue();
@@ -611,6 +626,13 @@ impl ServiceContainer {
 
             info!("Stopping danmu service...");
             self.danmu_service.shutdown().await;
+            if self.danmu_coordination_receiver.lock().is_none() {
+                if let Err(error) = self.danmu_coordination_sender.shutdown().await {
+                    warn!(%error, "Failed to drain danmu coordination events during shutdown");
+                }
+            } else {
+                debug!("Danmu coordination handler was not started; skipping its shutdown barrier");
+            }
 
             info!("Stopping download manager...");
             let stopped_downloads = self.download_manager.stop_all().await;

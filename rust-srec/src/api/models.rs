@@ -290,6 +290,8 @@ pub struct GlobalConfigResponse {
     pub max_download_duration_secs: u64,
     pub max_part_size_bytes: u64,
     pub record_danmu: bool,
+    /// JSON `DanmuStatisticsConfig`; absent resolves to its defaults.
+    pub danmu_statistics: Option<String>,
     pub max_concurrent_downloads: u32,
     pub max_concurrent_uploads: u32,
     pub streamer_check_delay_ms: u64,
@@ -353,6 +355,7 @@ pub struct UpdateGlobalConfigRequest {
     pub default_download_engine: Option<serde_json::Value>,
     pub default_extractor: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
+    pub danmu_statistics: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<serde_json::Value>,
@@ -384,6 +387,8 @@ pub struct PlatformConfigResponse {
     pub fetch_delay_ms: Option<u64>,
     pub download_delay_ms: Option<u64>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub cookies: Option<String>,
     pub platform_specific_config: Option<String>,
     pub proxy_config: Option<String>,
@@ -423,6 +428,8 @@ pub struct CreateTemplateRequest {
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
     pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -450,6 +457,8 @@ pub struct UpdateTemplateRequest {
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
     pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -478,6 +487,8 @@ pub struct TemplateResponse {
     /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform value.
     pub extractor: Option<String>,
     pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
@@ -942,6 +953,21 @@ pub struct SessionDanmuStatisticsResponse {
     /// Approximate distinct senders (HyperLogLog estimate). `None` for
     /// statistics rows persisted before the metric existed.
     pub unique_talkers: Option<u64>,
+    /// Messages that were not gifts or super chats.
+    pub chat_count: Option<u64>,
+    /// Gift and super-chat messages.
+    pub gift_count: Option<u64>,
+    /// Seconds from the first message to the end of collection. Together with
+    /// `total_danmus` this gives an average rate over wall-clock time, which the
+    /// timeseries alone cannot provide because silent buckets are absent.
+    pub duration_secs: Option<u64>,
+    /// First message time.
+    pub start_time: Option<DateTime<Utc>>,
+    /// Collection end time; `None` while the session is still recording.
+    pub end_time: Option<DateTime<Utc>>,
+    /// Width of one `danmu_rate_timeseries` bucket. Long sessions are coarsened,
+    /// so this varies within a session and must be read rather than assumed.
+    pub rate_bucket_secs: Option<u64>,
     pub danmu_rate_timeseries: Vec<DanmuRatePoint>,
     pub top_talkers: Vec<DanmuTopTalker>,
     /// Top gift senders; `message_count` holds total gift items.
@@ -973,6 +999,10 @@ pub struct DanmuTopTalker {
     pub user_id: String,
     pub username: String,
     pub message_count: i64,
+    /// Overestimate bound; the true count is at least `message_count - error`.
+    /// Zero means exact, which is the case for every entry in a room with fewer
+    /// distinct senders than the tracking capacity.
+    pub error: i64,
 }
 
 /// Word frequency entry.
@@ -980,6 +1010,8 @@ pub struct DanmuTopTalker {
 pub struct DanmuWordFrequency {
     pub word: String,
     pub count: i64,
+    /// Overestimate bound; the true count is at least `count - error`.
+    pub error: i64,
 }
 
 /// Title change entry representing a stream title update.

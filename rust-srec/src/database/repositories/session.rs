@@ -101,12 +101,82 @@ pub trait SessionRepository: Send + Sync {
         }
         Ok(statistics)
     }
+    /// Message totals only, for callers that need a per-session count rather than
+    /// the full statistics.
+    ///
+    /// Exists because the aggregate JSON columns are large — the activity
+    /// timeseries alone is tens of kilobytes per row — and a session list that
+    /// only renders a count should not read them.
+    async fn get_danmu_counts_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<(String, i64)>> {
+        let statistics = self.get_danmu_statistics_for_sessions(session_ids).await?;
+        Ok(statistics
+            .into_iter()
+            .map(|stats| (stats.session_id, stats.total_danmus))
+            .collect())
+    }
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
     /// Insert or replace the statistics row for `stats.session_id`
     /// (`danmu_statistics.session_id` is UNIQUE; `stats.id` is only used when
     /// the row does not exist yet).
     async fn upsert_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
+
+    // Danmu aggregator checkpoints. Kept apart from the statistics accessors
+    // because the blob is large and only read when a collection starts.
+
+    /// Compressed `AggregatorState` for `session_id`, if a checkpoint exists.
+    async fn get_danmu_aggregator_state(&self, session_id: &str) -> Result<Option<Vec<u8>>> {
+        let _ = session_id;
+        Ok(None)
+    }
+    /// Store the latest checkpoint for `session_id`, replacing any previous one.
+    async fn upsert_danmu_aggregator_state(
+        &self,
+        session_id: &str,
+        version: i64,
+        state: &[u8],
+    ) -> Result<()> {
+        let _ = (session_id, version, state);
+        Ok(())
+    }
+    /// Discard the checkpoint for `session_id`.
+    async fn delete_danmu_aggregator_state(&self, session_id: &str) -> Result<()> {
+        let _ = session_id;
+        Ok(())
+    }
 }
+
+/// Danmu-statistics writes. Both statements list the same columns in the same
+/// order; `create_danmu_statistics` and `upsert_danmu_statistics` bind in that
+/// order, so the three must be edited together.
+const DANMU_STATISTICS_INSERT: &str = "INSERT INTO danmu_statistics (\
+     id, session_id, total_danmus, unique_talkers, chat_count, gift_count, \
+     duration_secs, start_time, end_time, rate_bucket_secs, \
+     danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency\
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+/// `id` is only used when the row does not exist yet; `session_id` is UNIQUE.
+const DANMU_STATISTICS_UPSERT: &str = "INSERT INTO danmu_statistics (\
+     id, session_id, total_danmus, unique_talkers, chat_count, gift_count, \
+     duration_secs, start_time, end_time, rate_bucket_secs, \
+     danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency\
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+     ON CONFLICT(session_id) DO UPDATE SET \
+     total_danmus = excluded.total_danmus, \
+     unique_talkers = excluded.unique_talkers, \
+     chat_count = excluded.chat_count, \
+     gift_count = excluded.gift_count, \
+     duration_secs = excluded.duration_secs, \
+     start_time = excluded.start_time, \
+     end_time = excluded.end_time, \
+     rate_bucket_secs = excluded.rate_bucket_secs, \
+     danmu_rate_timeseries = excluded.danmu_rate_timeseries, \
+     top_talkers = excluded.top_talkers, \
+     top_gifters = excluded.top_gifters, \
+     top_gifts = excluded.top_gifts, \
+     word_frequency = excluded.word_frequency";
 
 /// SQLx implementation of SessionRepository.
 pub struct SqlxSessionRepository {
@@ -491,23 +561,24 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_danmu_statistics", || async {
-            sqlx::query(
-                r#"
-                INSERT INTO danmu_statistics (id, session_id, total_danmus, unique_talkers, danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&stats.id)
-            .bind(&stats.session_id)
-            .bind(stats.total_danmus)
-            .bind(stats.unique_talkers)
-            .bind(&stats.danmu_rate_timeseries)
-            .bind(&stats.top_talkers)
-            .bind(&stats.top_gifters)
-            .bind(&stats.top_gifts)
-            .bind(&stats.word_frequency)
-            .execute(&self.write_pool)
-            .await?;
+            sqlx::query(DANMU_STATISTICS_INSERT)
+                .bind(&stats.id)
+                .bind(&stats.session_id)
+                .bind(stats.total_danmus)
+                .bind(stats.unique_talkers)
+                .bind(stats.chat_count)
+                .bind(stats.gift_count)
+                .bind(stats.duration_secs)
+                .bind(stats.start_time)
+                .bind(stats.end_time)
+                .bind(stats.rate_bucket_secs)
+                .bind(&stats.danmu_rate_timeseries)
+                .bind(&stats.top_talkers)
+                .bind(&stats.top_gifters)
+                .bind(&stats.top_gifts)
+                .bind(&stats.word_frequency)
+                .execute(&self.write_pool)
+                .await?;
             Ok(())
         })
         .await
@@ -515,31 +586,93 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn upsert_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
         retry_on_sqlite_busy("upsert_danmu_statistics", || async {
+            sqlx::query(DANMU_STATISTICS_UPSERT)
+                .bind(&stats.id)
+                .bind(&stats.session_id)
+                .bind(stats.total_danmus)
+                .bind(stats.unique_talkers)
+                .bind(stats.chat_count)
+                .bind(stats.gift_count)
+                .bind(stats.duration_secs)
+                .bind(stats.start_time)
+                .bind(stats.end_time)
+                .bind(stats.rate_bucket_secs)
+                .bind(&stats.danmu_rate_timeseries)
+                .bind(&stats.top_talkers)
+                .bind(&stats.top_gifters)
+                .bind(&stats.top_gifts)
+                .bind(&stats.word_frequency)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn get_danmu_counts_for_sessions(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<(String, i64)>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT session_id, total_danmus FROM danmu_statistics WHERE session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for session_id in session_ids {
+            separated.push_bind(session_id);
+        }
+        separated.push_unseparated(") ORDER BY session_id");
+
+        Ok(builder
+            .build_query_as::<(String, i64)>()
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
+    async fn get_danmu_aggregator_state(&self, session_id: &str) -> Result<Option<Vec<u8>>> {
+        let state: Option<(Vec<u8>,)> =
+            sqlx::query_as("SELECT state FROM danmu_aggregator_state WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(state.map(|(state,)| state))
+    }
+
+    async fn upsert_danmu_aggregator_state(
+        &self,
+        session_id: &str,
+        version: i64,
+        state: &[u8],
+    ) -> Result<()> {
+        retry_on_sqlite_busy("upsert_danmu_aggregator_state", || async {
             sqlx::query(
-                r#"
-                INSERT INTO danmu_statistics (id, session_id, total_danmus, unique_talkers, danmu_rate_timeseries, top_talkers, top_gifters, top_gifts, word_frequency)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
-                    total_danmus = excluded.total_danmus,
-                    unique_talkers = excluded.unique_talkers,
-                    danmu_rate_timeseries = excluded.danmu_rate_timeseries,
-                    top_talkers = excluded.top_talkers,
-                    top_gifters = excluded.top_gifters,
-                    top_gifts = excluded.top_gifts,
-                    word_frequency = excluded.word_frequency
-                "#,
+                "INSERT INTO danmu_aggregator_state (session_id, version, updated_at, state) \
+                 VALUES (?, ?, ?, ?) \
+                 ON CONFLICT(session_id) DO UPDATE SET \
+                 version = excluded.version, \
+                 updated_at = excluded.updated_at, \
+                 state = excluded.state",
             )
-            .bind(&stats.id)
-            .bind(&stats.session_id)
-            .bind(stats.total_danmus)
-            .bind(stats.unique_talkers)
-            .bind(&stats.danmu_rate_timeseries)
-            .bind(&stats.top_talkers)
-            .bind(&stats.top_gifters)
-            .bind(&stats.top_gifts)
-            .bind(&stats.word_frequency)
+            .bind(session_id)
+            .bind(version)
+            .bind(chrono::Utc::now().timestamp_millis())
+            .bind(state)
             .execute(&self.write_pool)
             .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn delete_danmu_aggregator_state(&self, session_id: &str) -> Result<()> {
+        retry_on_sqlite_busy("delete_danmu_aggregator_state", || async {
+            sqlx::query("DELETE FROM danmu_aggregator_state WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&self.write_pool)
+                .await?;
             Ok(())
         })
         .await

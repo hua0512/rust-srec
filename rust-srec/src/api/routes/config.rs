@@ -148,6 +148,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<Globa
         default_download_engine: config.default_download_engine,
         default_extractor: config.default_extractor,
         record_danmu: config.record_danmu,
+        danmu_statistics: config.danmu_statistics,
         job_history_retention_days,
         notification_event_log_retention_days,
         pipeline: config.pipeline,
@@ -173,6 +174,7 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
         fetch_delay_ms: config.fetch_delay_ms.map(|v| v as u64),
         download_delay_ms: config.download_delay_ms.map(|v| v as u64),
         record_danmu: config.record_danmu,
+        danmu_statistics: config.danmu_statistics,
         cookies: config.cookies,
         platform_specific_config: config.platform_specific_config,
         proxy_config: config.proxy_config,
@@ -301,6 +303,14 @@ pub async fn update_global_config(
         // `Option<String>` target: JSON `null` clears the override back to auto.
         default_extractor: |v: serde_json::Value| v.as_str().map(String::from),
         record_danmu: |v: serde_json::Value| v.as_bool(),
+        // JSON-TEXT column: the object is stored verbatim and parsed at resolve
+        // time, matching how the pipeline definitions are handled below. An object
+        // is re-serialized; a string is taken as already-serialized JSON.
+        danmu_statistics: |v: serde_json::Value| match v {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(text) => Some(text),
+            other => serde_json::to_string(&other).ok(),
+        },
         proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
         pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
@@ -449,6 +459,7 @@ pub async fn replace_platform_config(
         fetch_delay_ms: request.fetch_delay_ms.map(|v| v as i64),
         download_delay_ms: request.download_delay_ms.map(|v| v as i64),
         record_danmu: request.record_danmu,
+        danmu_statistics: request.danmu_statistics,
         cookies: request.cookies,
         platform_specific_config: request.platform_specific_config,
         proxy_config: request.proxy_config,
@@ -526,6 +537,7 @@ mod tests {
             max_download_duration_secs: 0,
             max_part_size_bytes: 8589934592,
             record_danmu: false,
+            danmu_statistics: None,
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,

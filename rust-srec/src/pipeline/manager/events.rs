@@ -561,4 +561,52 @@ where
             }
         }
     }
+
+    /// Drop the `DANMU_XML` media output for `path`, if one was persisted.
+    ///
+    /// The discard flow in `DownloadEventProcessor` suppresses an undersized
+    /// segment's danmu by consuming `discarded_segment_keys` when
+    /// `DanmuEvent::SegmentCompleted` arrives *after* the video's. The danmu event
+    /// can also arrive first — `CollectionRunner::shutdown` finalizes an open
+    /// segment when the stream closes or the transport fails, both of which happen
+    /// while the video segment is still recording — and in that order
+    /// `persist_danmu_segment` has already run. This removes the row so a
+    /// discarded segment leaves neither a file nor a record of one.
+    pub(crate) async fn remove_danmu_segment_output(&self, session_id: &str, path: &str) {
+        let Some(repo) = &self.session_repo else {
+            return;
+        };
+
+        let outputs = match repo.get_media_outputs_for_session(session_id).await {
+            Ok(outputs) => outputs,
+            Err(error) => {
+                tracing::warn!(
+                    session_id,
+                    path,
+                    %error,
+                    "Failed to look up danmu media output for a discarded segment"
+                );
+                return;
+            }
+        };
+
+        for output in outputs
+            .into_iter()
+            .filter(|output| output.file_type == MediaFileType::DanmuXml.as_str())
+            .filter(|output| output.file_path == path)
+        {
+            match repo.delete_media_output(&output.id).await {
+                Ok(()) => debug!(
+                    session_id,
+                    path, "Removed danmu media output for discarded segment"
+                ),
+                Err(error) => tracing::warn!(
+                    session_id,
+                    path,
+                    %error,
+                    "Failed to remove danmu media output for a discarded segment"
+                ),
+            }
+        }
+    }
 }

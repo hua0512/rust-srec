@@ -18,6 +18,20 @@ export const StreamSelectionConfigObjectSchema = z.object({
   max_bitrate: z.number().optional(),
 });
 
+// Every field is optional so a partial override round-trips: the backend fills
+// unspecified fields from its defaults.
+export const DanmuStatisticsObjectSchema = z.object({
+  enabled: z.boolean().optional(),
+  top_talkers: z.number().optional(),
+  top_words: z.number().optional(),
+  top_gifts: z.number().optional(),
+  talker_capacity: z.number().optional(),
+  word_capacity: z.number().optional(),
+  gift_capacity: z.number().optional(),
+  rate_bucket_secs: z.number().optional(),
+  extra_stop_words: z.array(z.string()).optional(),
+});
+
 export const DownloadRetryPolicyObjectSchema = z.object({
   max_retries: z.number(),
   initial_delay_ms: z.number(),

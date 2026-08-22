@@ -64,6 +64,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json", "fm
 async-trait = "0.1.89"
 rand = "0.10.0"
 regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
+# Chinese/Japanese word segmentation for danmu word-frequency statistics.
+# `default-dict` (on by default) embeds the dictionary so no runtime file is
+# needed; `tfidf`/`textrank` stay off since only segmentation is used.
+jieba-rs = "0.10.3"
 futures = "0.3.32"
 chrono = { version = "0.4.44", features = ["serde"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }

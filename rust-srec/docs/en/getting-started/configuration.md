@@ -31,10 +31,34 @@ Access via **Settings** → **Global Config**. The settings are organized into s
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `record_danmu` | Enable danmaku (live chat) recording | `false` |
+| `danmu_statistics` | How chat activity is summarised per session (see below) | defaults |
 | `auto_thumbnail` | Automatically generate video thumbnails | `true` |
 | `output_folder` | Base directory for recordings (supports templates) | `/app/output` |
 | `output_filename_template` | Filename pattern for recorded files | (see below) |
 | `output_file_format` | Default container format (mp4, flv, etc.) | `flv` |
+
+#### Danmu Statistics
+
+Every recording with `record_danmu` on gets a per-session chat summary: totals, an
+activity timeline, the most active chatters, the most frequent words and — where the
+platform reports them — gift rankings. `danmu_statistics` tunes that summary, and can
+be set globally or overridden per platform, per template and per streamer. Any field
+you leave out keeps its default, so `{"top_talkers": 200}` is a complete override.
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `enabled` | Compute the summary at all. Turning it off still records the chat files; it only stops the summary, which stores viewer names, from being computed and saved. | `true` |
+| `top_talkers` | Chatters and gift senders listed per session (1–500) | `100` |
+| `top_words` | Frequent words listed per session (1–500) | `50` |
+| `top_gifts` | Gift names listed per session (1–500) | `20` |
+| `rate_bucket_secs` | Activity-timeline granularity in seconds. Very long streams are automatically coarsened, so the session page reads the width back rather than assuming it. | `10` |
+| `talker_capacity` | Distinct chatters tracked (64–8192). While a stream has fewer than this, counts are exact; above it they become close estimates and the session page marks them with `≈`. | `2048` |
+| `word_capacity` | Distinct words tracked (64–8192), same trade-off | `2048` |
+| `gift_capacity` | Distinct gift names tracked | `256` |
+| `extra_stop_words` | Words to exclude from the frequent-words chart, on top of the built-in list | none |
+
+Out-of-range values are clamped rather than rejected, and a reported list is never
+longer than what is tracked.
 
 #### Resource Limits
 | Setting | Description | Default |

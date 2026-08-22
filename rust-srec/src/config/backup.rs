@@ -175,6 +175,9 @@ pub struct GlobalConfigExport {
     pub max_download_duration_secs: i64,
     pub max_part_size_bytes: i64,
     pub record_danmu: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub max_concurrent_downloads: i32,
     pub max_concurrent_uploads: i32,
     pub streamer_check_delay_ms: i64,
@@ -238,6 +241,9 @@ pub struct TemplateExport {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub record_danmu: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub platform_overrides: Option<serde_json::Value>,
     pub download_retry_policy: Option<serde_json::Value>,
     pub download_engine: Option<String>,
@@ -298,6 +304,9 @@ pub struct PlatformExport {
     pub platform_specific_config: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
     pub record_danmu: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
+    pub danmu_statistics: Option<String>,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,

@@ -69,6 +69,7 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         download_engine: model.download_engine.clone(),
         extractor: model.extractor.clone(),
         record_danmu: model.record_danmu,
+        danmu_statistics: model.danmu_statistics.clone(),
         platform_overrides: json::parse_optional_value_non_null(
             model.platform_overrides.as_deref(),
             JsonContext::TemplateField {
@@ -156,6 +157,7 @@ pub async fn create_template(
     template.download_engine = request.download_engine;
     template.extractor = request.extractor;
     template.record_danmu = request.record_danmu;
+    template.danmu_statistics = request.danmu_statistics;
 
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
@@ -326,6 +328,7 @@ pub async fn update_template(
     template.download_engine = request.download_engine;
     template.extractor = request.extractor;
     template.record_danmu = request.record_danmu;
+    template.danmu_statistics = request.danmu_statistics;
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
         Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
@@ -475,6 +478,7 @@ pub async fn clone_template(
     cloned.download_engine = existing.download_engine;
     cloned.extractor = existing.extractor;
     cloned.record_danmu = existing.record_danmu;
+    cloned.danmu_statistics = existing.danmu_statistics.clone();
     cloned.platform_overrides = existing.platform_overrides;
     cloned.engines_override = existing.engines_override;
     cloned.stream_selection_config = existing.stream_selection_config;
@@ -519,6 +523,7 @@ mod tests {
             download_engine: None,
             extractor: None,
             record_danmu: Some(true),
+            danmu_statistics: None,
             platform_overrides: None,
             engines_override: None,
             stream_selection_config: None,

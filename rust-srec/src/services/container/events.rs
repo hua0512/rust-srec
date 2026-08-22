@@ -12,6 +12,7 @@ use super::{
     should_record_recovery_from_progress,
 };
 use crate::config::{ConfigService, ConfigUpdateEvent};
+use crate::danmu::events::DanmuCoordinationReceiver;
 use crate::danmu::{DanmuEvent, DanmuService};
 use crate::database::repositories::{
     config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
@@ -224,9 +225,18 @@ impl ServiceContainer {
             });
     }
 
-    /// Set up danmu event subscriptions for segment coordination.
+    /// Set up required danmu event handling.
+    ///
+    /// All low-volume service events arrive directly over a lossless MPSC owned
+    /// by the composition root, preserving their order and ensuring state-changing
+    /// events never depend on observer speed. `DanmuService::subscribe` remains a
+    /// separate best-effort broadcast interface for optional observers.
     pub(super) fn setup_danmu_event_subscriptions(&self) {
-        let receiver = self.danmu_service.subscribe();
+        let Some(event_rx) = self.danmu_coordination_receiver.lock().take() else {
+            warn!("Required danmu coordination consumer is already running");
+            return;
+        };
+
         let handler = DanmuEventHandler {
             pipeline_manager: self.pipeline_manager.clone(),
             download_manager: self.download_manager.clone(),
@@ -234,13 +244,11 @@ impl ServiceContainer {
             config_service: self.config_service.clone(),
             stream_monitor: self.stream_monitor.clone(),
             discarded_segment_keys: self.discarded_segment_keys.clone(),
+            danmu_link_down: self.danmu_link_down.clone(),
         };
-        let cancellation_token = self.cancellation_token.clone();
 
-        self.task_supervisor.spawn(
-            "danmu event handler",
-            handler.run(receiver, cancellation_token),
-        );
+        self.task_supervisor
+            .spawn_critical("danmu event handler", handler.run(event_rx));
     }
 
     /// Set up notification service event subscriptions.
@@ -671,6 +679,26 @@ impl DownloadEventProcessor {
                     {
                         warn!("Failed to start danmu segment: {}", e);
                     }
+                } else {
+                    // Config is resolved only on the miss path: a session without
+                    // `record_danmu` legitimately has no collector, while one that
+                    // wants danmu has lost it and every later segment of this
+                    // recording will have no chat file. `DanmuService` removes the
+                    // handle as soon as its runner exits, so this is the only place
+                    // segment rotation can notice.
+                    let expects_danmu = self
+                        .config_service
+                        .get_config_for_streamer(streamer_id)
+                        .await
+                        .is_ok_and(|config| config.record_danmu);
+                    if expects_danmu {
+                        warn!(
+                            session_id = %session_id,
+                            streamer_id = %streamer_id,
+                            segment_index,
+                            "danmu: no active collector for new segment; chat will be missing from here on"
+                        );
+                    }
                 }
             }
             DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
@@ -754,6 +782,15 @@ impl DownloadEventProcessor {
                             e
                         ),
                     }
+                    // The `discarded_segment_keys` entry above only suppresses a
+                    // danmu segment whose `SegmentCompleted` is still to come. When
+                    // the danmu side finished first — the runner finalizes an open
+                    // segment on stream close or transport failure, both while the
+                    // video segment is still recording — its media output row
+                    // already exists and would outlive the file just deleted.
+                    self.pipeline_manager
+                        .remove_danmu_segment_output(session_id, &danmu_path.to_string_lossy())
+                        .await;
                     // Discarded segments never reach the pipeline manager.
                     return;
                 }
@@ -786,7 +823,7 @@ impl DownloadEventProcessor {
     }
 }
 
-/// Owned service handles for the `danmu event handler` task, cloned out of
+/// Owned service handles for the required `danmu event handler` task, cloned out of
 /// [`ServiceContainer`] by [`ServiceContainer::setup_danmu_event_subscriptions`]
 /// so the spawned future is `'static`.
 struct DanmuEventHandler {
@@ -796,36 +833,20 @@ struct DanmuEventHandler {
     config_service: Arc<RuntimeConfigService>,
     stream_monitor: Arc<RuntimeStreamMonitor>,
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
+    danmu_link_down: Arc<DashMap<String, Instant>>,
 }
 
 impl DanmuEventHandler {
-    async fn run(
-        self,
-        mut receiver: broadcast::Receiver<DanmuEvent>,
-        cancellation_token: CancellationToken,
-    ) {
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    debug!("Danmu event handler shutting down");
-                    break;
-                }
-                result = receiver.recv() => {
-                    match result {
-                        Ok(event) => self.handle_event(event).await,
-                        Err(error) => {
-                            if !broadcast_error_is_recoverable("danmu", error) {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+    async fn run(self, mut receiver: DanmuCoordinationReceiver) -> std::result::Result<(), String> {
+        while let Some(event) = receiver.recv().await.map_err(str::to_string)? {
+            self.handle_event(event).await;
         }
+        debug!("Danmu event handler drained and shut down");
+        Ok(())
     }
 
     async fn handle_event(&self, event: DanmuEvent) {
-        match &event {
+        match event {
             DanmuEvent::CollectionStarted {
                 session_id,
                 streamer_id,
@@ -835,19 +856,28 @@ impl DanmuEventHandler {
                     session_id, streamer_id
                 );
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::CollectionStarted {
+                        session_id,
+                        streamer_id,
+                    })
                     .await;
             }
             DanmuEvent::CollectionStopped {
                 session_id,
-                statistics,
+                total_count,
             } => {
                 info!(
                     "Danmu collection stopped for session {}: {} messages",
-                    session_id, statistics.total_count
+                    session_id, total_count
                 );
+                // Bounds `danmu_link_down`: a session that stops mid-outage never
+                // sends `Reconnected`, so this is the entry's only other removal.
+                self.danmu_link_down.remove(&session_id);
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::CollectionStopped {
+                        session_id,
+                        total_count,
+                    })
                     .await;
             }
             DanmuEvent::SegmentStarted {
@@ -864,10 +894,10 @@ impl DanmuEventHandler {
             }
             DanmuEvent::SegmentCompleted {
                 session_id,
+                streamer_id,
                 segment_id,
                 output_path,
                 message_count,
-                ..
             } => {
                 info!(
                     "Danmu segment completed: session={}, segment={}, messages={}",
@@ -878,7 +908,7 @@ impl DanmuEventHandler {
                     .remove(&(session_id.clone(), segment_id.clone()))
                     .is_some()
                 {
-                    match tokio::fs::remove_file(output_path).await {
+                    match tokio::fs::remove_file(&output_path).await {
                         Ok(()) => {
                             debug!("Deleted discarded danmu segment: {}", output_path.display())
                         }
@@ -897,7 +927,13 @@ impl DanmuEventHandler {
                 }
                 // Forward to pipeline manager for processing
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::SegmentCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_id,
+                        output_path,
+                        message_count,
+                    })
                     .await;
             }
             DanmuEvent::Control {
@@ -913,14 +949,19 @@ impl DanmuEventHandler {
 
                 // Forward to pipeline manager (e.g., title updates).
                 self.pipeline_manager
-                    .handle_danmu_event(event.clone())
+                    .handle_danmu_event(DanmuEvent::Control {
+                        session_id: session_id.clone(),
+                        streamer_id: streamer_id.clone(),
+                        platform: platform.clone(),
+                        control: control.clone(),
+                    })
                     .await;
 
                 if matches!(
                     control,
                     crate::danmu::DanmuControlEvent::StreamClosed { .. }
                 ) {
-                    self.handle_stream_closed(session_id, streamer_id, platform)
+                    self.handle_stream_closed(&session_id, &streamer_id, &platform)
                         .await;
                 }
             }
@@ -928,16 +969,30 @@ impl DanmuEventHandler {
                 session_id,
                 attempt,
             } => {
+                // This shares the required queue with CollectionStopped so a
+                // delayed reconnect cannot recreate health state for a session
+                // after its terminal cleanup.
+                self.danmu_link_down
+                    .entry(session_id.clone())
+                    .or_insert_with(Instant::now);
                 warn!(
                     "Danmu reconnecting for session {}: attempt {}",
                     session_id, attempt
                 );
             }
-            DanmuEvent::ReconnectFailed { session_id, error } => {
-                warn!(
-                    "Danmu reconnect failed for session {}: {}",
-                    session_id, error
+            DanmuEvent::Reconnected {
+                session_id,
+                attempts,
+                downtime_secs,
+            } => {
+                self.danmu_link_down.remove(&session_id);
+                info!(
+                    "Danmu reconnected for session {} after {} attempt(s), {}s down",
+                    session_id, attempts, downtime_secs
                 );
+            }
+            DanmuEvent::ReconnectFailed { session_id, error } => {
+                warn!("Danmu link down for session {}: {}", session_id, error);
             }
             DanmuEvent::Error { session_id, error } => {
                 warn!("Danmu error for session {}: {}", session_id, error);

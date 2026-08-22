@@ -792,10 +792,12 @@ mod tests {
         println!("connecting danmu room_id={room_id}");
 
         let provider = create_bigo_danmu_provider();
-        let mut connection = provider
+        let stream = provider
             .connect(&room_id, ConnectionConfig::default())
             .await
             .expect("danmu connect failed");
+        let mut connection = stream.connection;
+        let mut items = stream.items;
 
         let mut message_count = 0u32;
         let mut control_count = 0u32;
@@ -803,8 +805,8 @@ mod tests {
 
         let result = tokio::time::timeout(timeout, async {
             loop {
-                match provider.receive(&connection).await {
-                    Ok(Some(item)) => match item {
+                match items.recv().await {
+                    Some(item) => match item {
                         crate::danmaku::DanmuItem::Message(danmu) => {
                             println!(
                                 "[{}] {}: {}",
@@ -819,11 +821,8 @@ mod tests {
                             control_count += 1;
                         }
                     },
-                    Ok(None) => {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                    }
-                    Err(e) => {
-                        println!("receive error: {e}");
+                    None => {
+                        println!("stream closed by provider");
                         break;
                     }
                 }

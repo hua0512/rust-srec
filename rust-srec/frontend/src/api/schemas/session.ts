@@ -100,11 +100,15 @@ export const DanmuTopTalkerSchema = z.object({
   user_id: z.string(),
   username: z.string(),
   message_count: z.number(),
+  // Overestimate bound; the true count is at least message_count - error.
+  // Zero means exact. Absent on statistics stored before the field existed.
+  error: z.number().optional().default(0),
 });
 
 export const DanmuWordFrequencySchema = z.object({
   word: z.string(),
   count: z.number(),
+  error: z.number().optional().default(0),
 });
 
 export const DanmuGiftTallySchema = z.object({
@@ -117,6 +121,14 @@ export const SessionDanmuStatisticsSchema = z.object({
   total_danmus: z.number(),
   // Null on statistics rows persisted before the metric existed.
   unique_talkers: z.number().nullable().optional(),
+  chat_count: z.number().nullable().optional(),
+  gift_count: z.number().nullable().optional(),
+  duration_secs: z.number().nullable().optional(),
+  start_time: z.string().nullable().optional(),
+  end_time: z.string().nullable().optional(),
+  // Width of one timeline bucket. The backend halves the resolution of long
+  // sessions, so this varies and must not be assumed to be a minute.
+  rate_bucket_secs: z.number().nullable().optional(),
   danmu_rate_timeseries: z.array(DanmuRatePointSchema),
   top_talkers: z.array(DanmuTopTalkerSchema),
   top_gifters: z.array(DanmuTopTalkerSchema).optional().default([]),
