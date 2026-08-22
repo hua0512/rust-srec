@@ -1,6 +1,6 @@
 use base64::Engine as _;
 use p256::ecdsa::SigningKey;
-use p256::elliptic_curve::rand_core::OsRng;
+use p256::elliptic_curve::Generate;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -11,12 +11,10 @@ fn main() -> anyhow::Result<()> {
 
     let json = args.iter().any(|a| a == "--json");
 
-    let signing_key = SigningKey::random(&mut OsRng);
+    let signing_key = SigningKey::generate_from_rng(&mut rand::rng());
     let private_key_raw = signing_key.to_bytes();
-    let public_key_raw = signing_key
-        .verifying_key()
-        .to_encoded_point(false)
-        .to_bytes();
+    // VAPID keys are exchanged in the uncompressed SEC1 form, so pass compress = false.
+    let public_key_raw = signing_key.verifying_key().to_sec1_point(false).to_bytes();
 
     let public_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public_key_raw);
     let private_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(private_key_raw);
