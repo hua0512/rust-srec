@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import {
   FormControl,
   FormDescription,
@@ -14,7 +14,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { ChartColumn } from 'lucide-react';
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import {
   CONFIG_DESCRIPTION,
   CONFIG_INPUT,
@@ -24,6 +24,87 @@ import {
 interface DanmuStatisticsCardProps {
   form: UseFormReturn<any>;
   basePath?: string;
+}
+
+/** One word per line, trimmed, blanks dropped. */
+function toWords(text: string): string[] {
+  return text
+    .split('\n')
+    .map((word) => word.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Editor for the ignored-words list.
+ *
+ * The value is stored as a word array but edited as text, and mid-edit those
+ * shapes disagree: a trailing newline, a blank line, and leading spaces are all
+ * normal states while typing that normalize away. So the text is held here and
+ * only converted on the way into the form. Deriving the textarea's value back
+ * from the array instead would erase the newline that starts the next entry the
+ * moment it was typed, making a second word impossible to enter.
+ *
+ * Trimming is left to the backend's `sanitized()`, which does it on save.
+ */
+function IgnoredWordsField({
+  form,
+  name,
+}: {
+  form: UseFormReturn<any>;
+  name: string;
+}) {
+  const { i18n } = useLingui();
+  const words = useWatch({ control: form.control, name }) as
+    | string[]
+    | undefined;
+  const [draft, setDraft] = useState(() => (words ?? []).join('\n'));
+
+  useEffect(() => {
+    // Adopt the form value only when it changed from outside this field —
+    // loading a config, or a form reset. An edit of our own already produced
+    // this array, and re-deriving from it would discard the draft's whitespace.
+    const fromForm = (words ?? []).join('\n');
+    if (fromForm !== toWords(draft).join('\n')) {
+      setDraft(fromForm);
+    }
+  }, [words, draft]);
+
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="space-y-2">
+          <ConfigFieldLabel>
+            <Trans>Ignored words</Trans>
+          </ConfigFieldLabel>
+          <FormControl>
+            <Textarea
+              rows={3}
+              placeholder={i18n._(msg`One word per line`)}
+              value={draft}
+              onChange={(event) => {
+                const text = event.target.value;
+                setDraft(text);
+                const next = toWords(text);
+                // Undefined rather than an empty array: an absent field means
+                // this layer inherits, which is what clearing the box should do.
+                field.onChange(next.length > 0 ? next : undefined);
+              }}
+              onBlur={field.onBlur}
+            />
+          </FormControl>
+          <FormDescription className={CONFIG_DESCRIPTION}>
+            <Trans>
+              Excluded from the frequent-words chart, on top of the built-in
+              list. One per line.
+            </Trans>
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
 }
 
 /**
@@ -36,7 +117,6 @@ interface DanmuStatisticsCardProps {
  */
 export const DanmuStatisticsCard = memo(
   ({ form, basePath }: DanmuStatisticsCardProps) => {
-    const { i18n } = useLingui();
     const path = (field: string) =>
       basePath
         ? `${basePath}.danmu_statistics.${field}`
@@ -159,40 +239,7 @@ export const DanmuStatisticsCard = memo(
             )}
           </div>
 
-          <FormField
-            control={form.control}
-            name={path('extra_stop_words')}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel>
-                  <Trans>Ignored words</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Textarea
-                    rows={3}
-                    placeholder={i18n._(msg`One word per line`)}
-                    value={
-                      Array.isArray(field.value) ? field.value.join('\n') : ''
-                    }
-                    onChange={(event) => {
-                      const words = event.target.value
-                        .split('\n')
-                        .map((word) => word.trim())
-                        .filter(Boolean);
-                      field.onChange(words.length > 0 ? words : undefined);
-                    }}
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    Excluded from the frequent-words chart, on top of the
-                    built-in list. One per line.
-                  </Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <IgnoredWordsField form={form} name={path('extra_stop_words')} />
         </CardContent>
       </Card>
     );

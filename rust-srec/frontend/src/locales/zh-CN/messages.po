@@ -314,7 +314,7 @@ msgstr "正在录制"
 msgid "Active Recordings"
 msgstr "正在录制"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:144
+#: src/components/config/shared/danmu-statistics-card.tsx:224
 msgid "Activity resolution (seconds)"
 msgstr "活跃度精度（秒）"
 
@@ -764,7 +764,7 @@ msgstr "自动"
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:329
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:331
 msgid "Auto Layout"
 msgstr "自动布局"
 
@@ -1248,7 +1248,7 @@ msgstr "个渠道"
 msgid "Channels"
 msgstr "声道"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:112
+#: src/components/config/shared/danmu-statistics-card.tsx:192
 msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 msgstr "关闭后仍会录制弹幕文件，只是不再计算和保存包含观众昵称的场次统计摘要。"
 
@@ -1257,7 +1257,7 @@ msgstr "关闭后仍会录制弹幕文件，只是不再计算和保存包含观
 msgid "Chat ID"
 msgstr "聊天 ID"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:153
+#: src/components/config/shared/danmu-statistics-card.tsx:233
 msgid "Chatters tracked"
 msgstr "跟踪发言人数"
 
@@ -1392,7 +1392,7 @@ msgstr "最接近目标码率"
 msgid "Collapsible"
 msgstr "折叠方式"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:109
+#: src/components/config/shared/danmu-statistics-card.tsx:189
 msgid "Collect statistics"
 msgstr "收集统计"
 
@@ -1773,7 +1773,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "Count"
 msgstr "次数"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:154
+#: src/components/config/shared/danmu-statistics-card.tsx:234
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "当一场直播的不同发言人数少于此值时，计数保持精确。范围 64–8192。"
 
@@ -2115,7 +2115,7 @@ msgstr "弹幕控制"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:91
+#: src/components/config/shared/danmu-statistics-card.tsx:171
 #: src/components/sessions/danmu-stats-panel.tsx:171
 #: src/components/sessions/overview-tab.tsx:242
 msgid "Danmu Statistics"
@@ -2617,7 +2617,7 @@ msgstr "正在下载 {0}"
 msgid "Downloading..."
 msgstr "下载中..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:342
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:344
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
@@ -3051,7 +3051,7 @@ msgstr "排除模式"
 msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:187
+#: src/components/config/shared/danmu-statistics-card.tsx:98
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "在内置列表之外，额外从高频词图表中排除的词。每行一个。"
 
@@ -3765,7 +3765,7 @@ msgstr "格式"
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:138
+#: src/components/config/shared/danmu-statistics-card.tsx:218
 msgid "Frequent words to keep"
 msgstr "保留高频词数量"
 
@@ -4109,7 +4109,7 @@ msgstr "小时 (00-23)"
 msgid "Hours"
 msgstr "小时"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:94
+#: src/components/config/shared/danmu-statistics-card.tsx:174
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
 
@@ -4125,11 +4125,11 @@ msgstr "流水线步骤在被取消前允许运行的时长。这些值在工作
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "解密/处理后的分段在缓存中保留的时间。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:133
+#: src/components/config/shared/danmu-statistics-card.tsx:213
 msgid "How many appear in the ranking. 1–500."
 msgstr "排行榜中显示的数量。范围 1–500。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:139
+#: src/components/config/shared/danmu-statistics-card.tsx:219
 msgid "How many appear in the word chart. 1–500."
 msgstr "词频图表中显示的数量。范围 1–500。"
 
@@ -4269,7 +4269,7 @@ msgstr "忽略高于此比特率的流。"
 msgid "Ignore streams below this bitrate."
 msgstr "忽略低于此比特率的流。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:168
+#: src/components/config/shared/danmu-statistics-card.tsx:79
 msgid "Ignored words"
 msgstr "忽略的词"
 
@@ -5773,7 +5773,7 @@ msgstr "偏移一致性检查"
 msgid "OK"
 msgstr "正常"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:173
+#: src/components/config/shared/danmu-statistics-card.tsx:84
 msgid "One word per line"
 msgstr "每行一个词"
 
@@ -8543,7 +8543,7 @@ msgstr "按时间段调度"
 msgid "Timeline"
 msgstr "时间线"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:145
+#: src/components/config/shared/danmu-statistics-card.tsx:225
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
@@ -8612,7 +8612,7 @@ msgstr "令牌"
 msgid "Tool Location"
 msgstr "工具位置"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:132
+#: src/components/config/shared/danmu-statistics-card.tsx:212
 msgid "Top chatters to keep"
 msgstr "保留活跃发言人数量"
 

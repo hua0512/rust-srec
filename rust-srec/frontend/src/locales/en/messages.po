@@ -314,7 +314,7 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:144
+#: src/components/config/shared/danmu-statistics-card.tsx:224
 msgid "Activity resolution (seconds)"
 msgstr "Activity resolution (seconds)"
 
@@ -764,7 +764,7 @@ msgstr "Auto"
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:329
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:331
 msgid "Auto Layout"
 msgstr "Auto Layout"
 
@@ -1248,7 +1248,7 @@ msgstr "channels"
 msgid "Channels"
 msgstr "Channels"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:112
+#: src/components/config/shared/danmu-statistics-card.tsx:192
 msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 msgstr "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 
@@ -1257,7 +1257,7 @@ msgstr "Chat files are still recorded when this is off; only the per-session sum
 msgid "Chat ID"
 msgstr "Chat ID"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:153
+#: src/components/config/shared/danmu-statistics-card.tsx:233
 msgid "Chatters tracked"
 msgstr "Chatters tracked"
 
@@ -1392,7 +1392,7 @@ msgstr "Closest to bitrate"
 msgid "Collapsible"
 msgstr "Collapsible"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:109
+#: src/components/config/shared/danmu-statistics-card.tsx:189
 msgid "Collect statistics"
 msgstr "Collect statistics"
 
@@ -1773,7 +1773,7 @@ msgstr "Could not connect to the server. Please check your connection."
 msgid "Count"
 msgstr "Count"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:154
+#: src/components/config/shared/danmu-statistics-card.tsx:234
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 
@@ -2115,7 +2115,7 @@ msgstr "Danmu Control"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:91
+#: src/components/config/shared/danmu-statistics-card.tsx:171
 #: src/components/sessions/danmu-stats-panel.tsx:171
 #: src/components/sessions/overview-tab.tsx:242
 msgid "Danmu Statistics"
@@ -2617,7 +2617,7 @@ msgstr "Downloading {0}"
 msgid "Downloading..."
 msgstr "Downloading..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:342
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:344
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
 
@@ -3051,7 +3051,7 @@ msgstr "Exclude Patterns"
 msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:187
+#: src/components/config/shared/danmu-statistics-card.tsx:98
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 
@@ -3765,7 +3765,7 @@ msgstr "Format"
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:138
+#: src/components/config/shared/danmu-statistics-card.tsx:218
 msgid "Frequent words to keep"
 msgstr "Frequent words to keep"
 
@@ -4109,7 +4109,7 @@ msgstr "Hour (00-23)"
 msgid "Hours"
 msgstr "Hours"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:94
+#: src/components/config/shared/danmu-statistics-card.tsx:174
 msgid "How chat activity is summarised on the session page."
 msgstr "How chat activity is summarised on the session page."
 
@@ -4125,11 +4125,11 @@ msgstr "How long a pipeline step may run before it is cancelled. These are read 
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "How long to keep decrypted/processed segments in cache."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:133
+#: src/components/config/shared/danmu-statistics-card.tsx:213
 msgid "How many appear in the ranking. 1–500."
 msgstr "How many appear in the ranking. 1–500."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:139
+#: src/components/config/shared/danmu-statistics-card.tsx:219
 msgid "How many appear in the word chart. 1–500."
 msgstr "How many appear in the word chart. 1–500."
 
@@ -4269,7 +4269,7 @@ msgstr "Ignore streams above this bitrate."
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:168
+#: src/components/config/shared/danmu-statistics-card.tsx:79
 msgid "Ignored words"
 msgstr "Ignored words"
 
@@ -5773,7 +5773,7 @@ msgstr "Offset Consistency Check"
 msgid "OK"
 msgstr "OK"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:173
+#: src/components/config/shared/danmu-statistics-card.tsx:84
 msgid "One word per line"
 msgstr "One word per line"
 
@@ -8543,7 +8543,7 @@ msgstr "time-of-day timetable"
 msgid "Timeline"
 msgstr "Timeline"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:145
+#: src/components/config/shared/danmu-statistics-card.tsx:225
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "Timeline granularity. Very long streams are automatically coarsened past a point."
 
@@ -8612,7 +8612,7 @@ msgstr "Token"
 msgid "Tool Location"
 msgstr "Tool Location"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:132
+#: src/components/config/shared/danmu-statistics-card.tsx:212
 msgid "Top chatters to keep"
 msgstr "Top chatters to keep"
 
