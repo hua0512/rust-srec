@@ -125,7 +125,7 @@ export function removeEmpty(obj: any): any {
     return Object.fromEntries(
       Object.entries(obj)
         .map(([k, v]) => [k, removeEmpty(v)])
-        .filter(([_, v]) => v !== null && v !== undefined),
+        .filter(([, v]) => v !== null && v !== undefined),
     );
   }
   return obj;
