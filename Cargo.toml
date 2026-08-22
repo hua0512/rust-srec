@@ -91,7 +91,9 @@ schemars = "1.1"
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 lettre = { version = "0.11.22", default-features = false, features = ["aws-lc-rs", "builder", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
 mimalloc = "0.1.50"
-argon2 = "0.5"
+# "std" enables password-hash's rand_core/getrandom, which auth_service::hash_password
+# needs for `SaltString::generate(&mut OsRng)`.
+argon2 = { version = "0.5", features = ["std"] }
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 tar = "0.4"
 chrono-tz = "0.10"

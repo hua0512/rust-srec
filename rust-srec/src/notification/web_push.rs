@@ -12,8 +12,9 @@ use hkdf::Hkdf;
 use p256::ecdh::EphemeralSecret;
 use p256::ecdsa::SigningKey;
 use p256::ecdsa::signature::Signer;
-use p256::elliptic_curve::rand_core::{OsRng, RngCore};
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::Generate;
+use p256::elliptic_curve::sec1::ToSec1Point;
+use rand::Rng;
 use serde::Serialize;
 use sha2::Sha256;
 use std::time::Duration;
@@ -622,15 +623,15 @@ fn encrypt_aes128gcm(
 
     // Generate salt + local keypair.
     let mut salt = [0u8; SALT_LEN];
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut salt);
 
     let remote_pub = p256::PublicKey::from_sec1_bytes(remote_public_key_raw)
         .map_err(|_| Error::Other("Invalid remote public key".to_string()))?;
 
-    let local_secret = EphemeralSecret::random(&mut rng);
+    let local_secret = EphemeralSecret::generate_from_rng(&mut rng);
     let local_pub = p256::PublicKey::from(&local_secret);
-    let local_pub_raw = local_pub.to_encoded_point(false);
+    let local_pub_raw = local_pub.to_sec1_point(false);
     let local_pub_raw = local_pub_raw.as_bytes();
     let local_pub_raw: [u8; PUBLIC_KEY_LEN] = local_pub_raw
         .try_into()
