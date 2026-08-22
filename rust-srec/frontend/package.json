@@ -107,5 +107,8 @@
     "vite-plugin-oxlint": "^2.1.2",
     "vitest": "^4.1.11"
   },
+  "engines": {
+    "node": ">=26"
+  },
   "packageManager": "pnpm@11.11.0"
 }

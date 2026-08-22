@@ -2,6 +2,9 @@
     "name": "rust-srec-docs",
     "type": "module",
     "packageManager": "pnpm@11.11.0",
+    "engines": {
+        "node": ">=26"
+    },
     "scripts": {
         "docs:dev": "vitepress dev",
         "docs:build": "vitepress build",

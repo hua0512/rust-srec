@@ -112,6 +112,10 @@
 
   The `install.sh` bootstrap script now automatically detects the system locale (or respects `SREC_LANG`) and redirects to the English or Chinese interactive installer accordingly. The script verifies downloaded contents before execution to avoid running captive-portal error pages, and secret generation fails closed if secure random generation fails.
 
+- **Building from source now requires Node.js 26**
+
+  The web interface and the documentation site are now built with Node.js 26. If you build rust-srec from source, update Node before running the frontend — the repository now ships an `.nvmrc`, so version managers pick the right one for you. Docker and pre-built binary installations are unaffected.
+
 ## Desktop
 
 - **Fixed SQLite lock on first launch**

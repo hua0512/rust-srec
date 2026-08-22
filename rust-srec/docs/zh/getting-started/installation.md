@@ -26,7 +26,7 @@ Docker 已打包后端、前端和所需运行时依赖。请先按 [Docker 部�
 
 - Stable 渠道的 Rust 1.95 或更高版本。这是工作区 `Cargo.toml` 中声明的 `rust-version`，版本低于它 Cargo 会直接拒绝构建。
 - Git、CMake 3.12 或更高版本，以及 C/C++ 编译器。
-- 运行前端时需要 Node.js 24，以及 `rust-srec/frontend/package.json` 声明的 pnpm 版本。
+- 运行前端时需要 Node.js 26，以及 `rust-srec/frontend/package.json` 声明的 pnpm 版本。
 - 至少 2 GB 空闲磁盘空间用于依赖和构建产物。
 
 按操作系统安装原生构建工具：
