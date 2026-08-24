@@ -25,6 +25,11 @@ use crate::database::models::engine::StreamlinkEngineConfig;
 
 const PROCESS_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
 const TASK_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Grace given to streamlink to exit on its own once FFmpeg has already exited
+/// with a zero status. Longer than `PROCESS_CLEANUP_TIMEOUT`, which only reaps
+/// an already-killed child, because this waits out an ordinary streamlink
+/// shutdown; it only delays settlement when streamlink outlives FFmpeg.
+const STREAMLINK_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn build_http_cookie_args(cookie_string: &str) -> Vec<String> {
     // Streamlink expects repeated `--http-cookie name=value` arguments.
@@ -258,6 +263,79 @@ impl StreamlinkPipelineExit {
     }
 }
 
+/// How the streamlink process settled once FFmpeg had already exited with a
+/// zero status. Produced by `settle_streamlink_after_ffmpeg_exit`.
+#[derive(Debug)]
+enum StreamlinkSettlement {
+    /// Streamlink exited with a zero status inside the grace window.
+    ExitedCleanly,
+    /// Streamlink exited with a non-zero status inside the grace window.
+    ExitedWithFailure { code: Option<i32>, status: String },
+    /// `Child::wait` on streamlink returned an error.
+    WaitFailed(String),
+    /// Streamlink was still running when the grace window elapsed.
+    StillRunning,
+}
+
+/// Lets a stdout pipe failure recorded by the pipe task take precedence over
+/// `outcome`.
+///
+/// The pipe task stores into its `pipe_failure` slot when it cannot read
+/// streamlink's stdout or write FFmpeg's stdin, which truncates the recording
+/// no matter how the two processes exited; `outcome` is folded in as the
+/// secondary error, and a clean `Ffmpeg(Some(0))` contributes none because
+/// `failure_summary` returns `None` for it.
+fn apply_pipe_failure(
+    outcome: StreamlinkPipelineExit,
+    pipe_failure: Option<String>,
+) -> StreamlinkPipelineExit {
+    let Some(message) = pipe_failure else {
+        return outcome;
+    };
+    let mut failure = StreamlinkPipelineExit::Failed {
+        kind: DownloadFailureKind::Network,
+        message,
+    };
+    if let Some(secondary_error) = outcome.failure_summary() {
+        failure = failure.with_secondary_error(secondary_error);
+    }
+    failure
+}
+
+/// Maps `settlement` onto the pipeline outcome for a zero-status FFmpeg exit.
+///
+/// Streamlink closes its stdout before its own process exits, so the pipe task
+/// sees EOF and drops FFmpeg's stdin while the streamlink process is still
+/// tearing down: a zero FFmpeg status is a clean pipeline whenever streamlink
+/// also exits cleanly, and only a failure otherwise. Precedence and wording
+/// follow the `streamlink.wait()` select branch — a streamlink failure outranks
+/// a recorded pipe failure, which outranks the clean FFmpeg exit — so both
+/// orderings report the same thing for the same streamlink status.
+fn clean_ffmpeg_exit_outcome(
+    settlement: &StreamlinkSettlement,
+    pipe_failure: Option<String>,
+) -> StreamlinkPipelineExit {
+    match settlement {
+        StreamlinkSettlement::ExitedCleanly => {
+            apply_pipe_failure(StreamlinkPipelineExit::Ffmpeg(Some(0)), pipe_failure)
+        }
+        StreamlinkSettlement::ExitedWithFailure { code, status } => {
+            StreamlinkPipelineExit::Failed {
+                kind: DownloadFailureKind::ProcessExit { code: *code },
+                message: format!("Streamlink exited with status {status}"),
+            }
+        }
+        StreamlinkSettlement::WaitFailed(error) => StreamlinkPipelineExit::Failed {
+            kind: DownloadFailureKind::ProcessExit { code: None },
+            message: format!("Failed to wait for Streamlink: {error}"),
+        },
+        StreamlinkSettlement::StillRunning => StreamlinkPipelineExit::Failed {
+            kind: DownloadFailureKind::Other,
+            message: "FFmpeg exited before Streamlink completed".to_string(),
+        },
+    }
+}
+
 fn append_cleanup_result(message: &mut String, result: std::result::Result<Option<i32>, String>) {
     if let Err(cleanup_error) = result {
         message.push_str("; cleanup error: ");
@@ -323,6 +401,41 @@ async fn wait_then_terminate(
                 ),
             }
         }
+    }
+}
+
+/// Waits up to `timeout` for streamlink to exit on its own after FFmpeg has
+/// already exited, terminating it through `terminate_and_reap` when it does not.
+///
+/// The second element is `Ok(())` whenever streamlink is known to be reaped, so
+/// the caller can keep the `cleanup_confirmed` flag that drives
+/// `forced_settlement` accurate; its `Err` carries a cleanup error for
+/// `StreamlinkPipelineExit::with_cleanup_error`.
+async fn settle_streamlink_after_ffmpeg_exit(
+    streamlink: &mut Child,
+    timeout: Duration,
+) -> (StreamlinkSettlement, std::result::Result<(), String>) {
+    match tokio::time::timeout(timeout, streamlink.wait()).await {
+        Ok(Ok(status)) if status.success() => (StreamlinkSettlement::ExitedCleanly, Ok(())),
+        Ok(Ok(status)) => (
+            StreamlinkSettlement::ExitedWithFailure {
+                code: status.code(),
+                status: status.to_string(),
+            },
+            Ok(()),
+        ),
+        Ok(Err(error)) => (
+            StreamlinkSettlement::WaitFailed(error.to_string()),
+            terminate_and_reap(streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
+                .await
+                .map(|_| ()),
+        ),
+        Err(_) => (
+            StreamlinkSettlement::StillRunning,
+            terminate_and_reap(streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
+                .await
+                .map(|_| ()),
+        ),
     }
 }
 
@@ -535,71 +648,78 @@ impl DownloadEngine for StreamlinkEngine {
                             failure = failure.with_secondary_error(secondary_error);
                         }
                         failure
-                    } else if let Some(message) = process_pipe_failure.lock().clone() {
-                        let mut failure = StreamlinkPipelineExit::Failed {
-                            kind: DownloadFailureKind::Network,
-                            message,
-                        };
-                        if let Some(secondary_error) = ffmpeg_outcome.failure_summary() {
-                            failure = failure.with_secondary_error(secondary_error);
-                        }
-                        failure
                     } else {
-                        ffmpeg_outcome
+                        apply_pipe_failure(ffmpeg_outcome, process_pipe_failure.lock().clone())
                     };
                     (outcome, streamlink_confirmed && ffmpeg_confirmed)
                 }
-                ffmpeg_result = ffmpeg.wait() => {
-                    let (mut ffmpeg_outcome, ffmpeg_confirmed) = match ffmpeg_result {
-                        Ok(status) if status.success() => (StreamlinkPipelineExit::Failed {
-                            kind: DownloadFailureKind::Other,
-                            message: "FFmpeg exited before Streamlink completed".to_string(),
-                        }, true),
-                        Ok(status) => (StreamlinkPipelineExit::Ffmpeg(status.code()), true),
-                        Err(error) => {
-                            let failure = StreamlinkPipelineExit::Failed {
-                                kind: DownloadFailureKind::ProcessExit { code: None },
-                                message: format!("Failed to wait for FFmpeg: {error}"),
-                            };
-                            match terminate_and_reap(
-                                &mut ffmpeg,
-                                "ffmpeg",
-                                ffmpeg_stop_timeout,
-                            ).await {
-                                Ok(_) => (failure, true),
-                                Err(cleanup_error) => (
-                                    failure.with_cleanup_error(cleanup_error),
-                                    false,
-                                ),
+                ffmpeg_result = ffmpeg.wait() => match ffmpeg_result {
+                    // FFmpeg finalized the output on its own. Reaching this branch before
+                    // `streamlink.wait()` is the normal ordering at a clean stream end:
+                    // streamlink closes stdout first, the pipe task drops FFmpeg's stdin, and
+                    // FFmpeg's stream-copy finalization outruns streamlink's own shutdown. Let
+                    // streamlink finish exiting before deciding the outcome instead of reaping
+                    // it here.
+                    Ok(status) if status.success() => {
+                        let (settlement, streamlink_cleanup) = settle_streamlink_after_ffmpeg_exit(
+                            &mut streamlink,
+                            STREAMLINK_SETTLE_TIMEOUT,
+                        ).await;
+                        let mut outcome = clean_ffmpeg_exit_outcome(
+                            &settlement,
+                            process_pipe_failure.lock().clone(),
+                        );
+                        let streamlink_confirmed = match streamlink_cleanup {
+                            Ok(()) => true,
+                            Err(cleanup_error) => {
+                                warn!(%cleanup_error, "Failed to stop Streamlink after FFmpeg exited");
+                                outcome = outcome.with_cleanup_error(cleanup_error);
+                                false
                             }
-                        }
-                    };
-                    let streamlink_confirmed = match terminate_and_reap(
-                        &mut streamlink,
-                        "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
-                    ).await {
-                        Ok(_) => true,
-                        Err(cleanup_error) => {
-                            warn!(%cleanup_error, "Failed to stop Streamlink after FFmpeg exited");
-                            ffmpeg_outcome = ffmpeg_outcome.with_cleanup_error(cleanup_error);
-                            false
-                        }
-                    };
-
-                    let outcome = if let Some(message) = process_pipe_failure.lock().clone() {
-                        let mut failure = StreamlinkPipelineExit::Failed {
-                            kind: DownloadFailureKind::Network,
-                            message,
                         };
-                        if let Some(secondary_error) = ffmpeg_outcome.failure_summary() {
-                            failure = failure.with_secondary_error(secondary_error);
-                        }
-                        failure
-                    } else {
-                        ffmpeg_outcome
-                    };
-                    (outcome, streamlink_confirmed && ffmpeg_confirmed)
+                        (outcome, streamlink_confirmed)
+                    }
+                    ffmpeg_result => {
+                        // FFmpeg exited non-zero or could not be waited on, so the pipeline is
+                        // already broken and streamlink has nothing left to write into.
+                        let (mut ffmpeg_outcome, ffmpeg_confirmed) = match ffmpeg_result {
+                            Ok(status) => (StreamlinkPipelineExit::Ffmpeg(status.code()), true),
+                            Err(error) => {
+                                let failure = StreamlinkPipelineExit::Failed {
+                                    kind: DownloadFailureKind::ProcessExit { code: None },
+                                    message: format!("Failed to wait for FFmpeg: {error}"),
+                                };
+                                match terminate_and_reap(
+                                    &mut ffmpeg,
+                                    "ffmpeg",
+                                    ffmpeg_stop_timeout,
+                                ).await {
+                                    Ok(_) => (failure, true),
+                                    Err(cleanup_error) => (
+                                        failure.with_cleanup_error(cleanup_error),
+                                        false,
+                                    ),
+                                }
+                            }
+                        };
+                        let streamlink_confirmed = match terminate_and_reap(
+                            &mut streamlink,
+                            "streamlink",
+                            PROCESS_CLEANUP_TIMEOUT,
+                        ).await {
+                            Ok(_) => true,
+                            Err(cleanup_error) => {
+                                warn!(%cleanup_error, "Failed to stop Streamlink after FFmpeg exited");
+                                ffmpeg_outcome = ffmpeg_outcome.with_cleanup_error(cleanup_error);
+                                false
+                            }
+                        };
+
+                        (
+                            apply_pipe_failure(ffmpeg_outcome, process_pipe_failure.lock().clone()),
+                            streamlink_confirmed && ffmpeg_confirmed,
+                        )
+                    }
                 }
             };
 
@@ -1240,5 +1360,107 @@ mod tests {
         };
         assert_eq!(kind, DownloadFailureKind::ProcessExit { code: None });
         assert!(message.contains("failed to reap streamlink"));
+    }
+
+    #[test]
+    fn clean_ffmpeg_exit_completes_when_streamlink_also_exits_cleanly() {
+        let outcome = clean_ffmpeg_exit_outcome(&StreamlinkSettlement::ExitedCleanly, None);
+        assert!(matches!(outcome, StreamlinkPipelineExit::Ffmpeg(Some(0))));
+    }
+
+    #[test]
+    fn clean_ffmpeg_exit_reports_a_non_zero_streamlink_status_as_failure() {
+        let outcome = clean_ffmpeg_exit_outcome(
+            &StreamlinkSettlement::ExitedWithFailure {
+                code: Some(130),
+                status: "exit code: 130".to_string(),
+            },
+            None,
+        );
+
+        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
+            panic!("expected failure outcome");
+        };
+        assert_eq!(kind, DownloadFailureKind::ProcessExit { code: Some(130) });
+        assert!(message.contains("exit code: 130"));
+    }
+
+    #[test]
+    fn clean_ffmpeg_exit_reports_a_streamlink_wait_error_as_failure() {
+        let outcome = clean_ffmpeg_exit_outcome(
+            &StreamlinkSettlement::WaitFailed("no child processes".to_string()),
+            None,
+        );
+
+        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
+            panic!("expected failure outcome");
+        };
+        assert_eq!(kind, DownloadFailureKind::ProcessExit { code: None });
+        assert!(message.contains("no child processes"));
+    }
+
+    #[test]
+    fn clean_ffmpeg_exit_fails_when_streamlink_outlives_the_grace_window() {
+        let outcome = clean_ffmpeg_exit_outcome(&StreamlinkSettlement::StillRunning, None);
+
+        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
+            panic!("expected failure outcome");
+        };
+        assert_eq!(kind, DownloadFailureKind::Other);
+        assert_eq!(message, "FFmpeg exited before Streamlink completed");
+    }
+
+    #[test]
+    fn pipe_failure_outranks_a_clean_ffmpeg_exit() {
+        let outcome = clean_ffmpeg_exit_outcome(
+            &StreamlinkSettlement::ExitedCleanly,
+            Some("Failed to read Streamlink output: broken pipe".to_string()),
+        );
+
+        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
+            panic!("expected failure outcome");
+        };
+        assert_eq!(kind, DownloadFailureKind::Network);
+        assert!(message.contains("broken pipe"));
+        // A zero FFmpeg status has no `failure_summary`, so nothing is attached.
+        assert!(!message.contains("secondary process error"));
+    }
+
+    #[test]
+    fn streamlink_failure_outranks_a_recorded_pipe_failure() {
+        let outcome = clean_ffmpeg_exit_outcome(
+            &StreamlinkSettlement::ExitedWithFailure {
+                code: Some(1),
+                status: "exit code: 1".to_string(),
+            },
+            Some("Failed to read Streamlink output: broken pipe".to_string()),
+        );
+
+        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
+            panic!("expected failure outcome");
+        };
+        assert_eq!(kind, DownloadFailureKind::ProcessExit { code: Some(1) });
+        assert!(message.contains("exit code: 1"));
+    }
+
+    #[test]
+    fn pipe_failure_keeps_a_non_zero_ffmpeg_exit_as_secondary_error() {
+        let outcome = apply_pipe_failure(
+            StreamlinkPipelineExit::Ffmpeg(Some(1)),
+            Some("Failed to pipe Streamlink output into FFmpeg: broken pipe".to_string()),
+        );
+
+        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
+            panic!("expected failure outcome");
+        };
+        assert_eq!(kind, DownloadFailureKind::Network);
+        assert!(message.contains("broken pipe"));
+        assert!(message.contains("FFmpeg exited with code 1"));
+    }
+
+    #[test]
+    fn absent_pipe_failure_leaves_the_outcome_untouched() {
+        let outcome = apply_pipe_failure(StreamlinkPipelineExit::Ffmpeg(Some(0)), None);
+        assert!(matches!(outcome, StreamlinkPipelineExit::Ffmpeg(Some(0))));
     }
 }
