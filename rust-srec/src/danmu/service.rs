@@ -122,10 +122,48 @@ pub struct DanmuService {
 
 #[derive(Debug, Default)]
 pub(crate) struct DanmuShutdownReport {
-    pub(crate) failures: Vec<String>,
+    /// Errors reported by collections that had already ended when
+    /// `shutdown_until` closed admission: connect failures, runner errors and
+    /// per-session XML cleanup errors drained from `collection_failures`, plus
+    /// the reports of tasks joined during the graceful phase.
+    ///
+    /// A collection can end this way at any point in a long run while the
+    /// process keeps recording, so these say nothing about whether shutdown
+    /// itself finalized cleanly. Callers report them and continue.
+    pub(crate) runtime_failures: Vec<String>,
+    /// Failures of the shutdown phase itself: the start-admission deadline or
+    /// the graceful collection deadline elapsing, and collection tasks that
+    /// could not be joined. Each one means `shutdown_until` could not prove a
+    /// collector reached its final flush, so callers treat them as fatal.
+    pub(crate) shutdown_failures: Vec<String>,
     /// Sessions still active when the graceful deadline elapsed. Their
     /// cancellation cleanup was joined to completion before returning.
     pub(crate) forced_session_ids: Vec<String>,
+}
+
+/// What a stop request proved about the collector it targeted.
+///
+/// `start_collection` replaces a prior collector for the same streamer only
+/// when the stop proved the prior task released its `collections` entry;
+/// otherwise two collectors would hold one streamer's websocket at once.
+enum CollectionStopOutcome {
+    /// The task is gone. `collection_task` runs `remove_collection` before it
+    /// sends on `done_tx`, and on an unwind `CollectionCleanupGuard::drop` runs
+    /// it before `done_tx` is dropped, so a delivered outcome and a closed
+    /// channel both prove the registry entry is free. `errors` carries what the
+    /// collector reported on its way out.
+    Terminated {
+        statistics: DanmuStatistics,
+        errors: Vec<String>,
+    },
+    /// The session has no `collections` entry, so no collector holds its slot:
+    /// either it never had one or its task already ran `remove_collection`.
+    NotRegistered,
+    /// The stop is unproven and the task may still own its websocket and its
+    /// `collections` entry: `STOP_TIMEOUT` elapsed on the command send or on
+    /// the outcome wait — the collection's cancellation token is cancelled in
+    /// both cases — or another caller already took `done_rx` and owns the wait.
+    Unconfirmed(Error),
 }
 
 impl Default for DanmuService {
@@ -232,22 +270,54 @@ impl DanmuService {
             && self.collections.contains_key(&old_sid)
         {
             let started = std::time::Instant::now();
-            match self.stop_collection(&old_sid).await {
-                Ok(_) => info!(
-                    streamer_id,
-                    old_session_id = old_sid.as_str(),
-                    new_session_id = session_id,
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                    "danmu: replaced previous collector for streamer"
-                ),
-                Err(e) => {
+            match self
+                .stop_collection_with_reason(&old_sid, CollectionStopReason::SessionEnded)
+                .await
+            {
+                CollectionStopOutcome::Terminated { errors, .. } => {
+                    info!(
+                        streamer_id,
+                        old_session_id = old_sid.as_str(),
+                        new_session_id = session_id,
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        "danmu: replaced previous collector for streamer"
+                    );
+                    // The prior task released its `collections` entry, so the
+                    // replacement cannot overlap it and the errors it reported
+                    // are not a reason to deny this session a collector. They
+                    // go to `collection_failures`, which `shutdown_until`
+                    // returns as `runtime_failures`.
+                    if !errors.is_empty() {
+                        warn!(
+                            streamer_id,
+                            old_session_id = old_sid.as_str(),
+                            errors = ?errors,
+                            "danmu: prior collector terminated with errors"
+                        );
+                        self.record_collection_report(CollectionTaskReport {
+                            session_id: old_sid.clone(),
+                            runtime_error: None,
+                            cleanup_errors: errors,
+                        });
+                    }
+                }
+                CollectionStopOutcome::NotRegistered => {
+                    // The prior task ran `remove_collection` between the
+                    // `contains_key` check above and the stop request.
+                    debug!(
+                        streamer_id,
+                        old_session_id = old_sid.as_str(),
+                        "danmu: prior collector released its slot before the stop request"
+                    );
+                }
+                CollectionStopOutcome::Unconfirmed(error) => {
                     warn!(
                         streamer_id,
                         old_session_id = old_sid.as_str(),
-                        error = %e,
+                        error = %error,
                         "danmu: refusing to overlap a new collector with a prior collector"
                     );
-                    return Err(e);
+                    return Err(error);
                 }
             }
         }
@@ -409,27 +479,56 @@ impl DanmuService {
     }
 
     /// Stop danmu collection for a session.
+    ///
+    /// Anything but a clean stop is an error here, including a collector that
+    /// terminated while reporting errors. `start_collection` calls
+    /// [`Self::stop_collection_with_reason`] directly instead, because it has
+    /// to tell a collector that is gone from one that may still be running.
     pub async fn stop_collection(&self, session_id: &str) -> Result<DanmuStatistics> {
-        self.stop_collection_with_reason(session_id, CollectionStopReason::SessionEnded)
+        match self
+            .stop_collection_with_reason(session_id, CollectionStopReason::SessionEnded)
             .await
+        {
+            CollectionStopOutcome::Terminated { statistics, errors } if errors.is_empty() => {
+                Ok(statistics)
+            }
+            CollectionStopOutcome::Terminated { errors, .. } => Err(Error::Other(format!(
+                "danmu collection {session_id} stopped with errors: {}",
+                errors.join("; ")
+            ))),
+            CollectionStopOutcome::NotRegistered => Err(Error::from(
+                platforms_parser::danmaku::DanmakuError::connection(format!(
+                    "No active collection for session {}",
+                    session_id
+                )),
+            )),
+            CollectionStopOutcome::Unconfirmed(error) => Err(error),
+        }
     }
 
+    /// Request a stop and report what it proved about the collector.
+    ///
+    /// See [`CollectionStopOutcome`] for how each return maps onto whether the
+    /// task still holds its `collections` entry.
     async fn stop_collection_with_reason(
         &self,
         session_id: &str,
         reason: CollectionStopReason,
-    ) -> Result<DanmuStatistics> {
+    ) -> CollectionStopOutcome {
         let (command_tx, cancel_token, done_rx) = {
-            let mut state = self.collections.get_mut(session_id).ok_or_else(|| {
-                Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                    format!("No active collection for session {}", session_id),
-                ))
-            })?;
-            let done_rx = state.done_rx.take().ok_or_else(|| {
-                Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                    format!("Collection is already stopping for session {}", session_id),
-                ))
-            })?;
+            let Some(mut state) = self.collections.get_mut(session_id) else {
+                return CollectionStopOutcome::NotRegistered;
+            };
+            let Some(done_rx) = state.done_rx.take() else {
+                // Another stop owns the outcome wait, so this call cannot
+                // observe the task finishing.
+                return CollectionStopOutcome::Unconfirmed(Error::from(
+                    platforms_parser::danmaku::DanmakuError::connection(format!(
+                        "Collection is already stopping for session {}",
+                        session_id
+                    )),
+                ));
+            };
             (
                 state.command_tx.clone(),
                 state.cancel_token.clone(),
@@ -444,11 +543,13 @@ impl DanmuService {
         {
             Ok(Ok(())) => {}
             Ok(Err(_)) => {
-                tracing::debug!(session_id, "Danmu collection task already stopped");
+                // The receiver is gone, so the task is past its command loop.
+                // The `done_rx` wait below decides whether it finished.
+                debug!(session_id, "Danmu collection task already stopped");
             }
             Err(_) => {
                 cancel_token.cancel();
-                return Err(Error::Other(format!(
+                return CollectionStopOutcome::Unconfirmed(Error::Other(format!(
                     "danmu collection {session_id} stop command timed out after {STOP_TIMEOUT:?}"
                 )));
             }
@@ -456,33 +557,36 @@ impl DanmuService {
 
         match tokio::time::timeout_at(deadline, done_rx).await {
             Ok(Ok(outcome)) => {
-                tracing::debug!(session_id, reason = ?outcome.reason, "Danmu collection stopped");
-                if outcome.error.is_none() && outcome.cleanup_errors.is_empty() {
-                    return Ok(outcome.statistics);
-                }
-
+                debug!(session_id, reason = ?outcome.reason, "Danmu collection stopped");
                 let mut errors = outcome
                     .error
                     .into_iter()
                     .chain(outcome.cleanup_errors)
                     .map(|error| error.to_string())
                     .collect::<Vec<_>>();
+                // Sorted so a multi-error stop formats the same way every run.
                 errors.sort();
-                Err(Error::Other(format!(
-                    "danmu collection {session_id} stopped with errors: {}",
-                    errors.join("; ")
-                )))
+                CollectionStopOutcome::Terminated {
+                    statistics: outcome.statistics,
+                    errors,
+                }
             }
-            Ok(Err(_)) => Err(Error::Other(format!(
-                "danmu collection {session_id} ended without reporting an outcome"
-            ))),
+            // `done_tx` was dropped rather than sent, which only happens once
+            // the task's locals — `CollectionCleanupGuard` among them — have
+            // dropped, so the registry entry is already released.
+            Ok(Err(_)) => CollectionStopOutcome::Terminated {
+                statistics: DanmuStatistics::default(),
+                errors: vec![format!(
+                    "danmu collection {session_id} ended without reporting an outcome"
+                )],
+            },
             Err(_) => {
                 warn!(
                     "Danmu collection stop timed out after {:?} (session_id={})",
                     STOP_TIMEOUT, session_id
                 );
                 cancel_token.cancel();
-                Err(Error::Other(format!(
+                CollectionStopOutcome::Unconfirmed(Error::Other(format!(
                     "danmu collection {session_id} stop timed out after {STOP_TIMEOUT:?}"
                 )))
             }
@@ -523,17 +627,33 @@ impl DanmuService {
         append_collection_report(&mut self.collection_failures.lock(), report);
     }
 
+    /// Seed `collection_failures` with an error as if a collection had ended
+    /// badly earlier in the run, so tests outside this module can build a
+    /// service that carries pre-shutdown failures into `shutdown_until`.
+    #[cfg(test)]
+    pub(crate) fn seed_runtime_failure_for_test(&self, failure: String) {
+        self.collection_failures.lock().push(failure);
+    }
+
     /// Shutdown the service using its standalone timeout.
+    ///
+    /// Only [`DanmuShutdownReport::shutdown_failures`] fails this call.
+    /// `runtime_failures` describes collections that already ended during the
+    /// run; stopping the service can neither cause nor repair them, so they are
+    /// logged and the shutdown still counts as clean.
     pub async fn shutdown(&self) -> Result<()> {
         let report = self
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(10))
             .await?;
-        if report.failures.is_empty() {
+        for failure in &report.runtime_failures {
+            warn!(%failure, "Danmu collection ended with an error during the run");
+        }
+        if report.shutdown_failures.is_empty() {
             Ok(())
         } else {
             Err(Error::Other(format!(
                 "danmu collection task shutdown failed: {}",
-                report.failures.join("; ")
+                report.shutdown_failures.join("; ")
             )))
         }
     }
@@ -584,9 +704,13 @@ impl DanmuService {
         };
         drop(closed_admission);
 
-        let mut failures = std::mem::take(&mut *self.collection_failures.lock());
+        // Errors reaped from tasks that ended earlier in the run describe those
+        // collections, not this shutdown, so they stay out of
+        // `shutdown_failures`.
+        let mut runtime_failures = std::mem::take(&mut *self.collection_failures.lock());
+        let mut shutdown_failures = Vec::new();
         if admission_deadline_exceeded {
-            failures.push(
+            shutdown_failures.push(
                 "graceful danmu start-admission deadline exceeded; admitted starts were contained to completion"
                     .to_string(),
             );
@@ -602,7 +726,7 @@ impl DanmuService {
                     Err(_) => {
                         forced_session_ids = self.active_sessions();
                         forced_session_ids.sort();
-                        failures.push(format!(
+                        shutdown_failures.push(format!(
                             "graceful collection deadline exceeded; drained cancelled sessions to completion: {forced_session_ids:?}"
                         ));
                         graceful_deadline_exceeded = true;
@@ -612,17 +736,20 @@ impl DanmuService {
             };
 
             match result {
-                Some(Ok(report)) => append_collection_report(&mut failures, report),
+                Some(Ok(report)) => append_collection_report(&mut runtime_failures, report),
+                // A task that cannot be joined panicked or was aborted, so this
+                // shutdown cannot show its collection reached a final flush.
                 Some(Err(error)) => {
                     warn!(%error, "Danmu collection task failed while joining");
-                    failures.push(error.to_string());
+                    shutdown_failures.push(error.to_string());
                 }
                 None => break,
             }
         }
 
         Ok(DanmuShutdownReport {
-            failures,
+            runtime_failures,
+            shutdown_failures,
             forced_session_ids,
         })
     }
@@ -660,7 +787,11 @@ struct CollectionTaskReport {
     cleanup_errors: Vec<String>,
 }
 
-fn append_collection_report(failures: &mut Vec<String>, report: CollectionTaskReport) {
+/// Fold one collection's ending into the runtime-failure class.
+///
+/// Everything appended here describes how a single collection ended, which
+/// `shutdown_until` returns as [`DanmuShutdownReport::runtime_failures`].
+fn append_collection_report(runtime_failures: &mut Vec<String>, report: CollectionTaskReport) {
     let CollectionTaskReport {
         session_id,
         runtime_error,
@@ -668,11 +799,11 @@ fn append_collection_report(failures: &mut Vec<String>, report: CollectionTaskRe
     } = report;
     if let Some(error) = runtime_error {
         warn!(%session_id, %error, "Danmu collection ended with an error");
-        failures.push(format!("danmu collection {session_id} failed: {error}"));
+        runtime_failures.push(format!("danmu collection {session_id} failed: {error}"));
     } else {
         debug!(%session_id, "Danmu collection task reaped");
     }
-    failures.extend(cleanup_errors);
+    runtime_failures.extend(cleanup_errors);
 }
 
 /// One collection, from connect to terminal event.
@@ -1110,10 +1241,47 @@ mod tests {
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
             .await
             .expect("failed task should still be joined");
-        assert!(report.failures.iter().any(|failure| {
-            failure.contains("failed-session")
-                && failure.contains("fake provider has no streams left")
-        }));
+        assert!(
+            report.runtime_failures.iter().any(|failure| {
+                failure.contains("failed-session")
+                    && failure.contains("fake provider has no streams left")
+            }),
+            "a collection that never connected must still be reported"
+        );
+        assert!(
+            report.shutdown_failures.is_empty(),
+            "a collection that failed to start is not a shutdown-phase failure: {:?}",
+            report.shutdown_failures
+        );
+    }
+
+    /// `shutdown` reports a collection that ended badly during the run and
+    /// still returns `Ok`. Only `DanmuShutdownReport::shutdown_failures` may
+    /// fail it, because callers turn that `Err` into a failed process exit.
+    #[tokio::test]
+    async fn shutdown_succeeds_when_only_a_collection_failed_during_the_run() {
+        use crate::danmu::test_support::FakeProvider;
+
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(Vec::new())));
+        let service = DanmuService::with_providers(registry);
+
+        let start_result = service
+            .start_collection(collection_spec(
+                "failed-session",
+                "failed-streamer",
+                FakeProvider::URL,
+            ))
+            .await;
+        assert!(
+            start_result.is_err(),
+            "fixture: a provider without a stream must reject collection startup"
+        );
+
+        service
+            .shutdown()
+            .await
+            .expect("a collection that failed during the run must not fail shutdown");
     }
 
     #[tokio::test]
@@ -1170,9 +1338,18 @@ mod tests {
             .await
             .expect("blocker file should be removable");
 
-        assert!(report.failures.iter().any(|failure| {
-            failure.contains("danmu collection runtime-failure-session failed")
-        }));
+        assert!(
+            report
+                .runtime_failures
+                .iter()
+                .any(|failure| failure.contains("danmu collection runtime-failure-session failed")),
+            "the runner's error must still be reported"
+        );
+        assert!(
+            report.shutdown_failures.is_empty(),
+            "a collection that ended before shutdown must not fail the shutdown: {:?}",
+            report.shutdown_failures
+        );
     }
 
     #[tokio::test]
@@ -1206,7 +1383,8 @@ mod tests {
         };
 
         assert!(start_error.to_string().contains("cancelled during startup"));
-        assert!(report.failures.is_empty());
+        assert!(report.runtime_failures.is_empty());
+        assert!(report.shutdown_failures.is_empty());
         assert!(report.forced_session_ids.is_empty());
     }
 
@@ -1253,9 +1431,10 @@ mod tests {
             .expect("post-deadline cleanup should remain contained");
         assert!(
             report
-                .failures
+                .shutdown_failures
                 .iter()
-                .any(|failure| failure.contains("graceful collection deadline exceeded"))
+                .any(|failure| failure.contains("graceful collection deadline exceeded")),
+            "a missed graceful deadline is a shutdown-phase failure"
         );
     }
 
@@ -1327,6 +1506,117 @@ mod tests {
             .stop_collection(new_session)
             .await
             .expect("replacement stops");
+    }
+
+    /// A prior collector that already delivered its `CollectionOutcome` has
+    /// released its `collections` entry, so there is nothing for the new
+    /// collector to overlap and the errors it reported must not deny the next
+    /// session a collector. Only the `CollectionStopOutcome::Unconfirmed`
+    /// timeout paths refuse.
+    ///
+    /// The errors are still reported: they reach `collection_failures` and come
+    /// back as `DanmuShutdownReport::runtime_failures`, which never fails a
+    /// shutdown.
+    #[tokio::test]
+    async fn replacement_starts_after_a_prior_collector_terminated_with_errors() {
+        use crate::danmu::lifecycle::CollectionExitReason;
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
+        let streamer_id = "streamer-1";
+        let old_session = "session-old";
+        let new_session = "session-new";
+
+        // Stands in for a collector that finished its cleanup and reported a
+        // failed XML flush. Resolving `done_tx` up front is what the real task
+        // does after `remove_collection`, so the stop's outcome wait returns
+        // immediately with the errors attached.
+        let (done_tx, _cancel_token) = seed_active_collection(&service, streamer_id, old_session);
+        done_tx
+            .send(CollectionOutcome {
+                statistics: DanmuStatistics::default(),
+                reason: CollectionExitReason::Failed,
+                error: None,
+                cleanup_errors: vec![Error::Other(
+                    "failed to finalize danmu XML for session-old".to_string(),
+                )],
+            })
+            .expect("the seeded collector should deliver its outcome");
+
+        service
+            .start_collection(collection_spec(new_session, streamer_id, FakeProvider::URL))
+            .await
+            .expect("a terminated prior collector must not block the replacement");
+
+        assert!(
+            service.is_collecting(new_session),
+            "the replacement collector must own the session slot"
+        );
+        assert_eq!(
+            service.get_session_by_streamer(streamer_id).as_deref(),
+            Some(new_session),
+            "the replacement must claim the streamer-level slot"
+        );
+
+        let report = service
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .expect("shutdown should settle");
+        assert!(
+            report
+                .runtime_failures
+                .iter()
+                .any(|failure| failure.contains("failed to finalize danmu XML for session-old")),
+            "the prior collector's error must still be reported: {:?}",
+            report.runtime_failures
+        );
+        assert!(
+            report.shutdown_failures.is_empty(),
+            "and must not fail the shutdown: {:?}",
+            report.shutdown_failures
+        );
+    }
+
+    /// A stop that timed out leaves the prior task possibly holding its
+    /// websocket and its `collections` entry, so `start_collection` must refuse
+    /// rather than run two collectors for one streamer.
+    #[tokio::test(start_paused = true)]
+    async fn replacement_is_refused_while_the_prior_collector_may_still_run() {
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
+        let streamer_id = "streamer-1";
+        let old_session = "session-old";
+
+        // `done_tx` is held, so the outcome wait runs out its `STOP_TIMEOUT`
+        // without ever proving the task released its entry.
+        let (_done_tx, _cancel_token) = seed_active_collection(&service, streamer_id, old_session);
+
+        let result = service
+            .start_collection(collection_spec(
+                "session-new",
+                streamer_id,
+                FakeProvider::URL,
+            ))
+            .await;
+        let Err(error) = result else {
+            panic!("an unconfirmed prior collector must block the replacement");
+        };
+
+        assert!(
+            error.to_string().contains("stop timed out"),
+            "the refusal must carry the stop timeout: {error}"
+        );
+        assert!(
+            !service.is_collecting("session-new"),
+            "no replacement collector may be registered"
+        );
     }
 
     /// The guarantee `PipelineCoordinator` depends on: a collector that ends on a

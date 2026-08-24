@@ -660,11 +660,20 @@ impl ServiceContainer {
                         "Danmu collections exceeded the graceful deadline and were drained"
                     );
                 }
+                // `runtime_failures` are collections that ended earlier in the
+                // run — a dropped websocket, a segment XML that could not be
+                // written. They are reported and kept out of `failures`: only
+                // a shutdown-phase failure may make this method return `Err`,
+                // which `server.rs` turns into a nonzero worker exit and
+                // `classify_settled_exit` records as a crash.
+                for failure in &report.runtime_failures {
+                    warn!(%failure, "Danmu collection ended with an error during the run");
+                }
                 failures.extend(
                     report
-                        .failures
+                        .shutdown_failures
                         .into_iter()
-                        .map(|failure| format!("danmu collection task failed: {failure}")),
+                        .map(|failure| format!("danmu shutdown: {failure}")),
                 );
                 true
             }
@@ -798,9 +807,12 @@ impl ServiceContainer {
                 match self.danmu_service.shutdown_until(forced_deadline).await {
                     Ok(report) => {
                         danmu_quiesced = true;
+                        for failure in &report.runtime_failures {
+                            warn!(%failure, "Danmu collection ended with an error during the run");
+                        }
                         failures.extend(
                             report
-                                .failures
+                                .shutdown_failures
                                 .into_iter()
                                 .map(|failure| format!("forced danmu shutdown: {failure}")),
                         );
@@ -1250,6 +1262,13 @@ mod tests {
             .await
             .expect("shutdown tracer engine should open its segment");
         assert_eq!(container.download_manager.active_count(), 1);
+
+        // A collection that ended earlier in the run reaches `shutdown_until`
+        // as a `runtime_failures` entry. Only `shutdown_failures` may make
+        // `shutdown_with_grace_period` return `Err`.
+        danmu_service.seed_runtime_failure_for_test(
+            "danmu collection earlier-session failed: websocket connect timed out".to_string(),
+        );
 
         tokio::time::timeout(
             Duration::from_secs(10),
