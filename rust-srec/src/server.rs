@@ -46,14 +46,14 @@ async fn run_supervisor() -> anyhow::Result<()> {
             RuntimeTermination::Clean => {}
             RuntimeTermination::CleanRecoveryPending => {
                 eprintln!(
-                    "Runtime generation {} exited cleanly, but an earlier interrupted generation still requires recovery",
-                    report.generation
+                    "Runtime generation {} exited cleanly, but {} earlier generation(s) still require recovery",
+                    report.generation, report.unresolved_generations
                 );
             }
             RuntimeTermination::ForcedRecoveryPending => {
                 eprintln!(
-                    "Runtime generation {} exceeded the cooperative cutoff and was forcefully contained after {:?}; recovery is required",
-                    report.generation, report.elapsed
+                    "Runtime generation {} exceeded the cooperative cutoff and was forcefully contained after {:?}; recovery is required for {} generation(s)",
+                    report.generation, report.elapsed, report.unresolved_generations
                 );
             }
             RuntimeTermination::CrashedRecoveryPending => {
@@ -62,8 +62,8 @@ async fn run_supervisor() -> anyhow::Result<()> {
                     .as_deref()
                     .map_or(String::new(), |error| format!("; marker error: {error}"));
                 eprintln!(
-                    "Runtime generation {} exited without a clean containment proof (exit code: {:?}){}; recovery is required",
-                    report.generation, report.exit_code, marker_detail
+                    "Runtime generation {} exited without a clean containment proof (exit code: {:?}){}; recovery is required for {} generation(s)",
+                    report.generation, report.exit_code, marker_detail, report.unresolved_generations
                 );
             }
         },
@@ -99,6 +99,7 @@ async fn run_worker() -> anyhow::Result<()> {
     if let Some(previous_generation) = worker_control.previous_dirty_generation {
         warn!(
             %previous_generation,
+            unresolved_generations = %worker_control.unresolved_generations,
             "Previous contained runtime did not exit cleanly; startup recovery is required"
         );
     }

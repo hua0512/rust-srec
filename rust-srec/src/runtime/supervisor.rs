@@ -1,3 +1,4 @@
+use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
@@ -15,13 +16,16 @@ use tokio::time::timeout_at;
 use tracing::{error, warn};
 
 use super::deadline::{HardDeadlineWatchdog, ShutdownPolicy, ShutdownSchedule};
-use super::generation::{DirtyGenerationMarker, RuntimeGeneration, RuntimeLease};
+use super::generation::{
+    DirtyGenerationCount, DirtyGenerationMarker, RuntimeGeneration, RuntimeLease,
+};
 use crate::{Error, Result};
 
 const RUNTIME_ROLE_ENV: &str = "RUST_SREC_RUNTIME_ROLE";
 const RUNTIME_WORKER_ROLE: &str = "worker";
 const RUNTIME_GENERATION_ENV: &str = "RUST_SREC_RUNTIME_GENERATION";
 const PREVIOUS_DIRTY_GENERATION_ENV: &str = "RUST_SREC_PREVIOUS_DIRTY_GENERATION";
+const PREVIOUS_DIRTY_COUNT_ENV: &str = "RUST_SREC_PREVIOUS_DIRTY_COUNT";
 const RUNTIME_MARKER_PATH_ENV: &str = "RUST_SREC_RUNTIME_MARKER_PATH";
 const SHUTDOWN_TIMEOUT_ENV: &str = "RUST_SREC_SHUTDOWN_TIMEOUT_SECS";
 const SHUTDOWN_FORCE_RESERVE_ENV: &str = "RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS";
@@ -91,6 +95,9 @@ pub(crate) struct RuntimeExitReport {
     pub(crate) exit_code: Option<i32>,
     pub(crate) elapsed: Duration,
     pub(crate) marker_error: Option<String>,
+    /// Generations left owing recovery once this exit settled; zero for
+    /// `RuntimeTermination::Clean`.
+    pub(crate) unresolved_generations: DirtyGenerationCount,
 }
 
 pub(crate) struct SupervisedRun {
@@ -345,7 +352,9 @@ async fn supervise_command_with_monitor(
         .and_then(|state| state.latest_dirty_generation());
     let previous_dirty_count = previous_state
         .as_ref()
-        .map_or(0, |state| state.dirty_generation_count());
+        .map_or_else(DirtyGenerationCount::default, |state| {
+            state.dirty_generation_count()
+        });
     if let Some(previous_generation) = previous_generation {
         eprintln!(
             "Runtime recovery ledger contains {previous_dirty_count} unresolved generation(s), most recently {previous_generation}"
@@ -360,10 +369,12 @@ async fn supervise_command_with_monitor(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
     if let Some(previous_generation) = previous_generation {
-        command.env(
-            PREVIOUS_DIRTY_GENERATION_ENV,
-            previous_generation.to_string(),
-        );
+        command
+            .env(
+                PREVIOUS_DIRTY_GENERATION_ENV,
+                previous_generation.to_string(),
+            )
+            .env(PREVIOUS_DIRTY_COUNT_ENV, previous_dirty_count.to_string());
     }
     let mut child = ContainedChild::spawn(&mut command)
         .map_err(|error| Error::Other(format!("failed to launch contained runtime: {error}")))?;
@@ -501,6 +512,9 @@ fn classify_settled_exit(
     forced: bool,
 ) -> Result<RuntimeExitReport> {
     let generation = marker.generation();
+    // Dropping the marker leaves `generation` active on disk, so the debt the
+    // marker carries is what the next launch will find.
+    let unresolved_generations = marker.unresolved_generations();
     if forced {
         drop(marker);
         return Ok(RuntimeExitReport {
@@ -509,16 +523,22 @@ fn classify_settled_exit(
             exit_code: status.code(),
             elapsed,
             marker_error: None,
+            unresolved_generations,
         });
     }
 
     if status.success() {
-        let (termination, marker_error) = match marker.clear() {
-            Ok(false) => (RuntimeTermination::Clean, None),
-            Ok(true) => (RuntimeTermination::CleanRecoveryPending, None),
+        let (termination, marker_error, unresolved_generations) = match marker.clear() {
+            Ok(None) => (
+                RuntimeTermination::Clean,
+                None,
+                DirtyGenerationCount::default(),
+            ),
+            Ok(Some(remaining)) => (RuntimeTermination::CleanRecoveryPending, None, remaining),
             Err(error) => (
                 RuntimeTermination::CrashedRecoveryPending,
                 Some(error.to_string()),
+                unresolved_generations,
             ),
         };
         Ok(RuntimeExitReport {
@@ -527,6 +547,7 @@ fn classify_settled_exit(
             exit_code: status.code(),
             elapsed,
             marker_error,
+            unresolved_generations,
         })
     } else {
         drop(marker);
@@ -536,6 +557,7 @@ fn classify_settled_exit(
             exit_code: status.code(),
             elapsed,
             marker_error: None,
+            unresolved_generations,
         })
     }
 }
@@ -643,6 +665,9 @@ pub(crate) struct WorkerControl {
     lines: Lines<BufReader<tokio::io::Stdin>>,
     pub(crate) generation: RuntimeGeneration,
     pub(crate) previous_dirty_generation: Option<RuntimeGeneration>,
+    /// Ledger size the supervisor read before admitting this worker; zero
+    /// unless `previous_dirty_generation` is set.
+    pub(crate) unresolved_generations: DirtyGenerationCount,
 }
 
 impl WorkerControl {
@@ -656,7 +681,9 @@ impl WorkerControl {
 
 pub(crate) async fn wait_for_worker_start() -> Result<WorkerControl> {
     let generation = required_generation_environment(RUNTIME_GENERATION_ENV)?;
-    let previous_dirty_generation = optional_generation_environment(PREVIOUS_DIRTY_GENERATION_ENV)?;
+    let previous_dirty_generation =
+        optional_environment::<RuntimeGeneration>(PREVIOUS_DIRTY_GENERATION_ENV)?;
+    let unresolved_generations = previous_unresolved_generations(previous_dirty_generation)?;
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let line = lines.next_line().await?.ok_or_else(|| {
         Error::Other("runtime supervisor disconnected before worker admission".to_string())
@@ -671,6 +698,7 @@ pub(crate) async fn wait_for_worker_start() -> Result<WorkerControl> {
         lines,
         generation,
         previous_dirty_generation,
+        unresolved_generations,
     })
 }
 
@@ -681,7 +709,25 @@ fn required_generation_environment(name: &str) -> Result<RuntimeGeneration> {
         .map_err(|error| Error::config(format!("environment variable {name} is invalid: {error}")))
 }
 
-fn optional_generation_environment(name: &str) -> Result<Option<RuntimeGeneration>> {
+/// Size of the recovery ledger the supervisor published for this launch.
+///
+/// A worker started by hand can carry `PREVIOUS_DIRTY_GENERATION_ENV` without
+/// `PREVIOUS_DIRTY_COUNT_ENV`; the generation that variable names is itself one
+/// unresolved generation.
+fn previous_unresolved_generations(
+    previous_dirty_generation: Option<RuntimeGeneration>,
+) -> Result<DirtyGenerationCount> {
+    let published = optional_environment::<DirtyGenerationCount>(PREVIOUS_DIRTY_COUNT_ENV)?;
+    Ok(published.unwrap_or_else(|| {
+        DirtyGenerationCount::exactly(usize::from(previous_dirty_generation.is_some()))
+    }))
+}
+
+fn optional_environment<T>(name: &str) -> Result<Option<T>>
+where
+    T: FromStr,
+    T::Err: fmt::Display,
+{
     match std::env::var(name) {
         Ok(raw) => raw.parse().map(Some).map_err(|error| {
             Error::config(format!("environment variable {name} is invalid: {error}"))

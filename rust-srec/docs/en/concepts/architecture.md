@@ -350,3 +350,6 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
   - A forced or crashed worker leaves a dirty-generation marker beside SQLite so the next launch
     reports that recovery may be required. Earlier recovery debt survives later clean generations;
     the marker is a detection mechanism, not artifact replay.
+  - That marker keeps the oldest and newest unresolved generations plus a count of the ones in
+    between, so a restart loop cannot grow it. Startup and exit messages report how many
+    generations still owe recovery.
