@@ -559,6 +559,40 @@ fn shutdown_policy_from_environment() -> Result<ShutdownPolicy> {
     ShutdownPolicy::new(total, force_reserve).map_err(|error| Error::config(error.to_string()))
 }
 
+/// Held back from the worker's cooperative window: control-frame delivery
+/// after the supervisor observes the signal, plus the worker's post-drain
+/// teardown (shutdown notification, final logging, process exit). Keeps the
+/// `ServiceContainer` drain finishing before `ShutdownSchedule::force_at`.
+const WORKER_COOPERATIVE_MARGIN: Duration = Duration::from_secs(1);
+const MIN_WORKER_COOPERATIVE_GRACE: Duration = Duration::from_secs(1);
+
+fn cooperative_grace_from_policy(policy: ShutdownPolicy) -> Duration {
+    // `ShutdownPolicy::new` guarantees `force_reserve < total`, so the
+    // cooperative window is always positive before the margin is applied.
+    (policy.total() - policy.force_reserve())
+        .saturating_sub(WORKER_COOPERATIVE_MARGIN)
+        .max(MIN_WORKER_COOPERATIVE_GRACE)
+}
+
+/// Cooperative drain budget for the worker's `ServiceContainer::shutdown_with_grace_period`.
+///
+/// Derived from the same `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` /
+/// `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` values the supervisor turns into a
+/// `ShutdownSchedule`, so raising the configured timeout lengthens the phase
+/// that finalizes recordings instead of only moving the parent's force point.
+/// `supervise_current_executable` validates these variables before spawning the
+/// worker, so a parse failure here means the worker was launched by hand with a
+/// broken environment; the drain then falls back to the built-in defaults
+/// rather than failing the shutdown.
+pub(crate) fn worker_cooperative_grace() -> Duration {
+    let policy = shutdown_policy_from_environment().unwrap_or_else(|error| {
+        warn!(%error, "Invalid shutdown policy environment; using default drain budget");
+        ShutdownPolicy::new(DEFAULT_SHUTDOWN_TIMEOUT, DEFAULT_FORCE_RESERVE)
+            .expect("default shutdown policy must satisfy ShutdownPolicy::new")
+    });
+    cooperative_grace_from_policy(policy)
+}
+
 fn duration_from_environment(name: &str, default: Duration) -> Result<Duration> {
     let Some(raw) = std::env::var_os(name) else {
         return Ok(default);
@@ -711,6 +745,29 @@ mod tests {
         assert_eq!(
             parse_shutdown_command("SHUTDOWN signal").unwrap(),
             WorkerShutdownReason::Signal
+        );
+    }
+
+    #[test]
+    fn cooperative_grace_stays_inside_the_force_point() {
+        let policy = ShutdownPolicy::new(DEFAULT_SHUTDOWN_TIMEOUT, DEFAULT_FORCE_RESERVE).unwrap();
+        assert_eq!(
+            cooperative_grace_from_policy(policy),
+            DEFAULT_SHUTDOWN_TIMEOUT - DEFAULT_FORCE_RESERVE - WORKER_COOPERATIVE_MARGIN
+        );
+
+        let extended =
+            ShutdownPolicy::new(Duration::from_secs(300), DEFAULT_FORCE_RESERVE).unwrap();
+        assert_eq!(
+            cooperative_grace_from_policy(extended),
+            Duration::from_secs(300) - DEFAULT_FORCE_RESERVE - WORKER_COOPERATIVE_MARGIN
+        );
+
+        // A window at or below the margin still leaves a non-zero drain.
+        let tight = ShutdownPolicy::new(Duration::from_secs(3), Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            cooperative_grace_from_policy(tight),
+            MIN_WORKER_COOPERATIVE_GRACE
         );
     }
 

@@ -10,7 +10,7 @@ use crate::backend::{
 };
 use crate::runtime::{
     RuntimeTermination, WorkerShutdownReason, is_worker_process, supervise_current_executable,
-    wait_for_worker_start,
+    wait_for_worker_start, worker_cooperative_grace,
 };
 
 const WORKER_FAIL_STOP_EXIT_CODE: i32 = 70;
@@ -166,7 +166,12 @@ async fn run_worker() -> anyhow::Result<()> {
     }
 
     info!("Shutting down contained services...");
-    container.shutdown().await?;
+    // The drain budget follows the supervisor's configured shutdown policy so
+    // the cooperative phase ends before `ShutdownSchedule::force_at` instead of
+    // racing the parent's forced containment with a fixed default.
+    container
+        .shutdown_with_grace_period(worker_cooperative_grace())
+        .await?;
     info!("Contained rust-srec runtime shutdown complete");
 
     Ok(())
