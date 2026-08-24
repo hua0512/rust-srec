@@ -607,6 +607,10 @@ pub struct JobQueue {
     progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
     /// Progress update sender for async persistence/coalescing.
     progress_tx: tokio::sync::mpsc::Sender<JobProgressUpdate>,
+    /// Stops the progress consumer after worker producers have settled.
+    progress_shutdown: CancellationToken,
+    /// Owned so pipeline shutdown can prove no progress write remains in flight.
+    progress_aggregator: parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Cursor used to dedupe/append logs into `job_execution_logs`.
     persisted_log_cursor: DashMap<String, PersistedLogCursor>,
 }
@@ -637,13 +641,15 @@ impl JobQueue {
         let progress_cache: Arc<DashMap<String, JobProgressSnapshot>> = Arc::new(DashMap::new());
         let upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>> =
             Arc::new(std::sync::OnceLock::new());
-        spawn_progress_aggregator(
+        let progress_shutdown = CancellationToken::new();
+        let progress_aggregator = spawn_progress_aggregator(
             repository.clone(),
             progress_rx,
             jobs_cache.clone(),
             cancellation_tokens.clone(),
             progress_cache.clone(),
             upload_broadcaster.clone(),
+            progress_shutdown.clone(),
         );
 
         Self {
@@ -659,8 +665,28 @@ impl JobQueue {
             cancellation_tokens,
             progress_cache,
             progress_tx,
+            progress_shutdown,
+            progress_aggregator: parking_lot::Mutex::new(progress_aggregator),
             persisted_log_cursor: DashMap::new(),
         }
+    }
+
+    pub(crate) async fn stop_progress_aggregator(&self) {
+        self.progress_shutdown.cancel();
+        let task = self.progress_aggregator.lock().take();
+        if let Some(task) = task
+            && let Err(error) = task.await
+        {
+            warn!(%error, "Job progress aggregator failed while stopping");
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn progress_aggregator_is_running(&self) -> bool {
+        self.progress_aggregator
+            .lock()
+            .as_ref()
+            .is_some_and(|task| !task.is_finished())
     }
 
     /// Set the session repository for persisting media outputs (e.g., thumbnails).
@@ -2462,6 +2488,15 @@ impl JobQueue {
     }
 }
 
+impl Drop for JobQueue {
+    fn drop(&mut self) {
+        self.progress_shutdown.cancel();
+        if let Some(task) = self.progress_aggregator.get_mut().take() {
+            task.abort();
+        }
+    }
+}
+
 fn spawn_progress_aggregator(
     repo: Option<Arc<dyn JobRepository>>,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
@@ -2469,20 +2504,23 @@ fn spawn_progress_aggregator(
     cancellation_tokens: Arc<DashMap<String, CancellationToken>>,
     progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
     upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>>,
-) {
+    shutdown: CancellationToken,
+) -> Option<tokio::task::JoinHandle<()>> {
     if tokio::runtime::Handle::try_current().is_err() {
         // Some unit tests construct JobQueue outside a Tokio runtime. Progress persistence
         // is best-effort and can be disabled in those contexts.
-        return;
+        return None;
     }
 
-    tokio::spawn(async move {
+    Some(tokio::spawn(async move {
         let mut pending: HashMap<String, JobProgressSnapshot> = HashMap::new();
         let flush_every = std::time::Duration::from_millis(PROGRESS_FLUSH_INTERVAL_MS);
         let mut tick = tokio::time::interval(flush_every);
 
         loop {
             tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => break,
                 _ = tick.tick() => {
                     if pending.is_empty() {
                         continue;
@@ -2568,7 +2606,7 @@ fn spawn_progress_aggregator(
                 }
             }
         }
-    });
+    }))
 }
 
 /// Job statistics.

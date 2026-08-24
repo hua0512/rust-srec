@@ -114,6 +114,16 @@ The following environment variables can be configured in your <a :href="withBase
 | `OUTPUT_DIR` | Directory where recordings are stored | `/app/output` |
 | `LOG_DIR` | Directory for log files | `./logs` |
 
+### Shutdown
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` | Strict standalone-server shutdown deadline | `30` |
+| `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` | Time reserved inside the deadline for forced process-tree containment; must be greater than zero and less than the total timeout | `2` |
+| `RUST_SREC_CONTAINER_STOP_GRACE_PERIOD` | Docker Compose wait before external SIGKILL; keep longer than the backend deadline | `35s` |
+| `RUST_SREC_RUNTIME_MARKER_PATH` | Dirty-generation marker retained after a forced or crashed runtime | Beside the SQLite database |
+
+The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including while startup admission or marker I/O is in progress, and covers the parent process exit as well as worker cleanup. The server first asks its isolated runtime to shut down gracefully. At the start of the force reserve, it terminates the contained process tree if the runtime is still active and exits unsuccessfully. Exit status `124` identifies hard-deadline expiry; `125` means the terminal process-tree termination request itself failed. A worker-local fatal failure fails closed instead of starting an unbounded graceful drain. A retained marker means startup recovery may be required; later clean runs do not erase that earlier recovery debt. The marker does not by itself reconstruct an artifact that was interrupted before it reached SQLite. Remove it only while the backend is stopped and after the interrupted artifacts have been reconciled.
+
 ### Network
 | Variable | Description | Default |
 |----------|-------------|---------|

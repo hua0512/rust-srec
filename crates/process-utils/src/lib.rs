@@ -2,6 +2,56 @@
 
 use std::ffi::OsStr;
 
+#[cfg(all(
+    feature = "tokio",
+    any(
+        windows,
+        target_os = "aix",
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "haiku",
+        target_os = "hurd",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "nto",
+        target_os = "openbsd",
+        target_os = "solaris",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    )
+))]
+mod contained_child;
+
+#[cfg(all(
+    feature = "tokio",
+    any(
+        windows,
+        target_os = "aix",
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "haiku",
+        target_os = "hurd",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "nto",
+        target_os = "openbsd",
+        target_os = "solaris",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    )
+))]
+pub use contained_child::{ContainedChild, ContainmentError, TreeTerminator};
+
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 

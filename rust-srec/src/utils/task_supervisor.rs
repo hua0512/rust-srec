@@ -33,7 +33,9 @@ impl std::fmt::Display for RuntimeFailure {
 /// Owns background tasks spawned by the application composition root.
 ///
 /// Once shutdown starts, new tasks are rejected. Existing tasks are joined
-/// against one shared deadline and forcibly aborted if they do not finish.
+/// against one shared graceful deadline, then contained until every task has
+/// actually exited. Parent tasks are never aborted because they may own nested
+/// actors or repository work that must not outlive database shutdown.
 pub(crate) struct TaskSupervisor {
     accepting: AtomicBool,
     tasks: Mutex<JoinSet<&'static str>>,
@@ -182,11 +184,13 @@ impl TaskSupervisor {
         self.tasks.lock().len()
     }
 
-    /// Stops accepting tasks and waits for every owned task until `timeout` expires.
+    /// Stops accepting tasks, cancels the runtime, and joins every owned task.
     ///
-    /// Returns `true` when all tasks finished without exceeding the deadline.
+    /// Returns `true` when all tasks finished within the grace period. If the
+    /// period expires, this still waits for containment and returns `false`.
     pub(crate) async fn shutdown(&self, timeout: Duration) -> bool {
         self.accepting.store(false, Ordering::Release);
+        self.cancellation_token.cancel();
 
         let mut tasks = {
             let mut owned = self.tasks.lock();
@@ -205,14 +209,17 @@ impl TaskSupervisor {
                     let unfinished = tasks.len();
                     warn!(
                         unfinished,
-                        "Background task shutdown deadline exceeded; aborting tasks"
+                        "Background task grace period exceeded; awaiting containment"
                     );
-                    tasks.abort_all();
                     while let Some(result) = tasks.join_next().await {
-                        if let Err(error) = result
-                            && !error.is_cancelled()
-                        {
-                            warn!(error = %error, "Background task failed while being aborted");
+                        match result {
+                            Ok(name) => {
+                                debug!(task = name, "Background task stopped during containment")
+                            }
+                            Err(error) => warn!(
+                                error = %error,
+                                "Background task failed during containment"
+                            ),
                         }
                     }
                     return false;
@@ -260,9 +267,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_aborts_tasks_after_deadline() {
-        let supervisor = TaskSupervisor::new();
-        assert!(supervisor.spawn("pending", std::future::pending()));
+    async fn shutdown_contains_tasks_after_grace_deadline() {
+        let cancellation_token = CancellationToken::new();
+        let supervisor = TaskSupervisor::with_cancellation(cancellation_token.clone());
+        assert!(supervisor.spawn("pending", async move {
+            cancellation_token.cancelled().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }));
 
         assert!(!supervisor.shutdown(std::time::Duration::ZERO).await);
         assert_eq!(supervisor.task_count(), 0);
@@ -277,7 +288,8 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_reaps_completed_tasks() {
-        let supervisor = TaskSupervisor::new();
+        let cancellation_token = CancellationToken::new();
+        let supervisor = TaskSupervisor::with_cancellation(cancellation_token.clone());
         let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
 
         assert!(supervisor.spawn("completed", async move {
@@ -285,7 +297,10 @@ mod tests {
         }));
         completed_rx.await.expect("task should complete");
 
-        assert!(supervisor.spawn("pending", std::future::pending()));
+        assert!(supervisor.spawn("pending", async move {
+            cancellation_token.cancelled().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }));
         assert_eq!(supervisor.task_count(), 1);
 
         assert!(!supervisor.shutdown(std::time::Duration::ZERO).await);

@@ -336,6 +336,15 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
   - `GET /api/health` and `GET /api/health/ready` require a valid bearer token and return `401` when
     JWT authentication is not configured
 - Shutdown:
-  - The `ServiceContainer` holds a `CancellationToken` and propagates it to background tasks
+  - The standalone executable keeps SQLite, sockets, and recording files inside an OS-contained
+    worker process. A dedicated parent thread observes termination signals and arms the absolute
+    shutdown deadline even while startup or async runtime work is blocked. The watchdog remains
+    armed through durable marker updates, terminal diagnostics, and parent process exit.
+  - The `ServiceContainer` performs phased graceful shutdown inside that worker, keeping required
+    event consumers alive until final segment facts are persisted.
   - `SIGINT` triggers graceful shutdown on all supported platforms; `SIGTERM` is additionally
-    handled on Unix
+    handled on Unix. A signal sent directly to the worker or a worker-local critical failure
+    fail-stops that worker; the parent then contains its descendants and retains recovery state.
+  - A forced or crashed worker leaves a dirty-generation marker beside SQLite so the next launch
+    reports that recovery may be required. Earlier recovery debt survives later clean generations;
+    the marker is a detection mechanism, not artifact replay.

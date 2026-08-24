@@ -19,7 +19,8 @@ use crate::database::repositories::{
     streamer::SqlxStreamerRepository,
 };
 use crate::downloader::{
-    DownloadManager, DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent,
+    DownloadCoordinationReceiver, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
+    DownloadTerminalEvent,
 };
 use crate::monitor::StreamMonitor;
 use crate::pipeline::PipelineManager;
@@ -57,6 +58,10 @@ impl ServiceContainer {
 
     /// Set up download event subscriptions to pipeline manager.
     pub(super) fn setup_download_event_subscriptions(&self) {
+        let Some(coordination_receiver) = self.download_coordination_receiver.lock().take() else {
+            warn!("Required download coordination consumer is already running");
+            return;
+        };
         let receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -87,8 +92,12 @@ impl ServiceContainer {
             discarded_segment_keys: self.discarded_segment_keys.clone(),
         };
         self.task_supervisor.spawn(
-            "download event processor",
-            processor.run(event_rx, cancellation_token),
+            "download progress observer",
+            processor.clone().run_observer(event_rx, cancellation_token),
+        );
+        self.task_supervisor.spawn_critical(
+            "download coordination handler",
+            processor.run_required(coordination_receiver),
         );
     }
 
@@ -98,89 +107,22 @@ impl ServiceContainer {
     /// pipeline manager so the session-complete DAG fires at the right
     /// moment (per `cause.should_run_session_complete_pipeline()`).
     pub(super) fn setup_session_lifecycle_subscriptions(&self) {
-        // Take both required receivers before spawning either consumer, and
-        // restore them on mismatch: spawning the download-terminal handler
-        // without the transition coordinator (or vice versa) would leave
-        // `SessionLifecycle::publish_transition` or
-        // `DownloadEventPublisher::publish` feeding a channel nobody drains.
-        let (mut download_rx, mut transition_rx) = {
-            let mut download_slot = self.download_terminal_receiver.lock();
-            let mut transition_slot = self.session_transition_receiver.lock();
-            match (download_slot.take(), transition_slot.take()) {
-                (Some(download_rx), Some(transition_rx)) => (download_rx, transition_rx),
-                (download_rx, transition_rx) => {
-                    *download_slot = download_rx;
-                    *transition_slot = transition_rx;
-                    warn!("Session lifecycle consumers are already running");
-                    return;
-                }
-            }
+        let Some(mut transition_rx) = self.session_transition_receiver.lock().take() else {
+            warn!("Session transition coordinator is already running");
+            return;
         };
-        let lifecycle = self.session_lifecycle.clone();
-        let cancellation_token = self.cancellation_token.clone();
-
-        self.task_supervisor
-            .spawn_critical("session download events", async move {
-                loop {
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {
-                            debug!("SessionLifecycle download-event handler shutting down");
-                            return Ok::<(), String>(());
-                        }
-                        result = download_rx.recv() => {
-                            match result {
-                                Some(event) => {
-                                    lifecycle.on_download_terminal(&event).await.map_err(|error| {
-                                        format!(
-                                            "failed to process terminal event for session '{}': {error}",
-                                            event.session_id()
-                                        )
-                                    })?;
-                                }
-                                None => {
-                                    if cancellation_token.is_cancelled() {
-                                        return Ok(());
-                                    }
-                                    return Err(
-                                        "required download terminal event channel closed".to_string()
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            });
 
         let runtime_coordinator = self.runtime_coordinator.clone();
-        let cancellation_token = self.cancellation_token.clone();
 
         self.task_supervisor
             .spawn_critical("session transition coordinator", async move {
-                loop {
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {
-                            debug!("Session transition coordinator shutting down");
-                            return Ok::<(), String>(());
-                        }
-                        result = transition_rx.recv() => {
-                            match result {
-                                Some(transition) => {
-                                    runtime_coordinator
-                                        .handle_session_transition(transition)
-                                        .await;
-                                }
-                                None => {
-                                    if cancellation_token.is_cancelled() {
-                                        return Ok(());
-                                    }
-                                    return Err(
-                                        "required session transition channel closed".to_string()
-                                    );
-                                }
-                            }
-                        }
-                    }
+                while let Some(transition) = transition_rx.recv().await.map_err(str::to_string)? {
+                    runtime_coordinator
+                        .handle_session_transition(transition)
+                        .await;
                 }
+                debug!("Session transition coordinator drained and stopped");
+                Ok::<(), String>(())
             });
     }
 
@@ -550,9 +492,13 @@ async fn run_download_event_drain(
             result = receiver.recv() => {
                 match result {
                     Ok(download_event) => {
-                        if let DownloadManagerEvent::Progress(DownloadProgressEvent::Progress { progress, .. }) = &download_event
-                            && !should_record_recovery_from_progress(progress)
-                        {
+                        let DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
+                            progress,
+                            ..
+                        }) = &download_event else {
+                            continue;
+                        };
+                        if !should_record_recovery_from_progress(progress) {
                             continue;
                         }
                         if event_tx.send(download_event).await.is_err() {
@@ -577,6 +523,7 @@ async fn run_download_event_drain(
 /// [`ServiceContainer::setup_download_event_subscriptions`] so the spawned
 /// future is `'static`. Consumes the queue fed by
 /// [`run_download_event_drain`].
+#[derive(Clone)]
 struct DownloadEventProcessor {
     pipeline_manager: Arc<PipelineManager>,
     stream_monitor: Arc<RuntimeStreamMonitor>,
@@ -588,7 +535,7 @@ struct DownloadEventProcessor {
 }
 
 impl DownloadEventProcessor {
-    async fn run(
+    async fn run_observer(
         self,
         mut event_rx: mpsc::Receiver<DownloadManagerEvent>,
         process_token: CancellationToken,
@@ -598,11 +545,52 @@ impl DownloadEventProcessor {
                 debug!("Download event processor shutting down");
                 break;
             }
-            self.handle_event(download_event).await;
+            if download_event.requires_coordination() {
+                // Segment and terminal state changes were already applied and
+                // acknowledged by `run_required` before the manager exposed
+                // this observer copy. Replaying them here would duplicate
+                // danmu rotation, persistence, and lifecycle transitions.
+                continue;
+            }
+            if let Err(error) = self.handle_event(download_event).await {
+                warn!(%error, "Download progress observer failed to handle event");
+            }
         }
     }
 
-    async fn handle_event(&self, download_event: DownloadManagerEvent) {
+    async fn run_required(
+        self,
+        mut receiver: DownloadCoordinationReceiver,
+    ) -> std::result::Result<(), String> {
+        while let Some(delivery) = receiver.recv().await.map_err(str::to_string)? {
+            let (event, acknowledgement) = delivery.into_parts();
+            let result = self.handle_event(event).await;
+            let acknowledgement_result = result.as_ref().map(|_| ()).map_err(ToString::to_string);
+            if acknowledgement.send(acknowledgement_result).is_err() {
+                debug!("Download coordination event acknowledgement receiver was dropped");
+            }
+            result?;
+        }
+        debug!("Download coordination handler drained and shut down");
+        Ok(())
+    }
+
+    async fn handle_event(
+        &self,
+        download_event: DownloadManagerEvent,
+    ) -> std::result::Result<(), String> {
+        if let DownloadManagerEvent::Terminal(terminal) = &download_event {
+            self.session_lifecycle
+                .on_download_terminal(terminal)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "failed to apply terminal event for session '{}': {error}",
+                        terminal.session_id()
+                    )
+                })?;
+        }
+
         // Handle download failure for streamer error tracking. Danmu
         // collection is stopped separately by
         // `RuntimeCoordinator::handle_session_transition` so Failed
@@ -792,7 +780,7 @@ impl DownloadEventProcessor {
                         .remove_danmu_segment_output(session_id, &danmu_path.to_string_lossy())
                         .await;
                     // Discarded segments never reach the pipeline manager.
-                    return;
+                    return Ok(());
                 }
 
                 if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id)
@@ -819,7 +807,9 @@ impl DownloadEventProcessor {
         // every active download).
         self.pipeline_manager
             .handle_download_event(download_event)
-            .await;
+            .await
+            .map_err(|error| format!("failed to apply download event to pipeline: {error}"))?;
+        Ok(())
     }
 }
 
@@ -838,14 +828,19 @@ struct DanmuEventHandler {
 
 impl DanmuEventHandler {
     async fn run(self, mut receiver: DanmuCoordinationReceiver) -> std::result::Result<(), String> {
+        let mut failures = Vec::new();
         while let Some(event) = receiver.recv().await.map_err(str::to_string)? {
-            self.handle_event(event).await;
+            if let Err(error) = self.handle_event(event).await {
+                warn!(%error, "Required danmu event could not be applied");
+                failures.push(error);
+            }
         }
+        receiver.acknowledge_shutdown(failures);
         debug!("Danmu event handler drained and shut down");
         Ok(())
     }
 
-    async fn handle_event(&self, event: DanmuEvent) {
+    async fn handle_event(&self, event: DanmuEvent) -> std::result::Result<(), String> {
         match event {
             DanmuEvent::CollectionStarted {
                 session_id,
@@ -860,7 +855,8 @@ impl DanmuEventHandler {
                         session_id,
                         streamer_id,
                     })
-                    .await;
+                    .await
+                    .map_err(|error| format!("failed to apply danmu collection start: {error}"))?;
             }
             DanmuEvent::CollectionStopped {
                 session_id,
@@ -878,7 +874,8 @@ impl DanmuEventHandler {
                         session_id,
                         total_count,
                     })
-                    .await;
+                    .await
+                    .map_err(|error| format!("failed to apply danmu collection stop: {error}"))?;
             }
             DanmuEvent::SegmentStarted {
                 session_id,
@@ -923,7 +920,7 @@ impl DanmuEventHandler {
                         "Skipping danmu segment {} for session {} (paired video discarded)",
                         segment_id, session_id
                     );
-                    return;
+                    return Ok(());
                 }
                 // Forward to pipeline manager for processing
                 self.pipeline_manager
@@ -934,7 +931,10 @@ impl DanmuEventHandler {
                         output_path,
                         message_count,
                     })
-                    .await;
+                    .await
+                    .map_err(|error| {
+                        format!("failed to apply danmu segment completion: {error}")
+                    })?;
             }
             DanmuEvent::Control {
                 session_id,
@@ -955,7 +955,8 @@ impl DanmuEventHandler {
                         platform: platform.clone(),
                         control: control.clone(),
                     })
-                    .await;
+                    .await
+                    .map_err(|error| format!("failed to apply danmu control event: {error}"))?;
 
                 if matches!(
                     control,
@@ -998,6 +999,7 @@ impl DanmuEventHandler {
                 warn!("Danmu error for session {}: {}", session_id, error);
             }
         }
+        Ok(())
     }
 
     /// Treat a danmu stream-closed control event as authoritative

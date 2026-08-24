@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
@@ -69,6 +70,27 @@ struct PairedDagContext {
     streamer_id: String,
     segment_index: u32,
     created_at: std::time::Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PipelineRuntimeState {
+    NotStarted,
+    Running,
+    Stopped,
+}
+
+struct PipelineRuntime {
+    state: PipelineRuntimeState,
+    tasks: JoinSet<&'static str>,
+}
+
+impl PipelineRuntime {
+    fn new() -> Self {
+        Self {
+            state: PipelineRuntimeState::NotStarted,
+            tasks: JoinSet::new(),
+        }
+    }
 }
 
 const SESSION_COMPLETE_TTL_SECS: u64 = 48 * 60 * 60;
@@ -213,6 +235,9 @@ pub struct PipelineManager<
     streamer_repo: Option<Arc<SR>>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
+    /// Runtime loops spawned by `start`. `stop` takes and joins this set so
+    /// none of them can retain repository access after it returns.
+    runtime: parking_lot::Mutex<PipelineRuntime>,
     /// Throttle controller for download backpressure management.
     throttle_controller: Option<Arc<ThrottleController>>,
     /// Download limit adjuster for throttle controller integration.
@@ -355,6 +380,7 @@ where
             session_repo: None,
             streamer_repo: None,
             cancellation_token: CancellationToken::new(),
+            runtime: parking_lot::Mutex::new(PipelineRuntime::new()),
             throttle_controller,
             download_adjuster: None,
             preset_repo: None,
@@ -418,6 +444,7 @@ where
             session_repo: None,
             streamer_repo: None,
             cancellation_token: CancellationToken::new(),
+            runtime: parking_lot::Mutex::new(PipelineRuntime::new()),
             throttle_controller,
             download_adjuster: None,
             preset_repo: None,

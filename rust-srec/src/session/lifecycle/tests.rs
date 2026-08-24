@@ -1242,6 +1242,115 @@ async fn clean_disconnect_enters_hysteresis() {
     assert!(lifecycle.is_session_active(started.session_id()));
 }
 
+#[tokio::test]
+async fn shutdown_cancels_and_joins_hysteresis_without_ending_session() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+    let mut rx = lifecycle.subscribe();
+
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let _ = rx.recv().await.unwrap();
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_clean_disconnect(
+            started.session_id(),
+        ))
+        .await
+        .unwrap();
+    let _ = rx.recv().await.unwrap();
+
+    lifecycle
+        .shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1))
+        .await
+        .expect("hysteresis timer should stop within the shutdown deadline");
+
+    assert!(
+        db_session_end_time(&pool, started.session_id())
+            .await
+            .is_none()
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(25), rx.recv())
+            .await
+            .is_err(),
+        "a cancelled timer must not publish Ended after the shutdown fence"
+    );
+}
+
+#[tokio::test]
+async fn shutdown_drains_admitted_operations_and_rejects_late_mutations() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle(pool);
+    let admitted_operation = lifecycle.operation_gate.read().await;
+
+    let shutdown_lifecycle = lifecycle.clone();
+    let mut shutdown = tokio::spawn(async move {
+        shutdown_lifecycle
+            .shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1))
+            .await
+    });
+
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(25), &mut shutdown)
+            .await
+            .is_err(),
+        "shutdown must wait for an operation admitted before the fence"
+    );
+
+    drop(admitted_operation);
+    shutdown
+        .await
+        .expect("shutdown task should join")
+        .expect("lifecycle should drain before its deadline");
+
+    let error = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .expect_err("a lifecycle mutation after shutdown must be rejected");
+    assert!(error.to_string().contains("shutting down"));
+}
+
+#[tokio::test]
+async fn shutdown_drains_cancelled_timer_after_graceful_deadline() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle(pool);
+    let release_timer = Arc::new(tokio::sync::Notify::new());
+    let task_release = release_timer.clone();
+    lifecycle
+        .hysteresis_tasks
+        .lock()
+        .spawn(async move { task_release.notified().await });
+
+    let shutdown_lifecycle = lifecycle.clone();
+    let mut shutdown = tokio::spawn(async move {
+        shutdown_lifecycle
+            .shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_millis(10))
+            .await
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(25), &mut shutdown)
+            .await
+            .is_err(),
+        "deadline expiry must not abort an owned timer future"
+    );
+
+    release_timer.notify_one();
+    let report = tokio::time::timeout(std::time::Duration::from_secs(1), shutdown)
+        .await
+        .expect("shutdown should finish after timer settlement is released")
+        .expect("shutdown task should join")
+        .expect("cancelled timer should remain contained");
+    assert_eq!(report.forced_timer_count, 1);
+    assert!(
+        report
+            .failures
+            .iter()
+            .any(|failure| failure.contains("graceful hysteresis timer deadline exceeded"))
+    );
+}
+
 /// hysteresis timer expires with no resume → `Ended` transition,
 /// DB `end_time IS NOT NULL`, `via_hysteresis=true`.
 #[tokio::test]
@@ -3005,7 +3114,7 @@ async fn end_for_disable_broadcast_after_commit_and_memory_update() {
 #[tokio::test]
 async fn required_transition_survives_lagged_observer() {
     let pool = setup_pool().await;
-    let (required_tx, mut required_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (required_tx, mut required_rx) = crate::session::session_transition_channel();
     let lifecycle = SessionLifecycle::new(
         Arc::new(SessionLifecycleRepository::new(pool)),
         Arc::new(OfflineClassifier::new()),
@@ -3034,7 +3143,7 @@ async fn required_transition_survives_lagged_observer() {
     });
 
     let mut received_terminal = false;
-    while let Ok(Some(transition)) =
+    while let Ok(Ok(Some(transition))) =
         tokio::time::timeout(std::time::Duration::from_secs(1), required_rx.recv()).await
     {
         if matches!(

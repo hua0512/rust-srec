@@ -13,8 +13,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::Result;
-
 /// Type of download engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -522,7 +520,7 @@ impl DownloadFailureKind {
     }
 }
 
-/// Error returned by [`DownloadEngine::start`] carrying a classified
+/// Error returned by [`DownloadEngine::run`] carrying a classified
 /// [`DownloadFailureKind`] so the manager can make informed retry and
 /// circuit-breaker decisions without hardcoding `Other`.
 #[derive(Debug, thiserror::Error)]
@@ -728,17 +726,12 @@ pub trait DownloadEngine: Send + Sync {
     /// Get the engine type.
     fn engine_type(&self) -> EngineType;
 
-    /// Start a download.
+    /// Run a download to completion.
     ///
-    /// Returns a handle that can be used to monitor and cancel the download.
-    /// The engine should emit events through the handle's event channel.
-    async fn start(&self, handle: Arc<DownloadHandle>)
-    -> std::result::Result<(), EngineStartError>;
-
-    /// Stop a download.
-    ///
-    /// This should gracefully stop the download and clean up resources.
-    async fn stop(&self, handle: &DownloadHandle) -> Result<()>;
+    /// Cancellation is requested through the handle. The returned future must
+    /// not complete until every process and task owned by the engine has stopped
+    /// and no further events can be emitted through the handle's event channel.
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError>;
 
     /// Check if the engine is available (e.g., binary exists).
     fn is_available(&self) -> bool;

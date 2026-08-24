@@ -187,6 +187,16 @@ impl SessionRepository for TestSessionRepository {
         Ok(())
     }
 
+    async fn create_segment_output(
+        &self,
+        output: &MediaOutputDbModel,
+        segment: &SessionSegmentDbModel,
+    ) -> Result<()> {
+        self.insert_output(output.clone());
+        self.insert_segment(segment.clone());
+        Ok(())
+    }
+
     async fn delete_media_output(&self, _id: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
@@ -1193,6 +1203,25 @@ fn test_set_worker_concurrency_clamps_to_max_workers() {
     manager.set_worker_concurrency(1, 3);
     assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
     assert_eq!(manager.io_pool.desired_max_workers(), 3);
+}
+
+#[tokio::test]
+async fn stop_settles_owned_pipeline_runtime_tasks() {
+    let manager: Arc<PipelineManager> = Arc::new(PipelineManager::new());
+    assert!(manager.job_queue.progress_aggregator_is_running());
+
+    manager.clone().start();
+    assert_eq!(manager.runtime.lock().tasks.len(), 3);
+
+    tokio::time::timeout(std::time::Duration::from_secs(1), manager.stop())
+        .await
+        .expect("pipeline stop should settle every owned runtime task");
+
+    let runtime = manager.runtime.lock();
+    assert_eq!(runtime.state, PipelineRuntimeState::Stopped);
+    assert!(runtime.tasks.is_empty());
+    drop(runtime);
+    assert!(!manager.job_queue.progress_aggregator_is_running());
 }
 
 struct TestPipelinePresetRepository {

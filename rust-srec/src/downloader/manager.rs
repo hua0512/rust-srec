@@ -6,16 +6,16 @@ mod configuration;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
@@ -30,6 +30,8 @@ use super::queue::{
 use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
 use crate::Result;
 use crate::database::repositories::config::ConfigRepository;
+
+use attempt::{AttemptCompletion, AttemptSupervisor};
 
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
     serde_json::from_str(raw)
@@ -161,6 +163,8 @@ impl Default for DownloadManagerConfig {
 /// Internal state for an active download.
 struct ActiveDownload {
     handle: Arc<DownloadHandle>,
+    phase: Arc<Mutex<AttemptPhase>>,
+    completion: Arc<AttemptCompletion>,
     status: DownloadStatus,
     progress: DownloadProgress,
     /// Last known output path (from segments)
@@ -181,40 +185,229 @@ struct ActiveDownload {
     retry_config_override: Option<RetryConfig>,
 }
 
+#[derive(Debug, Clone)]
+enum AttemptPhase {
+    Running,
+    StopRequested(DownloadStopCause),
+    TerminalChosen,
+}
+
+impl AttemptPhase {
+    fn stop_cause(&self) -> Option<DownloadStopCause> {
+        match self {
+            Self::StopRequested(cause) => Some(cause.clone()),
+            Self::Running | Self::TerminalChosen => None,
+        }
+    }
+
+    fn is_stop_requested(&self) -> bool {
+        matches!(self, Self::StopRequested(_))
+    }
+}
+
 #[derive(Clone)]
 struct DownloadEventPublisher {
     observer_tx: broadcast::Sender<DownloadManagerEvent>,
-    required_terminal_tx: Option<mpsc::UnboundedSender<DownloadTerminalEvent>>,
+    coordination_tx: Option<DownloadCoordinationSender>,
 }
 
 impl DownloadEventPublisher {
     fn new(
         observer_tx: broadcast::Sender<DownloadManagerEvent>,
-        required_terminal_tx: Option<mpsc::UnboundedSender<DownloadTerminalEvent>>,
+        coordination_tx: Option<DownloadCoordinationSender>,
     ) -> Self {
         Self {
             observer_tx,
-            required_terminal_tx,
+            coordination_tx,
         }
     }
 
     fn publish(&self, event: DownloadManagerEvent) -> bool {
-        if let DownloadManagerEvent::Terminal(terminal) = &event
-            && let Some(required_tx) = &self.required_terminal_tx
-            && required_tx.send(terminal.clone()).is_err()
-        {
-            warn!(
-                session_id = %terminal.session_id(),
-                "Required download terminal event consumer is unavailable"
-            );
+        let (receipt, observed) = self.dispatch(event);
+        if matches!(&receipt, Some(DownloadCoordinationReceipt::Unavailable)) {
+            error!("Required download coordination consumer is unavailable");
         }
+        drop(receipt);
+        observed
+    }
 
+    async fn publish_and_wait(
+        &self,
+        event: DownloadManagerEvent,
+    ) -> std::result::Result<(), String> {
+        self.coordinate_and_wait(&event).await?;
+        self.observe(event);
+        Ok(())
+    }
+
+    async fn coordinate_and_wait(
+        &self,
+        event: &DownloadManagerEvent,
+    ) -> std::result::Result<(), String> {
+        if !event.requires_coordination() {
+            return Ok(());
+        }
+        match &self.coordination_tx {
+            Some(sender) => sender.publish(event.clone()).wait().await,
+            None => Ok(()),
+        }
+    }
+
+    fn observe(&self, event: DownloadManagerEvent) -> bool {
         self.observer_tx.send(event).is_ok()
+    }
+
+    fn dispatch(&self, event: DownloadManagerEvent) -> (Option<DownloadCoordinationReceipt>, bool) {
+        let receipt = if event.requires_coordination() {
+            self.coordination_tx
+                .as_ref()
+                .map(|sender| sender.publish(event.clone()))
+        } else {
+            None
+        };
+
+        let observed = self.observer_tx.send(event).is_ok();
+        (receipt, observed)
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
         self.observer_tx.subscribe()
     }
+
+    async fn shutdown_coordination(&self) -> std::result::Result<(), &'static str> {
+        match &self.coordination_tx {
+            Some(sender) => sender.shutdown().await,
+            None => Ok(()),
+        }
+    }
+}
+
+enum DownloadCoordinationDelivery {
+    Event {
+        event: Box<DownloadManagerEvent>,
+        acknowledgement: oneshot::Sender<std::result::Result<(), String>>,
+    },
+    Shutdown(oneshot::Sender<()>),
+}
+
+#[derive(Clone)]
+pub(crate) struct DownloadCoordinationSender {
+    state: Arc<Mutex<DownloadCoordinationState>>,
+}
+
+struct DownloadCoordinationState {
+    tx: mpsc::UnboundedSender<DownloadCoordinationDelivery>,
+    accepting: bool,
+}
+
+impl DownloadCoordinationSender {
+    fn publish(&self, event: DownloadManagerEvent) -> DownloadCoordinationReceipt {
+        let (acknowledgement, acknowledged) = oneshot::channel();
+        let delivery = DownloadCoordinationDelivery::Event {
+            event: Box::new(event),
+            acknowledgement,
+        };
+        let mut state = self.state.lock();
+        if !state.accepting || state.tx.send(delivery).is_err() {
+            state.accepting = false;
+            DownloadCoordinationReceipt::Unavailable
+        } else {
+            DownloadCoordinationReceipt::Pending(acknowledged)
+        }
+    }
+
+    async fn shutdown(&self) -> std::result::Result<(), &'static str> {
+        let (acknowledgement, acknowledged) = oneshot::channel();
+        {
+            let mut state = self.state.lock();
+            if !state.accepting {
+                return Err("required download coordination channel is already closed");
+            }
+            state.accepting = false;
+            state
+                .tx
+                .send(DownloadCoordinationDelivery::Shutdown(acknowledgement))
+                .map_err(|_| "required download coordination channel is closed")?;
+        }
+        acknowledged
+            .await
+            .map_err(|_| "download coordination handler stopped before acknowledging shutdown")
+    }
+}
+
+enum DownloadCoordinationReceipt {
+    Pending(oneshot::Receiver<std::result::Result<(), String>>),
+    Unavailable,
+}
+
+impl DownloadCoordinationReceipt {
+    async fn wait(self) -> std::result::Result<(), String> {
+        match self {
+            Self::Pending(acknowledged) => acknowledged.await.map_err(|_| {
+                "download coordination handler stopped before acknowledging event".to_string()
+            })?,
+            Self::Unavailable => {
+                Err("required download coordination channel is closed".to_string())
+            }
+        }
+    }
+}
+
+pub(crate) struct DownloadCoordinationEvent {
+    event: DownloadManagerEvent,
+    acknowledgement: oneshot::Sender<std::result::Result<(), String>>,
+}
+
+impl DownloadCoordinationEvent {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        DownloadManagerEvent,
+        oneshot::Sender<std::result::Result<(), String>>,
+    ) {
+        (self.event, self.acknowledgement)
+    }
+}
+
+pub(crate) struct DownloadCoordinationReceiver {
+    rx: mpsc::UnboundedReceiver<DownloadCoordinationDelivery>,
+}
+
+impl DownloadCoordinationReceiver {
+    pub(crate) async fn recv(
+        &mut self,
+    ) -> std::result::Result<Option<DownloadCoordinationEvent>, &'static str> {
+        match self.rx.recv().await {
+            Some(DownloadCoordinationDelivery::Event {
+                event,
+                acknowledgement,
+            }) => Ok(Some(DownloadCoordinationEvent {
+                event: *event,
+                acknowledgement,
+            })),
+            Some(DownloadCoordinationDelivery::Shutdown(acknowledgement)) => {
+                if acknowledgement.send(()).is_err() {
+                    debug!("Download coordination shutdown acknowledgement receiver was dropped");
+                }
+                Ok(None)
+            }
+            None => Err("required download coordination channel closed without shutdown"),
+        }
+    }
+}
+
+pub(crate) fn download_coordination_channel()
+-> (DownloadCoordinationSender, DownloadCoordinationReceiver) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    (
+        DownloadCoordinationSender {
+            state: Arc::new(Mutex::new(DownloadCoordinationState {
+                tx,
+                accepting: true,
+            })),
+        },
+        DownloadCoordinationReceiver { rx },
+    )
 }
 
 /// The Download Manager service.
@@ -226,6 +419,13 @@ pub struct DownloadManager {
     queue: Arc<DownloadQueue>,
     /// Active downloads.
     active_downloads: Arc<DashMap<String, ActiveDownload>>,
+    /// Owns every recording attempt and linearizes attempt admission against
+    /// shutdown. Engine and event-translator tasks never outlive this runtime.
+    attempts: AttemptSupervisor,
+    /// Fences preflight, queue admission, and pre-start terminal publication
+    /// against the required-event shutdown marker.
+    operation_gate: tokio::sync::RwLock<()>,
+    accepting_operations: AtomicBool,
     /// Pending configuration updates keyed by download_id.
     pending_updates: Arc<DashMap<String, PendingConfigUpdate>>,
     /// Next session-scoped segment index keyed by recording session id.
@@ -343,6 +543,28 @@ pub enum DownloadStopCause {
     Shutdown,
     /// Other internal/system stop reason.
     Other(String),
+}
+
+/// Result of a graceful download-runtime shutdown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadShutdownReport {
+    /// Downloads that were active when shutdown fenced new attempts.
+    pub stopped_download_ids: Vec<String>,
+    /// Attempts that exceeded the graceful deadline but were still joined
+    /// before shutdown continued.
+    pub deadline_exceeded_download_ids: Vec<String>,
+    /// Whether the required coordination consumer acknowledged its final
+    /// marker. Producers are quiesced even when this is false.
+    pub coordination_drained: bool,
+    /// Attempt or coordination failures observed after producer containment.
+    pub failures: Vec<String>,
+}
+
+/// Failure to close attempt admission before producer containment can begin.
+#[derive(Debug, thiserror::Error)]
+pub enum DownloadShutdownError {
+    #[error("download operation drain deadline exceeded")]
+    AdmissionDrain,
 }
 
 impl DownloadStopCause {
@@ -519,10 +741,9 @@ pub enum DownloadTerminalEvent {
         error: String,
         recoverable: bool,
     },
-    /// Download cancelled — stop requested externally (e.g. user, streamer
-    /// disabled, shutdown). A final `Completed` may still arrive once the
-    /// engine flushes the in-flight segment, so this variant is not treated
-    /// as "session complete" by default.
+    /// Download cancelled after the engine flushed its in-flight segment and
+    /// all preceding segment events were translated. Cancellation preserves
+    /// the logical session so a later attempt can resume it.
     Cancelled {
         download_id: String,
         streamer_id: String,
@@ -552,6 +773,16 @@ pub enum DownloadTerminalEvent {
 }
 
 impl DownloadManagerEvent {
+    pub(crate) fn requires_coordination(&self) -> bool {
+        matches!(
+            self,
+            Self::Progress(
+                DownloadProgressEvent::SegmentStarted { .. }
+                    | DownloadProgressEvent::SegmentCompleted { .. }
+            ) | Self::Terminal(_)
+        )
+    }
+
     /// Streamer id shared across both progress and terminal event shapes.
     pub fn streamer_id(&self) -> &str {
         match self {
@@ -768,6 +999,9 @@ impl DownloadManager {
             config: RwLock::new(config),
             queue,
             active_downloads: Arc::new(DashMap::new()),
+            attempts: AttemptSupervisor::new(),
+            operation_gate: tokio::sync::RwLock::new(()),
+            accepting_operations: AtomicBool::new(true),
             pending_updates: Arc::new(DashMap::new()),
             session_segment_indices: Arc::new(DashMap::new()),
             engines: RwLock::new(HashMap::new()),
@@ -799,11 +1033,8 @@ impl DownloadManager {
         manager
     }
 
-    pub(crate) fn with_required_terminal_sender(
-        mut self,
-        sender: mpsc::UnboundedSender<DownloadTerminalEvent>,
-    ) -> Self {
-        self.events.required_terminal_tx = Some(sender);
+    pub(crate) fn with_coordination_sender(mut self, sender: DownloadCoordinationSender) -> Self {
+        self.events.coordination_tx = Some(sender);
         self
     }
 
@@ -865,7 +1096,7 @@ impl DownloadManager {
     }
 
     /// Register a download engine.
-    pub fn register_engine(&mut self, engine: Arc<dyn DownloadEngine>) {
+    pub fn register_engine(&self, engine: Arc<dyn DownloadEngine>) {
         let engine_type = engine.engine_type();
         self.engines.write().insert(engine_type, engine);
         debug!("Registered download engine: {}", engine_type);
@@ -942,6 +1173,7 @@ impl DownloadManager {
     /// [`Self::start_with_slot`] consumes — this avoids re-resolving
     /// the engine after the slot is acquired.
     pub async fn preflight(&self, req: PreflightRequest) -> Result<EngineHandle> {
+        let _operation = self.begin_operation().await?;
         let overrides = req.engines_override.as_ref();
         let (engine, engine_type, engine_key) = self
             .resolve_engine(req.engine_id.as_deref(), overrides)
@@ -961,15 +1193,17 @@ impl DownloadManager {
         // Check circuit breaker using the streamer-scoped key
         if !self.circuit_breakers.is_allowed(&engine_key) {
             warn!("Engine {} is disabled by circuit breaker", engine_key);
+            let cooldown_secs = self.config.read().circuit_breaker_cooldown_secs;
 
-            self.emit_rejected(
+            self.emit_rejected_admitted(
                 req.streamer_id.clone(),
                 req.streamer_name.clone(),
                 req.session_id.clone(),
                 format!("Circuit breaker open for engine {}", engine_key),
-                Some(self.config.read().circuit_breaker_cooldown_secs),
+                Some(cooldown_secs),
                 DownloadRejectedKind::CircuitBreaker,
-            );
+            )
+            .await?;
 
             return Err(crate::Error::Other(format!(
                 "Engine {} is disabled by circuit breaker",
@@ -988,7 +1222,7 @@ impl DownloadManager {
                 "Output root gate rejected download (Degraded); emitting DownloadRejected"
             );
             let cooldown = super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
-            self.emit_rejected(
+            self.emit_rejected_admitted(
                 req.streamer_id.clone(),
                 req.streamer_name.clone(),
                 req.session_id.clone(),
@@ -998,7 +1232,8 @@ impl DownloadManager {
                     path: blocked.root.clone(),
                     io_kind: blocked.kind,
                 },
-            );
+            )
+            .await?;
             return Err(crate::Error::Other(format!(
                 "Output root {} is unwritable ({}); gate has the filesystem in Degraded state",
                 blocked.root.display(),
@@ -1022,14 +1257,15 @@ impl DownloadManager {
                     .get()
                     .map(|g| g.resolve_path(&req.output_dir))
                     .unwrap_or_else(|| super::output_root_gate::resolve_root(&req.output_dir, &[]));
-                self.emit_rejected(
+                self.emit_rejected_admitted(
                     req.streamer_id.clone(),
                     req.streamer_name.clone(),
                     req.session_id.clone(),
                     engine_err.message.clone(),
                     Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
                     DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
-                );
+                )
+                .await?;
             }
             return Err(crate::Error::Other(engine_err.message));
         }
@@ -1057,6 +1293,7 @@ impl DownloadManager {
         req: AcquireRequest,
         cancel: CancellationToken,
     ) -> Result<SlotGuard> {
+        let _operation = self.begin_operation().await?;
         let events_for_queue = self.events.clone();
         // Captured by the on_queued closure so the abort-emit branch
         // below can tell whether `DownloadQueued` actually fired
@@ -1176,56 +1413,59 @@ impl DownloadManager {
         download_id: &str,
         cause: DownloadStopCause,
     ) -> Result<()> {
-        if let Some((_, download)) = self.active_downloads.remove(download_id) {
-            let engine_type = download.handle.engine_type;
+        let completion = self.request_stop(download_id, cause)?;
+        completion.wait().await.map_err(|message| {
+            crate::Error::Other(format!(
+                "download {download_id} did not stop cleanly: {message}"
+            ))
+        })?;
+        info!(download_id, "Stopped download");
+        Ok(())
+    }
 
-            // Snapshot config once to avoid repeated lock acquisitions.
-            let config_snap = download.handle.config_snapshot();
-            let streamer_id = config_snap.streamer_id;
-            let streamer_name = config_snap.streamer_name;
-            let session_id = config_snap.session_id;
+    fn request_stop(
+        &self,
+        download_id: &str,
+        cause: DownloadStopCause,
+    ) -> Result<Arc<AttemptCompletion>> {
+        let Some(mut download) = self.active_downloads.get_mut(download_id) else {
+            return Err(crate::Error::NotFound {
+                entity_type: "Download".to_string(),
+                id: download_id.to_string(),
+            });
+        };
 
-            // Emit one final progress update before cancellation.
+        let (first_request, should_cancel) = {
+            let mut phase = download.phase.lock();
+            match &*phase {
+                AttemptPhase::Running => {
+                    *phase = AttemptPhase::StopRequested(cause);
+                    (true, true)
+                }
+                AttemptPhase::StopRequested(_) => (false, true),
+                AttemptPhase::TerminalChosen => (false, false),
+            }
+        };
+
+        if first_request {
+            download.status = DownloadStatus::Cancelled;
+            let config = download.handle.config_snapshot();
             self.events.publish(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::Progress {
                     download_id: download_id.to_string(),
-                    streamer_id: streamer_id.clone(),
-                    streamer_name: streamer_name.clone(),
-                    session_id: session_id.clone(),
+                    streamer_id: config.streamer_id,
+                    streamer_name: config.streamer_name,
+                    session_id: config.session_id,
                     status: DownloadStatus::Cancelled,
                     progress: download.progress.clone(),
                 },
             ));
-
-            if let Some(engine) = self.get_engine(engine_type) {
-                engine.stop(&download.handle).await?;
-            }
-
-            self.pending_updates.remove(download_id);
-
-            self.events.publish(DownloadManagerEvent::Terminal(
-                DownloadTerminalEvent::Cancelled {
-                    download_id: download_id.to_string(),
-                    streamer_id,
-                    streamer_name,
-                    session_id,
-                    cause,
-                },
-            ));
-
-            info!("Stopped download {}", download_id);
-
-            // Dropping the ActiveSlot inside the removed download
-            // releases the queue capacity and wakes the next waiter
-            // automatically.
-
-            Ok(())
-        } else {
-            Err(crate::Error::NotFound {
-                entity_type: "Download".to_string(),
-                id: download_id.to_string(),
-            })
         }
+
+        if should_cancel {
+            download.handle.cancel();
+        }
+        Ok(download.completion.clone())
     }
 
     /// Get information about active downloads.
@@ -1368,7 +1608,7 @@ impl DownloadManager {
     ///
     /// Parameter order mirrors the [`DownloadTerminalEvent::Rejected`]
     /// field order.
-    pub fn emit_rejected(
+    pub async fn emit_rejected(
         &self,
         streamer_id: String,
         streamer_name: String,
@@ -1376,17 +1616,56 @@ impl DownloadManager {
         reason: String,
         retry_after_secs: Option<u64>,
         kind: DownloadRejectedKind,
-    ) {
-        self.events.publish(DownloadManagerEvent::Terminal(
-            DownloadTerminalEvent::Rejected {
-                streamer_id,
-                streamer_name,
-                session_id,
-                reason,
-                retry_after_secs,
-                kind,
-            },
-        ));
+    ) -> Result<()> {
+        let _operation = self.begin_operation().await?;
+        self.emit_rejected_admitted(
+            streamer_id,
+            streamer_name,
+            session_id,
+            reason,
+            retry_after_secs,
+            kind,
+        )
+        .await
+    }
+
+    async fn emit_rejected_admitted(
+        &self,
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        reason: String,
+        retry_after_secs: Option<u64>,
+        kind: DownloadRejectedKind,
+    ) -> Result<()> {
+        self.events
+            .publish_and_wait(DownloadManagerEvent::Terminal(
+                DownloadTerminalEvent::Rejected {
+                    streamer_id,
+                    streamer_name,
+                    session_id,
+                    reason,
+                    retry_after_secs,
+                    kind,
+                },
+            ))
+            .await
+            .map_err(crate::Error::Other)
+    }
+
+    async fn begin_operation(&self) -> Result<tokio::sync::RwLockReadGuard<'_, ()>> {
+        if !self.accepting_operations.load(Ordering::Acquire) {
+            return Err(crate::Error::Other(
+                "download manager shutting down".to_string(),
+            ));
+        }
+        let guard = self.operation_gate.read().await;
+        if !self.accepting_operations.load(Ordering::Acquire) {
+            return Err(crate::Error::Other(
+                "download manager shutting down".to_string(),
+            ));
+        }
+        Ok(guard)
     }
 
     /// Update configuration for an active download.
@@ -1750,19 +2029,94 @@ impl DownloadManager {
             .map(|entry| entry.key().clone())
             .collect();
 
-        let mut stopped = Vec::new();
-        for id in download_ids {
-            if self
-                .stop_download_with_reason(&id, DownloadStopCause::Shutdown)
-                .await
-                .is_ok()
-            {
-                stopped.push(id);
-            }
-        }
+        let results = futures::future::join_all(
+            download_ids
+                .iter()
+                .map(|id| self.stop_download_with_reason(id, DownloadStopCause::Shutdown)),
+        )
+        .await;
+        let stopped = download_ids
+            .into_iter()
+            .zip(results)
+            .filter_map(|(id, result)| result.is_ok().then_some(id))
+            .collect::<Vec<_>>();
 
         info!("Stopped {} downloads", stopped.len());
         stopped
+    }
+
+    /// Fence new attempts, request a graceful stop for every active download,
+    /// and join all engine/translator tasks against one absolute deadline.
+    pub async fn shutdown_until(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> std::result::Result<DownloadShutdownReport, DownloadShutdownError> {
+        self.accepting_operations.store(false, Ordering::Release);
+        self.attempts.close_admission();
+        self.queue.shutdown();
+
+        let (operation_fence, admission_deadline_exceeded) =
+            match tokio::time::timeout_at(deadline, self.operation_gate.write()).await {
+                Ok(guard) => (guard, false),
+                Err(_) => {
+                    warn!(
+                        "Download operation grace period exceeded; awaiting admission containment"
+                    );
+                    // Queue shutdown wakes parked acquires and the admission flag
+                    // rejects any second-phase start. Keep ownership here until
+                    // every operation that crossed the fence has actually left;
+                    // otherwise the required-event shutdown marker could race a
+                    // late segment producer.
+                    (self.operation_gate.write().await, true)
+                }
+            };
+
+        let mut stopped_download_ids = self
+            .active_downloads
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        stopped_download_ids.sort();
+
+        for download_id in &stopped_download_ids {
+            if let Err(error) = self.request_stop(download_id, DownloadStopCause::Shutdown) {
+                debug!(%download_id, %error, "Download finished while shutdown was requesting stop");
+            }
+        }
+        drop(operation_fence);
+
+        let attempt_report = self.attempts.join_until(deadline).await;
+
+        let mut failures = attempt_report.failures;
+        if admission_deadline_exceeded {
+            failures.push(
+                "graceful download operation drain deadline exceeded; admitted operations were contained to completion"
+                    .to_string(),
+            );
+        }
+        let coordination_drained =
+            match tokio::time::timeout_at(deadline, self.events.shutdown_coordination()).await {
+                Ok(Ok(())) => true,
+                Ok(Err(message)) => {
+                    failures.push(format!(
+                        "required download coordination drain failed: {message}"
+                    ));
+                    false
+                }
+                Err(_) => {
+                    failures.push(
+                        "deadline exceeded while draining required download events".to_string(),
+                    );
+                    false
+                }
+            };
+
+        Ok(DownloadShutdownReport {
+            stopped_download_ids,
+            deadline_exceeded_download_ids: attempt_report.deadline_exceeded_download_ids,
+            coordination_drained,
+            failures,
+        })
     }
 }
 
@@ -1791,6 +2145,7 @@ mod tests {
         /// test interleave `stop_download` between the prelude and the tail
         /// to reproduce the trailing-flush race.
         release_tail: Option<Arc<tokio::sync::Notify>>,
+        release_tail_on_cancel: bool,
         tail: Vec<SegmentEvent>,
     }
 
@@ -1799,6 +2154,7 @@ mod tests {
             Self {
                 prelude: events,
                 release_tail: None,
+                release_tail_on_cancel: false,
                 tail: Vec::new(),
             }
         }
@@ -1811,6 +2167,16 @@ mod tests {
             Self {
                 prelude,
                 release_tail: Some(release),
+                release_tail_on_cancel: false,
+                tail,
+            }
+        }
+
+        fn with_shutdown_tail(prelude: Vec<SegmentEvent>, tail: Vec<SegmentEvent>) -> Self {
+            Self {
+                prelude,
+                release_tail: None,
+                release_tail_on_cancel: true,
                 tail,
             }
         }
@@ -1822,7 +2188,7 @@ mod tests {
             EngineType::Ffmpeg
         }
 
-        async fn start(
+        async fn run(
             &self,
             handle: Arc<DownloadHandle>,
         ) -> std::result::Result<(), EngineStartError> {
@@ -1838,6 +2204,8 @@ mod tests {
             }
             if let Some(release) = self.release_tail.as_ref() {
                 release.notified().await;
+            } else if self.release_tail_on_cancel {
+                handle.cancellation_token.cancelled().await;
             }
             for event in self.tail.clone() {
                 handle
@@ -1862,11 +2230,6 @@ mod tests {
                     kind: DownloadFailureKind::Other,
                     message: format!("failed to emit scripted completion event: {}", e),
                 })?;
-            Ok(())
-        }
-
-        async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-            handle.cancel();
             Ok(())
         }
 
@@ -2013,14 +2376,17 @@ mod tests {
         let manager = DownloadManager::new();
         let mut events = manager.subscribe();
 
-        manager.emit_rejected(
-            "streamer-1".to_string(),
-            "Streamer One".to_string(),
-            "session-1".to_string(),
-            "streamer temporarily disabled (error backoff)".to_string(),
-            Some(62),
-            DownloadRejectedKind::StreamerBackoff,
-        );
+        manager
+            .emit_rejected(
+                "streamer-1".to_string(),
+                "Streamer One".to_string(),
+                "session-1".to_string(),
+                "streamer temporarily disabled (error backoff)".to_string(),
+                Some(62),
+                DownloadRejectedKind::StreamerBackoff,
+            )
+            .await
+            .expect("rejection should publish");
 
         let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
             .await
@@ -2256,16 +2622,19 @@ mod tests {
             }
         };
 
-        // Stop the download — drops the `ActiveDownload` entry while the
-        // scripted engine is still parked on `release_tail`, so the
-        // trailing `SegmentCompleted` arrives after `active_downloads.remove`.
-        manager
-            .stop_download(&download_id)
-            .await
-            .expect("stop should succeed");
+        // Stop must stay pending while the engine is still flushing its tail.
+        let mut stop = Box::pin(manager.stop_download(&download_id));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), stop.as_mut())
+                .await
+                .is_err(),
+            "stop returned before the engine flushed its trailing segment"
+        );
 
         // Release the trailing SegmentCompleted.
         release_tail.notify_one();
+        stop.await
+            .expect("stop should finish after the tail drains");
 
         // The trailing SegmentCompleted must report the same session_index
         // as the SegmentStarted.
@@ -2278,6 +2647,208 @@ mod tests {
             panic!("expected segment completed event");
         };
         assert_eq!(completed_index, started_index);
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_trailing_segment_and_emits_one_terminal_outcome() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (coordination_tx, mut coordination_rx) = download_coordination_channel();
+        let manager = DownloadManager::new().with_coordination_sender(coordination_tx);
+        let mut events = manager.subscribe();
+        let segment_path = temp.path().join("shutdown-tail.flv");
+        let completion_received = Arc::new(tokio::sync::Notify::new());
+        let release_completion = Arc::new(tokio::sync::Notify::new());
+        let coordination_completion_received = completion_received.clone();
+        let coordination_release_completion = release_completion.clone();
+        let coordination_task = tokio::spawn(async move {
+            while let Some(delivery) = coordination_rx
+                .recv()
+                .await
+                .expect("coordination channel should close with a marker")
+            {
+                let (event, acknowledgement) = delivery.into_parts();
+                if matches!(
+                    event,
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted { .. })
+                ) {
+                    coordination_completion_received.notify_one();
+                    coordination_release_completion.notified().await;
+                }
+                acknowledgement
+                    .send(Ok(()))
+                    .expect("attempt should await its acknowledgement");
+            }
+        });
+
+        let scripted = ScriptedSegmentEngine::with_shutdown_tail(
+            vec![SegmentEvent::SegmentStarted {
+                path: segment_path.clone(),
+                sequence: 0,
+                started_at: Utc::now(),
+            }],
+            vec![completed_segment(segment_path, 0)],
+        );
+
+        start_scripted_download_with_engine(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), "session-shutdown-tail"),
+            scripted,
+        )
+        .await
+        .expect("download should start");
+
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for segment start")
+                .expect("download event channel closed");
+            if matches!(
+                event,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted { .. })
+            ) {
+                break;
+            }
+        }
+
+        let shutdown = manager.shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1));
+        tokio::pin!(shutdown);
+        tokio::select! {
+            () = completion_received.notified() => {}
+            result = &mut shutdown => panic!(
+                "shutdown returned before SegmentCompleted acknowledgement: {result:?}"
+            ),
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), shutdown.as_mut())
+                .await
+                .is_err(),
+            "shutdown must remain pending until SegmentCompleted is durably applied"
+        );
+        release_completion.notify_one();
+        shutdown
+            .await
+            .expect("download manager should drain before the deadline");
+        coordination_task
+            .await
+            .expect("coordination task should finish after the drain marker");
+
+        let mut saw_segment_completed = false;
+        let terminal = loop {
+            let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for shutdown events")
+                .expect("download event channel closed");
+            match event {
+                DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
+                    ..
+                }) => saw_segment_completed = true,
+                DownloadManagerEvent::Terminal(terminal) => break terminal,
+                _ => {}
+            }
+        };
+
+        assert!(
+            saw_segment_completed,
+            "the final segment must be published before the terminal outcome"
+        );
+        assert!(matches!(
+            terminal,
+            DownloadTerminalEvent::Cancelled {
+                cause: DownloadStopCause::Shutdown,
+                ..
+            }
+        ));
+        let mut additional_terminals = 0;
+        while let Ok(Ok(event)) =
+            tokio::time::timeout(Duration::from_millis(20), events.recv()).await
+        {
+            if matches!(event, DownloadManagerEvent::Terminal(_)) {
+                additional_terminals += 1;
+            }
+        }
+        assert_eq!(additional_terminals, 0, "terminal outcome must be unique");
+        assert_eq!(manager.active_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_rejects_queued_start_before_active_slot_is_released() {
+        let temp = tempfile::tempdir().expect("temp directory should be created");
+        let manager = Arc::new(DownloadManager::with_config(DownloadManagerConfig {
+            max_concurrent_downloads: 1,
+            high_priority_extra_slots: 0,
+            ..Default::default()
+        }));
+        manager.register_engine(Arc::new(ScriptedSegmentEngine::with_shutdown_tail(
+            Vec::new(),
+            Vec::new(),
+        )));
+        let mut events = manager.subscribe();
+
+        manager
+            .start_download(
+                DownloadConfig::new(
+                    "https://example.com/active.flv",
+                    temp.path().to_path_buf(),
+                    "active-streamer",
+                    "Active Streamer",
+                    "active-session",
+                ),
+                Some("ffmpeg".to_string()),
+                false,
+            )
+            .await
+            .expect("first download should occupy the only slot");
+
+        let queued_manager = manager.clone();
+        let queued_output = temp.path().to_path_buf();
+        let queued = tokio::spawn(async move {
+            queued_manager
+                .start_download(
+                    DownloadConfig::new(
+                        "https://example.com/queued.flv",
+                        queued_output,
+                        "queued-streamer",
+                        "Queued Streamer",
+                        "queued-session",
+                    ),
+                    Some("ffmpeg".to_string()),
+                    false,
+                )
+                .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while manager.queue.pending_count() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second download should park in the queue");
+
+        let report = manager
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .expect("manager should settle the active attempt");
+        let queued_error = queued
+            .await
+            .expect("queued start task should not panic")
+            .expect_err("queued start must be rejected during shutdown");
+
+        assert!(queued_error.to_string().contains("shutting down"));
+        assert_eq!(report.stopped_download_ids.len(), 1);
+        assert!(report.deadline_exceeded_download_ids.is_empty());
+        assert_eq!(manager.active_count(), 0);
+        assert_eq!(manager.queue.pending_count(), 0);
+
+        let started_count = std::iter::from_fn(|| events.try_recv().ok())
+            .filter(|event| {
+                matches!(
+                    event,
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted { .. })
+                )
+            })
+            .count();
+        assert_eq!(started_count, 1, "the queued engine must never start");
     }
 
     /// `clear_session_segment_index` can fire mid-drain (the dedicated
@@ -2881,8 +3452,8 @@ mod tests {
 
     #[tokio::test]
     async fn required_terminal_event_survives_lagged_observer() {
-        let (required_tx, mut required_rx) = mpsc::unbounded_channel();
-        let manager = DownloadManager::new().with_required_terminal_sender(required_tx);
+        let (coordination_tx, mut coordination_rx) = download_coordination_channel();
+        let manager = DownloadManager::new().with_coordination_sender(coordination_tx);
         let mut observer = manager.subscribe();
 
         for index in 0..300 {
@@ -2895,7 +3466,7 @@ mod tests {
             ));
         }
 
-        manager.emit_rejected(
+        let publish = manager.emit_rejected(
             "streamer".to_string(),
             "Streamer".to_string(),
             "required-session".to_string(),
@@ -2903,15 +3474,52 @@ mod tests {
             Some(5),
             DownloadRejectedKind::CircuitBreaker,
         );
+        tokio::pin!(publish);
 
-        let terminal = tokio::time::timeout(Duration::from_secs(1), required_rx.recv())
+        let delivery = tokio::select! {
+            delivery = coordination_rx.recv() => delivery
+                .expect("required terminal channel stays open")
+                .expect("required terminal event should arrive"),
+            result = &mut publish => panic!("publish returned before acknowledgement: {result:?}"),
+        };
+        let (event, acknowledgement) = delivery.into_parts();
+        let DownloadManagerEvent::Terminal(terminal) = event else {
+            panic!("expected terminal coordination event");
+        };
+        let _ = acknowledgement.send(Ok(()));
+        publish
             .await
-            .expect("required terminal event timed out")
-            .expect("required terminal channel closed");
+            .expect("rejection should complete after acknowledgement");
         assert_eq!(terminal.session_id(), "required-session");
         assert!(matches!(
             observer.recv().await,
             Err(broadcast::error::RecvError::Lagged(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn coordination_shutdown_rejects_events_behind_marker() {
+        let (coordination_tx, mut coordination_rx) = download_coordination_channel();
+        let late_sender = coordination_tx.clone();
+        let shutdown = tokio::spawn(async move { coordination_tx.shutdown().await });
+
+        assert!(matches!(coordination_rx.recv().await, Ok(None)));
+        shutdown
+            .await
+            .expect("shutdown task should not panic")
+            .expect("shutdown marker should be acknowledged");
+
+        let late_event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
+            streamer_id: "streamer".to_string(),
+            streamer_name: "Streamer".to_string(),
+            session_id: "session".to_string(),
+            reason: "late event".to_string(),
+            retry_after_secs: None,
+            kind: DownloadRejectedKind::CircuitBreaker,
+        });
+        assert!(matches!(
+            late_sender.publish(late_event),
+            DownloadCoordinationReceipt::Unavailable
         ));
     }
 }

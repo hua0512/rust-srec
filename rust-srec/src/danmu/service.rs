@@ -10,13 +10,17 @@
 //! When segment closes → finalize that XML file, but keep collecting danmu
 //! When session ends → stop collection entirely
 
-use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+use dashmap::DashMap;
+use parking_lot::Mutex;
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::danmu::{DanmuStatistics, ProviderRegistry};
 use crate::error::{Error, Result};
@@ -102,8 +106,26 @@ pub struct DanmuService {
     events: DanmuEventPublisher,
     /// Global cancellation token
     cancel_token: CancellationToken,
+    /// Tracks collection setup through task admission so shutdown cannot miss
+    /// an in-flight start.
+    start_gate: tokio::sync::RwLock<()>,
+    /// Serializes duplicate checks, replacement, registry insertion, and spawn.
+    start_serialization: tokio::sync::Mutex<()>,
+    accepting: AtomicBool,
+    /// Owns collection tasks through final XML flush and terminal events.
+    collection_tasks: Mutex<JoinSet<CollectionTaskReport>>,
+    /// Cleanup failures from tasks reaped before shutdown.
+    collection_failures: Mutex<Vec<String>>,
     /// Session repository for persistence
     session_repo: Option<Arc<dyn crate::database::repositories::SessionRepository>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct DanmuShutdownReport {
+    pub(crate) failures: Vec<String>,
+    /// Sessions still active when the graceful deadline elapsed. Their
+    /// cancellation cleanup was joined to completion before returning.
+    pub(crate) forced_session_ids: Vec<String>,
 }
 
 impl Default for DanmuService {
@@ -126,6 +148,11 @@ impl DanmuService {
             sessions_by_streamer: Arc::new(DashMap::new()),
             events: DanmuEventPublisher::new(256),
             cancel_token: CancellationToken::new(),
+            start_gate: tokio::sync::RwLock::new(()),
+            start_serialization: tokio::sync::Mutex::new(()),
+            accepting: AtomicBool::new(true),
+            collection_tasks: Mutex::new(JoinSet::new()),
+            collection_failures: Mutex::new(Vec::new()),
             session_repo: None,
         }
     }
@@ -153,6 +180,11 @@ impl DanmuService {
     /// Start danmu collection for a session.
     /// Returns a handle that can be used to control segment file writing.
     pub async fn start_collection(&self, spec: CollectionSpec) -> Result<CollectionHandle> {
+        let _start_guard = self.start_gate.read().await;
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(Error::Other("danmu service is shutting down".to_string()));
+        }
+
         let CollectionSpec {
             session_id,
             streamer_id,
@@ -161,6 +193,14 @@ impl DanmuService {
             extras,
             statistics,
         } = spec;
+
+        // Only this short setup section may reserve collection ownership.
+        // Expensive connection establishment happens in the owned task after
+        // the registry entry and JoinSet slot are installed.
+        let setup_guard = self.start_serialization.lock().await;
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(Error::Other("danmu service is shutting down".to_string()));
+        }
 
         // Check if already collecting
         if self.collections.contains_key(&session_id) {
@@ -200,14 +240,15 @@ impl DanmuService {
                     elapsed_ms = started.elapsed().as_millis() as u64,
                     "danmu: replaced previous collector for streamer"
                 ),
-                // Non-fatal: the new collector still spawns. Logged so a
-                // wedged prior runner is visible in operator dashboards.
-                Err(e) => warn!(
-                    streamer_id,
-                    old_session_id = old_sid.as_str(),
-                    error = %e,
-                    "danmu: failed to stop prior collector; new collector will spawn anyway"
-                ),
+                Err(e) => {
+                    warn!(
+                        streamer_id,
+                        old_session_id = old_sid.as_str(),
+                        error = %e,
+                        "danmu: refusing to overlap a new collector with a prior collector"
+                    );
+                    return Err(e);
+                }
             }
         }
 
@@ -291,6 +332,9 @@ impl DanmuService {
         let statistics =
             StatisticsSession::load(session_id.clone(), self.session_repo.clone(), statistics)
                 .await;
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(Error::Other("danmu service is shutting down".to_string()));
+        }
         let cancel_token = self.cancel_token.child_token();
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
@@ -307,7 +351,7 @@ impl DanmuService {
         self.sessions_by_streamer
             .insert(streamer_id.clone(), session_id.clone());
 
-        tokio::spawn(collection_task(CollectionTaskContext {
+        let collection = collection_task(CollectionTaskContext {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             room_id,
@@ -321,34 +365,40 @@ impl DanmuService {
             events: self.events.clone(),
             ready_tx,
             done_tx,
-        }));
-
-        tokio::select! {
-            ready = ready_rx => {
-                match ready {
-                    Ok(Ok(())) => {
-                        self.events.publish(DanmuEvent::CollectionStarted {
-                            session_id: session_id.clone(),
-                            streamer_id: streamer_id.clone(),
-                        });
-                    }
-                    Ok(Err(e)) => {
-                        remove_collection(&self.collections, &self.sessions_by_streamer, &session_id);
-                        return Err(e);
-                    }
-                    Err(_) => {
-                        remove_collection(&self.collections, &self.sessions_by_streamer, &session_id);
-                        return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                            "Danmu collection task stopped before it became ready",
-                        )));
+            cleanup: CollectionCleanupGuard {
+                collections: self.collections.clone(),
+                sessions_by_streamer: self.sessions_by_streamer.clone(),
+                events: self.events.clone(),
+                session_id: session_id.clone(),
+                started: false,
+                armed: true,
+            },
+        });
+        {
+            let mut tasks = self.collection_tasks.lock();
+            while let Some(result) = tasks.try_join_next() {
+                match result {
+                    Ok(report) => self.record_collection_report(report),
+                    Err(error) => {
+                        warn!(%error, "Danmu collection task failed before reap");
+                        self.collection_failures.lock().push(error.to_string());
                     }
                 }
             }
-            _ = cancel_token.cancelled() => {
-                remove_collection(&self.collections, &self.sessions_by_streamer, &session_id);
-                return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                    "Danmu collection cancelled before it became ready",
-                )));
+            tasks.spawn(collection);
+        }
+        drop(setup_guard);
+        drop(_start_guard);
+
+        match ready_rx.await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {
+                return Err(Error::from(
+                    platforms_parser::danmaku::DanmakuError::connection(
+                        "Danmu collection task stopped before it became ready",
+                    ),
+                ));
             }
         }
 
@@ -387,44 +437,54 @@ impl DanmuService {
             )
         };
 
-        if command_tx
-            .send(CollectionCommand::Stop(reason))
+        const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + STOP_TIMEOUT;
+        match tokio::time::timeout_at(deadline, command_tx.send(CollectionCommand::Stop(reason)))
             .await
-            .is_err()
         {
-            tracing::debug!(session_id, "Danmu collection task already stopped");
+            Ok(Ok(())) => {}
+            Ok(Err(_)) => {
+                tracing::debug!(session_id, "Danmu collection task already stopped");
+            }
+            Err(_) => {
+                cancel_token.cancel();
+                return Err(Error::Other(format!(
+                    "danmu collection {session_id} stop command timed out after {STOP_TIMEOUT:?}"
+                )));
+            }
         }
 
-        const STOP_TIMEOUT: Duration = Duration::from_secs(10);
-        match tokio::time::timeout(STOP_TIMEOUT, done_rx).await {
+        match tokio::time::timeout_at(deadline, done_rx).await {
             Ok(Ok(outcome)) => {
                 tracing::debug!(session_id, reason = ?outcome.reason, "Danmu collection stopped");
-                Ok(outcome.statistics)
+                if outcome.error.is_none() && outcome.cleanup_errors.is_empty() {
+                    return Ok(outcome.statistics);
+                }
+
+                let mut errors = outcome
+                    .error
+                    .into_iter()
+                    .chain(outcome.cleanup_errors)
+                    .map(|error| error.to_string())
+                    .collect::<Vec<_>>();
+                errors.sort();
+                Err(Error::Other(format!(
+                    "danmu collection {session_id} stopped with errors: {}",
+                    errors.join("; ")
+                )))
             }
-            Ok(Err(_)) => {
-                tracing::debug!(
-                    session_id,
-                    "Danmu collection task ended without reporting an outcome"
-                );
-                Ok(DanmuStatistics::default())
-            }
+            Ok(Err(_)) => Err(Error::Other(format!(
+                "danmu collection {session_id} ended without reporting an outcome"
+            ))),
             Err(_) => {
                 warn!(
                     "Danmu collection stop timed out after {:?} (session_id={})",
                     STOP_TIMEOUT, session_id
                 );
                 cancel_token.cancel();
-
-                // A wedged task cannot own completion, so the timeout fallback
-                // releases the coordinator gate. A late task observes the
-                // missing entry and cannot emit a duplicate terminal event.
-                if remove_collection(&self.collections, &self.sessions_by_streamer, session_id) {
-                    self.events.publish(DanmuEvent::CollectionStopped {
-                        session_id: session_id.to_string(),
-                        total_count: 0,
-                    });
-                }
-                Ok(DanmuStatistics::default())
+                Err(Error::Other(format!(
+                    "danmu collection {session_id} stop timed out after {STOP_TIMEOUT:?}"
+                )))
             }
         }
     }
@@ -459,21 +519,112 @@ impl DanmuService {
             .map(|entry| entry.value().clone())
     }
 
-    /// Shutdown the service.
-    pub async fn shutdown(&self) {
-        // Cancel all collections
-        self.cancel_token.cancel();
+    fn record_collection_report(&self, report: CollectionTaskReport) {
+        append_collection_report(&mut self.collection_failures.lock(), report);
+    }
 
-        // Stop all active collections
-        let session_ids: Vec<_> = self.collections.iter().map(|r| r.key().clone()).collect();
-        for session_id in session_ids {
-            if let Err(error) = self
-                .stop_collection_with_reason(&session_id, CollectionStopReason::ServiceShutdown)
-                .await
-            {
-                warn!(session_id, %error, "Failed to stop danmu collection during shutdown");
+    /// Shutdown the service using its standalone timeout.
+    pub async fn shutdown(&self) -> Result<()> {
+        let report = self
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(10))
+            .await?;
+        if report.failures.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::Other(format!(
+                "danmu collection task shutdown failed: {}",
+                report.failures.join("; ")
+            )))
+        }
+    }
+
+    /// Close start admission and join every collection task. The deadline
+    /// bounds the graceful phase; cancellation cleanup that is still running at
+    /// that point remains owned and is joined before this method returns.
+    pub(crate) async fn shutdown_until(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> Result<DanmuShutdownReport> {
+        self.accepting.store(false, Ordering::Release);
+
+        // Wait until every start that passed the initial admission check has
+        // either installed an owned task or rejected itself. The ready/connect
+        // handshake is performed by that owned task and is not inside this gate.
+        let (closed_admission, admission_deadline_exceeded) =
+            match tokio::time::timeout_at(deadline, self.start_gate.write()).await {
+                Ok(guard) => (guard, false),
+                Err(_) => {
+                    // Existing collectors and any admitted starter use children of
+                    // this token. Their owning JoinSet cannot be taken until the
+                    // start gate is acquired, because the admitted starter may
+                    // still install a task. Cancel first, then retain ownership
+                    // until that admission path has settled.
+                    self.cancel_token.cancel();
+                    warn!("Danmu start-admission grace period exceeded; awaiting containment");
+                    (self.start_gate.write().await, true)
+                }
+            };
+
+        for state in self.collections.iter() {
+            if let Err(error) = state.command_tx.try_send(CollectionCommand::Stop(
+                CollectionStopReason::ServiceShutdown,
+            )) {
+                debug!(
+                    session_id = state.key(),
+                    %error,
+                    "Danmu collection will use cancellation fallback during shutdown"
+                );
             }
         }
+        self.cancel_token.cancel();
+
+        let mut tasks = {
+            let mut owned = self.collection_tasks.lock();
+            std::mem::take(&mut *owned)
+        };
+        drop(closed_admission);
+
+        let mut failures = std::mem::take(&mut *self.collection_failures.lock());
+        if admission_deadline_exceeded {
+            failures.push(
+                "graceful danmu start-admission deadline exceeded; admitted starts were contained to completion"
+                    .to_string(),
+            );
+        }
+        let mut forced_session_ids = Vec::new();
+        let mut graceful_deadline_exceeded = false;
+        while !tasks.is_empty() {
+            let result = if graceful_deadline_exceeded {
+                tasks.join_next().await
+            } else {
+                match tokio::time::timeout_at(deadline, tasks.join_next()).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        forced_session_ids = self.active_sessions();
+                        forced_session_ids.sort();
+                        failures.push(format!(
+                            "graceful collection deadline exceeded; drained cancelled sessions to completion: {forced_session_ids:?}"
+                        ));
+                        graceful_deadline_exceeded = true;
+                        continue;
+                    }
+                }
+            };
+
+            match result {
+                Some(Ok(report)) => append_collection_report(&mut failures, report),
+                Some(Err(error)) => {
+                    warn!(%error, "Danmu collection task failed while joining");
+                    failures.push(error.to_string());
+                }
+                None => break,
+            }
+        }
+
+        Ok(DanmuShutdownReport {
+            failures,
+            forced_session_ids,
+        })
     }
 }
 
@@ -498,6 +649,30 @@ struct CollectionTaskContext {
     ready_tx: oneshot::Sender<Result<()>>,
     /// Carries the final outcome to a waiting `stop_collection`.
     done_tx: oneshot::Sender<CollectionOutcome>,
+    /// Constructed before spawn so an unpolled task still owns registry cleanup.
+    cleanup: CollectionCleanupGuard,
+}
+
+#[derive(Debug)]
+struct CollectionTaskReport {
+    session_id: String,
+    runtime_error: Option<String>,
+    cleanup_errors: Vec<String>,
+}
+
+fn append_collection_report(failures: &mut Vec<String>, report: CollectionTaskReport) {
+    let CollectionTaskReport {
+        session_id,
+        runtime_error,
+        cleanup_errors,
+    } = report;
+    if let Some(error) = runtime_error {
+        warn!(%session_id, %error, "Danmu collection ended with an error");
+        failures.push(format!("danmu collection {session_id} failed: {error}"));
+    } else {
+        debug!(%session_id, "Danmu collection task reaped");
+    }
+    failures.extend(cleanup_errors);
 }
 
 /// One collection, from connect to terminal event.
@@ -505,7 +680,7 @@ struct CollectionTaskContext {
 /// The task is the sole owner of normal completion: registry cleanup,
 /// persistence (inside `CollectionRunner::run`), and `CollectionStopped`.
 /// Callers only request a stop and await the outcome.
-async fn collection_task(ctx: CollectionTaskContext) {
+async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
     let CollectionTaskContext {
         session_id,
@@ -521,70 +696,81 @@ async fn collection_task(ctx: CollectionTaskContext) {
         events,
         ready_tx,
         done_tx,
+        mut cleanup,
     } = ctx;
 
-    // Armed for the whole task: every early return below either disarms it
-    // or has already released the session, and a panic in between is what
-    // it exists for.
-    let mut cleanup = CollectionCleanupGuard {
-        collections: collections.clone(),
-        sessions_by_streamer: sessions_by_streamer.clone(),
-        events: events.clone(),
-        session_id: session_id.clone(),
-        armed: true,
+    let (start_result, cancelled_during_startup) = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => (
+            Err(Error::Other(
+                format!("danmu collection {session_id} cancelled during startup")
+            )),
+            true,
+        ),
+        result = tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            CollectionRunner::new(RunnerParams {
+                session_id: session_id.clone(),
+                streamer_id: streamer_id.clone(),
+                room_id,
+                provider,
+                conn_config,
+                statistics,
+                events: events.clone(),
+            }),
+        ) => (
+            match result {
+                Ok(result) => result,
+                Err(_) => Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                    format!(
+                        "Danmu connection timed out after {:?} (session_id={})",
+                        CONNECT_TIMEOUT, session_id
+                    ),
+                ))),
+            },
+            false,
+        ),
     };
 
-    let (runner, items) = match tokio::time::timeout(
-        CONNECT_TIMEOUT,
-        CollectionRunner::new(RunnerParams {
-            session_id: session_id.clone(),
-            streamer_id,
-            room_id,
-            provider,
-            conn_config,
-            statistics,
-            events: events.clone(),
-        }),
-    )
-    .await
-    {
-        Ok(Ok(started)) => {
-            let _ = ready_tx.send(Ok(()));
-            started
-        }
-        Ok(Err(e)) => {
-            let error_message = e.to_string();
-            events.publish(DanmuEvent::Error {
-                session_id: session_id.clone(),
-                error: error_message,
-            });
-            let _ = ready_tx.send(Err(e));
+    let (runner, items) = match start_result {
+        Ok(started) => started,
+        Err(error) => {
+            let error_message = error.to_string();
             cleanup.disarm();
             remove_collection(&collections, &sessions_by_streamer, &session_id);
-            // No `CollectionStopped` here on purpose: collection never
-            // started, so `PipelineCoordinator` never set `danmu_observed`
-            // and the session-complete gate does not wait on a danmu arm.
-            return;
-        }
-        Err(_) => {
-            let message = format!(
-                "Danmu connection timed out after {:?} (session_id={})",
-                CONNECT_TIMEOUT, session_id
-            );
-            let _ = ready_tx.send(Err(Error::from(
-                platforms_parser::danmaku::DanmakuError::connection(message.clone()),
-            )));
-            events.publish(DanmuEvent::Error {
-                session_id: session_id.clone(),
-                error: message,
-            });
-            cleanup.disarm();
-            remove_collection(&collections, &sessions_by_streamer, &session_id);
-            return;
+            if ready_tx.send(Err(error)).is_err() {
+                debug!(%session_id, "Danmu collection starter dropped before startup failure was delivered");
+            }
+            if !cancelled_during_startup {
+                events.publish(DanmuEvent::Error {
+                    session_id: session_id.clone(),
+                    error: error_message.clone(),
+                });
+            }
+            return CollectionTaskReport {
+                session_id,
+                runtime_error: (!cancelled_during_startup).then_some(error_message),
+                cleanup_errors: Vec::new(),
+            };
         }
     };
+
+    cleanup.mark_started();
+    events.publish(DanmuEvent::CollectionStarted {
+        session_id: session_id.clone(),
+        streamer_id,
+    });
+    if ready_tx.send(Ok(())).is_err() {
+        debug!(%session_id, "Danmu collection starter dropped before readiness was delivered");
+    }
 
     let outcome = runner.run(command_rx, items, cancel_token).await;
+    let runtime_error = outcome.error.as_ref().map(ToString::to_string);
+    let cleanup_errors = outcome
+        .cleanup_errors
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
     if let Some(error) = &outcome.error {
         events.publish(DanmuEvent::Error {
             session_id: session_id.clone(),
@@ -606,7 +792,14 @@ async fn collection_task(ctx: CollectionTaskContext) {
     }
     cleanup.disarm();
 
-    let _ = done_tx.send(outcome);
+    if done_tx.send(outcome).is_err() {
+        debug!(%session_id, "Danmu collection stop waiter dropped before outcome was delivered");
+    }
+    CollectionTaskReport {
+        session_id,
+        runtime_error,
+        cleanup_errors,
+    }
 }
 
 /// Releases a session's collection state if the collector task unwinds.
@@ -629,10 +822,15 @@ struct CollectionCleanupGuard {
     sessions_by_streamer: Arc<DashMap<String, String>>,
     events: DanmuEventPublisher,
     session_id: String,
+    started: bool,
     armed: bool,
 }
 
 impl CollectionCleanupGuard {
+    fn mark_started(&mut self) {
+        self.started = true;
+    }
+
     fn disarm(&mut self) {
         self.armed = false;
     }
@@ -654,10 +852,12 @@ impl Drop for CollectionCleanupGuard {
                 session_id = %self.session_id,
                 "danmu: collector task ended without completing; releasing the session"
             );
-            self.events.publish(DanmuEvent::CollectionStopped {
-                session_id: self.session_id.clone(),
-                total_count: 0,
-            });
+            if self.started {
+                self.events.publish(DanmuEvent::CollectionStopped {
+                    session_id: self.session_id.clone(),
+                    total_count: 0,
+                });
+            }
         }
     }
 }
@@ -683,9 +883,8 @@ fn release_streamer_slot(
 /// Remove a session's collection state along with its streamer reverse-index
 /// entry.
 ///
-/// Returns whether this call was the one that removed the entry; callers use
-/// that to emit `DanmuEvent::CollectionStopped` exactly once when the runner
-/// task and `stop_collection` race.
+/// Returns whether this call was the one that removed the entry. The owned
+/// collection task is the only caller that publishes `CollectionStopped`.
 fn remove_collection(
     collections: &DashMap<String, CollectionState>,
     sessions_by_streamer: &DashMap<String, String>,
@@ -701,6 +900,52 @@ fn remove_collection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PendingConnectProvider {
+        entered: tokio::sync::Notify,
+    }
+
+    impl PendingConnectProvider {
+        const URL: &'static str = "https://pending.test/room-1";
+
+        fn new() -> Self {
+            Self {
+                entered: tokio::sync::Notify::new(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl platforms_parser::danmaku::DanmuProvider for PendingConnectProvider {
+        fn platform(&self) -> &str {
+            "pending"
+        }
+
+        async fn connect(
+            &self,
+            _room_id: &str,
+            _config: ConnectionConfig,
+        ) -> platforms_parser::danmaku::error::Result<platforms_parser::danmaku::DanmuStream>
+        {
+            self.entered.notify_one();
+            std::future::pending().await
+        }
+
+        async fn disconnect(
+            &self,
+            _connection: &mut platforms_parser::danmaku::DanmuConnection,
+        ) -> platforms_parser::danmaku::error::Result<()> {
+            Ok(())
+        }
+
+        fn supports_url(&self, url: &str) -> bool {
+            url.contains("pending.test")
+        }
+
+        fn extract_room_id(&self, _url: &str) -> Option<String> {
+            Some("room-1".to_string())
+        }
+    }
 
     /// Seed the service's maps as if a prior collector had spawned for this
     /// `(streamer_id, session_id)`, without actually running a connection
@@ -744,6 +989,274 @@ mod tests {
         let service = DanmuService::new();
 
         assert!(service.active_sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn shutdown_finalizes_xml_and_joins_collection_before_returning() {
+        use crate::danmu::test_support::{FakeProvider, temp_xml_path};
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
+        let mut events = service.subscribe();
+        let xml_path = temp_xml_path("service-shutdown");
+
+        let handle = service
+            .start_collection(collection_spec(
+                "session-shutdown",
+                "streamer-shutdown",
+                FakeProvider::URL,
+            ))
+            .await
+            .expect("collection should start");
+        handle
+            .start_segment("0", xml_path.clone(), chrono::Utc::now())
+            .await
+            .expect("segment start should be accepted");
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(2), events.recv())
+                .await
+                .expect("segment start event should arrive")
+                .expect("event channel should remain open");
+            if matches!(event, DanmuEvent::SegmentStarted { .. }) {
+                break;
+            }
+        }
+
+        service
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(2))
+            .await
+            .expect("collection should finalize within the shutdown deadline");
+
+        let xml = tokio::fs::read_to_string(&xml_path)
+            .await
+            .expect("finalized XML should remain readable");
+        assert!(xml.trim_end().ends_with("</i>"));
+        assert!(!service.is_collecting("session-shutdown"));
+        assert!(service.collection_tasks.lock().is_empty());
+
+        let mut completed_positions = Vec::new();
+        let mut stopped_positions = Vec::new();
+        let mut position = 0;
+        while let Ok(event) = events.try_recv() {
+            match event {
+                DanmuEvent::SegmentCompleted {
+                    ref output_path, ..
+                } => {
+                    assert_eq!(output_path, &xml_path);
+                    completed_positions.push(position);
+                }
+                DanmuEvent::CollectionStopped { .. } => stopped_positions.push(position),
+                _ => {}
+            }
+            position += 1;
+        }
+        assert_eq!(completed_positions.len(), 1);
+        assert_eq!(stopped_positions.len(), 1);
+        assert!(completed_positions[0] < stopped_positions[0]);
+
+        tokio::fs::remove_file(xml_path)
+            .await
+            .expect("test XML should be removable after shutdown");
+    }
+
+    #[tokio::test]
+    async fn shutdown_rejects_late_collection_starts() {
+        let service = DanmuService::new();
+        service
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .expect("empty service should stop");
+
+        let result = service
+            .start_collection(collection_spec(
+                "late-session",
+                "late-streamer",
+                "https://example.invalid/live",
+            ))
+            .await;
+        let Err(error) = result else {
+            panic!("late collection must be rejected");
+        };
+        assert!(error.to_string().contains("shutting down"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_report_retains_genuine_collection_start_failure() {
+        use crate::danmu::test_support::FakeProvider;
+
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(Vec::new())));
+        let service = DanmuService::with_providers(registry);
+
+        let start_result = service
+            .start_collection(collection_spec(
+                "failed-session",
+                "failed-streamer",
+                FakeProvider::URL,
+            ))
+            .await;
+        let Err(start_error) = start_result else {
+            panic!("provider without a stream must reject collection startup");
+        };
+        assert!(
+            start_error
+                .to_string()
+                .contains("fake provider has no streams left")
+        );
+
+        let report = service
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .expect("failed task should still be joined");
+        assert!(report.failures.iter().any(|failure| {
+            failure.contains("failed-session")
+                && failure.contains("fake provider has no streams left")
+        }));
+    }
+
+    #[tokio::test]
+    async fn shutdown_report_retains_collection_runtime_failure() {
+        use crate::danmu::test_support::{FakeProvider, temp_xml_path};
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = DanmuService::with_providers(registry);
+        let mut events = service.subscribe();
+        let handle = service
+            .start_collection(collection_spec(
+                "runtime-failure-session",
+                "runtime-failure-streamer",
+                FakeProvider::URL,
+            ))
+            .await
+            .expect("collection should become ready");
+
+        // A regular file cannot be used as the parent directory of the XML.
+        let blocker = temp_xml_path("service-runtime-failure-blocker");
+        tokio::fs::write(&blocker, b"not a directory")
+            .await
+            .expect("blocker file should be created");
+        handle
+            .start_segment(
+                "0",
+                blocker.join("child").join("segment.xml"),
+                chrono::Utc::now(),
+            )
+            .await
+            .expect("failing segment command should be admitted");
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let event = events
+                    .recv()
+                    .await
+                    .expect("event channel should remain available");
+                if matches!(event, DanmuEvent::CollectionStopped { .. }) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("failed collection should publish its terminal event");
+
+        let report = service
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .expect("failed collection task should be joined");
+        tokio::fs::remove_file(blocker)
+            .await
+            .expect("blocker file should be removable");
+
+        assert!(report.failures.iter().any(|failure| {
+            failure.contains("danmu collection runtime-failure-session failed")
+        }));
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancellation_during_startup_is_not_a_runtime_failure() {
+        let provider = Arc::new(PendingConnectProvider::new());
+        let mut registry = ProviderRegistry::new();
+        registry.register(provider.clone());
+        let service = Arc::new(DanmuService::with_providers(registry));
+
+        let start_service = service.clone();
+        let start = tokio::spawn(async move {
+            start_service
+                .start_collection(collection_spec(
+                    "cancelled-session",
+                    "cancelled-streamer",
+                    PendingConnectProvider::URL,
+                ))
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), provider.entered.notified())
+            .await
+            .expect("provider connect should begin");
+
+        let report = service
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .expect("startup cancellation should settle cleanly");
+        let start_result = start.await.expect("start task should join");
+        let Err(start_error) = start_result else {
+            panic!("shutdown must cancel startup");
+        };
+
+        assert!(start_error.to_string().contains("cancelled during startup"));
+        assert!(report.failures.is_empty());
+        assert!(report.forced_session_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn shutdown_drains_collection_cleanup_after_graceful_deadline() {
+        let service = Arc::new(DanmuService::new());
+        let cancelled = Arc::new(tokio::sync::Notify::new());
+        let release_cleanup = Arc::new(tokio::sync::Notify::new());
+        let task_token = service.cancel_token.child_token();
+        let task_cancelled = cancelled.clone();
+        let task_release = release_cleanup.clone();
+        service.collection_tasks.lock().spawn(async move {
+            task_token.cancelled().await;
+            task_cancelled.notify_one();
+            task_release.notified().await;
+            CollectionTaskReport {
+                session_id: "slow-cleanup-session".to_string(),
+                runtime_error: None,
+                cleanup_errors: Vec::new(),
+            }
+        });
+
+        let shutdown_service = service.clone();
+        let mut shutdown = tokio::spawn(async move {
+            shutdown_service
+                .shutdown_until(tokio::time::Instant::now() + Duration::from_millis(10))
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), cancelled.notified())
+            .await
+            .expect("owned task should observe service cancellation");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), &mut shutdown)
+                .await
+                .is_err(),
+            "deadline expiry must not abort an owned cleanup future"
+        );
+
+        release_cleanup.notify_one();
+        let report = tokio::time::timeout(Duration::from_secs(1), shutdown)
+            .await
+            .expect("shutdown should finish after cleanup is released")
+            .expect("shutdown task should join")
+            .expect("post-deadline cleanup should remain contained");
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.contains("graceful collection deadline exceeded"))
+        );
     }
 
     #[tokio::test]
@@ -800,8 +1313,8 @@ mod tests {
             .await
             .expect("replacement collection starts");
 
-        // The old collection must have been removed by the abort path,
-        // even though the new spawn ultimately failed.
+        // The old collection must be gone before the replacement claims the
+        // streamer-level slot.
         assert!(
             !service.is_collecting(old_session),
             "prior collector for {old_session} must have been aborted"
@@ -905,6 +1418,7 @@ mod tests {
                 sessions_by_streamer: service.sessions_by_streamer.clone(),
                 events: service.events.clone(),
                 session_id: "session-1".to_string(),
+                started: true,
                 armed: true,
             };
         }
@@ -940,6 +1454,7 @@ mod tests {
                 sessions_by_streamer: service.sessions_by_streamer.clone(),
                 events: service.events.clone(),
                 session_id: "session-1".to_string(),
+                started: true,
                 armed: true,
             };
             guard.disarm();
@@ -985,6 +1500,51 @@ mod tests {
             .stop_collection(session_id)
             .await
             .expect("collection stops");
+    }
+
+    #[tokio::test]
+    async fn concurrent_starts_reserve_a_session_exactly_once() {
+        use crate::danmu::test_support::FakeProvider;
+
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let mut registry = ProviderRegistry::new();
+        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
+        let service = Arc::new(DanmuService::with_providers(registry));
+
+        let first = {
+            let service = service.clone();
+            tokio::spawn(async move {
+                service
+                    .start_collection(collection_spec(
+                        "session-1",
+                        "streamer-1",
+                        FakeProvider::URL,
+                    ))
+                    .await
+            })
+        };
+        let second = {
+            let service = service.clone();
+            tokio::spawn(async move {
+                service
+                    .start_collection(collection_spec(
+                        "session-1",
+                        "streamer-1",
+                        FakeProvider::URL,
+                    ))
+                    .await
+            })
+        };
+
+        let first = first.await.expect("first start task should join");
+        let second = second.await.expect("second start task should join");
+        assert_ne!(first.is_ok(), second.is_ok());
+        assert_eq!(service.active_sessions(), vec!["session-1".to_string()]);
+
+        service
+            .shutdown()
+            .await
+            .expect("the winning collection should stop cleanly");
     }
 
     #[tokio::test]

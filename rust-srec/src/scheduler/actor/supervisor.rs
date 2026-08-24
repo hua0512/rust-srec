@@ -549,7 +549,7 @@ impl Supervisor {
                     // If still running, abort tasks
                     if self.registry.has_pending_tasks() {
                         forced_terminations = self.registry.pending_task_count();
-                        self.registry.abort_all();
+                        self.registry.abort_all().await;
                     }
                     break;
                 }
@@ -703,14 +703,79 @@ pub struct SupervisorStats {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use async_trait::async_trait;
     use chrono::Utc;
 
     use super::*;
     use crate::domain::{Priority, StreamerState};
     use crate::scheduler::actor::messages::StreamerConfig;
+    use crate::scheduler::actor::monitor_adapter::{CheckError, StatusChecker};
     use crate::scheduler::actor::registry::ActorTaskResult;
     use crate::scheduler::actor::streamer_actor::ActorOutcome;
-    use std::sync::Arc;
+
+    struct InFlightCheckGuard {
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Drop for InFlightCheckGuard {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::Release);
+        }
+    }
+
+    struct BlockingStatusChecker {
+        started: Arc<tokio::sync::Notify>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl StatusChecker for BlockingStatusChecker {
+        async fn check_status(
+            &self,
+            _streamer: &StreamerMetadata,
+        ) -> Result<
+            (
+                crate::scheduler::actor::messages::CheckResult,
+                crate::monitor::LiveStatus,
+            ),
+            CheckError,
+        > {
+            let guard = InFlightCheckGuard {
+                dropped: self.dropped.clone(),
+            };
+            self.started.notify_one();
+            let result = std::future::pending().await;
+            drop(guard);
+            result
+        }
+
+        async fn process_status(
+            &self,
+            _streamer: &StreamerMetadata,
+            _status: crate::monitor::LiveStatus,
+        ) -> Result<crate::monitor::ProcessStatusResult, CheckError> {
+            unreachable!("the blocking check never produces a status")
+        }
+
+        async fn handle_error(
+            &self,
+            _streamer: &StreamerMetadata,
+            _error: &str,
+        ) -> Result<(), CheckError> {
+            unreachable!("the blocking check never produces an error")
+        }
+
+        async fn set_infra_blocked(
+            &self,
+            _streamer: &StreamerMetadata,
+            _reason: crate::monitor::InfraBlockReason,
+        ) -> Result<(), CheckError> {
+            unreachable!("the blocking check never applies an infrastructure block")
+        }
+    }
 
     fn create_test_metadata(id: &str) -> StreamerMetadata {
         StreamerMetadata {
@@ -987,6 +1052,53 @@ mod tests {
 
         assert_eq!(report.total_actors, 3);
         assert_eq!(supervisor.registry().streamer_count(), 0);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn shutdown_reaps_forced_actor_before_returning() {
+        let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+        metadata_store.insert("blocked".to_string(), create_test_metadata("blocked"));
+
+        let check_started = Arc::new(tokio::sync::Notify::new());
+        let check_dropped = Arc::new(AtomicBool::new(false));
+        let checker = Arc::new(BlockingStatusChecker {
+            started: check_started.clone(),
+            dropped: check_dropped.clone(),
+        });
+        let config = SupervisorConfig {
+            shutdown_timeout: Duration::from_millis(10),
+            ..Default::default()
+        };
+        let mut supervisor = Supervisor::with_checkers(
+            token,
+            config,
+            metadata_store,
+            checker,
+            Arc::new(NoOpBatchChecker),
+        );
+        let actor = supervisor
+            .spawn_streamer("blocked", create_test_config(), None)
+            .expect("test actor should start");
+
+        actor
+            .send(StreamerMessage::CheckStatus)
+            .await
+            .expect("test actor should accept an immediate check");
+        tokio::time::timeout(Duration::from_secs(1), check_started.notified())
+            .await
+            .expect("test actor should enter the blocking check");
+        assert!(!check_dropped.load(Ordering::Acquire));
+
+        let report = supervisor.shutdown().await;
+
+        assert_eq!(report.total_actors, 1);
+        assert_eq!(report.forced_terminations, 1);
+        assert!(
+            check_dropped.load(Ordering::Acquire),
+            "shutdown must not return before the aborted actor future is dropped"
+        );
+        assert!(!supervisor.registry().has_pending_tasks());
     }
 
     #[test]

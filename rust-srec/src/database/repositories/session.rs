@@ -59,6 +59,14 @@ pub trait SessionRepository: Send + Sync {
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
+    /// Persist the retained video output and its session-segment index as one
+    /// atomic operation.
+    async fn create_segment_output(
+        &self,
+        output: &MediaOutputDbModel,
+        segment: &SessionSegmentDbModel,
+    ) -> Result<()>;
+
     /// Get the count of media outputs for a session.
     async fn get_output_count(&self, session_id: &str) -> Result<u32>;
 
@@ -394,6 +402,81 @@ impl SessionRepository for SqlxSessionRepository {
             )
             .bind(output.size_bytes)
             .bind(&output.session_id)
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn create_segment_output(
+        &self,
+        output: &MediaOutputDbModel,
+        segment: &SessionSegmentDbModel,
+    ) -> Result<()> {
+        if output.session_id != segment.session_id || output.file_path != segment.file_path {
+            return Err(Error::Other(
+                "media output and session segment must identify the same file".to_string(),
+            ));
+        }
+
+        retry_on_sqlite_busy("create_segment_output", || async {
+            let mut tx = begin_immediate(&self.write_pool).await?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&output.id)
+            .bind(&output.session_id)
+            .bind(&output.parent_media_output_id)
+            .bind(&output.file_path)
+            .bind(&output.file_type)
+            .bind(output.size_bytes)
+            .bind(output.created_at)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
+            )
+            .bind(output.size_bytes)
+            .bind(&output.session_id)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO session_segments (
+                    id,
+                    session_id,
+                    segment_index,
+                    file_path,
+                    duration_secs,
+                    size_bytes,
+                    split_reason_code,
+                    split_reason_details_json,
+                    created_at,
+                    completed_at,
+                    persisted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&segment.id)
+            .bind(&segment.session_id)
+            .bind(segment.segment_index)
+            .bind(&segment.file_path)
+            .bind(segment.duration_secs)
+            .bind(segment.size_bytes)
+            .bind(&segment.split_reason_code)
+            .bind(&segment.split_reason_details_json)
+            .bind(segment.created_at)
+            .bind(segment.completed_at)
+            .bind(segment.persisted_at)
             .execute(&mut *tx)
             .await?;
 
@@ -964,6 +1047,49 @@ mod tests {
         assert_eq!(saved.created_at, Some(1_700_000_000_000));
         assert_eq!(saved.completed_at, Some(1_700_000_009_500));
         assert!(saved.persisted_at >= 1_700_000_000_000);
+    }
+
+    #[tokio::test]
+    async fn create_segment_output_rolls_back_media_and_size_when_segment_insert_fails() {
+        let repo = setup_test_repo().await;
+        let mut existing = SessionSegmentDbModel::new(
+            "session-1",
+            0,
+            "/tmp/existing.ts",
+            1.0,
+            1,
+            Default::default(),
+            Default::default(),
+        );
+        existing.id = "duplicate-segment-id".to_string();
+        repo.create_session_segment(&existing).await.unwrap();
+
+        let output =
+            MediaOutputDbModel::new("session-1", "/tmp/final.ts", MediaFileType::Video, 2048);
+        let mut final_segment = SessionSegmentDbModel::new(
+            "session-1",
+            1,
+            "/tmp/final.ts",
+            2.0,
+            2048,
+            Default::default(),
+            Default::default(),
+        );
+        final_segment.id = existing.id.clone();
+
+        assert!(
+            repo.create_segment_output(&output, &final_segment)
+                .await
+                .is_err()
+        );
+        assert_eq!(repo.get_output_count("session-1").await.unwrap(), 0);
+        let total_size: i64 =
+            sqlx::query_scalar("SELECT total_size_bytes FROM live_sessions WHERE id = ?")
+                .bind("session-1")
+                .fetch_one(&repo.pool)
+                .await
+                .unwrap();
+        assert_eq!(total_size, 0);
     }
 
     #[tokio::test]

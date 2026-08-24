@@ -289,10 +289,28 @@ impl ActorRegistry {
         }
     }
 
-    /// Abort all actor tasks forcefully.
-    pub fn abort_all(&mut self) {
+    /// Abort all actor tasks forcefully and wait for their futures to be dropped.
+    pub async fn abort_all(&mut self) {
         warn!("Forcefully aborting all actor tasks");
         self.task_set.abort_all();
+
+        while let Some(result) = self.task_set.join_next().await {
+            match result {
+                Ok(task_result) => {
+                    debug!(
+                        actor_id = %task_result.actor_id,
+                        actor_type = %task_result.actor_type,
+                        "Actor exited while forced shutdown was being applied"
+                    );
+                }
+                Err(error) if error.is_cancelled() => {
+                    debug!("Actor task reaped after forced shutdown");
+                }
+                Err(error) => {
+                    warn!(%error, "Actor task failed while being reaped after forced shutdown");
+                }
+            }
+        }
     }
 
     /// Clear all actors from the registry.
