@@ -343,7 +343,9 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
   - The `ServiceContainer` performs phased graceful shutdown inside that worker, keeping required
     event consumers alive until final segment facts are persisted.
   - `SIGINT` triggers graceful shutdown on all supported platforms; `SIGTERM` is additionally
-    handled on Unix. A signal sent directly to the worker or a worker-local critical failure
+    handled on Unix. The parent and the worker both register handlers, so a signal delivered
+    straight to the worker — as `KillMode=control-group` or `pkill` does — runs the same graceful
+    finalization as one relayed over the control pipe. A worker-local critical failure still
     fail-stops that worker; the parent then contains its descendants and retains recovery state.
   - A forced or crashed worker leaves a dirty-generation marker beside SQLite so the next launch
     reports that recovery may be required. Earlier recovery debt survives later clean generations;

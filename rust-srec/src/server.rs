@@ -72,6 +72,13 @@ async fn run_supervisor() -> anyhow::Result<()> {
 }
 
 async fn run_worker() -> anyhow::Result<()> {
+    // Registered before `wait_for_worker_start` so the streams capture terminal
+    // signals from the first instant: until a handler exists a SIGTERM takes its
+    // default action and kills this process mid-startup. A signal that arrives
+    // during startup is observed at the select below and drains the runtime as
+    // soon as `ServiceContainer` is ready.
+    let direct_signal = worker_shutdown_signal()?;
+
     // The worker is already enrolled in its OS containment domain. It cannot
     // open SQLite, output files, or sockets until the supervisor has durably
     // installed the generation marker and sent START.
@@ -134,6 +141,15 @@ async fn run_worker() -> anyhow::Result<()> {
                 Ok(WorkerShutdownReason::SupervisorDisconnected) | Err(_) => fail_stop_worker(),
             }
         }
+        reason = direct_signal => {
+            // `run_supervisor` may observe the same signal and write a SHUTDOWN
+            // frame that `WorkerControl::wait_for_shutdown` no longer reads.
+            // Both routes yield `WorkerShutdownReason::Signal` and the same
+            // drain below, and the parent's absolute deadline bounds this
+            // shutdown either way.
+            info!(?reason, "Signal delivered directly to the contained runtime");
+            reason
+        }
         _failure = container.wait_for_runtime_failure() => fail_stop_worker(),
     };
 
@@ -160,6 +176,39 @@ fn fail_stop_worker() -> ! {
     // The parent owns the only bounded shutdown path. Exiting immediately lets
     // it contain descendants and retain the dirty generation for recovery.
     std::process::exit(WORKER_FAIL_STOP_EXIT_CODE);
+}
+
+/// Terminal signals addressed to the worker process itself.
+///
+/// `ContainedChild::spawn` puts the worker in its own process group, so the
+/// streams `supervisor_shutdown_signal` registers in the parent do not see a
+/// SIGTERM sent to the worker's PID or broadcast to every member of a service
+/// cgroup. Observing those signals here routes them through the same
+/// `WorkerShutdownReason::Signal` path as a SHUTDOWN frame on the control pipe,
+/// so `container.shutdown()` still drains events and finalizes segments.
+#[cfg(unix)]
+fn worker_shutdown_signal()
+-> anyhow::Result<impl std::future::Future<Output = WorkerShutdownReason> + Send + 'static> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let mut terminate = signal(SignalKind::terminate())?;
+    Ok(async move {
+        tokio::select! {
+            _ = interrupt.recv() => WorkerShutdownReason::Signal,
+            _ = terminate.recv() => WorkerShutdownReason::Signal,
+        }
+    })
+}
+
+/// `ContainedChild::spawn` launches the worker with `CREATE_NO_WINDOW` inside a
+/// Job Object, so it shares no console and receives no control events. Shutdown
+/// reaches it only as a SHUTDOWN frame written by `run_supervisor`, which
+/// `WorkerControl::wait_for_shutdown` already observes.
+#[cfg(windows)]
+fn worker_shutdown_signal()
+-> anyhow::Result<impl std::future::Future<Output = WorkerShutdownReason> + Send + 'static> {
+    Ok(std::future::pending::<WorkerShutdownReason>())
 }
 
 #[cfg(unix)]
