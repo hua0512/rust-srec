@@ -569,7 +569,19 @@ impl DownloadEventProcessor {
             if acknowledgement.send(acknowledgement_result).is_err() {
                 debug!("Download coordination event acknowledgement receiver was dropped");
             }
-            result?;
+            if let Err(error) = result {
+                // The negative acknowledgement above already contains the
+                // failure to the publishing download: `publish_and_wait` in
+                // `downloader::manager::attempt` cancels that download's engine
+                // and emits its Failed terminal, and `coordinate_and_wait`
+                // folds a terminal-apply error into the attempt outcome. This
+                // consumer stays alive so every other active recording keeps
+                // its segment persistence and lifecycle transitions.
+                warn!(
+                    %error,
+                    "Download coordination event failed; the publishing download was stopped via its acknowledgement"
+                );
+            }
         }
         debug!("Download coordination handler drained and shut down");
         Ok(())
