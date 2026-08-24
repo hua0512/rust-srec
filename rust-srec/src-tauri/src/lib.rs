@@ -25,6 +25,17 @@ use desktop_notifications::{
     register_desktop_notifications_ipc, should_deliver_desktop_notification,
 };
 
+/// Cooperative drain budget handed to `ServiceContainer::shutdown_with_hard_cap`.
+const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
+
+/// Wall-clock cap on the whole in-process drain.
+///
+/// The desktop hosts the backend inside its own process, so nothing outside it
+/// can force-kill a wedged engine or pipeline job. Past this cap
+/// `shutdown_with_hard_cap` aborts the remaining tasks — which is what kills
+/// their ffmpeg/streamlink children — so `app_handle.exit` cannot orphan them.
+const SHUTDOWN_HARD_CAP: Duration = Duration::from_secs(60);
+
 #[derive(Clone, Serialize)]
 struct BootProgressPayload {
     status: String,
@@ -797,7 +808,10 @@ async fn run_desktop_backend_init(
                 return;
             }
 
-            if let Err(error) = container.shutdown().await {
+            if let Err(error) = container
+                .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
+                .await
+            {
                 log::error!("Error during backend failure shutdown: {}", error);
             }
             app_handle.exit(1);
@@ -1316,7 +1330,10 @@ pub fn run() {
             if let Some(container) = state.backend() {
                 let app_handle = app_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = container.shutdown().await {
+                    if let Err(e) = container
+                        .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
+                        .await
+                    {
                         log::error!("Error during shutdown: {}", e);
                     }
                     app_handle.exit(0);

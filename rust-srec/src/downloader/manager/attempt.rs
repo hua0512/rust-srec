@@ -24,6 +24,7 @@ use crate::downloader::engine::{
 use crate::downloader::output_root_gate::OutputRootGate;
 use crate::downloader::queue::SlotGuard;
 use crate::downloader::resilience::EngineKey;
+use crate::utils::task_supervisor::DrainedTasks;
 
 use super::{
     ActiveDownload, AttemptPhase, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
@@ -146,11 +147,8 @@ impl AttemptSupervisor {
     }
 
     pub(super) async fn join_until(&self, deadline: tokio::time::Instant) -> AttemptShutdownReport {
-        let mut tasks = {
-            let mut owned = self.tasks.lock();
-            self.accepting.store(false, Ordering::Release);
-            std::mem::take(&mut *owned)
-        };
+        self.close_admission();
+        let mut tasks = DrainedTasks::take_from(&self.tasks);
 
         let mut failures = std::mem::take(&mut *self.failures.lock());
         let mut deadline_exceeded_download_ids = Vec::new();
@@ -212,6 +210,51 @@ impl AttemptSupervisor {
             failures,
             deadline_exceeded_download_ids,
         }
+    }
+
+    /// Aborts every running attempt and joins the aborted tasks.
+    ///
+    /// [`Self::join_until`] never aborts, so an attempt whose engine ignores
+    /// `DownloadHandle::cancel` keeps it waiting. This is the escape hatch for
+    /// a caller that must stop waiting: aborting drops the attempt future,
+    /// which drops the engine future and kills the ffmpeg/streamlink child it
+    /// spawned with `kill_on_drop`. Joining afterwards is what proves those
+    /// drops ran. Attempts that do not settle by `deadline` stay owned here.
+    ///
+    /// Returns the download ids that were still running.
+    pub(super) async fn abort_running(&self, deadline: tokio::time::Instant) -> Vec<String> {
+        self.close_admission();
+
+        let mut download_ids = self
+            .running
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        download_ids.sort();
+
+        let mut tasks = DrainedTasks::take_from(&self.tasks);
+        tasks.abort_all();
+        while !tasks.is_empty() {
+            match timeout_at(deadline, tasks.join_next()).await {
+                Ok(Some(Ok(report))) => {
+                    debug!(download_id = %report.download_id, "Recording attempt stopped after abort");
+                }
+                Ok(Some(Err(error))) if error.is_cancelled() => {}
+                Ok(Some(Err(error))) => {
+                    warn!(%error, "Recording attempt failed while being aborted");
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        unfinished = tasks.len(),
+                        "Aborted recording attempts did not settle before the reap deadline"
+                    );
+                    break;
+                }
+            }
+        }
+
+        download_ids
     }
 }
 

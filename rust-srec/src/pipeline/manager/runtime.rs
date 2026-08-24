@@ -183,6 +183,47 @@ where
         info!("Pipeline Manager stopped");
     }
 
+    /// Abort the worker pools and runtime tasks instead of joining them.
+    ///
+    /// [`Self::stop`] waits for in-flight jobs through
+    /// `WorkerPool::stop`, which is bounded only by
+    /// `WorkerPoolConfig::job_timeout_secs`. Callers that must stop waiting use
+    /// this so each job future is dropped and any process a processor spawned
+    /// with `kill_on_drop` is killed. Tasks that do not settle by `deadline`
+    /// are left aborted but unjoined.
+    ///
+    /// Returns the number of aborted tasks.
+    pub(crate) async fn abort(&self, deadline: tokio::time::Instant) -> usize {
+        warn!("Aborting Pipeline Manager");
+        self.cancellation_token.cancel();
+
+        let mut runtime_tasks = {
+            let mut runtime = self.runtime.lock();
+            runtime.state = PipelineRuntimeState::Stopped;
+            std::mem::take(&mut runtime.tasks)
+        };
+
+        let mut aborted = self.cpu_pool.abort(deadline).await + self.io_pool.abort(deadline).await;
+
+        aborted += runtime_tasks.len();
+        runtime_tasks.abort_all();
+        while !runtime_tasks.is_empty() {
+            match tokio::time::timeout_at(deadline, runtime_tasks.join_next()).await {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        unfinished = runtime_tasks.len(),
+                        "Aborted pipeline runtime tasks did not settle before the reap deadline"
+                    );
+                    break;
+                }
+            }
+        }
+
+        aborted
+    }
+
     /// Subscribe to pipeline events.
     pub fn subscribe(&self) -> broadcast::Receiver<PipelineEvent> {
         self.event_tx.subscribe()

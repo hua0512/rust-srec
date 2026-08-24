@@ -2118,6 +2118,21 @@ impl DownloadManager {
             failures,
         })
     }
+
+    /// Fence new attempts and abort the running ones instead of joining them.
+    ///
+    /// [`Self::shutdown_until`] contains attempts past its deadline, so an
+    /// engine that never returns keeps it pending. Callers that must stop
+    /// waiting use this: aborting drops each attempt future and kills the
+    /// engine child it owns through `kill_on_drop`. Attempts that do not
+    /// settle by `deadline` remain owned by the attempt supervisor.
+    ///
+    /// Returns the download ids that were still running.
+    pub(crate) async fn abort_attempts(&self, deadline: tokio::time::Instant) -> Vec<String> {
+        self.accepting_operations.store(false, Ordering::Release);
+        self.queue.shutdown();
+        self.attempts.abort_running(deadline).await
+    }
 }
 
 impl Default for DownloadManager {
@@ -2942,6 +2957,67 @@ mod tests {
             panic!("expected segment completed event");
         };
         assert_eq!(completed_index, started_index);
+    }
+
+    /// `shutdown_until` contains attempts past its deadline, so an engine that
+    /// ignores `DownloadHandle::cancel` keeps it pending forever. A caller that
+    /// stops awaiting it must still be able to reclaim those attempts:
+    /// `abort_attempts` drops each attempt future, which is what kills the
+    /// engine child owned through `kill_on_drop`.
+    #[tokio::test]
+    async fn abort_attempts_reclaims_attempts_left_by_a_dropped_shutdown() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let segment_path = temp.path().join("segment-0.flv");
+        // Never notified, so the engine parks past the shutdown request.
+        let wedged = Arc::new(tokio::sync::Notify::new());
+
+        let scripted = ScriptedSegmentEngine::with_gated_tail(
+            vec![SegmentEvent::SegmentStarted {
+                path: segment_path.clone(),
+                sequence: 0,
+                started_at: Utc::now(),
+            }],
+            wedged,
+            Vec::new(),
+        );
+        let download_id = start_scripted_download_with_engine(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), "session-abort-attempts"),
+            scripted,
+        )
+        .await
+        .expect("download should start");
+
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for segment started")
+                .expect("download event channel closed");
+            if matches!(
+                event,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted { .. })
+            ) {
+                break;
+            }
+        }
+
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(50),
+                manager.shutdown_until(tokio::time::Instant::now()),
+            )
+            .await
+            .is_err(),
+            "shutdown_until must keep containing an attempt whose engine ignores cancellation"
+        );
+
+        let aborted = manager
+            .abort_attempts(tokio::time::Instant::now() + Duration::from_secs(5))
+            .await;
+        assert_eq!(aborted, vec![download_id]);
+        assert_eq!(manager.active_count(), 0);
     }
 
     #[tokio::test]

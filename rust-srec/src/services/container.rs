@@ -227,6 +227,12 @@ const DEFAULT_EVENT_CAPACITY: usize = 256;
 const DEFAULT_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
 const CONTAINMENT_GATE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long [`ServiceContainer::shutdown_with_hard_cap`] waits for the tasks it
+/// aborted to settle. Joining an aborted task proves its future was dropped,
+/// which is when an engine child spawned with `kill_on_drop` is killed, so the
+/// method returns at most `hard_cap + ABORT_REAP_WINDOW` after it is called.
+const ABORT_REAP_WINDOW: Duration = Duration::from_secs(5);
+
 fn autoscale_concurrency_limit(raw: i32) -> usize {
     if raw > 0 {
         return raw as usize;
@@ -607,6 +613,62 @@ impl ServiceContainer {
     pub async fn shutdown(&self) -> Result<()> {
         self.shutdown_with_grace_period(DEFAULT_SHUTDOWN_GRACE_PERIOD)
             .await
+    }
+
+    /// Shutdown all services, giving up on containment after `hard_cap`.
+    ///
+    /// [`Self::shutdown`] waits as long as containment takes: the drains in
+    /// `TaskSupervisor::shutdown`, `DownloadManager::shutdown_until` and
+    /// `PipelineManager::stop` all keep joining past the grace period so no
+    /// producer outlives the database pools. That is only safe with a parent
+    /// process that enforces a wall-clock deadline and force-kills the process
+    /// tree. Embedders that run the container in-process call
+    /// this instead: when `hard_cap` expires the phased drain is dropped and
+    /// the remaining work is aborted, so each attempt/job future is dropped and
+    /// the ffmpeg/streamlink child it owns through `kill_on_drop` is killed
+    /// rather than orphaned by a later `std::process::exit`.
+    ///
+    /// Returns `Err` naming what was still running when the cap fired. On that
+    /// path the database pools are left open, matching the quiescence gate in
+    /// [`Self::shutdown_with_grace_period`]; the caller is expected to exit the
+    /// process. Returns at most `hard_cap + ABORT_REAP_WINDOW` after the call.
+    pub async fn shutdown_with_hard_cap(
+        &self,
+        grace_period: Duration,
+        hard_cap: Duration,
+    ) -> Result<()> {
+        let cap_deadline = tokio::time::Instant::now() + hard_cap;
+        let mut graceful = Box::pin(self.shutdown_with_grace_period(grace_period));
+        if let Ok(result) = tokio::time::timeout_at(cap_deadline, &mut graceful).await {
+            return result;
+        }
+
+        // Drop the drain before aborting: `TaskSupervisor::shutdown` and
+        // `AttemptSupervisor::join_until` return their `JoinSet`s to their
+        // owners when their futures are dropped, which is what lets the abort
+        // hatches below reach the tasks that are still running.
+        drop(graceful);
+        warn!(
+            ?hard_cap,
+            "Shutdown hard cap exceeded; aborting the remaining supervised work"
+        );
+
+        let reap_deadline = tokio::time::Instant::now() + ABORT_REAP_WINDOW;
+        let aborted_downloads = self.download_manager.abort_attempts(reap_deadline).await;
+        let aborted_pipeline_tasks = self.pipeline_manager.abort(reap_deadline).await;
+        let aborted_background_tasks = self.task_supervisor.abort_all(reap_deadline).await;
+
+        warn!(
+            downloads = ?aborted_downloads,
+            pipeline_tasks = aborted_pipeline_tasks,
+            background_tasks = aborted_background_tasks,
+            "Aborted supervised work after the shutdown hard cap"
+        );
+
+        Err(crate::Error::Other(format!(
+            "service shutdown exceeded its {hard_cap:?} hard cap: aborted {} recording attempt(s) {aborted_downloads:?}, {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s); database pools were left open",
+            aborted_downloads.len()
+        )))
     }
 
     /// Shutdown all services with a bounded cooperative grace period.
@@ -1551,6 +1613,77 @@ mod tests {
             .expect("resumed service container should shut down cleanly");
         assert!(reopened_pool.is_closed());
         assert!(reopened_write_pool.is_closed());
+    }
+
+    /// The phased drain waits for containment, so a task that ignores the
+    /// cancellation token holds `shutdown_with_grace_period` open forever.
+    /// `shutdown_with_hard_cap` must stop waiting, abort the task, and report
+    /// what it aborted instead of leaving an embedder wedged.
+    #[tokio::test]
+    async fn hard_cap_aborts_supervised_work_that_never_settles() {
+        let pool = migrated_test_pool().await;
+        let container = super::ServiceContainer::with_config(
+            pool.clone(),
+            pool.clone(),
+            Duration::from_secs(60),
+            8,
+        )
+        .await
+        .expect("service container should initialize");
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        assert!(container.task_supervisor.spawn("wedged", async move {
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        }));
+        started_rx.await.expect("wedged task should start");
+
+        let hard_cap = Duration::from_millis(200);
+        let started_at = std::time::Instant::now();
+        let error = container
+            .shutdown_with_hard_cap(Duration::from_millis(50), hard_cap)
+            .await
+            .expect_err("the wedged task must keep the drain from completing");
+        let elapsed = started_at.elapsed();
+
+        assert!(
+            elapsed >= hard_cap,
+            "shutdown returned before the hard cap: {elapsed:?}"
+        );
+        assert!(
+            elapsed < hard_cap + super::ABORT_REAP_WINDOW,
+            "aborting must not push shutdown past its reap window: {elapsed:?}"
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains("hard cap") && message.contains("1 background task(s)"),
+            "the error must name the work that was aborted: {message}"
+        );
+        // Producer quiescence was never proven, so the pools stay open exactly
+        // as in `shutdown_with_grace_period`; the caller exits the process.
+        assert!(!pool.is_closed());
+    }
+
+    #[tokio::test]
+    async fn hard_cap_shutdown_under_the_cap_closes_pools() {
+        let pool = migrated_test_pool().await;
+        let container = super::ServiceContainer::with_config(
+            pool.clone(),
+            pool.clone(),
+            Duration::from_secs(60),
+            8,
+        )
+        .await
+        .expect("service container should initialize");
+        container.setup_download_event_subscriptions();
+        container.setup_session_lifecycle_subscriptions();
+
+        container
+            .shutdown_with_hard_cap(Duration::from_millis(500), Duration::from_secs(5))
+            .await
+            .expect("a quiescent container should shut down within the cap");
+
+        assert!(pool.is_closed());
     }
 
     #[tokio::test]
