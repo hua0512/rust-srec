@@ -894,8 +894,8 @@ pub struct SessionEventResponse {
     pub kind: String,
     pub occurred_at: DateTime<Utc>,
     /// Typed payload. `None` when the underlying row had no payload or when
-    /// the payload failed to parse — the frontend treats both the same
-    /// (renders the row with kind only).
+    /// the payload failed to parse. The frontend still renders a known
+    /// lifecycle kind and marks only its extra details unavailable.
     pub payload: Option<SessionEventPayload>,
 }
 

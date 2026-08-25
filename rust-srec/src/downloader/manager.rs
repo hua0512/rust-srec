@@ -333,6 +333,19 @@ impl DownloadCoordinationSender {
             .await
             .map_err(|_| "download coordination handler stopped before acknowledging shutdown")
     }
+
+    #[cfg(test)]
+    pub(crate) async fn publish_and_wait_for_test(
+        &self,
+        event: DownloadManagerEvent,
+    ) -> std::result::Result<(), String> {
+        self.publish(event).wait().await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn shutdown_for_test(&self) -> std::result::Result<(), &'static str> {
+        self.shutdown().await
+    }
 }
 
 enum DownloadCoordinationReceipt {

@@ -15,6 +15,15 @@ pub(crate) struct ShutdownPolicy {
     force_reserve: Duration,
 }
 
+impl Default for ShutdownPolicy {
+    fn default() -> Self {
+        Self {
+            total: Duration::from_secs(30),
+            force_reserve: Duration::from_secs(2),
+        }
+    }
+}
+
 impl ShutdownPolicy {
     pub(crate) fn new(
         total: Duration,

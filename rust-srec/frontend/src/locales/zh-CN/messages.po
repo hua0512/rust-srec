@@ -1143,7 +1143,7 @@ msgstr "取消处理管道？"
 msgid "Cancelled"
 msgstr "已取消"
 
-#: src/components/sessions/timeline-tab.tsx:159
+#: src/components/sessions/timeline-tab.tsx:165
 msgctxt "terminal-cause"
 msgid "Cancelled"
 msgstr "已取消"
@@ -1186,8 +1186,8 @@ msgstr "分类"
 msgid "Category"
 msgstr "分类"
 
-#: src/components/sessions/timeline-tab.tsx:313
-#: src/components/sessions/timeline-tab.tsx:332
+#: src/components/sessions/timeline-tab.tsx:329
+#: src/components/sessions/timeline-tab.tsx:362
 msgid "Cause:"
 msgstr "原因："
 
@@ -1433,7 +1433,7 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 msgid "Completed"
 msgstr "已完成"
 
-#: src/components/sessions/timeline-tab.tsx:155
+#: src/components/sessions/timeline-tab.tsx:161
 msgctxt "terminal-cause"
 msgid "Completed"
 msgstr "下载断开"
@@ -1600,7 +1600,7 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/components/sessions/timeline-tab.tsx:339
+#: src/components/sessions/timeline-tab.tsx:369
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
 
@@ -1641,7 +1641,7 @@ msgstr "确认离线所需的连续失败检查次数。"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/sessions/timeline-tab.tsx:180
+#: src/components/sessions/timeline-tab.tsx:186
 msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
@@ -2125,7 +2125,7 @@ msgstr "弹幕统计"
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
-#: src/components/sessions/timeline-tab.tsx:176
+#: src/components/sessions/timeline-tab.tsx:182
 msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
@@ -2252,7 +2252,7 @@ msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
-#: src/components/sessions/timeline-tab.tsx:182
+#: src/components/sessions/timeline-tab.tsx:188
 msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "已确认离线"
@@ -2834,7 +2834,7 @@ msgstr "编码设置"
 msgid "End"
 msgstr "结束"
 
-#: src/components/sessions/timeline-tab.tsx:470
+#: src/components/sessions/timeline-tab.tsx:500
 msgid "End of History"
 msgstr "历史结束"
 
@@ -3193,7 +3193,7 @@ msgstr "五"
 msgid "Failed"
 msgstr "失败"
 
-#: src/components/sessions/timeline-tab.tsx:157
+#: src/components/sessions/timeline-tab.tsx:163
 msgctxt "terminal-cause"
 msgid "Failed"
 msgstr "下载失败"
@@ -4329,7 +4329,7 @@ msgstr "继承自上层"
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/sessions/timeline-tab.tsx:215
+#: src/components/sessions/timeline-tab.tsx:221
 msgid "INITIAL"
 msgstr "初始"
 
@@ -5544,11 +5544,11 @@ msgstr "未找到模板"
 msgid "No templates yet"
 msgstr "暂无模板"
 
-#: src/components/sessions/timeline-tab.tsx:377
+#: src/components/sessions/timeline-tab.tsx:407
 msgid "No Timeline Events"
 msgstr "暂无时间线事件"
 
-#: src/components/sessions/timeline-tab.tsx:380
+#: src/components/sessions/timeline-tab.tsx:410
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
@@ -5851,7 +5851,7 @@ msgstr "原画 / 蓝光"
 msgid "Out of disk space"
 msgstr "磁盘空间不足"
 
-#: src/components/sessions/timeline-tab.tsx:169
+#: src/components/sessions/timeline-tab.tsx:175
 msgctxt "terminal-cause"
 msgid "Out of Schedule"
 msgstr "不在计划时间内"
@@ -6125,7 +6125,7 @@ msgstr "峰值/分钟"
 msgid "Pending"
 msgstr "待处理"
 
-#: src/components/sessions/timeline-tab.tsx:244
+#: src/components/sessions/timeline-tab.tsx:250
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
@@ -6360,7 +6360,7 @@ msgstr "播放器"
 msgid "Playlist"
 msgstr "播放列表"
 
-#: src/components/sessions/timeline-tab.tsx:178
+#: src/components/sessions/timeline-tab.tsx:184
 msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "播放列表已失效"
@@ -6527,7 +6527,7 @@ msgctxt "pagination"
 msgid "Previous"
 msgstr "上一页"
 
-#: src/components/sessions/timeline-tab.tsx:288
+#: src/components/sessions/timeline-tab.tsx:294
 msgid "Previous Title"
 msgstr "上一个标题"
 
@@ -6869,7 +6869,7 @@ msgstr "录制完成"
 msgid "Recording rejected"
 msgstr "录制被拒绝"
 
-#: src/components/sessions/timeline-tab.tsx:304
+#: src/components/sessions/timeline-tab.tsx:310
 #: src/lib/notification-event-types.ts:19
 msgid "Recording started"
 msgstr "录制已开始"
@@ -6918,7 +6918,7 @@ msgstr "正则模式"
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
 
-#: src/components/sessions/timeline-tab.tsx:161
+#: src/components/sessions/timeline-tab.tsx:167
 msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
@@ -7081,16 +7081,16 @@ msgstr "重置密码"
 msgid "Resume"
 msgstr "继续"
 
-#: src/components/sessions/timeline-tab.tsx:253
+#: src/components/sessions/timeline-tab.tsx:259
 msgid "RESUMED"
 msgstr "已恢复"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:323
+#: src/components/sessions/timeline-tab.tsx:346
 msgid "Resumed after {0}s in pending state."
 msgstr "在待确认状态 {0} 秒后恢复。"
 
-#: src/components/sessions/timeline-tab.tsx:232
+#: src/components/sessions/timeline-tab.tsx:238
 msgid "RESUMED START"
 msgstr "恢复启动"
 
@@ -7675,9 +7675,17 @@ msgstr "录制会话详情"
 msgid "Session Duration"
 msgstr "录制时长"
 
-#: src/components/sessions/timeline-tab.tsx:262
+#: src/components/sessions/timeline-tab.tsx:268
 msgid "SESSION ENDED"
 msgstr "会话已结束"
+
+#: src/components/sessions/timeline-tab.tsx:355
+msgid "Session ended. Additional details are unavailable."
+msgstr "会话已结束。其他详细信息不可用。"
+
+#: src/components/sessions/timeline-tab.tsx:319
+msgid "Session entered pending confirmation. Additional details are unavailable."
+msgstr "会话已进入待确认状态。其他详细信息不可用。"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:400
@@ -7700,7 +7708,11 @@ msgstr "未找到录制会话"
 msgid "Session Preview"
 msgstr "录制预览"
 
-#: src/components/sessions/timeline-tab.tsx:234
+#: src/components/sessions/timeline-tab.tsx:340
+msgid "Session resumed. Additional details are unavailable."
+msgstr "会话已恢复。其他详细信息不可用。"
+
+#: src/components/sessions/timeline-tab.tsx:240
 msgid "SESSION STARTED"
 msgstr "会话已启动"
 
@@ -8104,7 +8116,7 @@ msgstr "主播处于冷却期"
 msgid "Streamer no longer exists on the platform"
 msgstr "主播在平台上已不存在"
 
-#: src/components/sessions/timeline-tab.tsx:163
+#: src/components/sessions/timeline-tab.tsx:169
 msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
@@ -8922,7 +8934,7 @@ msgstr "未知的过滤器类型"
 msgid "Unlimited"
 msgstr "不限"
 
-#: src/components/sessions/timeline-tab.tsx:347
+#: src/components/sessions/timeline-tab.tsx:377
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
@@ -8938,7 +8950,7 @@ msgstr "直到"
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
-#: src/components/sessions/timeline-tab.tsx:222
+#: src/components/sessions/timeline-tab.tsx:228
 msgid "UPDATE"
 msgstr "更新"
 
@@ -9073,7 +9085,7 @@ msgstr "启用 TLS"
 msgid "User Agent"
 msgstr "User-Agent"
 
-#: src/components/sessions/timeline-tab.tsx:167
+#: src/components/sessions/timeline-tab.tsx:173
 msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"

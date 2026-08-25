@@ -1,6 +1,7 @@
 //! Standalone server process composition.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tracing::{info, warn};
 
@@ -10,8 +11,9 @@ use crate::backend::{
 };
 use crate::runtime::{
     RuntimeTermination, WorkerShutdownReason, is_worker_process, supervise_current_executable,
-    wait_for_worker_start, worker_cooperative_grace,
+    wait_for_worker_start, worker_shutdown_schedule,
 };
+use crate::services::container::ServiceShutdownSchedule;
 
 const WORKER_FAIL_STOP_EXIT_CODE: i32 = 70;
 
@@ -131,13 +133,13 @@ async fn run_worker() -> anyhow::Result<()> {
     }
     info!("Contained rust-srec runtime started successfully");
 
-    let shutdown_reason = tokio::select! {
+    let (shutdown_reason, shutdown_started_at) = tokio::select! {
         control = worker_control.wait_for_shutdown() => {
             match control {
                 Ok(WorkerShutdownReason::Signal) => {
                     let reason = WorkerShutdownReason::Signal;
                     info!(?reason, "Runtime supervisor requested shutdown");
-                    reason
+                    (reason, Instant::now())
                 }
                 Ok(WorkerShutdownReason::SupervisorDisconnected) | Err(_) => fail_stop_worker(),
             }
@@ -149,30 +151,40 @@ async fn run_worker() -> anyhow::Result<()> {
             // drain below, and the parent's absolute deadline bounds this
             // shutdown either way.
             info!(?reason, "Signal delivered directly to the contained runtime");
-            reason
+            (reason, Instant::now())
         }
         _failure = container.wait_for_runtime_failure() => fail_stop_worker(),
     };
+
+    let schedule = worker_shutdown_schedule(shutdown_started_at);
+    let watchdog = schedule.arm_watchdog()?;
 
     let shutdown_event = NotificationEvent::SystemShutdown {
         reason: shutdown_reason.description().to_string(),
         timestamp: chrono::Utc::now(),
     };
-    if let Err(error) = container
-        .notification_service()
-        .notify(shutdown_event)
-        .await
+    let notification_deadline = tokio::time::Instant::from_std(schedule.cooperative_at())
+        .min(tokio::time::Instant::now() + Duration::from_secs(1));
+    match tokio::time::timeout_at(
+        notification_deadline,
+        container.notification_service().notify(shutdown_event),
+    )
+    .await
     {
-        warn!(%error, "Failed to send shutdown notification");
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => warn!(%error, "Failed to send shutdown notification"),
+        Err(_) => warn!("Shutdown notification exceeded its deadline; continuing service drain"),
     }
 
     info!("Shutting down contained services...");
-    // The drain budget follows the supervisor's configured shutdown policy so
-    // the cooperative phase ends before `ShutdownSchedule::force_at` instead of
-    // racing the parent's forced containment with a fixed default.
-    container
-        .shutdown_with_grace_period(worker_cooperative_grace())
-        .await?;
+    let service_schedule = ServiceShutdownSchedule::new(
+        tokio::time::Instant::from_std(schedule.cooperative_at()),
+        tokio::time::Instant::from_std(schedule.force_at()),
+        tokio::time::Instant::from_std(schedule.deadline()),
+    )?;
+    let shutdown_result = container.shutdown_with_schedule(service_schedule).await;
+    watchdog.disarm()?;
+    shutdown_result?;
     info!("Contained rust-srec runtime shutdown complete");
 
     Ok(())

@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -474,7 +475,7 @@ async fn run_discarded_segment_cleanup(
 
 /// Fast path: drain the download broadcast channel into the bounded
 /// `event_tx` queue quickly so slow per-event processing in
-/// [`DownloadEventProcessor::run`] cannot lag the broadcast receiver and
+/// [`DownloadEventProcessor::run_observer`] cannot lag the broadcast receiver and
 /// drop critical session events under backpressure. Progress ticks that
 /// carry no recovery signal (per `should_record_recovery_from_progress`)
 /// are dropped here before they consume queue capacity.
@@ -560,31 +561,13 @@ impl DownloadEventProcessor {
 
     async fn run_required(
         self,
-        mut receiver: DownloadCoordinationReceiver,
+        receiver: DownloadCoordinationReceiver,
     ) -> std::result::Result<(), String> {
-        while let Some(delivery) = receiver.recv().await.map_err(str::to_string)? {
-            let (event, acknowledgement) = delivery.into_parts();
-            let result = self.handle_event(event).await;
-            let acknowledgement_result = result.as_ref().map(|_| ()).map_err(ToString::to_string);
-            if acknowledgement.send(acknowledgement_result).is_err() {
-                debug!("Download coordination event acknowledgement receiver was dropped");
-            }
-            if let Err(error) = result {
-                // The negative acknowledgement above already contains the
-                // failure to the publishing download: `publish_and_wait` in
-                // `downloader::manager::attempt` cancels that download's engine
-                // and emits its Failed terminal, and `coordinate_and_wait`
-                // folds a terminal-apply error into the attempt outcome. This
-                // consumer stays alive so every other active recording keeps
-                // its segment persistence and lifecycle transitions.
-                warn!(
-                    %error,
-                    "Download coordination event failed; the publishing download was stopped via its acknowledgement"
-                );
-            }
-        }
-        debug!("Download coordination handler drained and shut down");
-        Ok(())
+        run_required_download_events(receiver, move |event| {
+            let processor = self.clone();
+            async move { processor.handle_event(event).await }
+        })
+        .await
     }
 
     async fn handle_event(
@@ -823,6 +806,35 @@ impl DownloadEventProcessor {
             .map_err(|error| format!("failed to apply download event to pipeline: {error}"))?;
         Ok(())
     }
+}
+
+async fn run_required_download_events<Handler, HandlerFuture>(
+    mut receiver: DownloadCoordinationReceiver,
+    mut handle_event: Handler,
+) -> std::result::Result<(), String>
+where
+    Handler: FnMut(DownloadManagerEvent) -> HandlerFuture,
+    HandlerFuture: Future<Output = std::result::Result<(), String>>,
+{
+    while let Some(delivery) = receiver.recv().await.map_err(str::to_string)? {
+        let (event, acknowledgement) = delivery.into_parts();
+        let result = handle_event(event).await;
+        let acknowledgement_result = result.as_ref().map(|_| ()).map_err(ToString::to_string);
+        if acknowledgement.send(acknowledgement_result).is_err() {
+            debug!("Download coordination event acknowledgement receiver was dropped");
+        }
+        if let Err(error) = result {
+            // The negative acknowledgement above already contains the failure
+            // to the publishing download. Keep this consumer alive so every
+            // other recording retains its persistence and lifecycle path.
+            warn!(
+                %error,
+                "Download coordination event failed; the publishing download was stopped via its acknowledgement"
+            );
+        }
+    }
+    debug!("Download coordination handler drained and shut down");
+    Ok(())
 }
 
 /// Owned service handles for the required `danmu event handler` task, cloned out of
@@ -1114,5 +1126,63 @@ impl DanmuEventHandler {
                 streamer_id, session_id
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::downloader::{DownloadRejectedKind, download_coordination_channel};
+
+    fn rejected_event(session_id: &str) -> DownloadManagerEvent {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
+            streamer_id: "streamer".to_string(),
+            streamer_name: "Streamer".to_string(),
+            session_id: session_id.to_string(),
+            reason: "test rejection".to_string(),
+            retry_after_secs: None,
+            kind: DownloadRejectedKind::CircuitBreaker,
+        })
+    }
+
+    #[tokio::test]
+    async fn required_download_consumer_negative_acks_one_event_and_continues() {
+        let (sender, receiver) = download_coordination_channel();
+        let handled = Arc::new(AtomicUsize::new(0));
+        let handled_by_task = Arc::clone(&handled);
+        let consumer = tokio::spawn(run_required_download_events(receiver, move |_event| {
+            let call = handled_by_task.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if call == 0 {
+                    Err("injected persistence failure".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+        }));
+
+        assert_eq!(
+            sender
+                .publish_and_wait_for_test(rejected_event("session-1"))
+                .await,
+            Err("injected persistence failure".to_string())
+        );
+
+        sender
+            .publish_and_wait_for_test(rejected_event("session-2"))
+            .await
+            .expect("the consumer must process events after a negative acknowledgement");
+        sender
+            .shutdown_for_test()
+            .await
+            .expect("the coordination marker must be acknowledged");
+        consumer
+            .await
+            .expect("coordination consumer must not panic")
+            .expect("coordination consumer must drain cleanly");
+
+        assert_eq!(handled.load(Ordering::SeqCst), 2);
     }
 }

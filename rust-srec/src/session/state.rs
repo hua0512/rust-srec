@@ -337,7 +337,7 @@ impl TerminalCause {
 /// monitor-side re-check loop. Lower-confidence signals stay in the existing
 /// hysteresis machinery on `StreamerActor`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", content = "count", rename_all = "snake_case")]
 pub enum OfflineSignal {
     /// Danmu websocket sent an explicit stream-closed control frame.
     DanmuStreamClosed,

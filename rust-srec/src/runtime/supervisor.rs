@@ -31,6 +31,7 @@ const SHUTDOWN_TIMEOUT_ENV: &str = "RUST_SREC_SHUTDOWN_TIMEOUT_SECS";
 const SHUTDOWN_FORCE_RESERVE_ENV: &str = "RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS";
 const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_FORCE_RESERVE: Duration = Duration::from_secs(2);
+const WORKER_COOPERATIVE_MARGIN: Duration = Duration::from_secs(1);
 const HARD_DEADLINE_EXIT_CODE: i32 = 124;
 const HARD_DEADLINE_CONTAINMENT_FAILURE_EXIT_CODE: i32 = 125;
 
@@ -48,6 +49,54 @@ impl Drop for ProcessExitGuard {
 pub(crate) enum WorkerShutdownReason {
     Signal,
     SupervisorDisconnected,
+}
+
+/// Absolute deadlines for one worker-side shutdown attempt.
+///
+/// `cooperative_at` leaves a delivery/teardown margin before the supervisor's
+/// force point. `deadline` is independently enforced inside the worker so a
+/// signal addressed only to the worker PID remains bounded.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct WorkerShutdownSchedule {
+    cooperative_at: Instant,
+    force_at: Instant,
+    deadline: Instant,
+}
+
+pub(crate) struct WorkerShutdownWatchdog(HardDeadlineWatchdog);
+
+impl WorkerShutdownWatchdog {
+    pub(crate) fn disarm(self) -> Result<()> {
+        self.0.disarm().map_err(|_| {
+            Error::Other("contained worker hard-deadline watchdog thread panicked".to_string())
+        })
+    }
+}
+
+impl WorkerShutdownSchedule {
+    pub(crate) fn cooperative_at(self) -> Instant {
+        self.cooperative_at
+    }
+
+    pub(crate) fn force_at(self) -> Instant {
+        self.force_at
+    }
+
+    pub(crate) fn deadline(self) -> Instant {
+        self.deadline
+    }
+
+    pub(crate) fn arm_watchdog(self) -> Result<WorkerShutdownWatchdog> {
+        HardDeadlineWatchdog::arm(self.deadline, || {
+            std::process::exit(HARD_DEADLINE_EXIT_CODE);
+        })
+        .map(WorkerShutdownWatchdog)
+        .map_err(|error| {
+            Error::Other(format!(
+                "failed to arm contained worker hard-deadline watchdog: {error}"
+            ))
+        })
+    }
 }
 
 impl WorkerShutdownReason {
@@ -585,34 +634,43 @@ fn shutdown_policy_from_environment() -> Result<ShutdownPolicy> {
 /// after the supervisor observes the signal, plus the worker's post-drain
 /// teardown (shutdown notification, final logging, process exit). Keeps the
 /// `ServiceContainer` drain finishing before `ShutdownSchedule::force_at`.
-const WORKER_COOPERATIVE_MARGIN: Duration = Duration::from_secs(1);
-const MIN_WORKER_COOPERATIVE_GRACE: Duration = Duration::from_secs(1);
-
-fn cooperative_grace_from_policy(policy: ShutdownPolicy) -> Duration {
-    // `ShutdownPolicy::new` guarantees `force_reserve < total`, so the
-    // cooperative window is always positive before the margin is applied.
-    (policy.total() - policy.force_reserve())
-        .saturating_sub(WORKER_COOPERATIVE_MARGIN)
-        .max(MIN_WORKER_COOPERATIVE_GRACE)
+fn worker_schedule_from_policy(
+    started_at: Instant,
+    policy: ShutdownPolicy,
+) -> Result<WorkerShutdownSchedule> {
+    let schedule = ShutdownSchedule::from_start(started_at, policy)
+        .map_err(|error| Error::config(error.to_string()))?;
+    let cooperative_at = schedule
+        .force_at()
+        .checked_sub(WORKER_COOPERATIVE_MARGIN)
+        .filter(|deadline| *deadline > started_at)
+        .unwrap_or(started_at);
+    Ok(WorkerShutdownSchedule {
+        cooperative_at,
+        force_at: schedule.force_at(),
+        deadline: schedule.deadline(),
+    })
 }
 
-/// Cooperative drain budget for the worker's `ServiceContainer::shutdown_with_grace_period`.
+/// Build the worker's absolute shutdown schedule from the supervisor policy.
 ///
 /// Derived from the same `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` /
 /// `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` values the supervisor turns into a
-/// `ShutdownSchedule`, so raising the configured timeout lengthens the phase
+/// [`ShutdownSchedule`], so raising the configured timeout lengthens the phase
 /// that finalizes recordings instead of only moving the parent's force point.
 /// `supervise_current_executable` validates these variables before spawning the
-/// worker, so a parse failure here means the worker was launched by hand with a
-/// broken environment; the drain then falls back to the built-in defaults
-/// rather than failing the shutdown.
-pub(crate) fn worker_cooperative_grace() -> Duration {
+/// worker. A parse failure here means the worker was launched by hand with a
+/// broken environment; shutdown still uses the built-in bounded policy.
+pub(crate) fn worker_shutdown_schedule(started_at: Instant) -> WorkerShutdownSchedule {
     let policy = shutdown_policy_from_environment().unwrap_or_else(|error| {
-        warn!(%error, "Invalid shutdown policy environment; using default drain budget");
-        ShutdownPolicy::new(DEFAULT_SHUTDOWN_TIMEOUT, DEFAULT_FORCE_RESERVE)
-            .expect("default shutdown policy must satisfy ShutdownPolicy::new")
+        warn!(%error, "Invalid shutdown policy environment; using default shutdown schedule");
+        ShutdownPolicy::default()
     });
-    cooperative_grace_from_policy(policy)
+    worker_schedule_from_policy(started_at, policy).unwrap_or(WorkerShutdownSchedule {
+        cooperative_at: started_at,
+        force_at: started_at,
+        deadline: started_at,
+    })
 }
 
 fn duration_from_environment(name: &str, default: Duration) -> Result<Duration> {
@@ -795,26 +853,35 @@ mod tests {
     }
 
     #[test]
-    fn cooperative_grace_stays_inside_the_force_point() {
+    fn worker_schedule_stays_inside_the_force_point() {
+        let started_at = Instant::now();
         let policy = ShutdownPolicy::new(DEFAULT_SHUTDOWN_TIMEOUT, DEFAULT_FORCE_RESERVE).unwrap();
+        let schedule = worker_schedule_from_policy(started_at, policy).unwrap();
+        assert_eq!(schedule.deadline() - started_at, DEFAULT_SHUTDOWN_TIMEOUT);
         assert_eq!(
-            cooperative_grace_from_policy(policy),
-            DEFAULT_SHUTDOWN_TIMEOUT - DEFAULT_FORCE_RESERVE - WORKER_COOPERATIVE_MARGIN
+            schedule.deadline() - schedule.force_at(),
+            DEFAULT_FORCE_RESERVE
+        );
+        assert_eq!(
+            schedule.force_at() - schedule.cooperative_at(),
+            WORKER_COOPERATIVE_MARGIN
         );
 
         let extended =
             ShutdownPolicy::new(Duration::from_secs(300), DEFAULT_FORCE_RESERVE).unwrap();
+        let extended = worker_schedule_from_policy(started_at, extended).unwrap();
         assert_eq!(
-            cooperative_grace_from_policy(extended),
+            extended.cooperative_at() - started_at,
             Duration::from_secs(300) - DEFAULT_FORCE_RESERVE - WORKER_COOPERATIVE_MARGIN
         );
 
-        // A window at or below the margin still leaves a non-zero drain.
+        // A window equal to the margin starts containment immediately instead
+        // of manufacturing grace that crosses the supervisor's force point.
         let tight = ShutdownPolicy::new(Duration::from_secs(3), Duration::from_secs(2)).unwrap();
-        assert_eq!(
-            cooperative_grace_from_policy(tight),
-            MIN_WORKER_COOPERATIVE_GRACE
-        );
+        let tight = worker_schedule_from_policy(started_at, tight).unwrap();
+        assert_eq!(tight.cooperative_at(), started_at);
+        assert_eq!(tight.force_at() - started_at, Duration::from_secs(1));
+        assert_eq!(tight.deadline() - started_at, Duration::from_secs(3));
     }
 
     #[test]

@@ -121,6 +121,7 @@ impl SessionEventPayload {
 /// - `{ "type": "rejected", "reason": "..." }`
 /// - `{ "type": "streamer_offline" }`
 /// - `{ "type": "definitive_offline", "signal": { "type": "danmu_stream_closed" } }`
+/// - `{ "type": "definitive_offline", "signal": { "type": "consecutive_failures", "count": 2 } }`
 /// - `{ "type": "user_disabled" }`
 /// - `{ "type": "out_of_schedule" }`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
@@ -229,6 +230,16 @@ mod tests {
             },
             via_hysteresis: true,
         });
+        let payload = SessionEventPayload::SessionEnded {
+            cause: TerminalCauseDto::DefinitiveOffline {
+                signal: OfflineSignal::ConsecutiveFailures(2),
+            },
+            via_hysteresis: false,
+        };
+        round_trip(&payload);
+        let json = serde_json::to_value(payload).expect("serialise consecutive failures");
+        assert_eq!(json["cause"]["signal"]["type"], "consecutive_failures");
+        assert_eq!(json["cause"]["signal"]["count"], 2);
     }
 
     #[test]

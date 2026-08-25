@@ -152,17 +152,16 @@ impl SessionLifecycleRepository {
         streamer_id: &str,
         payload: &SessionEventPayload,
         occurred_at: DateTime<Utc>,
-    ) -> SessionEventDbModel {
-        SessionEventDbModel {
+    ) -> Result<SessionEventDbModel> {
+        let encoded_payload = serde_json::to_string(payload)?;
+        Ok(SessionEventDbModel {
             id: 0,
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             kind: payload.kind().as_str().to_string(),
             occurred_at: occurred_at.timestamp_millis(),
-            // `to_string` on a typed enum should never fail; the `unwrap_or`
-            // keeps the audit row alive even if it somehow does.
-            payload: serde_json::to_string(payload).ok(),
-        }
+            payload: Some(encoded_payload),
+        })
     }
 
     /// Atomic "session started" bundle: one `BEGIN IMMEDIATE` transaction
@@ -260,7 +259,7 @@ impl SessionLifecycleRepository {
                 },
                 via_hysteresis: false,
             };
-            let row = Self::event_row(stale_id, &inputs.streamer_id, &payload, inputs.now);
+            let row = Self::event_row(stale_id, &inputs.streamer_id, &payload, inputs.now)?;
             SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 
@@ -310,7 +309,7 @@ impl SessionLifecycleRepository {
                     from_hysteresis: false,
                     title: Some(inputs.title.clone()),
                 };
-                let row = Self::event_row(&new_id, &inputs.streamer_id, &payload, inputs.now);
+                let row = Self::event_row(&new_id, &inputs.streamer_id, &payload, inputs.now)?;
                 SessionEventTxOps::insert(&mut tx, &row).await?;
                 info!("Created new session {}", new_id);
                 StartSessionOutcome::Created { session_id: new_id }
@@ -411,7 +410,7 @@ impl SessionLifecycleRepository {
                 cause,
                 via_hysteresis,
             };
-            let row = Self::event_row(id, streamer_id, &payload, now);
+            let row = Self::event_row(id, streamer_id, &payload, now)?;
             SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 
@@ -478,7 +477,7 @@ impl SessionLifecycleRepository {
             cause: TerminalCauseDto::UserDisabled,
             via_hysteresis,
         };
-        let row = Self::event_row(&sid, streamer_id, &payload, now);
+        let row = Self::event_row(&sid, streamer_id, &payload, now)?;
         SessionEventTxOps::insert(&mut tx, &row).await?;
 
         tx.commit().await?;
@@ -525,7 +524,7 @@ impl SessionLifecycleRepository {
                 cause: TerminalCauseDto::OutOfSchedule,
                 via_hysteresis: inputs.via_hysteresis,
             };
-            let row = Self::event_row(sid, &inputs.streamer_id, &payload, inputs.now);
+            let row = Self::event_row(sid, &inputs.streamer_id, &payload, inputs.now)?;
             SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 
@@ -661,7 +660,7 @@ impl SessionLifecycleRepository {
                 cause: inputs.cause,
                 via_hysteresis: inputs.via_hysteresis,
             };
-            let row = Self::event_row(id, &inputs.streamer_id, &payload, inputs.now);
+            let row = Self::event_row(id, &inputs.streamer_id, &payload, inputs.now)?;
             SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 

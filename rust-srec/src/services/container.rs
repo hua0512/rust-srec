@@ -227,11 +227,63 @@ const DEFAULT_EVENT_CAPACITY: usize = 256;
 const DEFAULT_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
 const CONTAINMENT_GATE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How long [`ServiceContainer::shutdown_with_hard_cap`] waits for the tasks it
-/// aborted to settle. Joining an aborted task proves its future was dropped,
-/// which is when an engine child spawned with `kill_on_drop` is killed, so the
-/// method returns at most `hard_cap + ABORT_REAP_WINDOW` after it is called.
+/// Time reserved inside a hard cap for aborted tasks to settle. Joining an
+/// aborted task proves its future was dropped, which is when an engine child
+/// spawned with `kill_on_drop` is killed.
 const ABORT_REAP_WINDOW: Duration = Duration::from_secs(5);
+
+/// Absolute deadlines consumed by the service shutdown module.
+///
+/// The cooperative drain may keep containing owned work after
+/// `cooperative_deadline`, but at `force_deadline` it is dropped and the
+/// remaining supervised tasks are aborted. All abort/reap work shares
+/// `hard_deadline`; no phase extends the caller's hard bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ServiceShutdownSchedule {
+    cooperative_deadline: tokio::time::Instant,
+    force_deadline: tokio::time::Instant,
+    hard_deadline: tokio::time::Instant,
+}
+
+impl ServiceShutdownSchedule {
+    pub(crate) fn new(
+        cooperative_deadline: tokio::time::Instant,
+        force_deadline: tokio::time::Instant,
+        hard_deadline: tokio::time::Instant,
+    ) -> Result<Self> {
+        if cooperative_deadline > force_deadline || force_deadline > hard_deadline {
+            return Err(crate::Error::validation(
+                "service shutdown deadlines must satisfy cooperative <= force <= hard",
+            ));
+        }
+        Ok(Self {
+            cooperative_deadline,
+            force_deadline,
+            hard_deadline,
+        })
+    }
+
+    fn from_now(grace_period: Duration, hard_cap: Duration) -> Result<Self> {
+        let started_at = tokio::time::Instant::now();
+        let hard_deadline = started_at.checked_add(hard_cap).ok_or_else(|| {
+            crate::Error::validation("service shutdown hard cap exceeds the monotonic clock range")
+        })?;
+        // A fixed five-second reserve would consume an entire short cap and
+        // force even quiescent services immediately. Preserve at least half of
+        // a short cap for cooperative shutdown while retaining the full reap
+        // window for normal production-sized caps.
+        let abort_reap_window = ABORT_REAP_WINDOW.min(hard_cap / 2);
+        let force_deadline = hard_deadline
+            .checked_sub(abort_reap_window)
+            .unwrap_or(started_at)
+            .max(started_at);
+        let cooperative_deadline = started_at
+            .checked_add(grace_period)
+            .unwrap_or(force_deadline)
+            .min(force_deadline);
+        Self::new(cooperative_deadline, force_deadline, hard_deadline)
+    }
+}
 
 fn autoscale_concurrency_limit(raw: i32) -> usize {
     if raw > 0 {
@@ -615,7 +667,7 @@ impl ServiceContainer {
             .await
     }
 
-    /// Shutdown all services, giving up on containment after `hard_cap`.
+    /// Shutdown all services within `hard_cap`.
     ///
     /// [`Self::shutdown`] waits as long as containment takes: the drains in
     /// `TaskSupervisor::shutdown`, `DownloadManager::shutdown_until` and
@@ -623,23 +675,32 @@ impl ServiceContainer {
     /// producer outlives the database pools. That is only safe with a parent
     /// process that enforces a wall-clock deadline and force-kills the process
     /// tree. Embedders that run the container in-process call
-    /// this instead: when `hard_cap` expires the phased drain is dropped and
+    /// this instead: before `hard_cap` expires the phased drain is dropped and
     /// the remaining work is aborted, so each attempt/job future is dropped and
     /// the ffmpeg/streamlink child it owns through `kill_on_drop` is killed
     /// rather than orphaned by a later `std::process::exit`.
     ///
     /// Returns `Err` naming what was still running when the cap fired. On that
     /// path the database pools are left open, matching the quiescence gate in
-    /// [`Self::shutdown_with_grace_period`]; the caller is expected to exit the
-    /// process. Returns at most `hard_cap + ABORT_REAP_WINDOW` after the call.
+    /// the cooperative shutdown path; the caller is expected to exit the
+    /// process. `ABORT_REAP_WINDOW` is reserved inside `hard_cap`, so this
+    /// method does not add a second timeout after the caller's deadline.
     pub async fn shutdown_with_hard_cap(
         &self,
         grace_period: Duration,
         hard_cap: Duration,
     ) -> Result<()> {
-        let cap_deadline = tokio::time::Instant::now() + hard_cap;
-        let mut graceful = Box::pin(self.shutdown_with_grace_period(grace_period));
-        if let Ok(result) = tokio::time::timeout_at(cap_deadline, &mut graceful).await {
+        let schedule = ServiceShutdownSchedule::from_now(grace_period, hard_cap)?;
+        self.shutdown_with_schedule(schedule).await
+    }
+
+    /// Run the phased shutdown against caller-owned absolute deadlines.
+    pub(crate) async fn shutdown_with_schedule(
+        &self,
+        schedule: ServiceShutdownSchedule,
+    ) -> Result<()> {
+        let mut graceful = Box::pin(self.shutdown_until(schedule.cooperative_deadline));
+        if let Ok(result) = tokio::time::timeout_at(schedule.force_deadline, &mut graceful).await {
             return result;
         }
 
@@ -649,24 +710,24 @@ impl ServiceContainer {
         // hatches below reach the tasks that are still running.
         drop(graceful);
         warn!(
-            ?hard_cap,
-            "Shutdown hard cap exceeded; aborting the remaining supervised work"
+            "Service shutdown reached its force deadline; aborting the remaining supervised work"
         );
 
-        let reap_deadline = tokio::time::Instant::now() + ABORT_REAP_WINDOW;
-        let aborted_downloads = self.download_manager.abort_attempts(reap_deadline).await;
-        let aborted_pipeline_tasks = self.pipeline_manager.abort(reap_deadline).await;
-        let aborted_background_tasks = self.task_supervisor.abort_all(reap_deadline).await;
+        let (aborted_downloads, aborted_pipeline_tasks, aborted_background_tasks) = tokio::join!(
+            self.download_manager.abort_attempts(schedule.hard_deadline),
+            self.pipeline_manager.abort(schedule.hard_deadline),
+            self.task_supervisor.abort_all(schedule.hard_deadline),
+        );
 
         warn!(
             downloads = ?aborted_downloads,
             pipeline_tasks = aborted_pipeline_tasks,
             background_tasks = aborted_background_tasks,
-            "Aborted supervised work after the shutdown hard cap"
+            "Aborted supervised work after the shutdown force deadline"
         );
 
         Err(crate::Error::Other(format!(
-            "service shutdown exceeded its {hard_cap:?} hard cap: aborted {} recording attempt(s) {aborted_downloads:?}, {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s); database pools were left open",
+            "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; database pools were left open",
             aborted_downloads.len()
         )))
     }
@@ -679,6 +740,10 @@ impl ServiceContainer {
     pub(crate) async fn shutdown_with_grace_period(&self, grace_period: Duration) -> Result<()> {
         info!("Shutting down services (grace period: {:?})", grace_period);
         let deadline = tokio::time::Instant::now() + grace_period;
+        self.shutdown_until(deadline).await
+    }
+
+    async fn shutdown_until(&self, deadline: tokio::time::Instant) -> Result<()> {
         let mut failures = Vec::new();
         let mut coordination_drained = true;
 
@@ -1647,16 +1712,12 @@ mod tests {
         let elapsed = started_at.elapsed();
 
         assert!(
-            elapsed >= hard_cap,
-            "shutdown returned before the hard cap: {elapsed:?}"
-        );
-        assert!(
-            elapsed < hard_cap + super::ABORT_REAP_WINDOW,
-            "aborting must not push shutdown past its reap window: {elapsed:?}"
+            elapsed < hard_cap + Duration::from_millis(250),
+            "aborting must stay inside the hard cap (allowing scheduler jitter): {elapsed:?}"
         );
         let message = error.to_string();
         assert!(
-            message.contains("hard cap") && message.contains("1 background task(s)"),
+            message.contains("force deadline") && message.contains("1 background task(s)"),
             "the error must name the work that was aborted: {message}"
         );
         // Producer quiescence was never proven, so the pools stay open exactly

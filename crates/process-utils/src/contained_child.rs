@@ -85,7 +85,7 @@ impl ContainedChild {
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ContainmentError> {
         if self.child.id().is_none() {
             if !self.tree_termination_requested {
-                self.request_tree_termination()?;
+                self.request_tree_termination_after_direct_exit()?;
             }
             return self
                 .child
@@ -99,7 +99,7 @@ impl ContainedChild {
             return Ok(None);
         }
         if !self.tree_termination_requested {
-            self.request_tree_termination()?;
+            self.request_tree_termination_after_direct_exit()?;
         }
         self.platform.retire_tree_target();
         let status = self
@@ -118,7 +118,7 @@ impl ContainedChild {
     pub async fn wait(&mut self) -> Result<ExitStatus, ContainmentError> {
         if self.child.id().is_none() {
             if !self.tree_termination_requested {
-                self.request_tree_termination()?;
+                self.request_tree_termination_after_direct_exit()?;
             }
             return self
                 .child
@@ -130,7 +130,7 @@ impl ContainedChild {
             .wait_for_direct_exit_without_reap(&mut self.child)
             .await?;
         if !self.tree_termination_requested {
-            self.request_tree_termination()?;
+            self.request_tree_termination_after_direct_exit()?;
         }
         self.platform.retire_tree_target();
         self.child
@@ -151,7 +151,7 @@ impl ContainedChild {
     ) -> Result<ExitStatus, ContainmentError> {
         if self.child.id().is_none() {
             if !self.tree_termination_requested {
-                self.request_tree_termination()?;
+                self.request_tree_termination_after_direct_exit()?;
             }
             if Instant::now() >= deadline {
                 return Err(ContainmentError::DeadlineExceeded {
@@ -227,7 +227,16 @@ impl ContainedChild {
         if self.tree_termination_requested {
             return Ok(());
         }
-        self.platform.terminate_tree()?;
+        self.platform.terminate_tree(false)?;
+        self.tree_termination_requested = true;
+        Ok(())
+    }
+
+    fn request_tree_termination_after_direct_exit(&mut self) -> Result<(), ContainmentError> {
+        if self.tree_termination_requested {
+            return Ok(());
+        }
+        self.platform.terminate_tree(true)?;
         self.tree_termination_requested = true;
         Ok(())
     }
@@ -248,7 +257,7 @@ pub struct TreeTerminator {
 impl TreeTerminator {
     /// Request immediate force termination of the whole contained tree.
     pub fn terminate_tree(&self) -> Result<(), ContainmentError> {
-        self.platform.terminate_tree()
+        self.platform.terminate_tree(false)
     }
 }
 
@@ -379,7 +388,10 @@ mod platform {
             }
         }
 
-        pub(super) fn terminate_tree(&self) -> Result<(), ContainmentError> {
+        pub(super) fn terminate_tree(
+            &self,
+            direct_exit_observed: bool,
+        ) -> Result<(), ContainmentError> {
             let mut target = self.target();
             if target.retired || target.termination_requested {
                 return Ok(());
@@ -393,7 +405,15 @@ mod platform {
             }
 
             let source = std::io::Error::last_os_error();
-            if source.raw_os_error() == Some(libc::ESRCH) {
+            let settled = source.raw_os_error() == Some(libc::ESRCH)
+                || (cfg!(target_os = "macos")
+                    && direct_exit_observed
+                    && source.raw_os_error() == Some(libc::EPERM));
+            if settled {
+                // Darwin reports EPERM when killpg targets an unreaped process
+                // group whose leader has exited and no signalable descendants
+                // remain. Accept it only after waitid proved that leader exit;
+                // explicit watchdog termination still surfaces EPERM.
                 target.termination_requested = true;
                 Ok(())
             } else {
@@ -486,7 +506,10 @@ mod platform {
             Ok(Self { job })
         }
 
-        pub(super) fn terminate_tree(&self) -> Result<(), ContainmentError> {
+        pub(super) fn terminate_tree(
+            &self,
+            _direct_exit_observed: bool,
+        ) -> Result<(), ContainmentError> {
             // SAFETY: the Job Object handle remains owned by `self` during the call.
             if unsafe { TerminateJobObject(job_handle(&self.job), FORCE_EXIT_CODE) } != 0 {
                 Ok(())

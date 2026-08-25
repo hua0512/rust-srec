@@ -285,8 +285,9 @@ impl DanmuService {
                     // The prior task released its `collections` entry, so the
                     // replacement cannot overlap it and the errors it reported
                     // are not a reason to deny this session a collector. They
-                    // go to `collection_failures`, which `shutdown_until`
-                    // returns as `runtime_failures`.
+                    // are still returned by the owned task's
+                    // `CollectionTaskReport`; the JoinSet is the single owner
+                    // that records them in `collection_failures`.
                     if !errors.is_empty() {
                         warn!(
                             streamer_id,
@@ -294,11 +295,6 @@ impl DanmuService {
                             errors = ?errors,
                             "danmu: prior collector terminated with errors"
                         );
-                        self.record_collection_report(CollectionTaskReport {
-                            session_id: old_sid.clone(),
-                            runtime_error: None,
-                            cleanup_errors: errors,
-                        });
                     }
                 }
                 CollectionStopOutcome::NotRegistered => {
@@ -1529,22 +1525,30 @@ mod tests {
         let streamer_id = "streamer-1";
         let old_session = "session-old";
         let new_session = "session-new";
+        let cleanup_error = "failed to finalize danmu XML for session-old";
 
         // Stands in for a collector that finished its cleanup and reported a
         // failed XML flush. Resolving `done_tx` up front is what the real task
         // does after `remove_collection`, so the stop's outcome wait returns
-        // immediately with the errors attached.
+        // immediately with the errors attached. The owned task separately
+        // returns the same failure through its JoinSet report; that report is
+        // the single path that records the failure for shutdown diagnostics.
         let (done_tx, _cancel_token) = seed_active_collection(&service, streamer_id, old_session);
         done_tx
             .send(CollectionOutcome {
                 statistics: DanmuStatistics::default(),
                 reason: CollectionExitReason::Failed,
                 error: None,
-                cleanup_errors: vec![Error::Other(
-                    "failed to finalize danmu XML for session-old".to_string(),
-                )],
+                cleanup_errors: vec![Error::Other(cleanup_error.to_string())],
             })
             .expect("the seeded collector should deliver its outcome");
+        service.collection_tasks.lock().spawn(async move {
+            CollectionTaskReport {
+                session_id: old_session.to_string(),
+                runtime_error: None,
+                cleanup_errors: vec![cleanup_error.to_string()],
+            }
+        });
 
         service
             .start_collection(collection_spec(new_session, streamer_id, FakeProvider::URL))
@@ -1565,12 +1569,14 @@ mod tests {
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
             .await
             .expect("shutdown should settle");
-        assert!(
-            report
-                .runtime_failures
-                .iter()
-                .any(|failure| failure.contains("failed to finalize danmu XML for session-old")),
-            "the prior collector's error must still be reported: {:?}",
+        let matching_failures = report
+            .runtime_failures
+            .iter()
+            .filter(|failure| failure.contains(cleanup_error))
+            .count();
+        assert_eq!(
+            matching_failures, 1,
+            "the prior collector's error must be reported exactly once: {:?}",
             report.runtime_failures
         );
         assert!(

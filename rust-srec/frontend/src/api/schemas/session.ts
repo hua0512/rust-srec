@@ -2,14 +2,11 @@ import { z } from 'zod';
 
 // --- Lifecycle event types (mirrors `rust-srec/src/session/events.rs`) ---
 
-// `OfflineSignal` from the Rust side — `#[serde(tag = "type", rename_all = "snake_case")]`.
-// Variants carry no extra fields here on the wire; richer variants like
-// `ConsecutiveFailures(u32)` serialise as tuple-newtype JSON
-// ({"type": "consecutive_failures"} with the integer in a sibling field),
-// but on the frontend we only need the discriminator to render a
-// human-readable label.
+// `OfflineSignal` uses adjacent tagging. `ConsecutiveFailures(u32)` carries
+// its value as `count`; the timeline currently needs only the discriminator.
 export const OfflineSignalSchema = z.object({
   type: z.string(),
+  count: z.number().int().nonnegative().optional(),
 });
 export type OfflineSignal = z.infer<typeof OfflineSignalSchema>;
 
@@ -58,7 +55,8 @@ export type SessionEventPayload = z.infer<typeof SessionEventPayloadSchema>;
 
 // One row from `session_events`, exposed via `SessionResponse.events`.
 // Payload is best-effort: the backend returns `None` if the JSON didn't
-// parse, and we accept that here (frontend renders the kind label only).
+// parse, and we accept that here (frontend renders the known lifecycle kind
+// with a details-unavailable fallback).
 export const SessionEventSchema = z.object({
   kind: z.string(),
   occurred_at: z.string(),

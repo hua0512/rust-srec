@@ -376,13 +376,26 @@ impl SessionLifecycle {
             return;
         };
         let kind = payload.kind().as_str();
+        let encoded_payload = match serde_json::to_string(&payload) {
+            Ok(encoded) => encoded,
+            Err(error) => {
+                warn!(
+                    session_id,
+                    streamer_id,
+                    kind,
+                    %error,
+                    "best-effort session event serialization failed"
+                );
+                return;
+            }
+        };
         let row = SessionEventDbModel {
             id: 0,
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             kind: kind.to_string(),
             occurred_at: occurred_at.timestamp_millis(),
-            payload: serde_json::to_string(&payload).ok(),
+            payload: Some(encoded_payload),
         };
         if let Err(e) = repo.insert(&row).await {
             warn!(
