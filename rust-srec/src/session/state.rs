@@ -203,8 +203,8 @@ pub enum TerminalCause {
     Completed,
     /// Engine gave up due to error. Whatever output is on disk is final.
     Failed { kind: DownloadFailureKind },
-    /// External stop request (user, scheduler, OutOfSchedule, Shutdown).
-    /// A subsequent `Completed` may still arrive if the engine flushes the final segment.
+    /// External stop request whose engine did not report clean completion.
+    /// The control-plane stop owner applies the authoritative session policy.
     Cancelled { cause: DownloadStopCause },
     /// Download never started (circuit breaker, output-root unavailable, etc.).
     Rejected { reason: String },
@@ -237,9 +237,9 @@ impl TerminalCause {
     ///
     /// - [`Self::Completed`]: yes — normal end, outputs finalised.
     /// - [`Self::Failed`]: yes — engine gave up; whatever's on disk is final.
-    /// - [`Self::Cancelled`]: **no** — cancellation is a stop *request*; a
-    ///   `Completed` may still arrive once the engine flushes the final
-    ///   segment. Firing the pipeline early would produce missing inputs.
+    /// - [`Self::Cancelled`]: **no** — clean finalization was not confirmed;
+    ///   the control-plane stop owner applies the authoritative session and
+    ///   pipeline policy.
     /// - [`Self::Rejected`]: no — never started, no outputs to process.
     /// - [`Self::StreamerOffline`]: yes — monitor said the streamer went offline.
     /// - [`Self::DefinitiveOffline`]: yes — engine boundary saw a definitive

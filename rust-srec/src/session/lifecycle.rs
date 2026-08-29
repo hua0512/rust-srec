@@ -754,11 +754,12 @@ impl SessionLifecycle {
         let streamer_name = event.streamer_name();
         let now = Utc::now();
 
-        // Step 1: Cancelled is a no-op.
+        // Step 1: The control-plane stop owner applies cancellation policy.
         if matches!(event, DownloadTerminalEvent::Cancelled { .. }) {
             debug!(
                 session_id,
-                streamer_id, "on_download_terminal: Cancelled is a no-op; session stays Recording"
+                streamer_id,
+                "on_download_terminal: deferring Cancelled to the control-plane stop owner"
             );
             return Ok(());
         }

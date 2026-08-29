@@ -737,6 +737,11 @@ pub enum DownloadTerminalEvent {
         /// whether to enter hysteresis (clean disconnect / subprocess exit
         /// → ambiguous) or commit Ended directly (HLS endlist → authoritative).
         engine_signal: EngineEndSignal,
+        /// External stop request that preceded the engine's clean completion.
+        ///
+        /// Completion describes the finalized recording output; this cause
+        /// preserves the control-plane intent for scheduler state handling.
+        stop_cause: Option<DownloadStopCause>,
     },
     /// Download failed — the engine gave up. Whatever output is on disk is
     /// final; no more segments will arrive.
@@ -912,9 +917,9 @@ impl DownloadTerminalEvent {
     /// - [`Self::Failed`]: `true` — the engine gave up; whatever's on disk
     ///   is final. Prior to this method existing, sessions that ended this
     ///   way silently skipped the session-complete pipeline.
-    /// - [`Self::Cancelled`]: `false` — cancellation is a stop *request*; a
-    ///   `Completed` may still arrive once the engine flushes the final
-    ///   segment. Firing the pipeline early would cause missing inputs.
+    /// - [`Self::Cancelled`]: `false` — the engine did not report a clean
+    ///   completion. The control-plane stop owner decides whether to end or
+    ///   preserve the session (shutdown preserves it for restart).
     /// - [`Self::Rejected`]: `false` — the download never started, no
     ///   outputs exist.
     pub fn should_run_session_complete_pipeline(&self) -> bool {
@@ -2345,14 +2350,16 @@ mod tests {
         }
     }
 
-    async fn wait_for_download_terminal(events: &mut broadcast::Receiver<DownloadManagerEvent>) {
+    async fn wait_for_download_terminal(
+        events: &mut broadcast::Receiver<DownloadManagerEvent>,
+    ) -> DownloadTerminalEvent {
         loop {
             let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
                 .await
                 .expect("timed out waiting for terminal download event")
                 .expect("download event channel closed");
-            if matches!(event, DownloadManagerEvent::Terminal(_)) {
-                return;
+            if let DownloadManagerEvent::Terminal(terminal) = event {
+                return terminal;
             }
         }
     }
@@ -2675,6 +2682,15 @@ mod tests {
             panic!("expected segment completed event");
         };
         assert_eq!(completed_index, started_index);
+
+        let terminal = wait_for_download_terminal(&mut events).await;
+        assert!(matches!(
+            terminal,
+            DownloadTerminalEvent::Completed {
+                stop_cause: Some(DownloadStopCause::User),
+                ..
+            }
+        ));
     }
 
     #[tokio::test]

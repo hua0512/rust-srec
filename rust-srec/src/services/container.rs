@@ -1646,6 +1646,7 @@ mod tests {
                 total_segments: 1,
                 file_path: Some(segment_path_string.clone()),
                 engine_signal: EngineEndSignal::CleanDisconnect,
+                stop_cause: None,
             })
             .await
             .expect("clean disconnect should enter hysteresis");

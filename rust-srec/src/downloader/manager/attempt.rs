@@ -28,7 +28,7 @@ use crate::utils::task_supervisor::DrainedTasks;
 
 use super::{
     ActiveDownload, AttemptPhase, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
-    DownloadTerminalEvent, PendingConfigUpdate, resolve_segment_path,
+    DownloadStopCause, DownloadTerminalEvent, PendingConfigUpdate, resolve_segment_path,
 };
 
 /// Completion signal shared by stop callers and the attempt finalizer.
@@ -305,7 +305,7 @@ impl Drop for AttemptFinalizer {
 
 fn choose_attempt_terminal(
     phase: &Mutex<AttemptPhase>,
-    natural: DownloadTerminalEvent,
+    mut natural: DownloadTerminalEvent,
     download_id: &str,
     streamer_id: &str,
     streamer_name: &str,
@@ -318,15 +318,26 @@ fn choose_attempt_terminal(
         stop_cause
     };
 
-    match stop_cause {
-        Some(cause) => DownloadTerminalEvent::Cancelled {
+    match (stop_cause, &mut natural) {
+        (Some(DownloadStopCause::Shutdown), _) => DownloadTerminalEvent::Cancelled {
+            download_id: download_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            streamer_name: streamer_name.to_string(),
+            session_id: session_id.to_string(),
+            cause: DownloadStopCause::Shutdown,
+        },
+        (Some(cause), DownloadTerminalEvent::Completed { stop_cause, .. }) => {
+            *stop_cause = Some(cause);
+            natural
+        }
+        (Some(cause), _) => DownloadTerminalEvent::Cancelled {
             download_id: download_id.to_string(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
             session_id: session_id.to_string(),
             cause,
         },
-        None => natural,
+        (None, _) => natural,
     }
 }
 
@@ -634,6 +645,7 @@ impl DownloadManager {
                             total_segments,
                             file_path: output_path,
                             engine_signal,
+                            stop_cause: None,
                         };
                     }
                     SegmentEvent::DiskFull { output_dir, detail } => {

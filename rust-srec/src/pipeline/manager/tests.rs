@@ -2041,6 +2041,7 @@ fn completed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent 
         total_segments: 0,
         file_path: None,
         engine_signal: EngineEndSignal::Unknown,
+        stop_cause: None,
     })
 }
 
@@ -2181,8 +2182,8 @@ async fn test_handle_download_event_failed_triggers_session_complete() {
     );
 }
 
-/// Cancelled is a stop *request*; a final `Completed` may still arrive.
-/// Firing the pipeline early would use a missing final segment.
+/// Cancelled does not confirm clean output finalization. The control-plane
+/// stop owner emits the authoritative session transition and pipeline policy.
 #[tokio::test]
 async fn test_handle_download_event_cancelled_does_not_trigger_session_complete() {
     let manager: PipelineManager = PipelineManager::new();
@@ -2208,7 +2209,7 @@ async fn test_handle_download_event_cancelled_does_not_trigger_session_complete(
     assert_eq!(
         manager.pipeline_coordinator.active_session_count_inline(),
         1,
-        "coordinator must still be active after Cancelled (awaiting Completed)"
+        "coordinator must remain active until the stop owner ends the session"
     );
 }
 

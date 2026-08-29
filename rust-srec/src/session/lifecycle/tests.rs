@@ -202,8 +202,8 @@ async fn on_download_terminal_cancelled_is_noop() {
     };
     lifecycle.on_download_terminal(&event).await.unwrap();
 
-    // Cancelled is a no-op: the engine may still flush a final Completed,
-    // so the session stays Recording and no SessionTransition is emitted.
+    // The control-plane stop owner applies cancellation policy, so the
+    // download terminal itself leaves the session unchanged.
     assert!(
         lifecycle.is_session_active(started.session_id()),
         "Cancelled must leave session in Recording state"
@@ -233,6 +233,7 @@ async fn on_download_terminal_is_idempotent() {
         total_segments: 0,
         file_path: None,
         engine_signal: crate::downloader::EngineEndSignal::Unknown,
+        stop_cause: None,
     };
     lifecycle.on_download_terminal(&event).await.unwrap();
 
@@ -1181,6 +1182,7 @@ fn make_terminal_completed_clean_disconnect(session_id: &str) -> DownloadTermina
         total_segments: 0,
         file_path: None,
         engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+        stop_cause: None,
     }
 }
 
@@ -1195,6 +1197,7 @@ fn make_terminal_completed_hls_endlist(session_id: &str) -> DownloadTerminalEven
         total_segments: 0,
         file_path: None,
         engine_signal: crate::downloader::EngineEndSignal::HlsEndlist,
+        stop_cause: None,
     }
 }
 
@@ -2269,6 +2272,7 @@ async fn hysteresis_entered_persisted() {
         total_segments: 0,
         file_path: None,
         engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+        stop_cause: None,
     };
     lifecycle.on_download_terminal(&event).await.unwrap();
 
@@ -2315,6 +2319,7 @@ async fn resumed_then_started_pair_persisted() {
         total_segments: 0,
         file_path: None,
         engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+        stop_cause: None,
     };
     lifecycle.on_download_terminal(&event).await.unwrap();
     // Resume before the (25 ms) timer fires.
