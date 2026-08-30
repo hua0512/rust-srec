@@ -1277,6 +1277,16 @@ impl JobQueue {
 
     /// Mark a job as completed.
     pub async fn complete(&self, job_id: &str, result: JobResult) -> Result<()> {
+        self.complete_if_processing(job_id, result).await?;
+        Ok(())
+    }
+
+    /// Mark a job as completed and report whether it left an active state.
+    pub(crate) async fn complete_if_processing(
+        &self,
+        job_id: &str,
+        result: JobResult,
+    ) -> Result<bool> {
         let mut transitioned = false;
 
         // Capture outputs for persistence before they are moved into cache/DB models.
@@ -1295,7 +1305,7 @@ impl JobQueue {
 
             if db_job.get_status() != Some(JobStatus::Processing) {
                 self.finalize_cancelled_job(job_id);
-                return Ok(());
+                return Ok(false);
             }
 
             db_job.mark_completed();
@@ -1303,24 +1313,6 @@ impl JobQueue {
                 db_job.set_outputs(&result.outputs);
             }
             db_job.duration_secs = Some(result.duration_secs);
-
-            // Persist detailed logs to job_execution_logs and keep only a capped summary in execution_info.
-            if !result.logs.is_empty() {
-                let new_logs = self.persist_logs_to_db(job_id, &result.logs).await?;
-
-                let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
-                    db_job.execution_info.as_deref(),
-                    JsonContext::JobField {
-                        job_id: &db_job.id,
-                        field: "execution_info",
-                    },
-                    "Invalid execution_info JSON; resetting to defaults",
-                );
-
-                update_log_summary(&mut exec_info, &new_logs);
-                extend_logs_capped(&mut exec_info, &new_logs);
-                db_job.execution_info = Some(serde_json::to_string(&exec_info)?);
-            }
 
             // Calculate queue wait time (DB stores epoch millis)
             if let (created_ms, Some(started_ms)) = (db_job.created_at, db_job.started_at) {
@@ -1333,10 +1325,57 @@ impl JobQueue {
                 .await?;
             if updated == 0 {
                 self.finalize_cancelled_job(job_id);
-                return Ok(());
+                return Ok(false);
             }
 
             transitioned = true;
+
+            // The COMPLETED row above is the recovery boundary for DAG jobs. Execution logs and
+            // their summary are auxiliary observability writes and cannot make a processor rerun.
+            if !result.logs.is_empty() {
+                match self.persist_logs_to_db(job_id, &result.logs).await {
+                    Ok(new_logs) => {
+                        let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                            db_job.execution_info.as_deref(),
+                            JsonContext::JobField {
+                                job_id: &db_job.id,
+                                field: "execution_info",
+                            },
+                            "Invalid execution_info JSON; resetting to defaults",
+                        );
+                        update_log_summary(&mut exec_info, &new_logs);
+                        extend_logs_capped(&mut exec_info, &new_logs);
+                        match serde_json::to_string(&exec_info) {
+                            Ok(execution_info) => {
+                                if let Err(error) = repo
+                                    .update_job_execution_info(job_id, &execution_info)
+                                    .await
+                                {
+                                    warn!(
+                                        job_id = %job_id,
+                                        error = %error,
+                                        "Failed to persist completed job log summary"
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                warn!(
+                                    job_id = %job_id,
+                                    error = %error,
+                                    "Failed to serialize completed job log summary"
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        warn!(
+                            job_id = %job_id,
+                            error = %error,
+                            "Failed to persist completed job execution logs"
+                        );
+                    }
+                }
+            }
         }
 
         // Update cache (in-memory mode or best-effort visibility).
@@ -1449,7 +1488,7 @@ impl JobQueue {
             info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
         }
 
-        Ok(())
+        Ok(transitioned)
     }
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<()> {

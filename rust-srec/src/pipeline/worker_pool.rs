@@ -671,70 +671,9 @@ impl WorkerPool {
                                             );
                                         }
 
-                                    // Check if this is a DAG job
-                                    debug!(
-                                        "Job {} completed, dag_step_execution_id={:?}",
-                                        job_id, dag_step_execution_id
-                                    );
-                                    if let Some(dag_step_id) = dag_step_execution_id.as_deref()
-                                        && let Some(scheduler) = &dag_scheduler
-                                    {
-                                        // Notify DAG scheduler to create next jobs before moving outputs into completion.
-                                        match scheduler
-                                            .on_job_completed(
-                                                dag_step_id,
-                                                &output.outputs,
-                                                input.streamer_name.as_deref(),
-                                                input.session_title.as_deref(),
-                                                input.platform.as_deref(),
-                                                input.session_start,
-                                            )
-                                            .await
-                                        {
-                                            Ok(DagJobCompletedUpdate { new_job_ids, completion }) => {
-                                                if !new_job_ids.is_empty() {
-                                                    info!(
-                                                        "DAG step {} completed, created {} downstream jobs",
-                                                        dag_step_id,
-                                                        new_job_ids.len()
-                                                    );
-                                                }
-                                                if let Some(completion) = completion
-                                                    && let Some(tx) = &dag_notify_tx
-                                                    && let Err(e) = tx.send(completion).await
-                                                {
-                                                    warn!(
-                                                        error = %e,
-                                                        "Failed to send DAG completion notification"
-                                                    );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    "Failed to handle DAG job completion for {}: {}",
-                                                    dag_step_id, e
-                                                );
-                                                if let Ok(completion) = scheduler
-                                                    .fail_dag_for_step(
-                                                        dag_step_id,
-                                                        &format!("DAG scheduler error: {}", e),
-                                                    )
-                                                    .await
-                                                    && let Some(completion) = completion
-                                                    && let Some(tx) = &dag_notify_tx
-                                                    && let Err(e) = tx.send(completion).await
-                                                {
-                                                    warn!(
-                                                        error = %e,
-                                                        "Failed to send DAG completion notification"
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if let Err(e) = job_queue
-                                        .complete(
+                                    let completed_outputs = output.outputs.clone();
+                                    match job_queue
+                                        .complete_if_processing(
                                             &job_id,
                                             JobResult {
                                                 outputs: output.outputs,
@@ -746,11 +685,79 @@ impl WorkerPool {
                                         )
                                         .await
                                     {
-                                        error!(
-                                            job_id = %job_id,
-                                            error = %e,
-                                            "Failed to persist completed pipeline job"
-                                        );
+                                        Ok(true) => {
+                                            // `JobQueue::complete_if_processing` persists outputs before
+                                            // `DagScheduler::on_job_completed` derives graph advancement from them.
+                                            debug!(
+                                                "Job {} completed, dag_step_execution_id={:?}",
+                                                job_id, dag_step_execution_id
+                                            );
+                                            if let Some(dag_step_id) = dag_step_execution_id.as_deref()
+                                                && let Some(scheduler) = &dag_scheduler
+                                            {
+                                                match scheduler
+                                                    .on_job_completed(
+                                                        dag_step_id,
+                                                        &completed_outputs,
+                                                        input.streamer_name.as_deref(),
+                                                        input.session_title.as_deref(),
+                                                        input.platform.as_deref(),
+                                                        input.session_start,
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(DagJobCompletedUpdate { new_job_ids, completion }) => {
+                                                        if !new_job_ids.is_empty() {
+                                                            info!(
+                                                                "DAG step {} completed, created {} downstream jobs",
+                                                                dag_step_id,
+                                                                new_job_ids.len()
+                                                            );
+                                                        }
+                                                        if let Some(completion) = completion
+                                                            && let Some(tx) = &dag_notify_tx
+                                                            && let Err(e) = tx.send(completion).await
+                                                        {
+                                                            warn!(
+                                                                error = %e,
+                                                                "Failed to send DAG completion notification"
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        error!(
+                                                            "Failed to handle DAG job completion for {}: {}",
+                                                            dag_step_id, e
+                                                        );
+                                                        if let Ok(completion) = scheduler
+                                                            .fail_dag_for_step(
+                                                                dag_step_id,
+                                                                &format!("DAG scheduler error: {}", e),
+                                                            )
+                                                            .await
+                                                            && let Some(completion) = completion
+                                                            && let Some(tx) = &dag_notify_tx
+                                                            && let Err(e) = tx.send(completion).await
+                                                        {
+                                                            warn!(
+                                                                error = %e,
+                                                                "Failed to send DAG completion notification"
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Ok(false) => {
+                                            debug!(job_id = %job_id, "Job completion lost an active-state race");
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                job_id = %job_id,
+                                                error = %e,
+                                                "Failed to persist completed pipeline job"
+                                            );
+                                        }
                                     }
                                     }
                                 }

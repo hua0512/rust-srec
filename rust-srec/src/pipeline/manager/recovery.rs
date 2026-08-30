@@ -16,11 +16,27 @@ where
     SR: StreamerRepository + Send + Sync + 'static,
 {
     /// Recover jobs from database on startup.
-    /// Resets PROCESSING jobs to PENDING for re-execution.
+    /// Re-drives persisted DAG completions before resetting interrupted jobs for re-execution.
     /// For sequential pipelines, no special handling is needed since only one job
     /// per pipeline exists at a time.
     pub async fn recover_jobs(&self) -> Result<usize> {
         info!("Recovering jobs from database...");
+        // Reconciliation runs before `JobQueue::recover_jobs` so materialized jobs are already
+        // PENDING when the queue loads them, but it must not gate that reset: a failure here
+        // would otherwise leave every interrupted job stuck in PROCESSING.
+        if let Some(scheduler) = &self.dag_scheduler {
+            match scheduler.recover_dag_jobs().await {
+                Ok(materialized) if materialized > 0 => info!(
+                    jobs = %materialized,
+                    "Materialized DAG jobs during startup reconciliation"
+                ),
+                Ok(_) => {}
+                Err(e) => warn!(
+                    error = %e,
+                    "Failed to reconcile DAG jobs; continuing with job recovery"
+                ),
+            }
+        }
         let recovered = self.job_queue.recover_jobs().await?;
         if let Err(e) = self.recover_pipeline_coordination().await {
             warn!(

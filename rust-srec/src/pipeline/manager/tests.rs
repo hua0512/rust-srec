@@ -578,6 +578,15 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
+    async fn publish_dag(
+        &self,
+        _dag: &DagExecutionDbModel,
+        _steps: &[DagStepExecutionDbModel],
+        _root_jobs: &[JobDbModel],
+    ) -> Result<()> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
         self.dags
             .lock()
@@ -666,11 +675,23 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
+    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> Result<()> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn complete_step_and_check_dependents(
         &self,
         _step_id: &str,
         _outputs: &[String],
     ) -> Result<Vec<crate::database::models::ReadyStep>> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn fail_step_and_cancel_dag(
+        &self,
+        _step_id: &str,
+        _error: &str,
+    ) -> Result<Option<Vec<String>>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -732,6 +753,16 @@ impl DagRepository for TestDagRepositoryForRetry {
     async fn get_pending_root_steps(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
         unimplemented!("not needed for these tests")
     }
+
+    async fn list_processing_steps_with_completed_jobs(
+        &self,
+    ) -> Result<Vec<DagStepExecutionDbModel>> {
+        Ok(Vec::new())
+    }
+
+    async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
 }
 
 #[async_trait]
@@ -740,6 +771,16 @@ impl DagRepository for TestDagRepository {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
         self.insert(dag.clone());
         Ok(())
+    }
+
+    async fn publish_dag(
+        &self,
+        dag: &DagExecutionDbModel,
+        steps: &[DagStepExecutionDbModel],
+        _root_jobs: &[JobDbModel],
+    ) -> Result<()> {
+        self.create_dag(dag).await?;
+        self.create_steps(steps).await
     }
 
     async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
@@ -866,11 +907,23 @@ impl DagRepository for TestDagRepository {
         unimplemented!("not needed for these tests")
     }
 
+    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> Result<()> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn complete_step_and_check_dependents(
         &self,
         _step_id: &str,
         _outputs: &[String],
     ) -> Result<Vec<crate::database::models::ReadyStep>> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn fail_step_and_cancel_dag(
+        &self,
+        _step_id: &str,
+        _error: &str,
+    ) -> Result<Option<Vec<String>>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -915,6 +968,16 @@ impl DagRepository for TestDagRepository {
 
     async fn get_pending_root_steps(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
         unimplemented!("not needed for these tests")
+    }
+
+    async fn list_processing_steps_with_completed_jobs(
+        &self,
+    ) -> Result<Vec<DagStepExecutionDbModel>> {
+        Ok(Vec::new())
+    }
+
+    async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
     }
 }
 
