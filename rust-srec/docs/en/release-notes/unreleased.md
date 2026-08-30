@@ -58,6 +58,10 @@
 
   When a recording stopped, chat messages the platform had already delivered but that were still queued were discarded — up to a hundred of the stream's final messages, missing from both the statistics and the last chat file. They are now collected before the recording closes.
 
+- **Chat no longer spills into the next part of a recording**
+
+  When a recording rolled over to a new part, chat messages the platform had already delivered but that were still queued ended up in the new part's chat file, showing at its very first second instead of at the end of the part they were actually sent in. They now stay with the part they belong to.
+
 - **Chat files are no longer left incomplete**
 
   A chat recording that ended because of a connection failure left its file unterminated and unregistered, so it did not appear among the session's files and could not be used by the danmaku conversion step. The file is now closed properly and recorded like any other, and chat belonging to a recording part that gets discarded for being too small is now removed from the session's file list along with it.
