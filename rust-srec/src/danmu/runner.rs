@@ -234,13 +234,22 @@ impl CollectionRunner {
             };
 
             match event {
-                LoopEvent::Command(cmd) => match self.handle_command(cmd).await? {
-                    CommandResult::Continue => {}
-                    CommandResult::Stop(reason) => {
+                LoopEvent::Command(cmd) => {
+                    if self.command_closes_current_segment(cmd.as_ref())
+                        && let Some(reason) = self.drain_segment_boundary(&mut link).await?
+                    {
                         self.drain_pending(&mut link).await?;
                         return Ok(reason);
                     }
-                },
+
+                    match self.handle_command(cmd).await? {
+                        CommandResult::Continue => {}
+                        CommandResult::Stop(reason) => {
+                            self.drain_pending(&mut link).await?;
+                            return Ok(reason);
+                        }
+                    }
+                }
                 LoopEvent::Cancelled => {
                     self.drain_pending(&mut link).await?;
                     return Ok(CollectionExitReason::Cancelled);
@@ -302,6 +311,33 @@ impl CollectionRunner {
             );
         }
         Ok(())
+    }
+
+    /// Consume the items that were already queued when a segment boundary was
+    /// observed, before the active writer is closed or replaced.
+    async fn drain_segment_boundary(
+        &mut self,
+        link: &mut Link,
+    ) -> Result<Option<CollectionExitReason>> {
+        let Link::Up(items) = link else {
+            return Ok(None);
+        };
+
+        // Snapshot the queue depth so a busy producer cannot postpone segment
+        // rotation indefinitely by refilling the channel while it is drained.
+        let queued = items.len();
+        for _ in 0..queued {
+            let Ok(item) = items.try_recv() else {
+                break;
+            };
+
+            self.note_link_recovered();
+            if let CommandResult::Stop(reason) = self.handle_item(item).await? {
+                return Ok(Some(reason));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Wait for the next transport event: an item while the link is up, or the
@@ -467,6 +503,18 @@ impl CollectionRunner {
             None => Ok(CommandResult::Stop(
                 CollectionExitReason::CommandChannelClosed,
             )),
+        }
+    }
+
+    fn command_closes_current_segment(&self, cmd: Option<&CollectionCommand>) -> bool {
+        let Some((current_segment_id, _)) = &self.current_writer else {
+            return false;
+        };
+
+        match cmd {
+            Some(CollectionCommand::StartSegment { .. }) => true,
+            Some(CollectionCommand::EndSegment { segment_id }) => segment_id == current_segment_id,
+            Some(CollectionCommand::Stop(_)) | None => false,
         }
     }
 
@@ -794,6 +842,76 @@ mod tests {
         assert_eq!(
             reconnect_alerts, 1,
             "a sustained outage should alert once, not once per attempt"
+        );
+    }
+
+    /// Messages already queued when a video segment ends still belong to that
+    /// segment. Segment commands have priority in the run loop, so the runner
+    /// must drain the item queue before replacing the active writer.
+    #[tokio::test(start_paused = true)]
+    async fn queued_messages_do_not_cross_segment_boundary() {
+        let (items_tx, items_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![items_rx]));
+        let (runner, items) = runner_for(provider, DanmuEventPublisher::new(64)).await;
+
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let first = temp_xml_path("queued-boundary-0");
+        let second = temp_xml_path("queued-boundary-1");
+        let first_start = Utc::now();
+        let second_start = first_start + chrono::Duration::seconds(5);
+
+        command_tx
+            .send(CollectionCommand::StartSegment {
+                segment_id: "seg-0".to_string(),
+                output_path: first.clone(),
+                start_time: first_start,
+            })
+            .await
+            .expect("start first segment");
+        items_tx
+            .send(chat("queued-before-boundary"))
+            .await
+            .expect("queue old-segment message");
+        command_tx
+            .send(CollectionCommand::EndSegment {
+                segment_id: "seg-0".to_string(),
+            })
+            .await
+            .expect("end first segment");
+        command_tx
+            .send(CollectionCommand::StartSegment {
+                segment_id: "seg-1".to_string(),
+                output_path: second.clone(),
+                start_time: second_start,
+            })
+            .await
+            .expect("start second segment");
+        command_tx
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
+            .await
+            .expect("stop collection");
+
+        let outcome = runner
+            .run(command_rx, items, CancellationToken::new())
+            .await;
+        assert_eq!(outcome.reason, CollectionExitReason::SessionStopped);
+
+        let first_xml = tokio::fs::read_to_string(&first)
+            .await
+            .expect("read first XML");
+        let second_xml = tokio::fs::read_to_string(&second)
+            .await
+            .expect("read second XML");
+        let _ = tokio::fs::remove_file(&first).await;
+        let _ = tokio::fs::remove_file(&second).await;
+
+        assert!(
+            first_xml.contains("queued-before-boundary"),
+            "queued message must remain in the first segment: {first_xml}"
+        );
+        assert!(
+            !second_xml.contains("queued-before-boundary"),
+            "queued message leaked into the second segment: {second_xml}"
         );
     }
 
