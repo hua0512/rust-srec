@@ -221,7 +221,7 @@ fn create_mixed_packet_size_data() -> Vec<u8> {
     let base = create_complex_ts_data();
     let mut out = Vec::new();
 
-    for (idx, packet) in base.chunks_exact(188).enumerate() {
+    for (idx, packet) in base.as_chunks::<188>().0.iter().enumerate() {
         // Use packet pairs per format so format probing can lock and step.
         match (idx / 2) % 3 {
             0 => out.extend_from_slice(packet),
@@ -237,7 +237,7 @@ fn create_noisy_resync_data() -> Vec<u8> {
     let base = create_complex_ts_data();
     let mut out = Vec::new();
 
-    for (idx, packet) in base.chunks_exact(188).enumerate() {
+    for (idx, packet) in base.as_chunks::<188>().0.iter().enumerate() {
         // Alternate format by pairs and inject noise at pair boundaries.
         if (idx / 2) % 2 == 0 {
             out.extend_from_slice(&wrap_m2ts_packet(packet));

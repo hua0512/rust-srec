@@ -378,20 +378,17 @@ impl ColorConfig {
             bit_reader.read_bit()?
         };
 
-        let color_primaries;
-        let transfer_characteristics;
-        let matrix_coefficients;
-
         let color_description_present_flag = bit_reader.read_bit()?;
-        if color_description_present_flag {
-            color_primaries = bit_reader.read_bits(8)? as u8;
-            transfer_characteristics = bit_reader.read_bits(8)? as u8;
-            matrix_coefficients = bit_reader.read_bits(8)? as u8;
-        } else {
-            color_primaries = 2; // CP_UNSPECIFIED
-            transfer_characteristics = 2; // TC_UNSPECIFIED
-            matrix_coefficients = 2; // MC_UNSPECIFIED
-        }
+        let (color_primaries, transfer_characteristics, matrix_coefficients) =
+            if color_description_present_flag {
+                (
+                    bit_reader.read_bits(8)? as u8,
+                    bit_reader.read_bits(8)? as u8,
+                    bit_reader.read_bits(8)? as u8,
+                )
+            } else {
+                (2, 2, 2) // CP_UNSPECIFIED, TC_UNSPECIFIED, MC_UNSPECIFIED
+            };
 
         let num_planes = if mono_chrome { 1 } else { 3 };
 

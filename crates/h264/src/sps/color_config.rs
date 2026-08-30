@@ -42,20 +42,13 @@ impl ColorConfig {
         let video_format = reader.read_bits(3)? as u8;
         let video_full_range_flag = reader.read_bit()?;
 
-        let color_primaries;
-        let transfer_characteristics;
-        let matrix_coefficients;
-
         let color_description_present_flag = reader.read_bit()?;
-        if color_description_present_flag {
-            color_primaries = reader.read_u8()?;
-            transfer_characteristics = reader.read_u8()?;
-            matrix_coefficients = reader.read_u8()?;
-        } else {
-            color_primaries = 2; // UNSPECIFIED
-            transfer_characteristics = 2; // UNSPECIFIED
-            matrix_coefficients = 2; // UNSPECIFIED
-        }
+        let (color_primaries, transfer_characteristics, matrix_coefficients) =
+            if color_description_present_flag {
+                (reader.read_u8()?, reader.read_u8()?, reader.read_u8()?)
+            } else {
+                (2, 2, 2) // UNSPECIFIED for all three
+            };
 
         Ok(ColorConfig {
             video_format: VideoFormat::try_from(video_format)?, // defalut value is 5 E.2.1 Table E-2

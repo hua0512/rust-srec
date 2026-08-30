@@ -384,26 +384,22 @@ impl Sps {
 
         let profile_idc = bit_reader.read_u8()?;
 
-        let constraint_set0_flag;
-        let constraint_set1_flag;
-        let constraint_set2_flag;
-
-        match profile_idc {
+        let (constraint_set0_flag, constraint_set1_flag, constraint_set2_flag) = match profile_idc {
             // 7.4.2.1.1
             44 | 100 | 110 | 122 | 244 => {
                 // constraint_set0 thru 2 must be false in this case
                 bit_reader.read_bits(3)?;
-                constraint_set0_flag = false;
-                constraint_set1_flag = false;
-                constraint_set2_flag = false;
+                (false, false, false)
             }
             _ => {
                 // otherwise we parse the bits as expected
-                constraint_set0_flag = bit_reader.read_bit()?;
-                constraint_set1_flag = bit_reader.read_bit()?;
-                constraint_set2_flag = bit_reader.read_bit()?;
+                (
+                    bit_reader.read_bit()?,
+                    bit_reader.read_bit()?,
+                    bit_reader.read_bit()?,
+                )
             }
-        }
+        };
 
         let constraint_set3_flag = if profile_idc == 44 {
             bit_reader.read_bit()?;
