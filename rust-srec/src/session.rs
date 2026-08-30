@@ -57,3 +57,6 @@ pub use lifecycle::{
 };
 pub use state::{OfflineSignal, SessionState, TerminalCause};
 pub use transition::SessionTransition;
+pub(crate) use transition::{
+    SessionTransitionReceiver, SessionTransitionSender, session_transition_channel,
+};

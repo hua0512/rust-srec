@@ -107,10 +107,7 @@ impl DownloadEngine for MesioEngine {
         EngineType::Mesio
     }
 
-    async fn start(
-        &self,
-        handle: Arc<DownloadHandle>,
-    ) -> std::result::Result<(), EngineStartError> {
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
         let config_snapshot = handle.config_snapshot();
         let streamer_id = config_snapshot.streamer_id.clone();
 
@@ -166,13 +163,6 @@ impl DownloadEngine for MesioEngine {
         }
 
         download_result
-    }
-
-    async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-        let streamer_id = handle.config_snapshot().streamer_id;
-        info!("Stopping mesio download for streamer {}", streamer_id);
-        handle.cancel();
-        Ok(())
     }
 
     fn is_available(&self) -> bool {

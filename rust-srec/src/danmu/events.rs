@@ -4,8 +4,10 @@
 //! internal commands used to control collection sessions.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use parking_lot::Mutex;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, trace};
 
@@ -115,15 +117,26 @@ impl DanmuEventPublisher {
     }
 
     pub(crate) fn publish(&self, event: DanmuEvent) {
-        if let Some(sender) = &self.coordination_tx
-            && !sender.publish(event.clone())
-        {
-            error!(
-                event = ?event,
-                "Required danmu coordination event could not be delivered"
-            );
+        if let Some(sender) = &self.coordination_tx {
+            match sender.publish(event.clone()) {
+                CoordinationDelivery::Accepted => {}
+                // Publishing behind the shutdown marker is the normal tail of a
+                // drain, not a fault: `DanmuCoordinationSender::shutdown` closed
+                // admission precisely so no further event is applied.
+                CoordinationDelivery::ClosedByShutdown => debug!(
+                    event = ?event,
+                    "Danmu event published after the coordination shutdown marker"
+                ),
+                CoordinationDelivery::ConsumerGone => error!(
+                    event = ?event,
+                    "Required danmu coordination event could not be delivered"
+                ),
+            }
         }
 
+        // Observers are a live view, not a record of what was applied, so they
+        // are notified regardless. Suppressing them on a coordination failure
+        // would freeze the UI without making the failure any less lost.
         if self.observer_tx.send(event).is_err() {
             trace!("Danmu event had no broadcast observers");
         }
@@ -132,29 +145,61 @@ impl DanmuEventPublisher {
 
 enum DanmuCoordinationDelivery {
     Event(DanmuEvent),
-    Shutdown(oneshot::Sender<()>),
+    Shutdown(oneshot::Sender<Vec<String>>),
 }
 
 /// Sending half of the required runtime coordination channel.
 #[derive(Clone)]
 pub(crate) struct DanmuCoordinationSender {
+    state: Arc<Mutex<DanmuCoordinationState>>,
+}
+
+struct DanmuCoordinationState {
     tx: mpsc::UnboundedSender<DanmuCoordinationDelivery>,
+    accepting: bool,
+}
+
+/// Why a required-coordination publish did or did not reach its consumer.
+enum CoordinationDelivery {
+    Accepted,
+    /// Admission was closed by `DanmuCoordinationSender::shutdown`.
+    ClosedByShutdown,
+    /// The receiver was dropped without crossing the shutdown marker.
+    ConsumerGone,
 }
 
 impl DanmuCoordinationSender {
-    fn publish(&self, event: DanmuEvent) -> bool {
-        self.tx
+    fn publish(&self, event: DanmuEvent) -> CoordinationDelivery {
+        let mut state = self.state.lock();
+        if !state.accepting {
+            return CoordinationDelivery::ClosedByShutdown;
+        }
+        if state
+            .tx
             .send(DanmuCoordinationDelivery::Event(event))
-            .is_ok()
+            .is_err()
+        {
+            state.accepting = false;
+            return CoordinationDelivery::ConsumerGone;
+        }
+        CoordinationDelivery::Accepted
     }
 
     /// Wait until every event published before this call has been handled, then
     /// stop the single required consumer.
-    pub(crate) async fn shutdown(&self) -> Result<(), &'static str> {
+    pub(crate) async fn shutdown(&self) -> Result<Vec<String>, &'static str> {
         let (acknowledgement, acknowledged) = oneshot::channel();
-        self.tx
-            .send(DanmuCoordinationDelivery::Shutdown(acknowledgement))
-            .map_err(|_| "required danmu coordination channel is closed")?;
+        {
+            let mut state = self.state.lock();
+            if !state.accepting {
+                return Err("required danmu coordination channel is already closed");
+            }
+            state.accepting = false;
+            state
+                .tx
+                .send(DanmuCoordinationDelivery::Shutdown(acknowledgement))
+                .map_err(|_| "required danmu coordination channel is closed")?;
+        }
         acknowledged
             .await
             .map_err(|_| "danmu coordination handler stopped before acknowledging shutdown")
@@ -164,6 +209,7 @@ impl DanmuCoordinationSender {
 /// Receiving half of the required runtime coordination channel.
 pub(crate) struct DanmuCoordinationReceiver {
     rx: mpsc::UnboundedReceiver<DanmuCoordinationDelivery>,
+    shutdown_acknowledgement: Option<oneshot::Sender<Vec<String>>>,
 }
 
 impl DanmuCoordinationReceiver {
@@ -171,12 +217,20 @@ impl DanmuCoordinationReceiver {
         match self.rx.recv().await {
             Some(DanmuCoordinationDelivery::Event(event)) => Ok(Some(event)),
             Some(DanmuCoordinationDelivery::Shutdown(acknowledgement)) => {
-                if acknowledgement.send(()).is_err() {
-                    debug!("Danmu coordination shutdown acknowledgement receiver was dropped");
-                }
+                self.shutdown_acknowledgement = Some(acknowledgement);
                 Ok(None)
             }
             None => Err("required danmu coordination channel closed without shutdown"),
+        }
+    }
+
+    pub(crate) fn acknowledge_shutdown(&mut self, failures: Vec<String>) {
+        let Some(acknowledgement) = self.shutdown_acknowledgement.take() else {
+            debug!("Danmu coordination receiver had no shutdown marker to acknowledge");
+            return;
+        };
+        if acknowledgement.send(failures).is_err() {
+            debug!("Danmu coordination shutdown acknowledgement receiver was dropped");
         }
     }
 }
@@ -184,8 +238,16 @@ impl DanmuCoordinationReceiver {
 pub(crate) fn danmu_coordination_channel() -> (DanmuCoordinationSender, DanmuCoordinationReceiver) {
     let (tx, rx) = mpsc::unbounded_channel();
     (
-        DanmuCoordinationSender { tx },
-        DanmuCoordinationReceiver { rx },
+        DanmuCoordinationSender {
+            state: Arc::new(Mutex::new(DanmuCoordinationState {
+                tx,
+                accepting: true,
+            })),
+        },
+        DanmuCoordinationReceiver {
+            rx,
+            shutdown_acknowledgement: None,
+        },
     )
 }
 
@@ -252,6 +314,7 @@ mod tests {
                 assert_eq!(message_count, received as u64);
                 received += 1;
             }
+            coordination_rx.acknowledge_shutdown(Vec::new());
             received
         });
 
@@ -263,6 +326,16 @@ mod tests {
         assert_eq!(
             consumer.await.expect("consumer task completes"),
             EVENT_COUNT
+        );
+        assert!(
+            matches!(
+                coordination_tx.publish(DanmuEvent::CollectionStopped {
+                    session_id: "late-session".to_string(),
+                    total_count: 0,
+                }),
+                CoordinationDelivery::ClosedByShutdown
+            ),
+            "an event must not be admitted behind the shutdown marker"
         );
     }
 }

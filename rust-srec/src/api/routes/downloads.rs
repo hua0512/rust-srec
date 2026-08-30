@@ -854,6 +854,7 @@ mod tests {
             total_segments: 360,
             file_path: Some("/path/to/video.mp4".to_string()),
             engine_signal: crate::downloader::EngineEndSignal::Unknown,
+            stop_cause: None,
         });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

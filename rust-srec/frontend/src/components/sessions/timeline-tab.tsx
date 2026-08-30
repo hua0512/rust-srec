@@ -40,25 +40,25 @@ type TimelineEntry =
   | {
       kind: 'session_started';
       timestamp: string;
-      fromHysteresis: boolean;
+      fromHysteresis: boolean | null;
       title: string | null;
     }
   | {
       kind: 'hysteresis_entered';
       timestamp: string;
-      cause: TerminalCauseDto;
-      resumeDeadline: string;
+      cause: TerminalCauseDto | null;
+      resumeDeadline: string | null;
     }
   | {
       kind: 'session_resumed';
       timestamp: string;
-      hysteresisDurationSecs: number;
+      hysteresisDurationSecs: number | null;
     }
   | {
       kind: 'session_ended';
       timestamp: string;
-      cause: TerminalCauseDto;
-      viaHysteresis: boolean;
+      cause: TerminalCauseDto | null;
+      viaHysteresis: boolean | null;
     }
   | {
       // Fallback for an unrecognised event kind (forward compat — backend
@@ -86,46 +86,52 @@ function buildEntries(
 
   for (const e of events) {
     const payload = e.payload as SessionEventPayload | null | undefined;
-    if (!payload) {
-      entries.push({
-        kind: 'unknown_event',
-        timestamp: e.occurred_at,
-        rawKind: e.kind,
-      });
-      continue;
-    }
-    switch (payload.kind) {
-      case 'session_started':
+    switch (e.kind) {
+      case 'session_started': {
+        const started = payload?.kind === e.kind ? payload : null;
         entries.push({
           kind: 'session_started',
           timestamp: e.occurred_at,
-          fromHysteresis: payload.from_hysteresis,
-          title: payload.title ?? null,
+          fromHysteresis: started?.from_hysteresis ?? null,
+          title: started?.title ?? null,
         });
         break;
-      case 'hysteresis_entered':
+      }
+      case 'hysteresis_entered': {
+        const entered = payload?.kind === e.kind ? payload : null;
         entries.push({
           kind: 'hysteresis_entered',
           timestamp: e.occurred_at,
-          cause: payload.cause,
-          resumeDeadline: payload.resume_deadline,
+          cause: entered?.cause ?? null,
+          resumeDeadline: entered?.resume_deadline ?? null,
         });
         break;
-      case 'session_resumed':
+      }
+      case 'session_resumed': {
+        const resumed = payload?.kind === e.kind ? payload : null;
         entries.push({
           kind: 'session_resumed',
           timestamp: e.occurred_at,
-          hysteresisDurationSecs: payload.hysteresis_duration_secs,
+          hysteresisDurationSecs: resumed?.hysteresis_duration_secs ?? null,
         });
         break;
-      case 'session_ended':
+      }
+      case 'session_ended': {
+        const ended = payload?.kind === e.kind ? payload : null;
         entries.push({
           kind: 'session_ended',
           timestamp: e.occurred_at,
-          cause: payload.cause,
-          viaHysteresis: payload.via_hysteresis,
+          cause: ended?.cause ?? null,
+          viaHysteresis: ended?.via_hysteresis ?? null,
         });
         break;
+      }
+      default:
+        entries.push({
+          kind: 'unknown_event',
+          timestamp: e.occurred_at,
+          rawKind: e.kind,
+        });
     }
   }
 
@@ -228,7 +234,9 @@ function entryBadge(entry: TimelineEntry) {
           variant="secondary"
           className="text-[10px] tracking-wider font-normal bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
         >
-          {entry.fromHysteresis ? (
+          {entry.fromHysteresis === null ? (
+            <Trans>STARTED</Trans>
+          ) : entry.fromHysteresis ? (
             <Trans>RESUMED START</Trans>
           ) : (
             <Trans>SESSION STARTED</Trans>
@@ -295,6 +303,13 @@ function EntryBody({ entry }: { entry: TimelineEntry }) {
         </>
       );
     case 'session_started':
+      if (entry.title === null && entry.fromHysteresis === null) {
+        return (
+          <div className="text-sm text-muted-foreground italic">
+            <Trans>Session started. Additional details are unavailable.</Trans>
+          </div>
+        );
+      }
       return (
         <div className="text-sm text-foreground">
           {entry.title ? (
@@ -307,6 +322,16 @@ function EntryBody({ entry }: { entry: TimelineEntry }) {
         </div>
       );
     case 'hysteresis_entered':
+      if (!entry.cause) {
+        return (
+          <div className="text-sm text-muted-foreground italic">
+            <Trans>
+              Session entered pending confirmation. Additional details are
+              unavailable.
+            </Trans>
+          </div>
+        );
+      }
       return (
         <div className="text-sm space-y-1">
           <div className="text-foreground">
@@ -318,6 +343,13 @@ function EntryBody({ entry }: { entry: TimelineEntry }) {
         </div>
       );
     case 'session_resumed':
+      if (entry.hysteresisDurationSecs === null) {
+        return (
+          <div className="text-sm text-muted-foreground italic">
+            <Trans>Session resumed. Additional details are unavailable.</Trans>
+          </div>
+        );
+      }
       return (
         <div className="text-sm text-foreground">
           <Trans>
@@ -326,6 +358,13 @@ function EntryBody({ entry }: { entry: TimelineEntry }) {
         </div>
       );
     case 'session_ended':
+      if (!entry.cause) {
+        return (
+          <div className="text-sm text-muted-foreground italic">
+            <Trans>Session ended. Additional details are unavailable.</Trans>
+          </div>
+        );
+      }
       return (
         <div className="text-sm space-y-1">
           <div className="text-foreground">

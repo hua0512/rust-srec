@@ -1143,7 +1143,7 @@ msgstr "Cancel Pipeline?"
 msgid "Cancelled"
 msgstr "Cancelled"
 
-#: src/components/sessions/timeline-tab.tsx:159
+#: src/components/sessions/timeline-tab.tsx:165
 msgctxt "terminal-cause"
 msgid "Cancelled"
 msgstr "Cancelled"
@@ -1186,8 +1186,8 @@ msgstr "Categories"
 msgid "Category"
 msgstr "Category"
 
-#: src/components/sessions/timeline-tab.tsx:313
-#: src/components/sessions/timeline-tab.tsx:332
+#: src/components/sessions/timeline-tab.tsx:338
+#: src/components/sessions/timeline-tab.tsx:371
 msgid "Cause:"
 msgstr "Cause:"
 
@@ -1433,7 +1433,7 @@ msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgid "Completed"
 msgstr "Completed"
 
-#: src/components/sessions/timeline-tab.tsx:155
+#: src/components/sessions/timeline-tab.tsx:161
 msgctxt "terminal-cause"
 msgid "Completed"
 msgstr "Completed"
@@ -1600,7 +1600,7 @@ msgstr "Confirm new password"
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/components/sessions/timeline-tab.tsx:339
+#: src/components/sessions/timeline-tab.tsx:378
 msgid "Confirmed via backstop timer."
 msgstr "Confirmed via backstop timer."
 
@@ -1641,7 +1641,7 @@ msgstr "Consecutive failed checks needed to confirm offline."
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
-#: src/components/sessions/timeline-tab.tsx:180
+#: src/components/sessions/timeline-tab.tsx:186
 msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
@@ -2125,7 +2125,7 @@ msgstr "Danmu Statistics"
 msgid "Danmu statistics are not available for this session."
 msgstr "Danmu statistics are not available for this session."
 
-#: src/components/sessions/timeline-tab.tsx:176
+#: src/components/sessions/timeline-tab.tsx:182
 msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "Danmu Stream Closed"
@@ -2252,7 +2252,7 @@ msgstr "Define rules to automatically record or skip streams based on title, tim
 msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
-#: src/components/sessions/timeline-tab.tsx:182
+#: src/components/sessions/timeline-tab.tsx:188
 msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "Definitive Offline"
@@ -2834,7 +2834,7 @@ msgstr "Encoding Settings"
 msgid "End"
 msgstr "End"
 
-#: src/components/sessions/timeline-tab.tsx:470
+#: src/components/sessions/timeline-tab.tsx:509
 msgid "End of History"
 msgstr "End of History"
 
@@ -3193,7 +3193,7 @@ msgstr "F"
 msgid "Failed"
 msgstr "Failed"
 
-#: src/components/sessions/timeline-tab.tsx:157
+#: src/components/sessions/timeline-tab.tsx:163
 msgctxt "terminal-cause"
 msgid "Failed"
 msgstr "Failed"
@@ -4329,7 +4329,7 @@ msgstr "Inherited"
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
 
-#: src/components/sessions/timeline-tab.tsx:215
+#: src/components/sessions/timeline-tab.tsx:221
 msgid "INITIAL"
 msgstr "INITIAL"
 
@@ -5544,11 +5544,11 @@ msgstr "No templates found"
 msgid "No templates yet"
 msgstr "No templates yet"
 
-#: src/components/sessions/timeline-tab.tsx:377
+#: src/components/sessions/timeline-tab.tsx:416
 msgid "No Timeline Events"
 msgstr "No Timeline Events"
 
-#: src/components/sessions/timeline-tab.tsx:380
+#: src/components/sessions/timeline-tab.tsx:419
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "No title changes or lifecycle events were recorded for this session."
 
@@ -5851,7 +5851,7 @@ msgstr "Original / Blu-ray"
 msgid "Out of disk space"
 msgstr "Out of disk space"
 
-#: src/components/sessions/timeline-tab.tsx:169
+#: src/components/sessions/timeline-tab.tsx:175
 msgctxt "terminal-cause"
 msgid "Out of Schedule"
 msgstr "Out of Schedule"
@@ -6125,7 +6125,7 @@ msgstr "Peak / min"
 msgid "Pending"
 msgstr "Pending"
 
-#: src/components/sessions/timeline-tab.tsx:244
+#: src/components/sessions/timeline-tab.tsx:252
 msgid "PENDING CONFIRMATION"
 msgstr "PENDING CONFIRMATION"
 
@@ -6360,7 +6360,7 @@ msgstr "Player"
 msgid "Playlist"
 msgstr "Playlist"
 
-#: src/components/sessions/timeline-tab.tsx:178
+#: src/components/sessions/timeline-tab.tsx:184
 msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "Playlist Gone"
@@ -6527,7 +6527,7 @@ msgctxt "pagination"
 msgid "Previous"
 msgstr "Previous"
 
-#: src/components/sessions/timeline-tab.tsx:288
+#: src/components/sessions/timeline-tab.tsx:296
 msgid "Previous Title"
 msgstr "Previous Title"
 
@@ -6869,7 +6869,7 @@ msgstr "Recording finished"
 msgid "Recording rejected"
 msgstr "Recording rejected"
 
-#: src/components/sessions/timeline-tab.tsx:304
+#: src/components/sessions/timeline-tab.tsx:319
 #: src/lib/notification-event-types.ts:19
 msgid "Recording started"
 msgstr "Recording started"
@@ -6918,7 +6918,7 @@ msgstr "Regex Pattern"
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "Regex patterns to exclude files. Matched against full path and filename."
 
-#: src/components/sessions/timeline-tab.tsx:161
+#: src/components/sessions/timeline-tab.tsx:167
 msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
@@ -7081,16 +7081,16 @@ msgstr "Restore password"
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/sessions/timeline-tab.tsx:253
+#: src/components/sessions/timeline-tab.tsx:261
 msgid "RESUMED"
 msgstr "RESUMED"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:323
+#: src/components/sessions/timeline-tab.tsx:355
 msgid "Resumed after {0}s in pending state."
 msgstr "Resumed after {0}s in pending state."
 
-#: src/components/sessions/timeline-tab.tsx:232
+#: src/components/sessions/timeline-tab.tsx:240
 msgid "RESUMED START"
 msgstr "RESUMED START"
 
@@ -7675,9 +7675,17 @@ msgstr "Session Details"
 msgid "Session Duration"
 msgstr "Session Duration"
 
-#: src/components/sessions/timeline-tab.tsx:262
+#: src/components/sessions/timeline-tab.tsx:270
 msgid "SESSION ENDED"
 msgstr "SESSION ENDED"
+
+#: src/components/sessions/timeline-tab.tsx:364
+msgid "Session ended. Additional details are unavailable."
+msgstr "Session ended. Additional details are unavailable."
+
+#: src/components/sessions/timeline-tab.tsx:328
+msgid "Session entered pending confirmation. Additional details are unavailable."
+msgstr "Session entered pending confirmation. Additional details are unavailable."
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:400
@@ -7700,9 +7708,17 @@ msgstr "Session not found"
 msgid "Session Preview"
 msgstr "Session Preview"
 
-#: src/components/sessions/timeline-tab.tsx:234
+#: src/components/sessions/timeline-tab.tsx:349
+msgid "Session resumed. Additional details are unavailable."
+msgstr "Session resumed. Additional details are unavailable."
+
+#: src/components/sessions/timeline-tab.tsx:242
 msgid "SESSION STARTED"
 msgstr "SESSION STARTED"
+
+#: src/components/sessions/timeline-tab.tsx:309
+msgid "Session started. Additional details are unavailable."
+msgstr "Session started. Additional details are unavailable."
 
 #: src/components/sessions/overview-tab.tsx:153
 msgid "Session thumbnail"
@@ -7946,6 +7962,10 @@ msgstr "Start Time"
 msgid "Started"
 msgstr "Started"
 
+#: src/components/sessions/timeline-tab.tsx:238
+msgid "STARTED"
+msgstr "STARTED"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:703
 msgid "State"
 msgstr "State"
@@ -8104,7 +8124,7 @@ msgstr "Streamer is on cooldown"
 msgid "Streamer no longer exists on the platform"
 msgstr "Streamer no longer exists on the platform"
 
-#: src/components/sessions/timeline-tab.tsx:163
+#: src/components/sessions/timeline-tab.tsx:169
 msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "Streamer Offline"
@@ -8922,7 +8942,7 @@ msgstr "Unknown filter type"
 msgid "Unlimited"
 msgstr "Unlimited"
 
-#: src/components/sessions/timeline-tab.tsx:347
+#: src/components/sessions/timeline-tab.tsx:386
 msgid "Unrecognised event kind."
 msgstr "Unrecognised event kind."
 
@@ -8938,7 +8958,7 @@ msgstr "Until"
 msgid "Untitled Stream"
 msgstr "Untitled Stream"
 
-#: src/components/sessions/timeline-tab.tsx:222
+#: src/components/sessions/timeline-tab.tsx:228
 msgid "UPDATE"
 msgstr "UPDATE"
 
@@ -9073,7 +9093,7 @@ msgstr "Use TLS"
 msgid "User Agent"
 msgstr "User Agent"
 
-#: src/components/sessions/timeline-tab.tsx:167
+#: src/components/sessions/timeline-tab.tsx:173
 msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "User Disabled"

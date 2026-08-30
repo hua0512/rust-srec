@@ -224,7 +224,72 @@ const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
 const DEFAULT_EVENT_CAPACITY: usize = 256;
 
 /// Default shutdown timeout.
-const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
+
+/// Floor for the window `shutdown_until` hands `TaskSupervisor::shutdown`.
+///
+/// The producer drains run first against the same absolute deadline, so a slow
+/// recording flush can leave nothing behind. Without a floor every supervised
+/// task that merely had not been reaped yet would be reported as an overrun.
+const BACKGROUND_TASK_MIN_GRACE_PERIOD: Duration = Duration::from_secs(2);
+
+/// Time reserved inside a hard cap for aborted tasks to settle. Joining an
+/// aborted task proves its future was dropped, which is when an engine child
+/// spawned with `kill_on_drop` is killed.
+const ABORT_REAP_WINDOW: Duration = Duration::from_secs(5);
+
+/// Absolute deadlines consumed by the service shutdown module.
+///
+/// The cooperative drain may keep containing owned work after
+/// `cooperative_deadline`, but at `force_deadline` it is dropped and the
+/// remaining supervised tasks are aborted. All abort/reap work shares
+/// `hard_deadline`; no phase extends the caller's hard bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ServiceShutdownSchedule {
+    cooperative_deadline: tokio::time::Instant,
+    force_deadline: tokio::time::Instant,
+    hard_deadline: tokio::time::Instant,
+}
+
+impl ServiceShutdownSchedule {
+    pub(crate) fn new(
+        cooperative_deadline: tokio::time::Instant,
+        force_deadline: tokio::time::Instant,
+        hard_deadline: tokio::time::Instant,
+    ) -> Result<Self> {
+        if cooperative_deadline > force_deadline || force_deadline > hard_deadline {
+            return Err(crate::Error::validation(
+                "service shutdown deadlines must satisfy cooperative <= force <= hard",
+            ));
+        }
+        Ok(Self {
+            cooperative_deadline,
+            force_deadline,
+            hard_deadline,
+        })
+    }
+
+    fn from_now(grace_period: Duration, hard_cap: Duration) -> Result<Self> {
+        let started_at = tokio::time::Instant::now();
+        let hard_deadline = started_at.checked_add(hard_cap).ok_or_else(|| {
+            crate::Error::validation("service shutdown hard cap exceeds the monotonic clock range")
+        })?;
+        // A fixed five-second reserve would consume an entire short cap and
+        // force even quiescent services immediately. Preserve at least half of
+        // a short cap for cooperative shutdown while retaining the full reap
+        // window for normal production-sized caps.
+        let abort_reap_window = ABORT_REAP_WINDOW.min(hard_cap / 2);
+        let force_deadline = hard_deadline
+            .checked_sub(abort_reap_window)
+            .unwrap_or(started_at)
+            .max(started_at);
+        let cooperative_deadline = started_at
+            .checked_add(grace_period)
+            .unwrap_or(force_deadline)
+            .min(force_deadline);
+        Self::new(cooperative_deadline, force_deadline, hard_deadline)
+    }
+}
 
 fn autoscale_concurrency_limit(raw: i32) -> usize {
     if raw > 0 {
@@ -309,18 +374,17 @@ pub struct ServiceContainer {
     monitor_event_receiver: parking_lot::Mutex<
         Option<tokio::sync::mpsc::Receiver<crate::monitor::MonitorEventDelivery>>,
     >,
-    /// Required terminal-download receiver used for session state changes.
-    download_terminal_receiver: parking_lot::Mutex<
-        Option<tokio::sync::mpsc::UnboundedReceiver<crate::downloader::DownloadTerminalEvent>>,
-    >,
+    /// Single required download lifecycle consumer, moved into its supervised task.
+    download_coordination_receiver:
+        parking_lot::Mutex<Option<crate::downloader::DownloadCoordinationReceiver>>,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
     /// hard-ended suppression cache, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
     pub(crate) session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Required session-transition receiver used for runtime side effects.
-    session_transition_receiver: parking_lot::Mutex<
-        Option<tokio::sync::mpsc::UnboundedReceiver<crate::session::SessionTransition>>,
-    >,
+    session_transition_sender: crate::session::SessionTransitionSender,
+    session_transition_receiver:
+        parking_lot::Mutex<Option<crate::session::SessionTransitionReceiver>>,
     /// Operational policy for required runtime events.
     runtime_coordinator: Arc<RuntimeCoordinator>,
     /// Danmu service.
@@ -603,69 +667,301 @@ impl ServiceContainer {
         Ok(())
     }
 
-    /// Shutdown all services gracefully.
+    /// Shutdown all services, waiting as long as containment takes.
+    ///
+    /// `DEFAULT_SHUTDOWN_GRACE_PERIOD` bounds only the cooperative
+    /// phase. The drains in `TaskSupervisor::shutdown`,
+    /// `DownloadManager::shutdown_until` and `PipelineManager::stop` all keep
+    /// joining past it so no producer outlives the database pools, so this call
+    /// has no wall-clock bound and a wedged engine holds it open indefinitely.
+    /// Only use it under a parent process that force-kills the process tree;
+    /// in-process embedders want [`Self::shutdown_with_hard_cap`].
     pub async fn shutdown(&self) -> Result<()> {
-        self.shutdown_with_timeout(DEFAULT_SHUTDOWN_TIMEOUT).await
+        self.shutdown_with_grace_period(DEFAULT_SHUTDOWN_GRACE_PERIOD)
+            .await
     }
 
-    /// Shutdown all services gracefully with a custom timeout.
-    pub(crate) async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<()> {
-        info!("Shutting down services (timeout: {:?})", timeout);
-        let deadline = tokio::time::Instant::now() + timeout;
+    /// Shutdown all services within `hard_cap`.
+    ///
+    /// [`Self::shutdown`] waits as long as containment takes: the drains in
+    /// `TaskSupervisor::shutdown`, `DownloadManager::shutdown_until` and
+    /// `PipelineManager::stop` all keep joining past the grace period so no
+    /// producer outlives the database pools. That is only safe with a parent
+    /// process that enforces a wall-clock deadline and force-kills the process
+    /// tree. Embedders that run the container in-process call
+    /// this instead: before `hard_cap` expires the phased drain is dropped and
+    /// the remaining work is aborted, so each attempt/job future is dropped and
+    /// the ffmpeg/streamlink child it owns through `kill_on_drop` is killed
+    /// rather than orphaned by a later `std::process::exit`.
+    ///
+    /// Returns `Err` naming what was still running when the cap fired. On that
+    /// path the database pools are left open, matching the quiescence gate in
+    /// the cooperative shutdown path; the caller is expected to exit the
+    /// process. `ABORT_REAP_WINDOW` is reserved inside `hard_cap`, so this
+    /// method does not add a second timeout after the caller's deadline.
+    pub async fn shutdown_with_hard_cap(
+        &self,
+        grace_period: Duration,
+        hard_cap: Duration,
+    ) -> Result<()> {
+        let schedule = ServiceShutdownSchedule::from_now(grace_period, hard_cap)?;
+        self.shutdown_with_schedule(schedule).await
+    }
 
-        // Stop accepting new work and signal cancellation-aware background tasks.
-        // The required danmu coordinator intentionally stays alive until its
-        // producers stop and its shutdown barrier is acknowledged below.
-        self.cancellation_token.cancel();
+    /// Run the phased shutdown against caller-owned absolute deadlines.
+    pub(crate) async fn shutdown_with_schedule(
+        &self,
+        schedule: ServiceShutdownSchedule,
+    ) -> Result<()> {
+        let mut graceful = Box::pin(self.shutdown_until(schedule.cooperative_deadline));
+        if let Ok(result) = tokio::time::timeout_at(schedule.force_deadline, &mut graceful).await {
+            return result;
+        }
+
+        // Drop the drain before aborting. Every drain it owns hands its
+        // `JoinSet` back to its service through `DrainedTasks` when its future
+        // is dropped, which is what lets the abort hatches below reach the
+        // tasks that are still running instead of silently aborting them here.
+        drop(graceful);
+        warn!(
+            "Service shutdown reached its force deadline; aborting the remaining supervised work"
+        );
+
+        let (
+            aborted_downloads,
+            aborted_collections,
+            aborted_timers,
+            aborted_pipeline_tasks,
+            aborted_background_tasks,
+        ) = tokio::join!(
+            self.download_manager.abort_attempts(schedule.hard_deadline),
+            self.danmu_service.abort_collections(schedule.hard_deadline),
+            self.session_lifecycle.abort_timers(schedule.hard_deadline),
+            self.pipeline_manager.abort(schedule.hard_deadline),
+            self.task_supervisor.abort_all(schedule.hard_deadline),
+        );
+
+        warn!(
+            downloads = ?aborted_downloads,
+            collections = ?aborted_collections,
+            hysteresis_timers = aborted_timers,
+            pipeline_tasks = aborted_pipeline_tasks,
+            background_tasks = aborted_background_tasks,
+            "Aborted supervised work after the shutdown force deadline"
+        );
+
+        Err(crate::Error::Other(format!(
+            "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {} danmu collection(s) {aborted_collections:?}, {aborted_timers} hysteresis timer(s), {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; database pools were left open",
+            aborted_downloads.len(),
+            aborted_collections.len()
+        )))
+    }
+
+    /// Shutdown all services with a bounded cooperative grace period.
+    ///
+    /// If that period expires, containment may run longer while owned tasks
+    /// cancel and join. Database pools are never closed until every producer
+    /// that can write through them is proven quiescent.
+    pub(crate) async fn shutdown_with_grace_period(&self, grace_period: Duration) -> Result<()> {
+        info!("Shutting down services (grace period: {:?})", grace_period);
+        let deadline = tokio::time::Instant::now() + grace_period;
+        self.shutdown_until(deadline).await
+    }
+
+    async fn shutdown_until(&self, deadline: tokio::time::Instant) -> Result<()> {
+        // Containment failures: something could not be proven to have stopped
+        // writing. Only these make this method return `Err`, which `server.rs`
+        // turns into a nonzero worker exit and `classify_settled_exit` records
+        // as a crash that retains a dirty generation marker.
+        let mut failures = Vec::new();
+        // Soft-budget overruns and errors from work that ended earlier in the
+        // run. Both are reported and then ignored: a drain that overran its
+        // grace period still finalized every recording, and a download that
+        // failed hours ago says nothing about this shutdown.
+        let mut overruns = Vec::new();
+        let mut runtime_failures = Vec::new();
+        let mut coordination_drained = true;
+
+        // Fence producers before cancellation. Required coordination consumers
+        // are marker-driven, so they remain alive long enough to persist every
+        // final segment and terminal fact after auxiliary loops stop.
         self.stream_monitor.stop();
         self.download_manager.shutdown_queue();
+        self.cancellation_token.cancel();
 
-        let service_shutdown = async {
-            info!("Stopping notification service...");
-            self.notification_service.stop().await;
+        info!("Stopping download manager...");
+        let download_report = self.download_manager.shutdown_until(deadline).await;
+        info!(
+            count = download_report.stopped_download_ids.len(),
+            deadline_exceeded = download_report.deadline_exceeded_download_ids.len(),
+            "Stopped active downloads and drained required download events"
+        );
+        coordination_drained &= download_report.coordination_drained;
+        runtime_failures.extend(
+            download_report
+                .runtime_failures
+                .into_iter()
+                .map(|failure| format!("download run: {failure}")),
+        );
+        overruns.extend(
+            download_report
+                .overruns
+                .into_iter()
+                .map(|overrun| format!("download shutdown: {overrun}")),
+        );
+        failures.extend(
+            download_report
+                .failures
+                .into_iter()
+                .map(|failure| format!("download shutdown: {failure}")),
+        );
 
-            info!("Stopping danmu service...");
-            self.danmu_service.shutdown().await;
-            if self.danmu_coordination_receiver.lock().is_none() {
-                if let Err(error) = self.danmu_coordination_sender.shutdown().await {
-                    warn!(%error, "Failed to drain danmu coordination events during shutdown");
+        info!("Stopping danmu service...");
+        let danmu_report = self.danmu_service.shutdown_until(deadline).await;
+        if !danmu_report.forced_session_ids.is_empty() {
+            warn!(
+                sessions = ?danmu_report.forced_session_ids,
+                "Danmu collections exceeded the graceful deadline and were drained"
+            );
+        }
+        runtime_failures.extend(
+            danmu_report
+                .runtime_failures
+                .into_iter()
+                .map(|failure| format!("danmu run: {failure}")),
+        );
+        overruns.extend(
+            danmu_report
+                .overruns
+                .into_iter()
+                .map(|overrun| format!("danmu shutdown: {overrun}")),
+        );
+        failures.extend(
+            danmu_report
+                .shutdown_failures
+                .into_iter()
+                .map(|failure| format!("danmu shutdown: {failure}")),
+        );
+
+        if self.danmu_coordination_receiver.lock().is_none() {
+            match tokio::time::timeout_at(deadline, self.danmu_coordination_sender.shutdown()).await
+            {
+                Ok(Ok(event_failures)) => {
+                    // Per-event handler errors accumulated across the whole run,
+                    // not shutdown-phase containment failures.
+                    runtime_failures.extend(
+                        event_failures
+                            .into_iter()
+                            .map(|failure| format!("danmu coordination event failed: {failure}")),
+                    );
                 }
-            } else {
-                debug!("Danmu coordination handler was not started; skipping its shutdown barrier");
+                Ok(Err(error)) => {
+                    let message = format!("failed to drain danmu coordination events: {error}");
+                    warn!(%message);
+                    failures.push(message);
+                    coordination_drained = false;
+                }
+                Err(_) => {
+                    let message = "danmu coordination drain deadline exceeded".to_string();
+                    warn!(%message);
+                    failures.push(message);
+                    coordination_drained = false;
+                }
             }
-
-            info!("Stopping download manager...");
-            let stopped_downloads = self.download_manager.stop_all().await;
-            info!(count = stopped_downloads.len(), "Stopped active downloads");
-
-            info!("Stopping pipeline manager...");
-            self.pipeline_manager.stop().await;
-        };
-        if tokio::time::timeout_at(deadline, service_shutdown)
-            .await
-            .is_err()
-        {
-            warn!("Service shutdown deadline exceeded");
+        } else {
+            debug!("Danmu coordination handler was not started; skipping its shutdown barrier");
         }
 
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let lifecycle_report = self.session_lifecycle.shutdown_until(deadline).await;
+        if lifecycle_report.forced_timer_count > 0 {
+            warn!(
+                count = lifecycle_report.forced_timer_count,
+                "Session hysteresis timers exceeded the graceful deadline and were drained"
+            );
+        }
+        overruns.extend(
+            lifecycle_report
+                .overruns
+                .into_iter()
+                .map(|overrun| format!("session lifecycle: {overrun}")),
+        );
+        failures.extend(
+            lifecycle_report
+                .failures
+                .into_iter()
+                .map(|failure| format!("session lifecycle task failed: {failure}")),
+        );
+
+        if self.session_transition_receiver.lock().is_none() {
+            match tokio::time::timeout_at(deadline, self.session_transition_sender.shutdown()).await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    let message = format!("failed to drain session transitions: {error}");
+                    warn!(%message);
+                    failures.push(message);
+                    coordination_drained = false;
+                }
+                Err(_) => {
+                    let message = "session transition drain deadline exceeded".to_string();
+                    warn!(%message);
+                    failures.push(message);
+                    coordination_drained = false;
+                }
+            }
+        } else {
+            debug!("Session transition coordinator was not started; skipping its shutdown barrier");
+        }
+
+        // Every producer above joins past `deadline` rather than abandoning
+        // work, so reaching here means they are quiesced regardless of whether
+        // they stayed inside their budget. Downstream services can stop.
+        info!("Stopping pipeline manager...");
+        self.pipeline_manager.stop().await;
+        info!("Stopping notification service...");
+        self.notification_service.stop().await;
+
+        // The producer drains above may have consumed the whole window. Give
+        // the background tasks their own grace period rather than a zero-length
+        // one that reports an overrun for every task that is merely unreaped.
+        let remaining = deadline
+            .saturating_duration_since(tokio::time::Instant::now())
+            .max(BACKGROUND_TASK_MIN_GRACE_PERIOD);
         if !self.task_supervisor.shutdown(remaining).await {
-            warn!("One or more background tasks required forced cancellation");
+            let message =
+                "one or more background tasks exceeded the graceful shutdown period".to_string();
+            warn!(%message);
+            overruns.push(message);
         }
 
-        info!("Closing database pools...");
-        let close_pools = async {
+        // `TaskSupervisor::shutdown` has joined the required consumers by now,
+        // so nothing can still be mid-write. An undrained marker means one of
+        // them stopped without acknowledging, and leaving the pools open keeps
+        // the last observed state visible to the operator who has to reconcile
+        // it — the process exits immediately after this either way.
+        if coordination_drained {
+            info!("Closing database pools...");
             tokio::join!(self.write_pool.close(), self.pool.close());
-        };
-        if tokio::time::timeout_at(deadline, close_pools)
-            .await
-            .is_err()
-        {
-            warn!("Database pool shutdown deadline exceeded");
+        } else {
+            warn!("Required coordination markers did not drain; leaving database pools open");
+        }
+
+        for failure in &runtime_failures {
+            warn!(%failure, "Work ended with an error during the run");
+        }
+        for overrun in &overruns {
+            warn!(%overrun, "Shutdown phase exceeded its grace period but was contained");
         }
 
         info!("Services shut down");
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(crate::Error::Other(format!(
+                "service shutdown incomplete: {}",
+                failures.join("; ")
+            )))
+        }
     }
 
     /// Get the cancellation token for external use.
@@ -759,11 +1055,167 @@ pub struct ServiceStats {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use tokio::io::AsyncWriteExt;
+    use tokio::sync::{Notify, mpsc};
+
     use super::{
         RECOVERY_PROGRESS_MIN_BYTES, broadcast_error_is_recoverable,
         should_end_stream_on_danmu_stream_closed, should_record_recovery_from_progress,
     };
-    use crate::downloader::engine::DownloadProgress;
+    use crate::danmu::test_support::FakeProvider;
+    use crate::danmu::{CollectionSpec, DanmuService, ProviderRegistry};
+    use crate::database::models::{LiveSessionDbModel, StreamerDbModel, StreamerState};
+    use crate::database::repositories::{
+        SessionRepository, SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository,
+    };
+    use crate::downloader::engine::{DownloadProgress, EngineStartError, EngineType};
+    use crate::downloader::{
+        DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadManagerConfig,
+        DownloadManagerEvent, DownloadProgressEvent, DownloadProtocol, DownloadStopCause,
+        DownloadTerminalEvent, EngineEndSignal, SegmentEvent, SegmentInfo,
+    };
+
+    const SHUTDOWN_STREAMER_ID: &str = "shutdown-tracer-streamer";
+    const SHUTDOWN_SESSION_ID: &str = "shutdown-tracer-session";
+    const OPEN_SEGMENT_BYTES: &[u8] = b"recording";
+    const FINAL_SEGMENT_BYTES: &[u8] = b"-finalized";
+    const EXPECTED_SEGMENT_BYTES: &[u8] = b"recording-finalized";
+
+    #[derive(Clone)]
+    struct ShutdownFlushEngine {
+        segment_path: PathBuf,
+        started: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl DownloadEngine for ShutdownFlushEngine {
+        fn engine_type(&self) -> EngineType {
+            EngineType::Ffmpeg
+        }
+
+        async fn run(
+            &self,
+            handle: Arc<DownloadHandle>,
+        ) -> std::result::Result<(), EngineStartError> {
+            let started_at = Utc::now();
+            let mut file = tokio::fs::File::create(&self.segment_path)
+                .await
+                .map_err(|error| {
+                    EngineStartError::new(
+                        DownloadFailureKind::Io,
+                        format!("failed to create shutdown tracer segment: {error}"),
+                    )
+                })?;
+            file.write_all(OPEN_SEGMENT_BYTES).await.map_err(|error| {
+                EngineStartError::new(
+                    DownloadFailureKind::Io,
+                    format!("failed to write shutdown tracer segment: {error}"),
+                )
+            })?;
+            file.flush().await.map_err(|error| {
+                EngineStartError::new(
+                    DownloadFailureKind::Io,
+                    format!("failed to flush shutdown tracer segment: {error}"),
+                )
+            })?;
+            handle
+                .event_tx
+                .send(SegmentEvent::SegmentStarted {
+                    path: self.segment_path.clone(),
+                    sequence: 0,
+                    started_at,
+                })
+                .await
+                .map_err(|error| {
+                    EngineStartError::new(
+                        DownloadFailureKind::Other,
+                        format!("failed to emit shutdown tracer segment start: {error}"),
+                    )
+                })?;
+            self.started.notify_one();
+
+            handle.cancellation_token.cancelled().await;
+
+            file.write_all(FINAL_SEGMENT_BYTES).await.map_err(|error| {
+                EngineStartError::new(
+                    DownloadFailureKind::Io,
+                    format!("failed to finalize shutdown tracer segment: {error}"),
+                )
+            })?;
+            file.flush().await.map_err(|error| {
+                EngineStartError::new(
+                    DownloadFailureKind::Io,
+                    format!("failed to flush finalized shutdown tracer segment: {error}"),
+                )
+            })?;
+            file.sync_all().await.map_err(|error| {
+                EngineStartError::new(
+                    DownloadFailureKind::Io,
+                    format!("failed to sync finalized shutdown tracer segment: {error}"),
+                )
+            })?;
+            drop(file);
+
+            let size_bytes = tokio::fs::metadata(&self.segment_path)
+                .await
+                .map_err(|error| {
+                    EngineStartError::new(
+                        DownloadFailureKind::Io,
+                        format!("failed to stat finalized shutdown tracer segment: {error}"),
+                    )
+                })?
+                .len();
+            handle
+                .event_tx
+                .send(SegmentEvent::SegmentCompleted(SegmentInfo {
+                    path: self.segment_path.clone(),
+                    duration_secs: 1.0,
+                    size_bytes,
+                    index: 0,
+                    started_at: Some(started_at),
+                    completed_at: Utc::now(),
+                    split_reason_code: None,
+                    split_reason_details_json: None,
+                }))
+                .await
+                .map_err(|error| {
+                    EngineStartError::new(
+                        DownloadFailureKind::Other,
+                        format!("failed to emit shutdown tracer segment completion: {error}"),
+                    )
+                })?;
+            handle
+                .event_tx
+                .send(SegmentEvent::DownloadCompleted {
+                    total_bytes: size_bytes,
+                    total_duration_secs: 1.0,
+                    total_segments: 1,
+                    engine_signal: EngineEndSignal::CleanDisconnect,
+                })
+                .await
+                .map_err(|error| {
+                    EngineStartError::new(
+                        DownloadFailureKind::Other,
+                        format!("failed to emit shutdown tracer terminal event: {error}"),
+                    )
+                })?;
+            Ok(())
+        }
+
+        fn is_available(&self) -> bool {
+            true
+        }
+
+        fn version(&self) -> Option<String> {
+            Some("shutdown-tracer".to_string())
+        }
+    }
 
     async fn migrated_test_pool() -> sqlx::SqlitePool {
         let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
@@ -773,6 +1225,498 @@ mod tests {
             .await
             .expect("test migrations should succeed");
         pool
+    }
+
+    #[tokio::test]
+    async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_close() {
+        let temp_dir = tempfile::tempdir().expect("test directory should initialize");
+        let database_path = temp_dir.path().join("shutdown-tracer.sqlite");
+        let database_url = format!("sqlite:{}?mode=rwc", database_path.to_string_lossy());
+        let output_dir = temp_dir.path().join("recordings");
+        let segment_path = output_dir.join("segment-0.flv");
+        let segment_path_string = segment_path.to_string_lossy().into_owned();
+        let expected_size = 19;
+        let danmu_path = segment_path.with_extension("xml");
+
+        let (pool, write_pool) = crate::database::init_database_pools(&database_url)
+            .await
+            .expect("test database pools should initialize");
+        crate::database::run_migrations(&pool)
+            .await
+            .expect("test migrations should succeed");
+        let paired_segment_pipeline = crate::database::models::DagPipelineDefinition::new(
+            "Shutdown Paired Segment Pipeline",
+            vec![crate::database::models::DagStep::new(
+                "record-final-segment",
+                crate::database::models::PipelineStep::Inline {
+                    processor: "execute".to_string(),
+                    config: serde_json::json!({
+                        "command": if cfg!(windows) { "exit /B 0" } else { "true" }
+                    }),
+                },
+            )],
+        );
+        let paired_segment_pipeline_json = serde_json::to_string(&paired_segment_pipeline)
+            .expect("test pipeline should serialize");
+        let updated = sqlx::query(
+            "UPDATE global_config \
+             SET min_segment_size_bytes = 0, auto_thumbnail = FALSE, record_danmu = TRUE, paired_segment_pipeline = ? \
+             WHERE id = 'global-configuration'",
+        )
+        .bind(paired_segment_pipeline_json)
+        .execute(&write_pool)
+        .await
+        .expect("shutdown tracer config should update");
+        assert_eq!(updated.rows_affected(), 1);
+
+        let mut streamer = StreamerDbModel::new(
+            "Shutdown tracer",
+            "https://example.com/shutdown-tracer",
+            "platform-twitch",
+        );
+        streamer.id = SHUTDOWN_STREAMER_ID.to_string();
+        streamer.state = StreamerState::Live.as_str().to_string();
+        SqlxStreamerRepository::new(pool.clone(), write_pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .expect("shutdown tracer streamer should persist");
+
+        let mut session = LiveSessionDbModel::new(SHUTDOWN_STREAMER_ID);
+        session.id = SHUTDOWN_SESSION_ID.to_string();
+        SqlxSessionRepository::new(pool.clone(), write_pool.clone())
+            .create_session(&session)
+            .await
+            .expect("shutdown tracer session should persist");
+
+        let mut container = super::ServiceContainer::with_full_config(
+            pool,
+            write_pool,
+            super::ServiceContainerConfig {
+                cache_ttl: Duration::from_secs(60),
+                event_capacity: 8,
+                download_config: DownloadManagerConfig::default(),
+                pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
+                api_config: crate::api::server::ApiServerConfig::default(),
+            },
+        )
+        .await
+        .expect("service container should initialize");
+
+        let (_danmu_items_tx, danmu_items_rx) = mpsc::channel(8);
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(FakeProvider::new(vec![danmu_items_rx])));
+        let (danmu_coordination_sender, danmu_coordination_receiver) =
+            crate::danmu::events::danmu_coordination_channel();
+        let danmu_service = Arc::new(
+            DanmuService::with_providers(providers)
+                .with_session_repository(container.session_repository.clone())
+                .with_coordination_sender(danmu_coordination_sender.clone()),
+        );
+        container.danmu_service = danmu_service.clone();
+        container.danmu_coordination_sender = danmu_coordination_sender;
+        *container.danmu_coordination_receiver.lock() = Some(danmu_coordination_receiver);
+
+        container.pipeline_manager.clone().start();
+        container.setup_download_event_subscriptions();
+        container.setup_session_lifecycle_subscriptions();
+        container.setup_danmu_event_subscriptions();
+        danmu_service
+            .start_collection(CollectionSpec {
+                session_id: SHUTDOWN_SESSION_ID.to_string(),
+                streamer_id: SHUTDOWN_STREAMER_ID.to_string(),
+                streamer_url: FakeProvider::URL.to_string(),
+                cookies: None,
+                extras: None,
+                statistics: crate::domain::DanmuStatisticsConfig::default(),
+            })
+            .await
+            .expect("shutdown tracer danmu collection should start");
+
+        let started = Arc::new(Notify::new());
+        container
+            .download_manager
+            .register_engine(Arc::new(ShutdownFlushEngine {
+                segment_path: segment_path.clone(),
+                started: started.clone(),
+            }));
+        let mut events = container.download_manager.subscribe();
+        let download_id = container
+            .download_manager
+            .start_download(
+                DownloadConfig::new(
+                    "https://example.invalid/live.flv",
+                    output_dir.clone(),
+                    SHUTDOWN_STREAMER_ID,
+                    "Shutdown tracer",
+                    SHUTDOWN_SESSION_ID,
+                )
+                .with_protocol(DownloadProtocol::Flv),
+                Some("ffmpeg".to_string()),
+                false,
+            )
+            .await
+            .expect("shutdown tracer download should start");
+        tokio::time::timeout(Duration::from_secs(5), started.notified())
+            .await
+            .expect("shutdown tracer engine should open its segment");
+        assert_eq!(container.download_manager.active_count(), 1);
+
+        // A collection that ended earlier in the run reaches `shutdown_until`
+        // as a `runtime_failures` entry. Only `shutdown_failures` may make
+        // `shutdown_with_grace_period` return `Err`.
+        danmu_service.seed_runtime_failure_for_test(
+            "danmu collection earlier-session failed: websocket connect timed out".to_string(),
+        );
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            container.shutdown_with_grace_period(Duration::from_secs(10)),
+        )
+        .await
+        .expect("service container shutdown should complete within its deadline")
+        .expect("service container should shut down gracefully");
+
+        assert_eq!(container.download_manager.active_count(), 0);
+        assert!(container.pool.is_closed());
+        assert!(container.write_pool.is_closed());
+        assert_eq!(
+            tokio::fs::read(&segment_path)
+                .await
+                .expect("finalized segment should exist"),
+            EXPECTED_SEGMENT_BYTES
+        );
+        let xml = tokio::fs::read_to_string(&danmu_path)
+            .await
+            .expect("finalized danmu segment should exist");
+        assert!(xml.trim_end().ends_with("</i>"));
+        let renamed_segment_path = output_dir.join("segment-0-renamed.flv");
+        tokio::fs::rename(&segment_path, &renamed_segment_path)
+            .await
+            .expect("finalized segment should be renamable after shutdown");
+        tokio::fs::rename(&renamed_segment_path, &segment_path)
+            .await
+            .expect("renamed segment should move back to its persisted path");
+
+        let mut segment_completed_positions = Vec::new();
+        let mut terminal_positions = Vec::new();
+        let mut event_position = 0;
+        loop {
+            match events.try_recv() {
+                Ok(DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
+                    download_id: event_download_id,
+                    session_id,
+                    segment_path: event_segment_path,
+                    segment_index,
+                    ..
+                })) => {
+                    assert_eq!(event_download_id, download_id);
+                    assert_eq!(session_id, SHUTDOWN_SESSION_ID);
+                    assert_eq!(event_segment_path, segment_path_string);
+                    assert_eq!(segment_index, 0);
+                    segment_completed_positions.push(event_position);
+                }
+                Ok(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
+                    download_id: event_download_id,
+                    session_id,
+                    cause,
+                    ..
+                })) => {
+                    assert_eq!(event_download_id, download_id);
+                    assert_eq!(session_id, SHUTDOWN_SESSION_ID);
+                    assert_eq!(cause, DownloadStopCause::Shutdown);
+                    terminal_positions.push(event_position);
+                }
+                Ok(DownloadManagerEvent::Terminal(terminal)) => {
+                    panic!("unexpected shutdown tracer terminal event: {terminal:?}");
+                }
+                Ok(DownloadManagerEvent::Progress(_)) => {}
+                Err(
+                    tokio::sync::broadcast::error::TryRecvError::Empty
+                    | tokio::sync::broadcast::error::TryRecvError::Closed,
+                ) => break,
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(skipped)) => {
+                    panic!("shutdown tracer event receiver lagged by {skipped}");
+                }
+            }
+            event_position += 1;
+        }
+        assert_eq!(segment_completed_positions.len(), 1);
+        assert_eq!(terminal_positions.len(), 1);
+        assert!(segment_completed_positions[0] < terminal_positions[0]);
+
+        let (reopened_pool, reopened_write_pool) =
+            crate::database::init_database_pools(&database_url)
+                .await
+                .expect("closed shutdown tracer database should reopen");
+        let session_repo =
+            SqlxSessionRepository::new(reopened_pool.clone(), reopened_write_pool.clone());
+
+        let outputs = session_repo
+            .get_media_outputs_for_session(SHUTDOWN_SESSION_ID)
+            .await
+            .expect("shutdown tracer outputs should load");
+        assert_eq!(outputs.len(), 2);
+        let video_output = outputs
+            .iter()
+            .find(|output| output.file_type == "VIDEO")
+            .expect("video output should persist");
+        assert_eq!(video_output.file_path, segment_path_string);
+        assert_eq!(video_output.size_bytes, expected_size);
+        let danmu_output = outputs
+            .iter()
+            .find(|output| output.file_type == "DANMU_XML")
+            .expect("danmu XML output should persist");
+        assert_eq!(
+            danmu_output.file_path,
+            danmu_path.to_string_lossy().into_owned()
+        );
+        assert!(danmu_output.size_bytes > 0);
+
+        let segments = session_repo
+            .list_session_segments_for_session(SHUTDOWN_SESSION_ID, 10)
+            .await
+            .expect("shutdown tracer segments should load");
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].segment_index, 0);
+        assert_eq!(segments[0].file_path, segment_path_string);
+        assert_eq!(segments[0].size_bytes, expected_size);
+        let next_segment_index = session_repo
+            .next_session_segment_index(SHUTDOWN_SESSION_ID)
+            .await
+            .expect("next segment index should load");
+        assert_eq!(next_segment_index, 1);
+        let dag_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM dag_execution \
+             WHERE session_id = ? AND dag_definition LIKE '%Shutdown Paired Segment Pipeline%'",
+        )
+        .bind(SHUTDOWN_SESSION_ID)
+        .fetch_one(&reopened_pool)
+        .await
+        .expect("shutdown tracer DAG count should load");
+        assert_eq!(
+            dag_count, 1,
+            "the final paired-segment DAG must be created once"
+        );
+        let all_dag_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution WHERE session_id = ?")
+                .bind(SHUTDOWN_SESSION_ID)
+                .fetch_one(&reopened_pool)
+                .await
+                .expect("shutdown tracer total DAG count should load");
+        assert_eq!(
+            all_dag_count, 1,
+            "shutdown must not duplicate the paired-segment DAG"
+        );
+        let dag_statuses: Vec<String> = sqlx::query_scalar(
+            "SELECT status FROM dag_execution WHERE session_id = ? ORDER BY created_at",
+        )
+        .bind(SHUTDOWN_SESSION_ID)
+        .fetch_all(&reopened_pool)
+        .await
+        .expect("shutdown tracer DAG statuses should load");
+        assert_eq!(dag_statuses, vec!["COMPLETED"]);
+        let job_statuses: Vec<String> =
+            sqlx::query_scalar("SELECT status FROM job WHERE session_id = ? ORDER BY created_at")
+                .bind(SHUTDOWN_SESSION_ID)
+                .fetch_all(&reopened_pool)
+                .await
+                .expect("shutdown tracer job statuses should load");
+        assert_eq!(
+            job_statuses,
+            vec!["COMPLETED"],
+            "the configured paired-segment job must execute exactly once"
+        );
+
+        let active_session = session_repo
+            .get_active_session_for_streamer(SHUTDOWN_STREAMER_ID)
+            .await
+            .expect("active shutdown tracer session should load")
+            .expect("shutdown should preserve the active session");
+        assert_eq!(active_session.id, SHUTDOWN_SESSION_ID);
+        assert!(active_session.end_time.is_none());
+
+        let resumed_output_dir = output_dir.to_string_lossy().into_owned();
+        let updated = sqlx::query(
+            "UPDATE global_config \
+             SET record_danmu = FALSE, default_download_engine = 'ffmpeg', output_folder = ? \
+             WHERE id = 'global-configuration'",
+        )
+        .bind(&resumed_output_dir)
+        .execute(&reopened_write_pool)
+        .await
+        .expect("resume probe config should update");
+        assert_eq!(updated.rows_affected(), 1);
+
+        let resumed_container = super::ServiceContainer::with_full_config(
+            reopened_pool.clone(),
+            reopened_write_pool.clone(),
+            super::ServiceContainerConfig {
+                cache_ttl: Duration::from_secs(60),
+                event_capacity: 8,
+                download_config: DownloadManagerConfig::default(),
+                pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
+                api_config: crate::api::server::ApiServerConfig::default(),
+            },
+        )
+        .await
+        .expect("resumed service container should initialize");
+        resumed_container
+            .streamer_manager
+            .hydrate()
+            .await
+            .expect("resumed streamer metadata should hydrate");
+        resumed_container.setup_download_event_subscriptions();
+        resumed_container.setup_session_lifecycle_subscriptions();
+
+        let resumed_segment_path = output_dir.join("segment-1.flv");
+        let resumed_started = Arc::new(Notify::new());
+        resumed_container
+            .download_manager
+            .register_engine(Arc::new(ShutdownFlushEngine {
+                segment_path: resumed_segment_path,
+                started: resumed_started.clone(),
+            }));
+        let mut resumed_events = resumed_container.download_manager.subscribe();
+        let resume_streams = vec![
+            platforms_parser::media::StreamInfo::builder(
+                "https://example.invalid/resumed.flv",
+                platforms_parser::media::StreamFormat::Flv,
+                platforms_parser::media::formats::MediaFormat::Flv,
+            )
+            .build(),
+        ];
+        let live_args = |now| crate::session::LiveDetectedArgs {
+            streamer_id: SHUTDOWN_STREAMER_ID,
+            streamer_name: "Shutdown tracer",
+            streamer_url: "https://example.com/shutdown-tracer",
+            current_avatar: None,
+            new_avatar: None,
+            title: "Resumed shutdown tracer",
+            category: None,
+            streams: &resume_streams,
+            media_headers: None,
+            media_extras: None,
+            now,
+        };
+
+        let hydrated = resumed_container
+            .session_lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .expect("active persisted session should hydrate into the lifecycle");
+        assert_eq!(hydrated.session_id(), SHUTDOWN_SESSION_ID);
+        resumed_container
+            .session_lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Completed {
+                download_id: "pre-restart-download".to_string(),
+                streamer_id: SHUTDOWN_STREAMER_ID.to_string(),
+                streamer_name: "Shutdown tracer".to_string(),
+                session_id: SHUTDOWN_SESSION_ID.to_string(),
+                total_bytes: expected_size as u64,
+                total_duration_secs: 1.0,
+                total_segments: 1,
+                file_path: Some(segment_path_string.clone()),
+                engine_signal: EngineEndSignal::CleanDisconnect,
+                stop_cause: None,
+            })
+            .await
+            .expect("clean disconnect should enter hysteresis");
+        let resumed = resumed_container
+            .session_lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .expect("hysteresis resume should publish the production restart payload");
+        assert_eq!(resumed.session_id(), SHUTDOWN_SESSION_ID);
+        tokio::time::timeout(Duration::from_secs(5), resumed_started.notified())
+            .await
+            .expect("production resume pipeline should open its segment");
+        let resumed_index = loop {
+            let event = tokio::time::timeout(Duration::from_secs(5), resumed_events.recv())
+                .await
+                .expect("resumed segment start should arrive")
+                .expect("resumed event channel should remain open");
+            if let DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+                segment_index,
+                ..
+            }) = event
+            {
+                break segment_index;
+            }
+        };
+        assert_eq!(resumed_index, 1);
+        resumed_container
+            .shutdown_with_grace_period(Duration::from_secs(10))
+            .await
+            .expect("resumed service container should shut down cleanly");
+        assert!(reopened_pool.is_closed());
+        assert!(reopened_write_pool.is_closed());
+    }
+
+    /// The phased drain waits for containment, so a task that ignores the
+    /// cancellation token holds `shutdown_with_grace_period` open forever.
+    /// `shutdown_with_hard_cap` must stop waiting, abort the task, and report
+    /// what it aborted instead of leaving an embedder wedged.
+    #[tokio::test]
+    async fn hard_cap_aborts_supervised_work_that_never_settles() {
+        let pool = migrated_test_pool().await;
+        let container = super::ServiceContainer::with_config(
+            pool.clone(),
+            pool.clone(),
+            Duration::from_secs(60),
+            8,
+        )
+        .await
+        .expect("service container should initialize");
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        assert!(container.task_supervisor.spawn("wedged", async move {
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        }));
+        started_rx.await.expect("wedged task should start");
+
+        let hard_cap = Duration::from_millis(200);
+        let started_at = std::time::Instant::now();
+        let error = container
+            .shutdown_with_hard_cap(Duration::from_millis(50), hard_cap)
+            .await
+            .expect_err("the wedged task must keep the drain from completing");
+        let elapsed = started_at.elapsed();
+
+        assert!(
+            elapsed < hard_cap + Duration::from_millis(250),
+            "aborting must stay inside the hard cap (allowing scheduler jitter): {elapsed:?}"
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains("force deadline") && message.contains("1 background task(s)"),
+            "the error must name the work that was aborted: {message}"
+        );
+        // Producer quiescence was never proven, so the pools stay open exactly
+        // as in `shutdown_with_grace_period`; the caller exits the process.
+        assert!(!pool.is_closed());
+    }
+
+    #[tokio::test]
+    async fn hard_cap_shutdown_under_the_cap_closes_pools() {
+        let pool = migrated_test_pool().await;
+        let container = super::ServiceContainer::with_config(
+            pool.clone(),
+            pool.clone(),
+            Duration::from_secs(60),
+            8,
+        )
+        .await
+        .expect("service container should initialize");
+        container.setup_download_event_subscriptions();
+        container.setup_session_lifecycle_subscriptions();
+
+        container
+            .shutdown_with_hard_cap(Duration::from_millis(500), Duration::from_secs(5))
+            .await
+            .expect("a quiescent container should shut down within the cap");
+
+        assert!(pool.is_closed());
     }
 
     #[tokio::test]

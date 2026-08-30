@@ -4,6 +4,7 @@ services:
     image: ghcr.io/hua0512/rust-srec:${VERSION:-latest}
     container_name: rust-srec
     restart: unless-stopped
+    stop_grace_period: ${RUST_SREC_CONTAINER_STOP_GRACE_PERIOD:-35s}
     # Watchtower auto-update (only in effect when the optional `autoupdate`
     # profile is running): the pre-update hook gates updates on
     # /api/health/idle so a restart never interrupts a recording or a
@@ -21,6 +22,10 @@ services:
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///app/data/rust-srec.db}
+      - RUST_SREC_SHUTDOWN_TIMEOUT_SECS=${RUST_SREC_SHUTDOWN_TIMEOUT_SECS:-30}
+      - RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS=${RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS:-2}
+      # Empty = derive a marker path beside DATABASE_URL's SQLite file.
+      - RUST_SREC_RUNTIME_MARKER_PATH=${RUST_SREC_RUNTIME_MARKER_PATH:-}
       - OUTPUT_DIR=/app/output
       - API_PORT=8080
       - API_BIND_ADDRESS=0.0.0.0

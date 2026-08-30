@@ -210,9 +210,19 @@ impl ThrottleController {
         None
     }
 
-    /// Start background monitoring of queue depth.
-    /// This spawns a task that periodically checks queue depth and adjusts throttling.
+    /// Start background monitoring of queue depth and return its owned task.
     pub fn start_monitoring(
+        self: Arc<Self>,
+        job_queue: Arc<JobQueue>,
+        adjuster: Arc<dyn DownloadLimitAdjuster>,
+        cancellation_token: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(self.run_monitoring(job_queue, adjuster, cancellation_token))
+    }
+
+    /// Run monitoring until cancellation. PipelineManager owns this future so
+    /// its shutdown barrier can join the task.
+    pub(crate) async fn run_monitoring(
         self: Arc<Self>,
         job_queue: Arc<JobQueue>,
         adjuster: Arc<dyn DownloadLimitAdjuster>,
@@ -225,31 +235,29 @@ impl ThrottleController {
 
         let check_interval = Duration::from_millis(self.config.check_interval_ms);
 
-        tokio::spawn(async move {
-            info!("Throttle controller monitoring started");
+        info!("Throttle controller monitoring started");
 
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Throttle controller monitoring shutting down");
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    debug!("Throttle controller monitoring shutting down");
 
-                        // Restore original limit if we're currently throttled
-                        if self.is_throttled.load(Ordering::SeqCst) {
-                            let original = self.original_max_downloads.load(Ordering::SeqCst);
-                            adjuster.set_max_concurrent_downloads(original);
-                            info!("Restored max_concurrent_downloads to {} on shutdown", original);
-                        }
-                        break;
+                    // Restore original limit if we're currently throttled
+                    if self.is_throttled.load(Ordering::SeqCst) {
+                        let original = self.original_max_downloads.load(Ordering::SeqCst);
+                        adjuster.set_max_concurrent_downloads(original);
+                        info!("Restored max_concurrent_downloads to {} on shutdown", original);
                     }
-                    _ = tokio::time::sleep(check_interval) => {
-                        let queue_depth = job_queue.depth();
-                        self.check_and_update(queue_depth, adjuster.as_ref());
-                    }
+                    break;
+                }
+                _ = tokio::time::sleep(check_interval) => {
+                    let queue_depth = job_queue.depth();
+                    self.check_and_update(queue_depth, adjuster.as_ref());
                 }
             }
+        }
 
-            info!("Throttle controller monitoring stopped");
-        });
+        info!("Throttle controller monitoring stopped");
     }
 }
 

@@ -12,6 +12,8 @@ mod api;
 pub mod backend;
 pub mod error;
 mod mcp;
+mod runtime;
+mod server;
 mod services;
 
 // Internal modules kept `pub` only so the integration tests in `tests/` can

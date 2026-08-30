@@ -6,7 +6,9 @@ use pipeline_common::expand_filename_template;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use tokio::process::Child;
 use tokio::time::{Duration, Instant};
+use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{
@@ -14,11 +16,30 @@ use super::traits::{
     EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, is_disk_full_line, is_segment_start, observe_segment_event_send,
-    parse_opened_path, parse_progress,
+    OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_disk_full_line,
+    is_segment_start, observe_segment_event_send, parse_opened_path, parse_progress,
+    terminate_and_reap,
 };
-use crate::Result;
 use crate::database::models::engine::FfmpegEngineConfig;
+
+enum FfmpegProcessExit {
+    Status(Option<i32>),
+    Failed(String),
+}
+
+async fn settle_after_wait_failure(
+    child: &mut Child,
+    message: String,
+    timeout: Duration,
+) -> (FfmpegProcessExit, bool) {
+    match terminate_and_reap(child, "ffmpeg", timeout).await {
+        Ok(_) => (FfmpegProcessExit::Failed(message), true),
+        Err(cleanup_error) => (
+            FfmpegProcessExit::Failed(format!("{message}; cleanup error: {cleanup_error}")),
+            false,
+        ),
+    }
+}
 
 fn is_mp4_family(format: &str) -> bool {
     matches!(
@@ -214,10 +235,7 @@ impl DownloadEngine for FfmpegEngine {
         EngineType::Ffmpeg
     }
 
-    async fn start(
-        &self,
-        handle: Arc<DownloadHandle>,
-    ) -> std::result::Result<(), EngineStartError> {
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
         // Output directory is now prepared by
         // `DownloadManager::prepare_output_dir` before this method is called,
@@ -245,7 +263,8 @@ impl DownloadEngine for FfmpegEngine {
             .args(&args)
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
         let mut child = command.spawn().map_err(|e| {
             EngineStartError::new(
                 DownloadFailureKind::Configuration,
@@ -254,30 +273,50 @@ impl DownloadEngine for FfmpegEngine {
         })?;
 
         let mut stdin = child.stdin.take();
-        let stderr = child.stderr.take().ok_or_else(|| {
-            EngineStartError::new(
-                DownloadFailureKind::Other,
-                "Failed to capture ffmpeg stderr".to_string(),
-            )
-        })?;
+        let stderr = match child.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                let mut message = "Failed to capture ffmpeg stderr".to_string();
+                if let Err(cleanup_error) =
+                    terminate_and_reap(&mut child, "ffmpeg", PROCESS_CLEANUP_TIMEOUT).await
+                {
+                    message.push_str("; cleanup error: ");
+                    message.push_str(&cleanup_error);
+                }
+                return Err(EngineStartError::new(DownloadFailureKind::Other, message));
+            }
+        };
 
         // 2. Wait for exit (supports graceful stop on cancellation)
-        let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<Option<i32>>();
+        let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<FfmpegProcessExit>();
         let cancellation_token = handle.cancellation_token.clone();
+        let forced_settlement = CancellationToken::new();
+        let process_forced_settlement = forced_settlement.clone();
         let started_instant = Instant::now();
         let graceful_stop_timeout_secs = self.config.graceful_stop_timeout_secs;
-        tokio::spawn(async move {
+        let budget_handle = handle.clone();
+        let process_task = AbortOnDropHandle::new(tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
 
-            let graceful_stop_timeout = Duration::from_secs(graceful_stop_timeout_secs as u64);
+            // Resolved per use rather than once here: `set_stop_deadline` runs
+            // when the stop is requested, which is after this task starts, so a
+            // value captured now would still be the unclamped configured one.
+            let configured_graceful_stop = Duration::from_secs(graceful_stop_timeout_secs as u64);
+            let graceful_stop_timeout =
+                || budget_handle.graceful_stop_budget(configured_graceful_stop);
 
-            let exit_code = tokio::select! {
+            let (process_exit, cleanup_confirmed) = tokio::select! {
                 status = child.wait() => {
                     match status {
-                        Ok(exit_status) => exit_status.code(),
-                        Err(e) => {
-                            error!("Error waiting for ffmpeg process: {}", e);
-                            Some(-1)
+                        Ok(exit_status) => (FfmpegProcessExit::Status(exit_status.code()), true),
+                        Err(error) => {
+                            let message = format!("Failed to wait for ffmpeg: {error}");
+                            error!(%error, "Error waiting for ffmpeg process");
+                            settle_after_wait_failure(
+                                &mut child,
+                                message,
+                                graceful_stop_timeout(),
+                            ).await
                         }
                     }
                 }
@@ -295,22 +334,36 @@ impl DownloadEngine for FfmpegEngine {
                         }
                     }
 
-                    match tokio::time::timeout(graceful_stop_timeout, child.wait()).await {
-                        Ok(Ok(exit_status)) => exit_status.code(),
-                        Ok(Err(e)) => {
-                            error!("Error waiting for ffmpeg after stop request: {}", e);
-                            Some(-1)
+                    match tokio::time::timeout(graceful_stop_timeout(), child.wait()).await {
+                        Ok(Ok(exit_status)) => {
+                            (FfmpegProcessExit::Status(exit_status.code()), true)
+                        }
+                        Ok(Err(error)) => {
+                            let message =
+                                format!("Failed to wait for ffmpeg after stop request: {error}");
+                            error!(%error, "Error waiting for ffmpeg after stop request");
+                            settle_after_wait_failure(
+                                &mut child,
+                                message,
+                                graceful_stop_timeout(),
+                            ).await
                         }
                         Err(_) => {
                             warn!("FFmpeg did not exit in time; killing process");
-                            if let Err(e) = child.kill().await {
-                                warn!(error = %e, "Failed to kill ffmpeg process");
-                            }
-                            match child.wait().await {
-                                Ok(exit_status) => exit_status.code(),
-                                Err(e) => {
-                                    error!("Error waiting for killed ffmpeg process: {}", e);
-                                    Some(-1)
+                            match terminate_and_reap(
+                                &mut child,
+                                "ffmpeg",
+                                graceful_stop_timeout(),
+                            ).await {
+                                Ok(exit_code) => (FfmpegProcessExit::Status(exit_code), true),
+                                Err(cleanup_error) => {
+                                    error!(%cleanup_error, "Failed to stop ffmpeg process");
+                                    (
+                                        FfmpegProcessExit::Failed(format!(
+                                            "FFmpeg did not exit within the graceful stop timeout; cleanup error: {cleanup_error}"
+                                        )),
+                                        false,
+                                    )
                                 }
                             }
                         }
@@ -318,17 +371,32 @@ impl DownloadEngine for FfmpegEngine {
                 }
             };
 
-            if exit_tx.send(exit_code).is_err() {
+            if !cleanup_confirmed {
+                process_forced_settlement.cancel();
+            }
+            let cleanup_error = if cleanup_confirmed {
+                None
+            } else {
+                match &process_exit {
+                    FfmpegProcessExit::Failed(message) => Some(message.clone()),
+                    FfmpegProcessExit::Status(_) => {
+                        Some("ffmpeg process cleanup was not confirmed".to_string())
+                    }
+                }
+            };
+            if exit_tx.send(process_exit).is_err() {
                 debug!("Download exit receiver dropped before ffmpeg completed");
             }
-        });
+            (cleanup_confirmed, cleanup_error)
+        }));
 
         let event_tx = handle.event_tx.clone();
         let streamer_id = config.streamer_id.clone();
         let output_dir = config.output_dir.clone();
+        let event_forced_settlement = forced_settlement.clone();
 
         // 3. Spawn stderr reader task - waits for exit status before emitting event
-        tokio::spawn(async move {
+        let event_task = AbortOnDropHandle::new(tokio::spawn(async move {
             let mut reader = OutputRecordReader::new(stderr);
             let mut active_segment: Option<(u32, PathBuf, f64, DateTime<Utc>)> = None;
             let mut next_segment_index = 0u32;
@@ -346,6 +414,7 @@ impl DownloadEngine for FfmpegEngine {
             // a later ProcessExit path doesn't double-emit DiskFull for the
             // same incident.
             let mut disk_full_reported = false;
+            let mut cleanup_unconfirmed = false;
 
             if let Some(path) = single_output_path {
                 let index = 0u32;
@@ -366,6 +435,15 @@ impl DownloadEngine for FfmpegEngine {
 
             loop {
                 tokio::select! {
+                    biased;
+                    _ = event_forced_settlement.cancelled() => {
+                        cleanup_unconfirmed = true;
+                        warn!(
+                            streamer_id = %streamer_id,
+                            "Stopping FFmpeg stderr processing after unconfirmed process cleanup"
+                        );
+                        break;
+                    }
                     record_result = reader.next_record() => {
                         match record_result {
                             Ok(Some(line)) => {
@@ -566,8 +644,27 @@ impl DownloadEngine for FfmpegEngine {
                 }
             }
 
-            // Complete the last active segment (if any).
-            if let Some((index, path, started_media_at, started_at)) = active_segment.take() {
+            // Wait for the process owner before inspecting or publishing the
+            // final path. Stderr EOF can race process settlement, so observing
+            // EOF alone does not prove the writer has released the file.
+            let process_exit = match exit_rx.await {
+                Ok(process_exit) => process_exit,
+                Err(_) => {
+                    cleanup_unconfirmed = true;
+                    FfmpegProcessExit::Failed(
+                        "FFmpeg process waiter stopped without an exit result".to_string(),
+                    )
+                }
+            };
+            cleanup_unconfirmed |= event_forced_settlement.is_cancelled();
+
+            // A segment is durable only after the process waiter has confirmed
+            // cleanup. When containment itself failed, the child may still be
+            // writing this path, so publishing completion would race the DB and
+            // paired pipeline against a mutable file.
+            if !cleanup_unconfirmed
+                && let Some((index, path, started_media_at, started_at)) = active_segment.take()
+            {
                 let size_bytes = tokio::fs::metadata(&path)
                     .await
                     .map(|m| m.len())
@@ -599,11 +696,8 @@ impl DownloadEngine for FfmpegEngine {
                 );
             }
 
-            // Wait for exit status from process wait task (also completes on cancellation)
-            let exit_code = exit_rx.await.ok().flatten();
-
-            match exit_code {
-                Some(0) => {
+            match process_exit {
+                FfmpegProcessExit::Status(Some(0)) => {
                     // Exit code 0 - success. Subprocess exit alone is
                     // ambiguous: it could mean EOF or it could mean
                     // ffmpeg was killed cleanly. SessionLifecycle treats
@@ -622,7 +716,7 @@ impl DownloadEngine for FfmpegEngine {
                         &streamer_id,
                     );
                 }
-                Some(code) => {
+                FfmpegProcessExit::Status(Some(code)) => {
                     // If ffmpeg exited with code 228 and we didn't already
                     // detect ENOSPC from stderr, emit DiskFull as a fallback.
                     // This is the conventional ffmpeg exit code for
@@ -661,7 +755,7 @@ impl DownloadEngine for FfmpegEngine {
                         &streamer_id,
                     );
                 }
-                None => {
+                FfmpegProcessExit::Status(None) => {
                     observe_segment_event_send(
                         event_tx
                             .send(SegmentEvent::DownloadFailed {
@@ -672,16 +766,69 @@ impl DownloadEngine for FfmpegEngine {
                         &streamer_id,
                     );
                 }
+                FfmpegProcessExit::Failed(message) => {
+                    observe_segment_event_send(
+                        event_tx
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: DownloadFailureKind::ProcessExit { code: None },
+                                message,
+                            })
+                            .await,
+                        &streamer_id,
+                    );
+                }
             }
-        });
+        }));
 
-        Ok(())
-    }
+        let process_result = process_task.await;
+        let cleanup_confirmed = process_result
+            .as_ref()
+            .map(|(confirmed, _)| *confirmed)
+            .unwrap_or(false);
+        if !cleanup_confirmed {
+            forced_settlement.cancel();
+        }
 
-    async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-        let streamer_id = handle.config_snapshot().streamer_id;
-        info!("Stopping ffmpeg download for streamer {}", streamer_id);
-        handle.cancel();
+        let mut event_task = event_task;
+        let (event_result, settlement_timed_out) = if cleanup_confirmed {
+            (event_task.await, false)
+        } else {
+            match tokio::time::timeout(TASK_SETTLEMENT_TIMEOUT, &mut event_task).await {
+                Ok(result) => (result, false),
+                Err(_) => {
+                    event_task.abort();
+                    (event_task.await, true)
+                }
+            }
+        };
+
+        let mut task_errors = Vec::new();
+        match process_result {
+            Ok((true, _)) => {}
+            Ok((false, cleanup_error)) => task_errors.push(format!(
+                "process cleanup was not confirmed: {}",
+                cleanup_error.unwrap_or_else(|| "unknown cleanup failure".to_string())
+            )),
+            Err(error) => task_errors.push(format!("process waiter task failed: {error}")),
+        }
+        if settlement_timed_out {
+            task_errors.push(format!(
+                "event reader did not settle within {}s after unconfirmed process cleanup",
+                TASK_SETTLEMENT_TIMEOUT.as_secs()
+            ));
+        }
+        if let Err(error) = event_result
+            && !(settlement_timed_out && error.is_cancelled())
+        {
+            task_errors.push(format!("event reader task failed: {error}"));
+        }
+        if !task_errors.is_empty() {
+            return Err(EngineStartError::new(
+                DownloadFailureKind::Other,
+                format!("FFmpeg task settlement failed: {}", task_errors.join("; ")),
+            ));
+        }
+
         Ok(())
     }
 

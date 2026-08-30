@@ -13,8 +13,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::Result;
-
 /// Type of download engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -522,7 +520,7 @@ impl DownloadFailureKind {
     }
 }
 
-/// Error returned by [`DownloadEngine::start`] carrying a classified
+/// Error returned by [`DownloadEngine::run`] carrying a classified
 /// [`DownloadFailureKind`] so the manager can make informed retry and
 /// circuit-breaker decisions without hardcoding `Other`.
 #[derive(Debug, thiserror::Error)]
@@ -656,6 +654,14 @@ pub struct DownloadHandle {
     pub event_tx: mpsc::Sender<SegmentEvent>,
     /// Start time.
     pub started_at: DateTime<Utc>,
+    /// Absolute instant by which this download must have finished finalizing,
+    /// published by `DownloadManager::shutdown_until` before it cancels.
+    ///
+    /// `None` for an ordinary stop, where the engine is free to use its whole
+    /// configured `graceful_stop_timeout_secs`. During shutdown that timeout
+    /// can exceed the process-wide budget, so engines clamp against this
+    /// through [`Self::graceful_stop_budget`] and finish inside it.
+    stop_deadline: Arc<parking_lot::Mutex<Option<tokio::time::Instant>>>,
 }
 
 impl DownloadHandle {
@@ -673,7 +679,29 @@ impl DownloadHandle {
             cancellation_token: CancellationToken::new(),
             event_tx,
             started_at: Utc::now(),
+            stop_deadline: Arc::new(parking_lot::Mutex::new(None)),
         }
+    }
+
+    /// Record the absolute instant by which finalization must be complete.
+    ///
+    /// Called before `cancel` so an engine that reads its budget on the
+    /// cancellation branch always sees the deadline that applies to it.
+    pub fn set_stop_deadline(&self, deadline: tokio::time::Instant) {
+        *self.stop_deadline.lock() = Some(deadline);
+    }
+
+    /// The graceful-stop window this engine may actually use.
+    ///
+    /// `configured` is clamped to whatever remains before the deadline set by
+    /// [`Self::set_stop_deadline`]. Without the clamp a 60s engine default
+    /// outlives a 30s process shutdown budget, and the engine child is killed
+    /// mid-finalization instead of being asked to finish.
+    pub fn graceful_stop_budget(&self, configured: Duration) -> Duration {
+        let Some(deadline) = *self.stop_deadline.lock() else {
+            return configured;
+        };
+        configured.min(deadline.saturating_duration_since(tokio::time::Instant::now()))
     }
 
     /// Cancel the download.
@@ -728,17 +756,12 @@ pub trait DownloadEngine: Send + Sync {
     /// Get the engine type.
     fn engine_type(&self) -> EngineType;
 
-    /// Start a download.
+    /// Run a download to completion.
     ///
-    /// Returns a handle that can be used to monitor and cancel the download.
-    /// The engine should emit events through the handle's event channel.
-    async fn start(&self, handle: Arc<DownloadHandle>)
-    -> std::result::Result<(), EngineStartError>;
-
-    /// Stop a download.
-    ///
-    /// This should gracefully stop the download and clean up resources.
-    async fn stop(&self, handle: &DownloadHandle) -> Result<()>;
+    /// Cancellation is requested through the handle. The returned future must
+    /// not complete until every process and task owned by the engine has stopped
+    /// and no further events can be emitted through the handle's event channel.
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError>;
 
     /// Check if the engine is available (e.g., binary exists).
     fn is_available(&self) -> bool;
