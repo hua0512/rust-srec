@@ -8,7 +8,7 @@ use crate::database::repositories::{PipelinePresetFilters, PipelinePresetReposit
 use crate::downloader::DownloadTerminalEvent;
 use async_trait::async_trait;
 use std::cmp::Reverse;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -18,6 +18,7 @@ struct TestSessionRepository {
     segments: Mutex<HashMap<String, Vec<SessionSegmentDbModel>>>,
     outputs: Mutex<HashMap<String, Vec<MediaOutputDbModel>>>,
     list_filters: Mutex<Vec<SessionFilters>>,
+    session_complete_dispatched: Mutex<HashSet<String>>,
 }
 
 impl TestSessionRepository {
@@ -28,6 +29,7 @@ impl TestSessionRepository {
             segments: Mutex::new(HashMap::new()),
             outputs: Mutex::new(HashMap::new()),
             list_filters: Mutex::new(Vec::new()),
+            session_complete_dispatched: Mutex::new(HashSet::new()),
         }
     }
 
@@ -163,6 +165,49 @@ impl SessionRepository for TestSessionRepository {
                 .collect(),
             total,
         ))
+    }
+
+    async fn list_ended_sessions_pending_pipeline_recovery(
+        &self,
+        pagination: &Pagination,
+    ) -> Result<Vec<LiveSessionDbModel>> {
+        let segments = self.segments.lock().expect("lock poisoned");
+        let outputs = self.outputs.lock().expect("lock poisoned");
+        let dispatched = self
+            .session_complete_dispatched
+            .lock()
+            .expect("lock poisoned");
+        let mut sessions = self
+            .sessions
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|session| {
+                session.end_time.is_some()
+                    && !dispatched.contains(&session.id)
+                    && (segments
+                        .get(&session.id)
+                        .is_some_and(|segments| !segments.is_empty())
+                        || outputs
+                            .get(&session.id)
+                            .is_some_and(|outputs| !outputs.is_empty()))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        sessions.sort_by_key(|session| Reverse(session.start_time));
+        Ok(sessions
+            .into_iter()
+            .skip(pagination.offset as usize)
+            .take(pagination.limit as usize)
+            .collect())
+    }
+
+    async fn mark_session_complete_dispatched(&self, session_id: &str) -> Result<()> {
+        self.session_complete_dispatched
+            .lock()
+            .expect("lock poisoned")
+            .insert(session_id.to_string());
+        Ok(())
     }
 
     async fn get_media_output(&self, _id: &str) -> Result<MediaOutputDbModel> {
@@ -1963,6 +2008,49 @@ fn test_coordination_dag(
     dag
 }
 
+async fn configured_recovery_services(
+    streamer_id: &str,
+    segment_pipeline: Option<&DagPipelineDefinition>,
+    session_complete_pipeline: &DagPipelineDefinition,
+) -> (
+    Arc<SqlxConfigRepository>,
+    Arc<SqlxStreamerRepository>,
+    Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+) {
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES (?, ?)")
+        .bind("test-platform")
+        .bind("test")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+    let mut global = config_repo.get_global_config().await.unwrap();
+    global.pipeline = segment_pipeline.map(|pipeline| serde_json::to_string(pipeline).unwrap());
+    global.session_complete_pipeline =
+        Some(serde_json::to_string(session_complete_pipeline).unwrap());
+    config_repo.update_global_config(&global).await.unwrap();
+
+    let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool));
+    let mut streamer = crate::database::models::StreamerDbModel::new(
+        "streamer",
+        "https://example.com/streamer",
+        "test-platform",
+    );
+    streamer.id = streamer_id.to_string();
+    streamer_repo.create_streamer(&streamer).await.unwrap();
+
+    let config_service = Arc::new(ConfigService::new(
+        config_repo.clone(),
+        streamer_repo.clone(),
+    ));
+    (config_repo, streamer_repo, config_service)
+}
+
 #[tokio::test]
 async fn test_recovery_ignores_historical_ended_sessions() {
     let session_repo = Arc::new(TestSessionRepository::new(None));
@@ -2081,6 +2169,134 @@ async fn test_recovery_tracks_in_flight_ended_session_without_duplicate_dag() {
         0,
         "draining the recovered DAG must not create follow-up DAGs when no pipeline is configured"
     );
+}
+
+#[tokio::test]
+async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence() {
+    let session_id = "missing-segment-dag";
+    let streamer_id = "streamer-1";
+    let segment_pipeline = DagPipelineDefinition::new(
+        "segment",
+        vec![DagStep::new(
+            "segment-step",
+            PipelineStep::inline("noop", serde_json::json!({})),
+        )],
+    );
+    let session_pipeline = DagPipelineDefinition::new(
+        "session",
+        vec![DagStep::new(
+            "session-step",
+            PipelineStep::inline("noop", serde_json::json!({})),
+        )],
+    );
+    let (_config_repo, streamer_repo, config_service) =
+        configured_recovery_services(streamer_id, Some(&segment_pipeline), &session_pipeline).await;
+    let session_repo = Arc::new(TestSessionRepository::new(None));
+    session_repo.insert_session(test_session(
+        session_id,
+        streamer_id,
+        Some(chrono::Utc::now().timestamp_millis()),
+    ));
+    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
+        PipelineManagerConfig::default(),
+        job_repo,
+    )
+    .with_session_repository(session_repo)
+    .with_streamer_repository(streamer_repo)
+    .with_config_service(config_service)
+    .with_dag_repository(dag_repo.clone());
+
+    manager.recover_pipeline_coordination().await.unwrap();
+    manager.recover_pipeline_coordination().await.unwrap();
+
+    assert_eq!(dag_repo.create_calls(), 1);
+    let dags = dag_repo
+        .list_dags(None, Some(session_id), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(dags.len(), 1);
+    assert_eq!(dags[0].segment_source.as_deref(), Some("video"));
+    assert_eq!(dags[0].segment_index, Some(0));
+}
+
+#[tokio::test]
+async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
+    let session_id = "missing-session-complete";
+    let streamer_id = "streamer-1";
+    let session_pipeline = DagPipelineDefinition::new(
+        "session",
+        vec![DagStep::new(
+            "session-step",
+            PipelineStep::inline("noop", serde_json::json!({})),
+        )],
+    );
+    let (_config_repo, streamer_repo, config_service) =
+        configured_recovery_services(streamer_id, None, &session_pipeline).await;
+    let session_repo = Arc::new(TestSessionRepository::new(None));
+    session_repo.insert_session(test_session(
+        session_id,
+        streamer_id,
+        Some(chrono::Utc::now().timestamp_millis()),
+    ));
+    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
+        PipelineManagerConfig::default(),
+        job_repo,
+    )
+    .with_session_repository(session_repo)
+    .with_streamer_repository(streamer_repo)
+    .with_config_service(config_service)
+    .with_dag_repository(dag_repo.clone());
+
+    manager.recover_pipeline_coordination().await.unwrap();
+    manager.recover_pipeline_coordination().await.unwrap();
+
+    assert_eq!(dag_repo.create_calls(), 1);
+    let dags = dag_repo
+        .list_dags(None, Some(session_id), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(dags.len(), 1);
+    assert_eq!(dags[0].segment_source.as_deref(), Some("session_complete"));
+    assert!(dags[0].segment_index.is_none());
+}
+
+#[tokio::test]
+async fn recovered_session_complete_marker_suppresses_duplicate_creation() {
+    let session_id = "existing-session-complete";
+    let streamer_id = "streamer-1";
+    let session_repo = Arc::new(TestSessionRepository::new(None));
+    session_repo.insert_session(test_session(
+        session_id,
+        streamer_id,
+        Some(chrono::Utc::now().timestamp_millis()),
+    ));
+    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let mut session_dag = test_coordination_dag(
+        session_id,
+        streamer_id,
+        DagExecutionStatus::Processing,
+        "session_complete",
+        0,
+    );
+    session_dag.segment_index = None;
+    dag_repo.insert(session_dag);
+    let manager: PipelineManager = PipelineManager::with_repository(
+        PipelineManagerConfig::default(),
+        Arc::new(TestJobRepository::new()),
+    )
+    .with_session_repository(session_repo)
+    .with_dag_repository(dag_repo.clone());
+
+    manager.recover_pipeline_coordination().await.unwrap();
+
+    assert_eq!(dag_repo.create_calls(), 0);
 }
 
 // -----------------------------------------------------------------------

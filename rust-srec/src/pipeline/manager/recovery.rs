@@ -8,6 +8,7 @@ const COORDINATOR_RECOVERY_PAGE_LIMIT: u32 = 500;
 struct RecoveredCoordinatorSession {
     session: crate::database::models::LiveSessionDbModel,
     has_in_flight_coordination_dag: bool,
+    needs_session_complete_recovery: bool,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -76,6 +77,7 @@ where
                     RecoveredCoordinatorSession {
                         session,
                         has_in_flight_coordination_dag: false,
+                        needs_session_complete_recovery: false,
                     },
                 );
             }
@@ -84,6 +86,42 @@ where
                 break;
             }
             offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
+        }
+
+        if let Some(config_service) = &self.config_service {
+            let mut offset = 0;
+            loop {
+                let pagination = Pagination::new(COORDINATOR_RECOVERY_PAGE_LIMIT, offset);
+                let page = session_repo
+                    .list_ended_sessions_pending_pipeline_recovery(&pagination)
+                    .await?;
+                let page_len = page.len();
+                for session in page {
+                    let has_session_complete_pipeline = config_service
+                        .get_config_for_streamer(&session.streamer_id)
+                        .await
+                        .ok()
+                        .and_then(|config| config.session_complete_pipeline.clone())
+                        .is_some_and(|pipeline| !pipeline.is_empty());
+                    if has_session_complete_pipeline {
+                        sessions
+                            .entry(session.id.clone())
+                            .and_modify(|recovered| {
+                                recovered.needs_session_complete_recovery = true;
+                            })
+                            .or_insert(RecoveredCoordinatorSession {
+                                session,
+                                has_in_flight_coordination_dag: false,
+                                needs_session_complete_recovery: true,
+                            });
+                    }
+                }
+
+                if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
+                    break;
+                }
+                offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
+            }
         }
 
         if let Some(dag_repo) = &self.dag_repository {
@@ -104,6 +142,7 @@ where
                                     RecoveredCoordinatorSession {
                                         session,
                                         has_in_flight_coordination_dag: true,
+                                        needs_session_complete_recovery: false,
                                     },
                                 );
                             }
@@ -128,8 +167,9 @@ where
 
         for recovered_session in sessions.into_values() {
             let session = recovered_session.session;
-            let recover_ended_session =
-                session.end_time.is_some() && recovered_session.has_in_flight_coordination_dag;
+            let recover_ended_session = session.end_time.is_some()
+                && (recovered_session.has_in_flight_coordination_dag
+                    || recovered_session.needs_session_complete_recovery);
             let streamer_id = session.streamer_id.clone();
             let session_id = session.id.clone();
             let config = if let Some(config_service) = &self.config_service {
@@ -187,6 +227,20 @@ where
             let mut recovered_danmu_activity = coordination_dags
                 .iter()
                 .any(|dag| dag.segment_source.as_deref() == Some("danmu"));
+
+            if coordination_dags
+                .iter()
+                .any(|dag| dag.segment_source.as_deref() == Some("session_complete"))
+            {
+                commands.extend(
+                    self.pipeline_coordinator
+                        .apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                        })
+                        .await,
+                );
+            }
 
             for dag in &coordination_dags {
                 if dag.segment_source.as_deref() != Some("paired") {
@@ -257,6 +311,57 @@ where
                         })
                         .await,
                 );
+            }
+
+            // Every segment DAG state is applied before source artifacts so
+            // `recover_source_artifact` can distinguish a missing DAG from one
+            // that already completed, failed, or remains in flight.
+            for dag in &coordination_dags {
+                let Some(segment_source) = dag.segment_source.as_deref() else {
+                    continue;
+                };
+                if !matches!(segment_source, "video" | "danmu") {
+                    continue;
+                }
+                let Some(segment_index) = dag_segment_index(dag) else {
+                    continue;
+                };
+                let source = if segment_source == "video" {
+                    SourceType::Video
+                } else {
+                    SourceType::Danmu
+                };
+
+                match dag.get_status() {
+                    Some(DagExecutionStatus::Completed) => {
+                        let outputs = self.recover_leaf_outputs(dag).await;
+                        commands.extend(
+                            self.pipeline_coordinator
+                                .apply_event(
+                                    PipelineCoordinationEvent::RecoverSegmentDagCompleted {
+                                        session_id: session_id.clone(),
+                                        streamer_id: streamer_id.clone(),
+                                        segment_index,
+                                        source,
+                                        outputs,
+                                    },
+                                )
+                                .await,
+                        );
+                    }
+                    Some(DagExecutionStatus::Failed | DagExecutionStatus::Cancelled) => {
+                        commands.extend(
+                            self.pipeline_coordinator
+                                .apply_event(PipelineCoordinationEvent::RecoverSegmentDagFailed {
+                                    session_id: session_id.clone(),
+                                    segment_index,
+                                    source,
+                                })
+                                .await,
+                        );
+                    }
+                    Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing) | None => {}
+                }
             }
 
             match session_repo
@@ -334,54 +439,6 @@ where
                 ),
             }
 
-            for dag in &coordination_dags {
-                let Some(segment_source) = dag.segment_source.as_deref() else {
-                    continue;
-                };
-                if !matches!(segment_source, "video" | "danmu") {
-                    continue;
-                }
-                let Some(segment_index) = dag_segment_index(dag) else {
-                    continue;
-                };
-                let source = if segment_source == "video" {
-                    SourceType::Video
-                } else {
-                    SourceType::Danmu
-                };
-
-                match dag.get_status() {
-                    Some(DagExecutionStatus::Completed) => {
-                        let outputs = self.recover_leaf_outputs(dag).await;
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(
-                                    PipelineCoordinationEvent::RecoverSegmentDagCompleted {
-                                        session_id: session_id.clone(),
-                                        streamer_id: streamer_id.clone(),
-                                        segment_index,
-                                        source,
-                                        outputs,
-                                    },
-                                )
-                                .await,
-                        );
-                    }
-                    Some(DagExecutionStatus::Failed | DagExecutionStatus::Cancelled) => {
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(PipelineCoordinationEvent::RecoverSegmentDagFailed {
-                                    session_id: session_id.clone(),
-                                    segment_index,
-                                    source,
-                                })
-                                .await,
-                        );
-                    }
-                    Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing) | None => {}
-                }
-            }
-
             if recover_ended_session {
                 commands.extend(
                     self.pipeline_coordinator
@@ -448,7 +505,7 @@ where
                     dags.extend(page.into_iter().filter(|dag| {
                         matches!(
                             dag.segment_source.as_deref(),
-                            Some("video" | "danmu" | "paired")
+                            Some("video" | "danmu" | "paired" | "session_complete")
                         )
                     }));
 

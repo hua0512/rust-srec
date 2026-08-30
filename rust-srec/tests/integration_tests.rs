@@ -290,6 +290,58 @@ mod database_tests {
         assert!(!row.6);
     }
 
+    /// `run_migrations` only ever sees an empty `live_sessions` in tests, so the backfill in
+    /// `20260831000000_add_session_complete_dispatched` never runs against real rows there.
+    /// Replay just that statement over a populated table: every already-ended session must be
+    /// treated as decided, and a session still recording must stay pending so its
+    /// session-complete pipeline is still dispatched when it ends.
+    #[tokio::test]
+    async fn test_session_complete_dispatched_backfill_spares_active_sessions() {
+        let pool = init_pool("sqlite::memory:")
+            .await
+            .expect("Failed to create test pool");
+        run_migrations(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        sqlx::raw_sql(
+            r#"
+            INSERT INTO platform_config (id, platform_name)
+            VALUES ('platform-1', 'example_platform');
+
+            INSERT INTO streamers (id, name, url, platform_config_id, state)
+            VALUES ('streamer-1', 'Streamer', 'https://example.com/s', 'platform-1', 'NOT_LIVE');
+
+            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, session_complete_dispatched)
+            VALUES ('ended', 'streamer-1', 1000, 2000, 0);
+
+            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, session_complete_dispatched)
+            VALUES ('recording', 'streamer-1', 3000, NULL, 0);
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to seed pre-migration sessions");
+
+        sqlx::raw_sql(
+            "UPDATE live_sessions SET session_complete_dispatched = 1 WHERE end_time IS NOT NULL;",
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to replay backfill");
+
+        let dispatched: Vec<(String, i64)> =
+            sqlx::query_as("SELECT id, session_complete_dispatched FROM live_sessions ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to read back sessions");
+
+        assert_eq!(
+            dispatched,
+            vec![("ended".to_string(), 1), ("recording".to_string(), 0)]
+        );
+    }
+
     /// `run_migrations` in `setup_test_db` only ever sees an empty database, so it cannot
     /// catch that `platform_config` and `template_config` are the targets of
     /// `streamers.platform_config_id` and `streamers.template_config_id`. `init_pool` opens
