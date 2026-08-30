@@ -235,14 +235,27 @@ impl CollectionRunner {
 
             match event {
                 LoopEvent::Command(cmd) => {
-                    if self.command_closes_current_segment(cmd.as_ref())
-                        && let Some(reason) = self.drain_segment_boundary(&mut link).await?
-                    {
+                    let boundary_stop = if self.command_closes_current_segment(cmd.as_ref()) {
+                        self.drain_segment_boundary(&mut link).await?
+                    } else {
+                        None
+                    };
+
+                    // The boundary command runs even when the drain found a
+                    // stopping control event: `start_segment` is what opens the
+                    // next segment's XML and, via `finalize_current_segment`,
+                    // emits the `DanmuEvent::SegmentCompleted` that gives it a
+                    // `media_outputs` row. Skipping it would leave the video
+                    // segment without the danmu output
+                    // `PipelineCoordinator::try_trigger_paired` requires.
+                    let result = self.handle_command(cmd).await?;
+
+                    if let Some(reason) = boundary_stop {
                         self.drain_pending(&mut link).await?;
                         return Ok(reason);
                     }
 
-                    match self.handle_command(cmd).await? {
+                    match result {
                         CommandResult::Continue => {}
                         CommandResult::Stop(reason) => {
                             self.drain_pending(&mut link).await?;
@@ -315,6 +328,10 @@ impl CollectionRunner {
 
     /// Consume the items that were already queued when a segment boundary was
     /// observed, before the active writer is closed or replaced.
+    ///
+    /// A returned reason means a drained control event ends the session. The
+    /// caller must still run the boundary command before leaving the loop, so
+    /// the drain stops at that item rather than exiting on the caller's behalf.
     async fn drain_segment_boundary(
         &mut self,
         link: &mut Link,
@@ -326,18 +343,31 @@ impl CollectionRunner {
         // Snapshot the queue depth so a busy producer cannot postpone segment
         // rotation indefinitely by refilling the channel while it is drained.
         let queued = items.len();
+        let mut stop = None;
+        let mut drained = 0usize;
         for _ in 0..queued {
             let Ok(item) = items.try_recv() else {
                 break;
             };
 
             self.note_link_recovered();
+            if matches!(item, DanmuItem::Message(_)) {
+                drained += 1;
+            }
             if let CommandResult::Stop(reason) = self.handle_item(item).await? {
-                return Ok(Some(reason));
+                stop = Some(reason);
+                break;
             }
         }
 
-        Ok(None)
+        if drained > 0 {
+            debug!(
+                session_id = %self.session_id,
+                drained,
+                "danmu: kept queued messages in the segment being closed"
+            );
+        }
+        Ok(stop)
     }
 
     /// Wait for the next transport event: an item while the link is up, or the
@@ -506,6 +536,10 @@ impl CollectionRunner {
         }
     }
 
+    /// Whether `handle_command` would take `current_writer` away from the
+    /// segment it currently holds: `start_segment` finalizes any open writer
+    /// before opening the next one, while `end_segment` only acts when the id
+    /// matches. `Stop` and a closed channel leave the writer to `shutdown`.
     fn command_closes_current_segment(&self, cmd: Option<&CollectionCommand>) -> bool {
         let Some((current_segment_id, _)) = &self.current_writer else {
             return false;
@@ -912,6 +946,87 @@ mod tests {
         assert!(
             !second_xml.contains("queued-before-boundary"),
             "queued message leaked into the second segment: {second_xml}"
+        );
+    }
+
+    /// A `StreamClosed` sitting in the item queue at a segment boundary ends the
+    /// session, but the boundary command still has to run: every video segment
+    /// needs its own closed XML and `DanmuEvent::SegmentCompleted` for
+    /// `PipelineCoordinator::try_trigger_paired` to pair it.
+    #[tokio::test(start_paused = true)]
+    async fn stream_closed_at_boundary_still_rotates_segment() {
+        let (items_tx, items_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![items_rx]));
+        let event_publisher = DanmuEventPublisher::new(64);
+        let mut events = event_publisher.subscribe();
+        let (runner, items) = runner_for(provider, event_publisher).await;
+
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let first = temp_xml_path("boundary-closed-0");
+        let second = temp_xml_path("boundary-closed-1");
+        let first_start = Utc::now();
+
+        command_tx
+            .send(CollectionCommand::StartSegment {
+                segment_id: "seg-0".to_string(),
+                output_path: first.clone(),
+                start_time: first_start,
+            })
+            .await
+            .expect("start first segment");
+        items_tx
+            .send(chat("queued-before-close"))
+            .await
+            .expect("queue old-segment message");
+        items_tx
+            .send(DanmuItem::Control(DanmuControlEvent::StreamClosed {
+                message: None,
+                action: None,
+            }))
+            .await
+            .expect("queue stream close");
+        command_tx
+            .send(CollectionCommand::StartSegment {
+                segment_id: "seg-1".to_string(),
+                output_path: second.clone(),
+                start_time: first_start + chrono::Duration::seconds(5),
+            })
+            .await
+            .expect("start second segment");
+
+        let outcome = runner
+            .run(command_rx, items, CancellationToken::new())
+            .await;
+        assert_eq!(outcome.reason, CollectionExitReason::StreamClosed);
+
+        let first_xml = tokio::fs::read_to_string(&first)
+            .await
+            .expect("read first XML");
+        let second_xml = tokio::fs::read_to_string(&second)
+            .await
+            .expect("second segment XML must exist even though the stream closed");
+        let _ = tokio::fs::remove_file(&first).await;
+        let _ = tokio::fs::remove_file(&second).await;
+
+        assert!(
+            first_xml.contains("queued-before-close"),
+            "queued message must remain in the first segment: {first_xml}"
+        );
+        assert!(
+            second_xml.trim_end().ends_with("</i>"),
+            "second segment XML must be closed: {second_xml}"
+        );
+
+        let mut completed_segments = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let DanmuEvent::SegmentCompleted { segment_id, .. } = event {
+                completed_segments.push(segment_id);
+            }
+        }
+        assert_eq!(
+            completed_segments,
+            vec!["seg-0".to_string(), "seg-1".to_string()],
+            "each segment must be announced so it gets a media_outputs row"
         );
     }
 
