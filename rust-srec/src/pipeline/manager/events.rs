@@ -5,7 +5,7 @@ where
     CR: ConfigRepository + Send + Sync + 'static,
     SR: StreamerRepository + Send + Sync + 'static,
 {
-    pub async fn handle_download_event(&self, event: DownloadManagerEvent) {
+    pub async fn handle_download_event(&self, event: DownloadManagerEvent) -> Result<()> {
         match event {
             DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 streamer_id,
@@ -24,9 +24,6 @@ where
                     "Segment completed for {} (session: {}): {}",
                     streamer_id, session_id, segment_path
                 );
-                // Persist segment to database
-                self.persist_segment(&session_id, &segment_path, size_bytes)
-                    .await;
                 let session_segment = crate::database::models::SessionSegmentDbModel::new(
                     &session_id,
                     segment_index,
@@ -42,7 +39,7 @@ where
                         split_reason_details_json.clone(),
                     ),
                 );
-                self.persist_session_segment(&session_segment).await;
+                self.persist_segment(&session_segment).await?;
 
                 let merged_config = if let Some(config_service) = &self.config_service {
                     config_service
@@ -148,6 +145,7 @@ where
                 | DownloadProgressEvent::ConfigUpdateFailed { .. },
             ) => {}
         }
+        Ok(())
     }
 
     /// Handle a session lifecycle transition. Only
@@ -237,7 +235,7 @@ where
     /// Processes `DanmuEvent::SegmentCompleted` events by:
     /// 1. Persisting the danmu segment to the database as a media output
     /// 2. Creating pipeline jobs if a pipeline is configured for the streamer
-    pub async fn handle_danmu_event(&self, event: crate::danmu::DanmuEvent) {
+    pub async fn handle_danmu_event(&self, event: crate::danmu::DanmuEvent) -> Result<()> {
         use crate::danmu::DanmuControlEvent;
         use crate::danmu::DanmuEvent;
         use crate::database::models::TitleEntry;
@@ -289,7 +287,7 @@ where
                 // Apply title changes immediately so session titles stay accurate even when
                 // the monitor polling interval is long.
                 let Some(repo) = &self.session_repo else {
-                    return;
+                    return Ok(());
                 };
                 match repo.get_session(&session_id).await {
                     Ok(session) => {
@@ -360,7 +358,7 @@ where
                 // The file may have been deleted if the corresponding video segment was too small.
                 if !output_path.exists() {
                     debug!("Danmu segment file no longer exists: {}", segment_path);
-                    return;
+                    return Ok(());
                 }
 
                 let Some(segment_index) = parse_segment_index_from_danmu(&segment_id, &output_path)
@@ -371,12 +369,12 @@ where
                         path = %output_path.display(),
                         "Failed to parse danmu segment_index; skipping danmu pipeline coordination for this segment"
                     );
-                    return;
+                    return Ok(());
                 };
 
                 // Persist danmu segment to database as a media output
                 self.persist_danmu_segment(&session_id, &segment_path, message_count)
-                    .await;
+                    .await?;
 
                 let merged_config = if let Some(config_service) = &self.config_service {
                     config_service
@@ -424,6 +422,7 @@ where
             }
             _ => {}
         }
+        Ok(())
     }
 
     /// Check if session already has a thumbnail by querying media outputs.
@@ -483,44 +482,22 @@ where
     }
 
     /// Persist a downloaded segment to the database.
-    pub(super) async fn persist_segment(&self, session_id: &str, path: &str, size_bytes: u64) {
-        if let Some(repo) = &self.session_repo {
-            let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
-            let output = MediaOutputDbModel::new(
-                session_id,
-                path,
-                MediaFileType::Video, // Assuming video segments for now
-                size_bytes,
-            );
-
-            if let Err(e) = repo.create_media_output(&output).await {
-                tracing::error!(
-                    "Failed to persist segment for session {}: {}",
-                    session_id,
-                    e
-                );
-            } else {
-                debug!("Persisted segment for session {}", session_id);
-            }
-        }
-    }
-
-    pub(super) async fn persist_session_segment(
+    pub(super) async fn persist_segment(
         &self,
         segment: &crate::database::models::SessionSegmentDbModel,
-    ) {
-        let Some(repo) = &self.session_repo else {
-            return;
-        };
-
-        if let Err(e) = repo.create_session_segment(segment).await {
-            tracing::warn!(
-                session_id = %segment.session_id,
-                segment_index = segment.segment_index,
-                error = %e,
-                "Failed to persist session segment (non-fatal)"
+    ) -> Result<()> {
+        if let Some(repo) = &self.session_repo {
+            let output = MediaOutputDbModel::new(
+                &segment.session_id,
+                &segment.file_path,
+                MediaFileType::Video, // Assuming video segments for now
+                segment.size_bytes,
             );
+
+            repo.create_segment_output(&output, segment).await?;
+            debug!("Persisted segment for session {}", segment.session_id);
         }
+        Ok(())
     }
 
     /// Persist a danmu segment to the database.
@@ -529,7 +506,7 @@ where
         session_id: &str,
         path: &str,
         message_count: u64,
-    ) {
+    ) -> Result<()> {
         if let Some(repo) = &self.session_repo {
             // Get actual file size from disk
             let size_bytes = match tokio::fs::metadata(path).await {
@@ -547,19 +524,13 @@ where
             let output =
                 MediaOutputDbModel::new(session_id, path, MediaFileType::DanmuXml, size_bytes);
 
-            if let Err(e) = repo.create_media_output(&output).await {
-                tracing::error!(
-                    "Failed to persist danmu segment for session {}: {}",
-                    session_id,
-                    e
-                );
-            } else {
-                debug!(
-                    "Persisted danmu segment for session {} ({} messages, {} bytes)",
-                    session_id, message_count, size_bytes
-                );
-            }
+            repo.create_media_output(&output).await?;
+            debug!(
+                "Persisted danmu segment for session {} ({} messages, {} bytes)",
+                session_id, message_count, size_bytes
+            );
         }
+        Ok(())
     }
 
     /// Drop the `DANMU_XML` media output for `path`, if one was persisted.

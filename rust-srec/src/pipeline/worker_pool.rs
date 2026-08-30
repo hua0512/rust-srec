@@ -1005,6 +1005,49 @@ impl WorkerPool {
         info!("{} worker pool stopped", self.worker_type);
     }
 
+    /// Abort the worker tasks instead of waiting for their current job.
+    ///
+    /// [`Self::stop`] joins workers, so a job that runs up to
+    /// `WorkerPoolConfig::job_timeout_secs` holds it. Aborting drops the job
+    /// future, which kills any process the processor spawned through
+    /// `processors::utils::run_command_with_logs` (`kill_on_drop`); the join
+    /// that follows proves those drops ran. Returns 0 when a concurrent
+    /// [`Self::stop`] already owns the join set, in which case dropping that
+    /// call's join set is what aborts the workers.
+    ///
+    /// Returns the number of worker tasks that were aborted.
+    pub(crate) async fn abort(&self, deadline: tokio::time::Instant) -> usize {
+        self.cancellation_token.cancel();
+
+        let join_set = {
+            let mut tasks = self.tasks.lock();
+            tasks.take()
+        };
+        let Some(mut join_set) = join_set else {
+            return 0;
+        };
+
+        let aborted = join_set.len();
+        join_set.abort_all();
+        while !join_set.is_empty() {
+            match tokio::time::timeout_at(deadline, join_set.join_next()).await {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        "{} worker pool did not settle {} aborted tasks before the reap deadline",
+                        self.worker_type,
+                        join_set.len()
+                    );
+                    break;
+                }
+            }
+        }
+
+        info!("{} worker pool aborted", self.worker_type);
+        aborted
+    }
+
     /// Get the number of active workers.
     pub fn active_count(&self) -> usize {
         self.active_workers.load(Ordering::SeqCst)

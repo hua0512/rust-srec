@@ -162,17 +162,38 @@ pub struct SessionEventDbModel {
     pub kind: String,
     /// Milliseconds since Unix epoch (UTC).
     pub occurred_at: i64,
-    /// JSON-encoded `SessionEventPayload`. `None` only if a future kind has
-    /// no payload fields.
+    /// JSON-encoded `SessionEventPayload`. Legacy or externally repaired rows
+    /// may have no payload even for a known kind.
     pub payload: Option<String>,
 }
 
 impl From<SessionEventDbModel> for crate::session::SessionEvent {
     fn from(row: SessionEventDbModel) -> Self {
-        let payload = row
-            .payload
-            .as_deref()
-            .and_then(|raw| serde_json::from_str(raw).ok());
+        let payload = row.payload.as_deref().and_then(|raw| {
+            match serde_json::from_str::<crate::session::SessionEventPayload>(raw) {
+                Ok(payload) if payload.kind().as_str() == row.kind => Some(payload),
+                Ok(payload) => {
+                    tracing::warn!(
+                        event_id = row.id,
+                        session_id = %row.session_id,
+                        stored_kind = %row.kind,
+                        payload_kind = payload.kind().as_str(),
+                        "Session event payload discriminator does not match its row kind"
+                    );
+                    None
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        event_id = row.id,
+                        session_id = %row.session_id,
+                        kind = %row.kind,
+                        %error,
+                        "Session event payload could not be parsed; returning kind-only history"
+                    );
+                    None
+                }
+            }
+        });
         Self {
             id: row.id,
             session_id: row.session_id,

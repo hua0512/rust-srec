@@ -30,10 +30,70 @@ impl std::fmt::Display for RuntimeFailure {
     }
 }
 
+/// Holds a [`JoinSet`] taken out of `slot` for the duration of an await-heavy
+/// drain and returns it to `slot` on drop.
+///
+/// A drain cannot hold a `parking_lot::Mutex` across `JoinSet::join_next`, so
+/// it takes the whole set out. Returning the set when the drain future is
+/// dropped keeps the tasks that have not finished reachable from `&self`,
+/// which is what [`TaskSupervisor::abort_all`] and
+/// `AttemptSupervisor::abort_running` need after a caller stops awaiting a
+/// drain. Callers must fence spawning before taking the set: the slot is left
+/// empty for the lifetime of the guard, and the restore overwrites it.
+pub(crate) struct DrainedTasks<'slot, T: 'static> {
+    slot: &'slot Mutex<JoinSet<T>>,
+    tasks: Option<JoinSet<T>>,
+}
+
+impl<'slot, T: 'static> DrainedTasks<'slot, T> {
+    pub(crate) fn take_from(slot: &'slot Mutex<JoinSet<T>>) -> Self {
+        let tasks = std::mem::take(&mut *slot.lock());
+        Self {
+            slot,
+            tasks: Some(tasks),
+        }
+    }
+}
+
+impl<T: 'static> std::ops::Deref for DrainedTasks<'_, T> {
+    type Target = JoinSet<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.tasks
+            .as_ref()
+            .expect("drained tasks are only taken by Drop")
+    }
+}
+
+impl<T: 'static> std::ops::DerefMut for DrainedTasks<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.tasks
+            .as_mut()
+            .expect("drained tasks are only taken by Drop")
+    }
+}
+
+impl<T: 'static> Drop for DrainedTasks<'_, T> {
+    fn drop(&mut self) {
+        let Some(tasks) = self.tasks.take() else {
+            return;
+        };
+        if tasks.is_empty() {
+            return;
+        }
+        // Dropping `tasks` here would abort the unfinished tasks silently.
+        // Spawning is fenced before the set is taken, so the slot still holds
+        // the empty set installed by `take_from` and nothing is discarded.
+        *self.slot.lock() = tasks;
+    }
+}
+
 /// Owns background tasks spawned by the application composition root.
 ///
 /// Once shutdown starts, new tasks are rejected. Existing tasks are joined
-/// against one shared deadline and forcibly aborted if they do not finish.
+/// against one shared graceful deadline, then contained until every task has
+/// actually exited. Parent tasks are never aborted because they may own nested
+/// actors or repository work that must not outlive database shutdown.
 pub(crate) struct TaskSupervisor {
     accepting: AtomicBool,
     tasks: Mutex<JoinSet<&'static str>>,
@@ -182,16 +242,15 @@ impl TaskSupervisor {
         self.tasks.lock().len()
     }
 
-    /// Stops accepting tasks and waits for every owned task until `timeout` expires.
+    /// Stops accepting tasks, cancels the runtime, and joins every owned task.
     ///
-    /// Returns `true` when all tasks finished without exceeding the deadline.
+    /// Returns `true` when all tasks finished within the grace period. If the
+    /// period expires, this still waits for containment and returns `false`.
     pub(crate) async fn shutdown(&self, timeout: Duration) -> bool {
         self.accepting.store(false, Ordering::Release);
+        self.cancellation_token.cancel();
 
-        let mut tasks = {
-            let mut owned = self.tasks.lock();
-            std::mem::take(&mut *owned)
-        };
+        let mut tasks = DrainedTasks::take_from(&self.tasks);
         let deadline = Instant::now() + timeout;
 
         while !tasks.is_empty() {
@@ -205,14 +264,17 @@ impl TaskSupervisor {
                     let unfinished = tasks.len();
                     warn!(
                         unfinished,
-                        "Background task shutdown deadline exceeded; aborting tasks"
+                        "Background task grace period exceeded; awaiting containment"
                     );
-                    tasks.abort_all();
                     while let Some(result) = tasks.join_next().await {
-                        if let Err(error) = result
-                            && !error.is_cancelled()
-                        {
-                            warn!(error = %error, "Background task failed while being aborted");
+                        match result {
+                            Ok(name) => {
+                                debug!(task = name, "Background task stopped during containment")
+                            }
+                            Err(error) => warn!(
+                                error = %error,
+                                "Background task failed during containment"
+                            ),
                         }
                     }
                     return false;
@@ -221,6 +283,46 @@ impl TaskSupervisor {
         }
 
         true
+    }
+
+    /// Aborts every owned task instead of waiting for it to exit, then joins
+    /// the aborted tasks so their futures are dropped before returning.
+    ///
+    /// [`Self::shutdown`] deliberately waits for containment; this is the
+    /// escape hatch for a caller that has no parent supervisor to force-kill
+    /// the process and must stop waiting. Joining after the abort is what
+    /// proves each future was dropped, which is when a child process spawned
+    /// with `kill_on_drop` is killed. Tasks that do not settle by `deadline`
+    /// stay owned by this supervisor.
+    ///
+    /// Returns the number of tasks that were still running.
+    pub(crate) async fn abort_all(&self, deadline: Instant) -> usize {
+        self.accepting.store(false, Ordering::Release);
+        self.cancellation_token.cancel();
+
+        let mut tasks = DrainedTasks::take_from(&self.tasks);
+        let aborted = tasks.len();
+        tasks.abort_all();
+
+        while !tasks.is_empty() {
+            match timeout_at(deadline, tasks.join_next()).await {
+                Ok(Some(Ok(name))) => debug!(task = name, "Background task stopped after abort"),
+                Ok(Some(Err(error))) if error.is_cancelled() => {}
+                Ok(Some(Err(error))) => {
+                    warn!(error = %error, "Background task failed while being aborted")
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        unfinished = tasks.len(),
+                        "Aborted background tasks did not settle before the reap deadline"
+                    );
+                    break;
+                }
+            }
+        }
+
+        aborted
     }
 }
 
@@ -260,12 +362,47 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_aborts_tasks_after_deadline() {
-        let supervisor = TaskSupervisor::new();
-        assert!(supervisor.spawn("pending", std::future::pending()));
+    async fn shutdown_contains_tasks_after_grace_deadline() {
+        let cancellation_token = CancellationToken::new();
+        let supervisor = TaskSupervisor::with_cancellation(cancellation_token.clone());
+        assert!(supervisor.spawn("pending", async move {
+            cancellation_token.cancelled().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }));
 
         assert!(!supervisor.shutdown(std::time::Duration::ZERO).await);
         assert_eq!(supervisor.task_count(), 0);
+    }
+
+    /// `shutdown` never returns while a task ignores cancellation. A caller
+    /// that stops awaiting it must still be able to reach that task, so the
+    /// drained `JoinSet` is returned to the supervisor when the `shutdown`
+    /// future is dropped.
+    #[tokio::test]
+    async fn abort_all_reaches_tasks_left_by_a_dropped_shutdown() {
+        let supervisor = TaskSupervisor::new();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        assert!(supervisor.spawn("wedged", async move {
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        }));
+        started_rx.await.expect("task should start");
+
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(50),
+                supervisor.shutdown(Duration::ZERO),
+            )
+            .await
+            .is_err(),
+            "shutdown must keep waiting for a task that ignores cancellation"
+        );
+        assert_eq!(supervisor.task_count(), 1);
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        assert_eq!(supervisor.abort_all(deadline).await, 1);
+        assert_eq!(supervisor.task_count(), 0);
+        assert!(!supervisor.spawn("late", async {}));
     }
 
     #[tokio::test]
@@ -277,7 +414,8 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_reaps_completed_tasks() {
-        let supervisor = TaskSupervisor::new();
+        let cancellation_token = CancellationToken::new();
+        let supervisor = TaskSupervisor::with_cancellation(cancellation_token.clone());
         let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
 
         assert!(supervisor.spawn("completed", async move {
@@ -285,7 +423,10 @@ mod tests {
         }));
         completed_rx.await.expect("task should complete");
 
-        assert!(supervisor.spawn("pending", std::future::pending()));
+        assert!(supervisor.spawn("pending", async move {
+            cancellation_token.cancelled().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }));
         assert_eq!(supervisor.task_count(), 1);
 
         assert!(!supervisor.shutdown(std::time::Duration::ZERO).await);

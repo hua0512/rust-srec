@@ -197,13 +197,8 @@ impl FlvDownloader {
         // Close the pipeline input channel to signal completion
         drop(pipeline_input_tx);
 
-        // Wait for writer to complete
-        let writer_result = writer_task
-            .await
-            .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
-
         helpers::handle_writer_result(
-            writer_result,
+            writer_task,
             stream_error,
             processing_tasks,
             &self.event_tx,
@@ -276,13 +271,8 @@ impl FlvDownloader {
         // Close the channel to signal writer to finish
         drop(tx);
 
-        // Wait for writer to complete and get final stats
-        let writer_result = writer_task
-            .await
-            .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
-
         helpers::handle_writer_result(
-            writer_result,
+            writer_task,
             stream_error,
             vec![],
             &self.event_tx,

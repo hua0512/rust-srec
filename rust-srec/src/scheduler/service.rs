@@ -13,7 +13,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -60,22 +59,6 @@ const DEFAULT_OFFLINE_CHECK_INTERVAL_MS: u64 = 20_000;
 
 /// Default offline check count before switching to offline interval.
 const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
-
-/// Maximum age for entries in `Scheduler::stopped_downloads`.
-///
-/// This map is used to suppress follow-up terminal events that can arrive after a stop request.
-const STOPPED_DOWNLOADS_TTL: Duration = Duration::from_secs(60 * 60);
-
-/// Minimum interval between pruning passes over `Scheduler::stopped_downloads`.
-///
-/// Pruning is opportunistic (triggered on new cancellations) and throttled to avoid repeated
-/// O(n) scans when cancels happen in bursts.
-const STOPPED_DOWNLOADS_PRUNE_INTERVAL: Duration = Duration::from_secs(60);
-
-/// Minimum size before we consider pruning `Scheduler::stopped_downloads`.
-///
-/// Avoids an O(n) scan when the map is trivially small.
-const STOPPED_DOWNLOADS_PRUNE_MIN_SIZE: usize = 256;
 
 /// Scheduler configuration.
 #[derive(Debug, Clone)]
@@ -142,13 +125,15 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
     /// Throttle map for forwarding download heartbeats to streamer actors.
     download_heartbeat_last_sent: DashMap<String, Instant>,
-    /// Tracks downloads that were explicitly stopped/cancelled.
-    ///
-    /// Used to suppress follow-up `DownloadCompleted` / `DownloadFailed` events that can
-    /// legitimately arrive after a stop request (graceful engine finalization).
-    stopped_downloads: DashMap<String, (DownloadStopCause, i64)>,
-    /// Throttle for opportunistic pruning of `stopped_downloads` (wall clock ms).
-    stopped_downloads_last_prune_at_ms: AtomicI64,
+}
+
+fn download_end_policy_for_stop(cause: DownloadStopCause) -> DownloadEndPolicy {
+    match cause {
+        DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
+        DownloadStopCause::StreamerOffline => DownloadEndPolicy::StreamerOffline,
+        DownloadStopCause::OutOfSchedule => DownloadEndPolicy::OutOfSchedule,
+        other => DownloadEndPolicy::Stopped(other),
+    }
 }
 
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
@@ -243,8 +228,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_handles: HashMap::new(),
             download_event_rx: None,
             download_heartbeat_last_sent: DashMap::new(),
-            stopped_downloads: DashMap::new(),
-            stopped_downloads_last_prune_at_ms: AtomicI64::new(crate::database::time::now_ms()),
         }
     }
 
@@ -377,8 +360,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_handles: HashMap::new(),
             download_event_rx: None,
             download_heartbeat_last_sent: DashMap::new(),
-            stopped_downloads: DashMap::new(),
-            stopped_downloads_last_prune_at_ms: AtomicI64::new(crate::database::time::now_ms()),
         }
     }
 
@@ -1001,44 +982,19 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             }
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                 streamer_id,
-                download_id,
+                stop_cause,
                 ..
             }) => {
-                if self.stopped_downloads.remove(&download_id).is_some() {
-                    debug!(
-                        streamer_id = %streamer_id,
-                        download_id = %download_id,
-                        "Ignoring DownloadCompleted for previously-stopped download"
-                    );
-                    return;
-                }
-                // Engine clean end is *ambiguous* about platform state; the
-                // session lifecycle decides authority from `engine_signal`
-                // (HlsEndlist → authoritative end; CleanDisconnect → enters
-                // hysteresis). Routing this through `StreamerOffline` would
-                // make the actor push `process_status(Offline)` and override
-                // the in-flight hysteresis. See `DownloadEndPolicy::Completed`
-                // doc-comment.
-                send_to_actor(
-                    streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndPolicy::Completed),
-                )
-                .await;
+                let policy = stop_cause
+                    .map(download_end_policy_for_stop)
+                    .unwrap_or(DownloadEndPolicy::Completed);
+                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                 streamer_id,
-                download_id,
                 error,
                 ..
             }) => {
-                if self.stopped_downloads.remove(&download_id).is_some() {
-                    debug!(
-                        streamer_id = %streamer_id,
-                        download_id = %download_id,
-                        "Ignoring DownloadFailed for previously-stopped download"
-                    );
-                    return;
-                }
                 send_to_actor(
                     streamer_id,
                     StreamerMessage::DownloadEnded(DownloadEndPolicy::SegmentFailed(error)),
@@ -1047,54 +1003,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             }
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
                 streamer_id,
-                download_id,
                 cause,
                 ..
             }) => {
-                let now_ms = crate::database::time::now_ms();
-
-                // Engines can still emit a terminal event after a stop request
-                // (graceful finalization). Track this so we can suppress follow-ups.
-                self.stopped_downloads
-                    .insert(download_id.clone(), (cause.clone(), now_ms));
-
-                // Opportunistic TTL pruning to prevent unbounded growth if a cancelled download
-                // never produces a follow-up terminal event.
-                let interval_ms = STOPPED_DOWNLOADS_PRUNE_INTERVAL.as_millis() as i64;
-                let should_prune = self.stopped_downloads.len() >= STOPPED_DOWNLOADS_PRUNE_MIN_SIZE
-                    && {
-                        let last = self
-                            .stopped_downloads_last_prune_at_ms
-                            .load(Ordering::Relaxed);
-                        let elapsed_ms = now_ms.saturating_sub(last);
-                        if elapsed_ms >= interval_ms {
-                            self.stopped_downloads_last_prune_at_ms
-                                .compare_exchange(
-                                    last,
-                                    now_ms,
-                                    Ordering::Relaxed,
-                                    Ordering::Relaxed,
-                                )
-                                .is_ok()
-                        } else {
-                            false
-                        }
-                    };
-                if should_prune {
-                    let ttl_ms = STOPPED_DOWNLOADS_TTL.as_millis() as i64;
-                    self.stopped_downloads.retain(|_, (_, inserted_at)| {
-                        now_ms.saturating_sub(*inserted_at) <= ttl_ms
-                    });
-                }
-
-                let end_reason = match cause {
-                    DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
-                    DownloadStopCause::StreamerOffline => DownloadEndPolicy::StreamerOffline,
-                    DownloadStopCause::OutOfSchedule => DownloadEndPolicy::OutOfSchedule,
-                    other => DownloadEndPolicy::Stopped(other),
-                };
-
-                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(end_reason)).await;
+                let policy = download_end_policy_for_stop(cause);
+                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                 streamer_id,
@@ -1267,6 +1180,26 @@ mod tests {
         assert_eq!(config.check_interval_ms, 60_000);
         assert_eq!(config.offline_check_interval_ms, 20_000);
         assert_eq!(config.offline_check_count, 3);
+    }
+
+    #[test]
+    fn clean_completion_preserves_the_requested_stop_policy() {
+        assert!(matches!(
+            download_end_policy_for_stop(DownloadStopCause::User),
+            DownloadEndPolicy::UserCancelled
+        ));
+        assert!(matches!(
+            download_end_policy_for_stop(DownloadStopCause::StreamerOffline),
+            DownloadEndPolicy::StreamerOffline
+        ));
+        assert!(matches!(
+            download_end_policy_for_stop(DownloadStopCause::OutOfSchedule),
+            DownloadEndPolicy::OutOfSchedule
+        ));
+        assert!(matches!(
+            download_end_policy_for_stop(DownloadStopCause::DanmuStreamClosed),
+            DownloadEndPolicy::Stopped(DownloadStopCause::DanmuStreamClosed)
+        ));
     }
 
     #[test]

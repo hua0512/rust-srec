@@ -2150,16 +2150,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fs2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5101,7 +5091,11 @@ dependencies = [
 name = "process-utils"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "thiserror 2.0.20",
  "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5656,7 +5650,6 @@ name = "rust-srec-desktop"
 version = "0.5.1"
 dependencies = [
  "anyhow",
- "fs2",
  "hex",
  "log",
  "rand 0.10.2",

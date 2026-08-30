@@ -4,6 +4,22 @@
 
 ## Recording
 
+- **Recordings are finished properly when the app is stopped**
+
+  Stopping rust-srec — Ctrl+C, `docker compose down`, a container restart, or a system shutdown — could cut a recording short. The recording tool was sometimes killed before it finished writing, leaving the last part truncated, missing from the session's file list, or without its chat file. Shutdown now stops taking on new work first, lets the recordings that are already running finish and be saved, and only then closes down. Recording tools are now tied to the app itself as well, so none of them are left running after it exits.
+
+- **Shutdown always finishes within a time limit**
+
+  A recording that could not finish used to be able to hold shutdown open indefinitely. There is now a deadline — 30 seconds by default — after which anything still running is stopped and the app exits regardless. If your recordings routinely need longer to close, raise `RUST_SREC_SHUTDOWN_TIMEOUT_SECS`; the Docker Compose file has a matching `stop_grace_period` so Docker waits for the app rather than killing it first. A shutdown that takes longer than its grace period but still saves everything is treated as a normal exit. See [Configuration](../getting-started/configuration.md#shutdown).
+
+- **An interrupted shutdown is reported at the next startup**
+
+  If the app was killed outright, or could not finish closing in time, that is now recorded and reported the next time it starts, so an interrupted recording is visible instead of silently incomplete.
+
+- **A failed save no longer ends a running recording**
+
+  If one part of a recording could not be written to the database, the whole recording stopped. It now keeps going and the failure is reported instead.
+
 - **Fixed Unicode filenames in FFmpeg segment recording**
 
   FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale.
@@ -96,6 +112,10 @@
 
 ## Web interface
 
+- **Session timeline no longer hides events it can read**
+
+  Lifecycle entries whose stored details were missing or unreadable were listed as an unrecognised event. A known entry — a session starting or ending — now shows with its proper label and a note that further details are unavailable.
+
 - **Sidebar user menu**
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
@@ -117,6 +137,14 @@
   The web interface and the documentation site are now built with Node.js 26. If you build rust-srec from source, update Node before running the frontend — the repository now ships an `.nvmrc`, so version managers pick the right one for you. Docker and pre-built binary installations are unaffected.
 
 ## Desktop
+
+- **Closing the app finishes the recording first**
+
+  Quitting the desktop app while a stream was recording could leave the recording tool running in the background or cut the file short. The app now waits for the recording to be saved before it exits, up to a one-minute limit.
+
+- **Only one instance can use a recording database**
+
+  The desktop app and a separately-run rust-srec server could both open the same database at the same time, each unaware of the other, and record the same streamers twice. Whichever starts second now stops instead.
 
 - **Fixed SQLite lock on first launch**
 

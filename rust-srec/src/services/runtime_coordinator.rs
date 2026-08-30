@@ -124,18 +124,14 @@ impl RuntimeCoordinator {
             .collect();
 
         for download in downloads {
-            match self
-                .download_manager
-                .stop_download_with_reason(
-                    &download.id,
-                    crate::downloader::DownloadStopCause::StreamerDisabled,
-                )
-                .await
-            {
+            match self.download_manager.request_stop_download(
+                &download.id,
+                crate::downloader::DownloadStopCause::StreamerDisabled,
+            ) {
                 Ok(()) => info!(
                     download_id = %download.id,
                     streamer_id,
-                    "Cancelled download for disabled streamer"
+                    "Requested download stop for disabled streamer"
                 ),
                 Err(error) => warn!(
                     download_id = %download.id,
@@ -254,13 +250,10 @@ impl RuntimeCoordinator {
                 }
 
                 if let Some(download) = self.download_manager.get_download_by_streamer(&streamer_id)
-                    && let Err(error) = self
-                        .download_manager
-                        .stop_download_with_reason(
-                            &download.id,
-                            crate::downloader::DownloadStopCause::StreamerOffline,
-                        )
-                        .await
+                    && let Err(error) = self.download_manager.request_stop_download(
+                        &download.id,
+                        crate::downloader::DownloadStopCause::StreamerOffline,
+                    )
                 {
                     warn!(
                         streamer_id,
@@ -299,13 +292,10 @@ impl RuntimeCoordinator {
                 }
 
                 if let Some(download) = self.download_manager.get_download_by_streamer(&streamer_id)
-                    && let Err(error) = self
-                        .download_manager
-                        .stop_download_with_reason(
-                            &download.id,
-                            crate::downloader::DownloadStopCause::OutOfSchedule,
-                        )
-                        .await
+                    && let Err(error) = self.download_manager.request_stop_download(
+                        &download.id,
+                        crate::downloader::DownloadStopCause::OutOfSchedule,
+                    )
                 {
                     warn!(
                         streamer_id,

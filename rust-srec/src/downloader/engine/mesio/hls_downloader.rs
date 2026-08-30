@@ -124,7 +124,23 @@ impl HlsDownloader {
 
         // Peek at the first segment to determine file extension
         let first_segment = loop {
-            match hls_stream.next().await {
+            let next = tokio::select! {
+                biased;
+                _ = self.cancellation_token.cancelled() => {
+                    return Err(EngineStartError::new(
+                        DownloadFailureKind::Other,
+                        "HLS download cancelled before the first segment",
+                    ));
+                }
+                _ = token.cancelled() => {
+                    return Err(EngineStartError::new(
+                        DownloadFailureKind::Other,
+                        "HLS download cancelled before the first segment",
+                    ));
+                }
+                next = hls_stream.next() => next,
+            };
+            match next {
                 Some(Ok(HlsData::EndMarker(_))) => {
                     debug!("Skipping leading HLS EndMarker before first data segment");
                     continue;
@@ -251,14 +267,6 @@ impl HlsDownloader {
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
 
-        // Send first segment to pipeline input
-        if pipeline_input_tx.send(Ok(first_segment)).await.is_err() {
-            return Err(EngineStartError::new(
-                DownloadFailureKind::Other,
-                "Pipeline input channel closed unexpectedly",
-            ));
-        }
-
         // Tap each HLS item to detect the authoritative EXT-X-ENDLIST marker
         // emitted by mesio (see `crates/mesio/src/hls/playlist.rs` ENDLIST
         // path). When set, the engine signal escalates from CleanDisconnect
@@ -267,7 +275,14 @@ impl HlsDownloader {
         let saw_endlist = Arc::new(AtomicBool::new(false));
         let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
 
-        // Consume the rest of the HLS stream and send to pipeline
+        // Feed the peeked segment through the same cancellation-aware path as
+        // the rest of the stream. This prevents a full pipeline input from
+        // pinning shutdown before the normal settlement path can join writers.
+        let hls_stream = futures::stream::once(std::future::ready(Ok::<
+            HlsData,
+            mesio::hls::HlsDownloaderError,
+        >(first_segment)))
+        .chain(hls_stream);
         let stream_error = helpers::consume_stream(
             hls_stream,
             &pipeline_input_tx,
@@ -289,11 +304,6 @@ impl HlsDownloader {
         // Close the pipeline input channel to signal completion
         drop(pipeline_input_tx);
 
-        // Wait for writer to complete
-        let writer_result = writer_task
-            .await
-            .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
-
         let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
             crate::downloader::EngineEndSignal::HlsEndlist
         } else {
@@ -301,7 +311,7 @@ impl HlsDownloader {
         };
 
         helpers::handle_writer_result(
-            writer_result,
+            writer_task,
             stream_error,
             processing_tasks,
             &self.event_tx,
@@ -360,20 +370,18 @@ impl HlsDownloader {
         // Spawn blocking writer task
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
 
-        // Send first segment to writer
-        if tx.send(Ok(first_segment)).await.is_err() {
-            return Err(EngineStartError::new(
-                DownloadFailureKind::Other,
-                "Writer channel closed unexpectedly",
-            ));
-        }
-
         // See `download_with_pipeline` for the rationale; raw mode uses the
         // same EXT-X-ENDLIST observer.
         let saw_endlist = Arc::new(AtomicBool::new(false));
         let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
 
-        // Consume the rest of the HLS stream and send to writer
+        // Consume the full stream, including the peeked segment, through the
+        // cancellation-aware forwarding path.
+        let hls_stream = futures::stream::once(std::future::ready(Ok::<
+            HlsData,
+            mesio::hls::HlsDownloaderError,
+        >(first_segment)))
+        .chain(hls_stream);
         let stream_error = helpers::consume_stream(
             hls_stream,
             &tx,
@@ -395,11 +403,6 @@ impl HlsDownloader {
         // Close the channel to signal writer to finish
         drop(tx);
 
-        // Wait for writer to complete and get final stats
-        let writer_result = writer_task
-            .await
-            .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
-
         let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
             crate::downloader::EngineEndSignal::HlsEndlist
         } else {
@@ -407,7 +410,7 @@ impl HlsDownloader {
         };
 
         helpers::handle_writer_result(
-            writer_result,
+            writer_task,
             stream_error,
             vec![],
             &self.event_tx,

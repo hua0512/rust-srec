@@ -24,7 +24,9 @@ use crate::database::repositories::{
     session::SqlxSessionRepository,
     streamer::SqlxStreamerRepository,
 };
-use crate::downloader::{DEFAULT_GATE_COOLDOWN_SECS, DownloadManager, OutputRootGate};
+use crate::downloader::{
+    DEFAULT_GATE_COOLDOWN_SECS, DownloadManager, OutputRootGate, download_coordination_channel,
+};
 use crate::metrics::{HealthChecker, MetricsCollector};
 use crate::monitor::StreamMonitor;
 use crate::notification::web_push::WebPushService;
@@ -189,7 +191,7 @@ impl ServiceContainer {
             global_config.offline_check_delay_ms as u64,
         ));
         let (required_transition_sender, required_transition_receiver) =
-            tokio::sync::mpsc::unbounded_channel();
+            crate::session::session_transition_channel();
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(
@@ -201,7 +203,7 @@ impl ServiceContainer {
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
             )
-            .with_required_transition_sender(required_transition_sender)
+            .with_required_transition_sender(required_transition_sender.clone())
             .with_hysteresis_resolver(hysteresis_resolver)
             .with_event_repo(session_event_repo.clone()),
         );
@@ -249,11 +251,11 @@ impl ServiceContainer {
         let mut effective_download_config = download_config;
         effective_download_config.max_concurrent_downloads =
             (global_config.max_concurrent_downloads as i64).max(1) as usize;
-        let (required_terminal_sender, required_terminal_receiver) =
-            tokio::sync::mpsc::unbounded_channel();
+        let (download_coordination_sender, download_coordination_receiver) =
+            download_coordination_channel();
         let download_manager = Arc::new(
             DownloadManager::with_config(effective_download_config)
-                .with_required_terminal_sender(required_terminal_sender)
+                .with_coordination_sender(download_coordination_sender)
                 .with_config_repo(config_repo.clone()),
         );
         download_manager
@@ -513,8 +515,11 @@ impl ServiceContainer {
             pipeline_manager,
             monitor_event_broadcaster,
             monitor_event_receiver: parking_lot::Mutex::new(Some(required_monitor_event_receiver)),
-            download_terminal_receiver: parking_lot::Mutex::new(Some(required_terminal_receiver)),
+            download_coordination_receiver: parking_lot::Mutex::new(Some(
+                download_coordination_receiver,
+            )),
             session_lifecycle,
+            session_transition_sender: required_transition_sender,
             session_transition_receiver: parking_lot::Mutex::new(Some(
                 required_transition_receiver,
             )),

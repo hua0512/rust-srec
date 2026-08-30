@@ -182,14 +182,19 @@ pub(super) async fn run_live_download_pipeline(
                 retry_after_secs,
                 "Ignoring StreamerLive while temporarily disabled"
             );
-            download_manager.emit_rejected(
-                streamer_id.clone(),
-                streamer_name.clone(),
-                session_id.clone(),
-                "streamer temporarily disabled (error backoff)".to_string(),
-                Some(retry_after_secs),
-                crate::downloader::DownloadRejectedKind::StreamerBackoff,
-            );
+            if let Err(error) = download_manager
+                .emit_rejected(
+                    streamer_id.clone(),
+                    streamer_name.clone(),
+                    session_id.clone(),
+                    "streamer temporarily disabled (error backoff)".to_string(),
+                    Some(retry_after_secs),
+                    crate::downloader::DownloadRejectedKind::StreamerBackoff,
+                )
+                .await
+            {
+                warn!(%error, "Failed to publish download rejection");
+            }
             return;
         }
     }

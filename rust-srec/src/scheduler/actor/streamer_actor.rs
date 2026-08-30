@@ -1077,7 +1077,7 @@ impl StreamerActor {
     ///
     /// **Returns fatal error to stop the actor entirely.** This handles **Scenario 2: Manual Download Cancellation**:
     /// - User cancels a download via UI/API (without disabling the streamer)
-    /// - Download manager sends DownloadCancelled event
+    /// - Download manager emits one terminal outcome carrying the User stop cause
     /// - Actor is still active and receives this message
     /// - Actor ends the session by calling `process_status(Offline)`
     /// - Actor then stops itself with a fatal error
@@ -1086,7 +1086,7 @@ impl StreamerActor {
     /// `ServiceContainer::handle_streamer_disabled`:
     /// - User disables/deletes a streamer
     /// - Container explicitly ends the session BEFORE removing the actor
-    /// - Actor is removed and won't receive this DownloadCancelled event
+    /// - Actor is removed and won't receive the terminal stop outcome
     ///
     /// Both paths are necessary: this path handles cancellation when the actor is still
     /// active, while the container path handles cleanup when the actor is being removed.

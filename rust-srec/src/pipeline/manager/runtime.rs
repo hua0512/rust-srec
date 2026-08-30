@@ -7,6 +7,21 @@ where
 {
     /// Start the pipeline manager.
     pub fn start(self: Arc<Self>) {
+        let mut runtime = self.runtime.lock();
+        match runtime.state {
+            PipelineRuntimeState::NotStarted => {
+                runtime.state = PipelineRuntimeState::Running;
+            }
+            PipelineRuntimeState::Running => {
+                warn!("Pipeline Manager is already started");
+                return;
+            }
+            PipelineRuntimeState::Stopped => {
+                warn!("Pipeline Manager cannot restart after shutdown");
+                return;
+            }
+        }
+
         info!("Starting Pipeline Manager");
 
         // Get CPU and IO processors
@@ -37,27 +52,35 @@ where
         // Use a bounded channel for DAG completion notifications to avoid unbounded memory growth
         // if completions outpace handling (apply backpressure instead).
         let (dag_notify_tx, mut dag_notify_rx) = mpsc::channel::<DagCompletionInfo>(1024);
-        let manager = self.clone();
-        tokio::spawn(async move {
+        let manager = Arc::downgrade(&self);
+        runtime.tasks.spawn(async move {
             while let Some(completion) = dag_notify_rx.recv().await {
+                let Some(manager) = manager.upgrade() else {
+                    break;
+                };
                 manager.handle_dag_completion(completion).await;
             }
+            "DAG completion handler"
         });
 
         let coordinator = self.pipeline_coordinator.clone();
         let coordinator_token = self.cancellation_token.clone();
-        tokio::spawn(async move {
+        runtime.tasks.spawn(async move {
             coordinator.start(coordinator_token).await;
+            "pipeline coordinator"
         });
 
-        let cleanup_manager = self.clone();
+        let cleanup_manager = Arc::downgrade(&self);
         let cleanup_token = self.cancellation_token.clone();
-        tokio::spawn(async move {
+        runtime.tasks.spawn(async move {
             let interval = std::time::Duration::from_secs(SESSION_COMPLETE_CLEANUP_INTERVAL_SECS);
             loop {
                 tokio::select! {
                     _ = cleanup_token.cancelled() => break,
                     _ = tokio::time::sleep(interval) => {
+                        let Some(cleanup_manager) = cleanup_manager.upgrade() else {
+                            break;
+                        };
                         let now = std::time::Instant::now();
                         cleanup_manager
                             .pipeline_coordinator
@@ -94,6 +117,7 @@ where
                     }
                 }
             }
+            "pipeline stale-state cleanup"
         });
 
         // Start worker pools with optional DAG scheduler
@@ -116,11 +140,16 @@ where
             && throttle_controller.is_enabled()
         {
             info!("Starting throttle controller monitoring");
-            throttle_controller.clone().start_monitoring(
-                self.job_queue.clone(),
-                adjuster.clone(),
-                self.cancellation_token.clone(),
-            );
+            let throttle_controller = throttle_controller.clone();
+            let job_queue = self.job_queue.clone();
+            let adjuster = adjuster.clone();
+            let cancellation_token = self.cancellation_token.clone();
+            runtime.tasks.spawn(async move {
+                throttle_controller
+                    .run_monitoring(job_queue, adjuster, cancellation_token)
+                    .await;
+                "pipeline throttle controller"
+            });
         }
 
         info!("Pipeline Manager started");
@@ -129,11 +158,70 @@ where
         info!("Stopping Pipeline Manager");
         self.cancellation_token.cancel();
 
+        let mut runtime_tasks = {
+            let mut runtime = self.runtime.lock();
+            runtime.state = PipelineRuntimeState::Stopped;
+            std::mem::take(&mut runtime.tasks)
+        };
+
         // Stop worker pools
         self.cpu_pool.stop().await;
         self.io_pool.stop().await;
 
+        // Workers are the only producers of DAG completion and progress
+        // updates. Once they have joined, the consumers can drain/stop without
+        // racing a late repository write.
+        self.job_queue.stop_progress_aggregator().await;
+
+        while let Some(result) = runtime_tasks.join_next().await {
+            match result {
+                Ok(task) => debug!(task, "Pipeline runtime task stopped"),
+                Err(error) => warn!(%error, "Pipeline runtime task failed while stopping"),
+            }
+        }
+
         info!("Pipeline Manager stopped");
+    }
+
+    /// Abort the worker pools and runtime tasks instead of joining them.
+    ///
+    /// [`Self::stop`] waits for in-flight jobs through
+    /// `WorkerPool::stop`, which is bounded only by
+    /// `WorkerPoolConfig::job_timeout_secs`. Callers that must stop waiting use
+    /// this so each job future is dropped and any process a processor spawned
+    /// with `kill_on_drop` is killed. Tasks that do not settle by `deadline`
+    /// are left aborted but unjoined.
+    ///
+    /// Returns the number of aborted tasks.
+    pub(crate) async fn abort(&self, deadline: tokio::time::Instant) -> usize {
+        warn!("Aborting Pipeline Manager");
+        self.cancellation_token.cancel();
+
+        let mut runtime_tasks = {
+            let mut runtime = self.runtime.lock();
+            runtime.state = PipelineRuntimeState::Stopped;
+            std::mem::take(&mut runtime.tasks)
+        };
+
+        let mut aborted = self.cpu_pool.abort(deadline).await + self.io_pool.abort(deadline).await;
+
+        aborted += runtime_tasks.len();
+        runtime_tasks.abort_all();
+        while !runtime_tasks.is_empty() {
+            match tokio::time::timeout_at(deadline, runtime_tasks.join_next()).await {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        unfinished = runtime_tasks.len(),
+                        "Aborted pipeline runtime tasks did not settle before the reap deadline"
+                    );
+                    break;
+                }
+            }
+        }
+
+        aborted
     }
 
     /// Subscribe to pipeline events.

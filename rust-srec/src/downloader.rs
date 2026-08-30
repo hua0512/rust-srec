@@ -28,9 +28,10 @@ pub use output_root_gate::{
 
 pub use manager::{
     ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
-    DownloadProgressEvent, DownloadRejectedKind, DownloadStopCause, DownloadTerminalEvent,
-    EngineEndSignal, EngineHandle, PreflightRequest,
+    DownloadProgressEvent, DownloadRejectedKind, DownloadShutdownReport, DownloadStopCause,
+    DownloadTerminalEvent, EngineEndSignal, EngineHandle, PreflightRequest,
 };
+pub(crate) use manager::{DownloadCoordinationReceiver, download_coordination_channel};
 pub use queue::{
     AcquireError, AcquireRequest, ActiveSlot, DownloadQueue, PendingEntry, Priority, SlotGuard,
 };

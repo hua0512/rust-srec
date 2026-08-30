@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::time::Instant;
 
-use fs2::FileExt;
 use rust_srec::backend;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
@@ -24,6 +23,17 @@ use desktop_notifications::{
     DesktopNotificationConfig, load_or_create_desktop_notifications_config,
     register_desktop_notifications_ipc, should_deliver_desktop_notification,
 };
+
+/// Cooperative drain budget handed to `ServiceContainer::shutdown_with_hard_cap`.
+const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
+
+/// Wall-clock cap on the whole in-process drain.
+///
+/// The desktop hosts the backend inside its own process, so nothing outside it
+/// can force-kill a wedged engine or pipeline job. Past this cap
+/// `shutdown_with_hard_cap` aborts the remaining tasks — which is what kills
+/// their ffmpeg/streamlink children — so `app_handle.exit` cannot orphan them.
+const SHUTDOWN_HARD_CAP: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Serialize)]
 struct BootProgressPayload {
@@ -237,6 +247,18 @@ fn toggle_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Connection URL for the desktop's SQLite database.
+///
+/// `RuntimeLease::acquire_for_database` derives the ownership lock from this,
+/// so the setup hook and the backend boot must build it the same way or the
+/// lease would guard a different file than the one actually opened.
+fn desktop_database_url(data_dir: &Path) -> String {
+    format!(
+        "sqlite:{}?mode=rwc",
+        data_dir.join("srec.db").to_string_lossy()
+    )
+}
+
 fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
     let secret_path = data_dir.join("jwt_secret");
 
@@ -278,7 +300,7 @@ fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
 struct DesktopBackendState {
     container: std::sync::Mutex<Option<Arc<backend::ServiceContainer>>>,
     log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
-    _instance_lock: std::fs::File,
+    _instance_lock: backend::RuntimeLease,
     shutdown_started: AtomicBool,
 
     main_window_centered: AtomicBool,
@@ -301,7 +323,7 @@ struct LaunchArgsPayload {
 
 impl DesktopBackendState {
     fn new(
-        instance_lock: std::fs::File,
+        instance_lock: backend::RuntimeLease,
         initial_launch: LaunchArgsPayload,
         data_dir: PathBuf,
         log_dir: PathBuf,
@@ -536,8 +558,7 @@ async fn run_desktop_backend_init(
 
     emit_boot_progress(&app_handle, "Initializing...", 0.1);
 
-    let db_path = data_dir.join("srec.db");
-    let database_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+    let database_url = desktop_database_url(&data_dir);
     // Parallelize logging init and database pool creation for faster startup.
     let log_and_pool_start = Instant::now();
     let log_dir_str_clone = log_dir_str.clone();
@@ -797,7 +818,10 @@ async fn run_desktop_backend_init(
                 return;
             }
 
-            if let Err(error) = container.shutdown().await {
+            if let Err(error) = container
+                .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
+                .await
+            {
                 log::error!("Error during backend failure shutdown: {}", error);
             }
             app_handle.exit(1);
@@ -1080,20 +1104,23 @@ pub fn run() {
             // Defense-in-depth: ensure we never start a 2nd backend instance against the same
             // local SQLite DB, even if the single-instance plugin doesn't exit early on some
             // platforms/configurations.
-            let lock_path = data_dir.join("app.lock");
-            let lock_file = OpenOptions::new()
-                .create(true)
-                .read(true)
-                .write(true)
-                .truncate(false)
-                .open(&lock_path)?;
-            if lock_file.try_lock_exclusive().is_err() {
-                app.handle().exit(0);
-                return Ok(());
-            }
+            //
+            // Keyed on the database rather than on this app's data directory,
+            // so a standalone `rust-srec` server pointed at the same file is
+            // excluded too — it acquires the same lease before it starts.
+            let instance_lock =
+                match backend::RuntimeLease::acquire_for_database(&desktop_database_url(&data_dir))
+                {
+                    Ok(lease) => lease,
+                    Err(error) => {
+                        log::warn!("Another runtime already owns this database: {error}");
+                        app.handle().exit(0);
+                        return Ok(());
+                    }
+                };
 
             app.manage(DesktopBackendState::new(
-                lock_file,
+                instance_lock,
                 LaunchArgsPayload {
                     args: launch_args.clone(),
                     cwd: launch_cwd.clone(),
@@ -1316,7 +1343,10 @@ pub fn run() {
             if let Some(container) = state.backend() {
                 let app_handle = app_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = container.shutdown().await {
+                    if let Err(e) = container
+                        .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
+                        .await
+                    {
                         log::error!("Error during shutdown: {}", e);
                     }
                     app_handle.exit(0);

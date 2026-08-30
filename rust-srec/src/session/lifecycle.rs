@@ -26,12 +26,15 @@
 //! [`crate::downloader::DownloadManager`] broadcast channels.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
-use tokio::sync::{broadcast, mpsc};
+use parking_lot::Mutex;
+use tokio::sync::{RwLock, RwLockReadGuard, broadcast};
+use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
 use crate::Result;
@@ -50,7 +53,8 @@ use crate::session::classifier::{EngineKind, OfflineClassifier};
 use crate::session::events::SessionEventPayload;
 use crate::session::hysteresis::{HysteresisConfig, HysteresisHandle};
 use crate::session::state::{SessionState, TerminalCause};
-use crate::session::transition::SessionTransition;
+use crate::session::transition::{SessionTransition, SessionTransitionSender};
+use crate::utils::task_supervisor::DrainedTasks;
 
 /// Default broadcast capacity for [`SessionTransition`] subscribers.
 pub const DEFAULT_TRANSITION_CHANNEL_CAPACITY: usize = 256;
@@ -126,7 +130,29 @@ pub struct SessionLifecycle {
     /// the audit log.
     event_repo: Option<Arc<dyn SessionEventRepository>>,
     transition_tx: broadcast::Sender<SessionTransition>,
-    required_transition_tx: Option<mpsc::UnboundedSender<SessionTransition>>,
+    required_transition_tx: Option<SessionTransitionSender>,
+    /// Admission fence for every externally-triggered lifecycle mutation.
+    /// Shutdown takes the write side before closing the required transition
+    /// channel, which guarantees that no admitted operation can publish
+    /// behind the channel's shutdown marker.
+    operation_gate: RwLock<()>,
+    accepting_operations: AtomicBool,
+    hysteresis_tasks: Mutex<JoinSet<()>>,
+    hysteresis_shutdown: AtomicBool,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct SessionLifecycleShutdownReport {
+    /// Containment failures: a hysteresis timer task panicked or could not be
+    /// joined, so `shutdown_until` cannot prove it stopped writing. Fatal.
+    pub(crate) failures: Vec<String>,
+    /// Soft-budget overruns that were nevertheless contained to completion.
+    /// Reported so operators can raise the budget, never fatal — a drain that
+    /// took longer than its grace period still finalized everything.
+    pub(crate) overruns: Vec<String>,
+    /// Timers that were still settling when the graceful deadline elapsed.
+    /// They were already cancelled and were joined to completion afterwards.
+    pub(crate) forced_timer_count: usize,
 }
 
 /// Closure type for resolving a per-streamer hysteresis window.
@@ -167,12 +193,149 @@ impl SessionLifecycle {
             event_repo: None,
             transition_tx,
             required_transition_tx: None,
+            operation_gate: RwLock::new(()),
+            accepting_operations: AtomicBool::new(true),
+            hysteresis_tasks: Mutex::new(JoinSet::new()),
+            hysteresis_shutdown: AtomicBool::new(false),
         }
+    }
+
+    /// Stop admitting lifecycle mutations, drain every admitted operation,
+    /// then cancel and join the owned hysteresis timers. The deadline bounds
+    /// the graceful phase; timer cleanup remains owned and is joined after it.
+    /// Once this returns, no lifecycle producer can write session state or
+    /// publish a transition — the return value only classifies how that was
+    /// reached, so overruns land in `overruns` and never in `failures`.
+    pub(crate) async fn shutdown_until(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> SessionLifecycleShutdownReport {
+        self.accepting_operations.store(false, Ordering::Release);
+
+        let (operation_fence, operation_deadline_exceeded) =
+            match tokio::time::timeout_at(deadline, self.operation_gate.write()).await {
+                Ok(guard) => (guard, false),
+                Err(_) => {
+                    self.hysteresis_shutdown.store(true, Ordering::Release);
+                    for handle in self.hysteresis.iter() {
+                        handle.cancel();
+                    }
+                    // An admitted operation may still reach timer admission or
+                    // publish a required transition. Keep ownership and wait for
+                    // it before the transition shutdown marker is allowed to run.
+                    warn!(
+                        "Session lifecycle operation grace period exceeded; awaiting containment"
+                    );
+                    (self.operation_gate.write().await, true)
+                }
+            };
+
+        self.hysteresis_shutdown.store(true, Ordering::Release);
+        for handle in self.hysteresis.iter() {
+            handle.cancel();
+        }
+
+        // Returned to `hysteresis_tasks` if this future is dropped mid-join, so
+        // a caller that stops awaiting the drain leaves the timers joinable
+        // instead of aborting them.
+        let mut tasks = DrainedTasks::take_from(&self.hysteresis_tasks);
+        drop(operation_fence);
+        let mut failures = Vec::new();
+        let mut overruns = Vec::new();
+        if operation_deadline_exceeded {
+            overruns.push(
+                "graceful session lifecycle operation deadline exceeded; admitted operations were contained to completion"
+                    .to_string(),
+            );
+        }
+        let mut forced_timer_count = 0;
+        let mut graceful_deadline_exceeded = false;
+        loop {
+            let result = if graceful_deadline_exceeded {
+                tasks.join_next().await
+            } else {
+                match tokio::time::timeout_at(deadline, tasks.join_next()).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        forced_timer_count = tasks.len();
+                        overruns.push(format!(
+                            "graceful hysteresis timer deadline exceeded; drained {forced_timer_count} cancelled timers to completion"
+                        ));
+                        graceful_deadline_exceeded = true;
+                        continue;
+                    }
+                }
+            };
+
+            match result {
+                Some(Ok(())) => {}
+                Some(Err(error)) => failures.push(format!(
+                    "hysteresis timer task failed during shutdown: {error}"
+                )),
+                None => {
+                    return SessionLifecycleShutdownReport {
+                        failures,
+                        overruns,
+                        forced_timer_count,
+                    };
+                }
+            }
+        }
+    }
+
+    /// Cancel and abort the owned hysteresis timers instead of joining them.
+    ///
+    /// [`Self::shutdown_until`] keeps joining past its deadline, so a timer
+    /// task that never returns holds it pending. Callers with no parent
+    /// process to force-kill them use this.
+    ///
+    /// Returns the number of timer tasks that were still running.
+    pub(crate) async fn abort_timers(&self, deadline: tokio::time::Instant) -> usize {
+        self.accepting_operations.store(false, Ordering::Release);
+        self.hysteresis_shutdown.store(true, Ordering::Release);
+        for handle in self.hysteresis.iter() {
+            handle.cancel();
+        }
+
+        let mut tasks = DrainedTasks::take_from(&self.hysteresis_tasks);
+        let aborted = tasks.len();
+        tasks.abort_all();
+        while !tasks.is_empty() {
+            match tokio::time::timeout_at(deadline, tasks.join_next()).await {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        unfinished = tasks.len(),
+                        "Aborted hysteresis timers did not settle before the reap deadline"
+                    );
+                    break;
+                }
+            }
+        }
+
+        aborted
+    }
+
+    async fn begin_operation(&self) -> Result<RwLockReadGuard<'_, ()>> {
+        if !self.accepting_operations.load(Ordering::Acquire) {
+            return Err(crate::Error::Other(
+                "session lifecycle is shutting down".to_string(),
+            ));
+        }
+
+        let guard = self.operation_gate.read().await;
+        if !self.accepting_operations.load(Ordering::Acquire) {
+            return Err(crate::Error::Other(
+                "session lifecycle is shutting down".to_string(),
+            ));
+        }
+        Ok(guard)
     }
 
     pub(crate) fn with_required_transition_sender(
         mut self,
-        sender: mpsc::UnboundedSender<SessionTransition>,
+        sender: SessionTransitionSender,
     ) -> Self {
         self.required_transition_tx = Some(sender);
         self
@@ -229,10 +392,14 @@ impl SessionLifecycle {
 
     fn publish_transition(&self, transition: SessionTransition) {
         if let Some(required_tx) = &self.required_transition_tx
-            && required_tx.send(transition.clone()).is_err()
+            && !required_tx.publish(transition.clone())
         {
             warn!("Required session transition consumer is unavailable");
         }
+        // The broadcast half feeds SSE and notification observers, which are a
+        // live view rather than a record of what was applied. They are notified
+        // even when the required consumer refused, so a coordination failure
+        // does not also freeze every subscriber.
         let _ = self.transition_tx.send(transition);
     }
 
@@ -256,13 +423,26 @@ impl SessionLifecycle {
             return;
         };
         let kind = payload.kind().as_str();
+        let encoded_payload = match serde_json::to_string(&payload) {
+            Ok(encoded) => encoded,
+            Err(error) => {
+                warn!(
+                    session_id,
+                    streamer_id,
+                    kind,
+                    %error,
+                    "best-effort session event serialization failed"
+                );
+                return;
+            }
+        };
         let row = SessionEventDbModel {
             id: 0,
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             kind: kind.to_string(),
             occurred_at: occurred_at.timestamp_millis(),
-            payload: serde_json::to_string(&payload).ok(),
+            payload: Some(encoded_payload),
         };
         if let Err(e) = repo.insert(&row).await {
             warn!(
@@ -409,6 +589,8 @@ impl SessionLifecycle {
         &self,
         args: LiveDetectedArgs<'_>,
     ) -> Result<StartSessionOutcome> {
+        let _operation = self.begin_operation().await?;
+
         // Step 1: Hysteresis resume.
         //
         // `resume_from_hysteresis` returns `None` if the CAS-claim
@@ -498,6 +680,8 @@ impl SessionLifecycle {
         &self,
         args: OfflineDetectedArgs<'_>,
     ) -> Result<EndSessionOutcome> {
+        let _operation = self.begin_operation().await?;
+
         // Early dedup: if the in-memory map says this session is already in
         // `Ended` state (within `ended_retention`), short-circuit before we
         // hit the DB. Without this guard a duplicate authoritative-end —
@@ -610,16 +794,19 @@ impl SessionLifecycle {
         self: &Arc<Self>,
         event: &DownloadTerminalEvent,
     ) -> Result<()> {
+        let _operation = self.begin_operation().await?;
+
         let session_id = event.session_id();
         let streamer_id = event.streamer_id();
         let streamer_name = event.streamer_name();
         let now = Utc::now();
 
-        // Step 1: Cancelled is a no-op.
+        // Step 1: The control-plane stop owner applies cancellation policy.
         if matches!(event, DownloadTerminalEvent::Cancelled { .. }) {
             debug!(
                 session_id,
-                streamer_id, "on_download_terminal: Cancelled is a no-op; session stays Recording"
+                streamer_id,
+                "on_download_terminal: deferring Cancelled to the control-plane stop owner"
             );
             return Ok(());
         }
@@ -749,6 +936,14 @@ impl SessionLifecycle {
         cause: TerminalCause,
         observed_at: DateTime<Utc>,
     ) {
+        if self.hysteresis_shutdown.load(Ordering::Acquire) {
+            debug!(
+                session_id,
+                "Skipping hysteresis admission because session lifecycle is shutting down"
+            );
+            return;
+        }
+
         // Idempotency: if we're already in Hysteresis (or already Ended),
         // skip. The original timer / Ended state wins.
         if let Some(entry) = self.sessions.get(session_id)
@@ -837,11 +1032,11 @@ impl SessionLifecycle {
         // the repo, and the broadcast sender. When it fires, it calls back
         // into a static-style helper that takes those clones, so we don't
         // need an Arc<Self>-typed entry point for cancellation safety.
-        let me = Arc::clone(self);
+        let lifecycle = Arc::downgrade(self);
         let sid = session_id.to_string();
         let strm_id = streamer_id.to_string();
         let strm_name = streamer_name.to_string();
-        tokio::spawn(async move {
+        let timer = async move {
             tokio::select! {
                 _ = tokio::time::sleep_until(deadline_inst.into()) => {
                     // Deadline fired — confirm Ended unless cancelled meanwhile.
@@ -851,7 +1046,10 @@ impl SessionLifecycle {
                         return;
                     }
                     let now = Utc::now();
-                    if let Err(e) = me.enter_ended_state(EndedStateTransition {
+                    let Some(lifecycle) = lifecycle.upgrade() else {
+                        return;
+                    };
+                    if let Err(e) = lifecycle.enter_ended_state(EndedStateTransition {
                         session_id: &sid,
                         streamer_id: &strm_id,
                         streamer_name: &strm_name,
@@ -869,7 +1067,21 @@ impl SessionLifecycle {
                            "Hysteresis timer cancelled (resume or authoritative end)");
                 }
             }
-        });
+        };
+
+        let mut tasks = self.hysteresis_tasks.lock();
+        while let Some(result) = tasks.try_join_next() {
+            if let Err(error) = result {
+                warn!(%error, "Hysteresis timer task failed");
+            }
+        }
+        if self.hysteresis_shutdown.load(Ordering::Acquire) {
+            if let Some((_, handle)) = self.hysteresis.remove(session_id) {
+                handle.cancel();
+            }
+            return;
+        }
+        tasks.spawn(timer);
     }
 
     /// Cancel an active hysteresis timer and transition `Hysteresis →
@@ -1220,6 +1432,8 @@ impl SessionLifecycle {
         streamer_id: &str,
         streamer_name: &str,
     ) -> Result<Option<String>> {
+        let _operation = self.begin_operation().await?;
+
         let now = Utc::now();
 
         // Step 1: find the session in memory via the deterministic
@@ -1348,6 +1562,8 @@ impl SessionLifecycle {
         streamer_name: &str,
         old_state: StreamerState,
     ) -> Result<Option<String>> {
+        let _operation = self.begin_operation().await?;
+
         let now = Utc::now();
 
         let in_memory = self.current_session_for_streamer(streamer_id);

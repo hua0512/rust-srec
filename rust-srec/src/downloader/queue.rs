@@ -1510,6 +1510,50 @@ mod tests {
         assert!(matches!(res, Err(AcquireError::ShuttingDown)));
     }
 
+    #[tokio::test]
+    async fn shutdown_wakes_queued_acquire_before_active_slot_is_released() {
+        let q = DownloadQueue::new(1, 0);
+        let active = q
+            .acquire(
+                req("active", Priority::Normal),
+                CancellationToken::new(),
+                |_| {},
+            )
+            .await
+            .unwrap()
+            .into_active();
+        let queued = {
+            let q = q.clone();
+            tokio::spawn(async move {
+                q.acquire(
+                    req("queued", Priority::Normal),
+                    CancellationToken::new(),
+                    |_| {},
+                )
+                .await
+            })
+        };
+        for _ in 0..50 {
+            if q.pending_count() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(q.pending_count(), 1);
+
+        q.shutdown();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), queued)
+                .await
+                .expect("queued acquire should wake")
+                .expect("queued acquire task should not panic"),
+            Err(AcquireError::ShuttingDown)
+        ));
+        assert_eq!(q.in_flight(), 1);
+        drop(active);
+        assert_eq!(q.in_flight(), 0);
+    }
+
     /// Pins the race window between `try_acquire_fast` returning
     /// `false` and the waiter being enqueued: a `release()` running in
     /// that gap sees no waiters and returns, so the post-enqueue
