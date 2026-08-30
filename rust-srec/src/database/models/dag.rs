@@ -30,7 +30,7 @@ pub struct DagExecutionDbModel {
     pub session_id: Option<String>,
     /// Segment index when this DAG is tied to a specific session segment.
     pub segment_index: Option<i64>,
-    /// Segment source ("video", "danmu", or "paired") for segment-related DAGs.
+    /// Coordination discriminator ("video", "danmu", "paired", or "session_complete").
     pub segment_source: Option<String>,
     /// Unix epoch milliseconds (UTC) when the DAG was created.
     pub created_at: i64,

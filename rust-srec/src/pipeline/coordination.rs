@@ -200,6 +200,13 @@ pub enum PipelineCoordinationEvent {
         streamer_id: String,
         segment_index: u32,
     },
+    SessionCompleteDagStarted {
+        session_id: String,
+        streamer_id: String,
+    },
+    SessionCompleteDagCreationFailed {
+        session_id: String,
+    },
     SegmentDagStarted {
         session_id: String,
         streamer_id: String,
@@ -559,6 +566,22 @@ impl PipelineCoordinatorState {
                 session.recover_paired_dag_triggered(segment_index);
                 Vec::new()
             }
+            PipelineCoordinationEvent::SessionCompleteDagStarted {
+                session_id,
+                streamer_id,
+            } => {
+                let session = self.session_mut(&session_id, &streamer_id);
+                session.pending_session_complete_start = false;
+                session.session_complete_triggered = true;
+                Vec::new()
+            }
+            PipelineCoordinationEvent::SessionCompleteDagCreationFailed { session_id } => {
+                let Some(session) = self.sessions.get_mut(&session_id) else {
+                    return Vec::new();
+                };
+                session.pending_session_complete_start = false;
+                Vec::new()
+            }
             PipelineCoordinationEvent::SegmentDagStarted {
                 session_id,
                 streamer_id,
@@ -684,6 +707,7 @@ impl PipelineCoordinatorState {
                     session_id = %session_id,
                     age_secs = %session.last_activity.elapsed().as_secs(),
                     session_complete_triggered = session.session_complete_triggered,
+                    pending_session_complete_start = session.pending_session_complete_start,
                     unmet = ?session.unmet_completion_conditions(),
                     "Removing stale pipeline coordinator session"
                 );
@@ -711,6 +735,7 @@ pub struct SessionPipelineState {
     session_end_observed: bool,
     session_end_persisted: bool,
     session_complete_triggered: bool,
+    pending_session_complete_start: bool,
     /// When `PipelineCoordinator` first observed this session (via any reducer
     /// event). Distinct from `live_sessions.created_at`, which is the DB row
     /// insertion time written by `SessionLifecycle`. Copied into
@@ -752,6 +777,7 @@ impl SessionPipelineState {
             session_end_observed: false,
             session_end_persisted: false,
             session_complete_triggered: false,
+            pending_session_complete_start: false,
             created_at: now,
             last_activity: now,
             segment_pipeline: None,
@@ -823,6 +849,9 @@ impl SessionPipelineState {
                 let artifact = self.segment_mut(segment_index).artifact_mut(source);
                 artifact.add_source(path.clone());
                 if artifact.dag_started {
+                    if artifact.dag_failed {
+                        artifact.use_source_inputs_as_failed_fallback();
+                    }
                     false
                 } else {
                     artifact.dag_started = true;
@@ -865,13 +894,36 @@ impl SessionPipelineState {
             .segment_pipeline
             .as_ref()
             .is_some_and(|pipeline| !pipeline.is_empty());
-        let artifact = self.segment_mut(segment_index).artifact_mut(source);
-        artifact.add_source(path.clone());
 
         if has_segment_pipeline {
+            let should_start_dag = {
+                let artifact = self.segment_mut(segment_index).artifact_mut(source);
+                artifact.add_source(path.clone());
+                if artifact.dag_started {
+                    if artifact.dag_failed {
+                        artifact.use_source_inputs_as_failed_fallback();
+                    }
+                    false
+                } else {
+                    artifact.dag_started = true;
+                    true
+                }
+            };
+            if should_start_dag && let Some(pipeline) = self.segment_pipeline.clone() {
+                return vec![PipelineCommand::CreateSegmentDag {
+                    session_id: self.session_id.clone(),
+                    streamer_id: self.streamer_id.clone(),
+                    segment_index,
+                    source,
+                    input_path: path,
+                    pipeline,
+                }];
+            }
             return Vec::new();
         }
 
+        let artifact = self.segment_mut(segment_index).artifact_mut(source);
+        artifact.add_source(path.clone());
         artifact.add_final(path);
         let mut commands = self.try_trigger_paired(segment_index);
         commands.extend(self.try_finalize());
@@ -892,6 +944,7 @@ impl SessionPipelineState {
         let outputs = dedup_paths_preserve_order(outputs);
         let artifact = self.segment_mut(segment_index).artifact_mut(source);
         artifact.dag_started = true;
+        artifact.dag_failed = false;
         for output in outputs {
             artifact.add_final(output);
         }
@@ -911,15 +964,10 @@ impl SessionPipelineState {
             self.danmu_observed = true;
         }
 
-        if let Some(segment) = self.segments.get_mut(&segment_index) {
-            let artifact = segment.artifact_mut(source);
-            artifact.dag_started = true;
-            artifact.use_source_inputs_as_failed_fallback();
-        } else {
-            self.segment_mut(segment_index)
-                .artifact_mut(source)
-                .dag_started = true;
-        }
+        let artifact = self.segment_mut(segment_index).artifact_mut(source);
+        artifact.dag_started = true;
+        artifact.dag_failed = true;
+        artifact.use_source_inputs_as_failed_fallback();
 
         let ready_segments: Vec<u32> = self
             .segments
@@ -975,6 +1023,7 @@ impl SessionPipelineState {
         let outputs = dedup_paths_preserve_order(outputs);
         let segment = self.segment_mut(segment_index);
         let artifact = segment.artifact_mut(source);
+        artifact.dag_failed = false;
         for output in outputs {
             artifact.add_final(output);
         }
@@ -994,6 +1043,7 @@ impl SessionPipelineState {
 
         if let Some(segment) = self.segments.get_mut(&segment_index) {
             let artifact = segment.artifact_mut(source);
+            artifact.dag_failed = true;
             artifact.use_source_inputs_as_failed_fallback();
         }
 
@@ -1136,7 +1186,7 @@ impl SessionPipelineState {
             return Vec::new();
         };
 
-        self.session_complete_triggered = true;
+        self.pending_session_complete_start = true;
         let outputs = self.session_outputs();
         info!(
             session_id = %self.session_id,
@@ -1151,6 +1201,7 @@ impl SessionPipelineState {
         self.session_end_observed
             && self.session_end_persisted
             && !self.session_complete_triggered
+            && !self.pending_session_complete_start
             && self.artifacts_drained_for_session_complete()
     }
 
@@ -1166,6 +1217,12 @@ impl SessionPipelineState {
         }
         if !self.session_end_persisted {
             unmet.push("session_end_persisted");
+        }
+        if self.session_complete_triggered {
+            unmet.push("session_complete_triggered");
+        }
+        if self.pending_session_complete_start {
+            unmet.push("pending_session_complete_start");
         }
         if !self.video_complete {
             unmet.push("video_complete");
@@ -1269,6 +1326,7 @@ impl SessionPipelineState {
             pending_paired_starts = ?self.pending_paired_starts,
             has_video_output = %self.has_video_output(),
             session_complete_triggered = %self.session_complete_triggered,
+            pending_session_complete_start = %self.pending_session_complete_start,
             "Session not ready for session-complete trigger"
         );
     }
@@ -1294,6 +1352,7 @@ pub struct ArtifactLane {
     source_inputs: Vec<PathBuf>,
     final_outputs: Vec<PathBuf>,
     dag_started: bool,
+    dag_failed: bool,
     final_outputs_are_fallback: bool,
 }
 
@@ -1562,6 +1621,98 @@ mod tests {
                 })
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn session_complete_acknowledges_only_after_dag_creation() {
+        let coord = PipelineCoordinator::new();
+        let session_id = "session1";
+        let streamer_id = "streamer1";
+
+        coord.apply_event_inline(configure_event(
+            session_id,
+            streamer_id,
+            false,
+            None,
+            None,
+            Some(non_empty_pipeline("session-complete")),
+        ));
+        coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+            session_id: session_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            segment_index: 0,
+            path: PathBuf::from("/seg0.flv"),
+        });
+        coord.apply_event_inline(end_event(session_id, streamer_id));
+        assert!(matches!(
+            coord
+                .apply_event_inline(persisted_event(session_id))
+                .as_slice(),
+            [PipelineCommand::CreateSessionCompleteDag { .. }]
+        ));
+
+        coord.apply_event_inline(
+            PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
+                session_id: session_id.to_string(),
+            },
+        );
+        assert!(matches!(
+            coord
+                .apply_event_inline(persisted_event(session_id))
+                .as_slice(),
+            [PipelineCommand::CreateSessionCompleteDag { .. }]
+        ));
+
+        coord.apply_event_inline(PipelineCoordinationEvent::SessionCompleteDagStarted {
+            session_id: session_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+        });
+        assert!(
+            coord
+                .apply_event_inline(persisted_event(session_id))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn recovered_failed_segment_uses_artifact_without_recreating_dag() {
+        let coord = PipelineCoordinator::new();
+        let session_id = "session1";
+        let streamer_id = "streamer1";
+        coord.apply_event_inline(configure_event(
+            session_id,
+            streamer_id,
+            false,
+            Some(non_empty_pipeline("segment")),
+            None,
+            Some(non_empty_pipeline("session-complete")),
+        ));
+        coord.apply_event_inline(PipelineCoordinationEvent::RecoverSegmentDagFailed {
+            session_id: session_id.to_string(),
+            segment_index: 0,
+            source: SourceType::Video,
+        });
+
+        assert!(
+            coord
+                .apply_event_inline(PipelineCoordinationEvent::RecoverSourceArtifact {
+                    session_id: session_id.to_string(),
+                    streamer_id: streamer_id.to_string(),
+                    segment_index: 0,
+                    source: SourceType::Video,
+                    path: PathBuf::from("/seg0.flv"),
+                })
+                .is_empty()
+        );
+        coord.apply_event_inline(end_event(session_id, streamer_id));
+        assert!(matches!(
+            coord
+                .apply_event_inline(persisted_event(session_id))
+                .as_slice(),
+            [PipelineCommand::CreateSessionCompleteDag { outputs, .. }]
+                if outputs.video_outputs.len() == 1
+                    && outputs.video_outputs[0].path.as_path() == Path::new("/seg0.flv")
+        ));
     }
 
     #[test]

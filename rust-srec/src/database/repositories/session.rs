@@ -40,6 +40,16 @@ pub trait SessionRepository: Send + Sync {
         pagination: &Pagination,
     ) -> Result<(Vec<LiveSessionDbModel>, u64)>;
 
+    /// List ended sessions that have persisted artifacts and whose session-complete pipeline was
+    /// never dispatched.
+    async fn list_ended_sessions_pending_pipeline_recovery(
+        &self,
+        pagination: &Pagination,
+    ) -> Result<Vec<LiveSessionDbModel>>;
+
+    /// Record that `session_id` no longer needs its session-complete pipeline dispatched.
+    async fn mark_session_complete_dispatched(&self, session_id: &str) -> Result<()>;
+
     // Media Outputs
     async fn get_media_output(&self, id: &str) -> Result<MediaOutputDbModel>;
     async fn get_media_outputs_for_session(
@@ -874,6 +884,56 @@ impl SessionRepository for SqlxSessionRepository {
         Ok((sessions, total_count))
     }
 
+    async fn list_ended_sessions_pending_pipeline_recovery(
+        &self,
+        pagination: &Pagination,
+    ) -> Result<Vec<LiveSessionDbModel>> {
+        // `session_complete_dispatched` is the authoritative signal;
+        // `segment_source = 'session_complete'` covers the window where
+        // `run_session_complete_pipeline` published the DAG but had not yet marked the session.
+        let sessions = sqlx::query_as::<_, LiveSessionDbModel>(
+            r#"
+            SELECT session.*
+            FROM live_sessions AS session
+            WHERE session.end_time IS NOT NULL
+              AND session.session_complete_dispatched = 0
+              AND (
+                EXISTS (
+                    SELECT 1 FROM session_segments
+                    WHERE session_id = session.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM media_outputs
+                    WHERE session_id = session.id
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM dag_execution
+                WHERE session_id = session.id
+                  AND segment_source = 'session_complete'
+              )
+            ORDER BY session.start_time DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(sessions)
+    }
+
+    async fn mark_session_complete_dispatched(&self, session_id: &str) -> Result<()> {
+        retry_on_sqlite_busy("mark_session_complete_dispatched", || async {
+            sqlx::query("UPDATE live_sessions SET session_complete_dispatched = 1 WHERE id = ?")
+                .bind(session_id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn get_output_count(&self, session_id: &str) -> Result<u32> {
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM media_outputs WHERE session_id = ?")
@@ -1143,6 +1203,117 @@ mod tests {
         let next = repo.next_session_segment_index("session-1").await.unwrap();
 
         assert_eq!(next, 4);
+    }
+
+    #[tokio::test]
+    async fn ended_pipeline_recovery_candidates_require_artifact_and_no_session_dag() {
+        use crate::database::models::{DagExecutionDbModel, DagPipelineDefinition};
+        use crate::database::repositories::{DagRepository as _, SqlxDagRepository};
+
+        let repo = setup_test_repo().await;
+        let ended_at = crate::database::time::now_ms();
+        repo.end_session("session-1", ended_at).await.unwrap();
+        assert!(
+            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        repo.create_session_segment(&SessionSegmentDbModel::new(
+            "session-1",
+            0,
+            "/tmp/segment-000.ts",
+            1.0,
+            1024,
+            Default::default(),
+            Default::default(),
+        ))
+        .await
+        .unwrap();
+        let candidates = repo
+            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+            .await
+            .unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "session-1");
+
+        // An untagged session-scoped DAG is a thumbnail run and says nothing about
+        // session-complete dispatch, so the session stays a candidate.
+        let definition = DagPipelineDefinition::new("session-complete", Vec::new());
+        let new_session_dag = |segment_source: Option<&str>| {
+            let mut dag = DagExecutionDbModel::new(
+                &definition,
+                Some("streamer-1".to_string()),
+                Some("session-1".to_string()),
+            );
+            dag.segment_source = segment_source.map(str::to_string);
+            dag
+        };
+        SqlxDagRepository::new(repo.pool.clone(), repo.write_pool.clone())
+            .create_dag(&new_session_dag(None))
+            .await
+            .unwrap();
+        assert_eq!(
+            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        repo.mark_session_complete_dispatched("session-1")
+            .await
+            .unwrap();
+        assert!(
+            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// A published session-complete DAG suppresses recovery on its own, covering the window
+    /// where `run_session_complete_pipeline` committed the DAG but had not yet marked the row.
+    #[tokio::test]
+    async fn published_session_complete_dag_suppresses_recovery_without_the_marker() {
+        use crate::database::models::{DagExecutionDbModel, DagPipelineDefinition};
+        use crate::database::repositories::{DagRepository as _, SqlxDagRepository};
+
+        let repo = setup_test_repo().await;
+        repo.end_session("session-1", crate::database::time::now_ms())
+            .await
+            .unwrap();
+        repo.create_session_segment(&SessionSegmentDbModel::new(
+            "session-1",
+            0,
+            "/tmp/segment-000.ts",
+            1.0,
+            1024,
+            Default::default(),
+            Default::default(),
+        ))
+        .await
+        .unwrap();
+
+        let definition = DagPipelineDefinition::new("session-complete", Vec::new());
+        let mut dag = DagExecutionDbModel::new(
+            &definition,
+            Some("streamer-1".to_string()),
+            Some("session-1".to_string()),
+        );
+        dag.segment_source = Some("session_complete".to_string());
+        SqlxDagRepository::new(repo.pool.clone(), repo.write_pool.clone())
+            .create_dag(&dag)
+            .await
+            .unwrap();
+
+        assert!(
+            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

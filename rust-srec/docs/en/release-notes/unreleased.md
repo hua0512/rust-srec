@@ -44,6 +44,14 @@
 
   A new `baidupcs` pipeline processor uploads recordings to Baidu Netdisk through the BaiduPCS-Go command-line tool, which is now bundled in the Docker image. Add it to a pipeline like any other upload step: the destination folder supports the usual streamer/title/date placeholders, same-name files can be skipped or overwritten, and uploads appear in the same live progress, per-file records and streamer-card indicators as rclone transfers. Log in from the preset editor — paste your netdisk cookies (or BDUSS and STOKEN) once and the account card shows who is signed in and how much space is left. Tick **Remember for automatic re-login** and upload jobs log in again by themselves when the session expires, so a recording made at night still lands in the netdisk without anyone clicking Login; leave it unticked and the credentials are handed to BaiduPCS-Go without the app keeping them. If the remembered credentials themselves stop working, a notification tells you to log in again and further attempts pause for an hour instead of hammering Baidu. Logging out forgets the remembered credentials. Because BaiduPCS-Go's exit code does not reflect upload results, rust-srec reads the tool's per-file output instead, and a retried job re-sends only the files that did not make it. See [DAG Pipeline](../concepts/pipeline.md#baidu-netdisk-baidupcs).
 
+- **Post-processing no longer stalls or repeats work after a crash**
+
+  If the app stopped unexpectedly — a crash, a host reboot, a container killed mid-job — a recording's post-processing could be left half-finished. The remaining steps were never started and the session stayed stuck as still-processing with no way to retry it, while a step that had just completed could run a second time on the next start, re-uploading files that had already been uploaded and re-running any move or delete steps that followed it. Post-processing now resumes from where it stopped, and steps that already finished are not run again.
+
+- **Post-processing that never got started is now picked up**
+
+  If the app stopped in the moment between a recording finishing and its post-processing being set up — or if setting it up failed — that work was lost for good: the uploads and transcodes configured to run after a recording simply never ran, and nothing said so. Startup now notices post-processing that was due but never began and starts it, however long the app was down, both for a whole session and for an individual part of a recording. Recordings that had already finished before this update are left alone, so updating — or turning post-processing on for the first time — does not retroactively run it across everything you have recorded so far.
+
 ## Danmu
 
 - **Chat recording now survives network interruptions**

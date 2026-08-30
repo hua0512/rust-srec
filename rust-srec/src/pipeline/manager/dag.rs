@@ -299,6 +299,25 @@ where
         }
     }
 
+    /// Record that `session_id` needs no further session-complete dispatch, so
+    /// `list_ended_sessions_pending_pipeline_recovery` stops offering it to startup recovery.
+    ///
+    /// Logged rather than propagated: the DAG this marks is already durable, and the
+    /// `segment_source = 'session_complete'` check in that query keeps a failed write from
+    /// producing a duplicate run.
+    async fn mark_session_complete_dispatched(&self, session_id: &str) {
+        let Some(repo) = self.session_repo.as_ref() else {
+            return;
+        };
+        if let Err(e) = repo.mark_session_complete_dispatched(session_id).await {
+            warn!(
+                session_id = %session_id,
+                error = %e,
+                "Failed to mark session-complete pipeline as dispatched"
+            );
+        }
+    }
+
     pub(super) async fn run_session_complete_pipeline(
         &self,
         outputs: SessionOutputs,
@@ -318,6 +337,15 @@ where
                 session_id = %outputs.session_id,
                 "Skipping session-complete pipeline: no steps configured"
             );
+            self.mark_session_complete_dispatched(&outputs.session_id)
+                .await;
+            let _ = self
+                .pipeline_coordinator
+                .apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
+                    session_id: outputs.session_id,
+                    streamer_id: outputs.streamer_id,
+                })
+                .await;
             return;
         }
 
@@ -399,20 +427,46 @@ where
             "Triggering session-complete pipeline"
         );
 
-        if let Err(e) = self
-            .create_dag_pipeline(
+        match self
+            .create_dag_pipeline_internal(
                 &outputs.session_id,
                 &outputs.streamer_id,
                 input_paths,
                 pipeline_def,
+                None,
+                Some(DagExecutionMetadata {
+                    segment_index: None,
+                    segment_source: Some("session_complete".to_string()),
+                }),
             )
             .await
         {
-            tracing::error!(
-                "Failed to create session-complete pipeline for session {}: {}",
-                outputs.session_id,
-                e
-            );
+            Ok(_) => {
+                self.mark_session_complete_dispatched(&outputs.session_id)
+                    .await;
+                let _ = self
+                    .pipeline_coordinator
+                    .apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
+                        session_id: outputs.session_id,
+                        streamer_id: outputs.streamer_id,
+                    })
+                    .await;
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to create session-complete pipeline for session {}: {}",
+                    outputs.session_id,
+                    e
+                );
+                let _ = self
+                    .pipeline_coordinator
+                    .apply_event(
+                        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
+                            session_id: outputs.session_id,
+                        },
+                    )
+                    .await;
+            }
         }
     }
 
