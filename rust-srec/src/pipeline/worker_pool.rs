@@ -29,7 +29,7 @@ const SHUTDOWN_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs
 ///
 /// Send errors mean no subscriber is currently attached (the notification service is the only
 /// consumer, and it is optional), which is not a job failure.
-fn emit_event(event_tx: &Option<broadcast::Sender<PipelineEvent>>, event: PipelineEvent) {
+fn emit_event(event_tx: Option<&broadcast::Sender<PipelineEvent>>, event: PipelineEvent) {
     if let Some(tx) = event_tx {
         let _ = tx.send(event);
     }
@@ -409,7 +409,7 @@ impl WorkerPool {
                                     }
 
                                     emit_event(
-                                        &event_tx,
+                                        event_tx.as_ref(),
                                         PipelineEvent::JobFailed {
                                             job_id: job_id.clone(),
                                             job_type: job_type.clone(),
@@ -511,7 +511,7 @@ impl WorkerPool {
                             };
 
                             emit_event(
-                                &event_tx,
+                                event_tx.as_ref(),
                                 PipelineEvent::JobStarted {
                                     job_id: job_id.clone(),
                                     job_type: job_type.clone(),
@@ -769,7 +769,7 @@ impl WorkerPool {
                                     {
                                         Ok(true) => {
                                             emit_event(
-                                                &event_tx,
+                                                event_tx.as_ref(),
                                                 PipelineEvent::JobCompleted {
                                                     job_id: job_id.clone(),
                                                     job_type: job_type.clone(),
@@ -863,7 +863,7 @@ impl WorkerPool {
                                     // Check if this is a DAG job for fail-fast handling
                                     let error = e.to_string();
                                     emit_event(
-                                        &event_tx,
+                                        event_tx.as_ref(),
                                         PipelineEvent::JobFailed {
                                             job_id: job_id.clone(),
                                             job_type: job_type.clone(),
@@ -927,7 +927,7 @@ impl WorkerPool {
                                     job_cancellation_token.cancel();
 
                                     emit_event(
-                                        &event_tx,
+                                        event_tx.as_ref(),
                                         PipelineEvent::JobFailed {
                                             job_id: job_id.clone(),
                                             job_type: job_type.clone(),
@@ -1004,7 +1004,7 @@ impl WorkerPool {
                                 error!(job_id = %job.id, %error, "Failed to mark job as failed");
                             }
                             emit_event(
-                                &event_tx,
+                                event_tx.as_ref(),
                                 PipelineEvent::JobFailed {
                                     job_id: job.id.clone(),
                                     job_type: job.job_type.clone(),
@@ -1427,7 +1427,7 @@ mod tests {
     }
 
     /// The worker is the only place a job's start and terminal state are known, so it is what
-    /// feeds the pipeline_started / pipeline_completed notification subscriptions.
+    /// feeds the `pipeline_started` / `pipeline_completed` notification subscriptions.
     #[tokio::test]
     async fn test_worker_emits_started_and_completed_events() {
         let job_queue = Arc::new(JobQueue::new());

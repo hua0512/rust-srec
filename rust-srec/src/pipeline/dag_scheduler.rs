@@ -973,15 +973,18 @@ impl DagScheduler {
             .collect();
 
         for job_id in &job_ids {
-            match self.job_queue.cancel_job(job_id).await {
-                Ok(_) => {}
-                // Already terminal, or already gone: nothing to stand down.
-                Err(Error::InvalidStateTransition { .. } | Error::NotFound { .. }) => {}
-                Err(e) => warn!(
+            // A job that is already terminal, or already gone, needs no stand-down.
+            if let Err(e) = self.job_queue.cancel_job(job_id).await
+                && !matches!(
+                    e,
+                    Error::InvalidStateTransition { .. } | Error::NotFound { .. }
+                )
+            {
+                warn!(
                     job_id = %job_id,
                     error = %e,
                     "Failed to cancel job while deleting DAG"
-                ),
+                );
             }
         }
 

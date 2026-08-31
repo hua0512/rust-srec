@@ -795,17 +795,16 @@ impl RemuxProcessor {
         if remove_input_on_success {
             if output_replaced_input {
                 let msg = format!(
-                    "Not removing input {}: it is the same file as the remux output",
-                    input_path
+                    "Not removing input {input_path}: it is the same file as the remux output"
                 );
-                warn!("{}", msg);
+                warn!("{msg}");
                 logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Warn,
                     msg,
                 ));
             } else {
                 match tokio::fs::remove_file(input_path).await {
-                    Ok(_) => {
+                    Ok(()) => {
                         info!("Removed input file after successful remux: {}", input_path);
                         logs.push(create_log_entry(
                             crate::pipeline::job_queue::LogLevel::Info,
@@ -978,10 +977,9 @@ impl Processor for RemuxProcessor {
                     .any(|output_key| Self::paths_equal(&input_key, output_key))
                 {
                     let msg = format!(
-                        "Not removing input {}: it is the same file as a remux output",
-                        input_path
+                        "Not removing input {input_path}: it is the same file as a remux output"
                     );
-                    warn!("{}", msg);
+                    warn!("{msg}");
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         msg,
