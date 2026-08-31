@@ -482,7 +482,10 @@ impl JobRepository for SqlxJobRepository {
             // Avoid taking a write lock when there are no pending jobs: first select the next job id,
             // then claim it with a conditional UPDATE. This reduces lock contention under load.
             //
-            // We keep ordering consistent with list_jobs_filtered: priority DESC, created_at DESC.
+            // Claim order is priority DESC, created_at ASC, id ASC: within a priority the oldest
+            // job runs first, so a steady arrival rate cannot starve work already in the queue.
+            // This deliberately differs from list_jobs_filtered, which orders newest-first for
+            // display; JobQueue::dequeue's in-memory fallback mirrors the order used here.
             for _ in 0..3 {
                 let next_id: Option<String> = match job_types {
                     Some(types) if !types.is_empty() => {
@@ -492,7 +495,7 @@ impl JobRepository for SqlxJobRepository {
                             SELECT id
                             FROM job
                             WHERE status = ? AND job_type IN ({})
-                            ORDER BY priority DESC, created_at DESC
+                            ORDER BY priority DESC, created_at ASC, id ASC
                             LIMIT 1
                             "#,
                             placeholders
@@ -511,7 +514,7 @@ impl JobRepository for SqlxJobRepository {
                             SELECT id
                             FROM job
                             WHERE status = ?
-                            ORDER BY priority DESC, created_at DESC
+                            ORDER BY priority DESC, created_at ASC, id ASC
                             LIMIT 1
                             "#,
                         )
@@ -1035,6 +1038,60 @@ mod stress_tests {
     use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    async fn temp_repo(name: &str) -> (TempDir, SqlxJobRepository) {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join(name);
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            db_path.to_string_lossy().replace('\\', "/")
+        );
+
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let repo = SqlxJobRepository::new(pool.clone(), pool);
+        (dir, repo)
+    }
+
+    /// Within a priority the oldest job is claimed first, so a steady arrival rate cannot
+    /// starve work already queued. Priority still outranks age.
+    #[tokio::test]
+    async fn claim_next_pending_job_is_oldest_first_within_priority() {
+        let (_dir, repo) = temp_repo("claim_order.db").await;
+        let base = crate::database::time::now_ms();
+
+        // Inserted newest-first, so insertion order cannot be mistaken for claim order.
+        let mut ids = Vec::new();
+        for (age_offset_ms, priority) in [(300i64, 0), (200, 0), (100, 0), (400, 5)] {
+            let mut job = JobDbModel::new_with_input(
+                "remux",
+                format!("input-{age_offset_ms}"),
+                priority,
+                Some("streamer".to_string()),
+                Some("session".to_string()),
+                "{}",
+            );
+            job.created_at = base + age_offset_ms;
+            repo.create_job(&job).await.unwrap();
+            ids.push((age_offset_ms, priority, job.id));
+        }
+
+        let mut claim_order = Vec::new();
+        while let Some(job) = repo.claim_next_pending_job(None).await.unwrap() {
+            let (age_offset_ms, priority, _) = ids
+                .iter()
+                .find(|(_, _, id)| id == &job.id)
+                .expect("claimed a job we created");
+            claim_order.push((*age_offset_ms, *priority));
+        }
+
+        assert_eq!(
+            claim_order,
+            vec![(400, 5), (100, 0), (200, 0), (300, 0)],
+            "expected priority first, then oldest-first within a priority"
+        );
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_claim_concurrent_no_double_claims() {

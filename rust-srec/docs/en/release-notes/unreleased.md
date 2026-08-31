@@ -48,6 +48,38 @@
 
   If the app stopped unexpectedly — a crash, a host reboot, a container killed mid-job — a recording's post-processing could be left half-finished. The remaining steps were never started and the session stayed stuck as still-processing with no way to retry it, while a step that had just completed could run a second time on the next start, re-uploading files that had already been uploaded and re-running any move or delete steps that followed it. Post-processing now resumes from where it stopped, and steps that already finished are not run again.
 
+- **Pipeline steps that could never run no longer hang the whole recording**
+
+  A step naming a processor that does not exist was accepted, queued, and then simply never picked up — the pipeline sat at "processing" forever, the recording it belonged to never finished post-processing, and the stuck job kept counting towards the queue depth, eventually making the app throttle its own recordings. This affected the built-in **Create ZIP archive** preset and any compression preset made in the preset editor, both of which named a processor the workers did not recognise. Those presets now run. A pipeline that still names an unknown processor is rejected when you save it, with the list of processors you can use, and jobs already stuck from before this release are failed at startup so the recording waiting on them can move on.
+
+- **Pipeline notifications for started, finished and failed jobs now arrive**
+
+  Subscribing to **Pipeline started**, **Pipeline completed** or **Pipeline failed** produced nothing: a transcode or upload could fail and no notification was ever sent. These now fire as the jobs run.
+
+- **Deleting a pipeline execution stops the work it was doing**
+
+  Deleting a pipeline that was still running removed it from the list but left its job running in the background — the transcode or upload carried on, and the recording it belonged to kept waiting for a pipeline that no longer existed. Deleting now cancels the work first.
+
+- **Queued jobs run oldest-first**
+
+  With more work queued than the workers could keep up with, the most recently added job was always picked next, so an older job could be passed over indefinitely while newer recordings kept jumping ahead of it. Jobs of equal priority now run in the order they were queued; a higher priority still goes first.
+
+- **Transcoding no longer deletes the file it just produced**
+
+  When "remove input on success" was enabled and the output turned out to be the same file as the input — reachable through a symlinked folder, or differing only in upper/lower case on macOS and Windows — the step overwrote the recording with the transcoded version and then deleted it, losing both. The step now detects that the input and the output are one file and keeps it.
+
+- **A move step no longer reports success for a file it did not move**
+
+  When a move step found its source file missing, any file with the same name in the destination folder was accepted as proof the move had already happened, and that unrelated file was passed on to the following steps. This resume now only applies where it was meant to — a retried job, or one picked up again after a crash.
+
+- **Workflow outputs reach the next step in a consistent order**
+
+  A step placed after a workflow received that workflow's outputs in a different order on every run, which could change the result of steps that combine their inputs, such as concatenation. The order now follows the workflow definition.
+
+- **Stopping the app no longer waits on a long post-processing job**
+
+  A transcode or upload running at shutdown held the app open until the shutdown deadline expired and everything was cut off, which was then reported as an unclean exit. Short jobs are still given time to finish and record their result; a longer one is now asked to stop early so the app can close normally, and it runs again from the start next time.
+
 - **Post-processing that never got started is now picked up**
 
   If the app stopped in the moment between a recording finishing and its post-processing being set up — or if setting it up failed — that work was lost for good: the uploads and transcodes configured to run after a recording simply never ran, and nothing said so. Startup now notices post-processing that was due but never began and starts it, however long the app was down, both for a whole session and for an individual part of a recording. Recordings that had already finished before this update are left alone, so updating — or turning post-processing on for the first time — does not retroactively run it across everything you have recorded so far.

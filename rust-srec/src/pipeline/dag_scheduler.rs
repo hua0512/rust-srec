@@ -955,12 +955,39 @@ impl DagScheduler {
     }
 
     /// Permanently delete a DAG execution, all its steps, and associated jobs/logs.
+    ///
+    /// `delete_jobs_by_pipeline` removes rows regardless of status, so a job that is still
+    /// pending or processing has to be stood down first: `JobQueue::cancel_job` signals the
+    /// worker's cancellation token and settles the queue depth, and `JobQueue::forget_jobs`
+    /// clears the caches that would otherwise keep entries for rows that no longer exist.
     pub async fn delete_dag(&self, dag_id: &str) -> Result<()> {
         // Verify DAG exists first
         self.dag_repository.get_dag(dag_id).await?;
 
+        let job_ids: Vec<String> = self
+            .job_repository
+            .get_jobs_by_pipeline(dag_id)
+            .await?
+            .into_iter()
+            .map(|job| job.id)
+            .collect();
+
+        for job_id in &job_ids {
+            match self.job_queue.cancel_job(job_id).await {
+                Ok(_) => {}
+                // Already terminal, or already gone: nothing to stand down.
+                Err(Error::InvalidStateTransition { .. } | Error::NotFound { .. }) => {}
+                Err(e) => warn!(
+                    job_id = %job_id,
+                    error = %e,
+                    "Failed to cancel job while deleting DAG"
+                ),
+            }
+        }
+
         // Delete all associated jobs and their logs
         self.job_repository.delete_jobs_by_pipeline(dag_id).await?;
+        self.job_queue.forget_jobs(&job_ids);
 
         // Delete the DAG (CASCADE deletes steps)
         self.dag_repository.delete_dag(dag_id).await
@@ -1333,6 +1360,74 @@ mod tests {
         assert!(job_repo.get_job(&root_job.id).await.is_err());
         let counts = job_repo.get_job_counts_by_status().await.unwrap();
         assert_eq!(counts.failed, 0);
+    }
+
+    /// Deleting a DAG removes job rows outright, so a job a worker is still running has to be
+    /// told to stop and everything the queue holds for it has to go with the rows.
+    #[tokio::test]
+    async fn test_delete_dag_stands_down_active_jobs() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_queue = Arc::new(JobQueue::new());
+        let scheduler = DagScheduler::new(job_queue.clone(), dag_repo, job_repo.clone());
+        let dag_def = DagPipelineDefinition::new(
+            "delete stands down jobs",
+            vec![DagStep {
+                id: "A".to_string(),
+                step: PipelineStep::inline("noop", serde_json::json!({})),
+                depends_on: vec![],
+            }],
+        );
+
+        let created = scheduler
+            .create_dag_pipeline(
+                dag_def,
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+
+        // Stands in for a worker claiming the job: dequeue is what registers its token.
+        let claimed = job_queue
+            .dequeue(None)
+            .await
+            .unwrap()
+            .expect("the root job is claimable");
+        assert_eq!(claimed.id, created.root_job_ids[0]);
+        let token = job_queue
+            .get_cancellation_token(&claimed.id)
+            .await
+            .expect("dequeue registers a cancellation token");
+        assert!(!token.is_cancelled());
+        assert_eq!(job_queue.depth(), 1);
+
+        scheduler.delete_dag(&created.dag_id).await.unwrap();
+
+        assert!(
+            token.is_cancelled(),
+            "a worker inside Processor::process must be told the job is gone"
+        );
+        assert_eq!(
+            job_queue.depth(),
+            0,
+            "the deleted job still counted as queued"
+        );
+        assert!(job_queue.get_job(&claimed.id).await.unwrap().is_none());
+        assert!(
+            job_queue
+                .get_cancellation_token(&claimed.id)
+                .await
+                .is_none()
+        );
+        assert!(job_repo.get_job(&claimed.id).await.is_err());
     }
 
     /// The retry fan-out path (reset_dag_for_retry -> enqueue_now_ready_steps)

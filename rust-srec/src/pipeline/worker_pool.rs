@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -13,7 +13,27 @@ use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler,
 };
 use super::job_queue::{JobExecutionInfo, JobQueue, JobResult};
+use super::manager::PipelineEvent;
 use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput};
+
+/// How long a job already in `Processor::process` may keep running after the pool's
+/// cancellation token fires before its own token is cancelled too.
+///
+/// Sized to sit inside the cooperative window `ServiceContainer::shutdown_until` allows, so a
+/// short job (thumbnail, metadata, delete) still finishes and records its result, while a long
+/// one (remux, upload) stops cooperatively instead of holding `WorkerPool::stop` until the
+/// caller gives up and calls `WorkerPool::abort`.
+const SHUTDOWN_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Broadcast a job lifecycle event, if the pool was started with a sender.
+///
+/// Send errors mean no subscriber is currently attached (the notification service is the only
+/// consumer, and it is optional), which is not a job failure.
+fn emit_event(event_tx: &Option<broadcast::Sender<PipelineEvent>>, event: PipelineEvent) {
+    if let Some(tx) = event_tx {
+        let _ = tx.send(event);
+    }
+}
 
 /// Type of worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -210,16 +230,21 @@ impl WorkerPool {
 
     /// Start the worker pool.
     pub fn start(&self, job_queue: Arc<JobQueue>, processors: Vec<Arc<dyn Processor>>) {
-        self.start_with_dag_scheduler(job_queue, processors, None, None);
+        self.start_with_dag_scheduler(job_queue, processors, None, None, None);
     }
 
     /// Start the worker pool with optional DAG scheduler support.
+    ///
+    /// `event_tx` receives the `PipelineEvent::Job{Started,Completed,Failed}` transitions this
+    /// pool observes; workers are the only place they are known, since a job's terminal state
+    /// is decided here rather than by `PipelineManager`.
     pub fn start_with_dag_scheduler(
         &self,
         job_queue: Arc<JobQueue>,
         processors: Vec<Arc<dyn Processor>>,
         dag_scheduler: Option<Arc<DagScheduler>>,
         dag_notify_tx: Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
+        event_tx: Option<broadcast::Sender<PipelineEvent>>,
     ) {
         let worker_type = self.worker_type;
         let semaphore = self.semaphore.clone();
@@ -278,6 +303,7 @@ impl WorkerPool {
                 let avg_runtime_ms = avg_runtime_ms.clone();
                 let dag_scheduler = dag_scheduler.clone();
                 let dag_notify_tx = dag_notify_tx.clone();
+                let event_tx = event_tx.clone();
 
                 join_set.spawn(async move {
                     debug!("{} worker {} started", worker_type, i);
@@ -382,6 +408,15 @@ impl WorkerPool {
                                         );
                                     }
 
+                                    emit_event(
+                                        &event_tx,
+                                        PipelineEvent::JobFailed {
+                                            job_id: job_id.clone(),
+                                            job_type: job_type.clone(),
+                                            error: reason.clone(),
+                                        },
+                                    );
+
                                     // Fail the DAG execution (fail-fast) and notify completion listeners.
                                     handle_dag_job_failure(
                                         &dag_scheduler,
@@ -443,7 +478,18 @@ impl WorkerPool {
 
                             // Process the job with timeout
                             let mut job = job;
-                            let is_retry = job.retry_count > 0;
+                            // True when this job has been attempted before, which is what makes
+                            // a processor's resume path legitimate (see CopyMoveProcessor's
+                            // absent-source handling). `retry_count` covers an explicit
+                            // `JobQueue::retry_job`; `current_processor` covers a job a crash
+                            // left PROCESSING that `JobQueue::recover_jobs` reset to PENDING,
+                            // which leaves `retry_count` alone but keeps the execution_info the
+                            // earlier attempt wrote through `update_execution_info` below.
+                            let is_retry = job.retry_count > 0
+                                || job
+                                    .execution_info
+                                    .as_ref()
+                                    .is_some_and(|info| info.current_processor.is_some());
                             let dag_step_execution_id = job.dag_step_execution_id.take();
                             let current_step = job
                                 .execution_info
@@ -463,6 +509,15 @@ impl WorkerPool {
                                 session_start: job.session_start.take(),
                                 created_at: job.created_at,
                             };
+
+                            emit_event(
+                                &event_tx,
+                                PipelineEvent::JobStarted {
+                                    job_id: job_id.clone(),
+                                    job_type: job_type.clone(),
+                                    streamer_id: input.streamer_id.clone(),
+                                },
+                            );
 
                             let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(1024);
                             let log_dropped = Arc::new(AtomicUsize::new(0));
@@ -624,9 +679,35 @@ impl WorkerPool {
                                 );
                                 tokio::pin!(timed);
 
+                                // On shutdown a job gets SHUTDOWN_DRAIN_GRACE to finish on its
+                                // own; past that its own token is cancelled, which is the only
+                                // signal that reaches the processor, since ProcessorContext
+                                // carries that token and not the pool's. Without it the worker
+                                // stays inside `process` until `job_timeout` and `Self::stop`
+                                // waits there with it, so shutdown can only end by falling
+                                // back to `Self::abort`. A job stopped this way keeps its
+                                // PROCESSING row, which `JobQueue::recover_jobs` resets to
+                                // PENDING to be run again on the next start.
+                                let shutdown_drain = {
+                                    let cancellation_token = cancellation_token.clone();
+                                    async move {
+                                        cancellation_token.cancelled().await;
+                                        tokio::time::sleep(SHUTDOWN_DRAIN_GRACE).await;
+                                    }
+                                };
+
                                 tokio::select! {
                                     biased;
                                     _ = job_cancellation_token.cancelled() => None,
+                                    _ = shutdown_drain => {
+                                        info!(
+                                            job_id = %job_id,
+                                            "Stopping unfinished job for {} worker pool shutdown",
+                                            worker_type
+                                        );
+                                        job_cancellation_token.cancel();
+                                        None
+                                    }
                                     res = &mut timed => Some(res),
                                 }
                             };
@@ -672,6 +753,7 @@ impl WorkerPool {
                                         }
 
                                     let completed_outputs = output.outputs.clone();
+                                    let completed_duration = output.duration_secs;
                                     match job_queue
                                         .complete_if_processing(
                                             &job_id,
@@ -686,6 +768,14 @@ impl WorkerPool {
                                         .await
                                     {
                                         Ok(true) => {
+                                            emit_event(
+                                                &event_tx,
+                                                PipelineEvent::JobCompleted {
+                                                    job_id: job_id.clone(),
+                                                    job_type: job_type.clone(),
+                                                    duration_secs: completed_duration,
+                                                },
+                                            );
                                             // `JobQueue::complete_if_processing` persists outputs before
                                             // `DagScheduler::on_job_completed` derives graph advancement from them.
                                             debug!(
@@ -772,6 +862,14 @@ impl WorkerPool {
                                     if !job_cancellation_token.is_cancelled() {
                                     // Check if this is a DAG job for fail-fast handling
                                     let error = e.to_string();
+                                    emit_event(
+                                        &event_tx,
+                                        PipelineEvent::JobFailed {
+                                            job_id: job_id.clone(),
+                                            job_type: job_type.clone(),
+                                            error: error.clone(),
+                                        },
+                                    );
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
                                         let partial_outputs = job_queue
@@ -827,6 +925,15 @@ impl WorkerPool {
 
                                     if !job_cancellation_token.is_cancelled() {
                                     job_cancellation_token.cancel();
+
+                                    emit_event(
+                                        &event_tx,
+                                        PipelineEvent::JobFailed {
+                                            job_id: job_id.clone(),
+                                            job_type: job_type.clone(),
+                                            error: "Job timed out".to_string(),
+                                        },
+                                    );
 
                                     // Check if this is a DAG job for fail-fast handling
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
@@ -896,6 +1003,14 @@ impl WorkerPool {
                             {
                                 error!(job_id = %job.id, %error, "Failed to mark job as failed");
                             }
+                            emit_event(
+                                &event_tx,
+                                PipelineEvent::JobFailed {
+                                    job_id: job.id.clone(),
+                                    job_type: job.job_type.clone(),
+                                    error: "No processor found".to_string(),
+                                },
+                            );
                         }
 
                         drop(permit);
@@ -1247,6 +1362,164 @@ mod tests {
         fn name(&self) -> &'static str {
             "timeout-publish"
         }
+    }
+
+    struct NoopProcessor;
+
+    #[async_trait]
+    impl Processor for NoopProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["noop"]
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            Ok(ProcessorOutput {
+                duration_secs: 1.5,
+                ..Default::default()
+            })
+        }
+
+        fn name(&self) -> &'static str {
+            "noop"
+        }
+    }
+
+    struct FailingProcessor;
+
+    #[async_trait]
+    impl Processor for FailingProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["failing"]
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            Err(crate::Error::PipelineError("boom".to_string()))
+        }
+
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+    }
+
+    fn test_pool_config() -> WorkerPoolConfig {
+        WorkerPoolConfig {
+            max_workers: 1,
+            job_timeout_secs: 30,
+            poll_interval_ms: 10,
+            adaptive: AdaptiveWorkerPoolConfig::default(),
+        }
+    }
+
+    /// The worker is the only place a job's start and terminal state are known, so it is what
+    /// feeds the pipeline_started / pipeline_completed notification subscriptions.
+    #[tokio::test]
+    async fn test_worker_emits_started_and_completed_events() {
+        let job_queue = Arc::new(JobQueue::new());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+
+        pool.start_with_dag_scheduler(
+            job_queue.clone(),
+            vec![Arc::new(NoopProcessor)],
+            None,
+            None,
+            Some(event_tx),
+        );
+
+        let job = Job::new(
+            "noop",
+            vec!["/input".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job_queue.enqueue(job).await.unwrap();
+
+        let mut started: Option<(String, String)> = None;
+        let mut completed: Option<(String, f64)> = None;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while started.is_none() || completed.is_none() {
+                match event_rx.recv().await.unwrap() {
+                    PipelineEvent::JobStarted {
+                        job_id,
+                        streamer_id,
+                        ..
+                    } => started = Some((job_id, streamer_id)),
+                    PipelineEvent::JobCompleted {
+                        job_id,
+                        duration_secs,
+                        ..
+                    } => completed = Some((job_id, duration_secs)),
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("worker emits JobStarted and JobCompleted");
+
+        // streamer_id has to come from the job itself: DAG step jobs are enqueued through
+        // enqueue_existing and never emit JobEnqueued for a listener to correlate against.
+        assert_eq!(started, Some((job_id.clone(), "streamer-1".to_string())));
+        assert_eq!(completed, Some((job_id, 1.5)));
+
+        pool.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_worker_emits_failed_event() {
+        let job_queue = Arc::new(JobQueue::new());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+
+        pool.start_with_dag_scheduler(
+            job_queue.clone(),
+            vec![Arc::new(FailingProcessor)],
+            None,
+            None,
+            Some(event_tx),
+        );
+
+        let job = Job::new(
+            "failing",
+            vec!["/input".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job_queue.enqueue(job).await.unwrap();
+
+        let failure = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let PipelineEvent::JobFailed { job_id, error, .. } =
+                    event_rx.recv().await.unwrap()
+                {
+                    return (job_id, error);
+                }
+            }
+        })
+        .await
+        .expect("worker emits JobFailed");
+
+        assert_eq!(failure.0, job_id);
+        assert!(failure.1.contains("boom"), "{}", failure.1);
+
+        pool.stop().await;
     }
 
     #[test]

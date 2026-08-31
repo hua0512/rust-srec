@@ -39,6 +39,19 @@ where
             }
         }
         let recovered = self.job_queue.recover_jobs().await?;
+        // Runs before `recover_pipeline_coordination` so a DAG failed here is already terminal
+        // when the coordinator replays it, rather than being replayed as still in flight.
+        match self.fail_unclaimable_jobs().await {
+            Ok(failed) if failed > 0 => info!(
+                jobs = %failed,
+                "Failed pending jobs whose processor is not registered"
+            ),
+            Ok(_) => {}
+            Err(e) => warn!(
+                error = %e,
+                "Failed to sweep pending jobs with unregistered processors"
+            ),
+        }
         if let Err(e) = self.recover_pipeline_coordination().await {
             warn!(
                 error = %e,
@@ -51,6 +64,66 @@ where
             debug!("No jobs to recover from database");
         }
         Ok(recovered)
+    }
+
+    /// Fail pending jobs whose `job_type` no registered processor accepts.
+    ///
+    /// No pool claims such a job (see `supported_job_types`), so it would sit PENDING across
+    /// every restart while holding its DAG out of a terminal state and counting towards
+    /// `JobQueue::depth`, which drives the queue-depth warnings and download throttling.
+    /// `validate_step_processors` rejects new definitions that would produce one; this clears
+    /// jobs already persisted, whose step's DAG is failed through `DagScheduler::on_job_failed`
+    /// so its dependents are cancelled instead of waiting.
+    ///
+    /// Returns the number of jobs failed.
+    pub(super) async fn fail_unclaimable_jobs(&self) -> Result<usize> {
+        let supported = self.supported_job_types();
+        let filters = JobFilters {
+            status: Some(JobStatus::Pending),
+            ..Default::default()
+        };
+        let (jobs, _) = self
+            .job_queue
+            .list_jobs(&filters, &Pagination::new(10_000, 0))
+            .await?;
+
+        let mut failed = 0usize;
+        for job in jobs {
+            if supported.contains(job.job_type.as_str()) {
+                continue;
+            }
+
+            let reason = format!("No processor is registered for job type '{}'", job.job_type);
+            warn!(
+                job_id = %job.id,
+                job_type = %job.job_type,
+                "Failing pending job that no worker pool can claim"
+            );
+
+            if let Err(e) = self.job_queue.fail(&job.id, &reason).await {
+                warn!(
+                    job_id = %job.id,
+                    error = %e,
+                    "Failed to mark unclaimable job as failed"
+                );
+                continue;
+            }
+            failed += 1;
+
+            if let Some(step_id) = job.dag_step_execution_id.as_deref()
+                && let Some(scheduler) = &self.dag_scheduler
+                && let Err(e) = scheduler.on_job_failed(step_id, &reason).await
+            {
+                warn!(
+                    job_id = %job.id,
+                    dag_step_execution_id = %step_id,
+                    error = %e,
+                    "Failed to fail the DAG of an unclaimable job"
+                );
+            }
+        }
+
+        Ok(failed)
     }
 
     pub(super) async fn recover_pipeline_coordination(&self) -> Result<()> {

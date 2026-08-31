@@ -126,12 +126,14 @@ where
             cpu_processors,
             self.dag_scheduler.clone(),
             Some(dag_notify_tx.clone()),
+            Some(self.event_tx.clone()),
         );
         self.io_pool.start_with_dag_scheduler(
             self.job_queue.clone(),
             io_processors,
             self.dag_scheduler.clone(),
             Some(dag_notify_tx),
+            Some(self.event_tx.clone()),
         );
 
         // Start throttle controller monitoring if enabled and adjuster is set
