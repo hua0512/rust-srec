@@ -13,7 +13,9 @@ import {
   cancelPipeline,
   deletePipeline,
   retryAllFailedPipelines,
+  batchPipelines,
 } from '@/server/functions';
+import type { BatchDagAction, DagSummary } from '@/api/schemas';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
@@ -49,12 +51,15 @@ import {
   AlertCircle,
   Timer,
   ListTodo,
+  ListChecks,
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary-card';
+import { PipelineBatchActionBar } from '@/components/pipeline/jobs/pipeline-batch-action-bar';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
+import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { formatDuration } from '@/lib/format';
 import { z } from 'zod';
 
@@ -160,10 +165,50 @@ function PipelineJobsPage() {
     placeholderData: keepPreviousData,
   });
 
-  const pipelines = pipelinesData?.dags || [];
+  const pipelines: DagSummary[] = pipelinesData?.dags || [];
   const totalPipelines = pipelinesData?.total || 0;
 
   const totalPages = Math.ceil(totalPipelines / pageSize);
+
+  const pageIds = useMemo(
+    () => pipelines.map((pipeline) => pipeline.id),
+    [pipelines],
+  );
+
+  const {
+    selectionMode,
+    selectedIds,
+    setSelectedIds,
+    allPageSelected,
+    handleSelectionChange,
+    selectPage,
+    clearSelection,
+    toggleSelectionMode,
+    exitSelectionMode,
+  } = useBatchSelection({
+    pageIds,
+    scope: [currentPage, pageSize, q ?? '', selectedStatus ?? ''].join('|'),
+  });
+
+  // Cancel and retry each accept only a subset of statuses, so the bar reports
+  // how many of the selection they will touch instead of sending IDs the
+  // backend is certain to reject. Delete accepts every status.
+  const selectionCounts = useMemo(() => {
+    let cancellable = 0;
+    let retryable = 0;
+    for (const pipeline of pipelines) {
+      if (!selectedIds.has(pipeline.id)) continue;
+      if (pipeline.status === 'PENDING' || pipeline.status === 'PROCESSING') {
+        cancellable += 1;
+      } else if (
+        pipeline.status === 'FAILED' ||
+        pipeline.status === 'CANCELLED'
+      ) {
+        retryable += 1;
+      }
+    }
+    return { cancellable, retryable };
+  }, [pipelines, selectedIds]);
 
   // Memoize pagination pages calculation
   const paginationPages = useMemo(() => {
@@ -234,6 +279,75 @@ function PipelineJobsPage() {
     onError: () =>
       toast.error(i18n._(msg`Failed to retry all failed pipelines`)),
   });
+
+  const batchMutation = useMutation({
+    mutationFn: ({ ids, action }: { ids: string[]; action: BatchDagAction }) =>
+      batchPipelines({ data: { ids, action } }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'pipelines'],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+
+      if (result.failed === 0) {
+        toast.success(
+          i18n._(msg`Successfully processed ${result.succeeded} pipelines`),
+        );
+        exitSelectionMode();
+        return;
+      }
+
+      // Keep only the failures selected so a retry of the action targets exactly
+      // the pipelines that did not go through.
+      const failedResults = result.results.filter((item) => !item.success);
+      setSelectedIds(new Set(failedResults.map((item) => item.id)));
+      toast.warning(
+        i18n._(
+          msg`Processed ${result.succeeded} pipelines; ${result.failed} failed`,
+        ),
+        {
+          description: failedResults
+            .slice(0, 3)
+            .map((item) => item.error)
+            .filter(Boolean)
+            .join('; '),
+        },
+      );
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to process selected pipelines`),
+      );
+    },
+  });
+
+  const handleBatchAction = useCallback(
+    (action: BatchDagAction) => {
+      if (selectedIds.size === 0 || batchMutation.isPending) return;
+
+      // Cancel and retry are status-gated; sending the whole selection would
+      // produce guaranteed per-item failures for the ineligible pipelines.
+      let ids = Array.from(selectedIds);
+      if (action.type === 'cancel' || action.type === 'retry') {
+        const eligible =
+          action.type === 'cancel'
+            ? new Set(['PENDING', 'PROCESSING'])
+            : new Set(['FAILED', 'CANCELLED']);
+        const eligibleIds = new Set(
+          pipelines
+            .filter((pipeline) => eligible.has(pipeline.status))
+            .map((pipeline) => pipeline.id),
+        );
+        ids = ids.filter((id) => eligibleIds.has(id));
+      }
+
+      if (ids.length === 0) return;
+      batchMutation.mutate({ ids, action });
+    },
+    [selectedIds, batchMutation, pipelines],
+  );
 
   const handleViewDetails = useCallback(
     (pipelineId: string) => {
@@ -313,6 +427,24 @@ function PipelineJobsPage() {
                 >
                   {totalPipelines} <Trans>pipelines</Trans>
                 </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleSelectionMode}
+                  aria-pressed={selectionMode}
+                  aria-label={i18n._(msg`Select pipelines`)}
+                  className={cn(
+                    'h-9 gap-2 whitespace-nowrap rounded-full px-3',
+                    selectionMode
+                      ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <ListChecks className="h-4 w-4" />
+                  <span className="hidden sm:inline">
+                    <Trans>Select</Trans>
+                  </span>
+                </Button>
                 <Button
                   className="h-9 gap-2 whitespace-nowrap"
                   variant="default"
@@ -410,13 +542,16 @@ function PipelineJobsPage() {
               animate="visible"
               exit="exit"
             >
-              {pipelines.map((pipeline: any) => (
+              {pipelines.map((pipeline) => (
                 <motion.div key={pipeline.id} variants={itemVariants}>
                   <PipelineSummaryCard
                     pipeline={pipeline}
                     onCancelPipeline={handleCancelPipeline}
                     onDeletePipeline={handleDeletePipeline}
                     onViewDetails={handleViewDetails}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(pipeline.id)}
+                    onSelectChange={handleSelectionChange}
                   />
                 </motion.div>
               ))}
@@ -548,34 +683,56 @@ function PipelineJobsPage() {
           </div>
         )}
       </div>
-      {/* Retry All Failed FAB */}
+      {/* Retry All Failed FAB. Hidden while selecting so it cannot overlap the
+          batch action bar, which offers a scoped retry instead. */}
       <AnimatePresence>
-        {selectedStatus === 'FAILED' && stats && stats.failed_count > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className={cn(FAB_ANCHOR, 'md:bottom-10 md:right-10')}
-          >
-            <Button
-              size="lg"
-              onClick={handleRetryAllFailed}
-              disabled={retryAllFailedMutation.isPending}
-              className="rounded-full shadow-xl shadow-red-500/30 gap-2.5 h-14 px-7 bg-red-600 hover:bg-red-700 text-white border-none group transition-all duration-300 active:scale-95"
+        {!selectionMode &&
+          selectedStatus === 'FAILED' &&
+          stats &&
+          stats.failed_count > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.9 }}
+              className={cn(FAB_ANCHOR, 'md:bottom-10 md:right-10')}
             >
-              <RefreshCw
-                className={cn(
-                  'h-5 w-5',
-                  retryAllFailedMutation.isPending && 'animate-spin',
-                  !retryAllFailedMutation.isPending &&
-                    'group-hover:rotate-180 transition-transform duration-500',
-                )}
-              />
-              <span className="font-bold tracking-tight text-base">
-                <Trans>Retry All Failed</Trans>
-              </span>
-            </Button>
-          </motion.div>
+              <Button
+                size="lg"
+                onClick={handleRetryAllFailed}
+                disabled={retryAllFailedMutation.isPending}
+                className="rounded-full shadow-xl shadow-red-500/30 gap-2.5 h-14 px-7 bg-red-600 hover:bg-red-700 text-white border-none group transition-all duration-300 active:scale-95"
+              >
+                <RefreshCw
+                  className={cn(
+                    'h-5 w-5',
+                    retryAllFailedMutation.isPending && 'animate-spin',
+                    !retryAllFailedMutation.isPending &&
+                      'group-hover:rotate-180 transition-transform duration-500',
+                  )}
+                />
+                <span className="font-bold tracking-tight text-base">
+                  <Trans>Retry All Failed</Trans>
+                </span>
+              </Button>
+            </motion.div>
+          )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectionMode && (
+          <PipelineBatchActionBar
+            selectedCount={selectedIds.size}
+            pageCount={pipelines.length}
+            allPageSelected={allPageSelected}
+            cancellableCount={selectionCounts.cancellable}
+            retryableCount={selectionCounts.retryable}
+            runningCount={selectionCounts.cancellable}
+            isPending={batchMutation.isPending}
+            onSelectPage={selectPage}
+            onClearSelection={clearSelection}
+            onAction={handleBatchAction}
+            onExit={toggleSelectionMode}
+          />
         )}
       </AnimatePresence>
     </div>

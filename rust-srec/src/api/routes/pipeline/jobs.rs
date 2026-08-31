@@ -18,8 +18,10 @@ use crate::database::time::ms_to_datetime;
 use crate::pipeline::{Job, JobProgressSnapshot};
 
 use super::{
-    CreatePipelineRequest, CreatePipelineResponse, OutputFilterParams, OutputRouteState,
-    PipelineRouteState, UploadRouteState,
+    BatchDagItemResult, BatchDeleteOutputsRequest, BatchDeleteOutputsResponse,
+    CreatePipelineRequest, CreatePipelineResponse, DeleteOutputParams, DeleteOutputResponse,
+    OutputFilterParams, OutputRouteState, PipelineRouteState, UploadRouteState,
+    dag::validate_batch_ids,
 };
 
 /// List pipeline jobs with pagination and filtering.
@@ -675,6 +677,145 @@ pub async fn list_outputs(
     let response =
         PaginatedResponse::new(output_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
+}
+
+/// Remove one media output, optionally deleting its file first.
+///
+/// The path comes from `media_outputs.file_path` looked up by `id`, never from the
+/// caller. A file that is already gone counts as deleted — the record is what the
+/// caller asked to remove. Any other IO error leaves the row in place so the caller
+/// can retry with `delete_file` off, which is why the file is removed before the row:
+/// deleting the row first and then failing would orphan the file with no path left to
+/// find it by.
+async fn delete_output_inner(
+    state: &OutputRouteState,
+    id: &str,
+    delete_file: bool,
+) -> ApiResult<bool> {
+    let output = state
+        .session_repository
+        .get_media_output(id)
+        .await
+        .map_err(ApiError::from)?;
+
+    let mut file_deleted = false;
+    if delete_file {
+        let path = crate::api::routes::media::normalize_media_path(&output.file_path);
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => file_deleted = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(ApiError::from(crate::Error::io_path(
+                    "remove_file",
+                    &path,
+                    error,
+                )));
+            }
+        }
+    }
+
+    // Goes through the repository so `live_sessions.total_size_bytes` is decremented in
+    // the same transaction that removes the row.
+    state
+        .session_repository
+        .delete_media_output(id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(file_deleted)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/pipeline/outputs/{id}",
+    tag = "pipeline",
+    params(
+        ("id" = String, Path, description = "Media output ID"),
+        DeleteOutputParams
+    ),
+    responses(
+        (status = 200, description = "Media output deleted", body = DeleteOutputResponse),
+        (status = 404, description = "Media output not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_output(
+    State(state): State<OutputRouteState>,
+    Path(id): Path<String>,
+    Query(params): Query<DeleteOutputParams>,
+) -> ApiResult<Json<DeleteOutputResponse>> {
+    let file_deleted = delete_output_inner(&state, &id, params.delete_file).await?;
+
+    let message = if file_deleted {
+        format!("Output '{}' and its file deleted", id)
+    } else {
+        format!("Output '{}' deleted", id)
+    };
+
+    Ok(Json(DeleteOutputResponse {
+        id,
+        file_deleted,
+        message,
+    }))
+}
+
+/// Delete several media outputs, reporting a result per ID.
+///
+/// Outputs are removed sequentially and successful ones are never rolled back, so a
+/// batch that hits an unreadable file is partially applied. Those per-item failures
+/// are reported in `results`, not as a failed request — only ID validation produces a
+/// non-200.
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/outputs/batch-delete",
+    tag = "pipeline",
+    request_body = BatchDeleteOutputsRequest,
+    responses(
+        (status = 200, description = "Per-output deletion results", body = BatchDeleteOutputsResponse),
+        (status = 422, description = "Invalid batch request", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn batch_delete_outputs(
+    State(state): State<OutputRouteState>,
+    Json(request): Json<BatchDeleteOutputsRequest>,
+) -> ApiResult<Json<BatchDeleteOutputsResponse>> {
+    validate_batch_ids(&request.ids, "output")?;
+
+    let requested = request.ids.len();
+    let mut results = Vec::with_capacity(requested);
+
+    for id in request.ids {
+        match delete_output_inner(&state, &id, request.delete_file).await {
+            Ok(_) => results.push(BatchDagItemResult {
+                id,
+                success: true,
+                code: None,
+                error: None,
+            }),
+            Err(api_error) => {
+                tracing::warn!(
+                    output_id = %id,
+                    error_code = %api_error.code,
+                    "Batch output deletion failed"
+                );
+                results.push(BatchDagItemResult {
+                    id,
+                    success: false,
+                    code: Some(api_error.code),
+                    error: Some(api_error.message),
+                });
+            }
+        }
+    }
+
+    let succeeded = results.iter().filter(|result| result.success).count();
+    Ok(Json(BatchDeleteOutputsResponse {
+        requested,
+        succeeded,
+        failed: requested - succeeded,
+        results,
+    }))
 }
 
 /// Get pipeline statistics.

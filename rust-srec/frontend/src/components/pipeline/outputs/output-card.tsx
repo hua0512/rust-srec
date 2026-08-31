@@ -19,12 +19,16 @@ import {
   FileVideo,
   HardDrive,
   Calendar,
+  Check,
   Copy,
   CheckCircle2,
   FolderOpen,
   CloudUpload,
   CloudAlert,
+  Trash2,
 } from 'lucide-react';
+import { DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { DeleteOutputsDialog } from '@/components/pipeline/outputs/delete-outputs-dialog';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
@@ -39,6 +43,10 @@ import type { MediaOutput } from '@/api/schemas';
 
 interface OutputCardProps {
   output: MediaOutput;
+  onDelete?: (outputId: string, deleteFile: boolean) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onSelectChange?: (outputId: string, selected: boolean) => void;
 }
 
 // Format colors for different file types
@@ -56,9 +64,16 @@ const FORMAT_COLORS: Record<string, string> = {
 
 import { basename, formatBytes } from '@/lib/format';
 
-export function OutputCard({ output }: OutputCardProps) {
+export function OutputCard({
+  output,
+  onDelete,
+  selectionMode = false,
+  isSelected = false,
+  onSelectChange,
+}: OutputCardProps) {
   const { i18n } = useLingui();
   const [copied, setCopied] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Client-side time for hydration-safe relative time
   const [mounted, setMounted] = useState(false);
@@ -80,8 +95,42 @@ export function OutputCard({ output }: OutputCardProps) {
     'from-gray-500/10 to-gray-500/5 text-gray-500 border-gray-500/20';
   const hasFailedUpload = output.uploads.some((u) => u.status === 'FAILED');
 
+  const toggleSelection = () => {
+    if (selectionMode) {
+      onSelectChange?.(output.id, !isSelected);
+    }
+  };
+
   return (
-    <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
+    <Card
+      onClick={toggleSelection}
+      role={selectionMode ? 'checkbox' : undefined}
+      aria-checked={selectionMode ? isSelected : undefined}
+      tabIndex={selectionMode ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (selectionMode && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          toggleSelection();
+        }
+      }}
+      className={cn(
+        'relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20',
+        selectionMode && 'cursor-pointer select-none',
+        isSelected && 'border-primary/50 ring-2 ring-primary',
+      )}
+    >
+      {selectionMode && (
+        <div
+          className={cn(
+            'absolute right-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border-2 shadow-sm transition-colors',
+            isSelected
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-background/90 text-transparent',
+          )}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </div>
+      )}
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
 
       {/* Hover Glow Effect */}
@@ -167,7 +216,12 @@ export function OutputCard({ output }: OutputCardProps) {
           {output.format}
         </Badge>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <DropdownMenuTrigger
+            asChild
+            onClick={(e) => e.stopPropagation()}
+            // Hidden while selecting so the row has a single click target.
+            className={cn(selectionMode && 'hidden')}
+          >
             <Button
               variant="ghost"
               size="icon"
@@ -207,8 +261,35 @@ export function OutputCard({ output }: OutputCardProps) {
               <FolderOpen className="mr-2 h-4 w-4" />{' '}
               <Trans>Copy Directory</Trans>
             </DropdownMenuItem>
+            {onDelete && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteOpen(true);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {onDelete && (
+          <DeleteOutputsDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            count={1}
+            onConfirm={(deleteFile) => {
+              setDeleteOpen(false);
+              onDelete(output.id, deleteFile);
+            }}
+          />
+        )}
       </CardHeader>
 
       <CardContent className="relative pb-4 flex-1 z-10">

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use axum::{
     Json,
@@ -10,10 +10,45 @@ use crate::database::models::JobStatus;
 use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 
 use super::{
-    DagCancelResponse, DagFilterParams, DagGraphEdge, DagGraphNode, DagGraphResponse, DagListItem,
-    DagListResponse, DagPaginationParams, DagRetryResponse, DagStatsResponse, DagStatusResponse,
+    BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse, DagCancelResponse,
+    DagFilterParams, DagGraphEdge, DagGraphNode, DagGraphResponse, DagListItem, DagListResponse,
+    DagPaginationParams, DagRetryResponse, DagStatsResponse, DagStatusResponse,
     DagStepStatusResponse, PipelineRouteState, ValidateDagRequest, ValidateDagResponse,
 };
+
+/// Maximum number of DAG IDs accepted by `POST /api/pipeline/dags/batch`.
+pub(super) const MAX_DAG_BATCH_SIZE: usize = 100;
+
+/// Reject a batch whose IDs are missing, oversized, blank or repeated.
+///
+/// `entity` names the ID kind in the error message so [`batch_dags`] and the media
+/// output batch in [`super::jobs`] can share one implementation.
+pub(super) fn validate_batch_ids(ids: &[String], entity: &str) -> ApiResult<()> {
+    if ids.is_empty() {
+        return Err(ApiError::validation(format!(
+            "At least one {entity} ID is required"
+        )));
+    }
+    if ids.len() > MAX_DAG_BATCH_SIZE {
+        return Err(ApiError::validation(format!(
+            "A batch may contain at most {MAX_DAG_BATCH_SIZE} {entity} IDs"
+        )));
+    }
+    if ids.iter().any(|id| id.trim().is_empty()) {
+        return Err(ApiError::validation(format!(
+            "{entity} IDs cannot be empty"
+        )));
+    }
+
+    let unique_ids: HashSet<&str> = ids.iter().map(String::as_str).collect();
+    if unique_ids.len() != ids.len() {
+        return Err(ApiError::validation(format!(
+            "{entity} IDs must be unique within a batch"
+        )));
+    }
+
+    Ok(())
+}
 
 #[utoipa::path(
     get,
@@ -223,8 +258,10 @@ pub async fn retry_dag(
     retry_dag_inner(&state, &dag_id).await.map(Json)
 }
 
-/// Core of [`retry_dag`], kept separate from the handler so callers that already
-/// hold a [`PipelineRouteState`] can reuse it without rebuilding the extractors.
+/// Core of [`retry_dag`], shared with [`batch_dags`].
+///
+/// Kept separate from the handler so a batch item reports exactly the error the
+/// single-DAG endpoint would have produced for the same ID.
 async fn retry_dag_inner(state: &PipelineRouteState, dag_id: &str) -> ApiResult<DagRetryResponse> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -574,6 +611,104 @@ pub async fn retry_all_failed_dags(
         "count": retried_count,
         "message": format!("Successfully retried {} failed or cancelled DAGs", retried_count)
     })))
+}
+
+/// Apply one action to several DAGs, reporting a result per ID.
+///
+/// Items are applied sequentially and successful ones are never rolled back, so a
+/// partially applied batch is the normal outcome when the selection mixes statuses:
+/// [`crate::pipeline::PipelineManager::cancel_dag`] rejects a DAG that is already
+/// terminal and [`retry_dag_inner`] rejects one that is not, while
+/// [`crate::pipeline::PipelineManager::delete_dag`] accepts any status. Those
+/// per-item rejections are reported in `results`, not as a failed request — only ID
+/// validation and a missing DAG scheduler produce a non-200.
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/dags/batch",
+    tag = "pipeline",
+    request_body = BatchDagRequest,
+    responses(
+        (status = 200, description = "Per-DAG results for the requested action", body = BatchDagResponse),
+        (status = 422, description = "Invalid batch request", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "DAG scheduler not available", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn batch_dags(
+    State(state): State<PipelineRouteState>,
+    Json(request): Json<BatchDagRequest>,
+) -> ApiResult<Json<BatchDagResponse>> {
+    validate_batch_ids(&request.ids, "DAG")?;
+
+    // Without a scheduler every item would fail identically, so fail the request once
+    // instead of returning N copies of the same 503 in `results`.
+    state
+        .pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+
+    let pipeline_manager = &state.pipeline_manager;
+    let action = request.action;
+    let requested = request.ids.len();
+    let mut results = Vec::with_capacity(requested);
+
+    for id in request.ids {
+        // Collects `ApiResult` rather than `crate::Result` because `retry_dag_inner`
+        // already produces `ApiError`; routing it through `crate::Error` would flatten
+        // its bad-request status gates into 500s and make an item's `code` differ from
+        // what `retry_dag` returns for the same DAG.
+        let result: ApiResult<()> = async {
+            match action {
+                BatchDagAction::Cancel => {
+                    pipeline_manager
+                        .cancel_dag(&id)
+                        .await
+                        .map_err(ApiError::from)?;
+                }
+                BatchDagAction::Retry => {
+                    retry_dag_inner(&state, &id).await?;
+                }
+                BatchDagAction::Delete => {
+                    pipeline_manager
+                        .delete_dag(&id)
+                        .await
+                        .map_err(ApiError::from)?;
+                }
+            }
+            Ok(())
+        }
+        .await;
+
+        match result {
+            Ok(()) => results.push(BatchDagItemResult {
+                id,
+                success: true,
+                code: None,
+                error: None,
+            }),
+            Err(api_error) => {
+                tracing::warn!(
+                    dag_id = %id,
+                    error_code = %api_error.code,
+                    "Batch DAG action failed"
+                );
+                results.push(BatchDagItemResult {
+                    id,
+                    success: false,
+                    code: Some(api_error.code),
+                    error: Some(api_error.message),
+                });
+            }
+        }
+    }
+
+    let succeeded = results.iter().filter(|result| result.success).count();
+    Ok(Json(BatchDagResponse {
+        requested,
+        succeeded,
+        failed: requested - succeeded,
+        results,
+    }))
 }
 
 #[utoipa::path(
@@ -938,4 +1073,114 @@ pub(super) fn topological_sort(dag: &DagPipelineDefinition) -> Vec<String> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::routes::pipeline::tests::build_test_state;
+
+    #[test]
+    fn test_validate_batch_ids() {
+        assert!(validate_batch_ids(&["dag-1".to_string()], "DAG").is_ok());
+        assert!(validate_batch_ids(&[], "DAG").is_err());
+        assert!(validate_batch_ids(&["".to_string()], "DAG").is_err());
+        assert!(validate_batch_ids(&["   ".to_string()], "DAG").is_err());
+        assert!(validate_batch_ids(&["dag-1".to_string(), "dag-1".to_string()], "DAG").is_err());
+
+        let oversized = (0..=MAX_DAG_BATCH_SIZE)
+            .map(|index| format!("dag-{index}"))
+            .collect::<Vec<_>>();
+        assert!(validate_batch_ids(&oversized, "DAG").is_err());
+    }
+
+    #[test]
+    fn test_validate_batch_ids_names_the_entity() {
+        let error = validate_batch_ids(&[], "output").expect_err("empty batch must be rejected");
+        assert!(
+            error.message.contains("output"),
+            "message should name the entity, got: {}",
+            error.message
+        );
+    }
+
+    /// Pins the `#[serde(tag = "type", rename_all = "snake_case")]` wire format the
+    /// frontend's discriminated union mirrors.
+    #[test]
+    fn test_batch_dag_action_deserialization() {
+        for (raw, expected) in [
+            ("cancel", BatchDagAction::Cancel),
+            ("retry", BatchDagAction::Retry),
+            ("delete", BatchDagAction::Delete),
+        ] {
+            let request: BatchDagRequest = serde_json::from_value(serde_json::json!({
+                "ids": ["dag-1"],
+                "action": { "type": raw }
+            }))
+            .expect("batch DAG request should deserialize");
+            assert_eq!(request.action, expected);
+            assert_eq!(request.ids, vec!["dag-1".to_string()]);
+        }
+
+        assert!(
+            serde_json::from_value::<BatchDagRequest>(serde_json::json!({
+                "ids": ["dag-1"],
+                "action": { "type": "purge" }
+            }))
+            .is_err(),
+            "unknown action variants must be rejected"
+        );
+    }
+
+    /// ID validation runs before the scheduler lookup, so an empty batch is a 422
+    /// even when DAG support is unavailable.
+    #[tokio::test]
+    async fn test_batch_dags_rejects_empty_ids_before_scheduler_check() {
+        let state = build_test_state();
+        let error = batch_dags(
+            State(state),
+            Json(BatchDagRequest {
+                ids: vec![],
+                action: BatchDagAction::Cancel,
+            }),
+        )
+        .await
+        .expect_err("empty batch must be rejected");
+
+        assert_eq!(error.status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(error.code, "VALIDATION_ERROR");
+    }
+
+    /// A missing scheduler fails the whole request once rather than producing one
+    /// identical per-item failure per ID.
+    #[tokio::test]
+    async fn test_batch_dags_requires_dag_scheduler() {
+        let state = build_test_state();
+        let error = batch_dags(
+            State(state),
+            Json(BatchDagRequest {
+                ids: vec!["dag-1".to_string(), "dag-2".to_string()],
+                action: BatchDagAction::Retry,
+            }),
+        )
+        .await
+        .expect_err("missing scheduler must fail the whole request");
+
+        assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn test_batch_dag_item_result_omits_empty_error_fields() {
+        let json = serde_json::to_value(BatchDagItemResult {
+            id: "dag-1".to_string(),
+            success: true,
+            code: None,
+            error: None,
+        })
+        .unwrap();
+
+        assert_eq!(json["success"], serde_json::Value::Bool(true));
+        assert!(json.get("code").is_none());
+        assert!(json.get("error").is_none());
+    }
 }
