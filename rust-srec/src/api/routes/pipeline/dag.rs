@@ -628,12 +628,14 @@ pub async fn delete_dag(
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    let dag_scheduler = pipeline_manager
+    // Preserve service-unavailable semantics if DAG support isn't configured.
+    pipeline_manager
         .dag_scheduler()
         .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
-    // Delete the DAG
-    dag_scheduler
+    // Goes through the manager so a DAG that is still running is cancelled, and the pipeline
+    // coordinator notified, before its rows are removed.
+    pipeline_manager
         .delete_dag(&dag_id)
         .await
         .map_err(ApiError::from)?;

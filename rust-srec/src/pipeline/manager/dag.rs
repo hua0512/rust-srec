@@ -1,5 +1,6 @@
 use super::*;
 use chrono::{DateTime, Utc};
+use std::collections::HashSet;
 
 impl<CR, SR> PipelineManager<CR, SR>
 where
@@ -769,6 +770,34 @@ where
         Ok(update.cancelled_count)
     }
 
+    /// Delete a DAG execution together with its steps and jobs.
+    ///
+    /// A DAG that has not reached a terminal state is cancelled through [`Self::cancel_dag`]
+    /// first, so the pipeline coordinator is told the DAG is over before
+    /// `DagScheduler::delete_dag` removes the rows it would otherwise keep waiting on.
+    pub async fn delete_dag(&self, dag_id: &str) -> Result<()> {
+        let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
+            crate::Error::Validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            )
+        })?;
+
+        let dag = dag_scheduler.get_dag_status(dag_id).await?;
+        if !dag.get_status().is_some_and(|status| status.is_terminal())
+            && let Err(cancel_error) = self.cancel_dag(dag_id).await
+        {
+            // A DAG that became terminal between the two calls needs no stand-down. Any other
+            // failure means jobs may still be running, and removing their rows would strand
+            // them, so the delete does not proceed.
+            let dag = dag_scheduler.get_dag_status(dag_id).await?;
+            if !dag.get_status().is_some_and(|status| status.is_terminal()) {
+                return Err(cancel_error);
+            }
+        }
+
+        dag_scheduler.delete_dag(dag_id).await
+    }
+
     pub(super) async fn execute_pipeline_commands(&self, commands: Vec<PipelineCommand>) {
         let mut pending = std::collections::VecDeque::from(commands);
         while let Some(command) = pending.pop_front() {
@@ -913,6 +942,7 @@ where
             let resolved = self.resolve_dag_step(&dag_step.step).await?;
             dag_step.step = resolved;
         }
+        self.validate_step_processors(&resolved_dag)?;
 
         // Look up metadata for placeholder support
         let streamer_name = self.lookup_streamer_name(streamer_id).await;
@@ -978,8 +1008,6 @@ where
         &self,
         mut dag: DagPipelineDefinition,
     ) -> Result<DagPipelineDefinition> {
-        use std::collections::HashSet;
-
         // Keep expanding until no workflow steps remain (handles nested workflows)
         let mut iteration = 0;
         const MAX_ITERATIONS: usize = 10; // Prevent infinite loops from circular workflow references
@@ -1026,11 +1054,6 @@ where
                     .iter()
                     .map(|s| s.id.clone())
                     .collect();
-                let leaf_step_ids: HashSet<String> = workflow_dag
-                    .leaf_steps()
-                    .iter()
-                    .map(|s| s.id.clone())
-                    .collect();
 
                 // Create a prefix to avoid ID collisions
                 let prefix = format!("{}__", workflow_step_id);
@@ -1059,10 +1082,16 @@ where
                     })
                     .collect();
 
-                // Find steps that depend on the workflow step and update their dependencies
-                let prefixed_leaf_ids: Vec<String> = leaf_step_ids
+                // Find steps that depend on the workflow step and update their dependencies.
+                //
+                // Taken in `leaf_steps()` order, which follows the workflow definition:
+                // `DagRepository::complete_step_and_check_dependents` merges a step's inputs
+                // in `depends_on` order, so the order recorded here decides the input order a
+                // fan-in step downstream of this workflow receives.
+                let prefixed_leaf_ids: Vec<String> = workflow_dag
+                    .leaf_steps()
                     .iter()
-                    .map(|id| format!("{}{}", prefix, id))
+                    .map(|s| format!("{}{}", prefix, s.id))
                     .collect();
 
                 for step in &mut dag.steps {
@@ -1154,5 +1183,53 @@ where
             }
             PipelineStep::Inline { .. } => Ok(step.clone()),
         }
+    }
+
+    /// Job types accepted by at least one processor in `self.processors`.
+    ///
+    /// `start_with_dag_scheduler` hands each pool only its own processors' `job_types()`, and
+    /// `JobQueue::dequeue` uses that list as a claim filter. A job whose type is outside this
+    /// set is therefore never claimed by any pool.
+    pub(super) fn supported_job_types(&self) -> HashSet<&'static str> {
+        self.processors
+            .iter()
+            .flat_map(|processor| processor.job_types())
+            .collect()
+    }
+
+    /// Reject a resolved DAG definition that names a processor no pool can run.
+    ///
+    /// Such a step's job would be enqueued and never claimed, holding its step in PROCESSING
+    /// and its DAG out of a terminal state forever — which also blocks the session-complete
+    /// gating in `PipelineCoordinator`. Callers pass a definition whose steps
+    /// `resolve_dag_step` has already turned into `PipelineStep::Inline`.
+    pub(super) fn validate_step_processors(&self, dag: &DagPipelineDefinition) -> Result<()> {
+        let supported = self.supported_job_types();
+
+        let unknown: Vec<String> = dag
+            .steps
+            .iter()
+            .filter_map(|dag_step| match &dag_step.step {
+                PipelineStep::Inline { processor, .. }
+                    if !supported.contains(processor.as_str()) =>
+                {
+                    Some(format!("'{}' (step '{}')", processor, dag_step.id))
+                }
+                _ => None,
+            })
+            .collect();
+
+        if unknown.is_empty() {
+            return Ok(());
+        }
+
+        let mut known: Vec<&str> = supported.into_iter().collect();
+        known.sort_unstable();
+
+        Err(crate::Error::Validation(format!(
+            "Pipeline references unknown processor(s): {}. Available processors: {}",
+            unknown.join(", "),
+            known.join(", ")
+        )))
     }
 }

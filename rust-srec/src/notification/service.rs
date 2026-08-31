@@ -1414,11 +1414,20 @@ impl NotificationService {
                                         job_to_streamer.insert(job_id, streamer_id);
                                         None
                                     }
-                                    PipelineEvent::JobStarted { job_id, job_type } => {
-                                        let streamer_id = job_to_streamer
-                                            .get(&job_id)
-                                            .cloned()
-                                            .unwrap_or_default();
+                                    PipelineEvent::JobStarted { job_id, job_type, streamer_id } => {
+                                        // DAG step jobs are enqueued through
+                                        // JobQueue::enqueue_existing and never produce a
+                                        // JobEnqueued event, so job_to_streamer has no entry
+                                        // for them; the worker's own streamer_id is the
+                                        // reliable source.
+                                        let streamer_id = if streamer_id.is_empty() {
+                                            job_to_streamer
+                                                .get(&job_id)
+                                                .cloned()
+                                                .unwrap_or_default()
+                                        } else {
+                                            streamer_id
+                                        };
                                         Some(NotificationEvent::PipelineStarted {
                                             job_id,
                                             job_type,

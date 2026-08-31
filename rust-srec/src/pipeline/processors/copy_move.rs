@@ -236,7 +236,7 @@ impl Processor for CopyMoveProcessor {
     async fn process(
         &self,
         input: &ProcessorInput,
-        _ctx: &ProcessorContext,
+        ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
@@ -422,7 +422,14 @@ impl Processor for CopyMoveProcessor {
                     // destination confirms that move completed. This must
                     // run before the `overwrite` check below, which would
                     // otherwise reject the destination file as a collision.
-                    if config.operation == CopyMoveOperation::Move
+                    //
+                    // Gated on `ctx.is_retry`, which the worker loop sets only
+                    // when this job has been attempted before: without an
+                    // earlier attempt to resume, a same-named file at the
+                    // destination belongs to something else, and adopting it
+                    // would report a move that never happened.
+                    if ctx.is_retry
+                        && config.operation == CopyMoveOperation::Move
                         && let Ok(dest_meta) = fs::metadata(&dest).await
                         && dest_meta.is_file()
                     {
@@ -1266,7 +1273,7 @@ mod tests {
             .unwrap();
 
         let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
+        let ctx = ProcessorContext::noop("test").with_retry(true);
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             config: Some(
@@ -1290,6 +1297,37 @@ mod tests {
             output.outputs,
             vec![dest_dir.join("moved.txt").to_string_lossy().to_string()]
         );
+    }
+
+    /// Without an earlier attempt to resume, a same-named file at the
+    /// destination belongs to something else and must not be adopted as this
+    /// move's output.
+    #[tokio::test]
+    async fn test_first_attempt_move_does_not_adopt_unrelated_destination_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("moved.txt");
+        let dest_dir = temp_dir.path().join("output");
+        fs::create_dir_all(&dest_dir).await.unwrap();
+        fs::write(dest_dir.join("moved.txt"), "unrelated")
+            .await
+            .unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            config: Some(
+                serde_json::json!({
+                    "operation": "move",
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(err.to_string().contains("failed to copy/move"));
     }
 
     #[tokio::test]
@@ -1361,7 +1399,7 @@ mod tests {
         fs::write(&pending, "still local").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
+        let ctx = ProcessorContext::noop("test").with_retry(true);
         let input = ProcessorInput {
             inputs: vec![
                 already_moved.to_string_lossy().to_string(),

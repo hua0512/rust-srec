@@ -542,7 +542,10 @@ impl Processor for CompressionProcessor {
     }
 
     fn job_types(&self) -> Vec<&'static str> {
-        vec!["compress", "archive"]
+        // "compression" is the name the preset editor writes (frontend VALID_PROCESSORS) and
+        // the one the seeded `archive_zip` job preset carries, so it has to be claimable:
+        // a job type outside this list is filtered out by every pool's dequeue and never runs.
+        vec!["compress", "archive", "compression"]
     }
 
     fn name(&self) -> &'static str {
@@ -796,6 +799,8 @@ mod tests {
         let processor = CompressionProcessor::new();
         assert!(processor.can_process("compress"));
         assert!(processor.can_process("archive"));
+        // Written by the preset editor and by the seeded `archive_zip` preset.
+        assert!(processor.can_process("compression"));
         assert!(!processor.can_process("remux"));
     }
 

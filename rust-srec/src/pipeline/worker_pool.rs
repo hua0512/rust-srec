@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -12,8 +12,38 @@ use tracing::{debug, error, info, warn};
 use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler,
 };
-use super::job_queue::{JobExecutionInfo, JobQueue, JobResult};
-use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput};
+use super::job_queue::{Job, JobExecutionInfo, JobLogEntry, JobQueue, JobResult};
+use super::manager::PipelineEvent;
+use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput};
+
+/// How long a job already in `Processor::process` may keep running after the pool's
+/// cancellation token fires before its own token is cancelled too.
+///
+/// Sized to sit inside the cooperative window `ServiceContainer::shutdown_until` allows, so a
+/// short job (thumbnail, metadata, delete) still finishes and records its result, while a long
+/// one (remux, upload) stops cooperatively instead of holding `WorkerPool::stop` until the
+/// caller gives up and calls `WorkerPool::abort`.
+const SHUTDOWN_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Capacity of the per-job channel between `JobLogSink` and its collector task. Overflow is
+/// counted by the sink and reported in the job's log rather than blocking the processor.
+const LOG_CHANNEL_CAPACITY: usize = 1024;
+
+/// Error recorded when no registered processor accepts a job's type.
+const NO_PROCESSOR_ERROR: &str = "No processor found";
+
+/// Error recorded when a job outlives `WorkerPoolConfig::job_timeout_secs`.
+const TIMED_OUT_ERROR: &str = "Job timed out";
+
+/// Broadcast a job lifecycle event, if the pool was started with a sender.
+///
+/// Send errors mean no subscriber is currently attached (the notification service is the only
+/// consumer, and it is optional), which is not a job failure.
+fn emit_event(event_tx: Option<&broadcast::Sender<PipelineEvent>>, event: PipelineEvent) {
+    if let Some(tx) = event_tx {
+        let _ = tx.send(event);
+    }
+}
 
 /// Type of worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -210,16 +240,21 @@ impl WorkerPool {
 
     /// Start the worker pool.
     pub fn start(&self, job_queue: Arc<JobQueue>, processors: Vec<Arc<dyn Processor>>) {
-        self.start_with_dag_scheduler(job_queue, processors, None, None);
+        self.start_with_dag_scheduler(job_queue, processors, None, None, None);
     }
 
     /// Start the worker pool with optional DAG scheduler support.
+    ///
+    /// `event_tx` receives the `PipelineEvent::Job{Started,Completed,Failed}` transitions this
+    /// pool observes; workers are the only place they are known, since a job's terminal state
+    /// is decided here rather than by `PipelineManager`.
     pub fn start_with_dag_scheduler(
         &self,
         job_queue: Arc<JobQueue>,
         processors: Vec<Arc<dyn Processor>>,
         dag_scheduler: Option<Arc<DagScheduler>>,
         dag_notify_tx: Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
+        event_tx: Option<broadcast::Sender<PipelineEvent>>,
     ) {
         let worker_type = self.worker_type;
         let semaphore = self.semaphore.clone();
@@ -278,6 +313,20 @@ impl WorkerPool {
                 let avg_runtime_ms = avg_runtime_ms.clone();
                 let dag_scheduler = dag_scheduler.clone();
                 let dag_notify_tx = dag_notify_tx.clone();
+                let event_tx = event_tx.clone();
+
+                let runner = JobRunner {
+                    worker_type,
+                    job_queue: job_queue.clone(),
+                    processors,
+                    dag_scheduler,
+                    dag_notify_tx,
+                    event_tx,
+                    active_workers,
+                    avg_runtime_ms,
+                    job_timeout,
+                    shutdown: cancellation_token.clone(),
+                };
 
                 join_set.spawn(async move {
                     debug!("{} worker {} started", worker_type, i);
@@ -304,9 +353,8 @@ impl WorkerPool {
                         }
 
                         // Try to acquire a permit
-                        let permit = match semaphore.clone().try_acquire_owned() {
-                            Ok(p) => p,
-                            Err(_) => continue, // No permits available
+                        let Ok(permit) = semaphore.clone().try_acquire_owned() else {
+                            continue; // No permits available
                         };
 
                         // Try to dequeue a job
@@ -316,587 +364,32 @@ impl WorkerPool {
                             Some(supported_job_types.as_slice()) // Vec Derefs to slice
                         };
 
-                        let job = match job_queue.dequeue(filter_types).await {
-                            Ok(Some(job)) => job,
-                            Ok(None) => {
-                                let next_ms = (current_poll_interval.as_millis() as u64)
-                                    .saturating_mul(2)
-                                    .min(max_poll_interval.as_millis() as u64);
-                                current_poll_interval =
-                                    std::time::Duration::from_millis(next_ms.max(1));
-                                drop(permit);
-                                continue;
-                            }
+                        let claimed = match job_queue.dequeue(filter_types).await {
+                            Ok(claimed) => claimed,
                             Err(e) => {
                                 error!("Error dequeuing job: {}", e);
-                                let next_ms = (current_poll_interval.as_millis() as u64)
-                                    .saturating_mul(2)
-                                    .min(max_poll_interval.as_millis() as u64);
-                                current_poll_interval =
-                                    std::time::Duration::from_millis(next_ms.max(1));
-                                drop(permit);
-                                continue;
+                                None
                             }
+                        };
+
+                        // Nothing to run, or the claim failed: back off before polling again so
+                        // an idle pool does not spin at `poll_interval_ms`.
+                        let Some(job) = claimed else {
+                            let next_ms = (current_poll_interval.as_millis() as u64)
+                                .saturating_mul(2)
+                                .min(max_poll_interval.as_millis() as u64);
+                            current_poll_interval =
+                                std::time::Duration::from_millis(next_ms.max(1));
+                            drop(permit);
+                            continue;
                         };
                         current_poll_interval = poll_interval;
 
-                        // Find a processor for this job
-                        let processor = processors.iter().find(|p| p.can_process(&job.job_type));
-
-                        if let Some(processor) = processor {
-                            let job_id = job.id.clone();
-                            let job_type = job.job_type.clone();
-
-                            debug!(
-                                "{} worker {} processing job {} ({})",
-                                worker_type, i, job_id, job_type
-                            );
-
-                            // Handle multi-input jobs for processors without batch support.
-                            //
-                            // IMPORTANT: Splitting a DAG step job into multiple jobs would corrupt DAG semantics
-                            // (one step would be "completed" multiple times). For DAG jobs, fail fast instead.
-                            if job.inputs.len() > 1 && !processor.supports_batch_input() {
-                                if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
-                                    let reason = format!(
-                                        "DAG step job has {} inputs but processor '{}' does not support batch inputs",
-                                        job.inputs.len(),
-                                        processor.name()
-                                    );
-                                    error!(job_id = %job_id, dag_step_execution_id = %dag_step_id, "{}", reason);
-
-                                    if let Err(e) = job_queue
-                                        .fail_with_cleanup_and_step_info(
-                                            &job_id,
-                                            &reason,
-                                            Some(processor.name()),
-                                            job.execution_info.as_ref().and_then(|i| i.current_step),
-                                            job.execution_info.as_ref().and_then(|i| i.total_steps),
-                                        )
-                                        .await
-                                    {
-                                        error!(
-                                            job_id = %job_id,
-                                            error = %e,
-                                            "Failed to persist invalid multi-input DAG job failure"
-                                        );
-                                    }
-
-                                    // Fail the DAG execution (fail-fast) and notify completion listeners.
-                                    handle_dag_job_failure(
-                                        &dag_scheduler,
-                                        &dag_notify_tx,
-                                        dag_step_id,
-                                        &reason,
-                                        DagFailureKind::NonBatchInput,
-                                    )
-                                    .await;
-
-                                    drop(permit);
-                                    continue;
-                                }
-
-                                info!(
-                                    "Splitting job {} with {} inputs for single-input processor {}",
-                                    job_id,
-                                    job.inputs.len(),
-                                    processor.name()
-                                );
-                                match job_queue.split_job_for_single_input(&job).await {
-                                    Ok(split_ids) => {
-                                        info!(
-                                            "Split job {} into {} jobs: {:?}",
-                                            job_id,
-                                            split_ids.len(),
-                                            split_ids
-                                        );
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to split job {}: {}", job_id, e);
-                                        if let Err(fail_error) = job_queue
-                                            .fail(&job_id, &format!("Failed to split job: {}", e))
-                                            .await
-                                        {
-                                            error!(
-                                                job_id = %job_id,
-                                                error = %fail_error,
-                                                "Failed to persist job split failure"
-                                            );
-                                        }
-                                    }
-                                }
-                                drop(permit);
-                                continue;
-                            }
-
-                            active_workers.fetch_add(1, Ordering::SeqCst);
-                            let started = std::time::Instant::now();
-
-                            // Record execution start info
-                            let exec_info =
-                                JobExecutionInfo::new().with_processor(processor.name());
-                            if let Err(e) =
-                                job_queue.update_execution_info(&job_id, exec_info).await
-                            {
-                                warn!("Failed to update execution info for job {}: {}", job_id, e);
-                            }
-
-                            // Process the job with timeout
-                            let mut job = job;
-                            let is_retry = job.retry_count > 0;
-                            let dag_step_execution_id = job.dag_step_execution_id.take();
-                            let current_step = job
-                                .execution_info
-                                .as_ref()
-                                .and_then(|i| i.current_step);
-                            let total_steps = job.execution_info.as_ref().and_then(|i| i.total_steps);
-
-                            let input = ProcessorInput {
-                                inputs: std::mem::take(&mut job.inputs),
-                                outputs: std::mem::take(&mut job.outputs),
-                                config: job.config.take(),
-                                streamer_id: std::mem::take(&mut job.streamer_id),
-                                session_id: std::mem::take(&mut job.session_id),
-                                streamer_name: job.streamer_name.take(),
-                                session_title: job.session_title.take(),
-                                platform: job.platform.take(),
-                                session_start: job.session_start.take(),
-                                created_at: job.created_at,
-                            };
-
-                            let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(1024);
-                            let log_dropped = Arc::new(AtomicUsize::new(0));
-                            let log_sink = JobLogSink::new(log_tx, log_dropped.clone());
-                            let job_queue_clone = job_queue.clone();
-                            let job_id_clone = job_id.clone();
-
-                            // Spawn log collector task
-                            let log_collector = tokio::spawn(async move {
-                                const FLUSH_INTERVAL_MS: u64 = 200;
-                                const MAX_BATCH_SIZE: usize = 1000;
-                                const MAX_BUFFERED_LOGS: usize = 4000;
-
-                                let mut flush_timer =
-                                    tokio::time::interval(std::time::Duration::from_millis(
-                                        FLUSH_INTERVAL_MS,
-                                    ));
-                                flush_timer
-                                    .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-                                let mut buffer: VecDeque<super::job_queue::JobLogEntry> =
-                                    VecDeque::with_capacity(MAX_BATCH_SIZE);
-                                let mut dropped_due_to_backpressure: usize = 0;
-
-                                let mut backoff = std::time::Duration::ZERO;
-                                let mut next_flush_allowed = tokio::time::Instant::now();
-
-                                async fn flush(
-                                    job_queue: &super::job_queue::JobQueue,
-                                    job_id: &str,
-                                    buffer: &mut VecDeque<super::job_queue::JobLogEntry>,
-                                    backoff: &mut std::time::Duration,
-                                    next_flush_allowed: &mut tokio::time::Instant,
-                                    force: bool,
-                                ) {
-                                    if buffer.is_empty() {
-                                        return;
-                                    }
-                                    if !force && tokio::time::Instant::now() < *next_flush_allowed {
-                                        return;
-                                    }
-
-                                    let slice = buffer.make_contiguous();
-                                    match job_queue.append_log_entry(job_id, slice).await {
-                                        Ok(()) => {
-                                            buffer.clear();
-                                            *backoff = std::time::Duration::ZERO;
-                                            *next_flush_allowed = tokio::time::Instant::now();
-                                        }
-                                        Err(e) => {
-                                            warn!(
-                                                "Failed to append streaming logs for job {}: {}",
-                                                job_id, e
-                                            );
-                                            *backoff = if backoff.is_zero() {
-                                                std::time::Duration::from_millis(200)
-                                            } else {
-                                                (*backoff * 2).min(std::time::Duration::from_secs(5))
-                                            };
-                                            *next_flush_allowed = tokio::time::Instant::now() + *backoff;
-                                        }
-                                    }
-                                }
-
-                                loop {
-                                    tokio::select! {
-                                        entry = log_rx.recv() => {
-                                            match entry {
-                                                Some(entry) => {
-                                                    buffer.push_back(entry);
-
-                                                    if buffer.len() > MAX_BUFFERED_LOGS {
-                                                        while buffer.len() > MAX_BUFFERED_LOGS {
-                                                            let _ = buffer.pop_front();
-                                                            dropped_due_to_backpressure = dropped_due_to_backpressure.saturating_add(1);
-                                                        }
-                                                    }
-
-                                                    if buffer.len() >= MAX_BATCH_SIZE {
-                                                        flush(
-                                                            &job_queue_clone,
-                                                            &job_id_clone,
-                                                            &mut buffer,
-                                                            &mut backoff,
-                                                            &mut next_flush_allowed,
-                                                            false,
-                                                        )
-                                                        .await;
-                                                    }
-                                                }
-                                                None => {
-                                                    let producer_dropped = log_dropped.load(Ordering::Relaxed);
-                                                    if dropped_due_to_backpressure > 0 {
-                                                        buffer.push_back(super::job_queue::JobLogEntry::warn(format!(
-                                                            "Dropped {} log lines due to DB backpressure (buffer_cap={})",
-                                                            dropped_due_to_backpressure,
-                                                            MAX_BUFFERED_LOGS,
-                                                        )));
-                                                    }
-                                                    if producer_dropped > 0 {
-                                                        buffer.push_back(super::job_queue::JobLogEntry::warn(format!(
-                                                            "Dropped {} log lines due to log channel backpressure (capacity={})",
-                                                            producer_dropped,
-                                                            1024,
-                                                        )));
-                                                    }
-                                                    flush(
-                                                        &job_queue_clone,
-                                                        &job_id_clone,
-                                                        &mut buffer,
-                                                        &mut backoff,
-                                                        &mut next_flush_allowed,
-                                                        true,
-                                                    )
-                                                    .await;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        _ = flush_timer.tick() => {
-                                            flush(
-                                                &job_queue_clone,
-                                                &job_id_clone,
-                                                &mut buffer,
-                                                &mut backoff,
-                                                &mut next_flush_allowed,
-                                                false,
-                                            )
-                                            .await;
-                                        }
-                                    }
-                                }
-                            });
-
-                            let job_cancellation_token =
-                                match job_queue.get_cancellation_token(&job_id).await {
-                                    Some(token) => token,
-                                    None => {
-                                        warn!(
-                                            job_id = %job_id,
-                                            "Missing cancellation token for processing job"
-                                        );
-                                        CancellationToken::new()
-                                    }
-                                };
-
-                            let ctx = ProcessorContext::new(
-                                job_id.clone(),
-                                job_queue.progress_reporter(&job_id),
-                                log_sink,
-                                job_cancellation_token.clone(),
-                            )
-                            .with_retry(is_retry);
-
-                            let result = {
-                                let timed = tokio::time::timeout(
-                                    job_timeout,
-                                    processor.process(&input, &ctx),
-                                );
-                                tokio::pin!(timed);
-
-                                tokio::select! {
-                                    biased;
-                                    _ = job_cancellation_token.cancelled() => None,
-                                    res = &mut timed => Some(res),
-                                }
-                            };
-
-                            // Drop ctx to close the log channel
-                            drop(ctx);
-
-                            // Wait for log collector to finish draining
-                            if let Err(join_error) = log_collector.await {
-                                error!(
-                                    job_id = %job_id,
-                                    error = %join_error,
-                                    "Job log collector task failed"
-                                );
-                            }
-
-                            match result {
-                                None => {
-                                    // No upload_records synthesis here: the job's CANCELLED
-                                    // status is the durable truth, and cancel_job already
-                                    // broadcast the Terminal{Cancelled} upload event.
-                                    info!(job_id = %job_id, "Job cancelled while processing");
-                                }
-                                Some(Ok(Ok(output))) => {
-                                    if job_cancellation_token.is_cancelled() {
-                                        info!(
-                                            job_id = %job_id,
-                                            "Job finished after cancellation; skipping completion"
-                                        );
-                                    }
-
-                                    if !job_cancellation_token.is_cancelled() {
-                                    // Track partial outputs for observability
-                                    if !output.items_produced.is_empty()
-                                        && let Err(e) = job_queue
-                                            .track_partial_outputs(&job_id, &output.items_produced)
-                                            .await
-                                        {
-                                            warn!(
-                                                "Failed to track partial outputs for job {}: {}",
-                                                job_id, e
-                                            );
-                                        }
-
-                                    let completed_outputs = output.outputs.clone();
-                                    match job_queue
-                                        .complete_if_processing(
-                                            &job_id,
-                                            JobResult {
-                                                outputs: output.outputs,
-                                                duration_secs: output.duration_secs,
-                                                metadata: output.metadata,
-                                                uploads: output.uploads,
-                                                logs: output.logs,
-                                            },
-                                        )
-                                        .await
-                                    {
-                                        Ok(true) => {
-                                            // `JobQueue::complete_if_processing` persists outputs before
-                                            // `DagScheduler::on_job_completed` derives graph advancement from them.
-                                            debug!(
-                                                "Job {} completed, dag_step_execution_id={:?}",
-                                                job_id, dag_step_execution_id
-                                            );
-                                            if let Some(dag_step_id) = dag_step_execution_id.as_deref()
-                                                && let Some(scheduler) = &dag_scheduler
-                                            {
-                                                match scheduler
-                                                    .on_job_completed(
-                                                        dag_step_id,
-                                                        &completed_outputs,
-                                                        input.streamer_name.as_deref(),
-                                                        input.session_title.as_deref(),
-                                                        input.platform.as_deref(),
-                                                        input.session_start,
-                                                    )
-                                                    .await
-                                                {
-                                                    Ok(DagJobCompletedUpdate { new_job_ids, completion }) => {
-                                                        if !new_job_ids.is_empty() {
-                                                            info!(
-                                                                "DAG step {} completed, created {} downstream jobs",
-                                                                dag_step_id,
-                                                                new_job_ids.len()
-                                                            );
-                                                        }
-                                                        if let Some(completion) = completion
-                                                            && let Some(tx) = &dag_notify_tx
-                                                            && let Err(e) = tx.send(completion).await
-                                                        {
-                                                            warn!(
-                                                                error = %e,
-                                                                "Failed to send DAG completion notification"
-                                                            );
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        error!(
-                                                            "Failed to handle DAG job completion for {}: {}",
-                                                            dag_step_id, e
-                                                        );
-                                                        if let Ok(completion) = scheduler
-                                                            .fail_dag_for_step(
-                                                                dag_step_id,
-                                                                &format!("DAG scheduler error: {}", e),
-                                                            )
-                                                            .await
-                                                            && let Some(completion) = completion
-                                                            && let Some(tx) = &dag_notify_tx
-                                                            && let Err(e) = tx.send(completion).await
-                                                        {
-                                                            warn!(
-                                                                error = %e,
-                                                                "Failed to send DAG completion notification"
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Ok(false) => {
-                                            debug!(job_id = %job_id, "Job completion lost an active-state race");
-                                        }
-                                        Err(e) => {
-                                            error!(
-                                                job_id = %job_id,
-                                                error = %e,
-                                                "Failed to persist completed pipeline job"
-                                            );
-                                        }
-                                    }
-                                    }
-                                }
-                                Some(Ok(Err(e))) => {
-                                    if job_cancellation_token.is_cancelled() {
-                                        info!(
-                                            job_id = %job_id,
-                                            "Job failed after cancellation; skipping failure handling"
-                                        );
-                                    }
-
-                                    if !job_cancellation_token.is_cancelled() {
-                                    // Check if this is a DAG job for fail-fast handling
-                                    let error = e.to_string();
-                                    if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
-                                        // First mark job as failed
-                                        let partial_outputs = job_queue
-                                            .fail_with_cleanup_and_step_info(
-                                                &job_id,
-                                                &error,
-                                                Some(processor.name()),
-                                                current_step,
-                                                total_steps,
-                                            )
-                                            .await;
-                                        if let Ok(outputs) = partial_outputs
-                                            && !outputs.is_empty() {
-                                                cleanup_partial_outputs(&outputs).await;
-                                            }
-
-                                        // Then notify DAG scheduler for fail-fast
-                                        handle_dag_job_failure(
-                                            &dag_scheduler,
-                                            &dag_notify_tx,
-                                            dag_step_id,
-                                            &error,
-                                            DagFailureKind::ProcessorError,
-                                        )
-                                        .await;
-                                    } else {
-                                        // Regular pipeline job failure
-                                        // Clean up partial outputs on failure
-                                        // Record step info for observability
-                                        let partial_outputs = job_queue
-                                            .fail_with_cleanup_and_step_info(
-                                                &job_id,
-                                                &error,
-                                                Some(processor.name()),
-                                                current_step,
-                                                total_steps,
-                                            )
-                                            .await;
-                                        if let Ok(outputs) = partial_outputs
-                                            && !outputs.is_empty() {
-                                                cleanup_partial_outputs(&outputs).await;
-                                        }
-                                    }
-                                    }
-                                }
-                                Some(Err(_)) => {
-                                    if job_cancellation_token.is_cancelled() {
-                                        info!(
-                                            job_id = %job_id,
-                                            "Job timed out after cancellation; skipping timeout handling"
-                                        );
-                                    }
-
-                                    if !job_cancellation_token.is_cancelled() {
-                                    job_cancellation_token.cancel();
-
-                                    // Check if this is a DAG job for fail-fast handling
-                                    if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
-                                        // First mark job as failed
-                                        let partial_outputs = job_queue
-                                            .fail_with_cleanup_and_step_info(
-                                                &job_id,
-                                                "Job timed out",
-                                                Some(processor.name()),
-                                                current_step,
-                                                total_steps,
-                                            )
-                                            .await;
-                                        if let Ok(outputs) = partial_outputs
-                                            && !outputs.is_empty() {
-                                                cleanup_partial_outputs(&outputs).await;
-                                            }
-
-                                        // Then notify DAG scheduler for fail-fast
-                                        handle_dag_job_failure(
-                                            &dag_scheduler,
-                                            &dag_notify_tx,
-                                            dag_step_id,
-                                            "Job timed out",
-                                            DagFailureKind::Timeout,
-                                        )
-                                        .await;
-                                    } else {
-                                        // Regular pipeline job timeout
-                                        // Clean up partial outputs on timeout
-                                        // Record step info for observability
-                                        let partial_outputs = job_queue
-                                            .fail_with_cleanup_and_step_info(
-                                                &job_id,
-                                                "Job timed out",
-                                                Some(processor.name()),
-                                                current_step,
-                                                total_steps,
-                                            )
-                                            .await;
-                                        if let Ok(outputs) = partial_outputs
-                                            && !outputs.is_empty() {
-                                                cleanup_partial_outputs(&outputs).await;
-                                            }
-                                    }
-                                    }
-                                }
-                            }
-
-                            if job_cancellation_token.is_cancelled() {
-                                job_queue.finalize_cancelled_job(&job_id);
-                            }
-
-                            active_workers.fetch_sub(1, Ordering::SeqCst);
-                            update_avg_runtime_ms(
-                                &avg_runtime_ms,
-                                started.elapsed().as_millis() as u64,
-                            );
-                        } else {
-                            warn!(
-                                "No processor found for job type: '{}'. Available processors: {:?}",
-                                job.job_type,
-                                processors.iter().map(|p| p.name()).collect::<Vec<_>>()
-                            );
-                            if let Err(error) =
-                                job_queue.fail(&job.id, "No processor found").await
-                            {
-                                error!(job_id = %job.id, %error, "Failed to mark job as failed");
-                            }
-                        }
+                        debug!(
+                            "{} worker {} processing job {} ({})",
+                            worker_type, i, job.id, job.job_type
+                        );
+                        runner.run(job).await;
 
                         drop(permit);
                     }
@@ -1082,72 +575,697 @@ enum DagFailureKind {
     Timeout,
 }
 
-/// Fail-fast handling for a failed DAG step job: reports the failure to
-/// `DagScheduler::on_job_failed` (which cancels sibling jobs) and forwards any
-/// resulting `DagCompletionInfo` to `dag_notify_tx`. No-op when `dag_scheduler`
-/// is `None`.
-async fn handle_dag_job_failure(
-    dag_scheduler: &Option<Arc<DagScheduler>>,
-    dag_notify_tx: &Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
-    dag_step_id: &str,
-    reason: &str,
-    kind: DagFailureKind,
-) {
-    let Some(scheduler) = dag_scheduler else {
-        return;
-    };
+/// Everything a worker task needs to run the jobs it claims.
+///
+/// One is built per worker in [`WorkerPool::start_with_dag_scheduler`]. The worker loop owns
+/// the claim side — permit, `JobQueue::dequeue`, poll backoff — and hands each claimed job to
+/// [`JobRunner::run`], which owns everything from picking a processor to recording a terminal
+/// state.
+struct JobRunner {
+    worker_type: WorkerType,
+    job_queue: Arc<JobQueue>,
+    processors: Vec<Arc<dyn Processor>>,
+    dag_scheduler: Option<Arc<DagScheduler>>,
+    dag_notify_tx: Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
+    event_tx: Option<broadcast::Sender<PipelineEvent>>,
+    active_workers: Arc<AtomicUsize>,
+    avg_runtime_ms: Arc<AtomicU64>,
+    job_timeout: std::time::Duration,
+    /// The pool's shutdown token. Distinct from the per-job token that reaches the processor
+    /// through `ProcessorContext`; see [`JobRunner::execute`].
+    shutdown: CancellationToken,
+}
 
-    match scheduler.on_job_failed(dag_step_id, reason).await {
-        Ok(DagJobFailedUpdate {
-            cancelled_count,
-            completion,
-        }) => {
-            match kind {
-                DagFailureKind::NonBatchInput => {}
-                DagFailureKind::ProcessorError => {
+/// What `Processor::process` produced, once the cancellation and timeout races around it have
+/// been settled.
+enum JobOutcome {
+    /// The job's own token fired: a user cancel, DAG fail-fast, or the shutdown drain.
+    Cancelled,
+    Completed(Box<ProcessorOutput>),
+    Failed(crate::Error),
+    TimedOut,
+}
+
+/// The job fields the terminal handlers still need after `ProcessorInput` has taken ownership
+/// of the rest of the job.
+struct JobFacts {
+    id: String,
+    job_type: String,
+    processor_name: &'static str,
+    dag_step_execution_id: Option<String>,
+    current_step: Option<u32>,
+    total_steps: Option<u32>,
+}
+
+impl JobRunner {
+    fn emit(&self, event: PipelineEvent) {
+        emit_event(self.event_tx.as_ref(), event);
+    }
+
+    /// Route `job` to a processor that accepts its type and run it to a terminal state.
+    ///
+    /// Reaching the no-processor arm means `JobQueue::dequeue`'s type filter and
+    /// `Processor::can_process` disagree, since the filter is built from the same
+    /// `job_types()`.
+    async fn run(&self, job: Job) {
+        let Some(processor) = self
+            .processors
+            .iter()
+            .find(|p| p.can_process(&job.job_type))
+            .cloned()
+        else {
+            warn!(
+                "No processor found for job type: '{}'. Available processors: {:?}",
+                job.job_type,
+                self.processors.iter().map(|p| p.name()).collect::<Vec<_>>()
+            );
+            if let Err(error) = self.job_queue.fail(&job.id, NO_PROCESSOR_ERROR).await {
+                error!(job_id = %job.id, %error, "Failed to mark job as failed");
+            }
+            self.emit(PipelineEvent::JobFailed {
+                job_id: job.id,
+                job_type: job.job_type,
+                error: NO_PROCESSOR_ERROR.to_string(),
+            });
+            return;
+        };
+
+        if self.settle_multi_input(&job, &processor).await {
+            return;
+        }
+
+        self.execute_job(job, &processor).await;
+    }
+
+    /// Handle a multi-input job routed to a processor that takes one input at a time.
+    ///
+    /// Returns `true` when the job has been dealt with here and must not be executed: either
+    /// it was split into single-input jobs, or — for a DAG step, where splitting would let one
+    /// step complete several times — it was failed and its DAG failed with it.
+    async fn settle_multi_input(&self, job: &Job, processor: &Arc<dyn Processor>) -> bool {
+        if job.inputs.len() <= 1 || processor.supports_batch_input() {
+            return false;
+        }
+
+        if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
+            let reason = format!(
+                "DAG step job has {} inputs but processor '{}' does not support batch inputs",
+                job.inputs.len(),
+                processor.name()
+            );
+            error!(job_id = %job.id, dag_step_execution_id = %dag_step_id, "{}", reason);
+
+            if let Err(e) = self
+                .job_queue
+                .fail_with_cleanup_and_step_info(
+                    &job.id,
+                    &reason,
+                    Some(processor.name()),
+                    job.execution_info.as_ref().and_then(|i| i.current_step),
+                    job.execution_info.as_ref().and_then(|i| i.total_steps),
+                )
+                .await
+            {
+                error!(
+                    job_id = %job.id,
+                    error = %e,
+                    "Failed to persist invalid multi-input DAG job failure"
+                );
+            }
+
+            self.emit(PipelineEvent::JobFailed {
+                job_id: job.id.clone(),
+                job_type: job.job_type.clone(),
+                error: reason.clone(),
+            });
+
+            // Fail the DAG execution (fail-fast) and notify completion listeners.
+            self.fail_dag_step(dag_step_id, &reason, DagFailureKind::NonBatchInput)
+                .await;
+
+            return true;
+        }
+
+        info!(
+            "Splitting job {} with {} inputs for single-input processor {}",
+            job.id,
+            job.inputs.len(),
+            processor.name()
+        );
+        match self.job_queue.split_job_for_single_input(job).await {
+            Ok(split_ids) => {
+                info!(
+                    "Split job {} into {} jobs: {:?}",
+                    job.id,
+                    split_ids.len(),
+                    split_ids
+                );
+            }
+            Err(e) => {
+                error!("Failed to split job {}: {}", job.id, e);
+                if let Err(fail_error) = self
+                    .job_queue
+                    .fail(&job.id, &format!("Failed to split job: {}", e))
+                    .await
+                {
+                    error!(
+                        job_id = %job.id,
+                        error = %fail_error,
+                        "Failed to persist job split failure"
+                    );
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Run one job through its processor and record the terminal state it reached.
+    async fn execute_job(&self, mut job: Job, processor: &Arc<dyn Processor>) {
+        self.active_workers.fetch_add(1, Ordering::SeqCst);
+        let started = std::time::Instant::now();
+
+        // Record execution start info
+        let exec_info = JobExecutionInfo::new().with_processor(processor.name());
+        if let Err(e) = self
+            .job_queue
+            .update_execution_info(&job.id, exec_info)
+            .await
+        {
+            warn!("Failed to update execution info for job {}: {}", job.id, e);
+        }
+
+        // True when this job has been attempted before, which is what makes a processor's
+        // resume path legitimate (see CopyMoveProcessor's absent-source handling).
+        // `retry_count` covers an explicit `JobQueue::retry_job`; `current_processor` covers a
+        // job a crash left PROCESSING that `JobQueue::recover_jobs` reset to PENDING, which
+        // leaves `retry_count` alone but keeps the execution_info the earlier attempt wrote
+        // through `update_execution_info` above.
+        let is_retry = job.retry_count > 0
+            || job
+                .execution_info
+                .as_ref()
+                .is_some_and(|info| info.current_processor.is_some());
+
+        let facts = JobFacts {
+            id: job.id.clone(),
+            job_type: job.job_type.clone(),
+            processor_name: processor.name(),
+            dag_step_execution_id: job.dag_step_execution_id.take(),
+            current_step: job.execution_info.as_ref().and_then(|i| i.current_step),
+            total_steps: job.execution_info.as_ref().and_then(|i| i.total_steps),
+        };
+
+        let input = ProcessorInput {
+            inputs: std::mem::take(&mut job.inputs),
+            outputs: std::mem::take(&mut job.outputs),
+            config: job.config.take(),
+            streamer_id: std::mem::take(&mut job.streamer_id),
+            session_id: std::mem::take(&mut job.session_id),
+            streamer_name: job.streamer_name.take(),
+            session_title: job.session_title.take(),
+            platform: job.platform.take(),
+            session_start: job.session_start.take(),
+            created_at: job.created_at,
+        };
+
+        self.emit(PipelineEvent::JobStarted {
+            job_id: facts.id.clone(),
+            job_type: facts.job_type.clone(),
+            streamer_id: input.streamer_id.clone(),
+        });
+
+        let (log_tx, log_rx) = tokio::sync::mpsc::channel(LOG_CHANNEL_CAPACITY);
+        let log_dropped = Arc::new(AtomicUsize::new(0));
+        let log_sink = JobLogSink::new(log_tx, log_dropped.clone());
+        let log_collector = spawn_log_collector(
+            self.job_queue.clone(),
+            facts.id.clone(),
+            log_rx,
+            log_dropped,
+        );
+
+        let job_token = match self.job_queue.get_cancellation_token(&facts.id).await {
+            Some(token) => token,
+            None => {
+                warn!(
+                    job_id = %facts.id,
+                    "Missing cancellation token for processing job"
+                );
+                CancellationToken::new()
+            }
+        };
+
+        let ctx = ProcessorContext::new(
+            facts.id.clone(),
+            self.job_queue.progress_reporter(&facts.id),
+            log_sink,
+            job_token.clone(),
+        )
+        .with_retry(is_retry);
+
+        let outcome = self
+            .execute(processor, &input, &ctx, &facts.id, &job_token)
+            .await;
+
+        // Drop ctx to close the log channel
+        drop(ctx);
+
+        // Wait for log collector to finish draining
+        if let Err(join_error) = log_collector.await {
+            error!(
+                job_id = %facts.id,
+                error = %join_error,
+                "Job log collector task failed"
+            );
+        }
+
+        // A cancellation that landed while the processor was finishing wins: its CANCELLED row
+        // is the durable truth, so nothing here may write a competing terminal state.
+        let cancelled = job_token.is_cancelled();
+        match outcome {
+            JobOutcome::Cancelled => {
+                // No upload_records synthesis here: the job's CANCELLED status is the durable
+                // truth, and cancel_job already broadcast the Terminal{Cancelled} upload event.
+                info!(job_id = %facts.id, "Job cancelled while processing");
+            }
+            JobOutcome::Completed(_) if cancelled => {
+                info!(
+                    job_id = %facts.id,
+                    "Job finished after cancellation; skipping completion"
+                );
+            }
+            JobOutcome::Completed(output) => {
+                self.finish_completed(&facts, *output, &input).await;
+            }
+            JobOutcome::Failed(_) if cancelled => {
+                info!(
+                    job_id = %facts.id,
+                    "Job failed after cancellation; skipping failure handling"
+                );
+            }
+            JobOutcome::Failed(e) => {
+                self.finish_failed(&facts, &e.to_string(), DagFailureKind::ProcessorError)
+                    .await;
+            }
+            JobOutcome::TimedOut if cancelled => {
+                info!(
+                    job_id = %facts.id,
+                    "Job timed out after cancellation; skipping timeout handling"
+                );
+            }
+            JobOutcome::TimedOut => {
+                job_token.cancel();
+                self.finish_failed(&facts, TIMED_OUT_ERROR, DagFailureKind::Timeout)
+                    .await;
+            }
+        }
+
+        if job_token.is_cancelled() {
+            self.job_queue.finalize_cancelled_job(&facts.id);
+        }
+
+        self.active_workers.fetch_sub(1, Ordering::SeqCst);
+        update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);
+    }
+
+    /// Await `Processor::process` against the job's own cancellation, the pool's shutdown, and
+    /// `job_timeout`.
+    ///
+    /// On shutdown a job gets `SHUTDOWN_DRAIN_GRACE` to finish on its own; past that its own
+    /// token is cancelled, which is the only signal that reaches the processor, since
+    /// `ProcessorContext` carries that token and not the pool's. Without it the worker stays
+    /// inside `process` until `job_timeout` and `WorkerPool::stop` waits there with it, so
+    /// shutdown could only end by falling back to `WorkerPool::abort`. A job stopped this way
+    /// keeps its PROCESSING row, which `JobQueue::recover_jobs` resets to PENDING to be run
+    /// again on the next start.
+    async fn execute(
+        &self,
+        processor: &Arc<dyn Processor>,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+        job_id: &str,
+        job_token: &CancellationToken,
+    ) -> JobOutcome {
+        let timed = tokio::time::timeout(self.job_timeout, processor.process(input, ctx));
+        tokio::pin!(timed);
+
+        let shutdown_drain = {
+            let shutdown = self.shutdown.clone();
+            async move {
+                shutdown.cancelled().await;
+                tokio::time::sleep(SHUTDOWN_DRAIN_GRACE).await;
+            }
+        };
+
+        tokio::select! {
+            biased;
+            _ = job_token.cancelled() => JobOutcome::Cancelled,
+            _ = shutdown_drain => {
+                info!(
+                    job_id = %job_id,
+                    "Stopping unfinished job for {} worker pool shutdown",
+                    self.worker_type
+                );
+                job_token.cancel();
+                JobOutcome::Cancelled
+            }
+            res = &mut timed => match res {
+                Ok(Ok(output)) => JobOutcome::Completed(Box::new(output)),
+                Ok(Err(e)) => JobOutcome::Failed(e),
+                Err(_) => JobOutcome::TimedOut,
+            },
+        }
+    }
+
+    /// Persist a successful job and let its DAG advance.
+    async fn finish_completed(
+        &self,
+        facts: &JobFacts,
+        output: ProcessorOutput,
+        input: &ProcessorInput,
+    ) {
+        // Track partial outputs for observability
+        if !output.items_produced.is_empty()
+            && let Err(e) = self
+                .job_queue
+                .track_partial_outputs(&facts.id, &output.items_produced)
+                .await
+        {
+            warn!(
+                "Failed to track partial outputs for job {}: {}",
+                facts.id, e
+            );
+        }
+
+        let completed_outputs = output.outputs.clone();
+        let completed_duration = output.duration_secs;
+        let persisted = self
+            .job_queue
+            .complete_if_processing(
+                &facts.id,
+                JobResult {
+                    outputs: output.outputs,
+                    duration_secs: output.duration_secs,
+                    metadata: output.metadata,
+                    uploads: output.uploads,
+                    logs: output.logs,
+                },
+            )
+            .await;
+
+        match persisted {
+            Ok(true) => {}
+            Ok(false) => {
+                debug!(job_id = %facts.id, "Job completion lost an active-state race");
+                return;
+            }
+            Err(e) => {
+                error!(
+                    job_id = %facts.id,
+                    error = %e,
+                    "Failed to persist completed pipeline job"
+                );
+                return;
+            }
+        }
+
+        self.emit(PipelineEvent::JobCompleted {
+            job_id: facts.id.clone(),
+            job_type: facts.job_type.clone(),
+            duration_secs: completed_duration,
+        });
+
+        // `JobQueue::complete_if_processing` persists outputs before
+        // `DagScheduler::on_job_completed` derives graph advancement from them.
+        debug!(
+            "Job {} completed, dag_step_execution_id={:?}",
+            facts.id, facts.dag_step_execution_id
+        );
+
+        let Some(dag_step_id) = facts.dag_step_execution_id.as_deref() else {
+            return;
+        };
+        let Some(scheduler) = &self.dag_scheduler else {
+            return;
+        };
+
+        match scheduler
+            .on_job_completed(
+                dag_step_id,
+                &completed_outputs,
+                input.streamer_name.as_deref(),
+                input.session_title.as_deref(),
+                input.platform.as_deref(),
+                input.session_start,
+            )
+            .await
+        {
+            Ok(DagJobCompletedUpdate {
+                new_job_ids,
+                completion,
+            }) => {
+                if !new_job_ids.is_empty() {
                     info!(
-                        "DAG step {} failed, cancelled {} jobs (fail-fast)",
-                        dag_step_id, cancelled_count
+                        "DAG step {} completed, created {} downstream jobs",
+                        dag_step_id,
+                        new_job_ids.len()
+                    );
+                }
+                self.notify_dag_completion(completion).await;
+            }
+            Err(e) => {
+                error!(
+                    "Failed to handle DAG job completion for {}: {}",
+                    dag_step_id, e
+                );
+                if let Ok(completion) = scheduler
+                    .fail_dag_for_step(dag_step_id, &format!("DAG scheduler error: {}", e))
+                    .await
+                {
+                    self.notify_dag_completion(completion).await;
+                }
+            }
+        }
+    }
+
+    /// Persist a failed or timed-out job, clean up what it half-produced, and fail its DAG.
+    async fn finish_failed(&self, facts: &JobFacts, error: &str, kind: DagFailureKind) {
+        self.emit(PipelineEvent::JobFailed {
+            job_id: facts.id.clone(),
+            job_type: facts.job_type.clone(),
+            error: error.to_string(),
+        });
+
+        // Record step info for observability, and clean up partial outputs so a retry does not
+        // start from a half-written file.
+        let partial_outputs = self
+            .job_queue
+            .fail_with_cleanup_and_step_info(
+                &facts.id,
+                error,
+                Some(facts.processor_name),
+                facts.current_step,
+                facts.total_steps,
+            )
+            .await;
+        if let Ok(outputs) = partial_outputs
+            && !outputs.is_empty()
+        {
+            cleanup_partial_outputs(&outputs).await;
+        }
+
+        if let Some(dag_step_id) = facts.dag_step_execution_id.as_deref() {
+            self.fail_dag_step(dag_step_id, error, kind).await;
+        }
+    }
+
+    /// Fail-fast for a failed DAG step job: reports the failure to
+    /// `DagScheduler::on_job_failed`, which cancels sibling jobs, and forwards any resulting
+    /// completion. No-op when the pool has no scheduler.
+    async fn fail_dag_step(&self, dag_step_id: &str, reason: &str, kind: DagFailureKind) {
+        let Some(scheduler) = &self.dag_scheduler else {
+            return;
+        };
+
+        match scheduler.on_job_failed(dag_step_id, reason).await {
+            Ok(DagJobFailedUpdate {
+                cancelled_count,
+                completion,
+            }) => {
+                match kind {
+                    DagFailureKind::NonBatchInput => {}
+                    DagFailureKind::ProcessorError => {
+                        info!(
+                            "DAG step {} failed, cancelled {} jobs (fail-fast)",
+                            dag_step_id, cancelled_count
+                        );
+                    }
+                    DagFailureKind::Timeout => {
+                        info!(
+                            "DAG step {} timed out, cancelled {} jobs (fail-fast)",
+                            dag_step_id, cancelled_count
+                        );
+                    }
+                }
+                self.notify_dag_completion(completion).await;
+            }
+            Err(e) => match kind {
+                DagFailureKind::NonBatchInput => {
+                    error!(
+                        dag_step_execution_id = %dag_step_id,
+                        error = %e,
+                        "Failed to fail DAG for non-batch processor"
+                    );
+                }
+                DagFailureKind::ProcessorError => {
+                    error!(
+                        "Failed to handle DAG job failure for {}: {}",
+                        dag_step_id, e
                     );
                 }
                 DagFailureKind::Timeout => {
-                    info!(
-                        "DAG step {} timed out, cancelled {} jobs (fail-fast)",
-                        dag_step_id, cancelled_count
+                    error!(
+                        "Failed to handle DAG job timeout for {}: {}",
+                        dag_step_id, e
                     );
                 }
-            }
-            if let Some(completion) = completion
-                && let Some(tx) = dag_notify_tx
-                && let Err(e) = tx.send(completion).await
-            {
-                warn!(
-                    error = %e,
-                    "Failed to send DAG completion notification"
-                );
+            },
+        }
+    }
+
+    /// Forward a terminal DAG state to `PipelineManager::handle_dag_completion`.
+    async fn notify_dag_completion(&self, completion: Option<DagCompletionInfo>) {
+        if let Some(completion) = completion
+            && let Some(tx) = &self.dag_notify_tx
+            && let Err(e) = tx.send(completion).await
+        {
+            warn!(
+                error = %e,
+                "Failed to send DAG completion notification"
+            );
+        }
+    }
+}
+
+/// Drain a job's streaming log entries into `job_execution_logs`.
+///
+/// Runs as its own task so a slow or failing database write never blocks
+/// `Processor::process`. `execute_job` drops the `ProcessorContext` — and with it the sink's
+/// sender — before awaiting the returned handle, which is what ends the loop and forces the
+/// final flush.
+fn spawn_log_collector(
+    job_queue: Arc<JobQueue>,
+    job_id: String,
+    mut log_rx: tokio::sync::mpsc::Receiver<JobLogEntry>,
+    log_dropped: Arc<AtomicUsize>,
+) -> tokio::task::JoinHandle<()> {
+    const FLUSH_INTERVAL_MS: u64 = 200;
+    const MAX_BATCH_SIZE: usize = 1000;
+    const MAX_BUFFERED_LOGS: usize = 4000;
+
+    tokio::spawn(async move {
+        let mut flush_timer =
+            tokio::time::interval(std::time::Duration::from_millis(FLUSH_INTERVAL_MS));
+        flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        let mut buffer: VecDeque<JobLogEntry> = VecDeque::with_capacity(MAX_BATCH_SIZE);
+        let mut dropped_due_to_backpressure: usize = 0;
+        let mut backoff = LogFlushBackoff::default();
+
+        loop {
+            tokio::select! {
+                entry = log_rx.recv() => {
+                    let Some(entry) = entry else {
+                        // The sink is gone: report what was dropped and flush unconditionally.
+                        let producer_dropped = log_dropped.load(Ordering::Relaxed);
+                        if dropped_due_to_backpressure > 0 {
+                            buffer.push_back(JobLogEntry::warn(format!(
+                                "Dropped {dropped_due_to_backpressure} log lines due to DB backpressure (buffer_cap={MAX_BUFFERED_LOGS})",
+                            )));
+                        }
+                        if producer_dropped > 0 {
+                            buffer.push_back(JobLogEntry::warn(format!(
+                                "Dropped {producer_dropped} log lines due to log channel backpressure (capacity={LOG_CHANNEL_CAPACITY})",
+                            )));
+                        }
+                        backoff.flush(&job_queue, &job_id, &mut buffer, true).await;
+                        break;
+                    };
+
+                    buffer.push_back(entry);
+                    while buffer.len() > MAX_BUFFERED_LOGS {
+                        let _ = buffer.pop_front();
+                        dropped_due_to_backpressure = dropped_due_to_backpressure.saturating_add(1);
+                    }
+
+                    if buffer.len() >= MAX_BATCH_SIZE {
+                        backoff.flush(&job_queue, &job_id, &mut buffer, false).await;
+                    }
+                }
+                _ = flush_timer.tick() => {
+                    backoff.flush(&job_queue, &job_id, &mut buffer, false).await;
+                }
             }
         }
-        Err(e) => match kind {
-            DagFailureKind::NonBatchInput => {
-                error!(
-                    dag_step_execution_id = %dag_step_id,
-                    error = %e,
-                    "Failed to fail DAG for non-batch processor"
-                );
+    })
+}
+
+/// Retry pacing for `JobQueue::append_log_entry`, so a database that is refusing writes is
+/// retried with a widening gap instead of once per buffered batch.
+struct LogFlushBackoff {
+    delay: std::time::Duration,
+    next_flush_allowed: tokio::time::Instant,
+}
+
+impl Default for LogFlushBackoff {
+    fn default() -> Self {
+        Self {
+            delay: std::time::Duration::ZERO,
+            next_flush_allowed: tokio::time::Instant::now(),
+        }
+    }
+}
+
+impl LogFlushBackoff {
+    const MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+    const INITIAL_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
+    /// Write `buffer` out, unless a previous failure asked for a wait that has not elapsed.
+    /// `force` ignores that wait, for the final flush once the job's sink is gone.
+    async fn flush(
+        &mut self,
+        job_queue: &JobQueue,
+        job_id: &str,
+        buffer: &mut VecDeque<JobLogEntry>,
+        force: bool,
+    ) {
+        if buffer.is_empty() {
+            return;
+        }
+        if !force && tokio::time::Instant::now() < self.next_flush_allowed {
+            return;
+        }
+
+        match job_queue
+            .append_log_entry(job_id, buffer.make_contiguous())
+            .await
+        {
+            Ok(()) => {
+                buffer.clear();
+                self.delay = std::time::Duration::ZERO;
+                self.next_flush_allowed = tokio::time::Instant::now();
             }
-            DagFailureKind::ProcessorError => {
-                error!(
-                    "Failed to handle DAG job failure for {}: {}",
-                    dag_step_id, e
-                );
+            Err(e) => {
+                warn!("Failed to append streaming logs for job {}: {}", job_id, e);
+                self.delay = if self.delay.is_zero() {
+                    Self::INITIAL_DELAY
+                } else {
+                    (self.delay * 2).min(Self::MAX_DELAY)
+                };
+                self.next_flush_allowed = tokio::time::Instant::now() + self.delay;
             }
-            DagFailureKind::Timeout => {
-                error!(
-                    "Failed to handle DAG job timeout for {}: {}",
-                    dag_step_id, e
-                );
-            }
-        },
+        }
     }
 }
 
@@ -1247,6 +1365,164 @@ mod tests {
         fn name(&self) -> &'static str {
             "timeout-publish"
         }
+    }
+
+    struct NoopProcessor;
+
+    #[async_trait]
+    impl Processor for NoopProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["noop"]
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            Ok(ProcessorOutput {
+                duration_secs: 1.5,
+                ..Default::default()
+            })
+        }
+
+        fn name(&self) -> &'static str {
+            "noop"
+        }
+    }
+
+    struct FailingProcessor;
+
+    #[async_trait]
+    impl Processor for FailingProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["failing"]
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            Err(crate::Error::PipelineError("boom".to_string()))
+        }
+
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+    }
+
+    fn test_pool_config() -> WorkerPoolConfig {
+        WorkerPoolConfig {
+            max_workers: 1,
+            job_timeout_secs: 30,
+            poll_interval_ms: 10,
+            adaptive: AdaptiveWorkerPoolConfig::default(),
+        }
+    }
+
+    /// The worker is the only place a job's start and terminal state are known, so it is what
+    /// feeds the `pipeline_started` / `pipeline_completed` notification subscriptions.
+    #[tokio::test]
+    async fn test_worker_emits_started_and_completed_events() {
+        let job_queue = Arc::new(JobQueue::new());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+
+        pool.start_with_dag_scheduler(
+            job_queue.clone(),
+            vec![Arc::new(NoopProcessor)],
+            None,
+            None,
+            Some(event_tx),
+        );
+
+        let job = Job::new(
+            "noop",
+            vec!["/input".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job_queue.enqueue(job).await.unwrap();
+
+        let mut started: Option<(String, String)> = None;
+        let mut completed: Option<(String, f64)> = None;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while started.is_none() || completed.is_none() {
+                match event_rx.recv().await.unwrap() {
+                    PipelineEvent::JobStarted {
+                        job_id,
+                        streamer_id,
+                        ..
+                    } => started = Some((job_id, streamer_id)),
+                    PipelineEvent::JobCompleted {
+                        job_id,
+                        duration_secs,
+                        ..
+                    } => completed = Some((job_id, duration_secs)),
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("worker emits JobStarted and JobCompleted");
+
+        // streamer_id has to come from the job itself: DAG step jobs are enqueued through
+        // enqueue_existing and never emit JobEnqueued for a listener to correlate against.
+        assert_eq!(started, Some((job_id.clone(), "streamer-1".to_string())));
+        assert_eq!(completed, Some((job_id, 1.5)));
+
+        pool.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_worker_emits_failed_event() {
+        let job_queue = Arc::new(JobQueue::new());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+
+        pool.start_with_dag_scheduler(
+            job_queue.clone(),
+            vec![Arc::new(FailingProcessor)],
+            None,
+            None,
+            Some(event_tx),
+        );
+
+        let job = Job::new(
+            "failing",
+            vec!["/input".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job_queue.enqueue(job).await.unwrap();
+
+        let failure = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let PipelineEvent::JobFailed { job_id, error, .. } =
+                    event_rx.recv().await.unwrap()
+                {
+                    return (job_id, error);
+                }
+            }
+        })
+        .await
+        .expect("worker emits JobFailed");
+
+        assert_eq!(failure.0, job_id);
+        assert!(failure.1.contains("boom"), "{}", failure.1);
+
+        pool.stop().await;
     }
 
     #[test]

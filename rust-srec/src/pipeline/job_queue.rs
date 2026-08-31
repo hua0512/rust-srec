@@ -1211,13 +1211,14 @@ impl JobQueue {
                     continue;
                 }
 
-                // Match DB ordering: priority DESC, created_at DESC, id ASC for stability.
+                // Match the claim order of JobRepository::claim_next_pending_job:
+                // priority DESC, created_at ASC, id ASC.
                 let candidate = (job.priority, job.created_at, job.id.clone());
                 match &selected {
                     None => selected = Some(candidate),
                     Some((best_prio, best_created, best_id)) => {
                         if candidate.0 > *best_prio
-                            || (candidate.0 == *best_prio && candidate.1 > *best_created)
+                            || (candidate.0 == *best_prio && candidate.1 < *best_created)
                             || (candidate.0 == *best_prio
                                 && candidate.1 == *best_created
                                 && candidate.2 < *best_id)
@@ -1987,6 +1988,35 @@ impl JobQueue {
         self.cancellation_tokens.get(job_id).map(|t| t.clone())
     }
 
+    /// Drop every in-memory trace of jobs whose rows have been deleted.
+    ///
+    /// `DagScheduler::delete_dag` removes job rows through
+    /// `JobRepository::delete_jobs_by_pipeline`, so no terminal transition will ever run for
+    /// them and nothing else clears what `enqueue`, `dequeue` and `progress_reporter` left
+    /// behind. Cancelling the token stops a worker that is still inside `Processor::process`
+    /// for a deleted job, and any entry still in an active state is removed from `depth`,
+    /// which feeds `depth_status` and the throttle controller.
+    pub(crate) fn forget_jobs(&self, job_ids: &[String]) {
+        let mut still_active = 0usize;
+
+        for job_id in job_ids {
+            if let Some((_, job)) = self.jobs_cache.remove(job_id)
+                && matches!(job.status, JobStatus::Pending | JobStatus::Processing)
+            {
+                still_active += 1;
+            }
+            if let Some((_, token)) = self.cancellation_tokens.remove(job_id) {
+                token.cancel();
+            }
+            let _ = self.persisted_log_cursor.remove(job_id);
+            self.progress_cache.remove(job_id);
+        }
+
+        if still_active > 0 {
+            self.decrement_depth(still_active);
+        }
+    }
+
     pub fn finalize_cancelled_job(&self, job_id: &str) {
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
@@ -2516,7 +2546,9 @@ impl JobQueue {
             items.push((job.priority, job.created_at, job.id.clone()));
         }
 
-        // Match DB ordering: priority DESC, created_at DESC, id ASC for stability.
+        // Match list_jobs_filtered's display ordering: priority DESC, created_at DESC,
+        // id ASC for stability. This is the listing order, not the claim order used by
+        // dequeue.
         items.sort_by(|a, b| {
             b.0.cmp(&a.0)
                 .then_with(|| b.1.cmp(&a.1))
@@ -3393,6 +3425,67 @@ mod tests {
 
         assert!(!job_id.is_empty());
         assert_eq!(queue.depth(), 1);
+    }
+
+    /// Equal-priority jobs are claimed oldest-first, so a steady arrival rate cannot starve
+    /// work already in the queue. Mirrors the ordering in
+    /// `JobRepository::claim_next_pending_job`.
+    #[tokio::test]
+    async fn test_dequeue_prefers_oldest_job_at_equal_priority() {
+        let queue = JobQueue::new();
+        let base = Utc::now();
+
+        let mut expected_order = Vec::new();
+        // Enqueued newest-first: insertion order must not decide the claim order.
+        for offset_secs in [120i64, 60, 0] {
+            let mut job = Job::new(
+                "remux",
+                vec![format!("/input-{offset_secs}.flv")],
+                vec![],
+                "streamer",
+                "session",
+            );
+            job.created_at = base + chrono::Duration::seconds(offset_secs);
+            expected_order.push((job.created_at, job.id.clone()));
+            queue.enqueue(job).await.unwrap();
+        }
+        expected_order.sort_by_key(|(created_at, _)| *created_at);
+
+        for (_, expected_id) in &expected_order {
+            let claimed = queue
+                .dequeue(None)
+                .await
+                .unwrap()
+                .expect("a pending job is available");
+            assert_eq!(&claimed.id, expected_id);
+        }
+    }
+
+    /// Priority still wins over age: a higher-priority job jumps ahead of older work.
+    #[tokio::test]
+    async fn test_dequeue_prefers_priority_over_age() {
+        let queue = JobQueue::new();
+        let base = Utc::now();
+
+        let mut old = Job::new("remux", vec!["/old.flv".to_string()], vec![], "s", "sess");
+        old.created_at = base;
+        let old_id = old.id.clone();
+        queue.enqueue(old).await.unwrap();
+
+        let mut urgent = Job::new(
+            "remux",
+            vec!["/urgent.flv".to_string()],
+            vec![],
+            "s",
+            "sess",
+        )
+        .with_priority(10);
+        urgent.created_at = base + chrono::Duration::seconds(60);
+        let urgent_id = urgent.id.clone();
+        queue.enqueue(urgent).await.unwrap();
+
+        assert_eq!(queue.dequeue(None).await.unwrap().unwrap().id, urgent_id);
+        assert_eq!(queue.dequeue(None).await.unwrap().unwrap().id, old_id);
     }
 
     #[tokio::test]

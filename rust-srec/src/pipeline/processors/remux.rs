@@ -32,6 +32,33 @@ async fn make_absolute(path: &str) -> String {
     path.to_string()
 }
 
+/// Reduce `path` to a form two spellings of the same file share, for use with
+/// [`RemuxProcessor::paths_equal`].
+///
+/// Only the comparison keys go through this; `make_absolute` still produces what is handed to
+/// ffmpeg, because `canonicalize` rewrites Windows paths into the `\\?\` verbatim form that
+/// not every tool accepts. Resolution goes through the parent directory so an output path that
+/// does not exist yet — the usual case, since the output is about to be written — still
+/// collapses symlinked and `..`-relative directories onto the same key as its input.
+async fn comparison_key(path: &str) -> String {
+    let path_obj = Path::new(path);
+
+    if let Ok(resolved) = tokio::fs::canonicalize(path_obj).await {
+        return resolved.to_string_lossy().into_owned();
+    }
+
+    if let (Some(parent), Some(file_name)) = (path_obj.parent(), path_obj.file_name())
+        && let Ok(resolved_parent) = tokio::fs::canonicalize(parent).await
+    {
+        return resolved_parent
+            .join(file_name)
+            .to_string_lossy()
+            .into_owned();
+    }
+
+    make_absolute(path).await
+}
+
 struct TempOutputGuard {
     path: PathBuf,
 }
@@ -572,8 +599,13 @@ impl RemuxProcessor {
         args
     }
 
+    /// Whether two [`comparison_key`] results name the same file.
+    ///
+    /// Case-folded wherever the default filesystem is case-insensitive (Windows, and APFS/HFS+
+    /// on macOS): there, `clip.MP4` and `clip.mp4` are one file, and treating them as two makes
+    /// the in-place guards below miss.
     fn paths_equal(a: &str, b: &str) -> bool {
-        if cfg!(windows) {
+        if cfg!(any(windows, target_os = "macos")) {
             a.eq_ignore_ascii_case(b)
         } else {
             a == b
@@ -585,10 +617,10 @@ impl RemuxProcessor {
         config: &RemuxConfig,
         output_override: Option<&str>,
     ) -> Result<String> {
-        let input_abs = make_absolute(input_path).await;
+        let input_abs = comparison_key(input_path).await;
 
         if let Some(out) = output_override.filter(|s| !s.is_empty()) {
-            let out_abs = make_absolute(out).await;
+            let out_abs = comparison_key(out).await;
             if Self::paths_equal(&input_abs, &out_abs) {
                 return Err(crate::Error::PipelineError(
                     "Remux output path must not be the same as the input path (use a different output or omit outputs for an auto-generated path)".to_string(),
@@ -614,7 +646,7 @@ impl RemuxProcessor {
             .join(format!("{}.{}", file_stem, ext))
             .to_string_lossy()
             .to_string();
-        let candidate_abs = make_absolute(&candidate).await;
+        let candidate_abs = comparison_key(&candidate).await;
 
         // Avoid in-place remux (ffmpeg cannot safely write to the same path it's reading from).
         if Self::paths_equal(&input_abs, &candidate_abs) {
@@ -752,21 +784,40 @@ impl RemuxProcessor {
 
         // Remove input file if requested and successful
         let mut logs = command_output.logs;
+        // Both paths exist now that the output has been promoted, so their comparison keys
+        // resolve fully. If they name one file, `promote_remux_output` has already replaced
+        // the input with the remuxed result and deleting it would destroy that result.
+        let output_replaced_input = remove_input_on_success
+            && Self::paths_equal(
+                &comparison_key(input_path).await,
+                &comparison_key(output_path).await,
+            );
         if remove_input_on_success {
-            match tokio::fs::remove_file(input_path).await {
-                Ok(_) => {
-                    info!("Removed input file after successful remux: {}", input_path);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Info,
-                        format!("Removed input file: {}", input_path),
-                    ));
-                }
-                Err(e) => {
-                    ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Warn,
-                        format!("Failed to remove input file {}: {}", input_path, e),
-                    ));
+            if output_replaced_input {
+                let msg = format!(
+                    "Not removing input {input_path}: it is the same file as the remux output"
+                );
+                warn!("{msg}");
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Warn,
+                    msg,
+                ));
+            } else {
+                match tokio::fs::remove_file(input_path).await {
+                    Ok(()) => {
+                        info!("Removed input file after successful remux: {}", input_path);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Info,
+                            format!("Removed input file: {}", input_path),
+                        ));
+                    }
+                    Err(e) => {
+                        ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Warn,
+                            format!("Failed to remove input file {}: {}", input_path, e),
+                        ));
+                    }
                 }
             }
         }
@@ -785,7 +836,7 @@ impl RemuxProcessor {
                 serde_json::json!({
                     "video_codec": format!("{:?}", config.video_codec),
                     "audio_codec": format!("{:?}", config.audio_codec),
-                    "input_removed": remove_input_on_success,
+                    "input_removed": remove_input_on_success && !output_replaced_input,
                 })
                 .to_string(),
             ),
@@ -909,9 +960,33 @@ impl Processor for RemuxProcessor {
             }
         }
 
+        let mut removed_inputs = 0usize;
         if config.remove_input_on_success {
+            // An input the remux wrote back over (see `paths_equal` in process_one) is now the
+            // output itself, so removing it would delete the result.
+            let mut output_keys = Vec::with_capacity(outputs.len());
+            for output in &outputs {
+                output_keys.push(comparison_key(output).await);
+            }
+
             // Only remove inputs that were actually remuxed. Skipped inputs should never be removed.
             for input_path in &succeeded_inputs {
+                let input_key = comparison_key(input_path).await;
+                if output_keys
+                    .iter()
+                    .any(|output_key| Self::paths_equal(&input_key, output_key))
+                {
+                    let msg = format!(
+                        "Not removing input {input_path}: it is the same file as a remux output"
+                    );
+                    warn!("{msg}");
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Warn,
+                        msg,
+                    ));
+                    continue;
+                }
+
                 let input_path_string = make_absolute(input_path).await;
                 let input_path = input_path_string.as_str();
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
@@ -922,6 +997,7 @@ impl Processor for RemuxProcessor {
                         format!("Failed to remove input file {}: {}", input_path, e),
                     ));
                 } else {
+                    removed_inputs += 1;
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Info,
                         format!("Removed input file: {}", input_path),
@@ -937,7 +1013,7 @@ impl Processor for RemuxProcessor {
                 serde_json::json!({
                     "batch": true,
                     "inputs": input.inputs.len(),
-                    "input_removed": config.remove_input_on_success,
+                    "input_removed": removed_inputs > 0,
                     "video_codec": format!("{:?}", config.video_codec),
                     "audio_codec": format!("{:?}", config.audio_codec),
                 })
@@ -965,6 +1041,61 @@ mod tests {
     fn test_remux_processor_type() {
         let processor = RemuxProcessor::new();
         assert_eq!(processor.processor_type(), ProcessorType::Cpu);
+    }
+
+    /// An output that reaches the input through a symlinked directory is still the input:
+    /// `promote_remux_output` would write over it and `remove_input_on_success` would then
+    /// delete the result.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_output_override_aliasing_the_input_is_rejected() {
+        let dir = TempDir::new().unwrap();
+        let real = dir.path().join("real");
+        fs::create_dir(&real).unwrap();
+        fs::write(real.join("clip.flv"), b"data").unwrap();
+        std::os::unix::fs::symlink(&real, dir.path().join("link")).unwrap();
+
+        let input = dir
+            .path()
+            .join("link")
+            .join("clip.flv")
+            .to_string_lossy()
+            .into_owned();
+        let output = real.join("clip.flv").to_string_lossy().into_owned();
+
+        let error = RemuxProcessor::determine_output_path_for_input(
+            &input,
+            &RemuxConfig::default(),
+            Some(&output),
+        )
+        .await
+        .expect_err("an aliased output path is the input path");
+        assert!(
+            error
+                .to_string()
+                .contains("must not be the same as the input path"),
+            "{error}"
+        );
+    }
+
+    /// A distinct output next to the input is still accepted after resolution.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_distinct_output_override_is_accepted() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("clip.flv"), b"data").unwrap();
+
+        let input = dir.path().join("clip.flv").to_string_lossy().into_owned();
+        let output = dir.path().join("clip.mp4").to_string_lossy().into_owned();
+
+        let resolved = RemuxProcessor::determine_output_path_for_input(
+            &input,
+            &RemuxConfig::default(),
+            Some(&output),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved, output);
     }
 
     #[test]

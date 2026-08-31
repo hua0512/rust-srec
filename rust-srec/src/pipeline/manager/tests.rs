@@ -414,8 +414,24 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn mark_job_failed(&self, _id: &str, _error: &str) -> Result<u64> {
-        unimplemented!("not needed for these tests")
+    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64> {
+        let mut jobs = self.jobs.lock().expect("lock poisoned");
+        let job = jobs
+            .get_mut(id)
+            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+        if !matches!(
+            JobStatus::parse(&job.status),
+            Some(JobStatus::Pending | JobStatus::Processing)
+        ) {
+            return Ok(0);
+        }
+
+        let now = chrono::Utc::now().timestamp_millis();
+        job.status = JobStatus::Failed.as_str().to_string();
+        job.error = Some(error.to_string());
+        job.completed_at = Some(now);
+        job.updated_at = now;
+        Ok(1)
     }
 
     async fn mark_job_cancelled(&self, id: &str) -> Result<u64> {
@@ -486,12 +502,22 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_job_execution_info(&self, _id: &str) -> Result<Option<String>> {
-        unimplemented!("not needed for these tests")
+    async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .jobs
+            .lock()
+            .expect("lock poisoned")
+            .get(id)
+            .and_then(|job| job.execution_info.clone()))
     }
 
-    async fn update_job_execution_info(&self, _id: &str, _execution_info: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
+    async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()> {
+        let mut jobs = self.jobs.lock().expect("lock poisoned");
+        let job = jobs
+            .get_mut(id)
+            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+        job.execution_info = Some(execution_info.to_string());
+        Ok(())
     }
 
     async fn update_job_state(&self, _id: &str, _state: &str) -> Result<()> {
@@ -522,8 +548,10 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
+    /// Accepted and dropped: terminal transitions persist a log line through this, and no
+    /// test here asserts on stored logs.
     async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> Result<()> {
-        unimplemented!("not needed for these tests")
+        Ok(())
     }
 
     async fn get_execution_logs(&self, _job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
@@ -544,10 +572,23 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
 
     async fn list_jobs_filtered(
         &self,
-        _filters: &crate::database::models::JobFilters,
+        filters: &crate::database::models::JobFilters,
         _pagination: &crate::database::models::Pagination,
     ) -> Result<(Vec<JobDbModel>, u64)> {
-        unimplemented!("not needed for these tests")
+        let jobs: Vec<JobDbModel> = self
+            .jobs
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|job| {
+                filters
+                    .status
+                    .is_none_or(|status| JobStatus::parse(&job.status) == Some(status))
+            })
+            .cloned()
+            .collect();
+        let total = jobs.len() as u64;
+        Ok((jobs, total))
     }
 
     async fn list_jobs_page_filtered(
@@ -1380,10 +1421,10 @@ async fn test_expand_workflows_with_duplicate_names() {
     let workflow_dag = DagPipelineDefinition::new(
         "wf",
         vec![
-            DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({}))),
+            DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
             DagStep::with_dependencies(
                 "B",
-                PipelineStep::inline("noop", serde_json::json!({})),
+                PipelineStep::inline("remux", serde_json::json!({})),
                 vec!["A".to_string()],
             ),
         ],
@@ -1413,7 +1454,7 @@ async fn test_expand_workflows_with_duplicate_names() {
             },
             DagStep::with_dependencies(
                 "Z",
-                PipelineStep::inline("noop", serde_json::json!({})),
+                PipelineStep::inline("remux", serde_json::json!({})),
                 vec!["W2".to_string()],
             ),
         ],
@@ -1438,6 +1479,178 @@ async fn test_expand_workflows_with_duplicate_names() {
 
     // Z depends on the *leaf* of W2 after expansion.
     assert_eq!(deps_by_id.get("Z").unwrap(), &vec!["W2__B".to_string()]);
+}
+
+/// A fan-in step downstream of a workflow receives its inputs in `depends_on` order
+/// (`DagRepository::complete_step_and_check_dependents`), so expansion must record the
+/// workflow's leaves in definition order rather than in whatever order a hash container
+/// happens to yield.
+#[tokio::test]
+async fn test_expand_workflows_preserves_leaf_order() {
+    let workflow_dag = DagPipelineDefinition::new(
+        "wf",
+        vec![
+            DagStep::new("root", PipelineStep::inline("remux", serde_json::json!({}))),
+            DagStep::with_dependencies(
+                "leaf_a",
+                PipelineStep::inline("remux", serde_json::json!({})),
+                vec!["root".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "leaf_b",
+                PipelineStep::inline("remux", serde_json::json!({})),
+                vec!["root".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "leaf_c",
+                PipelineStep::inline("remux", serde_json::json!({})),
+                vec!["root".to_string()],
+            ),
+        ],
+    );
+    let repo = Arc::new(TestPipelinePresetRepository {
+        preset: PipelinePreset::new("wf", workflow_dag),
+    });
+
+    let manager: PipelineManager = PipelineManager::new().with_pipeline_preset_repository(repo);
+
+    let parent = DagPipelineDefinition::new(
+        "parent",
+        vec![
+            DagStep {
+                id: "W".to_string(),
+                step: PipelineStep::Workflow {
+                    name: "wf".to_string(),
+                },
+                depends_on: vec![],
+            },
+            DagStep::with_dependencies(
+                "Z",
+                PipelineStep::inline("remux", serde_json::json!({})),
+                vec!["W".to_string()],
+            ),
+        ],
+    );
+
+    let expanded = manager.expand_workflows_in_dag(parent).await.unwrap();
+    let z = expanded
+        .steps
+        .iter()
+        .find(|step| step.id == "Z")
+        .expect("Z survives expansion");
+
+    assert_eq!(
+        z.depends_on,
+        vec![
+            "W__leaf_a".to_string(),
+            "W__leaf_b".to_string(),
+            "W__leaf_c".to_string(),
+        ]
+    );
+}
+
+/// Every processor name the preset editor can write must be claimable by a pool, or the jobs
+/// it produces sit PENDING forever. Mirrors `VALID_PROCESSORS` in
+/// `frontend/src/api/schemas/pipeline.ts`; the seeded `archive_zip` job preset in the initial
+/// schema migration also relies on "compression" resolving here.
+#[test]
+fn test_frontend_processor_names_are_all_claimable() {
+    let manager: PipelineManager = PipelineManager::new();
+    let supported = manager.supported_job_types();
+
+    for processor in [
+        "remux",
+        "rclone",
+        "baidupcs",
+        "thumbnail",
+        "execute",
+        "audio_extract",
+        "compression",
+        "copy_move",
+        "delete",
+        "metadata",
+        "danmaku_factory",
+        "ass_burnin",
+    ] {
+        assert!(
+            supported.contains(processor),
+            "processor '{processor}' is offered by the preset editor but no pool can claim it"
+        );
+    }
+}
+
+/// A step naming a processor no pool registers would be enqueued and never claimed, so the
+/// definition has to be rejected up front rather than at dequeue time.
+#[test]
+fn test_validate_step_processors_rejects_unknown_processor() {
+    let manager: PipelineManager = PipelineManager::new();
+
+    let dag = DagPipelineDefinition::new(
+        "unknown processor",
+        vec![
+            DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
+            DagStep::with_dependencies(
+                "B",
+                PipelineStep::inline("totally_not_a_processor", serde_json::json!({})),
+                vec!["A".to_string()],
+            ),
+        ],
+    );
+
+    let error = manager
+        .validate_step_processors(&dag)
+        .expect_err("unknown processor is rejected");
+    let message = error.to_string();
+    assert!(message.contains("totally_not_a_processor"), "{message}");
+    assert!(message.contains("step 'B'"), "{message}");
+}
+
+/// A pending job whose processor no pool registers can never be claimed, so startup fails it
+/// instead of leaving it (and the queue depth it inflates) in place across every restart.
+#[tokio::test]
+async fn test_fail_unclaimable_jobs_only_fails_jobs_without_a_processor() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let claimable = JobDbModel::new_with_input("remux", "/a.flv", 0, None, None, "{}");
+    let unclaimable =
+        JobDbModel::new_with_input("totally_not_a_processor", "/b.flv", 0, None, None, "{}");
+    job_repo.insert(claimable.clone());
+    job_repo.insert(unclaimable.clone());
+
+    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
+        PipelineManagerConfig::default(),
+        job_repo.clone(),
+    );
+
+    let failed = manager.fail_unclaimable_jobs().await.unwrap();
+
+    assert_eq!(failed, 1);
+    assert_eq!(
+        job_repo.get_job(&unclaimable.id).await.unwrap().status,
+        JobStatus::Failed.as_str()
+    );
+    assert_eq!(
+        job_repo.get_job(&claimable.id).await.unwrap().status,
+        JobStatus::Pending.as_str()
+    );
+}
+
+#[test]
+fn test_validate_step_processors_accepts_registered_processors() {
+    let manager: PipelineManager = PipelineManager::new();
+
+    let dag = DagPipelineDefinition::new(
+        "known processors",
+        vec![
+            DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
+            DagStep::with_dependencies(
+                "B",
+                PipelineStep::inline("copy_move", serde_json::json!({})),
+                vec!["A".to_string()],
+            ),
+        ],
+    );
+
+    manager.validate_step_processors(&dag).unwrap();
 }
 
 #[tokio::test]
@@ -2179,14 +2392,14 @@ async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence(
         "segment",
         vec![DagStep::new(
             "segment-step",
-            PipelineStep::inline("noop", serde_json::json!({})),
+            PipelineStep::inline("remux", serde_json::json!({})),
         )],
     );
     let session_pipeline = DagPipelineDefinition::new(
         "session",
         vec![DagStep::new(
             "session-step",
-            PipelineStep::inline("noop", serde_json::json!({})),
+            PipelineStep::inline("remux", serde_json::json!({})),
         )],
     );
     let (_config_repo, streamer_repo, config_service) =
@@ -2230,7 +2443,7 @@ async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
         "session",
         vec![DagStep::new(
             "session-step",
-            PipelineStep::inline("noop", serde_json::json!({})),
+            PipelineStep::inline("remux", serde_json::json!({})),
         )],
     );
     let (_config_repo, streamer_repo, config_service) =

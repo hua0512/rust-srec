@@ -193,7 +193,11 @@ pub enum PipelineEvent {
         streamer_id: String,
     },
     /// Job started processing.
-    JobStarted { job_id: String, job_type: String },
+    JobStarted {
+        job_id: String,
+        job_type: String,
+        streamer_id: String,
+    },
     /// Job completed successfully.
     JobCompleted {
         job_id: String,
@@ -255,9 +259,17 @@ pub struct PipelineManager<
     pipeline_coordinator: PipelineCoordinator,
 
     /// DAG execution -> segment context mapping (for per-segment DAG completion accounting).
-    dag_segment_contexts: DashMap<String, SegmentDagContext>,
+    ///
+    /// `Arc`-shared: `run_segment_pipeline` moves a handle into the `before_root_jobs` hook,
+    /// and `DashMap::clone` copies entries instead of sharing them, so a bare clone would
+    /// record the context in a map that dies with the closure — leaving
+    /// `handle_dag_completion` with nothing to look up.
+    dag_segment_contexts: Arc<DashMap<String, SegmentDagContext>>,
     /// DAG execution -> paired-segment DAG context mapping (for gating session-complete).
-    paired_dag_contexts: DashMap<String, PairedDagContext>,
+    ///
+    /// `Arc`-shared for the same reason as `dag_segment_contexts`, via
+    /// `run_paired_segment_pipeline`.
+    paired_dag_contexts: Arc<DashMap<String, PairedDagContext>>,
     /// DAG execution IDs already processed by `handle_dag_completion` (best-effort dedupe).
     handled_dag_completions: DashMap<String, std::time::Instant>,
 
@@ -388,8 +400,8 @@ where
             config_service: None,
             last_queue_status: AtomicU8::new(0),
             pipeline_coordinator: PipelineCoordinator::new(),
-            dag_segment_contexts: DashMap::new(),
-            paired_dag_contexts: DashMap::new(),
+            dag_segment_contexts: Arc::new(DashMap::new()),
+            paired_dag_contexts: Arc::new(DashMap::new()),
             handled_dag_completions: DashMap::new(),
             dag_repository: None,
             job_repository: None,
@@ -452,8 +464,8 @@ where
             config_service: None,
             last_queue_status: AtomicU8::new(0),
             pipeline_coordinator: PipelineCoordinator::new(),
-            dag_segment_contexts: DashMap::new(),
-            paired_dag_contexts: DashMap::new(),
+            dag_segment_contexts: Arc::new(DashMap::new()),
+            paired_dag_contexts: Arc::new(DashMap::new()),
             handled_dag_completions: DashMap::new(),
             dag_repository: None,
             job_repository: Some(job_repository),
