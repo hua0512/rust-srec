@@ -220,6 +220,12 @@ pub async fn retry_dag(
     State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagRetryResponse>> {
+    retry_dag_inner(&state, &dag_id).await.map(Json)
+}
+
+/// Core of [`retry_dag`], kept separate from the handler so callers that already
+/// hold a [`PipelineRouteState`] can reuse it without rebuilding the extractors.
+async fn retry_dag_inner(state: &PipelineRouteState, dag_id: &str) -> ApiResult<DagRetryResponse> {
     let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
@@ -228,7 +234,7 @@ pub async fn retry_dag(
 
     // Get DAG execution
     let dag = dag_scheduler
-        .get_dag_status(&dag_id)
+        .get_dag_status(dag_id)
         .await
         .map_err(ApiError::from)?;
 
@@ -240,7 +246,7 @@ pub async fn retry_dag(
 
     // Get all steps
     let steps = dag_scheduler
-        .get_dag_steps(&dag_id)
+        .get_dag_steps(dag_id)
         .await
         .map_err(ApiError::from)?;
 
@@ -259,7 +265,7 @@ pub async fn retry_dag(
 
     // Prepare DAG for retry so downstream steps can be scheduled again.
     dag_scheduler
-        .reset_dag_for_retry(&dag_id)
+        .reset_dag_for_retry(dag_id)
         .await
         .map_err(ApiError::from)?;
 
@@ -333,12 +339,12 @@ pub async fn retry_dag(
         )
     };
 
-    Ok(Json(DagRetryResponse {
-        dag_id,
+    Ok(DagRetryResponse {
+        dag_id: dag_id.to_string(),
         retried_steps,
         job_ids,
         message,
-    }))
+    })
 }
 
 #[utoipa::path(
