@@ -921,33 +921,29 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn get_job_counts_by_status(&self) -> Result<JobCounts> {
-        // Use a single query with CASE statements for efficiency
-        let row: (i64, i64, i64, i64, i64) = sqlx::query_as(
-            r#"
-            SELECT
-                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as pending,
-                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as processing,
-                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as completed,
-                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as failed,
-                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as cancelled
-            FROM job
-            "#,
-        )
-        .bind(JobStatus::Pending.as_str())
-        .bind(JobStatus::Processing.as_str())
-        .bind(JobStatus::Completed.as_str())
-        .bind(JobStatus::Failed.as_str())
-        .bind(JobStatus::Cancelled.as_str())
-        .fetch_one(&self.pool)
-        .await?;
+        // GROUP BY walks idx_job_status_created_at in status order and emits one
+        // count per run, so each index entry is visited once with no per-row
+        // comparison against every status value.
+        let rows: Vec<(String, i64)> =
+            sqlx::query_as("SELECT status, COUNT(*) FROM job GROUP BY status")
+                .fetch_all(&self.pool)
+                .await?;
 
-        Ok(JobCounts {
-            pending: row.0 as u64,
-            processing: row.1 as u64,
-            completed: row.2 as u64,
-            failed: row.3 as u64,
-            cancelled: row.4 as u64,
-        })
+        let mut counts = JobCounts::default();
+        for (status, count) in rows {
+            let count = count as u64;
+            match JobStatus::parse(&status) {
+                Some(JobStatus::Pending) => counts.pending = count,
+                Some(JobStatus::Processing) => counts.processing = count,
+                Some(JobStatus::Completed) => counts.completed = count,
+                Some(JobStatus::Failed) => counts.failed = count,
+                Some(JobStatus::Cancelled) => counts.cancelled = count,
+                // The status CHECK constraint on job admits only the values above.
+                None => {}
+            }
+        }
+
+        Ok(counts)
     }
 
     async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
