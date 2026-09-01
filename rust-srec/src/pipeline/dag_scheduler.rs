@@ -655,10 +655,9 @@ impl DagScheduler {
         let dag = self.dag_repository.get_dag(dag_id).await?;
 
         if dag.get_status().map(|s| s.is_terminal()).unwrap_or(false) {
-            return Err(Error::Validation(format!(
-                "DAG {} is already in terminal state",
-                dag_id
-            )));
+            return Err(Error::DagAlreadyTerminal {
+                dag_id: dag_id.to_string(),
+            });
         }
 
         let cancelled = self

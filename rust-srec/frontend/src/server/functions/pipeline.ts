@@ -24,6 +24,7 @@ import {
 import type {
   BatchDagRequest,
   BatchDeleteOutputsRequest,
+  DagPipelineDefinition,
 } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -183,8 +184,11 @@ export const retryAllFailedPipelines = createServerFn({
     .parse(json);
 });
 
+// Type-only validator, deliberately not `DagPipelineDefinitionSchema.parse`:
+// this endpoint exists to have the backend explain what is wrong with a DAG,
+// so rejecting the payload here would swallow the report the caller wants.
 export const validateDagDefinition = createServerFn({ method: 'POST' })
-  .validator((dag: any) => dag)
+  .validator((dag: DagPipelineDefinition) => dag)
   .handler(async ({ data: dag }) => {
     const json = await fetchBackend('/pipeline/validate', {
       method: 'POST',
