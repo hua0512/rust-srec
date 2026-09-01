@@ -42,6 +42,7 @@
 //! | GET | `/api/pipeline/dag/{dag_id}/stats` | Get DAG step statistics (blocked/pending/processing/etc.) |
 //! | POST | `/api/pipeline/dag/{dag_id}/retry` | Retry failed or cancelled steps in a DAG |
 //! | DELETE | `/api/pipeline/dag/{dag_id}` | Cancel a DAG execution and all its steps |
+//! | POST | `/api/pipeline/dags/batch` | Cancel, retry or delete several DAG executions |
 //!
 //! ## Presets (Workflow Templates)
 //!
@@ -59,6 +60,8 @@
 //! | Method | Path | Description |
 //! |--------|------|-------------|
 //! | GET | `/api/pipeline/outputs` | List media outputs with filtering |
+//! | DELETE | `/api/pipeline/outputs/{id}` | Delete a media output, optionally with its file |
+//! | POST | `/api/pipeline/outputs/batch-delete` | Delete several media outputs |
 //! | GET | `/api/pipeline/stats` | Get pipeline statistics |
 
 pub(crate) mod dag;
@@ -69,12 +72,13 @@ pub(crate) mod presets;
 // `api::openapi::ApiDoc`) addresses handlers through the `dag`/`jobs`/
 // `presets` submodules directly, so no re-export is needed.
 use dag::{
-    cancel_dag, delete_dag, get_dag_graph, get_dag_stats, get_dag_status, list_dags,
+    batch_dags, cancel_dag, delete_dag, get_dag_graph, get_dag_stats, get_dag_status, list_dags,
     retry_all_failed_dags, retry_dag, validate_dag,
 };
 use jobs::{
-    cancel_job, cancel_pipeline, create_pipeline, delete_job, get_job, get_job_progress, get_stats,
-    list_job_logs, list_job_uploads, list_jobs, list_jobs_page, list_outputs, retry_job,
+    batch_delete_outputs, cancel_job, cancel_pipeline, create_pipeline, delete_job, delete_output,
+    get_job, get_job_progress, get_stats, list_job_logs, list_job_uploads, list_jobs,
+    list_jobs_page, list_outputs, retry_job,
 };
 use presets::{
     create_pipeline_preset, delete_pipeline_preset, get_pipeline_preset_by_id,
@@ -189,6 +193,9 @@ impl FromRef<AppState> for UploadRouteState {
 /// - `GET /dag/{dag_id}/stats` - Get DAG step statistics
 /// - `POST /dag/{dag_id}/retry` - Retry failed or cancelled steps in a DAG
 /// - `DELETE /dag/{dag_id}` - Cancel a DAG execution
+/// - `POST /dags/batch` - Cancel, retry or delete several DAG executions
+/// - `DELETE /outputs/{id}` - Delete a media output, optionally with its file
+/// - `POST /outputs/batch-delete` - Delete several media outputs
 /// - `POST /validate` - Validate a DAG definition
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -203,6 +210,8 @@ pub fn router() -> Router<AppState> {
         .route("/jobs/{id}", delete(delete_job))
         .route("/{pipeline_id}", delete(cancel_pipeline))
         .route("/outputs", get(list_outputs))
+        .route("/outputs/batch-delete", post(batch_delete_outputs))
+        .route("/outputs/{id}", delete(delete_output))
         .route("/stats", get(get_stats))
         .route("/create", post(create_pipeline))
         .route("/validate", post(validate_dag))
@@ -219,6 +228,7 @@ pub fn router() -> Router<AppState> {
         .route("/presets/{id}/preview", get(preview_pipeline_preset))
         .route("/dags", get(list_dags))
         .route("/dags/retry_failed", post(retry_all_failed_dags))
+        .route("/dags/batch", post(batch_dags))
         .route("/dag/{dag_id}", get(get_dag_status).delete(cancel_dag))
         .route("/dag/{dag_id}/delete", delete(delete_dag))
         .route("/dag/{dag_id}/graph", get(get_dag_graph))
@@ -685,6 +695,97 @@ pub struct DagStatsResponse {
     pub progress_percent: f64,
 }
 
+/// Action applied to every DAG in a batch request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BatchDagAction {
+    /// Cancel a DAG that is still pending or processing.
+    Cancel,
+    /// Retry the failed or cancelled steps of a terminal DAG.
+    Retry,
+    /// Delete a DAG with its steps and jobs, cancelling it first when it is still running.
+    Delete,
+}
+
+/// Request to apply one action to multiple DAG executions.
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
+pub struct BatchDagRequest {
+    /// Unique DAG execution IDs to process.
+    pub ids: Vec<String>,
+    /// Action applied to each DAG.
+    pub action: BatchDagAction,
+}
+
+/// Result of a batch action for one DAG.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct BatchDagItemResult {
+    /// DAG execution ID supplied in the request.
+    pub id: String,
+    /// Whether the action succeeded.
+    pub success: bool,
+    /// Stable error code when the action failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Human-readable error when the action failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Summary of a batch DAG action.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct BatchDagResponse {
+    /// Number of unique DAGs requested.
+    pub requested: usize,
+    /// Number of successful actions.
+    pub succeeded: usize,
+    /// Number of failed actions.
+    pub failed: usize,
+    /// Per-DAG action results.
+    pub results: Vec<BatchDagItemResult>,
+}
+
+/// Request to delete multiple media outputs.
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
+pub struct BatchDeleteOutputsRequest {
+    /// Unique media output IDs to delete.
+    pub ids: Vec<String>,
+    /// Whether to also remove each output's file from disk.
+    #[serde(default)]
+    pub delete_file: bool,
+}
+
+/// Summary of a batch media output deletion.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct BatchDeleteOutputsResponse {
+    /// Number of unique outputs requested.
+    pub requested: usize,
+    /// Number of outputs deleted.
+    pub succeeded: usize,
+    /// Number of outputs that could not be deleted.
+    pub failed: usize,
+    /// Per-output deletion results.
+    pub results: Vec<BatchDagItemResult>,
+}
+
+/// Response for a single media output deletion.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct DeleteOutputResponse {
+    /// Media output ID that was deleted.
+    pub id: String,
+    /// Whether the output's file was removed from disk.
+    pub file_deleted: bool,
+    /// Message describing the deletion.
+    pub message: String,
+}
+
+/// Query parameters for deleting a media output.
+#[derive(Debug, Clone, Default, serde::Deserialize, utoipa::IntoParams)]
+pub struct DeleteOutputParams {
+    /// Whether to also remove the output's file from disk.
+    #[serde(default)]
+    pub delete_file: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use axum::extract::{Path, Query, State};
@@ -701,7 +802,10 @@ mod tests {
     use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
 
-    fn build_test_state() -> PipelineRouteState {
+    // `pub(super)` so `dag::tests` can build a route state without a second copy of
+    // this constructor. `PipelineManager::new()` leaves `dag_scheduler` unset, which is
+    // what lets those tests exercise the service-unavailable path with no DB fixture.
+    pub(super) fn build_test_state() -> PipelineRouteState {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
         PipelineRouteState {
             pipeline_manager: Arc::new(PipelineManager::new()),

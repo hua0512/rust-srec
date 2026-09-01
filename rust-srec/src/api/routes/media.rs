@@ -37,6 +37,30 @@ pub struct AuthQuery {
     pub token: Option<String>,
 }
 
+/// Turn a stored `media_outputs.file_path` into a path usable by the std/tokio APIs.
+///
+/// Windows note: some parts of the pipeline/tooling may emit extended-length paths
+/// like `\\?\C:\...`. While this is valid for Win32 APIs, it can be a portability
+/// footgun across libraries and runtimes. Normalize it to a regular path when possible.
+///
+/// Shared by [`get_media_content`] and the media output deletion in
+/// [`crate::api::routes::pipeline::jobs`] so both resolve a stored path identically.
+pub(crate) fn normalize_media_path(file_path: &str) -> PathBuf {
+    let path = PathBuf::from(file_path);
+    if cfg!(windows)
+        && let Some(s) = path.to_str()
+    {
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            // `\\?\UNC\server\share\...` -> `\\server\share\...`
+            return PathBuf::from(format!(r"\\{}", rest));
+        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+            // `\\?\C:\...` -> `C:\...`
+            return PathBuf::from(rest);
+        }
+    }
+    path
+}
+
 #[utoipa::path(
     get,
     path = "/api/media/{id}/content",
@@ -82,21 +106,7 @@ pub async fn get_media_content(
         .await
         .map_err(ApiError::from)?;
 
-    // Windows note: some parts of the pipeline/tooling may emit extended-length paths
-    // like `\\?\C:\...`. While this is valid for Win32 APIs, it can be a portability
-    // footgun across libraries and runtimes. Normalize it to a regular path when possible.
-    let mut path = PathBuf::from(&media.file_path);
-    if cfg!(windows)
-        && let Some(s) = path.to_str()
-    {
-        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-            // `\\?\UNC\server\share\...` -> `\\server\share\...`
-            path = PathBuf::from(format!(r"\\{}", rest));
-        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
-            // `\\?\C:\...` -> `C:\...`
-            path = PathBuf::from(rest);
-        }
-    }
+    let path = normalize_media_path(&media.file_path);
 
     let exists = tokio::fs::try_exists(&path)
         .await

@@ -31,6 +31,7 @@ import {
   MoreHorizontal,
   XCircle,
   CheckCircle2,
+  Check,
   Timer,
   ExternalLink,
   Layers,
@@ -41,6 +42,7 @@ import { t, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { type DagSummary } from '@/api/schemas';
 
+import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/date-utils';
 import { getStatusConfig } from '@/components/pipeline/status-config';
 
@@ -49,9 +51,14 @@ interface PipelineSummaryCardProps {
   onCancelPipeline?: (pipelineId: string) => void;
   onDeletePipeline?: (pipelineId: string) => void;
   onViewDetails: (pipelineId: string) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onSelectChange?: (pipelineId: string, selected: boolean) => void;
 }
 
-// Custom comparison function to prevent unnecessary re-renders
+// Custom comparison function to prevent unnecessary re-renders.
+// The selection props are compared too — omitting them would stop the checkbox
+// and ring from re-rendering when the selection changes.
 function arePropsEqual(
   prevProps: PipelineSummaryCardProps,
   nextProps: PipelineSummaryCardProps,
@@ -67,6 +74,9 @@ function arePropsEqual(
     prevPipeline.failed_steps === nextPipeline.failed_steps &&
     prevPipeline.total_steps === nextPipeline.total_steps &&
     prevPipeline.created_at === nextPipeline.created_at &&
+    prevProps.selectionMode === nextProps.selectionMode &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.onSelectChange === nextProps.onSelectChange &&
     prevProps.onCancelPipeline === nextProps.onCancelPipeline &&
     prevProps.onDeletePipeline === nextProps.onDeletePipeline &&
     prevProps.onViewDetails === nextProps.onViewDetails
@@ -78,6 +88,9 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   onCancelPipeline,
   onDeletePipeline,
   onViewDetails,
+  selectionMode = false,
+  isSelected = false,
+  onSelectChange,
 }: PipelineSummaryCardProps) {
   const { i18n } = useLingui();
 
@@ -97,11 +110,46 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   const canCancel = isPending || isProcessing;
   const statusLabel = statusKey.toLowerCase();
 
+  // In selection mode the card toggles its own selection instead of navigating,
+  // and `[&_a]:pointer-events-none` stops the title Link from swallowing the click.
+  const handleCardClick = () => {
+    if (selectionMode) {
+      onSelectChange?.(pipeline.id, !isSelected);
+      return;
+    }
+    onViewDetails(pipeline.id);
+  };
+
   return (
     <Card
-      onClick={() => onViewDetails(pipeline.id)}
-      className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20 cursor-pointer"
+      onClick={handleCardClick}
+      role={selectionMode ? 'checkbox' : undefined}
+      aria-checked={selectionMode ? isSelected : undefined}
+      tabIndex={selectionMode ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (selectionMode && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onSelectChange?.(pipeline.id, !isSelected);
+        }
+      }}
+      className={cn(
+        'relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20 cursor-pointer',
+        selectionMode && 'select-none [&_a]:pointer-events-none',
+        isSelected && 'border-primary/50 ring-2 ring-primary',
+      )}
     >
+      {selectionMode && (
+        <div
+          className={cn(
+            'absolute right-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border-2 shadow-sm transition-colors',
+            isSelected
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-background/90 text-transparent',
+          )}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </div>
+      )}
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
 
       {/* Hover Glow Effect */}
@@ -139,7 +187,12 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
           {statusLabel}
         </Badge>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+          <DropdownMenuTrigger
+            asChild
+            onClick={(e) => e.stopPropagation()}
+            // Hidden while selecting so the row has a single click target.
+            className={cn(selectionMode && 'hidden')}
+          >
             <Button
               variant="ghost"
               size="icon"

@@ -16,6 +16,14 @@ import {
   DagPipelineDefinitionSchema,
   CreatePipelinePresetRequestSchema,
   UpdatePipelinePresetRequestSchema,
+  BatchResponseSchema,
+  BatchDagRequestSchema,
+  BatchDeleteOutputsRequestSchema,
+  DeleteOutputResponseSchema,
+} from '../../api/schemas';
+import type {
+  BatchDagRequest,
+  BatchDeleteOutputsRequest,
 } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -258,6 +266,38 @@ export const deletePipeline = createServerFn({ method: 'POST' })
         message: z.string(),
       })
       .parse(json);
+  });
+
+export const batchPipelines = createServerFn({ method: 'POST' })
+  .validator((data: BatchDagRequest) => BatchDagRequestSchema.parse(data))
+  .handler(async ({ data }) => {
+    const json = await fetchBackend('/pipeline/dags/batch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return BatchResponseSchema.parse(json);
+  });
+
+export const deletePipelineOutput = createServerFn({ method: 'POST' })
+  .validator((data: { id: string; deleteFile: boolean }) => data)
+  .handler(async ({ data }) => {
+    const json = await fetchBackend(
+      `/pipeline/outputs/${encodeURIComponent(data.id)}?delete_file=${data.deleteFile}`,
+      { method: 'DELETE' },
+    );
+    return DeleteOutputResponseSchema.parse(json);
+  });
+
+export const batchDeletePipelineOutputs = createServerFn({ method: 'POST' })
+  .validator((data: BatchDeleteOutputsRequest) =>
+    BatchDeleteOutputsRequestSchema.parse(data),
+  )
+  .handler(async ({ data }) => {
+    const json = await fetchBackend('/pipeline/outputs/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return BatchResponseSchema.parse(json);
   });
 
 export const createPipelineJob = createServerFn({ method: 'POST' })

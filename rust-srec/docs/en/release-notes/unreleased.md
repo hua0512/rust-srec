@@ -84,6 +84,14 @@
 
   If the app stopped in the moment between a recording finishing and its post-processing being set up — or if setting it up failed — that work was lost for good: the uploads and transcodes configured to run after a recording simply never ran, and nothing said so. Startup now notices post-processing that was due but never began and starts it, however long the app was down, both for a whole session and for an individual part of a recording. Recordings that had already finished before this update are left alone, so updating — or turning post-processing on for the first time — does not retroactively run it across everything you have recorded so far.
 
+- **Select several pipelines and act on them at once**
+
+  Tidying up finished pipelines meant opening each card's menu and confirming one at a time. **Pipeline Jobs** now has a **Select** button: tick the pipelines you want and cancel, retry or delete all of them together. Retry and cancel only apply to the pipelines they can — the buttons show how many of your selection they will touch — while delete works on any of them, stopping anything still running first. If part of the batch does not go through, only those pipelines stay selected so you can try again on just them.
+
+- **Delete recorded files from the Media Outputs page**
+
+  Media outputs could only be browsed, so clearing space meant finding the files on disk yourself and then having no way to tidy up the leftover entries. Each output now has a **Delete** option, and a **Select** button lets you clear many at once. By default this only removes the entry and leaves the file untouched; tick **Also delete files from disk** in the confirmation to remove the recording itself. Deleting an entry whose file you already removed by hand works as expected, and the owning recording's total size is corrected either way.
+
 ## Danmu
 
 - **Chat recording now survives network interruptions**

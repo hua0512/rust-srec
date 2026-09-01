@@ -1,8 +1,18 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { listPipelineOutputs } from '@/server/functions';
+import {
+  listPipelineOutputs,
+  deletePipelineOutput,
+  batchDeletePipelineOutputs,
+} from '@/server/functions';
+import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { Trans } from '@lingui/react/macro';
@@ -30,8 +40,12 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { FileVideo, AlertCircle, Film } from 'lucide-react';
+import { FileVideo, AlertCircle, Film, ListChecks } from 'lucide-react';
 import { OutputCard } from '@/components/pipeline/outputs/output-card';
+import { OutputBatchActionBar } from '@/components/pipeline/outputs/output-batch-action-bar';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { useBatchSelection } from '@/hooks/use-batch-selection';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/outputs',
@@ -45,6 +59,7 @@ import { formatBytes } from '@/lib/format';
 
 function PipelineOutputsPage() {
   const { i18n } = useLingui();
+  const queryClient = useQueryClient();
   const search = Route.useSearch();
   const updateSearch = useUpdateSearch<typeof search>();
 
@@ -111,6 +126,112 @@ function PipelineOutputsPage() {
     const formats = new Set(outputs.map((o) => o.format.toLowerCase()));
     return Array.from(formats).sort();
   }, [outputs]);
+
+  // Scoped to `displayedOutputs`, not `outputs`: the format filter is applied
+  // client-side, so select-page must cover what is actually on screen.
+  const pageIds = useMemo(
+    () => displayedOutputs.map((output) => output.id),
+    [displayedOutputs],
+  );
+
+  const {
+    selectionMode,
+    selectedIds,
+    setSelectedIds,
+    allPageSelected,
+    handleSelectionChange,
+    selectPage,
+    clearSelection,
+    toggleSelectionMode,
+    exitSelectionMode,
+  } = useBatchSelection({
+    pageIds,
+    scope: [currentPage, pageSize, debouncedSearch, selectedFormat ?? ''].join(
+      '|',
+    ),
+  });
+
+  // Deleting an output decrements its session's total size, so the sessions
+  // list has to be refetched alongside this page.
+  const invalidateOutputs = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['pipeline', 'outputs'] });
+    void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+  }, [queryClient]);
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ id, deleteFile }: { id: string; deleteFile: boolean }) =>
+      deletePipelineOutput({ data: { id, deleteFile } }),
+    onSuccess: (result) => {
+      invalidateOutputs();
+      toast.success(
+        result.file_deleted
+          ? i18n._(msg`Output and its file deleted`)
+          : i18n._(msg`Output deleted`),
+      );
+    },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to delete output`),
+      ),
+  });
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: ({ ids, deleteFile }: { ids: string[]; deleteFile: boolean }) =>
+      batchDeletePipelineOutputs({ data: { ids, delete_file: deleteFile } }),
+    onSuccess: (result) => {
+      invalidateOutputs();
+
+      if (result.failed === 0) {
+        toast.success(
+          i18n._(msg`Successfully deleted ${result.succeeded} outputs`),
+        );
+        exitSelectionMode();
+        return;
+      }
+
+      // Keep only the failures selected so a retry targets exactly the outputs
+      // that were not removed.
+      const failedResults = result.results.filter((item) => !item.success);
+      setSelectedIds(new Set(failedResults.map((item) => item.id)));
+      toast.warning(
+        i18n._(
+          msg`Deleted ${result.succeeded} outputs; ${result.failed} failed`,
+        ),
+        {
+          description: failedResults
+            .slice(0, 3)
+            .map((item) => item.error)
+            .filter(Boolean)
+            .join('; '),
+        },
+      );
+    },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to delete selected outputs`),
+      ),
+  });
+
+  const deleteMutate = deleteMutation.mutate;
+  const handleDeleteOutput = useCallback(
+    (id: string, deleteFile: boolean) => deleteMutate({ id, deleteFile }),
+    [deleteMutate],
+  );
+
+  const handleBatchDelete = useCallback(
+    (deleteFile: boolean) => {
+      if (selectedIds.size === 0 || batchDeleteMutation.isPending) return;
+      batchDeleteMutation.mutate({
+        ids: Array.from(selectedIds),
+        deleteFile,
+      });
+    },
+    [selectedIds, batchDeleteMutation],
+  );
 
   // Memoize pagination pages calculation
   const paginationPages = useMemo(() => {
@@ -180,6 +301,21 @@ function PipelineOutputsPage() {
             >
               {formatBytes(totalSize)}
             </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleSelectionMode}
+              aria-pressed={selectionMode}
+              aria-label={i18n._(msg`Select outputs`)}
+              className={cn(
+                'h-9 gap-2 whitespace-nowrap rounded-full px-3',
+                selectionMode &&
+                  'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+              )}
+            >
+              <ListChecks className="h-4 w-4" />
+              <Trans>Select</Trans>
+            </Button>
           </>
         }
       >
@@ -251,7 +387,13 @@ function PipelineOutputsPage() {
             >
               {displayedOutputs.map((output) => (
                 <motion.div key={output.id} variants={itemVariants}>
-                  <OutputCard output={output} />
+                  <OutputCard
+                    output={output}
+                    onDelete={handleDeleteOutput}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(output.id)}
+                    onSelectChange={handleSelectionChange}
+                  />
                 </motion.div>
               ))}
             </motion.div>
@@ -366,6 +508,21 @@ function PipelineOutputsPage() {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {selectionMode && (
+          <OutputBatchActionBar
+            selectedCount={selectedIds.size}
+            pageCount={displayedOutputs.length}
+            allPageSelected={allPageSelected}
+            isPending={batchDeleteMutation.isPending}
+            onSelectPage={selectPage}
+            onClearSelection={clearSelection}
+            onDelete={handleBatchDelete}
+            onExit={toggleSelectionMode}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

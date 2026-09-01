@@ -38,8 +38,10 @@ use crate::api::routes::notifications::{
     CreateChannelRequest, UpdateChannelRequest, UpdateSubscriptionsRequest,
 };
 use crate::api::routes::pipeline::{
-    CreatePipelinePresetRequest, CreatePipelineRequest, CreatePipelineResponse, DagCancelResponse,
-    DagGraphResponse, DagListResponse, DagRetryResponse, DagStatsResponse, DagStatusResponse,
+    BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse,
+    BatchDeleteOutputsRequest, BatchDeleteOutputsResponse, CreatePipelinePresetRequest,
+    CreatePipelineRequest, CreatePipelineResponse, DagCancelResponse, DagGraphResponse,
+    DagListResponse, DagRetryResponse, DagStatsResponse, DagStatusResponse, DeleteOutputResponse,
     PipelinePresetListResponse, PipelinePresetResponse, PresetPreviewResponse,
     UpdatePipelinePresetRequest, ValidateDagRequest, ValidateDagResponse,
 };
@@ -166,6 +168,9 @@ pub struct MessageResponse {
         // DAG endpoints
         crate::api::routes::pipeline::dag::list_dags,
         crate::api::routes::pipeline::dag::retry_all_failed_dags,
+        crate::api::routes::pipeline::dag::batch_dags,
+        crate::api::routes::pipeline::jobs::delete_output,
+        crate::api::routes::pipeline::jobs::batch_delete_outputs,
         crate::api::routes::pipeline::dag::get_dag_status,
         crate::api::routes::pipeline::dag::get_dag_graph,
         crate::api::routes::pipeline::dag::get_dag_stats,
@@ -363,6 +368,13 @@ pub struct MessageResponse {
             DagRetryResponse,
             DagCancelResponse,
             DagStatsResponse,
+            BatchDagAction,
+            BatchDagRequest,
+            BatchDagItemResult,
+            BatchDagResponse,
+            BatchDeleteOutputsRequest,
+            BatchDeleteOutputsResponse,
+            DeleteOutputResponse,
             ValidateDagRequest,
             ValidateDagResponse,
             crate::database::models::job::DagPipelineDefinition,
@@ -394,6 +406,50 @@ impl utoipa::Modify for SecurityAddon {
                         ))
                         .build(),
                 ),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use utoipa::OpenApi;
+
+    /// Registering a handler takes three coordinated edits in this file (import,
+    /// `paths(...)`, `components(schemas(...))`), and missing the `paths(...)` one
+    /// still compiles — the endpoint just silently vanishes from the spec.
+    #[test]
+    fn batch_endpoints_are_registered() {
+        let doc = ApiDoc::openapi();
+
+        for path in [
+            "/api/pipeline/dags/batch",
+            "/api/pipeline/outputs/{id}",
+            "/api/pipeline/outputs/batch-delete",
+        ] {
+            assert!(
+                doc.paths.paths.contains_key(path),
+                "{path} is missing from the OpenAPI spec"
+            );
+        }
+
+        let schemas = &doc
+            .components
+            .as_ref()
+            .expect("spec should declare components")
+            .schemas;
+        for schema in [
+            "BatchDagAction",
+            "BatchDagRequest",
+            "BatchDagResponse",
+            "BatchDeleteOutputsRequest",
+            "BatchDeleteOutputsResponse",
+            "DeleteOutputResponse",
+        ] {
+            assert!(
+                schemas.contains_key(schema),
+                "{schema} is missing from the OpenAPI components"
             );
         }
     }

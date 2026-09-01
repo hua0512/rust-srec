@@ -352,3 +352,65 @@ export const PipelinePresetListResponseSchema = z.object({
 export type PipelinePresetListResponse = z.infer<
   typeof PipelinePresetListResponseSchema
 >;
+
+// Batch endpoints share one item-result shape across DAGs and media outputs: the
+// backend applies items sequentially without rolling back, so a request can be
+// partially applied and `results` is how callers learn which IDs failed.
+export const BatchItemResultSchema = z.object({
+  id: z.string(),
+  success: z.boolean(),
+  code: z.string().optional(),
+  error: z.string().optional(),
+});
+export type BatchItemResult = z.infer<typeof BatchItemResultSchema>;
+
+export const BatchResponseSchema = z.object({
+  requested: z.number(),
+  succeeded: z.number(),
+  failed: z.number(),
+  results: z.array(BatchItemResultSchema),
+});
+export type BatchResponse = z.infer<typeof BatchResponseSchema>;
+
+// Mirrors the Rust `#[serde(tag = "type", rename_all = "snake_case")]` enum.
+export const BatchDagActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('cancel') }),
+  z.object({ type: z.literal('retry') }),
+  z.object({ type: z.literal('delete') }),
+]);
+export type BatchDagAction = z.infer<typeof BatchDagActionSchema>;
+
+// `max(100)` matches MAX_DAG_BATCH_SIZE in the backend, so an oversized selection
+// is rejected before it reaches the network.
+const batchIdsSchema = z.array(z.string().min(1)).min(1).max(100);
+
+export const BatchDagRequestSchema = z
+  .object({
+    ids: batchIdsSchema,
+    action: BatchDagActionSchema,
+  })
+  .refine((data) => new Set(data.ids).size === data.ids.length, {
+    message: 'Pipeline IDs must be unique',
+    path: ['ids'],
+  });
+export type BatchDagRequest = z.infer<typeof BatchDagRequestSchema>;
+
+export const BatchDeleteOutputsRequestSchema = z
+  .object({
+    ids: batchIdsSchema,
+    delete_file: z.boolean(),
+  })
+  .refine((data) => new Set(data.ids).size === data.ids.length, {
+    message: 'Output IDs must be unique',
+    path: ['ids'],
+  });
+export type BatchDeleteOutputsRequest = z.infer<
+  typeof BatchDeleteOutputsRequestSchema
+>;
+
+export const DeleteOutputResponseSchema = z.object({
+  id: z.string(),
+  file_deleted: z.boolean(),
+  message: z.string(),
+});
+export type DeleteOutputResponse = z.infer<typeof DeleteOutputResponseSchema>;
