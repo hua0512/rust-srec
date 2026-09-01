@@ -85,6 +85,21 @@ impl DagExecutionDbModel {
         }
     }
 
+    /// Read only the `name` field of `dag_definition`.
+    ///
+    /// List views need the name alone; deserialising every step and its
+    /// processor config through `get_dag_definition` is wasted work there.
+    pub fn dag_definition_name(&self) -> Option<String> {
+        #[derive(Deserialize)]
+        struct DagDefinitionName {
+            name: String,
+        }
+
+        serde_json::from_str::<DagDefinitionName>(&self.dag_definition)
+            .ok()
+            .map(|definition| definition.name)
+    }
+
     /// Get the DAG pipeline definition.
     pub fn get_dag_definition(&self) -> Option<DagPipelineDefinition> {
         json::parse_optional(

@@ -439,22 +439,25 @@ pub async fn list_dags(
         .await
         .map_err(ApiError::from)?;
 
-    // Batch-fetch streamer names
-    let streamer_ids: std::collections::HashSet<String> =
-        dags.iter().filter_map(|d| d.streamer_id.clone()).collect();
-    let fetches = streamer_ids.into_iter().map(|streamer_id| {
-        let repo = state.streamer_repository.clone();
-        async move {
-            let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
-            (streamer_id, name)
+    // One `WHERE id IN (...)` query for every streamer on the page. A failed
+    // lookup only blanks the display names, as before.
+    let streamer_ids: Vec<String> = dags
+        .iter()
+        .filter_map(|d| d.streamer_id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let streamer_names: HashMap<String, String> = match state
+        .streamer_repository
+        .get_streamers_by_ids(&streamer_ids)
+        .await
+    {
+        Ok(streamers) => streamers.into_iter().map(|s| (s.id, s.name)).collect(),
+        Err(error) => {
+            tracing::warn!(%error, "failed to resolve streamer names for DAG list");
+            HashMap::new()
         }
-    });
-    let streamer_names: std::collections::HashMap<String, String> =
-        futures::future::join_all(fetches)
-            .await
-            .into_iter()
-            .filter_map(|(id, name)| name.map(|n| (id, n)))
-            .collect();
+    };
 
     // Convert to response format
     let dag_items: Vec<DagListItem> = dags
@@ -462,10 +465,8 @@ pub async fn list_dags(
         .map(|dag| {
             let progress_percent = dag.progress_percent();
 
-            // Parse DAG definition to get the name
             let name = dag
-                .get_dag_definition()
-                .map(|def| def.name)
+                .dag_definition_name()
                 .unwrap_or_else(|| "Unknown".to_string());
 
             let streamer_name = dag

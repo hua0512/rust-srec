@@ -568,31 +568,29 @@ pub async fn list_outputs(
         .await
         .map_err(ApiError::from)?;
 
+    // One `WHERE id IN (...)` query for every session on the page. A failed
+    // lookup only blanks the streamer ids, as before.
     let streamer_id_by_session: HashMap<String, String> = if requested_streamer_id.is_none() {
-        let mut session_ids: HashSet<String> = HashSet::new();
-        for output in &outputs {
-            session_ids.insert(output.session_id.clone());
-        }
-
-        let fetches = session_ids.into_iter().map(|session_id| {
-            let session_repository = state.session_repository.clone();
-            async move {
-                let streamer_id = session_repository
-                    .get_session(&session_id)
-                    .await
-                    .ok()
-                    .map(|session| session.streamer_id);
-                (session_id, streamer_id)
-            }
-        });
-
-        join_all(fetches)
-            .await
+        let session_ids: Vec<String> = outputs
+            .iter()
+            .map(|output| output.session_id.clone())
+            .collect::<HashSet<_>>()
             .into_iter()
-            .filter_map(|(session_id, streamer_id)| {
-                streamer_id.map(|streamer_id| (session_id, streamer_id))
-            })
-            .collect()
+            .collect();
+        match state
+            .session_repository
+            .get_sessions_by_ids(&session_ids)
+            .await
+        {
+            Ok(sessions) => sessions
+                .into_iter()
+                .map(|session| (session.id, session.streamer_id))
+                .collect(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to resolve sessions for output list");
+                HashMap::new()
+            }
+        }
     } else {
         HashMap::new()
     };

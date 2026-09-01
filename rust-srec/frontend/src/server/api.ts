@@ -54,12 +54,12 @@ export const fetchBackend = async <T = any>(
   const headers = new Headers(init?.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+  // Every server function passes through here, including the 5 s pollers,
+  // so the request trace is development-only.
+  if (import.meta.env.DEV) {
     console.log(
-      `[API] ${init?.method || 'GET'} ${endpoint} - Token present: ${token.slice(0, 10)}...`,
-    );
-  } else {
-    console.log(
-      `[API] ${init?.method || 'GET'} ${endpoint} - No token found in session.`,
+      `[API] ${init?.method || 'GET'} ${endpoint} - ${token ? 'token present' : 'no token in session'}`,
     );
   }
 
@@ -87,9 +87,11 @@ export const fetchBackend = async <T = any>(
     headers,
   });
 
-  console.log(
-    `[API] ${init?.method || 'GET'} ${endpoint} - Status: ${response.status}`,
-  );
+  if (import.meta.env.DEV) {
+    console.log(
+      `[API] ${init?.method || 'GET'} ${endpoint} - Status: ${response.status}`,
+    );
+  }
 
   // Handle errors
   if (!response.ok) {

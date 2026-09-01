@@ -543,6 +543,20 @@ where
             .collect()
     }
 
+    /// Clone only the streamers `predicate` accepts. `list_streamers` pages a
+    /// filtered view of the map, so filtering during the shard walk copies the
+    /// matching entries instead of every `StreamerMetadata`.
+    pub fn get_filtered(
+        &self,
+        predicate: impl Fn(&StreamerMetadata) -> bool,
+    ) -> Vec<StreamerMetadata> {
+        self.metadata
+            .iter()
+            .filter(|entry| predicate(entry.value()))
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
     /// Get all active streamers.
     ///
     /// Returns streamers in active states (NotLive, Live, OutOfSchedule, InspectingLive).
