@@ -420,7 +420,9 @@ function PipelineJobsPage() {
                 placeholder={i18n._(msg`Search jobs...`)}
                 className="flex-1 sm:w-64"
               />
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Scrolls rather than overflowing the page: the count badge grows
+                  with the pipeline total and the buttons keep their labels. */}
+              <div className="flex items-center gap-2 shrink-0 overflow-x-auto no-scrollbar">
                 <Badge
                   variant="secondary"
                   className="h-9 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50"
@@ -428,22 +430,19 @@ function PipelineJobsPage() {
                   {totalPipelines} <Trans>pipelines</Trans>
                 </Badge>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={toggleSelectionMode}
                   aria-pressed={selectionMode}
                   aria-label={i18n._(msg`Select pipelines`)}
                   className={cn(
                     'h-9 gap-2 whitespace-nowrap rounded-full px-3',
-                    selectionMode
-                      ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
-                      : 'text-muted-foreground hover:text-foreground',
+                    selectionMode &&
+                      'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
                   )}
                 >
                   <ListChecks className="h-4 w-4" />
-                  <span className="hidden sm:inline">
-                    <Trans>Select</Trans>
-                  </span>
+                  <Trans>Select</Trans>
                 </Button>
                 <Button
                   className="h-9 gap-2 whitespace-nowrap"

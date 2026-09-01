@@ -512,7 +512,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:163
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:339
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:99
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:335
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:332
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:281
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:170
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:454
@@ -833,7 +833,7 @@ msgstr "均值 {averagePerMinute}"
 msgid "Avg / min"
 msgstr "平均/分钟"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:498
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:495
 msgid "Avg. Duration"
 msgstr "平均时长"
 
@@ -1452,7 +1452,7 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:288
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:624
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:108
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:484
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:481
 msgid "Completed"
 msgstr "已完成"
 
@@ -1823,7 +1823,7 @@ msgstr "CQ (恒定质量)"
 #: src/components/config/templates/template-editor.tsx:213
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:458
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:455
 msgid "Create"
 msgstr "创建"
 
@@ -1887,7 +1887,7 @@ msgstr "创建新预设"
 msgid "Create New Workflow"
 msgstr "创建新工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:455
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:452
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
@@ -3238,7 +3238,7 @@ msgstr "五"
 #: src/components/pipeline/status-config.ts:108
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:347
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:111
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:491
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:488
 msgid "Failed"
 msgstr "失败"
 
@@ -4536,7 +4536,7 @@ msgstr "任务超时"
 msgid "Jobs"
 msgstr "处理任务"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:581
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:578
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
@@ -5066,7 +5066,7 @@ msgstr "MB/s"
 msgid "Media Outputs"
 msgstr "媒体文件"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:425
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:422
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
@@ -5453,7 +5453,7 @@ msgstr "没有输入路径"
 msgid "No issues detected"
 msgstr "未检测到问题"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:572
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:569
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
@@ -5486,7 +5486,7 @@ msgstr "未找到匹配的事件"
 msgid "No media outputs generated yet."
 msgstr "尚未生成媒体输出。"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:418
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:415
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
@@ -5506,7 +5506,7 @@ msgstr "没有其他可依赖的步骤。"
 msgid "No output generated"
 msgstr "未生成输出"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:416
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:413
 msgid "No outputs found"
 msgstr "未找到媒体文件"
 
@@ -5522,7 +5522,7 @@ msgstr "未配置任何参数。"
 msgid "No pipeline DAGs found."
 msgstr "未发现处理管道 DAG。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:574
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:571
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
@@ -6202,7 +6202,7 @@ msgstr "峰值/分钟"
 
 #: src/components/pipeline/status-config.ts:102
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:100
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:469
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:466
 msgid "Pending"
 msgstr "待处理"
 
@@ -6218,8 +6218,8 @@ msgstr "待清除错误"
 msgid "Pending Jobs"
 msgstr "待处理任务"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:596
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:441
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:593
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:438
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:393
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:274
 msgid "Per page:"
@@ -6689,7 +6689,7 @@ msgstr "已处理分段 TTL（毫秒）"
 #: src/components/pipeline/status-config.ts:104
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:325
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:475
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:472
 msgid "Processing"
 msgstr "处理中"
 
@@ -7202,7 +7202,7 @@ msgstr "重试"
 msgid "Retry {retryableCount} failed or cancelled pipelines"
 msgstr "重试 {retryableCount} 个已失败或已取消的流水线"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:714
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:711
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
@@ -7552,8 +7552,8 @@ msgstr "分段 TTL（毫秒）"
 msgid "Segments"
 msgstr "分段"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:445
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:319
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:443
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:317
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:765
 msgid "Select"
 msgstr "选择"
@@ -8949,8 +8949,8 @@ msgstr "尝试调整搜索或过滤器"
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:579
-#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:423
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:576
+#: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:420
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:369
 msgid "Try adjusting your search or filters."
 msgstr "尝试调整搜索或过滤器。"
