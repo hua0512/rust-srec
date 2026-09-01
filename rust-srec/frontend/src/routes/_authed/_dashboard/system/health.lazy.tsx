@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { HealthStatusBadge } from '@/components/health/health-status-badge';
+import { StorageUsageCard } from '@/components/health/storage-usage-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useState, useEffect } from 'react';
@@ -191,6 +192,12 @@ function SystemHealthPage() {
                 description={<Trans>RAM utilization</Trans>}
                 color="text-purple-500"
               />
+            </motion.div>
+
+            {/* Per-filesystem free space. Renders nothing when no disk
+                probe resolved a filesystem. */}
+            <motion.div variants={itemVariants}>
+              <StorageUsageCard components={health.components} />
             </motion.div>
 
             {/* Detailed Components Table */}

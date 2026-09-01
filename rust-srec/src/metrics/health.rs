@@ -63,6 +63,61 @@ impl std::fmt::Display for HealthStatus {
     }
 }
 
+/// Filesystem capacity for one monitored path.
+///
+/// Attached to the `disk:{path}` entries of [`SystemHealth::components`] by
+/// the disk probe so consumers read numbers directly instead of parsing
+/// [`ComponentHealth::message`], which is empty while a disk is healthy.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct DiskUsage {
+    /// Monitored path, matching the `disk:` component name suffix.
+    pub path: String,
+    /// Mount point of the filesystem `path` resolves to. Paths sharing a
+    /// mount point sit on the same filesystem and report identical figures.
+    pub mount_point: String,
+    /// Filesystem size in bytes.
+    pub total_bytes: u64,
+    /// Bytes still writable.
+    pub available_bytes: u64,
+    /// `total_bytes - available_bytes`. Includes reserved blocks, so it can
+    /// exceed what the files on the filesystem occupy.
+    pub used_bytes: u64,
+    /// Percentage of `total_bytes` that is not available (0-100).
+    pub used_percent: f32,
+}
+
+impl DiskUsage {
+    /// Build a usage record for `path` on the filesystem mounted at
+    /// `mount_point`.
+    ///
+    /// `used_percent` is derived from the same `1 - available / total` ratio
+    /// [`HealthChecker::check_disk_space_with_thresholds`] compares against
+    /// the warning and critical thresholds, so a reported percentage never
+    /// disagrees with the status it is rendered next to. A `total` of zero
+    /// (filesystem size unknown) yields 0%.
+    pub fn new(
+        path: impl Into<String>,
+        mount_point: impl Into<String>,
+        available_bytes: u64,
+        total_bytes: u64,
+    ) -> Self {
+        let used_bytes = total_bytes.saturating_sub(available_bytes);
+        let used_percent = if total_bytes == 0 {
+            0.0
+        } else {
+            ((1.0 - available_bytes as f64 / total_bytes as f64) * 100.0) as f32
+        };
+        Self {
+            path: path.into(),
+            mount_point: mount_point.into(),
+            total_bytes,
+            available_bytes,
+            used_bytes,
+            used_percent,
+        }
+    }
+}
+
 /// Health information for a single component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentHealth {
@@ -76,6 +131,9 @@ pub struct ComponentHealth {
     pub last_check: Option<String>,
     /// Check duration in milliseconds.
     pub check_duration_ms: Option<u64>,
+    /// Filesystem capacity, set only by the disk probe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk: Option<DiskUsage>,
 }
 
 impl ComponentHealth {
@@ -87,6 +145,7 @@ impl ComponentHealth {
             message: None,
             last_check: Some(chrono::Utc::now().to_rfc3339()),
             check_duration_ms: None,
+            disk: None,
         }
     }
 
@@ -98,6 +157,7 @@ impl ComponentHealth {
             message: Some(message.into()),
             last_check: Some(chrono::Utc::now().to_rfc3339()),
             check_duration_ms: None,
+            disk: None,
         }
     }
 
@@ -109,12 +169,19 @@ impl ComponentHealth {
             message: Some(message.into()),
             last_check: Some(chrono::Utc::now().to_rfc3339()),
             check_duration_ms: None,
+            disk: None,
         }
     }
 
     /// Set the check duration.
     pub fn with_duration(mut self, duration: Duration) -> Self {
         self.check_duration_ms = Some(duration.as_millis() as u64);
+        self
+    }
+
+    /// Attach filesystem capacity.
+    pub fn with_disk(mut self, disk: DiskUsage) -> Self {
+        self.disk = Some(disk);
         self
     }
 }
@@ -1072,6 +1139,63 @@ mod tests {
         let health =
             checker.check_disk_space("/data", 3 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
         assert_eq!(health.status, HealthStatus::Unhealthy);
+    }
+
+    #[test]
+    fn disk_usage_reports_used_bytes_and_percent() {
+        let usage = DiskUsage::new(
+            "/rec",
+            "/",
+            25 * 1024 * 1024 * 1024,
+            100 * 1024 * 1024 * 1024,
+        );
+        assert_eq!(usage.path, "/rec");
+        assert_eq!(usage.mount_point, "/");
+        assert_eq!(usage.used_bytes, 75 * 1024 * 1024 * 1024);
+        assert!(
+            (usage.used_percent - 75.0).abs() < 0.01,
+            "used_percent was {}",
+            usage.used_percent
+        );
+    }
+
+    #[test]
+    fn disk_usage_percent_matches_threshold_ratio() {
+        // The percentage the dashboard renders must agree with the status
+        // `check_disk_space` derives from the same available/total pair:
+        // 85% used sits above the 0.80 warning threshold, so a bar showing
+        // 85% next to a Degraded badge is consistent.
+        let available = 15 * 1024 * 1024 * 1024;
+        let total = 100 * 1024 * 1024 * 1024;
+        let usage = DiskUsage::new("/rec", "/", available, total);
+        let checker = HealthChecker::new();
+        assert_eq!(
+            checker.check_disk_space("/rec", available, total).status,
+            HealthStatus::Degraded
+        );
+        assert!(usage.used_percent >= (checker.disk_warning_threshold() * 100.0) as f32);
+    }
+
+    #[test]
+    fn disk_usage_handles_unknown_total() {
+        let usage = DiskUsage::new("/rec", "/", 0, 0);
+        assert_eq!(usage.used_bytes, 0);
+        assert_eq!(usage.used_percent, 0.0);
+    }
+
+    #[test]
+    fn with_disk_attaches_usage_to_component() {
+        let health = ComponentHealth::healthy("disk:/rec").with_disk(DiskUsage::new(
+            "/rec",
+            "/",
+            50 * 1024 * 1024 * 1024,
+            100 * 1024 * 1024 * 1024,
+        ));
+        // A healthy disk has no message, so the numbers are the only way a
+        // consumer learns how much space is left.
+        assert!(health.message.is_none());
+        let disk = health.disk.expect("with_disk should populate disk");
+        assert_eq!(disk.available_bytes, 50 * 1024 * 1024 * 1024);
     }
 
     #[test]

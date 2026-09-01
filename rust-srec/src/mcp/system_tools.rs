@@ -46,6 +46,7 @@ impl SrecMcpServer {
                 message: health.message.clone(),
                 last_check: health.last_check.clone(),
                 check_duration_ms: health.check_duration_ms,
+                disk: health.disk.clone(),
             })
             .collect();
         let response = HealthResponse {

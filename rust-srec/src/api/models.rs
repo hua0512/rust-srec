@@ -1090,6 +1090,9 @@ pub struct ComponentHealth {
     pub last_check: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_duration_ms: Option<u64>,
+    /// Filesystem capacity, present on `disk:` components only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk: Option<crate::metrics::DiskUsage>,
 }
 
 // ============================================================================

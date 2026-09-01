@@ -5,12 +5,15 @@ import { cn } from '@/lib/utils';
 interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number;
   max?: number;
+  /** Overrides the filled portion's `bg-primary`, e.g. to signal a threshold. */
+  indicatorClassName?: string;
 }
 
 function Progress({
   className,
   value = 0,
   max = 100,
+  indicatorClassName,
   ...props
 }: ProgressProps) {
   const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
@@ -30,7 +33,10 @@ function Progress({
     >
       <div
         data-slot="progress-indicator"
-        className="bg-primary h-full transition-all duration-300 ease-in-out"
+        className={cn(
+          'bg-primary h-full transition-all duration-300 ease-in-out',
+          indicatorClassName,
+        )}
         style={{ width: `${percentage}%` }}
       />
     </div>

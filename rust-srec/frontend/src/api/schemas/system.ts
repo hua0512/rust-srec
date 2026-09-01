@@ -165,13 +165,27 @@ export const GlobalConfigWriteSchema = z.object({
   paired_segment_pipeline: z.any().nullable().optional(),
 });
 
+// Filesystem capacity. Only `disk:` components carry it; the backend omits
+// the field entirely everywhere else.
+export const DiskUsageSchema = z.object({
+  path: z.string(),
+  mount_point: z.string(),
+  total_bytes: z.number(),
+  available_bytes: z.number(),
+  used_bytes: z.number(),
+  used_percent: z.number(),
+});
+export type DiskUsage = z.infer<typeof DiskUsageSchema>;
+
 export const ComponentHealthSchema = z.object({
   name: z.string(),
   status: z.string(),
   message: z.string().nullable().optional(),
   last_check: z.string().nullable().optional(),
   check_duration_ms: z.number().nullable().optional(),
+  disk: DiskUsageSchema.nullable().optional(),
 });
+export type ComponentHealth = z.infer<typeof ComponentHealthSchema>;
 
 export const HealthSchema = z.object({
   status: z.string(),

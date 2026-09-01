@@ -164,6 +164,7 @@ impl GpuSnapshot {
                 message: Some("GPU health probe has not run yet".to_string()),
                 last_check: None,
                 check_duration_ms: None,
+                disk: None,
             },
             failure: None,
         }
@@ -331,6 +332,7 @@ impl GpuHealthMonitor {
             message: Some(message),
             last_check: now.clone(),
             check_duration_ms: dur_ms,
+            disk: None,
         };
 
         match exec {

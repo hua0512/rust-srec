@@ -35,7 +35,7 @@ pub use gpu_health::{
     DEFAULT_PROBE_INTERVAL_SECS as DEFAULT_GPU_PROBE_INTERVAL_SECS, GpuHealthMonitor,
 };
 pub use health::{
-    ComponentHealth, DiskSnapshot, HealthChecker, HealthProbe, HealthStatus, SystemHealth,
-    SystemMetricsSnapshot,
+    ComponentHealth, DiskSnapshot, DiskUsage, HealthChecker, HealthProbe, HealthStatus,
+    SystemHealth, SystemMetricsSnapshot,
 };
 pub use prometheus::PrometheusExporter;
