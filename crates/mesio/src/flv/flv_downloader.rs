@@ -162,14 +162,12 @@ impl FlvDownloader {
     where
         R: tokio::io::AsyncRead + Send + 'static,
     {
-        // Determine optimal buffer size based on expected content
-        // Use larger buffers (at least 64KB) for better throughput, as most modern networks
-        // can easily saturate smaller buffers
+        // FlvDecoderStream reads straight into its own read buffer of this
+        // size, and BytesStreamReader already hands out whole network chunks,
+        // so a BufReader in between would only copy every byte a second time.
         let buffer_size = self.config.buffer_size.max(64 * 1024);
 
-        let buffered_reader = tokio::io::BufReader::with_capacity(buffer_size, reader);
-        let pinned_reader = Box::pin(buffered_reader);
-        let flv_stream = FlvDecoderStream::with_capacity(pinned_reader, buffer_size);
+        let flv_stream = FlvDecoderStream::with_capacity(Box::pin(reader), buffer_size);
         flv_stream
             .map(|result| match result {
                 Ok(data) => Ok(data),

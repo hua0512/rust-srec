@@ -102,14 +102,16 @@ struct TimingState {
     /// Current accumulated offset to apply to timestamps
     delta: i64,
 
-    /// Last tag processed (any type)
-    last_tag: Option<FlvTag>,
+    /// Timestamp of the last tag processed (any type). Only the timestamps
+    /// are kept: holding the tags themselves would pin their payload slices,
+    /// and with them the decoder's read buffer, until the next tag arrives.
+    last_timestamp_ms: Option<u32>,
 
-    /// Last audio tag processed
-    last_audio_tag: Option<FlvTag>,
+    /// Timestamp of the last audio tag processed
+    last_audio_timestamp_ms: Option<u32>,
 
-    /// Last video tag processed
-    last_video_tag: Option<FlvTag>,
+    /// Timestamp of the last video tag processed
+    last_video_timestamp_ms: Option<u32>,
 
     /// Video frame rate in frames per second
     frame_rate: f64,
@@ -146,9 +148,9 @@ impl TimingState {
 
         Self {
             delta: 0,
-            last_tag: None,
-            last_audio_tag: None,
-            last_video_tag: None,
+            last_timestamp_ms: None,
+            last_audio_timestamp_ms: None,
+            last_video_timestamp_ms: None,
             frame_rate: config.default_frame_rate,
             audio_rate: config.default_audio_rate,
             video_frame_interval,
@@ -175,9 +177,9 @@ impl TimingState {
     /// Reset the timing state
     fn reset(&mut self, config: &TimingRepairConfig) {
         self.delta = 0;
-        self.last_tag = None;
-        self.last_audio_tag = None;
-        self.last_video_tag = None;
+        self.last_timestamp_ms = None;
+        self.last_audio_timestamp_ms = None;
+        self.last_video_timestamp_ms = None;
         self.frame_rate = config.default_frame_rate;
         self.video_frame_interval = Self::calculate_video_frame_interval(config.default_frame_rate);
         self.audio_rate = config.default_audio_rate;
@@ -258,20 +260,20 @@ impl TimingState {
         let expected = Self::apply_delta(current, self.delta);
 
         if tag.is_audio_tag() {
-            if let Some(ref last) = self.last_audio_tag {
+            if let Some(last_ts) = self.last_audio_timestamp_ms {
                 // Treat equal timestamps as valid: an audio tag sharing the previous
                 // audio tag's timestamp is not a backwards jump, so only a strictly
                 // smaller `expected` is a rebound.
-                expected < last.timestamp_ms
+                expected < last_ts
             } else {
                 false
             }
         } else if tag.is_video_tag() {
-            if let Some(ref last) = self.last_video_tag {
+            if let Some(last_ts) = self.last_video_timestamp_ms {
                 // Treat equal timestamps as valid: an enhanced METADATA video packet
                 // (tag type 9) legitimately shares its coded frame's timestamp, so only
                 // a strictly smaller `expected` is a rebound.
-                expected < last.timestamp_ms
+                expected < last_ts
             } else {
                 false
             }
@@ -282,18 +284,16 @@ impl TimingState {
 
     /// Check if there's a discontinuity in timestamps
     fn is_timestamp_discontinuous(&self, tag: &FlvTag, config: &TimingRepairConfig) -> bool {
-        if self.last_tag.is_none() {
+        let Some(last_ts) = self.last_timestamp_ms else {
             return false;
-        }
-
-        let last = self.last_tag.as_ref().unwrap();
+        };
         let current = tag.timestamp_ms;
 
         let expected = Self::apply_delta(current, self.delta);
 
         // Calculate the difference between expected and last timestamp
         // Convert to i64 before subtraction to avoid overflow
-        let diff: i64 = (expected as i64) - (last.timestamp_ms as i64);
+        let diff: i64 = (expected as i64) - (last_ts as i64);
 
         // Determine threshold based on media type, considering rounding errors
         let base_threshold = match tag.tag_type() {
@@ -315,7 +315,7 @@ impl TimingState {
         match config.strategy {
             RepairStrategy::Strict => {
                 // In strict mode, we check if the timestamp differs from what we'd expect
-                if tag.is_video_tag() && self.last_video_tag.is_some() {
+                if tag.is_video_tag() && self.last_video_timestamp_ms.is_some() {
                     diff < 0 || diff > threshold.into()
                 } else {
                     // For non-video tags or when no video history exists
@@ -330,26 +330,23 @@ impl TimingState {
     fn calculate_delta_correction(&mut self, tag: &FlvTag) -> i64 {
         let current = tag.timestamp_ms;
         let mut new_delta = self.delta;
-        let last_ts = self.last_tag.as_ref().map(|t| t.timestamp_ms).unwrap_or(0);
+        let last_ts = self.last_timestamp_ms.unwrap_or(0);
 
-        if let Some(last_video) = self.last_video_tag.as_ref().filter(|_| tag.is_video_tag()) {
+        if let Some(last_video_ts) = self.last_video_timestamp_ms.filter(|_| tag.is_video_tag()) {
             // Calculate ideal next frame timestamp; saturating_add keeps the u32 timeline
             // from wrapping near u32::MAX after ~49.7 days accumulated in one segment.
-            let ideal_next_ts = last_video
-                .timestamp_ms
-                .saturating_add(self.video_frame_interval);
+            let ideal_next_ts = last_video_ts.saturating_add(self.video_frame_interval);
 
             new_delta = ideal_next_ts as i64 - current as i64;
-        } else if let Some(last_audio) = self.last_audio_tag.as_ref().filter(|_| tag.is_audio_tag())
+        } else if let Some(last_audio_ts) =
+            self.last_audio_timestamp_ms.filter(|_| tag.is_audio_tag())
         {
-            let ideal_next_ts = last_audio
-                .timestamp_ms
-                .saturating_add(self.audio_sample_interval);
+            let ideal_next_ts = last_audio_ts.saturating_add(self.audio_sample_interval);
             new_delta = ideal_next_ts as i64 - current as i64;
-        } else if let Some(last) = &self.last_tag {
+        } else if let Some(last_ts) = self.last_timestamp_ms {
             // No type-specific last tag, use generic last tag
             let interval = max(self.video_frame_interval, self.audio_sample_interval);
-            new_delta = last.timestamp_ms.saturating_add(interval) as i64 - current as i64;
+            new_delta = last_ts.saturating_add(interval) as i64 - current as i64;
         }
 
         let expected = Self::apply_delta(current, new_delta);
@@ -380,11 +377,11 @@ impl TimingState {
     }
 
     fn update_last_tags(&mut self, tag: &FlvTag) {
-        self.last_tag = Some(tag.clone());
+        self.last_timestamp_ms = Some(tag.timestamp_ms);
         if tag.is_audio_tag() {
-            self.last_audio_tag = Some(tag.clone());
+            self.last_audio_timestamp_ms = Some(tag.timestamp_ms);
         } else if tag.is_video_tag() {
-            self.last_video_tag = Some(tag.clone());
+            self.last_video_timestamp_ms = Some(tag.timestamp_ms);
         }
     }
 }
@@ -552,7 +549,7 @@ impl Processor<FlvData> for TimingRepairOperator {
                         "{} TimingRepair: Timestamp rebound detected: {}ms, last ts: {}ms,  would go back in time - applying correction delta: {}ms",
                         self.context.name,
                         tag.timestamp_ms,
-                        self.state.last_tag.as_ref().map_or(0, |t| t.timestamp_ms),
+                        self.state.last_timestamp_ms.unwrap_or(0),
                         new_delta
                     );
 
@@ -568,7 +565,7 @@ impl Processor<FlvData> for TimingRepairOperator {
                         "{} TimingRepair: Timestamp discontinuity detected: {}ms, last ts: {}ms, applying correction delta: {}ms",
                         self.context.name,
                         tag.timestamp_ms,
-                        self.state.last_tag.as_ref().map_or(0, |t| t.timestamp_ms),
+                        self.state.last_timestamp_ms.unwrap_or(0),
                         new_delta
                     );
 
@@ -584,15 +581,13 @@ impl Processor<FlvData> for TimingRepairOperator {
                             "{} TimingRepair: Negative timestamp detected, applying frame-rate aware correction",
                             self.context.name
                         );
-                        if let Some(last) = &self.state.last_tag {
+                        if let Some(last_ts) = self.state.last_timestamp_ms {
                             if tag.is_video_tag() {
-                                last.timestamp_ms
-                                    .saturating_add(self.state.video_frame_interval)
+                                last_ts.saturating_add(self.state.video_frame_interval)
                             } else if tag.is_audio_tag() {
-                                last.timestamp_ms
-                                    .saturating_add(self.state.audio_sample_interval)
+                                last_ts.saturating_add(self.state.audio_sample_interval)
                             } else {
-                                last.timestamp_ms.saturating_add(max(
+                                last_ts.saturating_add(max(
                                     self.state.video_frame_interval,
                                     self.state.audio_sample_interval,
                                 ))

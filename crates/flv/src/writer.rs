@@ -90,7 +90,7 @@ impl<W: Write + Seek> FlvWriter<W> {
     pub fn write_tag(
         &mut self,
         tag_type: FlvTagType,
-        data: Bytes,
+        data: &[u8],
         timestamp_ms: u32,
     ) -> io::Result<()> {
         self.write_tag_with_filter(tag_type, false, data, timestamp_ms)
@@ -100,7 +100,7 @@ impl<W: Write + Seek> FlvWriter<W> {
         &mut self,
         tag_type: FlvTagType,
         is_filtered: bool,
-        data: Bytes,
+        data: &[u8],
         timestamp_ms: u32,
     ) -> io::Result<()> {
         let data_size = data.len() as u32;
@@ -111,7 +111,7 @@ impl<W: Write + Seek> FlvWriter<W> {
         self.writer.write_all(&header_bytes)?;
 
         // Write tag data
-        self.writer.write_all(&data)?;
+        self.writer.write_all(data)?;
 
         // Update previous tag size
         self.previous_tag_size = data_size + TAG_HEADER_SIZE as u32; // data size + tag header size
@@ -130,7 +130,7 @@ impl<W: Write + Seek> FlvWriter<W> {
         self.write_tag_with_filter(
             tag.tag_type(),
             tag.is_filtered(),
-            tag.data().clone(),
+            tag.data(),
             tag.timestamp_ms,
         )?;
         Ok(())
@@ -166,7 +166,7 @@ impl<W: Write + Seek> FlvWriter<W> {
         Amf0Encoder::encode_object(&mut buffer, &amf_properties)?;
 
         // Write script tag
-        self.write_tag(FlvTagType::ScriptData, Bytes::from(buffer), 0)
+        self.write_tag(FlvTagType::ScriptData, &buffer, 0)
             .map_err(Amf0WriteError::Io)
     }
 
@@ -188,7 +188,7 @@ impl<W: Write + Seek> FlvWriter<W> {
             ));
         }
 
-        self.write_tag(FlvTagType::Video, data, timestamp_ms)
+        self.write_tag(FlvTagType::Video, &data, timestamp_ms)
     }
 
     /// Writes audio data to the output
@@ -209,7 +209,7 @@ impl<W: Write + Seek> FlvWriter<W> {
             ));
         }
 
-        self.write_tag(FlvTagType::Audio, data, timestamp_ms)
+        self.write_tag(FlvTagType::Audio, &data, timestamp_ms)
     }
 
     /// Flushes any buffered data to the underlying writer

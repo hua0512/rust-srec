@@ -4,7 +4,6 @@ use std::{
     path::PathBuf,
 };
 
-use bytes::Bytes;
 use flv::{FlvWriter, tag::FlvTagType};
 use tracing::debug;
 
@@ -23,7 +22,7 @@ pub fn write_flv_tag<T: Write + Seek>(
     file_handle.seek(io::SeekFrom::Start(position))?;
 
     let mut flv_writer = FlvWriter::new(file_handle)?;
-    flv_writer.write_tag(tag_type, Bytes::copy_from_slice(data), timestamp)?;
+    flv_writer.write_tag(tag_type, data, timestamp)?;
     let file = flv_writer.into_inner()?;
     file.flush()?;
 
