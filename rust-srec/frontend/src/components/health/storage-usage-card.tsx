@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { HardDrive } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import {
@@ -100,7 +101,10 @@ export function StorageUsageCard({
 }: {
   components: ComponentHealth[];
 }) {
-  const groups = groupDisksByMountPoint(components);
+  const groups = useMemo(
+    () => groupDisksByMountPoint(components),
+    [components],
+  );
   if (groups.length === 0) return null;
 
   return (

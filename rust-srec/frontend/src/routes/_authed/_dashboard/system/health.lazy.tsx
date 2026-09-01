@@ -236,7 +236,10 @@ function SystemHealthPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {health.components
+                      {/* Copy before sorting: `health.components` is the
+                          array React Query holds in its cache, and sorting
+                          in place mutates it. */}
+                      {[...health.components]
                         .sort((a, b) => a.name.localeCompare(b.name))
                         .map((component) => (
                           <TableRow

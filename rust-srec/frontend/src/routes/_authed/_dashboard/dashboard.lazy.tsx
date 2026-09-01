@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
 import { formatBytes } from '@/lib/format';
+import type { ComponentHealth } from '@/api/schemas/system';
 import { useCallback, useMemo, memo, useState, useEffect } from 'react';
 
 const SKELETON_COUNT = 4;
@@ -162,11 +163,11 @@ function Dashboard() {
   );
 
   const dbComponent = useMemo(
-    () => health?.components.find((c: any) => c.name === 'database'),
+    () => health?.components.find((c) => c.name === 'database'),
     [health],
   );
   const downloadMgrComponent = useMemo(
-    () => health?.components.find((c: any) => c.name === 'download_manager'),
+    () => health?.components.find((c) => c.name === 'download_manager'),
     [health],
   );
   // Several disk probes can be registered (one per configured output root),
@@ -174,9 +175,9 @@ function Dashboard() {
   // on. Falls back to the first `disk:` component when none reports capacity.
   const diskComponent = useMemo(() => {
     const disks =
-      health?.components.filter((c: any) => c.name.startsWith('disk:')) ?? [];
-    return disks.reduce(
-      (worst: any, candidate: any) =>
+      health?.components.filter((c) => c.name.startsWith('disk:')) ?? [];
+    return disks.reduce<ComponentHealth | undefined>(
+      (worst, candidate) =>
         (candidate.disk?.used_percent ?? -1) > (worst?.disk?.used_percent ?? -1)
           ? candidate
           : worst,
@@ -452,7 +453,7 @@ const ComponentStatusCard = memo(
     caption,
   }: {
     name: string;
-    component: any;
+    component: ComponentHealth | undefined;
     icon: any;
     mounted: boolean;
     /** Replaces the status word as the card's figure, e.g. free disk space. */
