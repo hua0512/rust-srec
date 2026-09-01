@@ -23,9 +23,9 @@ use tokio_tungstenite::tungstenite::http::HeaderMap;
 use super::URL_REGEX;
 use super::danmu_models::{
     DouyuChatMessage, DouyuGiftMessage, DouyuMessageType, create_join_group_message,
-    create_login_message, parse_message,
+    create_login_message,
 };
-use super::stt::{create_packet, parse_packets};
+use super::stt::{SttMap, create_packet, parse_packets, stt_decode, stt_message_type};
 
 /// Douyu WebSocket server URL
 const DOUYU_WS_URL: &str = "wss://danmuproxy.douyu.com:8502/";
@@ -57,7 +57,7 @@ impl DouyuDanmuProtocol {
     }
 
     /// Parse chat messages from STT payload.
-    fn parse_chat_message(map: &rustc_hash::FxHashMap<String, String>) -> Option<DanmuMessage> {
+    fn parse_chat_message(map: &SttMap<'_>) -> Option<DanmuMessage> {
         let chat = DouyuChatMessage::from_map(map)?;
 
         let mut danmu = DanmuMessage::chat(&chat.id, &chat.uid, &chat.nickname, &chat.content)
@@ -96,7 +96,7 @@ impl DouyuDanmuProtocol {
             reason = "retained for protocol variants and forward-compatible response handling"
         )
     )]
-    fn parse_gift_message(map: &rustc_hash::FxHashMap<String, String>) -> Option<DanmuMessage> {
+    fn parse_gift_message(map: &SttMap<'_>) -> Option<DanmuMessage> {
         let gift = DouyuGiftMessage::from_map(map)?;
 
         let danmu = DanmuMessage::gift(
@@ -184,10 +184,16 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                 let mut items = Vec::new();
 
                 for payload in packets {
-                    let (msg_type, map) = parse_message(&payload);
+                    // Only chat messages are decoded; every other type is
+                    // dispatched on its `type` field alone, so uenter, dgb,
+                    // ranklist and the like never build a map.
+                    let msg_type = stt_message_type(&payload)
+                        .map(DouyuMessageType::from_str)
+                        .unwrap_or(DouyuMessageType::Unknown);
 
                     match msg_type {
                         DouyuMessageType::ChatMsg => {
+                            let map = stt_decode(&payload);
                             if let Some(danmu) = Self::parse_chat_message(&map) {
                                 items.push(DanmuItem::Message(danmu));
                             }

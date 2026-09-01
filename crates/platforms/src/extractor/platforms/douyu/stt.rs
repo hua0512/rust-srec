@@ -10,8 +10,14 @@
 //!   - `/` → `@S`
 //!   - `@` → `@A`
 
+use std::borrow::Cow;
+
 use bytes::{BufMut, Bytes, BytesMut};
 use rustc_hash::FxHashMap;
+
+/// Key/value pairs of one decoded STT payload, borrowed from the payload
+/// wherever no `@A` / `@S` escape had to be rewritten.
+pub type SttMap<'a> = FxHashMap<Cow<'a, str>, Cow<'a, str>>;
 
 /// Magic number for client → server messages
 const CLIENT_MAGIC: [u8; 4] = [0xb1, 0x02, 0x00, 0x00];
@@ -44,9 +50,40 @@ pub fn stt_escape(s: &str) -> String {
 
 /// Unescape STT special characters.
 ///
-/// Converts `@A` back to `@` and `@S` back to `/`.
-pub fn stt_unescape(s: &str) -> String {
-    s.replace("@S", "/").replace("@A", "@")
+/// Converts `@A` back to `@` and `@S` back to `/`. Borrows the input when it
+/// contains no `@`, which is the case for almost every key and value.
+pub fn stt_unescape(s: &str) -> Cow<'_, str> {
+    if !s.contains('@') {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '@' {
+            match chars.peek() {
+                Some('S') => {
+                    chars.next();
+                    out.push('/');
+                    continue;
+                }
+                Some('A') => {
+                    chars.next();
+                    out.push('@');
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        out.push(ch);
+    }
+    Cow::Owned(out)
+}
+
+/// Read the `type` field of an STT payload without decoding the rest.
+///
+/// Type names are plain identifiers, so the raw value is returned as is.
+pub fn stt_message_type(data: &str) -> Option<&str> {
+    data.split('/').find_map(|part| part.strip_prefix("type@="))
 }
 
 /// Encode a map of key-value pairs to STT format.
@@ -75,10 +112,10 @@ pub fn stt_encode(map: &FxHashMap<&str, &str>) -> String {
 /// # Example
 /// ```ignore
 /// let map = stt_decode("type@=loginreq/roomid@=123456/");
-/// assert_eq!(map.get("type"), Some(&"loginreq".to_string()));
+/// assert_eq!(map.get("type"), Some(&Cow::Borrowed("loginreq")));
 /// ```
-pub fn stt_decode(data: &str) -> FxHashMap<String, String> {
-    let mut map = FxHashMap::default();
+pub fn stt_decode(data: &str) -> SttMap<'_> {
+    let mut map = SttMap::default();
 
     // Split by `/` and filter out empty parts
     for part in data.split('/') {
@@ -130,7 +167,7 @@ pub fn create_packet(message: &str) -> Bytes {
 ///
 /// Returns the payload string and the number of bytes consumed.
 /// Returns None if the packet is incomplete or malformed.
-pub fn parse_packet(data: &[u8]) -> Option<(String, usize)> {
+pub fn parse_packet(data: &[u8]) -> Option<(Cow<'_, str>, usize)> {
     // Minimum packet size: 4 (len1) + 4 (len2) + 4 (magic) + 1 (null) = 13 bytes
     if data.len() < 13 {
         return None;
@@ -152,21 +189,19 @@ pub fn parse_packet(data: &[u8]) -> Option<(String, usize)> {
     let payload_end = total_size - 1;
 
     if payload_end <= payload_start {
-        return Some((String::new(), total_size));
+        return Some((Cow::Borrowed(""), total_size));
     }
 
     let payload = &data[payload_start..payload_end];
 
-    // Convert to string (lossy for robustness)
-    let payload_str = String::from_utf8_lossy(payload).to_string();
-
-    Some((payload_str, total_size))
+    // Borrowed unless the payload holds invalid UTF-8 that had to be replaced.
+    Some((String::from_utf8_lossy(payload), total_size))
 }
 
 /// Parse multiple packets from a buffer.
 ///
 /// Returns a vector of decoded payloads.
-pub fn parse_packets(data: &[u8]) -> Vec<String> {
+pub fn parse_packets(data: &[u8]) -> Vec<Cow<'_, str>> {
     let mut packets = Vec::new();
     let mut offset = 0;
 
@@ -224,15 +259,15 @@ mod tests {
     fn test_stt_decode() {
         let map = stt_decode("type@=loginreq/roomid@=123456/");
 
-        assert_eq!(map.get("type"), Some(&"loginreq".to_string()));
-        assert_eq!(map.get("roomid"), Some(&"123456".to_string()));
+        assert_eq!(map.get("type"), Some(&Cow::Borrowed("loginreq")));
+        assert_eq!(map.get("roomid"), Some(&Cow::Borrowed("123456")));
     }
 
     #[test]
     fn test_stt_decode_with_escaping() {
         let map = stt_decode("key@=value@Awith@Sslash/");
 
-        assert_eq!(map.get("key"), Some(&"value@with/slash".to_string()));
+        assert_eq!(map.get("key"), Some(&Cow::Borrowed("value@with/slash")));
     }
 
     #[test]
@@ -244,8 +279,8 @@ mod tests {
         let encoded = stt_encode(&original);
         let decoded = stt_decode(&encoded);
 
-        assert_eq!(decoded.get("type"), Some(&"test".to_string()));
-        assert_eq!(decoded.get("content"), Some(&"hello".to_string()));
+        assert_eq!(decoded.get("type"), Some(&Cow::Borrowed("test")));
+        assert_eq!(decoded.get("content"), Some(&Cow::Borrowed("hello")));
     }
 
     #[test]
@@ -283,9 +318,9 @@ mod tests {
         let (payload, _) = parse_packet(&packet).unwrap();
         let decoded = stt_decode(&payload);
 
-        assert_eq!(decoded.get("type"), Some(&"chatmsg".to_string()));
-        assert_eq!(decoded.get("nn"), Some(&"TestUser".to_string()));
-        assert_eq!(decoded.get("txt"), Some(&"Hello World!".to_string()));
+        assert_eq!(decoded.get("type"), Some(&Cow::Borrowed("chatmsg")));
+        assert_eq!(decoded.get("nn"), Some(&Cow::Borrowed("TestUser")));
+        assert_eq!(decoded.get("txt"), Some(&Cow::Borrowed("Hello World!")));
     }
 
     #[test]
@@ -323,7 +358,7 @@ mod tests {
 
         // Verify the decoded message type
         let decoded = stt_decode(&payload);
-        assert_eq!(decoded.get("type"), Some(&"mrkl".to_string()));
+        assert_eq!(decoded.get("type"), Some(&Cow::Borrowed("mrkl")));
     }
 
     #[test]

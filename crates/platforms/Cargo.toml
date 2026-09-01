@@ -60,7 +60,7 @@ rand = { workspace = true }
 # module in lib.rs when a platform requires JS-based signing).
 # rquickjs = { version = "0.12.0", optional = true, features = ["full-async"] }
 
-uuid  = { workspace = true, features = ["v4"]}
+uuid  = { workspace = true, features = ["v4", "fast-rng"]}
 m3u8-rs = { workspace = true }
 md-5 = { workspace = true }
 aes = { workspace = true }
