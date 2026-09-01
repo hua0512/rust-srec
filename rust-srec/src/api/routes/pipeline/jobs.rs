@@ -181,7 +181,12 @@ pub async fn list_job_logs(
 ) -> ApiResult<Json<PaginatedResponse<ApiJobLogEntry>>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    let effective_limit = pagination.limit.min(100);
+    // Log rows are small and a job keeps up to
+    // MAX_PERSISTED_LOG_ROWS_PER_JOB of them. The job page polls its loaded
+    // pages while the job runs, so each poll costs one round trip per page;
+    // a larger page keeps that to a handful for long-running jobs.
+    const MAX_LOG_PAGE_SIZE: u32 = 1000;
+    let effective_limit = pagination.limit.min(MAX_LOG_PAGE_SIZE);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     let (logs, total) = pipeline_manager
