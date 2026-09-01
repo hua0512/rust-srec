@@ -15,6 +15,18 @@ use sqlx::SqlitePool;
 pub trait SessionRepository: Send + Sync {
     // Live Sessions
     async fn get_session(&self, id: &str) -> Result<LiveSessionDbModel>;
+    /// Fetch several sessions in one round trip. Ids with no row are skipped.
+    async fn get_sessions_by_ids(&self, ids: &[String]) -> Result<Vec<LiveSessionDbModel>> {
+        let mut sessions = Vec::with_capacity(ids.len());
+        for id in ids {
+            match self.get_session(id).await {
+                Ok(session) => sessions.push(session),
+                Err(Error::NotFound { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(sessions)
+    }
     async fn get_active_session_for_streamer(
         &self,
         streamer_id: &str,
@@ -216,6 +228,25 @@ impl SessionRepository for SqlxSessionRepository {
             .fetch_optional(&self.pool)
             .await?
             .ok_or_else(|| Error::not_found("LiveSession", id))
+    }
+
+    async fn get_sessions_by_ids(&self, ids: &[String]) -> Result<Vec<LiveSessionDbModel>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder =
+            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM live_sessions WHERE id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+
+        Ok(builder
+            .build_query_as::<LiveSessionDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     async fn get_active_session_for_streamer(

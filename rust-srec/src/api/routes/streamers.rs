@@ -312,42 +312,43 @@ pub async fn list_streamers(
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
 
-    // Get all streamers from manager
-    let mut streamers = streamer_manager.get_all();
-
-    // Apply filters
-    if let Some(platform) = &filters.platform {
-        streamers.retain(|s| &s.platform_config_id == platform);
-    }
-    if let Some(template) = &filters.template {
-        streamers.retain(|s| s.template_config_id.as_ref() == Some(template));
-    }
-    if filters.template_unassigned == Some(true) {
-        streamers.retain(|s| s.template_config_id.is_none());
-    }
-    if let Some(state_str) = &filters.state
-        && !state_str.is_empty()
-    {
-        let states: Vec<StreamerState> = state_str
-            .split(',')
-            .filter_map(|s| StreamerState::parse(&s.trim().to_uppercase()))
-            .collect();
-        streamers.retain(|s| states.contains(&s.state));
-    }
-    if let Some(priority) = &filters.priority {
-        streamers.retain(|s| s.priority == *priority);
-    }
-    if let Some(enabled) = filters.enabled {
-        streamers.retain(|s| (s.state != StreamerState::Disabled) == enabled);
-    }
-    if let Some(search) = &filters.search
-        && !search.is_empty()
-    {
-        let search = search.to_lowercase();
-        streamers.retain(|s| {
-            s.name.to_lowercase().contains(&search) || s.url.to_lowercase().contains(&search)
+    // Resolve every filter once, then clone only the matching entries out of
+    // the manager's map: a narrow filter (the dashboard's `state=LIVE`) must
+    // not copy every streamer first.
+    let platform = filters.platform.as_deref();
+    let template = filters.template.as_deref();
+    let template_unassigned = filters.template_unassigned == Some(true);
+    let states: Option<Vec<StreamerState>> = filters
+        .state
+        .as_deref()
+        .filter(|state_str| !state_str.is_empty())
+        .map(|state_str| {
+            state_str
+                .split(',')
+                .filter_map(|s| StreamerState::parse(&s.trim().to_uppercase()))
+                .collect()
         });
-    }
+    let priority = filters.priority.as_ref();
+    let enabled = filters.enabled;
+    let search = filters
+        .search
+        .as_deref()
+        .filter(|search| !search.is_empty())
+        .map(str::to_lowercase);
+
+    let mut streamers = streamer_manager.get_filtered(|s| {
+        platform.is_none_or(|platform| s.platform_config_id == platform)
+            && template.is_none_or(|template| s.template_config_id.as_deref() == Some(template))
+            && (!template_unassigned || s.template_config_id.is_none())
+            && states
+                .as_ref()
+                .is_none_or(|states| states.contains(&s.state))
+            && priority.is_none_or(|priority| s.priority == *priority)
+            && enabled.is_none_or(|enabled| (s.state != StreamerState::Disabled) == enabled)
+            && search.as_ref().is_none_or(|search| {
+                s.name.to_lowercase().contains(search) || s.url.to_lowercase().contains(search)
+            })
+    });
 
     // Sort for stable pagination
     let sort_by = filters.sort_by.as_deref();
