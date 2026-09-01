@@ -12,6 +12,12 @@ use serde::Serialize;
 use crate::api::auth_service::AuthError;
 use crate::error::Error;
 
+/// Code returned when a cancel or retry targets a DAG that already reached a
+/// terminal status. Clients match on this to treat the race as a no-op rather
+/// than an error; keep it in sync with the frontend's
+/// `DAG_ALREADY_TERMINAL_CODE` in `lib/api-error.ts`.
+pub const DAG_ALREADY_TERMINAL_CODE: &str = "DAG_ALREADY_TERMINAL";
+
 /// API error response body.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ApiErrorResponse {
@@ -106,6 +112,11 @@ impl From<Error> for ApiError {
                 ApiError::not_found(format!("{} with id '{}' not found", entity_type, id))
             }
             Error::Validation(msg) => ApiError::validation(msg),
+            Error::DagAlreadyTerminal { ref dag_id } => ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                DAG_ALREADY_TERMINAL_CODE,
+                format!("DAG {} is already in a terminal state", dag_id),
+            ),
             Error::Configuration(msg) => ApiError::bad_request(msg),
             Error::DatabaseSqlx(e) => {
                 tracing::error!("Database error: {}", e);
@@ -204,6 +215,21 @@ mod tests {
 
         assert_eq!(api_err.status, StatusCode::FORBIDDEN);
         assert_eq!(api_err.code, "PASSWORD_CHANGE_REQUIRED");
+    }
+
+    #[test]
+    fn dag_already_terminal_has_its_own_code() {
+        let api_err = ApiError::from(Error::DagAlreadyTerminal {
+            dag_id: "dag-1".to_string(),
+        });
+
+        // The frontend branches its cancel UX on this code. A plain
+        // `Error::Validation` would collapse it into VALIDATION_ERROR and
+        // leave callers matching on message text.
+        assert_eq!(api_err.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(api_err.code, DAG_ALREADY_TERMINAL_CODE);
+        assert_ne!(api_err.code, ApiError::validation("x").code);
+        assert!(api_err.message.contains("dag-1"));
     }
 
     #[test]

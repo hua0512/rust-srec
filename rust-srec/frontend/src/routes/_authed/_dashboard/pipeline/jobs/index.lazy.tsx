@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { isDagAlreadyTerminalError } from '@/lib/api-error';
 import { FAB_ANCHOR } from '@/components/shared/save-fab';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import {
@@ -233,7 +234,7 @@ function PipelineJobsPage() {
 
   const cancelPipelineMutation = useMutation({
     mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       toast.success(
         i18n._(msg`Cancelled ${result.cancelled_steps} steps in pipeline`),
       );
@@ -242,9 +243,10 @@ function PipelineJobsPage() {
       });
       void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
-    onError: (error: any) => {
-      // Handle case where DAG is already in terminal state (completed/failed)
-      if (error?.body?.message?.includes('terminal state')) {
+    onError: (error) => {
+      // A pipeline that finished between render and click is not a failure —
+      // refresh so the card shows its real status.
+      if (isDagAlreadyTerminalError(error)) {
         toast.info(i18n._(msg`Pipeline is already completed or cancelled`));
         void queryClient.invalidateQueries({
           queryKey: ['pipeline', 'pipelines'],
@@ -269,7 +271,7 @@ function PipelineJobsPage() {
 
   const retryAllFailedMutation = useMutation({
     mutationFn: () => retryAllFailedPipelines(),
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       toast.success(result.message);
       void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'pipelines'],

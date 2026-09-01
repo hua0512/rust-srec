@@ -27,6 +27,17 @@ pub enum Error {
     #[error("Validation error: {0}")]
     Validation(String),
 
+    /// A DAG operation that only applies to a live execution was attempted on
+    /// one that already reached a terminal status.
+    ///
+    /// Distinct from [`Error::Validation`] so `From<Error> for ApiError` can
+    /// give it a dedicated code: callers branch their UI on this condition
+    /// (a cancel racing a DAG that just finished is expected, not a failure
+    /// to report), and a shared `VALIDATION_ERROR` code leaves them matching
+    /// on message text.
+    #[error("DAG {dag_id} is already in a terminal state")]
+    DagAlreadyTerminal { dag_id: String },
+
     #[error("Configuration error: {0}")]
     Configuration(String),
 
