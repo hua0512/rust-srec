@@ -93,6 +93,7 @@ pub async fn health_check(
             message: health.message.clone(),
             last_check: health.last_check.clone(),
             check_duration_ms: health.check_duration_ms,
+            disk: health.disk.clone(),
         })
         .collect();
 
@@ -226,6 +227,79 @@ mod tests {
         serde_json::from_slice(&body).expect("body should be valid JSON")
     }
 
+    /// Probe standing in for `DiskSpaceProbe`, which lives in
+    /// `services::container::health` and is not constructible from here.
+    struct StaticDiskProbe;
+
+    #[async_trait::async_trait]
+    impl crate::metrics::HealthProbe for StaticDiskProbe {
+        fn name(&self) -> std::borrow::Cow<'_, str> {
+            std::borrow::Cow::Borrowed("disk:/rec")
+        }
+
+        fn cadence(&self) -> std::time::Duration {
+            std::time::Duration::from_secs(30)
+        }
+
+        async fn probe(
+            &self,
+            _metrics: crate::metrics::SystemMetricsSnapshot,
+        ) -> crate::metrics::ComponentHealth {
+            crate::metrics::ComponentHealth::healthy("disk:/rec").with_disk(
+                crate::metrics::DiskUsage::new(
+                    "/rec",
+                    "/",
+                    40 * 1024 * 1024 * 1024,
+                    100 * 1024 * 1024 * 1024,
+                ),
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn health_check_serializes_disk_capacity() {
+        let health_checker = std::sync::Arc::new(crate::metrics::HealthChecker::new());
+        health_checker.register_probe(std::sync::Arc::new(StaticDiskProbe));
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let handle = health_checker.start(cancel.child_token());
+        // `start` runs a first-fill refresh before its ticker, so one yield
+        // is enough for the snapshot to hold the probe's value.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let state = HealthRouteState {
+            health_checker,
+            ..build_idle_test_state(crate::pipeline::PipelineManager::new())
+        };
+        let response = health_check(State(state), HeaderMap::new())
+            .await
+            .expect("health_check should succeed")
+            .into_response();
+        let json = read_json(response).await;
+
+        let disk = json["components"]
+            .as_array()
+            .expect("components should be an array")
+            .iter()
+            .find(|c| c["name"] == "disk:/rec")
+            .expect("the disk component should be present");
+        assert_eq!(disk["status"], "healthy");
+        assert_eq!(disk["disk"]["mount_point"], "/");
+        assert_eq!(disk["disk"]["available_bytes"], 40u64 * 1024 * 1024 * 1024);
+        assert_eq!(disk["disk"]["used_bytes"], 60u64 * 1024 * 1024 * 1024);
+
+        // Non-disk components must not grow a null `disk` key.
+        let database = json["components"]
+            .as_array()
+            .and_then(|components| components.iter().find(|c| c["name"] == "database"));
+        assert!(
+            database.is_none_or(|c| c.get("disk").is_none()),
+            "only disk components should carry capacity"
+        );
+
+        cancel.cancel();
+        let _ = handle.await;
+    }
+
     #[tokio::test]
     async fn test_idle_check_ok_when_nothing_active() {
         let state = build_idle_test_state(crate::pipeline::PipelineManager::new());
@@ -283,6 +357,7 @@ mod tests {
                 message: None,
                 last_check: None,
                 check_duration_ms: None,
+                disk: None,
             }],
             cpu_usage: 10.5,
             memory_usage: 45.2,

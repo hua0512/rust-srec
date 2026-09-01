@@ -244,6 +244,7 @@ pub struct MessageResponse {
             // Health schemas
             HealthResponse,
             ComponentHealth,
+            crate::metrics::DiskUsage,
             LivenessResponse,
             crate::api::routes::health::IdleResponse,
             // Auth schemas

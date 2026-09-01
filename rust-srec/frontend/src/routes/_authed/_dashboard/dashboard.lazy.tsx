@@ -17,17 +17,24 @@ import {
   XCircle,
   Circle,
   PlayCircle,
+  type LucideIcon,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { type I18n } from '@lingui/core';
-import { createLazyFileRoute, Link } from '@tanstack/react-router';
+import {
+  createLazyFileRoute,
+  Link,
+  type LinkProps,
+} from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
+import { formatBytes } from '@/lib/format';
+import type { ComponentHealth } from '@/api/schemas/system';
 import { useCallback, useMemo, memo, useState, useEffect } from 'react';
 
 const SKELETON_COUNT = 4;
@@ -116,7 +123,7 @@ function Dashboard() {
       toast.success(i18n._(msg`Streamer deleted`));
       void queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to delete streamer`));
     },
   });
@@ -124,7 +131,7 @@ function Dashboard() {
   const checkMutation = useMutation({
     mutationFn: (id: string) => checkStreamer({ data: id }),
     onSuccess: () => toast.success(i18n._(msg`Check triggered`)),
-    onError: (error: any) =>
+    onError: (error) =>
       toast.error(error.message || i18n._(msg`Failed to trigger check`)),
   });
 
@@ -135,7 +142,7 @@ function Dashboard() {
       toast.success(i18n._(msg`Streamer updated`));
       void queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) =>
+    onError: (error) =>
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
@@ -161,17 +168,30 @@ function Dashboard() {
   );
 
   const dbComponent = useMemo(
-    () => health?.components.find((c: any) => c.name === 'database'),
+    () => health?.components.find((c) => c.name === 'database'),
     [health],
   );
   const downloadMgrComponent = useMemo(
-    () => health?.components.find((c: any) => c.name === 'download_manager'),
+    () => health?.components.find((c) => c.name === 'download_manager'),
     [health],
   );
-  const diskComponent = useMemo(
-    () => health?.components.find((c: any) => c.name.startsWith('disk:')),
-    [health],
-  );
+  // Several disk probes can be registered (one per configured output root),
+  // so surface the one closest to full — that is the disk a clean-up is due
+  // on. Falls back to the first `disk:` component when none reports capacity.
+  const diskComponent = useMemo(() => {
+    const disks =
+      health?.components.filter((c) => c.name.startsWith('disk:')) ?? [];
+    return disks.reduce<ComponentHealth | undefined>(
+      (worst, candidate) =>
+        (candidate.disk?.used_percent ?? -1) > (worst?.disk?.used_percent ?? -1)
+          ? candidate
+          : worst,
+      disks[0],
+    );
+  }, [health]);
+  const free = diskComponent?.disk
+    ? formatBytes(diskComponent.disk.available_bytes)
+    : null;
 
   return (
     <div className="min-h-screen p-3 md:p-8 space-y-6 md:space-y-8 bg-gradient-to-br from-background via-background to-muted/20">
@@ -284,6 +304,8 @@ function Dashboard() {
                   component={diskComponent}
                   icon={HardDrive}
                   mounted={mounted}
+                  headline={free ? i18n._(msg`${free} free`) : undefined}
+                  caption={diskComponent?.disk?.path}
                 />
               </div>
             </div>
@@ -432,11 +454,17 @@ const ComponentStatusCard = memo(
     component,
     icon: Icon,
     mounted,
+    headline,
+    caption,
   }: {
     name: string;
-    component: any;
-    icon: any;
+    component: ComponentHealth | undefined;
+    icon: LucideIcon;
     mounted: boolean;
+    /** Replaces the status word as the card's figure, e.g. free disk space. */
+    headline?: string;
+    /** Extra line above the timestamp, e.g. the path a figure refers to. */
+    caption?: string;
   }) => {
     const { i18n } = useLingui();
 
@@ -497,17 +525,34 @@ const ComponentStatusCard = memo(
 
             <div
               className={cn(
-                'text-lg font-bold capitalize truncate tracking-tight',
+                'text-lg font-bold truncate tracking-tight',
+                // Only the status word wants title-casing; a headline is
+                // already a formatted figure ("95.12 GB free").
+                !headline && 'capitalize',
                 !isHealthy && 'text-red-500 dark:text-red-400',
               )}
             >
-              {!isHealthy && component.message && component.message.length < 30
-                ? component.message
-                : getStatusLabel(component.status, i18n)}
+              {headline
+                ? headline
+                : !isHealthy &&
+                    component.message &&
+                    component.message.length < 30
+                  ? component.message
+                  : getStatusLabel(component.status, i18n)}
             </div>
           </div>
+          {caption && (
+            <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono break-all">
+              {caption}
+            </p>
+          )}
           {component.last_check && (
-            <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono">
+            <p
+              className={cn(
+                'text-[10px] text-muted-foreground/60 font-mono',
+                caption ? 'mt-1' : 'mt-3',
+              )}
+            >
               <Trans>Updated</Trans>{' '}
               {mounted
                 ? formatRelativeTime(component.last_check, i18n.locale)
@@ -533,12 +578,12 @@ const StatCard = memo(
     search,
   }: {
     title: React.ReactNode;
-    icon: any;
+    icon: LucideIcon;
     value?: number;
     color?: string;
     bg?: string;
-    href?: string;
-    search?: any;
+    href?: LinkProps['to'];
+    search?: LinkProps['search'];
   }) => {
     const content = (
       <DashboardCard

@@ -12,12 +12,20 @@ use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
 use crate::downloader::{DownloadManager, OutputRootGate};
-use crate::metrics::{ComponentHealth, HealthChecker, HealthProbe, SystemMetricsSnapshot};
+use crate::metrics::{
+    ComponentHealth, DiskUsage, HealthChecker, HealthProbe, SystemMetricsSnapshot,
+};
 use crate::pipeline::PipelineManager;
 
 use super::{
     ServiceContainer, parse_output_roots_env, sqlite_file_path_from_url, static_root_prefix,
 };
+
+/// Upper bound on `DiskSpaceProbe` registrations, so a deployment with many
+/// per-streamer `output_folder` overrides can't fill the health snapshot
+/// with hundreds of `disk:` components. Real deployments span a handful of
+/// filesystems; roots beyond the limit are dropped with a warning.
+const MAX_DISK_PROBES: usize = 16;
 
 struct DatabaseProbe {
     pool: SqlitePool,
@@ -86,19 +94,30 @@ impl HealthProbe for DiskSpaceProbe {
 
     async fn probe(&self, metrics: SystemMetricsSnapshot) -> ComponentHealth {
         match metrics.best_disk_for_path(&self.lookup_path) {
+            // The capacity figures ride along on every status, healthy
+            // included: `check_disk_space_with_thresholds` leaves `message`
+            // empty below the warning threshold, so this is the only place
+            // free space is reported while nothing is wrong.
             Some(disk) => HealthChecker::check_disk_space_with_thresholds(
                 &self.display_path,
                 disk.available_space,
                 disk.total_space,
                 self.warning_threshold,
                 self.critical_threshold,
-            ),
+            )
+            .with_disk(DiskUsage::new(
+                &self.display_path,
+                disk.mount_point.to_string_lossy(),
+                disk.available_space,
+                disk.total_space,
+            )),
             None => ComponentHealth {
                 name: self.component_name.clone(),
                 status: crate::metrics::HealthStatus::Unknown,
                 message: Some("Unable to resolve disk for path".to_string()),
                 last_check: Some(chrono::Utc::now().to_rfc3339()),
                 check_duration_ms: None,
+                disk: None,
             },
         }
     }
@@ -414,33 +433,28 @@ fn probe_root_writable(root: &std::path::Path) -> std::io::Result<()> {
 }
 
 impl ServiceContainer {
-    /// Run the output-root write gate's one-shot startup probe.
+    /// Build the union of filesystem roots the downloader may write to.
     ///
-    /// Collects the set of root paths to probe from:
+    /// Sources, in the order they are merged: `RUST_SREC_OUTPUT_ROOTS`,
+    /// `OUTPUT_DIR`, then the static prefix (via [`static_root_prefix`]) of
+    /// the `output_folder` template at global, platform, template and
+    /// per-streamer scope. A source that fails to load is logged and
+    /// skipped so one unreadable config never hides the other roots.
     ///
-    /// 1. `RUST_SREC_OUTPUT_ROOTS` env var (if set).
-    /// 2. Otherwise, resolves each streamer's configured `output_folder`
-    ///    through `expand_path_template` + `resolve_root` and deduplicates.
+    /// Callers are [`Self::run_output_root_startup_probe`], which write-tests
+    /// each root once, and [`Self::register_health_checks`], which registers
+    /// a `DiskSpaceProbe` per root. Both need the same set: a root the
+    /// downloader writes to is a root whose free space the user cares about.
     ///
-    /// Each root is probed in parallel via `spawn_blocking` (sync `tempfile`
-    /// creation, write zero bytes, RAII unlink) wrapped in a 5-second
-    /// tokio timeout. A timeout or any error feeds the synthetic
-    /// `io::Error` into `gate.record_failure`, so broken mounts are
-    /// visible in `/health` from second zero rather than waiting for the
-    /// first monitor tick to attempt a download.
-    ///
-    /// This is the ONLY synthetic probe in the design — all other gate
-    /// transitions are event-driven via real `ensure_output_dir` calls
-    /// and engine stderr readers. See
-    /// `crate::downloader::output_root_gate` for the rationale.
-    pub(super) async fn run_output_root_startup_probe(&self) {
+    /// Every path feeds through [`crate::downloader::OutputRootGate::resolve_path`]
+    /// so the entries match the keys the download hot path uses, and the
+    /// `HashSet` collapses overlapping templates (e.g. three platforms all
+    /// writing under `/rec/`) into one entry.
+    pub(super) async fn collect_output_roots(
+        &self,
+    ) -> std::collections::HashSet<std::path::PathBuf> {
         use std::collections::HashSet;
 
-        // Build the union of roots to probe from all sources. Every source
-        // feeds through the gate's own `resolve_path` so the keys match
-        // what the runtime hot path will use — and we dedupe via HashSet
-        // so overlapping templates (e.g. three platforms all writing to
-        // `/rec/...`) produce a single probe.
         let mut roots: HashSet<std::path::PathBuf> = HashSet::new();
 
         // 1. Explicit env var always wins — if the user configured it,
@@ -451,9 +465,10 @@ impl ServiceContainer {
 
         // 2. `OUTPUT_DIR` env var, only when the operator set it. When
         //    unset, step 3 (global config `output_folder`) covers the
-        //    canonical default — probing `./output` here would register
+        //    canonical default — returning `./output` here would name
         //    a root the downloader never uses on a typical install, and
-        //    the tempfile probe would silently create that directory.
+        //    the write test in `run_output_root_startup_probe` would
+        //    silently create that directory.
         if let Ok(raw) = std::env::var("OUTPUT_DIR")
             && !raw.trim().is_empty()
         {
@@ -477,7 +492,7 @@ impl ServiceContainer {
             }
             Err(e) => warn!(
                 error = %e,
-                "Output-root startup probe: failed to read global config (continuing with env roots)"
+                "Output-root discovery: failed to read global config (continuing with env roots)"
             ),
         }
 
@@ -498,7 +513,7 @@ impl ServiceContainer {
             }
             Err(e) => warn!(
                 error = %e,
-                "Output-root startup probe: failed to list platform configs (continuing)"
+                "Output-root discovery: failed to list platform configs (continuing)"
             ),
         }
 
@@ -520,7 +535,7 @@ impl ServiceContainer {
             }
             Err(e) => warn!(
                 error = %e,
-                "Output-root startup probe: failed to list template configs (continuing)"
+                "Output-root discovery: failed to list template configs (continuing)"
             ),
         }
 
@@ -559,11 +574,30 @@ impl ServiceContainer {
                     Err(e) => debug!(
                         streamer_id = %id,
                         error = %e,
-                        "Output-root startup probe: skipping streamer whose config failed to merge"
+                        "Output-root discovery: skipping streamer whose config failed to merge"
                     ),
                 }
             }
         }
+
+        roots
+    }
+
+    /// Run the output-root write gate's one-shot startup probe.
+    ///
+    /// Each root from [`Self::collect_output_roots`] is probed in parallel
+    /// via `spawn_blocking` (sync `tempfile` creation, write zero bytes,
+    /// RAII unlink) wrapped in a 5-second tokio timeout. A timeout or any
+    /// error feeds the synthetic `io::Error` into `gate.record_failure`, so
+    /// broken mounts are visible in `/health` from second zero rather than
+    /// waiting for the first monitor tick to attempt a download.
+    ///
+    /// This is the ONLY synthetic probe in the design — all other gate
+    /// transitions are event-driven via real `ensure_output_dir` calls
+    /// and engine stderr readers. See
+    /// `crate::downloader::output_root_gate` for the rationale.
+    pub(super) async fn run_output_root_startup_probe(&self) {
+        let roots = self.collect_output_roots().await;
 
         if roots.is_empty() {
             debug!("Output-root startup probe: no roots to probe");
@@ -689,41 +723,71 @@ impl ServiceContainer {
             pool: self.pool.clone(),
         }));
 
-        // Disk space health checks (output dir and DB directory).
-        // Priority: explicit OUTPUT_DIR env, then the static prefix of the
-        // global config's `output_folder` template (matches what the
-        // download path will actually consult), then `./output` as a last
-        // resort for display when neither source is usable.
-        let output_dir = {
-            let env_dir = std::env::var("OUTPUT_DIR")
-                .ok()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty());
-            match env_dir {
-                Some(v) => v,
-                None => match self.config_service.get_global_config().await {
-                    Ok(cfg) => static_root_prefix(&cfg.output_folder)
-                        .unwrap_or_else(|| "./output".to_string()),
-                    Err(_) => "./output".to_string(),
-                },
-            }
-        };
-        // Ensure path is absolute for disk lookup
-        let output_dir_path = if let Ok(cwd) = std::env::current_dir() {
-            cwd.join(&output_dir)
-        } else {
-            PathBuf::from(output_dir.clone())
-        };
-
         let disk_warning_threshold = self.health_checker.disk_warning_threshold();
         let disk_critical_threshold = self.health_checker.disk_critical_threshold();
-        self.health_checker
-            .register_probe(Arc::new(DiskSpaceProbe::new(
-                output_dir,
-                output_dir_path,
-                disk_warning_threshold,
-                disk_critical_threshold,
-            )));
+
+        // Disk space health checks: one per output root the downloader may
+        // write to, so a streamer whose `output_folder` override lands on a
+        // second disk reports that disk's free space rather than the global
+        // one's. Sorted so component names stay stable across restarts, and
+        // capped because these run for the process lifetime (30 s cadence)
+        // unlike the one-shot write test in
+        // `run_output_root_startup_probe`, which shares the same root set.
+        let mut output_roots: Vec<PathBuf> =
+            self.collect_output_roots().await.into_iter().collect();
+        output_roots.sort();
+        if output_roots.len() > MAX_DISK_PROBES {
+            warn!(
+                total = output_roots.len(),
+                limit = MAX_DISK_PROBES,
+                "More output roots than disk probes allowed; free space for the rest is not reported"
+            );
+            output_roots.truncate(MAX_DISK_PROBES);
+        }
+
+        if output_roots.is_empty() {
+            // No absolute root is discoverable — every `output_folder` is a
+            // relative template, for which `static_root_prefix` returns
+            // None. Fall back to the path the download tree is rooted at
+            // relative to the working directory so the page still reports
+            // the filesystem recordings land on.
+            let output_dir = match self.config_service.get_global_config().await {
+                Ok(cfg) => {
+                    static_root_prefix(&cfg.output_folder).unwrap_or_else(|| "./output".to_string())
+                }
+                Err(_) => "./output".to_string(),
+            };
+            let output_dir_path = match std::env::current_dir() {
+                Ok(cwd) => cwd.join(&output_dir),
+                Err(_) => PathBuf::from(output_dir.clone()),
+            };
+            self.health_checker
+                .register_probe(Arc::new(DiskSpaceProbe::new(
+                    output_dir,
+                    output_dir_path,
+                    disk_warning_threshold,
+                    disk_critical_threshold,
+                )));
+        } else {
+            for root in output_roots {
+                // `collect_output_roots` passes `OUTPUT_DIR` through
+                // `resolve_path` verbatim, which keeps a relative value
+                // relative. `SystemMetricsSnapshot::best_disk_for_path`
+                // matches against mount points, so anchor it to the working
+                // directory first or no filesystem ever matches.
+                let lookup_path = match std::env::current_dir() {
+                    Ok(cwd) => cwd.join(&root),
+                    Err(_) => root.clone(),
+                };
+                self.health_checker
+                    .register_probe(Arc::new(DiskSpaceProbe::new(
+                        root.to_string_lossy().to_string(),
+                        lookup_path,
+                        disk_warning_threshold,
+                        disk_critical_threshold,
+                    )));
+            }
+        }
 
         if let Ok(database_url) = std::env::var("DATABASE_URL")
             && let Some(db_file) = sqlite_file_path_from_url(&database_url)
@@ -812,5 +876,88 @@ impl ServiceContainer {
         });
 
         info!("Health checks registered");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metrics::{DiskSnapshot, HealthStatus};
+
+    fn snapshot_with_disk(mount_point: &str, available: u64, total: u64) -> SystemMetricsSnapshot {
+        SystemMetricsSnapshot {
+            cpu_usage: 0.0,
+            memory_usage: 0.0,
+            disks: Arc::from(
+                vec![DiskSnapshot {
+                    mount_point: std::path::PathBuf::from(mount_point),
+                    available_space: available,
+                    total_space: total,
+                }]
+                .into_boxed_slice(),
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn disk_probe_reports_capacity_while_healthy() {
+        let probe = DiskSpaceProbe::new(
+            "/rec".to_string(),
+            std::path::PathBuf::from("/rec/huya"),
+            0.80,
+            0.95,
+        );
+        let health = probe
+            .probe(snapshot_with_disk(
+                "/",
+                60 * 1024 * 1024 * 1024,
+                100 * 1024 * 1024 * 1024,
+            ))
+            .await;
+
+        assert_eq!(health.status, HealthStatus::Healthy);
+        assert!(health.message.is_none());
+        let disk = health
+            .disk
+            .expect("a resolved filesystem must report its capacity");
+        assert_eq!(disk.path, "/rec");
+        assert_eq!(disk.mount_point, "/");
+        assert_eq!(disk.available_bytes, 60 * 1024 * 1024 * 1024);
+        assert_eq!(disk.total_bytes, 100 * 1024 * 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn disk_probe_reports_capacity_while_degraded() {
+        let probe = DiskSpaceProbe::new(
+            "/rec".to_string(),
+            std::path::PathBuf::from("/rec"),
+            0.80,
+            0.95,
+        );
+        let health = probe
+            .probe(snapshot_with_disk(
+                "/",
+                10 * 1024 * 1024 * 1024,
+                100 * 1024 * 1024 * 1024,
+            ))
+            .await;
+
+        assert_eq!(health.status, HealthStatus::Degraded);
+        let disk = health.disk.expect("capacity rides along on every status");
+        assert!((disk.used_percent - 90.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn disk_probe_without_matching_filesystem_reports_unknown() {
+        let probe = DiskSpaceProbe::new(
+            "/rec".to_string(),
+            std::path::PathBuf::from("/rec"),
+            0.80,
+            0.95,
+        );
+        let health = probe.probe(SystemMetricsSnapshot::empty()).await;
+
+        assert_eq!(health.status, HealthStatus::Unknown);
+        assert!(health.disk.is_none());
     }
 }

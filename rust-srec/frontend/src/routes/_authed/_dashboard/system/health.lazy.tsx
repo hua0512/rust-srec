@@ -17,9 +17,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { HealthStatusBadge } from '@/components/health/health-status-badge';
+import { StorageUsageCard } from '@/components/health/storage-usage-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, formatDistanceToNow } from 'date-fns';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import {
   Activity,
   Cpu,
@@ -27,6 +28,7 @@ import {
   Clock,
   RefreshCw,
   AlertTriangle,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Trans } from '@lingui/react/macro';
@@ -193,6 +195,12 @@ function SystemHealthPage() {
               />
             </motion.div>
 
+            {/* Per-filesystem free space. Renders nothing when no disk
+                probe resolved a filesystem. */}
+            <motion.div variants={itemVariants}>
+              <StorageUsageCard components={health.components} />
+            </motion.div>
+
             {/* Detailed Components Table */}
             <motion.div variants={itemVariants}>
               <Card className="overflow-hidden border-white/10 bg-background/30 backdrop-blur-xl shadow-2xl">
@@ -229,7 +237,10 @@ function SystemHealthPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {health.components
+                      {/* Copy before sorting: `health.components` is the
+                          array React Query holds in its cache, and sorting
+                          in place mutates it. */}
+                      {[...health.components]
                         .sort((a, b) => a.name.localeCompare(b.name))
                         .map((component) => (
                           <TableRow
@@ -295,7 +306,20 @@ function SystemHealthPage() {
   );
 }
 
-function MetricCard({ title, icon: Icon, content, description, color }: any) {
+function MetricCard({
+  title,
+  icon: Icon,
+  content,
+  description,
+  color,
+}: {
+  title: ReactNode;
+  icon: LucideIcon;
+  content: ReactNode;
+  description: ReactNode;
+  /** Tailwind text-colour class merged onto the icon. */
+  color?: string;
+}) {
   return (
     <Card className="border-white/10 bg-background/30 backdrop-blur-xl shadow-xl transition-all hover:bg-background/40 hover:scale-[1.02]">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

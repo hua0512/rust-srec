@@ -164,6 +164,10 @@
 
 ## Web interface
 
+- **See how much disk space is left**
+
+  The system health page said no more than "Healthy" about storage, so there was no way to tell whether a clean-up was due until space had already run low. A new **Storage** section now shows, for every disk your recordings are written to, how much space is free, how much of the disk is in use, and a bar that turns amber and then red as it fills. Disks are found from your output folders, including per-streamer, template and platform overrides, so a second drive is measured too; folders on the same disk are shown together. The dashboard's **Disk** card now leads with the free space on the fullest disk instead of just a status word.
+
 - **Session timeline no longer hides events it can read**
 
   Lifecycle entries whose stored details were missing or unreadable were listed as an unrecognised event. A known entry — a session starting or ending — now shows with its proper label and a note that further details are unavailable.
