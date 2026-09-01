@@ -17,12 +17,17 @@ import {
   XCircle,
   Circle,
   PlayCircle,
+  type LucideIcon,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { type I18n } from '@lingui/core';
-import { createLazyFileRoute, Link } from '@tanstack/react-router';
+import {
+  createLazyFileRoute,
+  Link,
+  type LinkProps,
+} from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -118,7 +123,7 @@ function Dashboard() {
       toast.success(i18n._(msg`Streamer deleted`));
       void queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to delete streamer`));
     },
   });
@@ -126,7 +131,7 @@ function Dashboard() {
   const checkMutation = useMutation({
     mutationFn: (id: string) => checkStreamer({ data: id }),
     onSuccess: () => toast.success(i18n._(msg`Check triggered`)),
-    onError: (error: any) =>
+    onError: (error) =>
       toast.error(error.message || i18n._(msg`Failed to trigger check`)),
   });
 
@@ -137,7 +142,7 @@ function Dashboard() {
       toast.success(i18n._(msg`Streamer updated`));
       void queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) =>
+    onError: (error) =>
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
@@ -454,7 +459,7 @@ const ComponentStatusCard = memo(
   }: {
     name: string;
     component: ComponentHealth | undefined;
-    icon: any;
+    icon: LucideIcon;
     mounted: boolean;
     /** Replaces the status word as the card's figure, e.g. free disk space. */
     headline?: string;
@@ -573,12 +578,12 @@ const StatCard = memo(
     search,
   }: {
     title: React.ReactNode;
-    icon: any;
+    icon: LucideIcon;
     value?: number;
     color?: string;
     bg?: string;
-    href?: string;
-    search?: any;
+    href?: LinkProps['to'];
+    search?: LinkProps['search'];
   }) => {
     const content = (
       <DashboardCard
