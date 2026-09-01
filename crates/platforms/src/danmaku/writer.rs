@@ -24,11 +24,18 @@
 //! - `uid_crc32`: CRC32 hash of the sender's user ID
 //! - `row_id`: Row ID for ordering (uses message count)
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
+
+/// Capacity of the in-memory buffer in front of the XML file. A flush batch
+/// from `CollectionRunner::flush_buffer` is at most `MAX_BUFFER_SIZE` messages
+/// of a few hundred bytes each, so one batch fits without an intermediate
+/// write.
+const FILE_BUFFER_CAPACITY: usize = 64 * 1024;
 
 use crate::danmaku::error::Result;
 use crate::danmaku::message::{DanmuMessage, DanmuType};
@@ -60,7 +67,7 @@ const DEFAULT_POOL: u8 = 0;
 /// ```
 pub struct XmlDanmuWriter {
     path: PathBuf,
-    file: Option<File>,
+    file: Option<BufWriter<File>>,
     message_count: u64,
     /// The start time of the current segment.
     /// Timestamps are written as second offsets from this time.
@@ -91,7 +98,7 @@ impl XmlDanmuWriter {
         segment_start_time: DateTime<Utc>,
         header_comments: Vec<String>,
     ) -> Result<Self> {
-        let file = File::create(path).await?;
+        let file = BufWriter::with_capacity(FILE_BUFFER_CAPACITY, File::create(path).await?);
         let mut writer = Self {
             path: path.to_path_buf(),
             file: Some(file),
@@ -193,11 +200,19 @@ impl XmlDanmuWriter {
             };
             file.write_all(xml.as_bytes()).await?;
             self.message_count += 1;
+        }
+        Ok(())
+    }
 
-            // Flush periodically
-            if self.message_count.is_multiple_of(100) {
-                file.flush().await?;
-            }
+    /// Hand everything buffered so far to the operating system.
+    ///
+    /// `write_message` only appends to the in-memory buffer; callers that
+    /// write messages in batches (`CollectionRunner::flush_buffer`) call this
+    /// once per batch so the file grows in one write per batch instead of one
+    /// per message.
+    pub async fn flush(&mut self) -> Result<()> {
+        if let Some(file) = &mut self.file {
+            file.flush().await?;
         }
         Ok(())
     }
@@ -281,11 +296,10 @@ fn message_color_to_bilibili_color(message: &DanmuMessage) -> Option<u32> {
     u32::from_str_radix(hex, 16).ok()
 }
 
-fn message_content_for_xml(message: &DanmuMessage) -> String {
+fn message_content_for_xml(message: &DanmuMessage) -> Cow<'_, str> {
     match message.message_type {
         DanmuType::SuperChat => {
             let content = message.content.trim();
-            let content = content.to_string();
 
             let price = message
                 .metadata
@@ -295,21 +309,21 @@ fn message_content_for_xml(message: &DanmuMessage) -> String {
                 .unwrap_or(0);
 
             if price > 0 && !content.is_empty() {
-                format!("[SC ￥{}] {}", price, content)
+                Cow::Owned(format!("[SC ￥{}] {}", price, content))
             } else if price > 0 {
-                format!("[SC ￥{}]", price)
+                Cow::Owned(format!("[SC ￥{}]", price))
             } else {
-                content
+                Cow::Borrowed(content)
             }
         }
         DanmuType::Gift => {
             let content = message.content.trim();
             if !content.is_empty() {
-                return content.to_string();
+                return Cow::Borrowed(content);
             }
 
             let Some(metadata) = message.metadata.as_ref() else {
-                return String::new();
+                return Cow::Borrowed("");
             };
 
             let gift_name = metadata
@@ -322,12 +336,12 @@ fn message_content_for_xml(message: &DanmuMessage) -> String {
                 .unwrap_or(0);
 
             if gift_count > 0 && !gift_name.is_empty() {
-                format!("赠送 {} x{}", gift_name, gift_count)
+                Cow::Owned(format!("赠送 {} x{}", gift_name, gift_count))
             } else {
-                String::new()
+                Cow::Borrowed("")
             }
         }
-        _ => message.content.clone(),
+        _ => Cow::Borrowed(&message.content),
     }
 }
 
@@ -386,8 +400,14 @@ fn super_chat_to_xml(message: &DanmuMessage, ts: f64, timestamp_ms: i64) -> Stri
 }
 
 /// Escape special XML characters in a string.
-pub fn escape_xml(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
+///
+/// Borrows the input when it contains nothing to escape, which is the common
+/// case for usernames and chat content.
+pub fn escape_xml(s: &str) -> Cow<'_, str> {
+    if !s.contains(['&', '<', '>', '"', '\'']) {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len() + 8);
     for ch in s.chars() {
         match ch {
             '&' => out.push_str("&amp;"),
@@ -398,7 +418,7 @@ pub fn escape_xml(s: &str) -> String {
             _ => out.push(ch),
         }
     }
-    out
+    Cow::Owned(out)
 }
 
 /// Calculate CRC32 hash of a string.

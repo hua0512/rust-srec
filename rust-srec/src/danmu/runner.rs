@@ -680,10 +680,11 @@ impl CollectionRunner {
             // Sort messages by timestamp
             self.message_buffer.sort_by_key(|m| m.timestamp);
 
-            // Write all messages
+            // Write all messages, then hand the batch to the OS in one write.
             for message in self.message_buffer.drain(..) {
                 writer.write_message(&message).await?;
             }
+            writer.flush().await?;
         }
 
         Ok(())
