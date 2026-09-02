@@ -1,9 +1,5 @@
 import { parseStoredSession } from './session-storage';
-import {
-  resolveCookieSecurity,
-  resolveSessionSecret,
-  warnInsecureCookieOnce,
-} from './session.server';
+import { resolveCookieSecurity, resolveSessionSecret } from './session.server';
 
 describe('parseStoredSession', () => {
   it('returns an object from valid JSON', () => {
@@ -47,30 +43,12 @@ describe('resolveCookieSecurity', () => {
     ['https, http', true],
     ['http, https', false],
     ['http', false],
+    ['', false],
   ])('reads X-Forwarded-Proto %p', (forwardedProto, secure) => {
     expect(resolveCookieSecurity({ forwardedProto })).toEqual({
       secure,
       warnInsecure: false,
     });
-  });
-
-  it.each([
-    ['for=192.0.2.60;proto=https;by=203.0.113.43', true],
-    ['proto="https"', true],
-    ['proto=HTTPS, proto=http', true],
-    ['for=192.0.2.60;proto=http', false],
-    ['for=192.0.2.60', false],
-  ])('falls back to the Forwarded header %p', (forwarded, secure) => {
-    expect(resolveCookieSecurity({ forwarded }).secure).toBe(secure);
-  });
-
-  it('prefers X-Forwarded-Proto over Forwarded', () => {
-    expect(
-      resolveCookieSecurity({
-        forwardedProto: 'https',
-        forwarded: 'proto=http',
-      }).secure,
-    ).toBe(true);
   });
 
   it('assumes HTTPS in production when no proxy header is present', () => {
@@ -119,7 +97,11 @@ describe('resolveCookieSecurity', () => {
 });
 
 describe('warnInsecureCookieOnce', () => {
-  it('logs at most once per process', () => {
+  it('logs once per module instance', async () => {
+    // The guard is module state, so load a fresh copy instead of inheriting
+    // whatever earlier tests left behind.
+    vi.resetModules();
+    const { warnInsecureCookieOnce } = await import('./session.server');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     warnInsecureCookieOnce();

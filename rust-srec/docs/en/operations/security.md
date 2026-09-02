@@ -12,7 +12,7 @@ Rust-Srec handles access tokens, platform cookies, notification credentials, rec
 
 ## Network and Session Security
 
-Terminate TLS before the frontend, set `COOKIE_SECURE=true`, and restrict both host ports with a firewall. Keep the backend private unless direct API consumers need it. Do not expose Swagger, media proxy routes, or logs to anonymous Internet clients.
+Terminate TLS before the frontend, set `COOKIE_SECURE=true` only if the proxy does not send `X-Forwarded-Proto: https`, and restrict both host ports with a firewall. Keep the backend private unless direct API consumers need it. Do not expose Swagger, media proxy routes, or logs to anonymous Internet clients.
 
 The stream proxy blocks private-network targets by default. Enabling `stream_proxy_allow_private_targets` allows authenticated users to make the service fetch internal addresses; enable it only for an explicit LAN-camera or restream use case.
 

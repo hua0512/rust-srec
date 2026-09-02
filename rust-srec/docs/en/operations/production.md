@@ -21,7 +21,7 @@ Keep the backend, database, configuration, and output paths on one trusted host.
 1. Use the [Docker deployment](../getting-started/docker.md) and set `VERSION=v0.5.1` for both images. Avoid `latest` where changes must be reviewed before rollout.
 2. Generate unique values for `JWT_SECRET` and `SESSION_SECRET`; store the `.env` file with restrictive permissions.
 3. Bind host ports to a private address or loopback. In Compose, a loopback-only mapping takes the form `127.0.0.1:15275:80` and `127.0.0.1:12555:8080`.
-4. Terminate HTTPS at a maintained reverse proxy and forward `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto`. The session cookie is marked `Secure` automatically once the proxy sends `X-Forwarded-Proto: https` (an RFC 7239 `Forwarded: proto=https` also works). If the proxy cannot send either header, set `COOKIE_SECURE=true` explicitly.
+4. Terminate HTTPS at a maintained reverse proxy and forward `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto`. The session cookie is marked `Secure` automatically once the proxy sends `X-Forwarded-Proto: https`. If the proxy cannot send that header, set `COOKIE_SECURE=true` explicitly.
 5. Put `DATA_DIR`, `CONFIG_DIR`, `OUTPUT_DIR`, and `LOG_DIR` on persistent storage. Size and monitor the output volume separately from the system disk.
 6. Set resource and application concurrency limits for the host. Start conservatively and load-test the expected number and bitrate of simultaneous streams.
 7. Configure notifications for recording failures, pipeline failures, credential expiry, and output-root write failures.

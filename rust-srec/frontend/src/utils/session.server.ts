@@ -30,8 +30,6 @@ export type CookieSecuritySignals = {
   cookieSecure?: string;
   /** Raw `X-Forwarded-Proto` request header. */
   forwardedProto?: string;
-  /** Raw RFC 7239 `Forwarded` request header. */
-  forwarded?: string;
   nodeEnv?: string;
 };
 
@@ -49,48 +47,25 @@ function firstXForwardedProto(header: string | undefined): string | undefined {
   return first || undefined;
 }
 
-// RFC 7239 `Forwarded: for=1.2.3.4;proto=https, for=...`; read `proto` from the
-// first element, which is the hop closest to the client.
-function firstForwardedHeaderProto(
-  header: string | undefined,
-): string | undefined {
-  if (!header) return undefined;
-  for (const pair of (header.split(',')[0] ?? '').split(';')) {
-    const separator = pair.indexOf('=');
-    if (separator < 0) continue;
-    if (pair.slice(0, separator).trim().toLowerCase() !== 'proto') continue;
-    const value = pair
-      .slice(separator + 1)
-      .trim()
-      .replace(/^"|"$/g, '')
-      .toLowerCase();
-    if (value) return value;
-  }
-  return undefined;
-}
-
 /**
  * Decides the `secure` attribute of the `srec_session` cookie.
  *
  * Priority:
  * 1. `COOKIE_SECURE`: `true` = always secure, `false` = never secure.
- * 2. The proxy-supplied scheme (`X-Forwarded-Proto`, then `Forwarded`). Plain
- *    HTTP stays non-secure so LAN deployments without TLS can still sign in.
- * 3. `NODE_ENV`, i.e. secure in production when no proxy header is present.
+ * 2. The scheme reported in `X-Forwarded-Proto`. Plain HTTP stays non-secure so
+ *    LAN deployments without TLS can still sign in.
+ * 3. `NODE_ENV`, i.e. secure in production when the header is absent or empty.
  */
 export function resolveCookieSecurity({
   cookieSecure,
   forwardedProto,
-  forwarded,
   nodeEnv,
 }: CookieSecuritySignals): CookieSecurity {
   const override = cookieSecure?.trim().toLowerCase();
   if (override === 'true') return { secure: true, warnInsecure: false };
   if (override === 'false') return { secure: false, warnInsecure: false };
 
-  const proto =
-    firstXForwardedProto(forwardedProto) ??
-    firstForwardedHeaderProto(forwarded);
+  const proto = firstXForwardedProto(forwardedProto);
   const secure = proto ? proto === 'https' : nodeEnv === 'production';
 
   return { secure, warnInsecure: !secure && nodeEnv === 'production' };
@@ -161,18 +136,16 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
 
   // getRequestHeader throws outside of a request context (e.g. prerendering),
   // which leaves resolveCookieSecurity on its NODE_ENV fallback.
-  const readHeader = (name: string): string | undefined => {
-    try {
-      return getRequestHeader(name);
-    } catch {
-      return undefined;
-    }
-  };
+  let forwardedProto: string | undefined;
+  try {
+    forwardedProto = getRequestHeader('x-forwarded-proto');
+  } catch {
+    forwardedProto = undefined;
+  }
 
   const { secure, warnInsecure } = resolveCookieSecurity({
     cookieSecure: process.env.COOKIE_SECURE,
-    forwardedProto: readHeader('x-forwarded-proto'),
-    forwarded: readHeader('forwarded'),
+    forwardedProto,
     nodeEnv: process.env.NODE_ENV,
   });
   if (warnInsecure) warnInsecureCookieOnce();
