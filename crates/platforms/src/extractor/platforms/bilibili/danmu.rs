@@ -97,7 +97,9 @@ struct AuthData {
 /// Decoded packet
 struct DecodedPacket {
     operation: u32,
-    body: Vec<u8>,
+    /// Slice of the frame (or of the decompressed buffer) the packet came
+    /// from; refcounted, so packets never copy their body.
+    body: Bytes,
 }
 
 /// Bilibili Danmu Protocol Implementation
@@ -330,7 +332,7 @@ impl BilibiliDanmuProtocol {
     }
 
     /// Decode packets, handling compression.
-    fn decode_packets(data: &[u8]) -> Vec<DecodedPacket> {
+    fn decode_packets(data: &Bytes) -> Vec<DecodedPacket> {
         let mut packets = Vec::new();
         let mut offset = 0;
 
@@ -351,18 +353,18 @@ impl BilibiliDanmuProtocol {
             match version {
                 ver::ZLIB => {
                     if let Ok(decompressed) = decompress_zlib(body) {
-                        packets.extend(Self::decode_packets(&decompressed));
+                        packets.extend(Self::decode_packets(&Bytes::from(decompressed)));
                     }
                 }
                 ver::BROTLI => {
                     if let Ok(decompressed) = decompress_brotli(body) {
-                        packets.extend(Self::decode_packets(&decompressed));
+                        packets.extend(Self::decode_packets(&Bytes::from(decompressed)));
                     }
                 }
                 ver::RAW_JSON | ver::POPULARITY => {
                     packets.push(DecodedPacket {
                         operation,
-                        body: body.to_vec(),
+                        body: data.slice(offset + 16..offset + packet_len),
                     });
                 }
                 _ => {
@@ -376,8 +378,37 @@ impl BilibiliDanmuProtocol {
         packets
     }
 
+    /// Commands `parse_notification` turns into items; everything else is
+    /// dropped.
+    fn handles_command(cmd_base: &str) -> bool {
+        matches!(
+            cmd_base,
+            "DANMU_MSG"
+                | "DANMU_MSG_MIRROR"
+                | "SEND_GIFT"
+                | "SUPER_CHAT_MESSAGE"
+                | "ROOM_CHANGE"
+                | "ROOM_LOCK"
+                | "CUT_OFF"
+        )
+    }
+
     /// Parse a notification message (op=5) into a danmu item.
     fn parse_notification(body: &[u8]) -> Option<DanmuItem> {
+        // Bilibili serialises `cmd` as the first key. Most notifications
+        // (INTERACT_WORD, ONLINE_RANK_*, WATCHED_CHANGE, STOP_LIVE_ROOM_LIST,
+        // ...) are dropped anyway, so when that layout holds and the command
+        // is not handled, skip the frame before it becomes a `Value` tree.
+        // Any other layout, or a command with escapes, takes the full parse.
+        if let Some(rest) = body.strip_prefix(b"{\"cmd\":\"")
+            && let Some(end) = rest.iter().position(|&b| b == b'"')
+            && let Ok(cmd) = std::str::from_utf8(&rest[..end])
+            && !cmd.contains('\\')
+            && !Self::handles_command(cmd.split(':').next().unwrap_or(cmd))
+        {
+            return None;
+        }
+
         let json: Value = serde_json::from_slice(body).ok()?;
         let cmd = json.get("cmd")?.as_str()?;
 
@@ -808,7 +839,7 @@ mod tests {
             let mut packet = vec![0_u8; 16];
             BigEndian::write_u32(&mut packet[0..4], packet_len);
 
-            assert!(BilibiliDanmuProtocol::decode_packets(&packet).is_empty());
+            assert!(BilibiliDanmuProtocol::decode_packets(&Bytes::from(packet)).is_empty());
         }
     }
 
@@ -817,7 +848,7 @@ mod tests {
         let mut packet = vec![0_u8; 16];
         BigEndian::write_u32(&mut packet[0..4], 17);
 
-        assert!(BilibiliDanmuProtocol::decode_packets(&packet).is_empty());
+        assert!(BilibiliDanmuProtocol::decode_packets(&Bytes::from(packet)).is_empty());
     }
 
     #[test]

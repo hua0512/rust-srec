@@ -44,8 +44,9 @@ impl TwitchDanmuProtocol {
             return None;
         }
 
-        // Parse tags
-        let mut tags = std::collections::HashMap::new();
+        // Parse tags. Keys and values borrow from `line`; only the three or
+        // four tags the message uses are copied out below.
+        let mut tags: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
         let mut remaining = line;
 
         if line.starts_with('@')
@@ -56,7 +57,7 @@ impl TwitchDanmuProtocol {
                 if let Some(eq_idx) = tag.find('=') {
                     let key = &tag[..eq_idx];
                     let value = &tag[eq_idx + 1..];
-                    tags.insert(key.to_string(), value.to_string());
+                    tags.insert(key, value);
                 }
             }
             remaining = &line[space_idx + 1..];
@@ -83,18 +84,15 @@ impl TwitchDanmuProtocol {
 
         let display_name = tags
             .get("display-name")
-            .cloned()
-            .unwrap_or_else(|| username.to_string());
+            .map_or_else(|| username.to_string(), |s| s.to_string());
 
         let user_id = tags
             .get("user-id")
-            .cloned()
-            .unwrap_or_else(|| username.to_string());
+            .map_or_else(|| username.to_string(), |s| s.to_string());
 
         let message_id = tags
             .get("id")
-            .cloned()
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            .map_or_else(|| uuid::Uuid::new_v4().to_string(), |s| s.to_string());
 
         let mut msg = DanmuMessage::chat(message_id, user_id, display_name, content.trim());
 
@@ -102,7 +100,7 @@ impl TwitchDanmuProtocol {
         if let Some(color) = tags.get("color")
             && !color.is_empty()
         {
-            msg = msg.with_color(color);
+            msg = msg.with_color(*color);
         }
 
         // Add badges as metadata

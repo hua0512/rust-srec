@@ -4,7 +4,7 @@
 
 use rustc_hash::FxHashMap;
 
-use super::stt::{stt_decode, stt_encode};
+use super::stt::{SttMap, stt_encode};
 
 /// Message types used in the Douyu danmu protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,20 +126,26 @@ pub struct DouyuChatMessage {
 
 impl DouyuChatMessage {
     /// Parse a chat message from decoded STT map.
-    pub fn from_map(map: &FxHashMap<String, String>) -> Option<Self> {
+    pub fn from_map(map: &SttMap<'_>) -> Option<Self> {
         // Required fields
-        let nickname = map.get("nn")?.clone();
-        let content = map.get("txt")?.clone();
+        let nickname = map.get("nn")?.to_string();
+        let content = map.get("txt")?.to_string();
 
         // Optional fields with defaults
-        let id = map.get("cid").cloned().unwrap_or_default();
-        let uid = map.get("uid").cloned().unwrap_or_default();
-        let room_id = map.get("rid").cloned().unwrap_or_default();
+        let id = map.get("cid").map(|s| s.to_string()).unwrap_or_default();
+        let uid = map.get("uid").map(|s| s.to_string()).unwrap_or_default();
+        let room_id = map.get("rid").map(|s| s.to_string()).unwrap_or_default();
         let level = map.get("level").and_then(|s| s.parse().ok()).unwrap_or(0);
 
-        let badge_name = map.get("bnn").cloned().filter(|s| !s.is_empty());
+        let badge_name = map
+            .get("bnn")
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
         let badge_level = map.get("bl").and_then(|s| s.parse().ok());
-        let platform = map.get("plat").cloned().filter(|s| !s.is_empty());
+        let platform = map
+            .get("plat")
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
         let noble_level = map.get("nl").and_then(|s| s.parse().ok());
 
         // Color is provided as an integer in the col field
@@ -199,17 +205,17 @@ pub struct DouyuGiftMessage {
 
 impl DouyuGiftMessage {
     /// Parse a gift message from decoded STT map.
-    pub fn from_map(map: &FxHashMap<String, String>) -> Option<Self> {
+    pub fn from_map(map: &SttMap<'_>) -> Option<Self> {
         // Required fields
-        let nickname = map.get("nn")?.clone();
-        let gift_id = map.get("gfid")?.clone();
+        let nickname = map.get("nn")?.to_string();
+        let gift_id = map.get("gfid")?.to_string();
 
         // Optional fields with defaults
-        let uid = map.get("uid").cloned().unwrap_or_default();
-        let room_id = map.get("rid").cloned().unwrap_or_default();
+        let uid = map.get("uid").map(|s| s.to_string()).unwrap_or_default();
+        let room_id = map.get("rid").map(|s| s.to_string()).unwrap_or_default();
         let gift_name = map
             .get("gfname")
-            .cloned()
+            .map(|s| s.to_string())
             .unwrap_or_else(|| "Gift".to_string());
         let gift_count = map.get("gfcnt").and_then(|s| s.parse().ok()).unwrap_or(1);
         let hits = map.get("hits").and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -227,15 +233,20 @@ impl DouyuGiftMessage {
 }
 
 /// Parse the message type from an STT-decoded map.
-pub fn get_message_type(map: &FxHashMap<String, String>) -> DouyuMessageType {
+///
+/// The protocol reads the type with `stt_message_type` before deciding
+/// whether to decode at all; this map-based form remains for tests.
+#[cfg(test)]
+pub fn get_message_type(map: &SttMap<'_>) -> DouyuMessageType {
     map.get("type")
         .map(|s| DouyuMessageType::from_str(s))
         .unwrap_or(DouyuMessageType::Unknown)
 }
 
 /// Parse a raw STT payload and return the message type and decoded map.
-pub fn parse_message(payload: &str) -> (DouyuMessageType, FxHashMap<String, String>) {
-    let map = stt_decode(payload);
+#[cfg(test)]
+pub fn parse_message(payload: &str) -> (DouyuMessageType, SttMap<'_>) {
+    let map = super::stt::stt_decode(payload);
     let msg_type = get_message_type(&map);
     (msg_type, map)
 }
