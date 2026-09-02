@@ -59,6 +59,8 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 | `delete` | 自动清理中间文件 | - |
 | `execute` | 执行自定义 Shell 脚本 | `command`, `scan_output_dir`, `scan_extension` |
 
+`execute` 命令中的 `{input}`、`{output}`、`{streamer}`、`{title}` 等占位符，其取值会自动加引号后再交给 Shell，因此包含空格、引号、`$` 或 `;` 的路径和标题都会以纯文本形式传入。占位符按原样书写即可（加不加引号都行），不需要自己再做转义。命令的其余部分不受影响，管道符、`&&` 和重定向照常可用。
+
 ### 百度网盘（`baidupcs`）
 
 `baidupcs` 处理器通过外部 [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) 命令行工具将录像上传到百度网盘（Docker 镜像已内置；裸机部署需自行安装，若不在 `PATH` 中可通过 `BAIDUPCS_PATH` 指定路径）。

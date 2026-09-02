@@ -9,7 +9,7 @@ use tracing::debug;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
-use crate::utils::filename::expand_placeholders;
+use crate::utils::filename::sanitize_filename;
 
 /// Configuration for execute command processor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +29,10 @@ pub struct ExecuteConfig {
     /// - `{title}` - sanitized session title (falls back to empty)
     /// - `{platform}` - platform name (falls back to empty)
     /// - time placeholders like `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%t`, and `%%`
+    ///
+    /// Substituted values are quoted for the shell by `substitute_variables`,
+    /// so a path or title containing spaces, quotes or `$` stays one literal
+    /// word; the command may still use pipes, `&&` and redirects itself.
     pub command: String,
 
     /// Directory to scan for new files after command execution.
@@ -42,6 +46,161 @@ pub struct ExecuteConfig {
     /// If not specified, all new files are included.
     #[serde(default)]
     pub scan_extension: Option<String>,
+}
+
+/// Shell that will interpret the command built by
+/// `ExecuteCommandProcessor::substitute_variables`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShellKind {
+    /// `sh -c <command>`.
+    Posix,
+    /// `cmd /C <command>`.
+    Cmd,
+}
+
+/// Shell that `Processor::process` spawns; keeps the escaping applied by
+/// `substitute_variables` in step with the interpreter that receives it.
+const SHELL: ShellKind = if cfg!(windows) {
+    ShellKind::Cmd
+} else {
+    ShellKind::Posix
+};
+
+/// Quoting context of a command template at a given byte offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuoteState {
+    Unquoted,
+    Single,
+    Double,
+}
+
+/// Escape `value` so a POSIX shell reads it as literal text at a point where
+/// the surrounding template is in `state`.
+fn escape_posix(value: &str, state: QuoteState) -> String {
+    match state {
+        // Wrap the whole value so spaces and every metacharacter lose meaning.
+        QuoteState::Unquoted => {
+            let mut out = String::with_capacity(value.len() + 2);
+            out.push('\'');
+            for c in value.chars() {
+                if c == '\'' {
+                    out.push_str(r"'\''");
+                } else {
+                    out.push(c);
+                }
+            }
+            out.push('\'');
+            out
+        }
+        // Already inside `'...'`: close, emit an escaped quote, reopen, so the
+        // template's own closing quote still lands where it was written.
+        QuoteState::Single => value.replace('\'', r"'\''"),
+        // Inside `"..."` only these four keep a special meaning.
+        QuoteState::Double => {
+            let mut out = String::with_capacity(value.len());
+            for c in value.chars() {
+                if matches!(c, '\\' | '"' | '$' | '`') {
+                    out.push('\\');
+                }
+                out.push(c);
+            }
+            out
+        }
+    }
+}
+
+/// Escape `value` for `cmd /C` at a point where the template is in `state`.
+///
+/// cmd.exe offers no escape for `"` inside a quoted string, so a `"` in the
+/// value is dropped rather than left to end the quoted region early. `%` is
+/// doubled to blunt `%VAR%` expansion; cmd re-scans the line after expanding
+/// it, so unlike `escape_posix` this is a mitigation, not a guarantee.
+fn escape_cmd(value: &str, state: QuoteState) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '"' => {}
+            '%' => escaped.push_str("%%"),
+            _ => escaped.push(c),
+        }
+    }
+
+    match state {
+        // Quote so `&`, `|`, `<`, `>` and spaces stay inside the argument.
+        QuoteState::Unquoted => format!("\"{escaped}\""),
+        QuoteState::Single | QuoteState::Double => escaped,
+    }
+}
+
+/// Replace every `{name}` in `template` that `resolve` recognises with its
+/// value, escaped for the quoting the template is in at that occurrence.
+///
+/// The template is scanned once, left to right, so a value containing a quote
+/// character cannot change the state seen by a later placeholder. Quote
+/// characters written by the template are preserved verbatim, so a preset that
+/// already writes `"{input}"` stays one double-quoted word instead of gaining
+/// a second layer of quoting. Names `resolve` returns `None` for are left as
+/// written.
+fn substitute_placeholders<'a>(
+    template: &str,
+    shell: ShellKind,
+    resolve: impl Fn(&str) -> Option<&'a str>,
+) -> String {
+    let mut out = String::with_capacity(template.len());
+    let bytes = template.as_bytes();
+    let mut state = QuoteState::Unquoted;
+    // Start of the run of template bytes not yet copied into `out`.
+    let mut chunk_start = 0usize;
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            // Skip past the escaped byte so `\"` does not flip `state`.
+            b'\\' if shell == ShellKind::Posix && state != QuoteState::Single => {
+                i = bytes.len().min(i + 2);
+            }
+            b'\'' if shell == ShellKind::Posix && state != QuoteState::Double => {
+                state = if state == QuoteState::Single {
+                    QuoteState::Unquoted
+                } else {
+                    QuoteState::Single
+                };
+                i += 1;
+            }
+            b'"' if state != QuoteState::Single => {
+                state = if state == QuoteState::Double {
+                    QuoteState::Unquoted
+                } else {
+                    QuoteState::Double
+                };
+                i += 1;
+            }
+            b'{' => {
+                let name_start = i + 1;
+                let resolved = template[name_start..].find('}').and_then(|offset| {
+                    resolve(&template[name_start..name_start + offset])
+                        .map(|value| (value, name_start + offset + 1))
+                });
+
+                match resolved {
+                    Some((value, after)) => {
+                        out.push_str(&template[chunk_start..i]);
+                        out.push_str(&match shell {
+                            ShellKind::Posix => escape_posix(value, state),
+                            ShellKind::Cmd => escape_cmd(value, state),
+                        });
+                        i = after;
+                        chunk_start = after;
+                    }
+                    None => i += 1,
+                }
+            }
+            _ => i += 1,
+        }
+    }
+
+    out.push_str(&template[chunk_start..]);
+    out
 }
 
 /// Processor for executing arbitrary shell commands.
@@ -64,16 +223,21 @@ impl ExecuteCommandProcessor {
         self
     }
 
-    /// Substitute variables in a command string.
+    /// Substitute variables in a command string for the shell that will run it.
     fn substitute_variables(command: &str, input: &ProcessorInput) -> String {
-        let command = expand_placeholders(
-            command,
-            &input.streamer_id,
-            &input.session_id,
-            input.streamer_name.as_deref(),
-            input.session_title.as_deref(),
-            input.platform.as_deref(),
-        );
+        Self::substitute_variables_for(SHELL, command, input)
+    }
+
+    /// Expand the template's own `%Y`-style placeholders, then splice in the
+    /// `{...}` values escaped for `shell`.
+    ///
+    /// Values carry platform-supplied text (a recording path built from the
+    /// stream title, `{title}`, `{streamer}`), so they are treated as data
+    /// rather than as command syntax: time placeholders belong to the template
+    /// and are expanded first, which leaves a `%` arriving with a value literal
+    /// and keeps `escape_cmd`'s doubled `%%` intact.
+    fn substitute_variables_for(shell: ShellKind, command: &str, input: &ProcessorInput) -> String {
+        let template = pipeline_common::expand_path_template(command);
 
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
         let output_path = input.outputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -82,22 +246,41 @@ impl ExecuteCommandProcessor {
         let outputs_json =
             serde_json::to_string(&input.outputs).unwrap_or_else(|_| "[]".to_string());
 
-        let mut expanded = command
-            .replace("{input}", input_path)
-            .replace("{output}", output_path)
-            .replace("{inputs_json}", &inputs_json)
-            .replace("{outputs_json}", &outputs_json)
-            .replace("{streamer_id}", &input.streamer_id)
-            .replace("{session_id}", &input.session_id);
+        // Same fallbacks as utils::filename::expand_placeholders: `{streamer}`
+        // degrades to the id, `{title}` to empty, both filesystem-sanitized.
+        let streamer_display = input
+            .streamer_name
+            .as_deref()
+            .map(sanitize_filename)
+            .unwrap_or_else(|| input.streamer_id.clone());
+        let title_display = input
+            .session_title
+            .as_deref()
+            .map(sanitize_filename)
+            .unwrap_or_default();
 
-        for (i, v) in input.inputs.iter().enumerate() {
-            expanded = expanded.replace(&format!("{{input{i}}}"), v);
-        }
-        for (i, v) in input.outputs.iter().enumerate() {
-            expanded = expanded.replace(&format!("{{output{i}}}"), v);
-        }
-
-        expanded
+        substitute_placeholders(&template, shell, |name| match name {
+            "input" => Some(input_path),
+            "output" => Some(output_path),
+            "inputs_json" => Some(inputs_json.as_str()),
+            "outputs_json" => Some(outputs_json.as_str()),
+            "streamer_id" => Some(input.streamer_id.as_str()),
+            "session_id" => Some(input.session_id.as_str()),
+            "streamer" => Some(streamer_display.as_str()),
+            "title" => Some(title_display.as_str()),
+            "platform" => Some(input.platform.as_deref().unwrap_or("")),
+            // `{inputN}` / `{outputN}` past the end of the list stay literal.
+            _ => name
+                .strip_prefix("input")
+                .and_then(|index| index.parse::<usize>().ok())
+                .and_then(|index| input.inputs.get(index))
+                .or_else(|| {
+                    name.strip_prefix("output")
+                        .and_then(|index| index.parse::<usize>().ok())
+                        .and_then(|index| input.outputs.get(index))
+                })
+                .map(String::as_str),
+        })
     }
 
     fn parse_config(input: &ProcessorInput) -> Result<ExecuteConfig> {
@@ -267,8 +450,15 @@ impl Processor for ExecuteCommandProcessor {
         // Build command
         #[cfg(windows)]
         let mut cmd = {
+            use std::os::windows::process::CommandExt;
+
             let mut c = Command::new("cmd");
-            c.args(["/C", &command]);
+            c.arg("/C");
+            // Append the command line verbatim: the default argument quoting
+            // escapes an embedded `"` as `\"`, which cmd.exe passes through
+            // literally instead of unescaping, corrupting every quoted value
+            // that escape_cmd placed in the command.
+            c.as_std_mut().raw_arg(&command);
             c
         };
 
@@ -440,9 +630,10 @@ mod tests {
         };
 
         let command = "echo {input} {output} {streamer_id}";
-        let result = ExecuteCommandProcessor::substitute_variables(command, &input);
+        let result =
+            ExecuteCommandProcessor::substitute_variables_for(ShellKind::Posix, command, &input);
 
-        assert_eq!(result, "echo /input.flv /output.mp4 streamer-1");
+        assert_eq!(result, "echo '/input.flv' '/output.mp4' 'streamer-1'");
     }
 
     #[test]
@@ -709,16 +900,30 @@ mod tests {
         };
 
         let cmd = "echo {input} {input0} {input1} {output} {output1} {inputs_json} {outputs_json} {streamer_id} {session_id}";
-        let out = ExecuteCommandProcessor::substitute_variables(cmd, &input);
+        let out = ExecuteCommandProcessor::substitute_variables_for(ShellKind::Posix, cmd, &input);
 
-        assert!(out.contains("/in0.mp4"));
-        assert!(out.contains("/in1.json"));
-        assert!(out.contains("/out0.mp4"));
-        assert!(out.contains("/out1.json"));
-        assert!(out.contains("[\"/in0.mp4\",\"/in1.json\"]"));
-        assert!(out.contains("[\"/out0.mp4\",\"/out1.json\"]"));
-        assert!(out.contains(" s "));
-        assert!(out.contains(" sess"));
+        assert_eq!(
+            out,
+            "echo '/in0.mp4' '/in0.mp4' '/in1.json' '/out0.mp4' '/out1.json' \
+             '[\"/in0.mp4\",\"/in1.json\"]' '[\"/out0.mp4\",\"/out1.json\"]' 's' 'sess'"
+        );
+    }
+
+    #[test]
+    fn test_substitute_variables_leaves_unknown_placeholders() {
+        let input = ProcessorInput {
+            inputs: vec!["/in0.mp4".to_string()],
+            outputs: vec![],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo {input3} {nope} {",
+            &input,
+        );
+
+        assert_eq!(out, "echo {input3} {nope} {");
     }
 
     #[test]
@@ -736,13 +941,12 @@ mod tests {
         };
 
         let cmd = "echo {platform} {streamer} {title} {streamer_id} {session_id}";
-        let out = ExecuteCommandProcessor::substitute_variables(cmd, &input);
+        let out = ExecuteCommandProcessor::substitute_variables_for(ShellKind::Posix, cmd, &input);
 
-        assert!(out.contains("Twitch"));
-        assert!(out.contains("Streamer_Name_"));
-        assert!(out.contains("Title_With_Colons"));
-        assert!(out.contains("streamer-123"));
-        assert!(out.contains("session-456"));
+        assert_eq!(
+            out,
+            "echo 'Twitch' 'Streamer_Name_' 'Title_With_Colons' 'streamer-123' 'session-456'"
+        );
     }
 
     #[test]
@@ -761,6 +965,184 @@ mod tests {
             err.to_string()
                 .contains("Invalid execute processor config object")
         );
+    }
+
+    /// A recording path built from a platform-supplied title can carry every
+    /// shell metacharacter `utils::filename::sanitize_filename` leaves alone.
+    const HOSTILE: &str = r#"/rec/a b$(id);`id`'q"&.mp4"#;
+
+    fn hostile_input() -> ProcessorInput {
+        ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec![],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_posix_escaping_unquoted_placeholder() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo {input}",
+            &hostile_input(),
+        );
+
+        assert_eq!(out, r#"echo '/rec/a b$(id);`id`'\''q"&.mp4'"#);
+    }
+
+    #[test]
+    fn test_posix_escaping_inside_double_quotes() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo \"{input}\"",
+            &hostile_input(),
+        );
+
+        assert_eq!(out, r#"echo "/rec/a b\$(id);\`id\`'q\"&.mp4""#);
+    }
+
+    #[test]
+    fn test_posix_escaping_inside_single_quotes() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo '{input}'",
+            &hostile_input(),
+        );
+
+        assert_eq!(out, r#"echo '/rec/a b$(id);`id`'\''q"&.mp4'"#);
+    }
+
+    /// A backslash-escaped quote is not a quote, so the placeholder after it is
+    /// still unquoted and must be wrapped by `escape_posix`.
+    #[test]
+    fn test_posix_escaped_quote_does_not_open_a_quoted_region() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo \\\"{input}\\\"",
+            &hostile_input(),
+        );
+
+        assert_eq!(out, r#"echo \"'/rec/a b$(id);`id`'\''q"&.mp4'\""#);
+    }
+
+    /// The quote a value contributes must not change the state the next
+    /// placeholder is escaped for.
+    #[test]
+    fn test_posix_value_quote_does_not_leak_into_later_placeholders() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec!["/out.mp4".to_string()],
+            streamer_id: "s1".to_string(),
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo \"{input}\" {output} '{streamer_id}'",
+            &input,
+        );
+
+        assert_eq!(
+            out,
+            r#"echo "/rec/a b\$(id);\`id\`'q\"&.mp4" '/out.mp4' 's1'"#
+        );
+    }
+
+    /// Time placeholders belong to the template, so a `%` arriving with a value
+    /// stays literal.
+    #[test]
+    fn test_percent_in_value_is_not_expanded_as_a_time_placeholder() {
+        let input = ProcessorInput {
+            inputs: vec!["/rec/100%Y.mp4".to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo {input}",
+            &input,
+        );
+
+        assert_eq!(out, "echo '/rec/100%Y.mp4'");
+    }
+
+    #[test]
+    fn test_cmd_escaping_drops_quotes_and_doubles_percent() {
+        let input = ProcessorInput {
+            inputs: vec![r#"C:\rec\a b&whoami%PATH%"x.mp4"#.to_string()],
+            ..Default::default()
+        };
+
+        // Unquoted: escape_cmd supplies the quotes.
+        assert_eq!(
+            ExecuteCommandProcessor::substitute_variables_for(
+                ShellKind::Cmd,
+                "echo {input}",
+                &input
+            ),
+            r#"echo "C:\rec\a b&whoami%%PATH%%x.mp4""#
+        );
+
+        // Inside the template's own quotes: no second layer.
+        assert_eq!(
+            ExecuteCommandProcessor::substitute_variables_for(
+                ShellKind::Cmd,
+                "echo \"{input}\"",
+                &input
+            ),
+            r#"echo "C:\rec\a b&whoami%%PATH%%x.mp4""#
+        );
+
+        // cmd has no single-quote syntax, so the placeholder is still unquoted.
+        assert_eq!(
+            ExecuteCommandProcessor::substitute_variables_for(
+                ShellKind::Cmd,
+                "echo '{input}'",
+                &input
+            ),
+            r#"echo '"C:\rec\a b&whoami%%PATH%%x.mp4"'"#
+        );
+    }
+
+    /// End-to-end through `sh -c`: a path full of metacharacters reaches the
+    /// child as one literal argument.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_hostile_input_path_reaches_the_child_verbatim() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let hostile = temp_dir.path().join(r#"a b$(id);`id`'q"&.mp4"#);
+        let hostile = hostile.to_string_lossy().to_string();
+        let captured = temp_dir.path().join("captured.txt");
+
+        let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        for template in [
+            "printf %s {input}",
+            "printf %s \"{input}\"",
+            "printf %s '{input}'",
+        ] {
+            let config = serde_json::json!({
+                "command": format!("{template} > {}", captured.display()),
+            });
+
+            let input = ProcessorInput {
+                inputs: vec![hostile.clone()],
+                outputs: vec![],
+                config: Some(config.to_string()),
+                ..Default::default()
+            };
+
+            processor.process(&input, &ctx).await.unwrap();
+
+            assert_eq!(
+                tokio::fs::read_to_string(&captured).await.unwrap(),
+                hostile,
+                "template {template} did not pass the path through literally"
+            );
+        }
     }
 
     /// Test missing config returns an error.

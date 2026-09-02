@@ -92,6 +92,10 @@
 
   Media outputs could only be browsed, so clearing space meant finding the files on disk yourself and then having no way to tidy up the leftover entries. Each output now has a **Delete** option, and a **Select** button lets you clear many at once. By default this only removes the entry and leaves the file untouched; tick **Also delete files from disk** in the confirmation to remove the recording itself. Deleting an entry whose file you already removed by hand works as expected, and the owning recording's total size is corrected either way.
 
+- **Custom command steps no longer trip over unusual file names**
+
+  A recording named after the stream title can end up with characters a shell reads as instructions — an apostrophe, a quote, `$`, a backtick, a semicolon. A pipeline step running a custom command would then fail on that file, or run part of the title as a command of its own. File paths, titles and streamer names are now quoted automatically wherever they appear in the command, so they always reach it as plain text. Pipes, `&&` and redirects in your own command still work, and placeholders you already wrapped in quotes yourself keep working — do not add extra escaping around them.
+
 ## Danmu
 
 - **Chat recording now survives network interruptions**
