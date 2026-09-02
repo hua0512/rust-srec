@@ -265,10 +265,9 @@ pub async fn update_global_config(
 
     let config_service = &state.config_service;
 
-    tracing::info!(
-        ?request,
-        "Received request to update global configuration via API"
-    );
+    // The request body carries `proxy_config`, whose URL may embed proxy credentials;
+    // only the field names are logged, via `updated_fields` after `apply_updates!` below.
+    tracing::info!("Received request to update global configuration via API");
 
     // Get current config to apply partial updates
     let mut config = config_service
@@ -418,6 +417,47 @@ pub async fn get_platform_config(
     Ok(Json(map_platform_config_to_response(config)))
 }
 
+/// Names of the overrides carried by `request`, for logging.
+///
+/// `replace_platform_config` must not record the body itself: `cookies`,
+/// `platform_specific_config` (refresh/access tokens, SOOP username/password) and
+/// `proxy_config` hold platform credentials.
+fn platform_config_fields_present(request: &PlatformConfigResponse) -> Vec<&'static str> {
+    macro_rules! present {
+        ($($field:ident),+ $(,)?) => {
+            [$((stringify!($field), request.$field.is_some())),+]
+                .into_iter()
+                .filter_map(|(name, is_set)| is_set.then_some(name))
+                .collect()
+        };
+    }
+
+    present!(
+        fetch_delay_ms,
+        download_delay_ms,
+        record_danmu,
+        danmu_statistics,
+        cookies,
+        platform_specific_config,
+        proxy_config,
+        output_folder,
+        output_filename_template,
+        download_engine,
+        extractor,
+        stream_selection_config,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        download_retry_policy,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        offline_check_count,
+        offline_check_delay_ms,
+    )
+}
+
 #[utoipa::path(
     put,
     path = "/api/config/platforms/{id}",
@@ -437,7 +477,7 @@ pub async fn replace_platform_config(
 ) -> ApiResult<Json<PlatformConfigResponse>> {
     tracing::info!(
         platform_id = %id,
-        ?request,
+        fields = %platform_config_fields_present(&request).join(", "),
         "Received request to replace platform configuration"
     );
 

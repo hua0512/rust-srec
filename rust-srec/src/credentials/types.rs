@@ -126,7 +126,7 @@ impl CredentialScope {
 }
 
 /// Complete credential information with source tracking.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CredentialSource {
     /// Which configuration layer the credentials came from.
     pub scope: CredentialScope,
@@ -140,6 +140,27 @@ pub struct CredentialSource {
     pub platform_name: String,
     /// Platform-specific re-login material (e.g. SOOP username/password).
     pub reauth_extra: Option<serde_json::Value>,
+}
+
+/// Renders `cookies`, `refresh_token`, `access_token` and `reauth_extra` as
+/// `[redacted]` so that recording a `CredentialSource` as a `tracing` field cannot
+/// write platform secrets to the log sinks installed by `crate::logging`. `scope`
+/// and `platform_name` stay visible because they identify the credential.
+impl std::fmt::Debug for CredentialSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn redact(present: bool) -> &'static str {
+            if present { "[redacted]" } else { "[unset]" }
+        }
+
+        f.debug_struct("CredentialSource")
+            .field("scope", &self.scope)
+            .field("platform_name", &self.platform_name)
+            .field("cookies", &redact(!self.cookies.is_empty()))
+            .field("refresh_token", &redact(self.refresh_token.is_some()))
+            .field("access_token", &redact(self.access_token.is_some()))
+            .field("reauth_extra", &redact(self.reauth_extra.is_some()))
+            .finish()
+    }
 }
 
 impl CredentialSource {
@@ -351,7 +372,66 @@ impl CredentialEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{extractor_platform_extras, platform_reauth_extra};
+    use super::{
+        CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
+    };
+
+    #[test]
+    fn debug_output_redacts_credential_material() {
+        let source = CredentialSource::new(
+            CredentialScope::Platform {
+                platform_id: "platform-1".to_string(),
+                platform_name: "bilibili".to_string(),
+            },
+            "SESSDATA=cookie-sentinel".to_string(),
+            Some("refresh-sentinel".to_string()),
+            "bilibili".to_string(),
+        )
+        .with_access_token(Some("access-sentinel".to_string()))
+        .with_reauth_extra(Some(serde_json::json!({
+            "username": "viewer",
+            "password": "password-sentinel",
+        })));
+
+        let rendered = format!("{source:?}");
+
+        for secret in [
+            "cookie-sentinel",
+            "refresh-sentinel",
+            "access-sentinel",
+            "password-sentinel",
+        ] {
+            assert!(
+                !rendered.contains(secret),
+                "Debug output leaked {secret}: {rendered}"
+            );
+        }
+        // Field names and provenance stay readable for diagnostics.
+        assert!(rendered.contains("cookies"));
+        assert!(rendered.contains("refresh_token"));
+        assert!(rendered.contains("bilibili"));
+    }
+
+    #[test]
+    fn debug_output_distinguishes_absent_credential_material() {
+        let source = CredentialSource::new(
+            CredentialScope::Platform {
+                platform_id: "platform-1".to_string(),
+                platform_name: "bilibili".to_string(),
+            },
+            String::new(),
+            None,
+            "bilibili".to_string(),
+        );
+
+        let rendered = format!("{source:?}");
+
+        assert!(rendered.contains("cookies: \"[unset]\""), "{rendered}");
+        assert!(
+            rendered.contains("refresh_token: \"[unset]\""),
+            "{rendered}"
+        );
+    }
 
     #[test]
     fn extracts_soop_reauthentication_fields() {

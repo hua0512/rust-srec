@@ -88,7 +88,6 @@ export const createStreamer = createServerFn({ method: 'POST' })
         ? removeEmpty(data.streamer_specific_config)
         : undefined,
     };
-    console.log('[createStreamer] Payload:', JSON.stringify(payload, null, 2));
     const json = await fetchBackend('/streamers', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -107,8 +106,6 @@ export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST t
         ? removeEmpty(data.streamer_specific_config)
         : undefined,
     };
-    console.log('[updateStreamer] ID:', id);
-    console.log('[updateStreamer] Payload:', JSON.stringify(payload, null, 2));
     const json = await fetchBackend(`/streamers/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),

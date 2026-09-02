@@ -188,6 +188,12 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+## Security
+
+- **Cookies, tokens and passwords are no longer written to the logs**
+
+  Saving a platform, template or streamer, and the background check that keeps platform cookies fresh, used to write the credentials themselves into the log files, the live log view and the browser console. Anyone able to read a log file, a log export or a container's logs could pick out the cookies, refresh tokens and account passwords for your platform accounts. Logs now record only which settings were touched, never their values. Old log files are not cleaned up, so if you have shared logs with anyone, change the cookies and passwords that appeared in them.
+
 ## Deployment
 
 - **Optional automatic container updates**

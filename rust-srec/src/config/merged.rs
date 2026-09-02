@@ -507,7 +507,12 @@ impl MergedConfigBuilder {
 
         // Parse streamer-specific config JSON
         if let Some(config) = streamer_config {
-            debug!("Applying streamer-specific config overrides: {}", config);
+            // Only the key set is logged: the object may carry `cookies` and
+            // `refresh_token`, which `config::resolver` reads to build a `CredentialSource`.
+            debug!(
+                keys = ?config.as_object().map(|fields| fields.keys().collect::<Vec<_>>()),
+                "Applying streamer-specific config overrides"
+            );
             if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
                 debug!("Streamer config override: output_folder = {}", v);
                 self.output_folder = Some(v.to_string());
