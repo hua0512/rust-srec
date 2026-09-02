@@ -308,11 +308,16 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
 ) -> Option<(DownloadFailureKind, String)> {
     let mut stream = std::pin::pin!(stream);
     let mut stream_error: Option<(DownloadFailureKind, String)> = None;
+    // One wait-list registration per token for the whole stream. A fresh
+    // `cancelled()` future inside each `select!` would register and
+    // deregister on every item, once to receive it and once to forward it.
+    let mut parent_cancelled = std::pin::pin!(context.parent_token.cancelled());
+    let mut child_cancelled = std::pin::pin!(context.child_token.cancelled());
 
     loop {
         let result = tokio::select! {
             biased;
-            _ = context.parent_token.cancelled() => {
+            _ = &mut parent_cancelled => {
                 debug!(
                     protocol = context.protocol,
                     streamer_id = context.streamer_id,
@@ -320,7 +325,7 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
                 );
                 break;
             }
-            _ = context.child_token.cancelled() => {
+            _ = &mut child_cancelled => {
                 debug!(
                     protocol = context.protocol,
                     streamer_id = context.streamer_id,
@@ -339,7 +344,7 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
                 inspect(&item);
                 let send_result = tokio::select! {
                     biased;
-                    _ = context.parent_token.cancelled() => {
+                    _ = &mut parent_cancelled => {
                         debug!(
                             protocol = context.protocol,
                             streamer_id = context.streamer_id,
@@ -347,7 +352,7 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
                         );
                         break;
                     }
-                    _ = context.child_token.cancelled() => {
+                    _ = &mut child_cancelled => {
                         debug!(
                             protocol = context.protocol,
                             streamer_id = context.streamer_id,
@@ -377,7 +382,7 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
                 stream_error = Some((kind, msg.clone()));
                 let send_result = tokio::select! {
                     biased;
-                    _ = context.parent_token.cancelled() => {
+                    _ = &mut parent_cancelled => {
                         debug!(
                             protocol = context.protocol,
                             streamer_id = context.streamer_id,
@@ -385,7 +390,7 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
                         );
                         break;
                     }
-                    _ = context.child_token.cancelled() => {
+                    _ = &mut child_cancelled => {
                         debug!(
                             protocol = context.protocol,
                             streamer_id = context.streamer_id,
