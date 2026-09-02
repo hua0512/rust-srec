@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use argon2::password_hash::PasswordHash;
 use chrono::Utc;
+use futures::stream::{self, StreamExt};
 use sqlx::SqlitePool;
 use tracing::warn;
 
@@ -20,6 +21,7 @@ use crate::database::repositories::{
     config::SqlxConfigRepository, streamer::SqlxStreamerRepository,
 };
 use crate::database::{ImmediateTransaction, begin_immediate};
+use crate::domain::StreamerState;
 use crate::notification::NotificationService;
 use crate::streamer::StreamerManager;
 
@@ -40,12 +42,43 @@ pub(crate) struct ConfigurationImportOutcome {
     pub warnings: Vec<String>,
 }
 
+/// Runtime work an import must retire before its transaction removes a
+/// `streamers` row.
+///
+/// Implemented by `RuntimeCoordinator::handle_streamer_removed`; the import
+/// depends on the trait so tests can observe the call ordering without a
+/// download runtime.
+#[async_trait::async_trait]
+pub(crate) trait StreamerRemovalStop: Send + Sync {
+    /// Stop the streamer's download, danmu collection and open session, and
+    /// return only once the download attempt has finalized.
+    async fn stop_for_removal(&self, streamer_id: &str);
+}
+
+/// Streamer rows the import writes, keyed by what the runtime has to do about
+/// them once the transaction commits.
+#[derive(Debug, Default)]
+struct StreamerImportDiff {
+    /// Rows inserted or updated by `apply_streamers`; each is resynced through
+    /// `StreamerManager::resync_streamer`.
+    upserted: Vec<String>,
+    /// Rows deleted by `apply_streamers` (replace mode only); each is evicted
+    /// through `StreamerManager::evict_deleted_streamer`.
+    deleted: Vec<String>,
+}
+
+/// Streamer resyncs in flight while `import` drains its post-commit diff. Bounds
+/// the concurrent `StreamerManager::resync_streamer` calls, each of which hits
+/// the streamer repository and publishes a config event.
+const RESYNC_CONCURRENCY: usize = 8;
+
 pub(crate) struct ConfigurationImportService {
     write_pool: SqlitePool,
     config_service: Arc<RuntimeConfigService>,
     streamer_manager: Arc<RuntimeStreamerManager>,
     notification_service: Arc<NotificationService>,
     credential_service: Arc<RuntimeCredentialService>,
+    removal_stop: Arc<dyn StreamerRemovalStop>,
 }
 
 impl ConfigurationImportService {
@@ -55,6 +88,7 @@ impl ConfigurationImportService {
         streamer_manager: Arc<RuntimeStreamerManager>,
         notification_service: Arc<NotificationService>,
         credential_service: Arc<RuntimeCredentialService>,
+        removal_stop: Arc<dyn StreamerRemovalStop>,
     ) -> Self {
         Self {
             write_pool,
@@ -62,6 +96,7 @@ impl ConfigurationImportService {
             streamer_manager,
             notification_service,
             credential_service,
+            removal_stop,
         }
     }
 
@@ -72,11 +107,23 @@ impl ConfigurationImportService {
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
 
+        // Retire the runtime work of every row the import is about to delete
+        // before opening the write transaction: `streamers.id` cascades into
+        // `live_sessions`, `media_outputs` and `session_segments`, so a download
+        // still writing segments would fail its foreign key mid-recording.
+        // `apply_streamers` recomputes the delete set inside the transaction and
+        // is authoritative; this pass only pre-empts the rows it can already see.
+        for streamer_id in
+            streamers_removed_by(&load_streamer_rows(&self.write_pool).await?, &config, mode)
+        {
+            self.removal_stop.stop_for_removal(&streamer_id).await;
+        }
+
         let mut tx = begin_immediate(&self.write_pool).await?;
         let snapshot = ImportSnapshot::load(&mut tx).await?;
         snapshot.validate_references(&config, mode)?;
 
-        let (stats, invalidated_credentials) =
+        let (stats, invalidated_credentials, streamer_diff) =
             apply_import(&mut tx, &snapshot, &config, mode).await?;
         tx.commit().await?;
 
@@ -85,9 +132,31 @@ impl ConfigurationImportService {
         }
 
         let mut warnings = Vec::new();
-        if let Err(error) = self.streamer_manager.hydrate().await {
-            warnings.push(format!("streamer runtime reload failed: {error}"));
+        for streamer_id in &streamer_diff.deleted {
+            self.streamer_manager.evict_deleted_streamer(streamer_id);
         }
+
+        // Bring the in-memory row and the scheduler's actor in line with what was
+        // just committed. `resync_streamer` publishes
+        // `ConfigUpdateEvent::StreamerMetadataUpdated`, which spawns an actor for a
+        // newly imported streamer and tears one down for a streamer the bundle
+        // disabled.
+        let mut resyncs = Vec::with_capacity(streamer_diff.upserted.len());
+        for streamer_id in streamer_diff.upserted {
+            let streamer_manager = Arc::clone(&self.streamer_manager);
+            resyncs.push(async move {
+                streamer_manager
+                    .resync_streamer(&streamer_id)
+                    .await
+                    .err()
+                    .map(|error| format!("streamer '{streamer_id}' runtime reload failed: {error}"))
+            });
+        }
+        let mut resyncs = stream::iter(resyncs).buffer_unordered(RESYNC_CONCURRENCY);
+        while let Some(warning) = resyncs.next().await {
+            warnings.extend(warning);
+        }
+
         if let Err(error) = self.notification_service.reload_from_db().await {
             warnings.push(format!("notification runtime reload failed: {error}"));
         }
@@ -102,11 +171,9 @@ struct ImportSnapshot {
     engines: HashMap<String, EngineConfigurationDbModel>,
     templates: HashMap<String, TemplateConfigDbModel>,
     platforms: HashMap<String, PlatformConfigDbModel>,
-    // Grouped by url.to_ascii_lowercase() and sorted by id. The schema declares
-    // streamers.url COLLATE NOCASE UNIQUE, but databases whose streamers table
-    // predates that collation enforce case-sensitive uniqueness only, so one key
-    // can hold several rows; streamer_for_update picks the row an import writes to
-    // and apply_import deletes (Replace) or warns about (Merge) the rest.
+    // Shaped by load_streamer_rows: streamer_for_update picks the row an import
+    // writes to, and apply_streamers deletes (Replace) or warns about (Merge) the
+    // rest of each case-insensitive group.
     streamers: HashMap<String, Vec<StreamerDbModel>>,
     channels: HashMap<String, NotificationChannelDbModel>,
     job_presets: HashMap<String, JobPreset>,
@@ -140,22 +207,7 @@ impl ImportSnapshot {
             .into_iter()
             .map(|model| (model.platform_name.clone(), model))
             .collect();
-        let mut streamers: HashMap<String, Vec<StreamerDbModel>> = HashMap::new();
-        for model in sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers")
-            .fetch_all(&mut **tx)
-            .await?
-        {
-            streamers
-                .entry(model.url.to_ascii_lowercase())
-                .or_default()
-                .push(model);
-        }
-        for rows in streamers.values_mut() {
-            // Lowest id first: streamer_for_update falls back to rows[0] when no
-            // byte-equal URL match exists, and that pick must not depend on row
-            // fetch order.
-            rows.sort_by(|a, b| a.id.cmp(&b.id));
-        }
+        let streamers = load_streamer_rows(&mut **tx).await?;
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
                 .fetch_all(&mut **tx)
@@ -196,17 +248,8 @@ impl ImportSnapshot {
         })
     }
 
-    /// Row that receives imported updates for `url`: the byte-equal URL match when
-    /// one exists, otherwise the lowest-id row of the case-insensitive group
-    /// (`load` sorts each group by id). Preferring the byte-equal match matters on
-    /// tables without the NOCASE collation: persist_streamer rewrites
-    /// streamers.url, and writing one row's exact URL onto a sibling id would
-    /// collide on the url UNIQUE constraint while the shadowed row still exists.
     fn streamer_for_update(&self, url: &str) -> Option<&StreamerDbModel> {
-        let rows = self.streamers.get(&url.to_ascii_lowercase())?;
-        rows.iter()
-            .find(|row| row.url == url)
-            .or_else(|| rows.first())
+        streamer_for_update(&self.streamers, url)
     }
 
     fn validate_references(
@@ -297,6 +340,78 @@ impl ImportSnapshot {
 
         Ok(())
     }
+}
+
+/// Every `streamers` row grouped by `url.to_ascii_lowercase()`, each group sorted
+/// by id.
+///
+/// The schema declares `streamers.url COLLATE NOCASE UNIQUE`, but databases whose
+/// streamers table predates that collation enforce case-sensitive uniqueness only,
+/// so one key can hold several rows. Lowest id first: [`streamer_for_update`]
+/// falls back to `rows[0]` when no byte-equal URL match exists, and that pick must
+/// not depend on row fetch order.
+async fn load_streamer_rows<'e, E>(
+    executor: E,
+) -> Result<HashMap<String, Vec<StreamerDbModel>>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let mut streamers: HashMap<String, Vec<StreamerDbModel>> = HashMap::new();
+    for model in sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers")
+        .fetch_all(executor)
+        .await?
+    {
+        streamers
+            .entry(model.url.to_ascii_lowercase())
+            .or_default()
+            .push(model);
+    }
+    for rows in streamers.values_mut() {
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+    }
+    Ok(streamers)
+}
+
+/// Row that receives imported updates for `url`: the byte-equal URL match when one
+/// exists, otherwise the lowest-id row of the case-insensitive group. Preferring
+/// the byte-equal match matters on tables without the NOCASE collation:
+/// persist_streamer rewrites streamers.url, and writing one row's exact URL onto a
+/// sibling id would collide on the url UNIQUE constraint while the shadowed row
+/// still exists.
+fn streamer_for_update<'a>(
+    streamers: &'a HashMap<String, Vec<StreamerDbModel>>,
+    url: &str,
+) -> Option<&'a StreamerDbModel> {
+    let rows = streamers.get(&url.to_ascii_lowercase())?;
+    rows.iter()
+        .find(|row| row.url == url)
+        .or_else(|| rows.first())
+}
+
+/// Ids of `streamers` rows `apply_streamers` will delete: in replace mode every
+/// row no bundle entry routes to, which covers unmatched URLs and the
+/// case-duplicate rows [`streamer_for_update`] passes over. Empty in merge mode,
+/// which never deletes streamer rows.
+fn streamers_removed_by(
+    streamers: &HashMap<String, Vec<StreamerDbModel>>,
+    config: &ConfigExport,
+    mode: ImportMode,
+) -> Vec<String> {
+    if mode != ImportMode::Replace {
+        return Vec::new();
+    }
+    let retained: HashSet<&str> = config
+        .streamers
+        .iter()
+        .filter_map(|item| streamer_for_update(streamers, &item.url))
+        .map(|row| row.id.as_str())
+        .collect();
+    streamers
+        .values()
+        .flatten()
+        .filter(|row| !retained.contains(row.id.as_str()))
+        .map(|row| row.id.clone())
+        .collect()
 }
 
 fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
@@ -670,13 +785,15 @@ fn validate_engine_reference(
 }
 
 /// Mutable outcome threaded through the credential-bearing apply_* passes:
-/// the per-entity counters apply_import returns to the caller plus the
+/// the per-entity counters apply_import returns to the caller, the
 /// `CredentialScope`s that `ConfigurationImportService::import` feeds to
-/// `credential_service.invalidate` after the transaction commits.
+/// `credential_service.invalidate` after the transaction commits, and the
+/// streamer ids it then pushes through `StreamerManager`.
 #[derive(Default)]
 struct ImportChanges {
     stats: ImportStats,
     invalidated_credentials: Vec<CredentialScope>,
+    streamers: StreamerImportDiff,
 }
 
 async fn apply_import(
@@ -684,7 +801,7 @@ async fn apply_import(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     mode: ImportMode,
-) -> Result<(ImportStats, Vec<CredentialScope>), ConfigurationImportError> {
+) -> Result<(ImportStats, Vec<CredentialScope>, StreamerImportDiff), ConfigurationImportError> {
     let replace = mode == ImportMode::Replace;
     let mut changes = ImportChanges::default();
 
@@ -715,7 +832,11 @@ async fn apply_import(
         .execute(&mut **tx)
         .await?;
 
-    Ok((changes.stats, changes.invalidated_credentials))
+    Ok((
+        changes.stats,
+        changes.invalidated_credentials,
+        changes.streamers,
+    ))
 }
 
 async fn apply_engines(
@@ -895,6 +1016,7 @@ async fn apply_streamers(
                 streamer_name: model.name.clone(),
             });
         retained_streamer_ids.insert(model.id.clone());
+        changes.streamers.upserted.push(model.id.clone());
         if existing.is_some() {
             changes.stats.streamers_updated += 1;
         } else {
@@ -931,6 +1053,7 @@ async fn apply_streamers(
                         streamer_id: existing.id.clone(),
                         streamer_name: existing.name.clone(),
                     });
+                changes.streamers.deleted.push(existing.id.clone());
                 changes.stats.streamers_deleted += 1;
             }
         }
@@ -1089,7 +1212,7 @@ fn streamer_model(
     model.url = source.url.clone();
     model.platform_config_id = platform_id.to_string();
     model.template_config_id = template_id;
-    model.state = source.state.clone();
+    model.state = imported_state(existing, &source.state);
     model.priority = source.priority.to_ascii_uppercase();
     model.avatar = source
         .avatar_url
@@ -1098,6 +1221,30 @@ fn streamer_model(
     model.streamer_specific_config = source.streamer_specific_config.clone().map(db_json);
     model.updated_at = crate::database::time::now_ms();
     model
+}
+
+/// Value written to `streamers.state`.
+///
+/// Only `DISABLED` and `CANCELLED` are carried over from the bundle: every other
+/// [`StreamerState`] is produced by monitoring, so importing one would overwrite
+/// the state of a streamer whose actor is mid-check or whose download is running —
+/// a `LIVE` row rewritten to `NOT_LIVE` re-triggers `SessionLifecycle::on_live_detected`
+/// on the next poll. An existing row otherwise keeps its own state, except when the
+/// bundle re-enables a row the operator had stopped, which resets it to `NOT_LIVE`
+/// so `StreamerMetadata::is_active` turns true again.
+fn imported_state(existing: Option<&StreamerDbModel>, source_state: &str) -> String {
+    let stopped =
+        |state: StreamerState| matches!(state, StreamerState::Disabled | StreamerState::Cancelled);
+    let not_live = StreamerState::NotLive.as_str().to_string();
+
+    match StreamerState::parse(source_state) {
+        Some(imported) if stopped(imported) => imported.as_str().to_string(),
+        _ => match existing.and_then(|row| StreamerState::parse(&row.state)) {
+            Some(current) if stopped(current) => not_live,
+            Some(current) => current.as_str().to_string(),
+            None => not_live,
+        },
+    }
 }
 
 fn db_json(value: serde_json::Value) -> String {
@@ -1877,6 +2024,150 @@ mod tests {
         platform
     }
 
+    /// Replace-mode `validate_references` resolves engine names from the bundle
+    /// alone, so a replace bundle must mirror the seeded engines to keep
+    /// `global_config.default_download_engine` valid.
+    async fn mirror_engines(pool: &SqlitePool, config: &mut ConfigExport) {
+        let engines: Vec<EngineConfigurationDbModel> =
+            sqlx::query_as("SELECT * FROM engine_configuration")
+                .fetch_all(pool)
+                .await
+                .unwrap();
+        config.engines = engines
+            .iter()
+            .map(|engine| crate::config::backup::EngineExport {
+                name: engine.name.clone(),
+                engine_type: engine.engine_type.clone(),
+                config: serde_json::from_str(&engine.config).unwrap(),
+            })
+            .collect();
+    }
+
+    /// Records every `stop_for_removal` call together with whether the streamer's
+    /// row was still present when it ran, so tests can assert the import stops the
+    /// runtime before its transaction deletes the row.
+    struct RecordingRemovalStop {
+        pool: SqlitePool,
+        calls: std::sync::Mutex<Vec<(String, bool)>>,
+    }
+
+    impl RecordingRemovalStop {
+        fn calls(&self) -> Vec<(String, bool)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl StreamerRemovalStop for RecordingRemovalStop {
+        async fn stop_for_removal(&self, streamer_id: &str) {
+            let present: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM streamers WHERE id = ?")
+                .bind(streamer_id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+            self.calls
+                .lock()
+                .unwrap()
+                .push((streamer_id.to_string(), present.0 > 0));
+        }
+    }
+
+    /// A migrated in-memory database wired to the same collaborators
+    /// `ServiceContainer::build_api_state` gives the import service, plus the
+    /// event stream and removal-stop log the tests assert on.
+    struct ImportHarness {
+        pool: SqlitePool,
+        global: GlobalConfigDbModel,
+        service: ConfigurationImportService,
+        streamer_manager: Arc<RuntimeStreamerManager>,
+        removal_stop: Arc<RecordingRemovalStop>,
+        events: tokio::sync::broadcast::Receiver<crate::config::ConfigUpdateEvent>,
+    }
+
+    impl ImportHarness {
+        async fn new() -> Self {
+            let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+            run_migrations(&pool).await.unwrap();
+            let global: GlobalConfigDbModel =
+                sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+
+            let broadcaster = crate::config::ConfigEventBroadcaster::new();
+            let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+            let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+            let config_service = Arc::new(RuntimeConfigService::with_cache_and_broadcaster(
+                config_repo.clone(),
+                streamer_repo.clone(),
+                crate::config::ConfigCache::new(),
+                broadcaster.clone(),
+            ));
+            let streamer_manager = Arc::new(RuntimeStreamerManager::new(
+                streamer_repo,
+                broadcaster.clone(),
+            ));
+            let credential_service = Arc::new(RuntimeCredentialService::new(
+                Arc::new(crate::credentials::CredentialResolver::new(config_repo)),
+                Arc::new(crate::database::repositories::SqlxCredentialStore::new(
+                    pool.clone(),
+                    pool.clone(),
+                )),
+            ));
+            let removal_stop = Arc::new(RecordingRemovalStop {
+                pool: pool.clone(),
+                calls: std::sync::Mutex::new(Vec::new()),
+            });
+
+            let service = ConfigurationImportService::new(
+                pool.clone(),
+                config_service,
+                streamer_manager.clone(),
+                Arc::new(NotificationService::new()),
+                credential_service,
+                removal_stop.clone(),
+            );
+
+            Self {
+                pool,
+                global,
+                service,
+                streamer_manager,
+                removal_stop,
+                events: broadcaster.subscribe(),
+            }
+        }
+
+        /// Inserts a streamer row on the `huya` platform and registers it with
+        /// `streamer_manager`, standing in for a streamer the runtime is already
+        /// monitoring when the import arrives.
+        async fn seed_streamer(&self, url: &str, state: StreamerState) -> StreamerDbModel {
+            let platform: PlatformConfigDbModel =
+                sqlx::query_as("SELECT * FROM platform_config WHERE platform_name = 'huya'")
+                    .fetch_one(&self.pool)
+                    .await
+                    .unwrap();
+            let mut model = StreamerDbModel::new("existing", url, &platform.id);
+            model.state = state.as_str().to_string();
+            let mut tx = begin_immediate(&self.pool).await.unwrap();
+            persist_streamer(&mut tx, &model).await.unwrap();
+            tx.commit().await.unwrap();
+            self.streamer_manager
+                .reload_from_repo(&model.id)
+                .await
+                .unwrap();
+            model
+        }
+
+        fn drain_events(&mut self) -> Vec<crate::config::ConfigUpdateEvent> {
+            let mut events = Vec::new();
+            while let Ok(event) = self.events.try_recv() {
+                events.push(event);
+            }
+            events
+        }
+    }
+
     /// io::Write sink shared with a tracing fmt subscriber so tests can assert on
     /// emitted log lines.
     #[derive(Clone, Default)]
@@ -2080,6 +2371,195 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replace_import_registers_a_new_streamer_with_the_runtime() {
+        let mut harness = ImportHarness::new().await;
+        let mut config = import_config(&harness.global);
+        mirror_engines(&harness.pool, &mut config).await;
+        config
+            .streamers
+            .push(imported_streamer("https://example.com/live/new", "huya"));
+
+        let outcome = harness
+            .service
+            .import(config, ImportMode::Replace)
+            .await
+            .unwrap();
+
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert_eq!(outcome.stats.streamers_created, 1);
+        let metadata = harness
+            .streamer_manager
+            .get_streamer_by_url("https://example.com/live/new")
+            .expect("imported streamer should be registered without a restart");
+        assert_eq!(metadata.state, StreamerState::NotLive);
+        assert!(harness.drain_events().contains(
+            &crate::config::ConfigUpdateEvent::StreamerMetadataUpdated {
+                streamer_id: metadata.id.clone(),
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn merge_import_without_streamers_leaves_a_live_streamer_live() {
+        let harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
+            .await;
+
+        harness
+            .service
+            .import(import_config(&harness.global), ImportMode::Merge)
+            .await
+            .unwrap();
+
+        let row: StreamerDbModel = sqlx::query_as("SELECT * FROM streamers WHERE id = ?")
+            .bind(&seeded.id)
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.state, StreamerState::Live.as_str());
+        assert_eq!(
+            harness
+                .streamer_manager
+                .get_streamer(&seeded.id)
+                .map(|metadata| metadata.state),
+            Some(StreamerState::Live)
+        );
+        assert!(harness.removal_stop.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn import_keeps_the_stored_state_of_a_streamer_the_bundle_updates() {
+        let harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
+            .await;
+
+        let mut config = import_config(&harness.global);
+        // The bundle carries NOT_LIVE, the state every export of an offline
+        // streamer holds; the running recording's LIVE row must survive it.
+        config
+            .streamers
+            .push(imported_streamer(&seeded.url, "huya"));
+        let outcome = harness
+            .service
+            .import(config, ImportMode::Merge)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.stats.streamers_updated, 1);
+        let row: StreamerDbModel = sqlx::query_as("SELECT * FROM streamers WHERE id = ?")
+            .bind(&seeded.id)
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.state, StreamerState::Live.as_str());
+        assert_eq!(row.name, "imported");
+    }
+
+    #[tokio::test]
+    async fn import_applies_a_bundle_that_disables_an_existing_streamer() {
+        let harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::NotLive)
+            .await;
+
+        let mut config = import_config(&harness.global);
+        let mut disabled = imported_streamer(&seeded.url, "huya");
+        disabled.state = StreamerState::Disabled.as_str().to_string();
+        config.streamers.push(disabled);
+        harness
+            .service
+            .import(config, ImportMode::Merge)
+            .await
+            .unwrap();
+
+        let row: StreamerDbModel = sqlx::query_as("SELECT * FROM streamers WHERE id = ?")
+            .bind(&seeded.id)
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.state, StreamerState::Disabled.as_str());
+        // ConfigEventHandler decides on cleanup from the cached metadata's
+        // `is_active`, so the disable has to reach it too.
+        assert_eq!(
+            harness
+                .streamer_manager
+                .get_streamer(&seeded.id)
+                .map(|metadata| metadata.is_active()),
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_import_stops_and_evicts_a_streamer_the_bundle_omits() {
+        let mut harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
+            .await;
+
+        let mut config = import_config(&harness.global);
+        mirror_engines(&harness.pool, &mut config).await;
+        let outcome = harness
+            .service
+            .import(config, ImportMode::Replace)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.stats.streamers_deleted, 1);
+        assert_eq!(
+            harness.removal_stop.calls(),
+            vec![(seeded.id.clone(), true)],
+            "the recording must be stopped while the row still exists"
+        );
+        assert!(harness.streamer_manager.get_streamer(&seeded.id).is_none());
+        assert!(
+            harness
+                .streamer_manager
+                .get_streamer_by_url(&seeded.url)
+                .is_none()
+        );
+        assert!(harness.drain_events().contains(
+            &crate::config::ConfigUpdateEvent::StreamerDeleted {
+                streamer_id: seeded.id.clone(),
+            }
+        ));
+    }
+
+    #[test]
+    fn imported_state_carries_disable_intent_but_not_runtime_state() {
+        let mut live = StreamerDbModel::new("live", "https://example.com/live", "platform-huya");
+        live.state = StreamerState::Live.as_str().to_string();
+        assert_eq!(
+            imported_state(Some(&live), StreamerState::NotLive.as_str()),
+            StreamerState::Live.as_str()
+        );
+        assert_eq!(
+            imported_state(Some(&live), StreamerState::Disabled.as_str()),
+            StreamerState::Disabled.as_str()
+        );
+
+        let mut disabled =
+            StreamerDbModel::new("disabled", "https://example.com/other", "platform-huya");
+        disabled.state = StreamerState::Disabled.as_str().to_string();
+        assert_eq!(
+            imported_state(Some(&disabled), StreamerState::NotLive.as_str()),
+            StreamerState::NotLive.as_str()
+        );
+
+        // A row the bundle creates never starts out LIVE: the actor's
+        // NotLive -> Live transition is what starts a download.
+        assert_eq!(
+            imported_state(None, StreamerState::Live.as_str()),
+            StreamerState::NotLive.as_str()
+        );
+        assert_eq!(
+            imported_state(None, StreamerState::Disabled.as_str()),
+            StreamerState::Disabled.as_str()
+        );
+    }
+
+    #[tokio::test]
     async fn replace_import_updates_lowest_id_case_duplicate_and_deletes_shadow() {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
@@ -2091,21 +2571,7 @@ mod tests {
         let platform = seed_case_duplicate_streamers(&pool).await;
 
         let mut config = import_config(&global);
-        // Replace-mode validate_references resolves engine names from the bundle
-        // alone, so mirror the seeded engines to keep default_download_engine valid.
-        let engines: Vec<EngineConfigurationDbModel> =
-            sqlx::query_as("SELECT * FROM engine_configuration")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
-        config.engines = engines
-            .iter()
-            .map(|engine| crate::config::backup::EngineExport {
-                name: engine.name.clone(),
-                engine_type: engine.engine_type.clone(),
-                config: serde_json::from_str(&engine.config).unwrap(),
-            })
-            .collect();
+        mirror_engines(&pool, &mut config).await;
         config.streamers.push(imported_streamer(
             "https://example.com/live/ALPHA",
             &platform.platform_name,
@@ -2117,7 +2583,7 @@ mod tests {
         snapshot
             .validate_references(&config, ImportMode::Replace)
             .unwrap();
-        let (stats, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
+        let (stats, _, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -2168,7 +2634,7 @@ mod tests {
         snapshot
             .validate_references(&config, ImportMode::Merge)
             .unwrap();
-        let (stats, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
+        let (stats, _, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -2257,7 +2723,7 @@ mod tests {
         snapshot
             .validate_references(&update_config, ImportMode::Merge)
             .unwrap();
-        let (stats, _) = apply_import(&mut tx, &snapshot, &update_config, ImportMode::Merge)
+        let (stats, _, _) = apply_import(&mut tx, &snapshot, &update_config, ImportMode::Merge)
             .await
             .unwrap();
         tx.commit().await.unwrap();

@@ -24,6 +24,10 @@
 
   FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale.
 
+- **Importing a configuration no longer disturbs your running recordings**
+
+  Importing a backup used to briefly flip every live streamer to offline, which produced a duplicate "went live" notification and made the streamer bounce between states on the dashboard. Streamers that were live stay live, and their recordings keep running untouched. New streamers in the imported file also start being monitored right away instead of waiting for the next restart, and a Replace import that drops a streamer now stops that streamer's recording cleanly first, so the recording is saved instead of ending with an error.
+
 ## API and integrations
 
 - **API keys for programmatic access**

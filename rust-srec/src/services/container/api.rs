@@ -135,6 +135,7 @@ impl ServiceContainer {
                     self.streamer_manager.clone(),
                     self.notification_service.clone(),
                     self.credential_service.clone(),
+                    self.runtime_coordinator.clone(),
                 ),
             ),
         };

@@ -33,6 +33,14 @@ type RuntimeStreamMonitor = StreamMonitor<
     SqlxConfigRepository,
 >;
 
+/// Whether [`RuntimeCoordinator::stop_streamer_work`] returns as soon as the stop
+/// is requested or only once the attempt has published its terminal outcome.
+#[derive(Clone, Copy)]
+enum StopWait {
+    Requested,
+    Finalized,
+}
+
 /// Coordinates required side effects for configuration, monitor, and session events.
 pub(crate) struct RuntimeCoordinator {
     download_manager: Arc<DownloadManager>,
@@ -116,6 +124,27 @@ impl RuntimeCoordinator {
     }
 
     pub(crate) async fn handle_streamer_disabled(&self, streamer_id: &str) {
+        self.stop_streamer_work(streamer_id, StopWait::Requested)
+            .await;
+    }
+
+    /// Stop everything bound to `streamer_id` and wait for each download attempt
+    /// to publish its terminal outcome.
+    ///
+    /// For callers about to remove the streamer's `streamers` row: the row's
+    /// `ON DELETE CASCADE` reaches `live_sessions`, `media_outputs` and
+    /// `session_segments`, so the attempt must be finalized before the delete or
+    /// its remaining segment writes fail the foreign key.
+    ///
+    /// Blocks for as long as the engine's graceful stop takes, so it must not run
+    /// on the download coordination loop; [`Self::handle_streamer_disabled`] is
+    /// the non-blocking variant used there.
+    pub(crate) async fn handle_streamer_removed(&self, streamer_id: &str) {
+        self.stop_streamer_work(streamer_id, StopWait::Finalized)
+            .await;
+    }
+
+    async fn stop_streamer_work(&self, streamer_id: &str, wait: StopWait) {
         let downloads: Vec<_> = self
             .download_manager
             .get_active_downloads()
@@ -124,14 +153,29 @@ impl RuntimeCoordinator {
             .collect();
 
         for download in downloads {
-            match self.download_manager.request_stop_download(
-                &download.id,
-                crate::downloader::DownloadStopCause::StreamerDisabled,
-            ) {
+            let (stopped, outcome) = match wait {
+                StopWait::Requested => (
+                    self.download_manager.request_stop_download(
+                        &download.id,
+                        crate::downloader::DownloadStopCause::StreamerDisabled,
+                    ),
+                    "Requested download stop for disabled streamer",
+                ),
+                StopWait::Finalized => (
+                    self.download_manager
+                        .stop_download_with_reason(
+                            &download.id,
+                            crate::downloader::DownloadStopCause::StreamerDisabled,
+                        )
+                        .await,
+                    "Finalized download for removed streamer",
+                ),
+            };
+            match stopped {
                 Ok(()) => info!(
                     download_id = %download.id,
                     streamer_id,
-                    "Requested download stop for disabled streamer"
+                    "{outcome}"
                 ),
                 Err(error) => warn!(
                     download_id = %download.id,
@@ -376,5 +420,12 @@ impl RuntimeCoordinator {
         self.pipeline_manager
             .handle_session_transition(transition)
             .await;
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::services::config_import::StreamerRemovalStop for RuntimeCoordinator {
+    async fn stop_for_removal(&self, streamer_id: &str) {
+        self.handle_streamer_removed(streamer_id).await;
     }
 }

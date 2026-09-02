@@ -266,24 +266,34 @@ where
                 e.is_active(),
                 e.offline_check_count,
                 e.offline_check_delay_ms,
+                e.url.to_lowercase(),
             )
         });
 
         match self.repo.get_streamer(id).await {
             Ok(model) => {
                 let mut metadata = StreamerMetadata::from_db_model(&model);
-                if let Some((_, _, offline_check_count, offline_check_delay_ms)) = old_state {
-                    metadata.offline_check_count = offline_check_count;
-                    metadata.offline_check_delay_ms = offline_check_delay_ms;
+                if let Some((_, _, offline_check_count, offline_check_delay_ms, _)) = &old_state {
+                    metadata.offline_check_count = *offline_check_count;
+                    metadata.offline_check_delay_ms = *offline_check_delay_ms;
                 }
                 let new_is_active = metadata.is_active();
                 let new_state = metadata.state;
+                // Keep `url_index` in step with `metadata` so `get_streamer_by_url`
+                // resolves rows this reload introduced or re-pointed.
+                let new_url = metadata.url.to_lowercase();
+                if let Some((_, _, _, _, old_url)) = &old_state
+                    && old_url != &new_url
+                {
+                    self.url_index.remove(old_url);
+                }
+                self.url_index.insert(new_url, id.to_string());
                 self.metadata.insert(id.to_string(), metadata.clone());
 
                 // Only emit event if state or active status actually changed
-                let should_emit = match old_state {
-                    Some((old_s, old_active, _, _)) => {
-                        old_s != new_state || old_active != new_is_active
+                let should_emit = match &old_state {
+                    Some((old_s, old_active, _, _, _)) => {
+                        old_s != &new_state || old_active != &new_is_active
                     }
                     None => true, // New entry, always emit
                 };
@@ -292,7 +302,7 @@ where
                     debug!(
                         "Streamer {} state changed: {:?} -> {:?} (active: {})",
                         id,
-                        old_state.map(|(state, _, _, _)| state),
+                        old_state.as_ref().map(|(state, _, _, _, _)| *state),
                         new_state,
                         new_is_active
                     );
@@ -306,7 +316,11 @@ where
                 Ok(Some(metadata))
             }
             Err(crate::Error::NotFound { .. }) => {
-                let was_present = self.metadata.remove(id).is_some();
+                let removed = self.metadata.remove(id);
+                if let Some((_, entry)) = &removed {
+                    self.url_index.remove(&entry.url.to_lowercase());
+                }
+                let was_present = removed.is_some();
 
                 // Only emit if we actually removed something
                 if was_present {
@@ -335,6 +349,45 @@ where
             }
         }
         Ok(reloaded)
+    }
+
+    /// Reload `id` from the repository and announce it as a metadata change.
+    ///
+    /// For callers that wrote the `streamers` row themselves and need the same
+    /// observable sequence as [`Self::create_streamer`] /
+    /// [`Self::partial_update_streamer`]: the scheduler's
+    /// `ensure_streamer_actor_state` spawns or retires the actor, and the
+    /// container's config event handler re-resolves the streamer's
+    /// `offline_check_*` values. Returns `None` when the row no longer exists,
+    /// in which case only [`Self::reload_from_repo`]'s removal handling applies.
+    pub async fn resync_streamer(&self, id: &str) -> Result<Option<StreamerMetadata>> {
+        let metadata = self.reload_from_repo(id).await?;
+        if metadata.is_some() {
+            self.broadcaster
+                .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
+                    streamer_id: id.to_string(),
+                });
+        }
+        Ok(metadata)
+    }
+
+    /// Drop `id` from the in-memory caches and broadcast
+    /// `ConfigUpdateEvent::StreamerDeleted` without touching the database.
+    ///
+    /// For callers that already removed the `streamers` row in their own
+    /// transaction; [`Self::delete_streamer`] would issue a second, redundant
+    /// `DELETE`.
+    pub fn evict_deleted_streamer(&self, id: &str) {
+        debug!("Evicting deleted streamer: {}", id);
+
+        if let Some((_, entry)) = self.metadata.remove(id) {
+            self.url_index.remove(&entry.url.to_lowercase());
+        }
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerDeleted {
+                streamer_id: id.to_string(),
+            });
     }
 
     /// Update a streamer's avatar.
