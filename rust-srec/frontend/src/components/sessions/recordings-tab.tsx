@@ -20,6 +20,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { isPlayable } from '@/lib/media';
+import { getMediaFileTypeMeta } from '@/lib/media-file-type';
 import { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
 import { formatSplitReason, SplitReasonDetails } from '@/lib/split-reason';
@@ -142,18 +143,19 @@ const OutputRow = memo(function OutputRow({
   onDownload: (id: string, name: string) => void;
   onPlay: (output: MediaOutput) => void;
 }) {
+  const { i18n } = useLingui();
   const fileName = output.file_path.split('/').pop();
+  // `format` is a media file type (VIDEO, DANMU_XML, ...), not an extension.
+  const typeMeta = getMediaFileTypeMeta(output.format);
+  const TypeIcon = typeMeta.icon;
 
   return (
     <div className="p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/10 transition-colors">
       <div className="flex items-center gap-3 overflow-hidden min-w-0">
-        <FileVideo className="h-4 w-4 text-primary/50 shrink-0" />
+        <TypeIcon className="h-4 w-4 text-primary/50 shrink-0" />
         <div className="flex items-center gap-2 min-w-0">
-          <Badge
-            variant="outline"
-            className="text-[9px] px-1 h-4 uppercase shrink-0"
-          >
-            {output.format}
+          <Badge variant="outline" className="text-[9px] px-1 h-4 shrink-0">
+            {i18n._(typeMeta.label)}
           </Badge>
           <p
             className="text-xs truncate font-mono text-foreground/80"

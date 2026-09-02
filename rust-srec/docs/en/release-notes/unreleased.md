@@ -164,6 +164,14 @@
 
 ## Web interface
 
+- **Media files page is readable again**
+
+  Every card on the **Media files** page was squeezed into the same shape regardless of what it held, and long recording names were cut down to two or three characters. Each file now leads with a coloured icon for what it actually is — a recording, audio, a thumbnail or a chat file — followed by its full name on its own line and the folder it sits in. The size and the recording session sit along the bottom. Names that are still too long to fit end in an ellipsis and show in full on hover.
+
+- **Media file types are translated and filter the whole library**
+
+  The type buttons above the list used to show the internal names `VIDEO`, `THUMBNAIL` and `DANMU_XML`, untranslated in every language, and they were built only from the page you happened to be looking at — so the buttons changed as you paged, and picking one filtered just that page. They now read as **Video**, **Audio**, **Thumbnail** and **Danmaku** in your language, each with the number of files of that type across your whole library, and picking one filters everything, not only the current page. The file count and total size next to the search box follow the type and search you have chosen, instead of only adding up what was on screen.
+
 - **See how much disk space is left**
 
   The system health page said no more than "Healthy" about storage, so there was no way to tell whether a clean-up was due until space had already run low. A new **Storage** section now shows, for every disk your recordings are written to, how much space is free, how much of the disk is in use, and a bar that turns amber and then red as it fills. Disks are found from your output folders, including per-streamer, template and platform overrides, so a second drive is measured too; folders on the same disk are shown together. The dashboard's **Disk** card now leads with the free space on the fullest disk instead of just a status word.

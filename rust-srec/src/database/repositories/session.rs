@@ -2,8 +2,8 @@
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
-    SessionFilters, SessionSegmentDbModel,
+    DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, MediaOutputTypeSummary,
+    OutputFilters, Pagination, SessionFilters, SessionSegmentDbModel,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -87,6 +87,13 @@ pub trait SessionRepository: Send + Sync {
         filters: &OutputFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<MediaOutputDbModel>, u64)>;
+
+    /// Count and total size of the media outputs matching `filters`, grouped by
+    /// `file_type`. Types with no matching rows are absent from the result.
+    async fn summarize_outputs_filtered(
+        &self,
+        filters: &OutputFilters,
+    ) -> Result<Vec<MediaOutputTypeSummary>>;
 
     async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()>;
     async fn list_session_segments_for_session(
@@ -195,6 +202,68 @@ const DANMU_STATISTICS_UPSERT: &str = "INSERT INTO danmu_statistics (\
      top_gifters = excluded.top_gifters, \
      top_gifts = excluded.top_gifts, \
      word_frequency = excluded.word_frequency";
+
+/// The `FROM`/`WHERE` fragments for an `OutputFilters` query, plus the values to
+/// bind in the order the placeholders appear.
+///
+/// `list_outputs_filtered` and `summarize_outputs_filtered` build three queries
+/// between them off the same filters. They share this one builder so a new
+/// filter cannot be added to one query's placeholders and missed in another's
+/// binds — a mismatch SQLite reports only as wrong rows, not as an error.
+struct OutputQueryClause {
+    from_clause: &'static str,
+    where_clause: String,
+    binds: Vec<String>,
+}
+
+/// One `GROUP BY m.file_type` row of `summarize_outputs_filtered`.
+#[derive(sqlx::FromRow)]
+struct OutputTypeSummaryRow {
+    file_type: String,
+    count: i64,
+    size_bytes: i64,
+}
+
+impl OutputQueryClause {
+    fn build(filters: &OutputFilters) -> Self {
+        let mut conditions: Vec<&'static str> = Vec::new();
+        let mut binds: Vec<String> = Vec::new();
+
+        if let Some(session_id) = &filters.session_id {
+            conditions.push("m.session_id = ?");
+            binds.push(session_id.clone());
+        }
+        if let Some(streamer_id) = &filters.streamer_id {
+            conditions.push("s.streamer_id = ?");
+            binds.push(streamer_id.clone());
+        }
+        if let Some(file_type) = &filters.file_type {
+            conditions.push("m.file_type = ?");
+            binds.push(file_type.clone());
+        }
+        if let Some(search) = &filters.search {
+            conditions.push("(m.file_path LIKE ? OR m.session_id LIKE ? OR m.file_type LIKE ?)");
+            let pattern = format!("%{search}%");
+            binds.extend([pattern.clone(), pattern.clone(), pattern]);
+        }
+
+        Self {
+            // `s` is only in scope for the streamer_id condition, so the join is
+            // added only when that filter is present.
+            from_clause: if filters.streamer_id.is_some() {
+                "media_outputs m INNER JOIN live_sessions s ON m.session_id = s.id"
+            } else {
+                "media_outputs m"
+            },
+            where_clause: if conditions.is_empty() {
+                String::new()
+            } else {
+                format!("WHERE {}", conditions.join(" AND "))
+            },
+            binds,
+        }
+    }
+}
 
 /// SQLx implementation of SessionRepository.
 pub struct SqlxSessionRepository {
@@ -949,94 +1018,68 @@ impl SessionRepository for SqlxSessionRepository {
         filters: &OutputFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<MediaOutputDbModel>, u64)> {
-        // Determine if we need to join with live_sessions for streamer_id filter
-        let needs_join = filters.streamer_id.is_some();
+        let clause = OutputQueryClause::build(filters);
 
-        // Build dynamic WHERE clause
-        let mut conditions: Vec<String> = Vec::new();
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM {} {}",
+            clause.from_clause, clause.where_clause
+        );
 
-        if filters.session_id.is_some() {
-            conditions.push("m.session_id = ?".to_string());
-        }
-        if filters.streamer_id.is_some() {
-            conditions.push("s.streamer_id = ?".to_string());
-        }
-
-        if filters.search.is_some() {
-            conditions.push(
-                "(m.file_path LIKE ? OR m.session_id LIKE ? OR m.file_type LIKE ?)".to_string(),
-            );
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        // Build FROM clause with optional join
-        let from_clause = if needs_join {
-            "media_outputs m INNER JOIN live_sessions s ON m.session_id = s.id"
-        } else {
-            "media_outputs m"
-        };
-
-        // Count query
-        let count_sql = format!("SELECT COUNT(*) FROM {} {}", from_clause, where_clause);
-
-        // Data query with pagination, ordered by created_at descending
-        // Select only media_outputs columns to avoid ambiguity
+        // Select only media_outputs columns to avoid ambiguity with the join.
         let data_sql = format!(
             "SELECT m.id, m.session_id, m.parent_media_output_id, m.file_path, m.file_type, m.size_bytes, m.created_at \
              FROM {} {} ORDER BY m.created_at DESC LIMIT ? OFFSET ?",
-            from_clause, where_clause
+            clause.from_clause, clause.where_clause
         );
 
-        // Execute count query
         let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-
-        // Bind parameters for count query
-        if let Some(session_id) = &filters.session_id {
-            count_query = count_query.bind(session_id);
+        for value in &clause.binds {
+            count_query = count_query.bind(value);
         }
-        if let Some(streamer_id) = &filters.streamer_id {
-            count_query = count_query.bind(streamer_id);
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            count_query = count_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
+        // COUNT(*) is never negative, so the sign cannot be lost here.
+        let total_count = count_query.fetch_one(&self.pool).await?.cast_unsigned();
 
-        let total_count = count_query.fetch_one(&self.pool).await? as u64;
-
-        // Execute data query
         let mut data_query = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(data_sql));
-
-        // Bind parameters for data query
-        if let Some(session_id) = &filters.session_id {
-            data_query = data_query.bind(session_id);
+        for value in &clause.binds {
+            data_query = data_query.bind(value);
         }
-        if let Some(streamer_id) = &filters.streamer_id {
-            data_query = data_query.bind(streamer_id);
-        }
-        if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
-            data_query = data_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
-        // Bind pagination parameters
-        data_query = data_query.bind(pagination.limit as i64);
-        data_query = data_query.bind(pagination.offset as i64);
+        data_query = data_query.bind(i64::from(pagination.limit));
+        data_query = data_query.bind(i64::from(pagination.offset));
 
         let outputs = data_query.fetch_all(&self.pool).await?;
 
         Ok((outputs, total_count))
+    }
+
+    async fn summarize_outputs_filtered(
+        &self,
+        filters: &OutputFilters,
+    ) -> Result<Vec<MediaOutputTypeSummary>> {
+        let clause = OutputQueryClause::build(filters);
+
+        let sql = format!(
+            "SELECT m.file_type AS file_type, COUNT(*) AS count, COALESCE(SUM(m.size_bytes), 0) AS size_bytes \
+             FROM {} {} GROUP BY m.file_type ORDER BY m.file_type",
+            clause.from_clause, clause.where_clause
+        );
+
+        let mut query = sqlx::query_as::<_, OutputTypeSummaryRow>(sqlx::AssertSqlSafe(sql));
+        for value in &clause.binds {
+            query = query.bind(value);
+        }
+
+        Ok(query
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|row| MediaOutputTypeSummary {
+                file_type: row.file_type,
+                // Clamped first: a stored negative `size_bytes` would otherwise
+                // wrap to an enormous total rather than contributing nothing.
+                count: row.count.max(0).cast_unsigned(),
+                size_bytes: row.size_bytes.max(0).cast_unsigned(),
+            })
+            .collect())
     }
 }
 
@@ -1048,6 +1091,7 @@ mod tests {
     };
     use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
     use crate::database::{init_pool_with_size, run_migrations};
+    use std::collections::HashMap;
 
     async fn setup_test_repo() -> SqlxSessionRepository {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
@@ -1385,5 +1429,97 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// Seeds `session-1` with one output per `MediaFileType` plus a second
+    /// video, giving every type a distinct size so a summary that mixes up
+    /// groups cannot still sum to the right totals.
+    async fn setup_output_filter_repo() -> SqlxSessionRepository {
+        let repo = setup_test_repo().await;
+        for output in [
+            MediaOutputDbModel::new("session-1", "/one.mp4", MediaFileType::Video, 100),
+            MediaOutputDbModel::new("session-1", "/two.mp4", MediaFileType::Video, 200),
+            MediaOutputDbModel::new("session-1", "/one.jpg", MediaFileType::Thumbnail, 10),
+            MediaOutputDbModel::new("session-1", "/one.xml", MediaFileType::DanmuXml, 1),
+        ] {
+            repo.create_media_output(&output).await.unwrap();
+        }
+        repo
+    }
+
+    #[tokio::test]
+    async fn list_outputs_filtered_narrows_to_one_file_type() {
+        let repo = setup_output_filter_repo().await;
+
+        let filters = OutputFilters::new().with_file_type(MediaFileType::Video.as_str());
+        let (outputs, total) = repo
+            .list_outputs_filtered(&filters, &Pagination::new(10, 0))
+            .await
+            .unwrap();
+
+        assert_eq!(total, 2);
+        assert_eq!(outputs.len(), 2);
+        assert!(
+            outputs
+                .iter()
+                .all(|output| output.file_type == MediaFileType::Video.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn list_outputs_filtered_applies_file_type_and_search_together() {
+        let repo = setup_output_filter_repo().await;
+
+        // The search alone matches `/one.mp4`, `/one.jpg` and `/one.xml`, so a
+        // dropped or misordered bind would show up as more than one row.
+        let filters = OutputFilters::new()
+            .with_file_type(MediaFileType::Video.as_str())
+            .with_search("/one.");
+        let (outputs, total) = repo
+            .list_outputs_filtered(&filters, &Pagination::new(10, 0))
+            .await
+            .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(outputs[0].file_path, "/one.mp4");
+    }
+
+    #[tokio::test]
+    async fn summarize_outputs_filtered_groups_counts_and_sizes_by_type() {
+        let repo = setup_output_filter_repo().await;
+
+        let summaries = repo
+            .summarize_outputs_filtered(&OutputFilters::new())
+            .await
+            .unwrap();
+
+        let by_type: HashMap<&str, &MediaOutputTypeSummary> = summaries
+            .iter()
+            .map(|summary| (summary.file_type.as_str(), summary))
+            .collect();
+        assert_eq!(by_type.len(), 3);
+        assert_eq!(by_type["VIDEO"].count, 2);
+        assert_eq!(by_type["VIDEO"].size_bytes, 300);
+        assert_eq!(by_type["THUMBNAIL"].count, 1);
+        assert_eq!(by_type["THUMBNAIL"].size_bytes, 10);
+        assert_eq!(by_type["DANMU_XML"].count, 1);
+        assert_eq!(by_type["DANMU_XML"].size_bytes, 1);
+        // No AUDIO rows exist, so that type is absent rather than zero.
+        assert!(!by_type.contains_key("AUDIO"));
+    }
+
+    #[tokio::test]
+    async fn summarize_outputs_filtered_honours_the_search_filter() {
+        let repo = setup_output_filter_repo().await;
+
+        let summaries = repo
+            .summarize_outputs_filtered(&OutputFilters::new().with_search("/two."))
+            .await
+            .unwrap();
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].file_type, "VIDEO");
+        assert_eq!(summaries[0].count, 1);
+        assert_eq!(summaries[0].size_bytes, 200);
     }
 }

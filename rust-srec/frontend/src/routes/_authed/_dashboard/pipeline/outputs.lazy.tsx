@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import {
   listPipelineOutputs,
+  getPipelineOutputSummary,
   deletePipelineOutput,
   batchDeletePipelineOutputs,
 } from '@/server/functions';
@@ -40,12 +41,25 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { FileVideo, AlertCircle, Film, ListChecks } from 'lucide-react';
+import {
+  FileVideo,
+  AlertCircle,
+  Film,
+  ListChecks,
+  Layers,
+  type LucideIcon,
+} from 'lucide-react';
 import { OutputCard } from '@/components/pipeline/outputs/output-card';
 import { OutputBatchActionBar } from '@/components/pipeline/outputs/output-batch-action-bar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useBatchSelection } from '@/hooks/use-batch-selection';
+import {
+  MEDIA_FILE_TYPE_ORDER,
+  getMediaFileTypeMeta,
+} from '@/lib/media-file-type';
+import { plural, t } from '@lingui/core/macro';
+import { formatBytes } from '@/lib/format';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/outputs',
@@ -55,7 +69,43 @@ export const Route = createLazyFileRoute(
 
 const PAGE_SIZES = [12, 24, 48, 96];
 
-import { formatBytes } from '@/lib/format';
+/**
+ * One pill in the file-type filter row, matching the pipeline jobs status
+ * filter. `count` arrives pre-formatted and is omitted while the outputs
+ * summary is still loading, so the pill never briefly claims zero.
+ */
+function TypeFilterPill({
+  icon: Icon,
+  label,
+  count,
+  isActive,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: ReactNode;
+  count?: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={isActive}
+      className={cn(
+        'relative flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-medium shadow-sm ring-1 transition-all duration-200',
+        isActive
+          ? 'bg-primary text-primary-foreground ring-primary'
+          : 'bg-background text-muted-foreground ring-border/50 hover:bg-muted hover:text-foreground',
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="whitespace-nowrap">{label}</span>
+      {count !== undefined && (
+        <span className="tabular-nums opacity-70">{count}</span>
+      )}
+    </button>
+  );
+}
 
 function PipelineOutputsPage() {
   const { i18n } = useLingui();
@@ -63,14 +113,15 @@ function PipelineOutputsPage() {
   const search = Route.useSearch();
   const updateSearch = useUpdateSearch<typeof search>();
 
-  // Search, format filter, and pagination live in the URL so they persist across
-  // navigation away from this page and reloads.
+  // Search, file-type filter, and pagination live in the URL so they persist
+  // across navigation away from this page and reloads.
   const selectedFormat = search.format ?? null;
   const debouncedSearch = search.q ?? '';
   const pageSize = search.size ?? 24;
   const currentPage = search.page ?? 0;
 
-  // Reset page when format changes
+  // Reset page when the type changes: the previous offset almost never lands on
+  // a valid page of the narrower result set.
   const handleFormatChange = (format: string | null) => {
     updateSearch({ format: format ?? undefined, page: undefined });
   };
@@ -78,6 +129,7 @@ function PipelineOutputsPage() {
   const {
     data: outputsData,
     isLoading,
+    isPlaceholderData,
     isError,
     error,
   } = useQuery({
@@ -92,6 +144,7 @@ function PipelineOutputsPage() {
     queryFn: () =>
       listPipelineOutputs({
         data: {
+          file_type: selectedFormat || undefined,
           search: debouncedSearch || undefined,
           limit: pageSize,
           offset: currentPage * pageSize,
@@ -101,38 +154,51 @@ function PipelineOutputsPage() {
     placeholderData: keepPreviousData,
   });
 
+  // Deliberately not keyed on the selected type: the endpoint reports every
+  // type, so switching tabs reuses this result instead of refetching.
+  const { data: summary } = useQuery({
+    queryKey: ['pipeline', 'outputs', 'summary', debouncedSearch],
+    queryFn: () =>
+      getPipelineOutputSummary({
+        data: { search: debouncedSearch || undefined },
+      }),
+    refetchInterval: 10000,
+    placeholderData: keepPreviousData,
+  });
+
   const outputs = outputsData?.items || [];
   const totalOutputs = outputsData?.total || 0;
-  const totalSize = outputs.reduce(
-    (acc, output) => acc + output.file_size_bytes,
-    0,
-  ); // Note: Server doesn't return total size of all filtered items yet, this is just page total
   const totalPages = Math.ceil(totalOutputs / pageSize);
 
-  // Client-side format filtering since API doesn't support it yet
-  const displayedOutputs = useMemo(() => {
-    let result = outputs;
-    if (selectedFormat) {
-      result = result.filter(
-        (output) =>
-          output.format.toLowerCase() === selectedFormat.toLowerCase(),
-      );
-    }
-    return result;
-  }, [outputs, selectedFormat]);
-
-  // Get unique formats for the filter (from current page only - limitation)
-  const availableFormats = useMemo(() => {
-    const formats = new Set(outputs.map((o) => o.format.toLowerCase()));
-    return Array.from(formats).sort();
-  }, [outputs]);
-
-  // Scoped to `displayedOutputs`, not `outputs`: the format filter is applied
-  // client-side, so select-page must cover what is actually on screen.
-  const pageIds = useMemo(
-    () => displayedOutputs.map((output) => output.id),
-    [displayedOutputs],
+  // `Intl.NumberFormat` rather than `i18n.number`, which Lingui v6 deprecates.
+  const numberFormat = useMemo(
+    () => new Intl.NumberFormat(i18n.locale),
+    [i18n.locale],
   );
+
+  // Counts and sizes come from the summary so they describe every match, not
+  // just the rows on this page.
+  const countsByType = useMemo(
+    () =>
+      new Map(summary?.by_type.map((entry) => [entry.file_type, entry]) ?? []),
+    [summary],
+  );
+  const filteredSize = selectedFormat
+    ? countsByType.get(selectedFormat)?.size_bytes
+    : summary?.total_size_bytes;
+
+  // Ordered by `MEDIA_FILE_TYPE_ORDER`, then any type the backend reports that
+  // the type map does not know, so its outputs stay reachable.
+  const typeFilters = useMemo(() => {
+    const present = new Set(summary?.by_type.map((entry) => entry.file_type));
+    const known = MEDIA_FILE_TYPE_ORDER.filter((type) => present.has(type));
+    const unknown = [...present]
+      .filter((type) => !MEDIA_FILE_TYPE_ORDER.includes(type))
+      .sort();
+    return [...known, ...unknown];
+  }, [summary]);
+
+  const pageIds = useMemo(() => outputs.map((output) => output.id), [outputs]);
 
   const {
     selectionMode,
@@ -291,16 +357,23 @@ function PipelineOutputsPage() {
             />
             <Badge
               variant="secondary"
-              className="h-9 px-3 text-sm whitespace-nowrap"
+              className="h-9 px-3 text-sm whitespace-nowrap tabular-nums"
             >
-              {i18n.number(totalOutputs)} <Trans>files</Trans>
+              {t(i18n)`${plural(totalOutputs, {
+                one: '# file',
+                other: '# files',
+              })}`}
             </Badge>
-            <Badge
-              variant="outline"
-              className="h-9 px-3 text-sm whitespace-nowrap"
-            >
-              {formatBytes(totalSize)}
-            </Badge>
+            {/* Hidden rather than "0 B" until the summary lands: a zero here
+                would read as an empty library. */}
+            {filteredSize !== undefined && (
+              <Badge
+                variant="outline"
+                className="h-9 px-3 text-sm whitespace-nowrap tabular-nums"
+              >
+                {formatBytes(filteredSize)}
+              </Badge>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -319,33 +392,33 @@ function PipelineOutputsPage() {
           </>
         }
       >
-        <nav className="flex items-center gap-1">
-          <button
+        <nav className="flex items-center gap-1.5">
+          <TypeFilterPill
+            icon={Layers}
+            label={<Trans>All</Trans>}
+            count={
+              summary ? numberFormat.format(summary.total_count) : undefined
+            }
+            isActive={selectedFormat === null}
             onClick={() => handleFormatChange(null)}
-            className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-              selectedFormat === null
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
-          >
-            <span className="relative z-10 flex items-center gap-1.5">
-              <Trans>All</Trans>
-            </span>
-          </button>
+          />
 
-          {availableFormats.map((format) => (
-            <button
-              key={format}
-              onClick={() => handleFormatChange(format)}
-              className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                selectedFormat === format
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              <span className="relative z-10 uppercase">{format}</span>
-            </button>
-          ))}
+          {typeFilters.map((fileType) => {
+            const meta = getMediaFileTypeMeta(fileType);
+            const count = countsByType.get(fileType)?.count;
+            return (
+              <TypeFilterPill
+                key={fileType}
+                icon={meta.icon}
+                label={i18n._(meta.label)}
+                count={
+                  count === undefined ? undefined : numberFormat.format(count)
+                }
+                isActive={selectedFormat === fileType}
+                onClick={() => handleFormatChange(fileType)}
+              />
+            );
+          })}
         </nav>
       </DashboardHeader>
 
@@ -376,16 +449,23 @@ function PipelineOutputsPage() {
                 </CardSkeleton>
               ))}
             </motion.div>
-          ) : displayedOutputs.length > 0 ? (
+          ) : outputs.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              // `keepPreviousData` keeps the old page on screen while the next
+              // one loads; dimming it marks the rows as not yet the ones asked
+              // for, and blocks clicks on cards that are about to be replaced.
+              className={cn(
+                'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 transition-opacity duration-200',
+                isPlaceholderData && 'pointer-events-none opacity-60',
+              )}
+              aria-busy={isPlaceholderData}
               variants={containerVariants}
               initial="hidden"
               animate="visible"
               exit="exit"
             >
-              {displayedOutputs.map((output) => (
+              {outputs.map((output) => (
                 <motion.div key={output.id} variants={itemVariants}>
                   <OutputCard
                     output={output}
@@ -513,7 +593,7 @@ function PipelineOutputsPage() {
         {selectionMode && (
           <OutputBatchActionBar
             selectedCount={selectedIds.size}
-            pageCount={displayedOutputs.length}
+            pageCount={outputs.length}
             allPageSelected={allPageSelected}
             isPending={batchDeleteMutation.isPending}
             onSelectPage={selectPage}

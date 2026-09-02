@@ -39,7 +39,8 @@ const output = {
   streamer_id: 'streamer-1',
   file_path: '/recordings/streamer-one/clip.mp4',
   file_size_bytes: 1024,
-  format: 'mp4',
+  // `format` carries `media_outputs.file_type`, never a container extension.
+  format: 'VIDEO',
   created_at: '2026-01-01T00:00:00Z',
   uploads: [],
 };

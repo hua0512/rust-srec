@@ -13,12 +13,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   MoreHorizontal,
-  FileVideo,
   HardDrive,
-  Calendar,
   Check,
   Copy,
   CheckCircle2,
@@ -39,6 +36,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { getMediaFileTypeMeta } from '@/lib/media-file-type';
 import type { MediaOutput } from '@/api/schemas';
 
 interface OutputCardProps {
@@ -49,20 +47,7 @@ interface OutputCardProps {
   onSelectChange?: (outputId: string, selected: boolean) => void;
 }
 
-// Format colors for different file types
-const FORMAT_COLORS: Record<string, string> = {
-  mp4: 'from-blue-500/10 to-blue-500/5 text-blue-500 border-blue-500/20',
-  mkv: 'from-purple-500/10 to-purple-500/5 text-purple-500 border-purple-500/20',
-  flv: 'from-orange-500/10 to-orange-500/5 text-orange-500 border-orange-500/20',
-  ts: 'from-green-500/10 to-green-500/5 text-green-500 border-green-500/20',
-  m4a: 'from-pink-500/10 to-pink-500/5 text-pink-500 border-pink-500/20',
-  mp3: 'from-pink-500/10 to-pink-500/5 text-pink-500 border-pink-500/20',
-  jpg: 'from-amber-500/10 to-amber-500/5 text-amber-500 border-amber-500/20',
-  png: 'from-amber-500/10 to-amber-500/5 text-amber-500 border-amber-500/20',
-  webp: 'from-amber-500/10 to-amber-500/5 text-amber-500 border-amber-500/20',
-};
-
-import { basename, formatBytes } from '@/lib/format';
+import { basename, dirname, formatBytes } from '@/lib/format';
 
 export function OutputCard({
   output,
@@ -89,11 +74,13 @@ export function OutputCard({
   };
 
   const filename = basename(output.file_path) || i18n._(msg`Unknown File`);
-  const formatLower = output.format.toLowerCase();
-  const colorClass =
-    FORMAT_COLORS[formatLower] ||
-    'from-gray-500/10 to-gray-500/5 text-gray-500 border-gray-500/20';
+  const directory = dirname(output.file_path) || output.file_path;
+  // `format` carries `media_outputs.file_type` (VIDEO, THUMBNAIL, ...), so the
+  // icon and colours come from the type map rather than a file extension.
+  const typeMeta = getMediaFileTypeMeta(output.format);
+  const TypeIcon = typeMeta.icon;
   const hasFailedUpload = output.uploads.some((u) => u.status === 'FAILED');
+  const sessionLabel = output.session_id.substring(0, 8);
 
   const toggleSelection = () => {
     if (selectionMode) {
@@ -114,7 +101,9 @@ export function OutputCard({
         }
       }}
       className={cn(
-        'relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20',
+        // Tighter than the shared Card default (gap-6 py-6): three short rows
+        // of metadata otherwise leave most of the card empty.
+        'relative h-full flex flex-col gap-3 py-4 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20',
         selectionMode && 'cursor-pointer select-none',
         isSelected && 'border-primary/50 ring-2 ring-primary',
       )}
@@ -136,36 +125,36 @@ export function OutputCard({
       {/* Hover Glow Effect */}
       <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
 
-      <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
+      <CardHeader className="relative flex flex-row items-center gap-3 space-y-0 z-10">
         <div
-          className={`p-3 rounded-2xl bg-gradient-to-br ${colorClass} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
+          className={`p-2 rounded-xl bg-gradient-to-br ${typeMeta.tile} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shrink-0`}
         >
-          <FileVideo className="h-5 w-5" />
+          <TypeIcon className="h-4 w-4" />
         </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <CardTitle
-            className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300"
-            title={filename}
-          >
-            {filename}
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {mounted
-                ? i18n.date(output.created_at, {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                  })
-                : i18n.date(output.created_at, { dateStyle: 'medium' })}
-            </span>
-          </div>
+        {/* min-w-0 lets the timestamp truncate instead of forcing the row wider;
+            everything after this column is shrink-0 so it never gets squeezed.
+            Deliberately not `uppercase`: that renders the translated type label
+            as VIDEO / THUMBNAIL, which is exactly the raw `file_type` value. */}
+        <div className="flex-1 min-w-0 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70">
+          <span className="shrink-0">{i18n._(typeMeta.label)}</span>
+          <span aria-hidden className="shrink-0 opacity-40">
+            ·
+          </span>
+          <span className="truncate">
+            {mounted
+              ? i18n.date(output.created_at, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })
+              : i18n.date(output.created_at, { dateStyle: 'medium' })}
+          </span>
         </div>
         {output.uploads.length > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
               <div
                 className={cn(
-                  'p-1.5 rounded-lg border',
+                  'p-1.5 rounded-lg border shrink-0',
                   hasFailedUpload
                     ? 'bg-destructive/10 text-destructive border-destructive/20'
                     : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400',
@@ -210,17 +199,12 @@ export function OutputCard({
             </TooltipContent>
           </Tooltip>
         )}
-        <Badge
-          className={`bg-gradient-to-br ${colorClass} border font-mono text-xs uppercase`}
-        >
-          {output.format}
-        </Badge>
         <DropdownMenu>
           <DropdownMenuTrigger
             asChild
             onClick={(e) => e.stopPropagation()}
             // Hidden while selecting so the row has a single click target.
-            className={cn(selectionMode && 'hidden')}
+            className={cn('shrink-0', selectionMode && 'hidden')}
           >
             <Button
               variant="ghost"
@@ -244,17 +228,7 @@ export function OutputCard({
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
-                const dir = output.file_path.substring(
-                  0,
-                  output.file_path.lastIndexOf(
-                    /[\\/]/.test(output.file_path)
-                      ? output.file_path.includes('\\')
-                        ? '\\'
-                        : '/'
-                      : '/',
-                  ),
-                );
-                void navigator.clipboard.writeText(dir);
+                void navigator.clipboard.writeText(directory);
                 toast.success(i18n._(msg`Directory path copied`));
               }}
             >
@@ -292,47 +266,33 @@ export function OutputCard({
         )}
       </CardHeader>
 
-      <CardContent className="relative pb-4 flex-1 z-10">
+      <CardContent className="relative flex-1 z-10 space-y-1.5">
+        {/* The name spans the full card: sharing the header row with the icon
+            and menu leaves too little width to reach the descriptive tail of a
+            recording filename. */}
+        <CardTitle
+          className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300"
+          title={filename}
+        >
+          {filename}
+        </CardTitle>
+        {/* The directory only: the file name is the title above, and a
+            single truncated line cannot clip a wrapped line in half. */}
         <p
-          className="text-xs text-muted-foreground/80 line-clamp-2 mb-4 leading-relaxed font-mono bg-muted/30 p-2 rounded-md"
+          className="text-[11px] text-muted-foreground/80 truncate font-mono bg-muted/30 px-2 py-1.5 rounded-md"
           title={output.file_path}
         >
-          {output.file_path}
+          {directory}
         </p>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border border-transparent group-hover:border-primary/5 transition-colors">
-            <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
-            <div className="flex flex-col">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                <Trans>Size</Trans>
-              </span>
-              <span className="text-xs font-medium">
-                {formatBytes(output.file_size_bytes)}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border border-transparent group-hover:border-primary/5 transition-colors">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            <div className="flex flex-col">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                <Trans>Created</Trans>
-              </span>
-              <span className="text-xs font-medium">
-                {i18n.date(output.created_at, { dateStyle: 'medium' })}
-              </span>
-            </div>
-          </div>
-        </div>
       </CardContent>
 
-      <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
-        <span className="font-mono opacity-50">
-          <Trans>Session</Trans>: {output.session_id.substring(0, 8)}
-        </span>
-        <span className="font-mono opacity-50">
+      <CardFooter className="relative text-[11px] flex justify-between items-center gap-3 z-10 border-t border-border/20 mt-auto px-6 pt-3 pb-0 bg-muted/5">
+        <span className="flex items-center gap-1.5 font-medium shrink-0">
+          <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
           {formatBytes(output.file_size_bytes)}
+        </span>
+        <span className="font-mono text-muted-foreground/60 truncate">
+          <Trans>Session {sessionLabel}</Trans>
         </span>
       </CardFooter>
     </Card>

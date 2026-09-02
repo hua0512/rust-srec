@@ -4,6 +4,7 @@ import {
   JobSchema,
   PipelineStatsSchema,
   MediaOutputSchema,
+  MediaOutputSummarySchema,
   JobProgressSnapshotSchema,
   UploadRecordListSchema,
   DagExecutionSchema,
@@ -322,21 +323,34 @@ export const getPipelineJob = createServerFn({ method: 'GET' })
     return JobSchema.parse(json);
   });
 
+interface PipelineOutputFilters {
+  session_id?: string;
+  /** A `MediaFileType` value such as `VIDEO`, matching `MediaOutput.format`. */
+  file_type?: string;
+  search?: string;
+}
+
+function pipelineOutputFilterParams(
+  filters: PipelineOutputFilters,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.session_id) params.set('session_id', filters.session_id);
+  if (filters.file_type) params.set('file_type', filters.file_type);
+  if (filters.search) params.set('search', filters.search);
+  return params;
+}
+
 export const listPipelineOutputs = createServerFn({ method: 'GET' })
   .validator(
     (
-      d: {
-        session_id?: string;
-        search?: string;
+      d: PipelineOutputFilters & {
         limit?: number;
         offset?: number;
       } = {},
     ) => d,
   )
   .handler(async ({ data }) => {
-    const params = new URLSearchParams();
-    if (data.session_id) params.set('session_id', data.session_id);
-    if (data.search) params.set('search', data.search);
+    const params = pipelineOutputFilterParams(data);
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
@@ -349,6 +363,22 @@ export const listPipelineOutputs = createServerFn({ method: 'GET' })
         offset: z.number(),
       })
       .parse(json);
+  });
+
+/**
+ * Totals for the outputs matching `filters`, broken down by file type.
+ *
+ * `file_type` is not accepted: the endpoint always reports every type so the
+ * counts behind a type picker stay put while one type is selected.
+ */
+export const getPipelineOutputSummary = createServerFn({ method: 'GET' })
+  .validator((d: Omit<PipelineOutputFilters, 'file_type'> = {}) => d)
+  .handler(async ({ data }) => {
+    const params = pipelineOutputFilterParams(data);
+    const json = await fetchBackend(
+      `/pipeline/outputs/summary?${params.toString()}`,
+    );
+    return MediaOutputSummarySchema.parse(json);
   });
 
 // Redundant schemas removed - now imported from api/schemas
