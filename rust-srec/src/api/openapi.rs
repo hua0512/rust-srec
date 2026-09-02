@@ -156,6 +156,7 @@ pub struct MessageResponse {
         crate::api::routes::pipeline::jobs::cancel_pipeline,
         crate::api::routes::pipeline::jobs::get_stats,
         crate::api::routes::pipeline::jobs::list_outputs,
+        crate::api::routes::pipeline::jobs::summarize_outputs,
         crate::api::routes::pipeline::jobs::create_pipeline,
         crate::api::routes::pipeline::dag::validate_dag,
         // Pipeline preset endpoints
@@ -296,6 +297,8 @@ pub struct MessageResponse {
             crate::api::models::UploadRecordResponse,
             crate::api::models::UploadRecordListResponse,
             crate::api::models::MediaOutputUploadInfo,
+            crate::api::routes::pipeline::MediaOutputSummaryResponse,
+            crate::api::routes::pipeline::MediaOutputTypeSummaryResponse,
             // Filter schemas
             CreateFilterRequest,
             UpdateFilterRequest,

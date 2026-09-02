@@ -60,6 +60,7 @@
 //! | Method | Path | Description |
 //! |--------|------|-------------|
 //! | GET | `/api/pipeline/outputs` | List media outputs with filtering |
+//! | GET | `/api/pipeline/outputs/summary` | Count and total size of matching outputs, per file type |
 //! | DELETE | `/api/pipeline/outputs/{id}` | Delete a media output, optionally with its file |
 //! | POST | `/api/pipeline/outputs/batch-delete` | Delete several media outputs |
 //! | GET | `/api/pipeline/stats` | Get pipeline statistics |
@@ -78,7 +79,7 @@ use dag::{
 use jobs::{
     batch_delete_outputs, cancel_job, cancel_pipeline, create_pipeline, delete_job, delete_output,
     get_job, get_job_progress, get_stats, list_job_logs, list_job_uploads, list_jobs,
-    list_jobs_page, list_outputs, retry_job,
+    list_jobs_page, list_outputs, retry_job, summarize_outputs,
 };
 use presets::{
     create_pipeline_preset, delete_pipeline_preset, get_pipeline_preset_by_id,
@@ -210,6 +211,7 @@ pub fn router() -> Router<AppState> {
         .route("/jobs/{id}", delete(delete_job))
         .route("/{pipeline_id}", delete(cancel_pipeline))
         .route("/outputs", get(list_outputs))
+        .route("/outputs/summary", get(summarize_outputs))
         .route("/outputs/batch-delete", post(batch_delete_outputs))
         .route("/outputs/{id}", delete(delete_output))
         .route("/stats", get(get_stats))
@@ -426,8 +428,36 @@ pub struct OutputFilterParams {
     pub session_id: Option<String>,
     /// Filter by streamer ID.
     pub streamer_id: Option<String>,
+    /// Filter by media file type: `VIDEO`, `AUDIO`, `THUMBNAIL`, or `DANMU_XML`.
+    /// This is the same value the list response returns as `format`.
+    pub file_type: Option<String>,
     /// Search query (matches file path, session ID, or format).
     pub search: Option<String>,
+}
+
+/// Media outputs of one file type matching a filter, with their combined size.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct MediaOutputTypeSummaryResponse {
+    /// Media file type: `VIDEO`, `AUDIO`, `THUMBNAIL`, or `DANMU_XML`.
+    pub file_type: String,
+    /// Number of matching outputs of this type.
+    pub count: u64,
+    /// Combined size of those outputs, in bytes.
+    pub size_bytes: u64,
+}
+
+/// Totals for the media outputs matching a filter, overall and per file type.
+///
+/// `by_type` ignores the `file_type` filter so the caller can render a type
+/// picker with stable counts while one type is selected.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct MediaOutputSummaryResponse {
+    /// Number of matching outputs across all types.
+    pub total_count: u64,
+    /// Combined size of all matching outputs, in bytes.
+    pub total_size_bytes: u64,
+    /// Per-type breakdown. Types with no matching outputs are omitted.
+    pub by_type: Vec<MediaOutputTypeSummaryResponse>,
 }
 
 // ============================================================================

@@ -11,6 +11,9 @@ pub struct OutputFilters {
     pub session_id: Option<String>,
     /// Filter by streamer ID (requires join with live_sessions).
     pub streamer_id: Option<String>,
+    /// Filter by `media_outputs.file_type`, i.e. a `MediaFileType::as_str` value
+    /// such as `VIDEO` or `DANMU_XML` — not a container format.
+    pub file_type: Option<String>,
     /// Search query.
     pub search: Option<String>,
 }
@@ -33,11 +36,29 @@ impl OutputFilters {
         self
     }
 
+    /// Filter by media file type. Accepts a `MediaFileType::as_str` value.
+    pub fn with_file_type(mut self, file_type: impl Into<String>) -> Self {
+        self.file_type = Some(file_type.into());
+        self
+    }
+
     /// Filter by search query.
     pub fn with_search(mut self, search: impl Into<String>) -> Self {
         self.search = Some(search.into());
         self
     }
+}
+
+/// One row of `SessionRepository::summarize_outputs_filtered`: how many media
+/// outputs of a given `file_type` match the filters, and their combined size.
+#[derive(Debug, Clone)]
+pub struct MediaOutputTypeSummary {
+    /// A `MediaFileType::as_str` value, e.g. `VIDEO`.
+    pub file_type: String,
+    /// Number of matching outputs of this type.
+    pub count: u64,
+    /// Summed `media_outputs.size_bytes` of those outputs.
+    pub size_bytes: u64,
 }
 
 /// Filter criteria for querying sessions.

@@ -1,8 +1,8 @@
 use super::*;
 use crate::database::models::{
     DagExecutionDbModel, DagStepExecutionDbModel, DanmuStatisticsDbModel, JobDbModel,
-    JobExecutionLogDbModel, LiveSessionDbModel, OutputFilters, PipelinePreset, SessionFilters,
-    SessionSegmentDbModel,
+    JobExecutionLogDbModel, LiveSessionDbModel, MediaOutputTypeSummary, OutputFilters,
+    PipelinePreset, SessionFilters, SessionSegmentDbModel,
 };
 use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
 use crate::downloader::DownloadTerminalEvent;
@@ -255,6 +255,13 @@ impl SessionRepository for TestSessionRepository {
         _filters: &OutputFilters,
         _pagination: &Pagination,
     ) -> Result<(Vec<MediaOutputDbModel>, u64)> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn summarize_outputs_filtered(
+        &self,
+        _filters: &OutputFilters,
+    ) -> Result<Vec<MediaOutputTypeSummary>> {
         unimplemented!("not needed for these tests")
     }
 

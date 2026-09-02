@@ -228,6 +228,23 @@ export const MediaOutputSchema = z.object({
 });
 export type MediaOutput = z.infer<typeof MediaOutputSchema>;
 
+// Totals from /pipeline/outputs/summary. `by_type` ignores the file_type
+// filter, so the type picker keeps every type's count while one is selected.
+export const MediaOutputSummarySchema = z.object({
+  total_count: z.number(),
+  total_size_bytes: z.number(),
+  by_type: z
+    .array(
+      z.object({
+        file_type: z.string(),
+        count: z.number(),
+        size_bytes: z.number(),
+      }),
+    )
+    .default([]),
+});
+export type MediaOutputSummary = z.infer<typeof MediaOutputSummarySchema>;
+
 // NOTE: This ExtractMetadataResponse is for URL extraction, NOT media file metadata
 export const ExtractMetadataResponseSchema = z.object({
   platform: z.string().nullable().optional(),

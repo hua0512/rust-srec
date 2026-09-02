@@ -113,6 +113,17 @@ export function basename(path: string): string {
 }
 
 /**
+ * Everything before the final path component, handling both `/` and `\`
+ * separators. Returns an empty string when the input has no separator, and the
+ * lone separator when the file sits at the root.
+ */
+export function dirname(path: string): string {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (idx < 0) return '';
+  return idx === 0 ? path.slice(0, 1) : path.slice(0, idx);
+}
+
+/**
  * Remove null and undefined values from an object or array recursively
  */
 export function removeEmpty(obj: any): any {

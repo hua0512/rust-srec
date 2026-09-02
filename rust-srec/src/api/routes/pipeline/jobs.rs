@@ -20,8 +20,8 @@ use crate::pipeline::{Job, JobProgressSnapshot};
 use super::{
     BatchDagItemResult, BatchDeleteOutputsRequest, BatchDeleteOutputsResponse,
     CreatePipelineRequest, CreatePipelineResponse, DeleteOutputParams, DeleteOutputResponse,
-    OutputFilterParams, OutputRouteState, PipelineRouteState, UploadRouteState,
-    dag::validate_batch_ids,
+    MediaOutputSummaryResponse, MediaOutputTypeSummaryResponse, OutputFilterParams,
+    OutputRouteState, PipelineRouteState, UploadRouteState, dag::validate_batch_ids,
 };
 
 /// List pipeline jobs with pagination and filtering.
@@ -557,6 +557,7 @@ pub async fn list_outputs(
     let db_filters = OutputFilters {
         session_id: filters.session_id,
         streamer_id: filters.streamer_id,
+        file_type: filters.file_type,
         search: filters.search,
     };
 
@@ -679,6 +680,54 @@ pub async fn list_outputs(
 
     let response =
         PaginatedResponse::new(output_responses, total, effective_limit, pagination.offset);
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/outputs/summary",
+    tag = "pipeline",
+    params(OutputFilterParams),
+    responses(
+        (status = 200, description = "Media output totals per file type", body = MediaOutputSummaryResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn summarize_outputs(
+    State(state): State<OutputRouteState>,
+    Query(filters): Query<OutputFilterParams>,
+) -> ApiResult<Json<MediaOutputSummaryResponse>> {
+    // `file_type` is deliberately dropped: a caller filtering on one type still
+    // needs every type's count to render its type picker. `total_count` and
+    // `total_size_bytes` below are therefore across all types as well.
+    let db_filters = OutputFilters {
+        session_id: filters.session_id,
+        streamer_id: filters.streamer_id,
+        file_type: None,
+        search: filters.search,
+    };
+
+    let by_type = state
+        .session_repository
+        .summarize_outputs_filtered(&db_filters)
+        .await
+        .map_err(ApiError::from)?;
+
+    let mut response = MediaOutputSummaryResponse {
+        total_count: 0,
+        total_size_bytes: 0,
+        by_type: Vec::with_capacity(by_type.len()),
+    };
+    for summary in by_type {
+        response.total_count += summary.count;
+        response.total_size_bytes += summary.size_bytes;
+        response.by_type.push(MediaOutputTypeSummaryResponse {
+            file_type: summary.file_type,
+            count: summary.count,
+            size_bytes: summary.size_bytes,
+        });
+    }
+
     Ok(Json(response))
 }
 
