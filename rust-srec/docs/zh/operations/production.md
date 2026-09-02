@@ -21,7 +21,7 @@ flowchart LR
 1. 使用 [Docker 部署](../getting-started/docker.md)，将两个镜像的 `VERSION` 固定为 `v0.5.1`。变更需审批的环境不要使用 `latest`。
 2. 为 `JWT_SECRET` 和 `SESSION_SECRET` 生成互不相同的唯一值，并限制 `.env` 文件权限。
 3. 把宿主机端口绑定到私网地址或回环地址。Compose 的回环映射格式为 `127.0.0.1:15275:80` 和 `127.0.0.1:12555:8080`。
-4. 在持续维护的反向代理终止 HTTPS，并转发 `Host`、`X-Forwarded-For` 与 `X-Forwarded-Proto`。HTTPS 验证成功后设置 `COOKIE_SECURE=true`。
+4. 在持续维护的反向代理终止 HTTPS，并转发 `Host`、`X-Forwarded-For` 与 `X-Forwarded-Proto`。只要反向代理发送 `X-Forwarded-Proto: https`（符合 RFC 7239 的 `Forwarded: proto=https` 同样有效），会话 Cookie 就会自动带上 `Secure` 标记；如果代理无法发送这两个头，请显式设置 `COOKIE_SECURE=true`。
 5. 将 `DATA_DIR`、`CONFIG_DIR`、`OUTPUT_DIR` 和 `LOG_DIR` 放在持久化存储上；输出卷应与系统盘分开估算和监控。
 6. 按主机容量设置容器资源限制和应用并发限制。从保守值开始，按预计同时录制数和码率压测。
 7. 为录制失败、管道失败、凭据过期和输出根不可写配置通知。

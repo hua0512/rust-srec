@@ -190,6 +190,10 @@
 
 ## 部署
 
+- **通过 HTTPS 反向代理访问时，登录 Cookie 会自动受到保护**
+
+  当 Web 界面通过终止 HTTPS 的反向代理对外发布时，保存登录状态的 Cookie 以前只有在手动设置 `COOKIE_SECURE=true` 之后才会被标记为仅 HTTPS，否则浏览器在普通 HTTP 请求中也会发送它。现在反向代理报告的协议能够原样传递给应用，Cookie 会自动带上仅 HTTPS 标记。家庭或办公网络内的纯 HTTP 部署不受影响，`COOKIE_SECURE` 也仍然可以在两个方向上覆盖自动判断。如果生产环境仍在通过普通 HTTP 访问，会记录一条提示警告（仅记录一次）。
+
 - **可选的容器自动更新**
 
   Docker Compose 文件新增了可选的 `watchtower` 服务（`docker compose --profile autoupdate up -d`），可自动拉取新镜像并重启容器——但只在系统空闲时进行。新增的免认证 `GET /api/health/idle` 端点会报告当前是否有录制、排队录制或执行中的管道任务（上传、remux、弹幕转换等）；只要处于忙碌状态，更新就会推迟到下一次检查，因此重启不会打断任何录制或上传。自动更新要求使用可变镜像标签（`VERSION=latest`）。详见[升级与回滚](../operations/upgrading.md#自动更新watchtower)。

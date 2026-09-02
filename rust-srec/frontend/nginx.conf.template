@@ -4,6 +4,15 @@ map $http_upgrade $connection_upgrade {
     ''      close;
 }
 
+# Client-facing scheme for the X-Forwarded-Proto sent upstream. This server only
+# listens on plain HTTP, so $scheme is never https; when an external TLS
+# terminator already set X-Forwarded-Proto, its value wins. A proxy chain sends
+# the client-facing hop first, so matching the start of the value is enough.
+map $http_x_forwarded_proto $forwarded_proto {
+    default   $scheme;
+    ~*^https  https;
+}
+
 server {
     listen 80;
     server_name localhost;
@@ -24,7 +33,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }
 
     # API proxy - backend URL is configurable via environment variable
@@ -36,6 +45,6 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }
 }
