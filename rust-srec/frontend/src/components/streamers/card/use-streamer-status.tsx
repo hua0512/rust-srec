@@ -19,6 +19,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 import type { Download, QueuedEntry } from '@/store/downloads';
 import { isStreamerRecovering } from './recovery-state';
+import { formatDate } from '@/lib/datetime';
 
 export function useStreamerStatus(
   streamer: z.infer<typeof StreamerSchema>,
@@ -147,7 +148,9 @@ export function useStreamerStatus(
                 <Trans>Until</Trans>
               </span>
               <span className="font-mono text-xs font-medium text-foreground/80">
-                {i18n.date(disabledUntil, { timeStyle: 'medium' })}
+                {formatDate(i18n.locale, disabledUntil, {
+                  timeStyle: 'medium',
+                })}
               </span>
             </div>
 
@@ -397,7 +400,7 @@ export function useStreamerStatus(
                 <Trans>Last Activity</Trans>
               </span>
               <span className="font-mono font-medium text-foreground">
-                {i18n.date(lastLiveDate, {
+                {formatDate(i18n.locale, lastLiveDate, {
                   dateStyle: 'medium',
                   timeStyle: 'medium',
                 })}

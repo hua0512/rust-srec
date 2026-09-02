@@ -38,6 +38,7 @@ import { type I18n } from '@lingui/core';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { formatDate } from '@/lib/datetime';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/system/health')({
   component: SystemHealthPage,
@@ -166,7 +167,8 @@ function SystemHealthPage() {
                   mounted ? (
                     <Trans>
                       Since{' '}
-                      {i18n.date(
+                      {formatDate(
+                        i18n.locale,
                         new Date(Date.now() - health.uptime_secs * 1000),
                         {
                           timeStyle: 'medium',

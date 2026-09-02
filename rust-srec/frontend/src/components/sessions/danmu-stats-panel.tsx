@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/datetime';
 
 // ---------------------------------------------------------------------------
 // Module-level constants – never recreated
@@ -270,7 +271,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
     const sorted = [...stats.danmu_rate_timeseries].sort((a, b) => a.ts - b.ts);
     const filled = fillGaps(sorted, bucketSecs);
     return downsampleTimeseries(filled, MAX_CHART_POINTS).map((point) => ({
-      label: i18n.date(new Date(point.ts), {
+      label: formatDate(i18n.locale, new Date(point.ts), {
         hour: '2-digit',
         minute: '2-digit',
       }),

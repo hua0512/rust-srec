@@ -12,6 +12,7 @@ import {
   getStatusLabel,
 } from '@/components/pipeline/status-config';
 import type { DagSummary } from '@/api/schemas';
+import { formatDate } from '@/lib/datetime';
 
 interface JobsTabProps {
   isLoading: boolean;
@@ -94,13 +95,17 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs md:text-sm text-muted-foreground sm:justify-end">
                             <div className="flex items-center gap-1.5 min-w-max">
                               <Clock className="h-3.5 w-3.5" />
-                              {i18n.date(new Date(dag.created_at), {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: 'numeric',
-                                second: 'numeric',
-                              })}
+                              {formatDate(
+                                i18n.locale,
+                                new Date(dag.created_at),
+                                {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: 'numeric',
+                                  second: 'numeric',
+                                },
+                              )}
                             </div>
                             {dag.progress_percent !== undefined && (
                               <div className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] md:text-xs">

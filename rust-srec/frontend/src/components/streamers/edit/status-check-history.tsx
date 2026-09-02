@@ -17,6 +17,7 @@ import {
   getStreamerCheckHistory,
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
+import { formatDate } from '@/lib/datetime';
 
 /**
  * Number of bar slots rendered. Matches the screenshot's "HISTORY (60PTS)"
@@ -158,7 +159,7 @@ const Bar = memo(function Bar({ entry, i18n }: BarProps) {
   // `entry.outcome` is the wire-format discriminator (`live`, `offline`,
   // …) which must not reach the screen-reader as-is.
   const ariaLabel = i18n._(
-    msg`${outcomeAriaName(entry.outcome, i18n)} at ${i18n.date(new Date(entry.checked_at), { timeStyle: 'short' })}`,
+    msg`${outcomeAriaName(entry.outcome, i18n)} at ${formatDate(i18n.locale, new Date(entry.checked_at), { timeStyle: 'short' })}`,
   );
 
   return (
@@ -193,7 +194,7 @@ function BarTooltipContent({
   entry: StreamerCheckHistoryEntry;
   i18n: ReturnType<typeof useLingui>['i18n'];
 }) {
-  const formatted = i18n.date(new Date(entry.checked_at), {
+  const formatted = formatDate(i18n.locale, new Date(entry.checked_at), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

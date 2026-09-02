@@ -48,6 +48,7 @@ interface OutputCardProps {
 }
 
 import { basename, dirname, formatBytes } from '@/lib/format';
+import { formatDate } from '@/lib/datetime';
 
 export function OutputCard({
   output,
@@ -142,11 +143,13 @@ export function OutputCard({
           </span>
           <span className="truncate">
             {mounted
-              ? i18n.date(output.created_at, {
+              ? formatDate(i18n.locale, output.created_at, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })
-              : i18n.date(output.created_at, { dateStyle: 'medium' })}
+              : formatDate(i18n.locale, output.created_at, {
+                  dateStyle: 'medium',
+                })}
           </span>
         </div>
         {output.uploads.length > 0 && (
@@ -188,7 +191,7 @@ export function OutputCard({
                   )}
                   {upload.completed_at && (
                     <div className="opacity-60">
-                      {i18n.date(upload.completed_at, {
+                      {formatDate(i18n.locale, upload.completed_at, {
                         dateStyle: 'medium',
                         timeStyle: 'short',
                       })}

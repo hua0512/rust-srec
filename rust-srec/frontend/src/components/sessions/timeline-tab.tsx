@@ -18,6 +18,7 @@ import type {
   SessionEventPayload,
   TerminalCauseDto,
 } from '@/api/schemas/session';
+import { formatDate } from '@/lib/datetime';
 
 // --- Unified timeline entry model ---
 //
@@ -469,7 +470,7 @@ export function TimelineTab({ session }: TimelineTabProps) {
                       i % 2 === 0 ? 'justify-start' : 'justify-end',
                     )}
                   >
-                    {i18n.date(new Date(entry.timestamp), {
+                    {formatDate(i18n.locale, new Date(entry.timestamp), {
                       hour: 'numeric',
                       minute: 'numeric',
                       second: 'numeric',
@@ -481,7 +482,7 @@ export function TimelineTab({ session }: TimelineTabProps) {
                     <Card className="bg-card/40 backdrop-blur-sm border-border/40 hover:border-primary/20 hover:bg-card/60 transition-all duration-300 group-hover:shadow-lg relative overflow-hidden">
                       {/* Mobile Time Stamp */}
                       <div className="md:hidden absolute top-3 right-3 text-[10px] font-mono text-muted-foreground/60 bg-muted/30 px-1.5 py-0.5 rounded">
-                        {i18n.date(new Date(entry.timestamp), {
+                        {formatDate(i18n.locale, new Date(entry.timestamp), {
                           hour: 'numeric',
                           minute: 'numeric',
                         })}

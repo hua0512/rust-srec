@@ -66,6 +66,7 @@ export const Route = createLazyFileRoute(
 });
 
 import { formatDuration } from '@/lib/format';
+import { formatDate } from '@/lib/datetime';
 
 function JobDetailsPage() {
   const { jobId } = Route.useParams();
@@ -608,14 +609,18 @@ function JobDetailsPage() {
                 <div className="space-y-6">
                   <TimelineItem
                     label={i18n._(msg`Created`)}
-                    time={i18n.date(job.created_at, { timeStyle: 'medium' })}
+                    time={formatDate(i18n.locale, job.created_at, {
+                      timeStyle: 'medium',
+                    })}
                     active
                   />
                   <TimelineItem
                     label={i18n._(msg`Started`)}
                     time={
                       job.started_at
-                        ? i18n.date(job.started_at, { timeStyle: 'medium' })
+                        ? formatDate(i18n.locale, job.started_at, {
+                            timeStyle: 'medium',
+                          })
                         : undefined
                     }
                     active={!!job.started_at}
@@ -624,7 +629,9 @@ function JobDetailsPage() {
                     label={i18n._(msg`Completed`)}
                     time={
                       job.completed_at
-                        ? i18n.date(job.completed_at, { timeStyle: 'medium' })
+                        ? formatDate(i18n.locale, job.completed_at, {
+                            timeStyle: 'medium',
+                          })
                         : undefined
                     }
                     active={!!job.completed_at}
@@ -734,7 +741,7 @@ function JobDetailsPage() {
                                 className="flex gap-4 hover:bg-zinc-900/50 -mx-2 px-2 py-0.5 rounded transition-colors group"
                               >
                                 <span className="text-zinc-600 shrink-0 select-none w-20 group-hover:text-zinc-500 transition-colors">
-                                  {i18n.date(log.timestamp, {
+                                  {formatDate(i18n.locale, log.timestamp, {
                                     timeStyle: 'medium',
                                   })}
                                 </span>

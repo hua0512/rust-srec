@@ -29,6 +29,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { formatDate } from '@/lib/datetime';
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -290,7 +291,7 @@ const TimelineNode = memo(function TimelineNode({
             </h4>
             <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
               <span className="font-mono flex items-center gap-1">
-                {i18n.date(new Date(group.startTimeMs), {
+                {formatDate(i18n.locale, new Date(group.startTimeMs), {
                   hour: '2-digit',
                   minute: '2-digit',
                   second: '2-digit',
@@ -298,7 +299,7 @@ const TimelineNode = memo(function TimelineNode({
                 {group.startTimeMs !== group.endTimeMs && (
                   <>
                     <ArrowRight className="h-3 w-3 opacity-50" />
-                    {i18n.date(new Date(group.endTimeMs), {
+                    {formatDate(i18n.locale, new Date(group.endTimeMs), {
                       hour: '2-digit',
                       minute: '2-digit',
                       second: '2-digit',
