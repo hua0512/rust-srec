@@ -357,4 +357,70 @@ mod tests {
         assert_eq!(count, 0);
         tx.commit().await.unwrap();
     }
+
+    /// `DROP TABLE` takes the dropped table's triggers with it, so a migration that
+    /// rebuilds `job` (create new table, copy, drop, rename) silently removes these.
+    /// Pin the set by name so a rebuild that does not reinstate one fails here rather
+    /// than quietly degrading `job_execution_progress` upkeep.
+    #[tokio::test]
+    async fn migrated_schema_keeps_every_job_progress_trigger() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        for trigger in [
+            "trg_job_execution_progress_touch_updated_at",
+            "trg_job_reset_clears_progress",
+            "trg_job_terminal_clears_progress",
+        ] {
+            let found: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+            )
+            .bind(trigger)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(found, 1, "missing trigger {trigger}");
+        }
+    }
+
+    #[tokio::test]
+    async fn reclaiming_a_processing_job_drops_its_progress_snapshot() {
+        use crate::database::models::{JobDbModel, JobExecutionProgressDbModel, JobStatus};
+        use crate::database::repositories::{JobRepository as _, SqlxJobRepository};
+
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
+
+        let job = JobDbModel::new("remux", "{}");
+        repo.create_job(&job).await.unwrap();
+        repo.update_job_status(&job.id, JobStatus::Processing)
+            .await
+            .unwrap();
+        // upsert_job_execution_progress only inserts while the job is PROCESSING.
+        repo.upsert_job_execution_progress(&JobExecutionProgressDbModel {
+            job_id: job.id.clone(),
+            kind: "ffmpeg".to_string(),
+            progress: r#"{"percent":42}"#.to_string(),
+            updated_at: time::now_ms(),
+        })
+        .await
+        .unwrap();
+        assert!(
+            repo.get_job_execution_progress(&job.id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        assert_eq!(repo.reset_processing_jobs().await.unwrap(), 1);
+
+        assert!(
+            repo.get_job_execution_progress(&job.id)
+                .await
+                .unwrap()
+                .is_none(),
+            "trg_job_reset_clears_progress should drop the snapshot of a requeued job"
+        );
+    }
 }

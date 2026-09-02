@@ -92,6 +92,10 @@
 
   Media outputs could only be browsed, so clearing space meant finding the files on disk yourself and then having no way to tidy up the leftover entries. Each output now has a **Delete** option, and a **Select** button lets you clear many at once. By default this only removes the entry and leaves the file untouched; tick **Also delete files from disk** in the confirmation to remove the recording itself. Deleting an entry whose file you already removed by hand works as expected, and the owning recording's total size is corrected either way.
 
+- **A job picked up again after a restart no longer shows stale progress**
+
+  If the app stopped while a transcode or upload was running, that job was put back in the queue on the next start but kept showing the percentage it had reached before — a job that was only waiting its turn could sit there reading "42%" until it actually started running again. The old figure is now cleared the moment the job returns to the queue.
+
 ## Danmu
 
 - **Chat recording now survives network interruptions**
