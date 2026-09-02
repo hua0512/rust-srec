@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
+import { searchParamsValidator } from '@/lib/search-params';
 
 // Search params schema for URL persistence — keeps search, the file-type filter,
 // and pagination in the URL so they survive leaving this page and reloads.
@@ -9,7 +10,7 @@ import { z } from 'zod';
 // `?format=video` select a type; it is idempotent, so re-validating the value
 // this produces cannot drift. An unrecognised value is passed through to the
 // backend, which then matches no rows and yields the empty state.
-const searchParamsSchema = z.object({
+const validateSearch = searchParamsValidator({
   q: z.string().optional(),
   format: z
     .string()
@@ -19,8 +20,6 @@ const searchParamsSchema = z.object({
   size: z.number().int().positive().optional(),
 });
 
-type SearchParams = z.infer<typeof searchParamsSchema>;
-
 export const Route = createFileRoute('/_authed/_dashboard/pipeline/outputs')({
-  validateSearch: (search): SearchParams => searchParamsSchema.parse(search),
+  validateSearch,
 });
