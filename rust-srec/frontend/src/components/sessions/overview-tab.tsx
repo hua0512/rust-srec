@@ -22,6 +22,7 @@ import { getMediaUrl } from '@/lib/url';
 import { isPlayable } from '@/lib/media';
 import type { SessionDanmuStatistics } from '@/api/schemas';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatDate } from '@/lib/datetime';
 
 const DanmuStatsPanel = React.lazy(() =>
   import('./danmu-stats-panel').then((module) => ({
@@ -302,7 +303,7 @@ function TimeBlock({ label, date, icon: Icon, delay }: any) {
       </div>
       <div className="font-mono text-sm font-semibold">
         {date
-          ? i18n.date(new Date(date), {
+          ? formatDate(i18n.locale, new Date(date), {
               hour: 'numeric',
               minute: 'numeric',
               second: 'numeric',
@@ -311,7 +312,7 @@ function TimeBlock({ label, date, icon: Icon, delay }: any) {
       </div>
       <div className="text-[10px] text-muted-foreground/60">
         {date ? (
-          i18n.date(new Date(date), {
+          formatDate(i18n.locale, new Date(date), {
             month: 'short',
             day: 'numeric',
             year: 'numeric',

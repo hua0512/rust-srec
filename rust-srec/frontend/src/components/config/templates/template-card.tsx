@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import z from 'zod';
 import { TemplateSchema } from '@/api/schemas';
+import { formatDate } from '@/lib/datetime';
 
 interface TemplateCardProps {
   template: z.infer<typeof TemplateSchema>;
@@ -170,7 +171,7 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
 
         <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
           <span className="opacity-50">
-            {i18n.date(new Date(template.updated_at || 0))}
+            {formatDate(i18n.locale, new Date(template.updated_at || 0))}
           </span>
           <span className="font-mono opacity-50">
             #{template.id.slice(0, 8)}

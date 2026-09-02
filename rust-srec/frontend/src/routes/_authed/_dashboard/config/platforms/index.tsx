@@ -1,14 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
+import { searchParamsValidator } from '@/lib/search-params';
 
 // Search params schema for URL persistence — keeps the search term in the URL so
 // it survives navigation into config/platforms/$platformId and reloads.
-const searchParamsSchema = z.object({
+const validateSearch = searchParamsValidator({
   q: z.string().optional(),
 });
 
-type SearchParams = z.infer<typeof searchParamsSchema>;
-
 export const Route = createFileRoute('/_authed/_dashboard/config/platforms/')({
-  validateSearch: (search): SearchParams => searchParamsSchema.parse(search),
+  validateSearch,
 });

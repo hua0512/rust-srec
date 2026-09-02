@@ -5,6 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import { formatDate } from '@/lib/datetime';
 
 interface RecentSessionsListProps {
   sessions: any[];
@@ -80,7 +81,7 @@ export const RecentSessionsList = memo(function RecentSessionsList({
                 <div className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
                   <span>
-                    {i18n.date(session.start_time, {
+                    {formatDate(i18n.locale, session.start_time, {
                       month: 'short',
                       day: 'numeric',
                     })}

@@ -38,6 +38,7 @@ import { msg } from '@lingui/core/macro';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { cn, getProxiedUrl } from '@/lib/utils';
 import { motion } from 'motion/react';
+import { formatDate } from '@/lib/datetime';
 
 type Session = z.infer<typeof SessionSchema>;
 
@@ -189,7 +190,7 @@ export const SessionCard = memo(
             <div className="flex items-center gap-2 text-muted-foreground/40">
               <Calendar className="h-3 w-3 text-blue-400/70" />
               <span className="text-[10px] font-black uppercase tracking-widest leading-none">
-                {i18n.date(new Date(session.start_time), {
+                {formatDate(i18n.locale, new Date(session.start_time), {
                   month: 'short',
                   day: 'numeric',
                   hour: '2-digit',

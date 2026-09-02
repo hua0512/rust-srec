@@ -164,6 +164,10 @@
 
 ## Web interface
 
+- **A bad link no longer replaces a list page with an error**
+
+  Recordings, streamers, processing jobs, workflows, presets, media files and the player all remember your search, filters and page number in the address bar. If any one of those values was not something the page could read — a hand-edited address, a truncated link, or one saved before an update changed what a filter accepts — the whole page was replaced by "Something went wrong!" and a block of technical detail. Values that cannot be read are now simply ignored, and the rest of the address still applies: a link carrying both a search term and an unusable page number now runs the search and starts from the first page.
+
 - **Media files page is readable again**
 
   Every card on the **Media files** page was squeezed into the same shape regardless of what it held, and long recording names were cut down to two or three characters. Each file now leads with a coloured icon for what it actually is — a recording, audio, a thumbnail or a chat file — followed by its full name on its own line and the folder it sits in. The size and the recording session sit along the bottom. Names that are still too long to fit end in an ellipsis and show in full on hover.
