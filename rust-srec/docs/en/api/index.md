@@ -90,7 +90,9 @@ API errors use one stable envelope:
 }
 ```
 
-`details` is omitted when unavailable. Common statuses are `400` invalid input, `401` missing/expired credentials, `403` disabled account or required password change, `404` missing resource, `409` conflict, `422` validation failure, `500` internal failure, and `503` unavailable dependency.
+`details` is omitted when unavailable. Common statuses are `400` invalid input, `401` missing/expired credentials, `403` disabled account or required password change, `404` missing resource, `409` conflict, `422` validation failure, `429` too many failed login attempts, `500` internal failure, and `503` unavailable dependency.
+
+`POST /api/auth/login` is rate limited per username and per source address. After five failed attempts it answers `429` with code `TOO_MANY_REQUESTS` and a `Retry-After` header holding the number of seconds to wait; a successful login clears the count for that username.
 
 Clients should branch on HTTP status and `code`, not parse the human-readable `message`.
 

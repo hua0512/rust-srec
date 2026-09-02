@@ -18,6 +18,7 @@ use crate::api::auth_service::{
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::jwt::Claims;
 use crate::api::middleware::AuthLayer;
+use crate::api::rate_limit::ClientIp;
 use crate::api::server::AppState;
 use crate::database::models::{ApiKeyAccessLevel, ApiKeyDbModel};
 
@@ -221,11 +222,13 @@ where
     responses(
         (status = 200, description = "Login successful", body = LoginResponse),
         (status = 401, description = "Invalid credentials", body = crate::api::error::ApiErrorResponse),
+        (status = 429, description = "Too many failed attempts; retry after the seconds in `Retry-After`", body = crate::api::error::ApiErrorResponse),
         (status = 503, description = "Authentication service unavailable", body = crate::api::error::ApiErrorResponse)
     )
 )]
 pub async fn login(
     State(state): State<AuthRouteState>,
+    ClientIp(client_ip): ClientIp,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
@@ -234,7 +237,12 @@ pub async fn login(
         .ok_or_else(|| ApiError::service_unavailable("Authentication not configured"))?;
 
     let response = auth_service
-        .authenticate(&request.username, &request.password, request.device_info)
+        .authenticate(
+            &request.username,
+            &request.password,
+            request.device_info,
+            client_ip,
+        )
         .await
         .map_err(ApiError::from)?;
 
@@ -853,6 +861,100 @@ mod tests {
             let body: serde_json::Value =
                 serde_json::from_slice(&body).expect("error body should be JSON");
             assert_eq!(body["code"], "PASSWORD_CHANGE_REQUIRED");
+        }
+
+        mod login_throttling {
+            //! Exercises the failed-attempt budget `AuthService::authenticate`
+            //! enforces via `api::rate_limit::LoginRateLimiter`, through the
+            //! real `/api/auth/login` handler.
+            //!
+            //! `ForcedChangeUserRepository::find_by_username` always returns
+            //! `None`, so every attempt fails before Argon2id runs and the
+            //! test measures the counter rather than hashing throughput.
+
+            use super::*;
+            use crate::api::rate_limit::{LOGIN_FAILURE_WINDOW, MAX_FAILED_LOGIN_ATTEMPTS};
+            use axum::http::header::RETRY_AFTER;
+
+            async fn attempt_login(app: &Router, username: &str) -> axum::response::Response {
+                let body = serde_json::json!({
+                    "username": username,
+                    "password": "definitely-wrong-1",
+                });
+                send(
+                    app,
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/auth/login")
+                        .header(CONTENT_TYPE, "application/json")
+                        .body(Body::from(body.to_string()))
+                        .expect("test request should build"),
+                )
+                .await
+            }
+
+            #[tokio::test]
+            async fn attempt_past_the_budget_is_throttled_with_retry_after() {
+                let (app, _token) = forced_change_app();
+
+                for attempt in 1..=MAX_FAILED_LOGIN_ATTEMPTS {
+                    let response = attempt_login(&app, "ghost").await;
+                    assert_eq!(
+                        response.status(),
+                        StatusCode::UNAUTHORIZED,
+                        "attempt {attempt} is still within the budget"
+                    );
+                }
+
+                let throttled = attempt_login(&app, "ghost").await;
+                assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+
+                let retry_after = throttled
+                    .headers()
+                    .get(RETRY_AFTER)
+                    .expect("a 429 must tell the client when to retry")
+                    .to_str()
+                    .expect("Retry-After should be ASCII")
+                    .parse::<u64>()
+                    .expect("Retry-After should be a delay in seconds");
+                assert!(retry_after > 0);
+                assert!(retry_after <= LOGIN_FAILURE_WINDOW.as_secs());
+
+                let body = to_bytes(throttled.into_body(), usize::MAX)
+                    .await
+                    .expect("error body should be readable");
+                let body: serde_json::Value =
+                    serde_json::from_slice(&body).expect("error body should be JSON");
+                assert_eq!(body["code"], "TOO_MANY_REQUESTS");
+                assert!(
+                    !body["message"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains("ghost"),
+                    "the response must not confirm whether the username exists"
+                );
+            }
+
+            #[tokio::test]
+            async fn throttling_one_username_leaves_others_alone() {
+                let (app, _token) = forced_change_app();
+
+                for _ in 0..=MAX_FAILED_LOGIN_ATTEMPTS {
+                    attempt_login(&app, "ghost").await;
+                }
+                assert_eq!(
+                    attempt_login(&app, "ghost").await.status(),
+                    StatusCode::TOO_MANY_REQUESTS
+                );
+
+                // `oneshot` leaves no `ConnectInfo<SocketAddr>` in the request
+                // extensions, so `ClientIp` is `None` and only the username
+                // key is counted.
+                assert_eq!(
+                    attempt_login(&app, "someone-else").await.status(),
+                    StatusCode::UNAUTHORIZED
+                );
+            }
         }
 
         mod api_key_endpoints {

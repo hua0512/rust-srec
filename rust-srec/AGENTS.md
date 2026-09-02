@@ -42,3 +42,4 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
   - `LOG_DIR`: Directory for log files (default: `logs`).
   - `API_BIND_ADDRESS`: Server host (default: `0.0.0.0`).
   - `API_PORT`: Server port (default: `12555`).
+  - `API_CORS_ORIGINS`: Comma-separated exact browser origins (`scheme://host[:port]`) allowed when authentication is disabled. Default: `http://localhost:15275`, `http://127.0.0.1:15275`, `tauri://localhost`, `http://tauri.localhost`. Ignored while `JWT_SECRET` is set (any origin is allowed then).

@@ -138,6 +138,7 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 |------|------|--------|
 | `JWT_SECRET` | JWT 签名密钥（**必需**，除非使用下述仅限本地的关闭选项） | - |
 | `AUTH_DISABLED` | 仅在绑定到回环地址的本地开发环境中关闭后端认证 | `false` |
+| `API_CORS_ORIGINS` | 关闭认证时，允许跨域调用 API 的浏览器来源列表（逗号分隔的精确 `scheme://host[:port]`） | 本地开发服务器与桌面端 Webview 来源 |
 | `JWT_ISSUER` | JWT 签发者标识 | `rust-srec` |
 | `JWT_AUDIENCE` | JWT 受众标识 | `rust-srec-api` |
 | `SESSION_SECRET` | 前端会话加密密钥 (**必需**, 至少 32 位) | - |
@@ -145,6 +146,8 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 | `MIN_PASSWORD_LENGTH` | 用户密码最小长度 | `8` |
 
 后端在未配置非空 `JWT_SECRET` 时会拒绝启动。仅在本地开发时，可以同时设置 `AUTH_DISABLED=true` 和 `API_BIND_ADDRESS=127.0.0.1`（或 `::1`）来关闭认证。通配地址、主机名和非回环绑定地址均不能使用此关闭选项。
+
+关闭认证时，只有 `API_CORS_ORIGINS` 中列出的来源可以从浏览器跨域调用 API；默认列表包含 `http://localhost:15275`、`http://127.0.0.1:15275`、`tauri://localhost` 和 `http://tauri.localhost`。设置该变量可覆盖默认值——每一项必须是不带路径的精确来源，格式错误的条目会在启动时记录警告并被忽略。启用认证时该变量不生效，任何来源都可以发起请求，因为受保护路由仍然需要 Bearer 令牌。
 
 ### 令牌过期
 | 变量 | 说明 | 默认值 |

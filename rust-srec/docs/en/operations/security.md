@@ -7,7 +7,8 @@ Rust-Srec handles access tokens, platform cookies, notification credentials, rec
 - Change `admin` / `admin123!` immediately. The application enforces a password change for the initial account, but the default credential must still never be exposed to a network.
 - Generate unique, random `JWT_SECRET` and `SESSION_SECRET` values of at least 32 characters. Rotating `JWT_SECRET` invalidates access tokens; plan the change as an outage for API clients.
 - Access tokens are short-lived. Refresh tokens are rotating session credentials and must be protected like passwords.
-- `AUTH_DISABLED=true` is only a local development escape hatch. The backend accepts it only with a loopback bind address; do not build production procedures around it.
+- `AUTH_DISABLED=true` is only a local development escape hatch. The backend accepts it only with a loopback bind address; do not build production procedures around it. In that mode cross-origin browser requests are restricted to the `API_CORS_ORIGINS` allowlist, so a page you visit in the same browser cannot drive the unauthenticated API; widen the list only for origins you control.
+- Repeated failed logins are throttled per username and per source address, and a throttled attempt is answered with `429` and a `Retry-After` delay instead of another password hash.
 - Tokens carry role names and exports include user accounts, but the route layer does not enforce a per-role authorization policy, and there is no identity-provider integration. See [Scope and Limits](./support.md#scope-and-limits).
 
 ## Network and Session Security

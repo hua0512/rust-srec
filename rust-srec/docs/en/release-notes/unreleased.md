@@ -38,6 +38,14 @@
 
   A new **Settings → API Keys** page lets you create, inspect, and revoke API keys with custom names and expiry dates. The page also generates ready-to-copy MCP configuration snippets for Claude Code, Cursor, and standard MCP clients.
 
+- **Repeated failed sign-ins are now slowed down**
+
+  Guessing a password can no longer be retried without limit. After five failed sign-ins the account is refused for a cooling-off period, and the same applies separately to the device the attempts came from; the reply says how many seconds to wait. Signing in correctly clears the count immediately, and the message never reveals whether the username exists. Password checks are also queued rather than all run at once, so a flood of sign-in attempts can no longer slow the rest of the app down.
+
+- **Stricter browser access while sign-in is turned off**
+
+  In the local-development mode that runs without sign-in, the backend used to accept browser requests from any website you happened to have open. It now accepts them only from the local web interface and the desktop app, so another page in the same browser cannot quietly issue commands to your recorder. If you open the interface from a different address, list it in the new `API_CORS_ORIGINS` setting. Nothing changes when sign-in is on. See [Configuration](../getting-started/configuration.md#security-auth).
+
 ## Pipeline and uploads
 
 - **Upload recordings to Baidu Netdisk**

@@ -19,6 +19,7 @@ use std::time::Duration;
 use tokio::net::lookup_host;
 
 use crate::api::auth_service::AuthService;
+use crate::api::cors::CorsPolicy;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 
@@ -42,6 +43,9 @@ pub struct StreamProxyState {
     /// only) falls back to `allow_private_targets`.
     config_service: Option<SharedConfigService>,
     allow_private_targets: bool,
+    /// Same policy the router-wide `CorsLayer` applies, so the CORS headers
+    /// these handlers write themselves cannot be looser than it.
+    cors: CorsPolicy,
 }
 
 impl FromRef<AppState> for StreamProxyState {
@@ -50,6 +54,7 @@ impl FromRef<AppState> for StreamProxyState {
             auth_service: state.auth_service.clone(),
             config_service: Some(state.config_service.clone()),
             allow_private_targets: false,
+            cors: state.cors_policy(),
         }
     }
 }
@@ -436,12 +441,17 @@ where
         .route("/", get(stream_proxy_get).options(stream_proxy_options))
 }
 
-async fn stream_proxy_options() -> impl IntoResponse {
+/// Answers the `OPTIONS` requests that reach the route rather than being
+/// short-circuited by the router-wide `CorsLayer` (which only intercepts a
+/// preflight carrying `Access-Control-Request-Method`).
+async fn stream_proxy_options(
+    State(state): State<StreamProxyState>,
+    headers_in: HeaderMap,
+) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        HeaderValue::from_static("*"),
-    );
+    state
+        .cors
+        .apply_allow_origin(headers_in.get(axum::http::header::ORIGIN), &mut headers);
     headers.insert(
         axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
         HeaderValue::from_static("GET, HEAD, OPTIONS"),
@@ -574,10 +584,9 @@ pub async fn stream_proxy_get(
         }
     }
 
-    out_headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        HeaderValue::from_static("*"),
-    );
+    state
+        .cors
+        .apply_allow_origin(headers_in.get(axum::http::header::ORIGIN), &mut out_headers);
     out_headers.insert(
         axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
         HeaderValue::from_static("GET, HEAD, OPTIONS"),
@@ -726,6 +735,7 @@ mod tests {
             auth_service: None,
             config_service: None,
             allow_private_targets,
+            cors: CorsPolicy::AnyOrigin,
         }
     }
 
