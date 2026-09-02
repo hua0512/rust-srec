@@ -411,7 +411,7 @@ export const StepLibrary = memo(function StepLibrary({
                                   {getJobPresetName(preset, i18n)}
                                 </div>
                                 {getJobPresetDescription(preset, i18n) && (
-                                  <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed h-9">
+                                  <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed min-h-9">
                                     {getJobPresetDescription(preset, i18n)}
                                   </p>
                                 )}
@@ -545,7 +545,7 @@ export const StepLibrary = memo(function StepLibrary({
                                   workflow,
                                   i18n,
                                 ) && (
-                                  <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed h-9">
+                                  <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed min-h-9">
                                     {getPipelinePresetDescription(
                                       workflow,
                                       i18n,
