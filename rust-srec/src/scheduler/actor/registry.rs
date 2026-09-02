@@ -6,8 +6,12 @@
 //! - Supports actor spawning and removal
 //! - Provides actor lookup and enumeration
 
+use std::any::Any;
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use futures::FutureExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -24,25 +28,29 @@ pub struct ActorTaskResult {
     pub actor_id: String,
     /// Actor type ("streamer" or "platform").
     pub actor_type: String,
+    /// Registry generation the finished task was spawned under.
+    pub generation: u64,
     /// The outcome of the actor's run.
     pub outcome: ActorResult,
 }
 
 impl ActorTaskResult {
     /// Create a result for a streamer actor.
-    pub fn streamer(id: impl Into<String>, outcome: ActorResult) -> Self {
+    pub fn streamer(id: impl Into<String>, generation: u64, outcome: ActorResult) -> Self {
         Self {
             actor_id: id.into(),
             actor_type: "streamer".to_string(),
+            generation,
             outcome,
         }
     }
 
     /// Create a result for a platform actor.
-    pub fn platform(id: impl Into<String>, outcome: ActorResult) -> Self {
+    pub fn platform(id: impl Into<String>, generation: u64, outcome: ActorResult) -> Self {
         Self {
             actor_id: id.into(),
             actor_type: "platform".to_string(),
+            generation,
             outcome,
         }
     }
@@ -78,6 +86,9 @@ pub struct ActorRegistry {
     task_set: JoinSet<ActorTaskResult>,
     /// Parent cancellation token.
     cancellation_token: CancellationToken,
+    /// Source of the generation stamped onto every spawned actor. Starts at 0
+    /// so `next_generation` never hands out the "unregistered" value 0.
+    generation_counter: AtomicU64,
 }
 
 impl ActorRegistry {
@@ -88,7 +99,13 @@ impl ActorRegistry {
             platforms: HashMap::new(),
             task_set: JoinSet::new(),
             cancellation_token,
+            generation_counter: AtomicU64::new(0),
         }
+    }
+
+    /// Allocate the next generation for a spawn.
+    fn next_generation(&self) -> u64 {
+        self.generation_counter.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Get the number of streamer actors.
@@ -173,7 +190,7 @@ impl ActorRegistry {
     pub fn spawn_streamer(
         &mut self,
         actor: StreamerActor,
-        handle: ActorHandle<StreamerMessage>,
+        mut handle: ActorHandle<StreamerMessage>,
     ) -> Result<ActorHandle<StreamerMessage>, RegistryError> {
         let id = actor.id().to_string();
 
@@ -183,16 +200,27 @@ impl ActorRegistry {
 
         info!("Spawning streamer actor: {}", id);
 
+        let generation = self.next_generation();
+        handle.set_generation(generation);
+
         // Clone handle for return
         let return_handle = handle.clone();
 
         // Store handle
         self.streamers.insert(id.clone(), handle);
 
-        // Spawn actor task
+        // Spawn actor task. `catch_unwind` turns a panic inside `run` into a
+        // recoverable `ActorError` so `Supervisor::handle_task_completion` sees
+        // a crash it can restart instead of a `JoinError` that carries no ID.
         self.task_set.spawn(async move {
-            let result = actor.run().await;
-            ActorTaskResult::streamer(id, result)
+            let result = match AssertUnwindSafe(actor.run()).catch_unwind().await {
+                Ok(result) => result,
+                Err(payload) => Err(ActorError::recoverable(format!(
+                    "Actor panicked: {}",
+                    panic_payload_message(payload.as_ref())
+                ))),
+            };
+            ActorTaskResult::streamer(id, generation, result)
         });
 
         Ok(return_handle)
@@ -205,7 +233,7 @@ impl ActorRegistry {
     pub fn spawn_platform(
         &mut self,
         actor: PlatformActor,
-        handle: ActorHandle<PlatformMessage>,
+        mut handle: ActorHandle<PlatformMessage>,
     ) -> Result<ActorHandle<PlatformMessage>, RegistryError> {
         let platform_id = actor.platform_id().to_string();
 
@@ -215,16 +243,27 @@ impl ActorRegistry {
 
         info!("Spawning platform actor: {}", platform_id);
 
+        let generation = self.next_generation();
+        handle.set_generation(generation);
+
         // Clone handle for return
         let return_handle = handle.clone();
 
         // Store handle
         self.platforms.insert(platform_id.clone(), handle);
 
-        // Spawn actor task
+        // Spawn actor task. `catch_unwind` turns a panic inside `run` into a
+        // recoverable `ActorError` so `Supervisor::handle_task_completion` sees
+        // a crash it can restart instead of a `JoinError` that carries no ID.
         self.task_set.spawn(async move {
-            let result = actor.run().await;
-            ActorTaskResult::platform(platform_id, result)
+            let result = match AssertUnwindSafe(actor.run()).catch_unwind().await {
+                Ok(result) => result,
+                Err(payload) => Err(ActorError::recoverable(format!(
+                    "Actor panicked: {}",
+                    panic_payload_message(payload.as_ref())
+                ))),
+            };
+            ActorTaskResult::platform(platform_id, generation, result)
         });
 
         Ok(return_handle)
@@ -323,27 +362,82 @@ impl ActorRegistry {
 
     /// Handle a completed actor task.
     ///
-    /// Removes the actor from the registry if it completed normally.
-    /// Returns the task result for further processing (e.g., restart decision).
-    pub fn handle_task_completion(&mut self, result: ActorTaskResult) -> ActorTaskResult {
-        match result.actor_type.as_str() {
+    /// Drops the actor's handle only when it still carries the generation the
+    /// finished task was spawned under. `remove_streamer` cancels an actor but
+    /// its task keeps running until the in-flight `check_status` returns, so a
+    /// respawn of the same ID can be live by the time the old task reports; the
+    /// generation check keeps that newer handle in the map.
+    pub fn handle_task_completion(&mut self, result: ActorTaskResult) -> CompletedTask {
+        let superseded = match result.actor_type.as_str() {
             "streamer" => {
-                self.streamers.remove(&result.actor_id);
+                remove_if_current(&mut self.streamers, &result.actor_id, result.generation)
             }
             "platform" => {
-                self.platforms.remove(&result.actor_id);
+                remove_if_current(&mut self.platforms, &result.actor_id, result.generation)
             }
             _ => {
                 warn!("Unknown actor type: {}", result.actor_type);
+                false
             }
+        };
+
+        if superseded {
+            debug!(
+                actor_id = %result.actor_id,
+                actor_type = %result.actor_type,
+                generation = result.generation,
+                "Ignoring completion from an actor that has already been replaced"
+            );
         }
 
-        result
+        CompletedTask { result, superseded }
     }
 
     /// Get a child cancellation token for spawning actors.
     pub fn child_token(&self) -> CancellationToken {
         self.cancellation_token.child_token()
+    }
+}
+
+/// A finished actor task reconciled against the registry by
+/// `ActorRegistry::handle_task_completion`.
+#[derive(Debug)]
+pub struct CompletedTask {
+    /// The task result as reported by the actor.
+    pub result: ActorTaskResult,
+    /// True when a newer actor is registered under the same ID, so this result
+    /// describes a task that outlived its `remove_streamer` / `remove_platform`.
+    pub superseded: bool,
+}
+
+/// Drop `map`'s entry for `actor_id` when its handle carries `generation`.
+///
+/// Returns true when a *different* generation is registered, i.e. the caller's
+/// result belongs to an actor that has already been replaced.
+fn remove_if_current<M>(
+    map: &mut HashMap<String, ActorHandle<M>>,
+    actor_id: &str,
+    generation: u64,
+) -> bool {
+    match map.get(actor_id) {
+        Some(handle) if handle.generation() == generation => {
+            map.remove(actor_id);
+            false
+        }
+        Some(_) => true,
+        None => false,
+    }
+}
+
+/// Render a `catch_unwind` payload, covering the `&'static str` and `String`
+/// shapes produced by `panic!`; anything else has no printable message.
+fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic payload".to_string()
     }
 }
 
@@ -362,12 +456,52 @@ pub enum RegistryError {
 mod tests {
     use super::*;
     use crate::domain::{Priority, StreamerState};
+    use crate::monitor::LiveStatus;
     use crate::scheduler::actor::messages::StreamerConfig;
-    use crate::scheduler::actor::monitor_adapter::NoOpStatusChecker;
+    use crate::scheduler::actor::monitor_adapter::{CheckError, NoOpStatusChecker};
     use crate::streamer::StreamerMetadata;
+    use async_trait::async_trait;
     use chrono::Utc;
     use dashmap::DashMap;
     use std::sync::Arc;
+
+    /// Status checker that unwinds inside `StreamerActor::perform_check`.
+    struct PanickingStatusChecker;
+
+    #[async_trait]
+    impl super::super::monitor_adapter::StatusChecker for PanickingStatusChecker {
+        async fn check_status(
+            &self,
+            _streamer: &StreamerMetadata,
+        ) -> Result<(crate::scheduler::actor::messages::CheckResult, LiveStatus), CheckError>
+        {
+            panic!("status check exploded");
+        }
+
+        async fn process_status(
+            &self,
+            _streamer: &StreamerMetadata,
+            _status: LiveStatus,
+        ) -> Result<crate::monitor::ProcessStatusResult, CheckError> {
+            unreachable!("the panicking check never produces a status")
+        }
+
+        async fn handle_error(
+            &self,
+            _streamer: &StreamerMetadata,
+            _error: &str,
+        ) -> Result<(), CheckError> {
+            unreachable!("the panicking check never produces an error")
+        }
+
+        async fn set_infra_blocked(
+            &self,
+            _streamer: &StreamerMetadata,
+            _reason: crate::monitor::InfraBlockReason,
+        ) -> Result<(), CheckError> {
+            unreachable!("the panicking check never applies an infrastructure block")
+        }
+    }
 
     fn create_test_metadata(id: &str) -> StreamerMetadata {
         StreamerMetadata {
@@ -547,20 +681,114 @@ mod tests {
 
     #[test]
     fn test_actor_task_result_is_crash() {
-        let stopped = ActorTaskResult::streamer("test", Ok(ActorOutcome::Stopped));
+        let stopped = ActorTaskResult::streamer("test", 1, Ok(ActorOutcome::Stopped));
         assert!(!stopped.is_crash());
 
-        let cancelled = ActorTaskResult::streamer("test", Ok(ActorOutcome::Cancelled));
+        let cancelled = ActorTaskResult::streamer("test", 1, Ok(ActorOutcome::Cancelled));
         assert!(!cancelled.is_crash());
 
         let error = ActorTaskResult::streamer(
             "test",
+            1,
             Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
                 "test error",
             )),
         );
         assert!(error.is_crash());
         assert_eq!(error.error_message(), Some("test error"));
+    }
+
+    #[tokio::test]
+    async fn panicking_actor_run_is_reported_as_a_crash() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+
+        let (actor, handle) = StreamerActor::with_priority_channel(
+            "panics".to_string(),
+            create_test_metadata_store("panics"),
+            create_test_config(),
+            token.child_token(),
+            Arc::new(PanickingStatusChecker),
+        );
+        let handle = registry.spawn_streamer(actor, handle).unwrap();
+
+        handle
+            .send(StreamerMessage::CheckStatus)
+            .await
+            .expect("the actor should accept an immediate check");
+
+        let joined = registry
+            .join_next()
+            .await
+            .expect("the actor task should finish");
+        let result =
+            joined.expect("a panic must be caught inside the task, not become a JoinError");
+
+        assert_eq!(result.generation, handle.generation());
+        assert!(result.is_crash());
+        assert!(
+            result
+                .error_message()
+                .unwrap_or_default()
+                .contains("status check exploded"),
+            "the panic payload should reach the restart path: {:?}",
+            result.error_message()
+        );
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn stale_completion_keeps_the_replacement_handle() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+        let metadata_store = create_test_metadata_store("test-1");
+
+        let (actor, handle) = StreamerActor::new(
+            "test-1".to_string(),
+            metadata_store.clone(),
+            create_test_config(),
+            token.child_token(),
+            create_noop_checker(),
+        );
+        let first = registry.spawn_streamer(actor, handle).unwrap();
+
+        // `remove_streamer` only cancels; the first task can still be running.
+        registry.remove_streamer("test-1");
+
+        let (actor, handle) = StreamerActor::new(
+            "test-1".to_string(),
+            metadata_store,
+            create_test_config(),
+            token.child_token(),
+            create_noop_checker(),
+        );
+        let second = registry.spawn_streamer(actor, handle).unwrap();
+        assert_ne!(first.generation(), second.generation());
+
+        let completed = registry.handle_task_completion(ActorTaskResult::streamer(
+            "test-1",
+            first.generation(),
+            Ok(ActorOutcome::Cancelled),
+        ));
+
+        assert!(completed.superseded);
+        assert_eq!(
+            registry.get_streamer("test-1").map(|h| h.generation()),
+            Some(second.generation())
+        );
+
+        // The replacement's own completion still clears the entry.
+        let completed = registry.handle_task_completion(ActorTaskResult::streamer(
+            "test-1",
+            second.generation(),
+            Ok(ActorOutcome::Stopped),
+        ));
+
+        assert!(!completed.superseded);
+        assert!(!registry.has_streamer("test-1"));
+
+        token.cancel();
     }
 
     #[test]

@@ -561,7 +561,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                                 self.handle_task_completion_action(action);
                             }
                             Err(e) => {
-                                error!("Actor task panicked: {}", e);
+                                // `ActorRegistry::spawn_streamer` catches actor
+                                // panics, so a JoinError here means the task was
+                                // aborted - which `ActorRegistry::abort_all` does
+                                // routinely once the shutdown deadline passes.
+                                if e.is_cancelled() {
+                                    debug!("Actor task reaped after abort: {}", e);
+                                } else {
+                                    error!("Actor task failed to join: {}", e);
+                                }
                             }
                         }
                     }
@@ -1118,6 +1126,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             }
             TaskCompletionAction::Crashed { actor_id } => {
                 warn!("Actor {} crashed", actor_id);
+            }
+            TaskCompletionAction::Superseded { actor_id } => {
+                debug!("Actor {} was replaced before its task finished", actor_id);
             }
             TaskCompletionAction::RestartScheduled { actor_id, backoff } => {
                 info!(

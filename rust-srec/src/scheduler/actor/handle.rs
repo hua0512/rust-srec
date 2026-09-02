@@ -91,6 +91,9 @@ pub struct ActorHandle<M> {
     pub metadata: ActorMetadata,
     /// Maximum mailbox capacity.
     max_capacity: usize,
+    /// Registry generation stamped by `ActorRegistry::spawn_streamer` /
+    /// `spawn_platform`; `0` means the handle has not been registered yet.
+    generation: u64,
 }
 
 impl<M> ActorHandle<M> {
@@ -107,6 +110,7 @@ impl<M> ActorHandle<M> {
             cancellation_token,
             metadata,
             max_capacity,
+            generation: 0,
         }
     }
 
@@ -124,6 +128,7 @@ impl<M> ActorHandle<M> {
             cancellation_token,
             metadata,
             max_capacity,
+            generation: 0,
         }
     }
 
@@ -244,6 +249,23 @@ impl<M> ActorHandle<M> {
         &self.metadata.id
     }
 
+    /// Stamp the registry generation onto this handle.
+    ///
+    /// Called by `ActorRegistry::spawn_streamer` / `spawn_platform` before the
+    /// handle is inserted into the registry maps.
+    pub fn set_generation(&mut self, generation: u64) {
+        self.generation = generation;
+    }
+
+    /// Get the registry generation this handle was spawned under.
+    ///
+    /// `ActorRegistry::handle_task_completion` compares it against the
+    /// generation reported by a finished task, so a task that outlives a
+    /// `remove_streamer` + respawn of the same ID cannot evict the newer handle.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
     /// Check if this is a high-priority actor.
     pub fn is_high_priority(&self) -> bool {
         self.metadata.high_priority
@@ -258,6 +280,7 @@ impl<M> Clone for ActorHandle<M> {
             cancellation_token: self.cancellation_token.clone(),
             metadata: self.metadata.clone(),
             max_capacity: self.max_capacity,
+            generation: self.generation,
         }
     }
 }
@@ -266,6 +289,7 @@ impl<M> fmt::Debug for ActorHandle<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ActorHandle")
             .field("metadata", &self.metadata)
+            .field("generation", &self.generation)
             .field("capacity", &self.mailbox_capacity())
             .field("cancelled", &self.is_cancelled())
             .finish()

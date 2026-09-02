@@ -24,6 +24,10 @@
 
   FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale.
 
+- **Streamers stay monitored after an unexpected failure**
+
+  A streamer whose monitoring hit an unexpected internal error was quietly left unwatched until rust-srec was restarted, so nothing was recorded in the meantime. Monitoring is now restarted automatically. Quickly disabling and re-enabling a streamer no longer leaves it monitored twice or not at all either.
+
 ## API and integrations
 
 - **API keys for programmatic access**
