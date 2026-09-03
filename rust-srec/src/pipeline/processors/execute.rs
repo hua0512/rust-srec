@@ -93,7 +93,10 @@ enum Region {
     /// another) or by a bare backtick, so the matching delimiter closes it.
     Backtick { outer: QuoteState, escaped: bool },
     /// `$(( ... ))`: an arithmetic expression, escaped as `QuoteState::Arith`.
-    Arithmetic(QuoteState),
+    /// `groups` counts the unclosed `( ... )` sub-expressions inside it, so a
+    /// `)))` ends one group and then the expansion rather than the expansion
+    /// and then an enclosing `Subshell`.
+    Arithmetic { outer: QuoteState, groups: usize },
 }
 
 /// A here-document redirection and the rules its body is read under.
@@ -384,7 +387,10 @@ fn substitute_placeholders<'a>(
                 && bytes.get(i + 1) == Some(&b'(')
                 && bytes.get(i + 2) == Some(&b'(') =>
             {
-                regions.push(Region::Arithmetic(state));
+                regions.push(Region::Arithmetic {
+                    outer: state,
+                    groups: 0,
+                });
                 state = QuoteState::Arith;
                 i += 3;
             }
@@ -396,11 +402,29 @@ fn substitute_placeholders<'a>(
                 state = QuoteState::Unquoted;
                 i += 2;
             }
+            // Inside `$(( ... ))` a `(` opens a sub-expression whose `)` is
+            // part of the arithmetic, so only the `)` left over once those are
+            // matched pairs with the `))` that ends the expansion.
+            b'(' if posix && state == QuoteState::Arith => {
+                if let Some(Region::Arithmetic { groups, .. }) = regions.last_mut() {
+                    *groups += 1;
+                }
+                i += 1;
+            }
+            b')' if posix
+                && state == QuoteState::Arith
+                && matches!(regions.last(), Some(Region::Arithmetic { groups, .. }) if *groups > 0) =>
+            {
+                if let Some(Region::Arithmetic { groups, .. }) = regions.last_mut() {
+                    *groups -= 1;
+                }
+                i += 1;
+            }
             b')' if posix
                 && bytes.get(i + 1) == Some(&b')')
-                && matches!(regions.last(), Some(Region::Arithmetic(_))) =>
+                && matches!(regions.last(), Some(Region::Arithmetic { groups, .. }) if *groups == 0) =>
             {
-                if let Some(Region::Arithmetic(outer)) = regions.pop() {
+                if let Some(Region::Arithmetic { outer, .. }) = regions.pop() {
                     state = outer;
                 }
                 i += 2;
@@ -470,19 +494,20 @@ fn substitute_placeholders<'a>(
                     j += 1;
                 }
 
-                // Quoting any part of the delimiter word makes the body literal
-                // text, so a value in it needs no escaping at all.
+                // The delimiter is the word after quote removal, and quoting
+                // any part of it makes the body literal text, so a value in it
+                // needs no escaping at all.
                 let word = &template[word_start..j];
-                let (delimiter, expand) = if word.len() >= 2
-                    && ((word.starts_with('\'') && word.ends_with('\''))
-                        || (word.starts_with('"') && word.ends_with('"')))
-                {
-                    (word[1..word.len() - 1].to_string(), false)
-                } else if word.contains('\\') {
-                    (word.replace('\\', ""), false)
-                } else {
-                    (word.to_string(), true)
-                };
+                let expand = !word.contains(['\'', '"', '\\']);
+                let mut delimiter = String::with_capacity(word.len());
+                let mut word_chars = word.chars();
+                while let Some(c) = word_chars.next() {
+                    match c {
+                        '\'' | '"' => {}
+                        '\\' => delimiter.extend(word_chars.next()),
+                        _ => delimiter.push(c),
+                    }
+                }
 
                 if !delimiter.is_empty() {
                     pending_heredocs.push(Heredoc {
@@ -1546,6 +1571,47 @@ mod tests {
         assert_eq!(out, r"printf %s $(( 1\)\); echo INJECTED # + 1 ))");
     }
 
+    /// A `( ... )` sub-expression inside `$(( ... ))` is arithmetic, so its `)`
+    /// must not be counted towards the `))` that ends the expansion.
+    #[test]
+    fn test_posix_arithmetic_sub_expressions_stay_inside_the_expansion() {
+        let input = ProcessorInput {
+            inputs: vec!["42".to_string()],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            subst(ShellKind::Posix, "printf %s $(( (1+2) * {input} ))", &input),
+            "printf %s $(( (1+2) * 42 ))"
+        );
+        assert_eq!(
+            subst(ShellKind::Posix, "printf %s $(( ({input}+1) ))", &input),
+            "printf %s $(( (42+1) ))"
+        );
+    }
+
+    /// `)))` ends a sub-expression and then the expansion; taking it for the
+    /// expansion plus an enclosing `$( ... )` would leave the rest of that
+    /// substitution's body escaped as if it were outside it.
+    #[test]
+    fn test_posix_arithmetic_close_does_not_pop_the_enclosing_substitution() {
+        let input = ProcessorInput {
+            outputs: vec![INJECTING.to_string()],
+            ..Default::default()
+        };
+
+        let out = subst(
+            ShellKind::Posix,
+            "printf '%s\\n' \"$( printf %s $(((1+2))) {output} )\"",
+            &input,
+        );
+
+        assert_eq!(
+            out,
+            "printf '%s\\n' \"$( printf %s $(((1+2))) 'x;echo INJECTED;x' )\""
+        );
+    }
+
     /// `\$(` is how a command substitution nests inside `` `...` ``, so the
     /// value belongs to the substitution's own unquoted context.
     #[test]
@@ -1633,6 +1699,35 @@ mod tests {
             out,
             "cat <<-EOF\n\tT=/rec/a b\\$(id);\\`id\\`'q\"&.mp4\n\tEOF\n\
              printf %s 'x;echo INJECTED;x'\n"
+        );
+    }
+
+    /// Quote removal makes `<<"E"OF` the delimiter `EOF`, so the body ends
+    /// where the shell ends it and the command text after it is scanned as
+    /// command text again.
+    #[test]
+    fn test_posix_heredoc_delimiter_is_the_word_after_quote_removal() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec![INJECTING.to_string()],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            subst(
+                ShellKind::Posix,
+                "cat <<\"E\"OF\nT={input}\nEOF\necho {output}\n",
+                &input,
+            ),
+            "cat <<\"E\"OF\nT=/rec/a b$(id);`id`'q\"&.mp4\nEOF\necho 'x;echo INJECTED;x'\n"
+        );
+        assert_eq!(
+            subst(
+                ShellKind::Posix,
+                "cat <<E'O'F\nT={input}\nEOF\necho {output}\n",
+                &input,
+            ),
+            "cat <<E'O'F\nT=/rec/a b$(id);`id`'q\"&.mp4\nEOF\necho 'x;echo INJECTED;x'\n"
         );
     }
 
@@ -1854,6 +1949,16 @@ mod tests {
                 "cat <<EOF\nT={input}\nEOF\n",
                 format!("a`{touch}`b"),
                 String::new(),
+            ),
+            (
+                "printf '%s\\n' \"$( printf %s $(((1+2))) {output} )\"",
+                "safe".to_string(),
+                format!(";{touch};"),
+            ),
+            (
+                "cat <<\"E\"OF\nhi\nEOF\necho {output}\n",
+                "safe".to_string(),
+                format!(";{touch};"),
             ),
         ];
 
