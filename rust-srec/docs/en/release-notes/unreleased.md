@@ -31,6 +31,9 @@
 - **A sign-in saved for a single streamer is no longer lost**
 
   Scanning the QR code to sign in to Bilibili for one streamer kept the account only until that streamer was next touched: renaming it, enabling or disabling it, changing its priority, or including it in a bulk action signed it out again, and its recordings carried on without the account. Sign-ins kept fresh for one streamer went the same way — whether renewed automatically, refreshed by hand, or handed over by the platform while checking whether the streamer was live. All of them now stay put.
+- **A full disk is reported instead of quietly breaking every recording**
+
+  When the drive filled up part-way through a recording, the built-in recorder reported it as a broken recording and held it against that streamer, while every other streamer kept starting and failing the same way. Running out of space is now recognised for what it is: you get the "Output path inaccessible" alert, recordings pause, and they resume on their own within 30 seconds of space becoming available.
 
 ## API and integrations
 
@@ -251,6 +254,10 @@
 - **Building from source now requires Node.js 26**
 
   The web interface and the documentation site are now built with Node.js 26. If you build rust-srec from source, update Node before running the frontend — the repository now ships an `.nvmrc`, so version managers pick the right one for you. Docker and pre-built binary installations are unaffected.
+
+- **The bundled systemd service file starts the recorder**
+
+  Installing rust-srec as a system service with the `rust-srec.service` file from the repository did not work: the service stopped immediately with a permission error, before it ever reached its database, and the directories it needed had to be created by hand first. The file now writes logs to `/var/log/rust-srec`, has systemd create and own `/var/lib/rust-srec` and `/var/log/rust-srec` on every start, and picks up `JWT_SECRET` and any other secrets from `/etc/rust-srec/rust-srec.env`. Stopping the service now waits long enough for recordings in progress to be saved, the fixed memory and CPU caps are opt-in so they cannot cut a recording short on a machine they do not suit, and the file's header lists the commands needed to install it. After the first start, set the recording folder in the web interface: the built-in default points inside the Docker image, so a system service records nothing until you change it. Recordings made by the service are readable only by the `rust-srec` account and its group, so add any other account that needs them — a file server, a media scanner — to that group. Docker installations are unaffected.
 
 ## Desktop
 
