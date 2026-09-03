@@ -1,7 +1,7 @@
 # rust-srec system service.
 #
 # Install as root:
-#   useradd --system --home-dir /opt/rust-srec --shell /usr/sbin/nologin rust-srec
+#   useradd --system --home-dir /var/lib/rust-srec --shell /usr/sbin/nologin rust-srec
 #   install -D -m 0755 rust-srec /opt/rust-srec/rust-srec
 #   install -d -m 0750 -o root -g rust-srec /etc/rust-srec
 #   umask 027 && printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" \
@@ -10,8 +10,21 @@
 #   install -D -m 0644 rust-srec.service /etc/systemd/system/rust-srec.service
 #   systemctl daemon-reload && systemctl enable --now rust-srec
 #
-# StateDirectory= and LogsDirectory= below create and chown /var/lib/rust-srec
-# and /var/log/rust-srec on every start, so nothing else has to be pre-created.
+# /opt/rust-srec is also the directory the Docker Compose installer defaults to
+# (RUST_SREC_DIR). Pick a different path for the binary if both deployments
+# share a host.
+#
+# StateDirectory= and LogsDirectory= below create /var/lib/rust-srec and
+# /var/log/rust-srec on every start, so nothing has to be pre-created. If either
+# already exists owned by someone other than rust-srec — for instance created by
+# hand to satisfy an earlier ReadWritePaths= — systemd recursively chowns
+# everything beneath it during exec setup, which on a large recordings tree can
+# outlast TimeoutStartSec=. Run this once before the first start:
+#   chown -R rust-srec:rust-srec /var/lib/rust-srec /var/log/rust-srec
+#
+# UMask=0027 below means recordings are written -rw-r-----, readable only by
+# rust-srec and its group. Add any account that has to read them (a file
+# server, a media scanner) to the rust-srec group, or lower UMask=.
 
 [Unit]
 Description=rust-srec Streaming Recorder Service
@@ -33,10 +46,15 @@ Type=exec
 User=rust-srec
 Group=rust-srec
 
-# `server::run` calls `load_dotenv`, which reads `.env` from this directory.
-# dotenvy does not overwrite variables that are already set, so a leftover
-# `.env` cannot override the settings below.
-WorkingDirectory=/opt/rust-srec
+# The state directory, not the install directory: `$HOME` is taken from the
+# rust-srec account and ProtectSystem=strict leaves /opt read-only, so tools
+# that persist state next to their config — rclone rewriting
+# `$HOME/.config/rclone/rclone.conf` on every OAuth token refresh, BaiduPCS-Go
+# storing its session unless `BAIDUPCS_GO_CONFIG_DIR` is set — need a writable
+# home. `server::run` calls `load_dotenv`, which reads `.env` from here;
+# dotenvy does not overwrite variables that are already set, so it can only add
+# to what this unit provides.
+WorkingDirectory=/var/lib/rust-srec
 ExecStart=/opt/rust-srec/rust-srec
 
 # systemd creates both directories owned by User=/Group= and adds them to the
@@ -55,14 +73,17 @@ Environment=RUST_LOG=info
 # dirty-generation marker from this URL, so it also lands under /var/lib.
 Environment=DATABASE_URL=sqlite:///var/lib/rust-srec/rust-srec.db
 # `run_worker` passes LOG_DIR to `init_logging` and `install_panic_hook`.
-# Without it the directory defaults to `logs` relative to WorkingDirectory=,
-# which ProtectSystem=strict mounts read-only, and startup aborts before the
-# database is opened.
+# Unset, both resolve `logs` against WorkingDirectory= and bury the log files
+# in the state directory; LogsDirectory= above already provides the path
+# journald-adjacent tooling expects.
 Environment=LOG_DIR=/var/log/rust-srec
 # Read by `ServiceContainer`'s health probes and the output-root write gate.
 # The directory recordings are actually written to is the `output_folder`
-# stored in the database and edited from the web interface; point it inside
-# /var/lib/rust-srec or add the target to ReadWritePaths= below.
+# stored in the database and edited from the web interface. Give a collection
+# that grows past a few hundred GB its own volume and list it under
+# ReadWritePaths= below rather than nesting it here: StateDirectory= recursively
+# chowns everything beneath /var/lib/rust-srec whenever it finds the directory
+# owned by another user, and that walk runs inside exec setup.
 Environment=OUTPUT_DIR=/var/lib/rust-srec/output
 Environment=API_BIND_ADDRESS=0.0.0.0
 Environment=API_PORT=12555
@@ -71,12 +92,15 @@ Environment=API_PORT=12555
 Environment=RUST_SREC_SHUTDOWN_TIMEOUT_SECS=30
 Environment=RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS=2
 
-# Host-specific settings and secrets, listed after Environment= so its values
-# win. `ServiceContainer::start_api_server` refuses to start without
-# JWT_SECRET, so this file is mandatory in practice; the leading `-` only
-# keeps the unit loadable before it is created. Web Push (VAPID) keys and any
-# *_PATH override for ffmpeg, rclone, streamlink or DanmakuFactory belong here
-# too.
+# Host-specific settings and secrets. `ServiceContainer::start_api_server`
+# refuses to start without JWT_SECRET, so this file is mandatory in practice;
+# the leading `-` turns a missing file into a warning instead of a failed
+# start, which keeps `systemctl start` reaching the binary's own diagnostics.
+# Web Push (VAPID) keys and any *_PATH override for ffmpeg, rclone, streamlink
+# or DanmakuFactory belong here too.
+#
+# Every assignment here overrides Environment=, regardless of which appears
+# first in the file — so an Environment= line added below this one is dead.
 EnvironmentFile=-/etc/rust-srec/rust-srec.env
 
 # Restart policy. `SupervisedRun::finish` exits non-zero whenever the contained
@@ -100,7 +124,8 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 # Hides /dev/dri and /dev/nvidia*, so ffmpeg falls back to software encoding
-# and the `nvidia-smi` GPU health probe reports the binary as unusable. For
+# and `GpuHealthMonitor::detect` skips registration when its `nvidia-smi
+# --version` probe fails, leaving no GPU section on the health page. For
 # hardware transcoding, override with PrivateDevices=no plus a DeviceAllow=
 # entry for the render node in a drop-in.
 PrivateDevices=yes
@@ -124,11 +149,15 @@ SystemCallArchitectures=native
 # pipeline's ffmpeg/rclone/streamlink children rely on.
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
+# Recordings land -rw-r-----, so readers outside the rust-srec group lose
+# access. See the group note in the header before lowering this.
 UMask=0027
 
 # Directories outside StateDirectory=/LogsDirectory= that the service must
-# write to, such as a recording volume referenced by the configured
-# `output_folder`.
+# write to: the recording volume behind the configured `output_folder`, and any
+# tool state kept off the state directory. Each path must already exist —
+# ProtectSystem=strict fails the unit with 226/NAMESPACE on a missing entry —
+# and systemd does not chown these, so create them owned by rust-srec.
 # ReadWritePaths=/srv/recordings
 
 # Logging

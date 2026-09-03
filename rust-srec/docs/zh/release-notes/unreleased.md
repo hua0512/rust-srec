@@ -246,7 +246,7 @@
 
 - **仓库自带的 systemd 服务文件可以正常启动录制程序**
 
-  用仓库里的 `rust-srec.service` 把 rust-srec 装成系统服务是跑不起来的：服务启动后立刻因权限错误退出，根本没能连上数据库，而且它需要的目录还得自己先手动创建。现在该文件会把日志写入 `/var/log/rust-srec`，由 systemd 在每次启动时创建并接管 `/var/lib/rust-srec` 与 `/var/log/rust-srec`，并从 `/etc/rust-srec/rust-srec.env` 读取 `JWT_SECRET` 等机密信息。停止服务时也会留出足够的时间让正在进行的录像保存完毕；原先固定的内存与 CPU 上限改为可选，不会再在不合适的机器上把录像中途掐断；文件开头还列出了安装所需的命令。Docker 安装方式不受影响。
+  用仓库里的 `rust-srec.service` 把 rust-srec 装成系统服务是跑不起来的：服务启动后立刻因权限错误退出，根本没能连上数据库，而且它需要的目录还得自己先手动创建。现在该文件会把日志写入 `/var/log/rust-srec`，由 systemd 在每次启动时创建并接管 `/var/lib/rust-srec` 与 `/var/log/rust-srec`，并从 `/etc/rust-srec/rust-srec.env` 读取 `JWT_SECRET` 等机密信息。停止服务时也会留出足够的时间让正在进行的录像保存完毕；原先固定的内存与 CPU 上限改为可选，不会再在不合适的机器上把录像中途掐断；文件开头还列出了安装所需的命令。以该服务方式录制的文件仅 `rust-srec` 账号及其用户组可读，如果还有其他账号需要访问（文件服务器、媒体库扫描等），请把它加入该用户组。Docker 安装方式不受影响。
 
 ## 桌面端
 

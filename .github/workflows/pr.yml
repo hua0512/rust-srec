@@ -162,10 +162,16 @@ jobs:
       # the unit's install path needs an executable before the check runs.
       - name: Stage the ExecStart target
         run: sudo install -D -m 0755 /bin/true /opt/rust-srec/rust-srec
-      # Rejects unparseable values and keys placed in a section that ignores
-      # them, such as StartLimitIntervalSec= outside [Unit].
+      # systemd-analyze verify exits 0 for an unparseable value, an unknown
+      # system-call group, and a key in a section that ignores it (such as
+      # StartLimitIntervalSec= outside [Unit]) — each is only a warning on
+      # stderr. Exit 1 is reserved for a unit that fails to load outright, so
+      # any output at all has to count as a failure here.
       - name: Verify the systemd unit
-        run: systemd-analyze verify rust-srec/rust-srec.service
+        run: |
+          out=$(systemd-analyze verify rust-srec/rust-srec.service 2>&1)
+          printf '%s\n' "$out"
+          [ -z "$out" ]
 
   frontend-lint:
     name: Frontend Lint
