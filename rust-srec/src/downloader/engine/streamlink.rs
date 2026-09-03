@@ -20,7 +20,7 @@ use super::traits::{
 use super::utils::{
     OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_disk_full_line,
     is_segment_start, observe_segment_event_send, parse_opened_path, parse_progress,
-    terminate_and_reap,
+    redact_process_args, terminate_and_reap,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
 
@@ -440,7 +440,8 @@ impl DownloadEngine for StreamlinkEngine {
 
         info!(
             "Starting streamlink download for streamer {} with args: {:?}",
-            config.streamer_id, streamlink_args
+            config.streamer_id,
+            redact_process_args(&streamlink_args)
         );
 
         // Spawn streamlink process

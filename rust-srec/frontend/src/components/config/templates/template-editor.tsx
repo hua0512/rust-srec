@@ -39,8 +39,6 @@ export function TemplateEditor({
   isSubmitting,
   mode,
 }: TemplateEditorProps) {
-  console.log('TemplateEditor render template:', template);
-
   const { data: engines = [] } = useQuery({
     queryKey: ['engines'],
     queryFn: () => listEngines(),

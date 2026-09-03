@@ -62,8 +62,6 @@ export function PresetEditor({
       config: {},
     },
   });
-  console.log('initialData', initialData);
-
   useEffect(() => {
     if (initialData) {
       form.reset({

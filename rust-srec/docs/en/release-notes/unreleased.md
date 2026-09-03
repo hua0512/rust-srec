@@ -192,7 +192,17 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+## Security
+
+- **Cookies, tokens and passwords are no longer written to the logs**
+
+  Starting a recording, saving a platform, template or streamer, and the background check that keeps platform cookies fresh, all used to write the credentials themselves into the log files, the live log view and the browser console. Anyone able to read a log file, a log export or a container's logs could pick out the cookies, refresh tokens and account passwords for your platform accounts. Logs now record only which settings were touched, never their values. Old log files are not cleaned up, so if you have shared logs with anyone, change the cookies and passwords that appeared in them.
+
 ## Deployment
+
+- **The sign-in cookie is protected automatically behind an HTTPS reverse proxy**
+
+  When the web interface is published through a reverse proxy that terminates HTTPS, the cookie that keeps you signed in was only marked HTTPS-only if you set `COOKIE_SECURE=true` by hand; otherwise the browser was willing to send it over plain HTTP as well. The scheme reported by the proxy now reaches the app intact, so the cookie is marked HTTPS-only on its own. Plain-HTTP installs on a home or office network keep working as before, and `COOKIE_SECURE` still overrides the automatic choice in either direction. If a production install is still reached over plain HTTP, a warning is logged once to point this out.
 
 - **Optional automatic container updates**
 
