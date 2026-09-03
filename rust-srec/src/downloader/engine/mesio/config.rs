@@ -35,7 +35,7 @@ pub fn build_hls_config(
 
     // Map headers
     for (key, value) in &config.headers {
-        debug!("Adding header: {} = {}", key, value);
+        debug!("Adding header: {}", key);
         builder = builder.add_header(key, value);
     }
 
@@ -344,7 +344,7 @@ pub fn build_flv_config(
 
     // Map headers
     for (key, value) in &config.headers {
-        debug!("Adding header : {}={}", key, value);
+        debug!("Adding header: {}", key);
         builder = builder.add_header(key, value);
     }
 
