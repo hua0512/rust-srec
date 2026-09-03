@@ -18,6 +18,9 @@ export type PresetListResponse = z.infer<typeof PresetListResponseSchema>;
 export interface JobPresetFilters {
   category?: string;
   processor?: string;
+  // Exact preset name; matches at most one preset. `search` is a substring match over both name
+  // and description, so it cannot be used to resolve a preset referenced by name.
+  name?: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -29,6 +32,7 @@ export const listJobPresets = createServerFn({ method: 'GET' })
     const params = new URLSearchParams();
     if (data.category) params.set('category', data.category);
     if (data.processor) params.set('processor', data.processor);
+    if (data.name) params.set('name', data.name);
     if (data.search) params.set('search', data.search);
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
