@@ -518,6 +518,32 @@ impl DownloadFailureKind {
                 | Self::Other
         )
     }
+
+    /// Classify the first `std::io::Error` in `err`'s `source()` chain.
+    ///
+    /// Returns `None` when the chain holds no `std::io::Error`, so each caller
+    /// keeps its own default for non-I/O failures ([`EngineStartError::from`]
+    /// uses [`Self::Other`], the mesio writer settlement path keeps
+    /// [`Self::Processing`]).
+    ///
+    /// Every kind the output-root gate tracks — `ENOENT`, `ENOSPC`, `EACCES`,
+    /// `EROFS`, and probe timeouts, i.e. every [`IoErrorKindSer`] except
+    /// [`IoErrorKindSer::Other`] — becomes [`Self::OutputRootUnavailable`], so
+    /// [`Self::affects_circuit_breaker`] stays false and
+    /// [`Self::is_recoverable`] stays true; the recording directory being
+    /// unusable is not the engine malfunctioning. Anything else is a plain
+    /// [`Self::Io`], scoped to the single file or operation that failed.
+    pub(crate) fn from_error_chain(err: &(dyn std::error::Error + 'static)) -> Option<Self> {
+        let io_kind = IoErrorKindSer::from_io_kind(io_error_kind_in_chain(err)?);
+        Some(match io_kind {
+            IoErrorKindSer::Other => Self::Io,
+            IoErrorKindSer::NotFound
+            | IoErrorKindSer::StorageFull
+            | IoErrorKindSer::PermissionDenied
+            | IoErrorKindSer::ReadOnlyFilesystem
+            | IoErrorKindSer::TimedOut => Self::OutputRootUnavailable { io_kind },
+        })
+    }
 }
 
 /// Error returned by [`DownloadEngine::run`] carrying a classified
@@ -544,24 +570,12 @@ impl EngineStartError {
 
 impl From<crate::Error> for EngineStartError {
     fn from(err: crate::Error) -> Self {
-        // Walk the error source chain to find the first std::io::Error and
-        // classify by its ErrorKind. Filesystem failures from the recording
-        // path (ENOENT/ENOSPC/EACCES/EROFS) become `OutputRootUnavailable`
-        // so the manager and the write gate can treat them as infra-level;
-        // other I/O errors stay as `Io`. Without this, every `crate::Error`
-        // collapsed to `DownloadFailureKind::Other` and lost retry/CB context.
-        let kind = io_error_kind_in_chain(&err)
-            .map(|k| match IoErrorKindSer::from_io_kind(k) {
-                IoErrorKindSer::NotFound
-                | IoErrorKindSer::StorageFull
-                | IoErrorKindSer::PermissionDenied
-                | IoErrorKindSer::ReadOnlyFilesystem
-                | IoErrorKindSer::TimedOut => DownloadFailureKind::OutputRootUnavailable {
-                    io_kind: IoErrorKindSer::from_io_kind(k),
-                },
-                IoErrorKindSer::Other => DownloadFailureKind::Io,
-            })
-            .unwrap_or(DownloadFailureKind::Other);
+        // `DownloadFailureKind::from_error_chain` walks the source chain for the
+        // first `std::io::Error`, so filesystem failures on the recording path
+        // reach the manager and the write gate as infra-level rather than
+        // collapsing to `Other` and losing their retry/circuit-breaker context.
+        let kind =
+            DownloadFailureKind::from_error_chain(&err).unwrap_or(DownloadFailureKind::Other);
         Self {
             kind,
             message: err.to_string(),
