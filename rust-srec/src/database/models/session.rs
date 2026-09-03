@@ -132,7 +132,16 @@ impl SessionFilters {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct LiveSessionDbModel {
     pub id: String,
-    pub streamer_id: String,
+    /// `None` once the `streamers` row this session belonged to is deleted:
+    /// the foreign key is `ON DELETE SET NULL`, so the recording history and
+    /// its `media_outputs` / `session_segments` / `danmu_statistics` children
+    /// outlive the streamer. Use [`Self::streamer_name`] for the label.
+    pub streamer_id: Option<String>,
+    /// Name the streamer had when the session started, snapshotted by
+    /// [`crate::database::repositories::SessionTxOps::create_session`]. Only
+    /// source of a display name once `streamer_id` is `None`; `None` for rows
+    /// whose streamer was already unresolvable when the column was backfilled.
+    pub streamer_name: Option<String>,
     /// Unix epoch milliseconds (UTC) when the session began.
     pub start_time: i64,
     /// Unix epoch milliseconds (UTC) when the session ended (null if ongoing).
@@ -147,12 +156,19 @@ impl LiveSessionDbModel {
     pub fn new(streamer_id: impl Into<String>) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            streamer_id: streamer_id.into(),
+            streamer_id: Some(streamer_id.into()),
+            streamer_name: None,
             start_time: crate::database::time::now_ms(),
             end_time: None,
             titles: Some("[]".to_string()),
             total_size_bytes: 0,
         }
+    }
+
+    /// Set the denormalized display name written alongside `streamer_id`.
+    pub fn with_streamer_name(mut self, streamer_name: impl Into<String>) -> Self {
+        self.streamer_name = Some(streamer_name.into());
+        self
     }
 }
 
@@ -475,7 +491,7 @@ mod tests {
     #[test]
     fn test_live_session_new() {
         let session = LiveSessionDbModel::new("streamer-1");
-        assert_eq!(session.streamer_id, "streamer-1");
+        assert_eq!(session.streamer_id.as_deref(), Some("streamer-1"));
         assert!(session.end_time.is_none());
     }
 

@@ -67,7 +67,9 @@ export type SessionEvent = z.infer<typeof SessionEventSchema>;
 // --- Session Schemas ---
 export const SessionSchema = z.object({
   id: z.string(),
-  streamer_id: z.string(),
+  // Null once the streamer has been deleted: the recording history outlives
+  // the streamer, so there is no streamer page left to link to.
+  streamer_id: z.string().nullable(),
   streamer_name: z.string(),
   streamer_avatar: z.string().nullable().optional(),
   titles: z.array(

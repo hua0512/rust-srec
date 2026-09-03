@@ -170,8 +170,14 @@ where
                     .await?;
                 let page_len = page.len();
                 for session in page {
+                    // `list_ended_sessions_pending_pipeline_recovery` already
+                    // filters `streamer_id IS NOT NULL`; the guard keeps the
+                    // config lookup total.
+                    let Some(streamer_id) = session.streamer_id.clone() else {
+                        continue;
+                    };
                     let has_session_complete_pipeline = config_service
-                        .get_config_for_streamer(&session.streamer_id)
+                        .get_config_for_streamer(&streamer_id)
                         .await
                         .ok()
                         .and_then(|config| config.session_complete_pipeline.clone())
@@ -243,7 +249,20 @@ where
             let recover_ended_session = session.end_time.is_some()
                 && (recovered_session.has_in_flight_coordination_dag
                     || recovered_session.needs_session_complete_recovery);
-            let streamer_id = session.streamer_id.clone();
+            // A session whose streamer was deleted has no config to resolve and
+            // no `StreamerActor` to hand the recovered state to, so it is not a
+            // recovery candidate: every `PipelineCoordinationEvent` below is
+            // keyed by streamer id. `list_ended_sessions_pending_pipeline_recovery`
+            // already filters these out, so reaching here means the session was
+            // pulled in by an in-flight coordination DAG — worth a line, same as
+            // the DAG-with-missing-session case above.
+            let Some(streamer_id) = session.streamer_id.clone() else {
+                warn!(
+                    session_id = %session.id,
+                    "Skipping pipeline coordinator recovery for session whose streamer was deleted"
+                );
+                continue;
+            };
             let session_id = session.id.clone();
             let config = if let Some(config_service) = &self.config_service {
                 config_service

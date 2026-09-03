@@ -350,12 +350,13 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_session", || async {
             sqlx::query(
                 r#"
-                INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, titles, total_size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&session.id)
             .bind(&session.streamer_id)
+            .bind(&session.streamer_name)
             .bind(session.start_time)
             .bind(session.end_time)
             .bind(&session.titles)
@@ -904,8 +905,15 @@ impl SessionRepository for SqlxSessionRepository {
             conditions.push("(s.total_size_bytes > 0 OR s.end_time IS NULL)".to_string());
         }
 
+        // `COALESCE` keeps a session searchable by streamer name after its
+        // `streamers` row is gone: the LEFT JOIN yields a NULL `st.name` and
+        // the denormalized `s.streamer_name` takes over. While the streamer
+        // exists `st.name` wins, so a rename is searchable immediately.
         if filters.search.is_some() {
-            conditions.push("(st.name LIKE ? OR s.titles LIKE ? OR s.id LIKE ?)".to_string());
+            conditions.push(
+                "(COALESCE(st.name, s.streamer_name) LIKE ? OR s.titles LIKE ? OR s.id LIKE ?)"
+                    .to_string(),
+            );
         }
 
         let where_clause = if conditions.is_empty() {
@@ -991,11 +999,18 @@ impl SessionRepository for SqlxSessionRepository {
         // `session_complete_dispatched` is the authoritative signal;
         // `segment_source = 'session_complete'` covers the window where
         // `run_session_complete_pipeline` published the DAG but had not yet marked the session.
+        //
+        // `streamer_id IS NOT NULL` excludes sessions whose streamer was
+        // deleted: `PipelineManager::recover_pipeline_coordinator_state` needs
+        // a streamer id to resolve a session-complete pipeline from
+        // `ConfigService::get_config_for_streamer`, and running one for a
+        // streamer the user removed would re-upload and re-notify.
         let sessions = sqlx::query_as::<_, LiveSessionDbModel>(
             r#"
             SELECT session.*
             FROM live_sessions AS session
             WHERE session.end_time IS NOT NULL
+              AND session.streamer_id IS NOT NULL
               AND session.session_complete_dispatched = 0
               AND (
                 EXISTS (
@@ -1537,6 +1552,195 @@ mod tests {
         assert_eq!(by_type["DANMU_XML"].size_bytes, 1);
         // No AUDIO rows exist, so that type is absent rather than zero.
         assert!(!by_type.contains_key("AUDIO"));
+    }
+
+    /// Deleting a streamer leaves its recordings behind: the
+    /// `live_sessions.streamer_id` foreign key is `ON DELETE SET NULL`, so the
+    /// session rows and their `media_outputs` / `session_segments` children
+    /// survive, and `streamer_name` keeps the label for the API responses.
+    #[tokio::test]
+    async fn deleting_a_streamer_keeps_its_sessions_and_outputs() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        streamer_repo.create_streamer(&streamer).await.unwrap();
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
+
+        let mut ended = LiveSessionDbModel::new("streamer-1").with_streamer_name("Streamer One");
+        ended.id = "session-ended".to_string();
+        repo.create_session(&ended).await.unwrap();
+        repo.end_session("session-ended", crate::database::time::now_ms())
+            .await
+            .unwrap();
+
+        let mut active = LiveSessionDbModel::new("streamer-1").with_streamer_name("Streamer One");
+        active.id = "session-active".to_string();
+        repo.create_session(&active).await.unwrap();
+
+        for session_id in ["session-ended", "session-active"] {
+            repo.create_media_output(&MediaOutputDbModel::new(
+                session_id,
+                format!("/tmp/{session_id}.mp4"),
+                MediaFileType::Video,
+                4096,
+            ))
+            .await
+            .unwrap();
+            repo.create_session_segment(&SessionSegmentDbModel::new(
+                session_id,
+                0,
+                format!("/tmp/{session_id}.mp4"),
+                12.0,
+                4096,
+                crate::database::models::SessionSegmentLifecycle::new(None, None),
+                crate::database::models::SessionSegmentSplitReason::new(None, None),
+            ))
+            .await
+            .unwrap();
+        }
+
+        streamer_repo.delete_streamer("streamer-1").await.unwrap();
+
+        for session_id in ["session-ended", "session-active"] {
+            let session = repo.get_session(session_id).await.unwrap();
+            assert_eq!(
+                session.streamer_id, None,
+                "{session_id} must be orphaned, not deleted"
+            );
+            assert_eq!(session.streamer_name.as_deref(), Some("Streamer One"));
+            assert_eq!(repo.get_output_count(session_id).await.unwrap(), 1);
+            assert_eq!(
+                repo.list_session_segments_page(session_id, &Pagination::new(10, 0))
+                    .await
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
+
+        // `trg_live_session_orphan_ends` closes the row the foreign-key action
+        // orphaned, so nothing reports it as still recording.
+        assert!(
+            repo.get_session("session-active")
+                .await
+                .unwrap()
+                .end_time
+                .is_some(),
+            "an orphaned session must not stay active"
+        );
+        let (active_sessions, _) = repo
+            .list_sessions_filtered(
+                &SessionFilters::new().with_active_only(true),
+                &Pagination::new(10, 0),
+            )
+            .await
+            .unwrap();
+        assert!(active_sessions.is_empty());
+    }
+
+    /// The session list keeps searching by streamer name after the streamer is
+    /// deleted: `list_sessions_filtered` coalesces the joined `streamers.name`
+    /// with the denormalized `live_sessions.streamer_name`.
+    #[tokio::test]
+    async fn orphaned_sessions_are_still_searchable_by_streamer_name() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        streamer_repo.create_streamer(&streamer).await.unwrap();
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
+        let mut session = LiveSessionDbModel::new("streamer-1").with_streamer_name("Streamer One");
+        session.id = "session-1".to_string();
+        session.total_size_bytes = 4096;
+        repo.create_session(&session).await.unwrap();
+        repo.end_session("session-1", crate::database::time::now_ms())
+            .await
+            .unwrap();
+        repo.create_media_output(&MediaOutputDbModel::new(
+            "session-1",
+            "/tmp/session-1.mp4",
+            MediaFileType::Video,
+            4096,
+        ))
+        .await
+        .unwrap();
+
+        streamer_repo.delete_streamer("streamer-1").await.unwrap();
+
+        let (found, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters::new().with_search("Streamer One"),
+                &Pagination::new(10, 0),
+            )
+            .await
+            .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "session-1");
+        assert_eq!(found[0].streamer_id, None);
+    }
+
+    /// Startup pipeline recovery skips orphaned sessions:
+    /// `PipelineManager` resolves a session-complete pipeline through
+    /// `ConfigService::get_config_for_streamer`, which needs a streamer id.
+    #[tokio::test]
+    async fn pipeline_recovery_skips_sessions_whose_streamer_was_deleted() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        streamer_repo.create_streamer(&streamer).await.unwrap();
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
+        let mut session = LiveSessionDbModel::new("streamer-1").with_streamer_name("Streamer One");
+        session.id = "session-1".to_string();
+        repo.create_session(&session).await.unwrap();
+        repo.create_media_output(&MediaOutputDbModel::new(
+            "session-1",
+            "/tmp/session-1.mp4",
+            MediaFileType::Video,
+            4096,
+        ))
+        .await
+        .unwrap();
+        repo.end_session("session-1", crate::database::time::now_ms())
+            .await
+            .unwrap();
+
+        let pending = repo
+            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+            .await
+            .unwrap();
+        assert_eq!(pending.len(), 1, "owned session is a recovery candidate");
+
+        streamer_repo.delete_streamer("streamer-1").await.unwrap();
+
+        let pending = repo
+            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+            .await
+            .unwrap();
+        assert!(pending.is_empty(), "orphaned session must not be recovered");
     }
 
     #[tokio::test]

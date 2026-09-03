@@ -159,6 +159,15 @@ impl RuntimeCoordinator {
             }
         }
 
+        // `StreamerManager` is the only source of the name here, and there is
+        // no useful session-row fallback behind it. It drops a cache entry
+        // only once the `streamers` row is gone (`delete_streamer`, or
+        // `reload_from_repo` seeing `NotFound`), and by then the
+        // `ON DELETE SET NULL` foreign key has cleared
+        // `live_sessions.streamer_id` and `trg_live_session_orphan_ends` has
+        // stamped `end_time`. `SessionLifecycle::end_for_disable` reads this
+        // name only on the branch where the session is still active, which is
+        // exactly the branch on which this lookup hits.
         let streamer_name = self
             .streamer_manager
             .get_streamer(streamer_id)
