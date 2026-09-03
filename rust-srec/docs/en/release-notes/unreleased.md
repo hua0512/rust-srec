@@ -104,6 +104,9 @@
 
   Media outputs could only be browsed, so clearing space meant finding the files on disk yourself and then having no way to tidy up the leftover entries. Each output now has a **Delete** option, and a **Select** button lets you clear many at once. By default this only removes the entry and leaves the file untouched; tick **Also delete files from disk** in the confirmation to remove the recording itself. Deleting an entry whose file you already removed by hand works as expected, and the owning recording's total size is corrected either way.
 
+- **Custom command steps no longer trip over unusual file names**
+
+  A recording named after the stream title can end up with characters a shell reads as instructions — an apostrophe, a quote, `$`, a backtick, a semicolon. A pipeline step running a custom command would then fail on that file, or run part of the title as a command of its own. File paths, titles and streamer names are now quoted automatically before the command runs, so they are passed on as text instead of being run — as a bare argument, inside quotes, inside `$(...)` or backticks, or in a here-document body. Pipes, `&&` and redirects in your own command still work, and placeholders you already wrapped in quotes yourself keep working — do not add extra escaping around them. See [DAG Pipeline](../concepts/pipeline.md#built-in-processors) for the two remaining limits.
 - **A job picked up again after a restart no longer shows stale progress**
 
   If the app stopped while a transcode or upload was running, that job was put back in the queue on the next start but kept showing the percentage it had reached before — a job that was only waiting its turn could sit there reading "42%" until it actually started running again. The old figure is now cleared the moment the job returns to the queue.
