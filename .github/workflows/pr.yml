@@ -162,10 +162,6 @@ jobs:
       # the unit's install path needs an executable before the check runs.
       - name: Stage the ExecStart target
         run: sudo install -D -m 0755 /bin/true /opt/rust-srec/rust-srec
-      # TEMPORARY: report how this runner's systemd treats --recursive-errors,
-      # so the flag the next step relies on is confirmed rather than assumed.
-      - name: Probe runner systemd behaviour
-        run: bash .github/scripts/systemd-verify-probe.sh
       # Without --recursive-errors=, verify "returns zero as the exit status
       # regardless whether warnings arise" (systemd-analyze(1)) — a misplaced
       # key, an unparseable value or an unknown syscall group is only a warning
