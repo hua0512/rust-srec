@@ -74,10 +74,23 @@ enum QuoteState {
     Double,
 }
 
+/// A region the scan has entered and not yet left, carrying the `QuoteState`
+/// to restore when it closes.
+#[derive(Debug, Clone, Copy)]
+enum Region {
+    /// `$( ... )`: the body is parsed as a fresh command, so the quoting that
+    /// surrounds the region does not reach into it.
+    Subshell(QuoteState),
+    /// `` `...` ``: as `Subshell`, and the shell additionally strips one layer
+    /// of `\` escapes from the body before parsing it.
+    Backtick(QuoteState),
+}
+
 /// Escape `value` so a POSIX shell reads it as literal text at a point where
-/// the surrounding template is in `state`.
-fn escape_posix(value: &str, state: QuoteState) -> String {
-    match state {
+/// the surrounding template is in `state`, nested inside `backtick_depth`
+/// enclosing `` `...` `` regions.
+fn escape_posix(value: &str, state: QuoteState, backtick_depth: usize) -> String {
+    let mut escaped = match state {
         // Wrap the whole value so spaces and every metacharacter lose meaning.
         QuoteState::Unquoted => {
             let mut out = String::with_capacity(value.len() + 2);
@@ -106,24 +119,36 @@ fn escape_posix(value: &str, state: QuoteState) -> String {
             }
             out
         }
+    };
+
+    // A `` `...` `` region ends at the first backtick the shell finds, whatever
+    // quoting sits between, and one layer of `\` escapes is removed from the
+    // body before it is parsed. Re-escape once per enclosing region so the word
+    // built above arrives intact.
+    for _ in 0..backtick_depth {
+        let mut layered = String::with_capacity(escaped.len());
+        for c in escaped.chars() {
+            if matches!(c, '\\' | '`') {
+                layered.push('\\');
+            }
+            layered.push(c);
+        }
+        escaped = layered;
     }
+
+    escaped
 }
 
 /// Escape `value` for `cmd /C` at a point where the template is in `state`.
 ///
-/// cmd.exe offers no escape for `"` inside a quoted string, so a `"` in the
-/// value is dropped rather than left to end the quoted region early. `%` is
-/// doubled to blunt `%VAR%` expansion; cmd re-scans the line after expanding
-/// it, so unlike `escape_posix` this is a mitigation, not a guarantee.
+/// A `"` is doubled: cmd keeps reading the text as quoted, so `&`, `|`, `<` and
+/// `>` stay inert, and the MS C runtime hands the child one literal quote.
+/// Unlike `escape_posix` this is not airtight — cmd expands `%VAR%` (and
+/// `!VAR!` where delayed expansion is on) before the command runs and offers no
+/// escape for `%` on a `/C` command line, so a value naming a defined variable
+/// still expands.
 fn escape_cmd(value: &str, state: QuoteState) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for c in value.chars() {
-        match c {
-            '"' => {}
-            '%' => escaped.push_str("%%"),
-            _ => escaped.push(c),
-        }
-    }
+    let escaped = value.replace('"', "\"\"");
 
     match state {
         // Quote so `&`, `|`, `<`, `>` and spaces stay inside the argument.
@@ -133,14 +158,15 @@ fn escape_cmd(value: &str, state: QuoteState) -> String {
 }
 
 /// Replace every `{name}` in `template` that `resolve` recognises with its
-/// value, escaped for the quoting the template is in at that occurrence.
+/// value, escaped for the context the template is in at that occurrence.
 ///
 /// The template is scanned once, left to right, so a value containing a quote
-/// character cannot change the state seen by a later placeholder. Quote
+/// character cannot change the context seen by a later placeholder. Quote
 /// characters written by the template are preserved verbatim, so a preset that
 /// already writes `"{input}"` stays one double-quoted word instead of gaining
-/// a second layer of quoting. Names `resolve` returns `None` for are left as
-/// written.
+/// a second layer of quoting. On `ShellKind::Posix` the scan also follows
+/// `$( ... )` and `` `...` ``, whose bodies the shell re-parses as commands in
+/// their own right. Names `resolve` returns `None` for are left as written.
 fn substitute_placeholders<'a>(
     template: &str,
     shell: ShellKind,
@@ -148,7 +174,11 @@ fn substitute_placeholders<'a>(
 ) -> String {
     let mut out = String::with_capacity(template.len());
     let bytes = template.as_bytes();
+    let posix = shell == ShellKind::Posix;
     let mut state = QuoteState::Unquoted;
+    // Command-substitution regions still open, innermost last.
+    let mut regions: Vec<Region> = Vec::new();
+    let mut backtick_depth = 0usize;
     // Start of the run of template bytes not yet copied into `out`.
     let mut chunk_start = 0usize;
     let mut i = 0usize;
@@ -156,10 +186,10 @@ fn substitute_placeholders<'a>(
     while i < bytes.len() {
         match bytes[i] {
             // Skip past the escaped byte so `\"` does not flip `state`.
-            b'\\' if shell == ShellKind::Posix && state != QuoteState::Single => {
+            b'\\' if posix && state != QuoteState::Single => {
                 i = bytes.len().min(i + 2);
             }
-            b'\'' if shell == ShellKind::Posix && state != QuoteState::Double => {
+            b'\'' if posix && state != QuoteState::Double => {
                 state = if state == QuoteState::Single {
                     QuoteState::Unquoted
                 } else {
@@ -175,6 +205,30 @@ fn substitute_placeholders<'a>(
                 };
                 i += 1;
             }
+            b'$' if posix && state != QuoteState::Single && bytes.get(i + 1) == Some(&b'(') => {
+                regions.push(Region::Subshell(state));
+                state = QuoteState::Unquoted;
+                i += 2;
+            }
+            b')' if posix && state != QuoteState::Single => {
+                if let Some(Region::Subshell(outer)) = regions.last().copied() {
+                    regions.pop();
+                    state = outer;
+                }
+                i += 1;
+            }
+            b'`' if posix && state != QuoteState::Single => {
+                if let Some(Region::Backtick(outer)) = regions.last().copied() {
+                    regions.pop();
+                    backtick_depth -= 1;
+                    state = outer;
+                } else {
+                    regions.push(Region::Backtick(state));
+                    backtick_depth += 1;
+                    state = QuoteState::Unquoted;
+                }
+                i += 1;
+            }
             b'{' => {
                 let name_start = i + 1;
                 let resolved = template[name_start..].find('}').and_then(|offset| {
@@ -185,10 +239,14 @@ fn substitute_placeholders<'a>(
                 match resolved {
                     Some((value, after)) => {
                         out.push_str(&template[chunk_start..i]);
-                        out.push_str(&match shell {
-                            ShellKind::Posix => escape_posix(value, state),
-                            ShellKind::Cmd => escape_cmd(value, state),
-                        });
+                        // An empty value carries no shell syntax, so it is
+                        // spliced in as nothing rather than as an empty word.
+                        if !value.is_empty() {
+                            out.push_str(&match shell {
+                                ShellKind::Posix => escape_posix(value, state, backtick_depth),
+                                ShellKind::Cmd => escape_cmd(value, state),
+                            });
+                        }
                         i = after;
                         chunk_start = after;
                     }
@@ -453,12 +511,14 @@ impl Processor for ExecuteCommandProcessor {
             use std::os::windows::process::CommandExt;
 
             let mut c = Command::new("cmd");
-            c.arg("/C");
-            // Append the command line verbatim: the default argument quoting
-            // escapes an embedded `"` as `\"`, which cmd.exe passes through
-            // literally instead of unescaping, corrupting every quoted value
-            // that escape_cmd placed in the command.
-            c.as_std_mut().raw_arg(&command);
+            c.args(["/S", "/C"]);
+            // `/S` makes cmd strip exactly the outer quote pair instead of
+            // applying its multi-quote rule, which would otherwise eat the
+            // first and last quote of a command that quotes its own program
+            // path. `raw_arg` keeps std's argument quoting from rewriting the
+            // `""` pairs escape_cmd emits into `\"`, which cmd does not
+            // unescape.
+            c.as_std_mut().raw_arg(format!("\"{command}\""));
             c
         };
 
@@ -1066,8 +1126,75 @@ mod tests {
         assert_eq!(out, "echo '/rec/100%Y.mp4'");
     }
 
+    /// A placeholder inside `$( ... )` is re-parsed by the subshell as a fresh
+    /// command, so the enclosing double quotes do not protect it.
     #[test]
-    fn test_cmd_escaping_drops_quotes_and_doubles_percent() {
+    fn test_posix_escaping_inside_command_substitution() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo \"$(dirname {input})\"",
+            &hostile_input(),
+        );
+
+        assert_eq!(out, r#"echo "$(dirname '/rec/a b$(id);`id`'\''q"&.mp4')""#);
+    }
+
+    /// The template's quoting resumes once the subshell closes.
+    #[test]
+    fn test_posix_quoting_resumes_after_command_substitution() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo \"$(dirname {input})\" {input}",
+            &hostile_input(),
+        );
+
+        assert_eq!(
+            out,
+            r#"echo "$(dirname '/rec/a b$(id);`id`'\''q"&.mp4')" '/rec/a b$(id);`id`'\''q"&.mp4'"#
+        );
+    }
+
+    /// A `` `...` `` region ends at the first backtick the shell finds, so
+    /// single-quoting the value is not enough on its own.
+    #[test]
+    fn test_posix_escaping_inside_backticks() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo `dirname {input}`",
+            &hostile_input(),
+        );
+
+        assert_eq!(out, r#"echo `dirname '/rec/a b$(id);\`id\`'\\''q"&.mp4'`"#);
+    }
+
+    #[test]
+    fn test_posix_escaping_inside_backticks_within_double_quotes() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo \"`dirname {input}`\"",
+            &hostile_input(),
+        );
+
+        assert_eq!(
+            out,
+            r#"echo "`dirname '/rec/a b$(id);\`id\`'\\''q"&.mp4'`""#
+        );
+    }
+
+    /// An absent output or title contributes no token, as before quoting.
+    #[test]
+    fn test_empty_values_are_spliced_in_as_nothing() {
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "echo {output} {title}",
+            &ProcessorInput::default(),
+        );
+
+        assert_eq!(out, "echo  ");
+    }
+
+    #[test]
+    fn test_cmd_escaping_doubles_quotes_and_leaves_percent() {
         let input = ProcessorInput {
             inputs: vec![r#"C:\rec\a b&whoami%PATH%"x.mp4"#.to_string()],
             ..Default::default()
@@ -1080,7 +1207,7 @@ mod tests {
                 "echo {input}",
                 &input
             ),
-            r#"echo "C:\rec\a b&whoami%%PATH%%x.mp4""#
+            r#"echo "C:\rec\a b&whoami%PATH%""x.mp4""#
         );
 
         // Inside the template's own quotes: no second layer.
@@ -1090,7 +1217,7 @@ mod tests {
                 "echo \"{input}\"",
                 &input
             ),
-            r#"echo "C:\rec\a b&whoami%%PATH%%x.mp4""#
+            r#"echo "C:\rec\a b&whoami%PATH%""x.mp4""#
         );
 
         // cmd has no single-quote syntax, so the placeholder is still unquoted.
@@ -1100,8 +1227,26 @@ mod tests {
                 "echo '{input}'",
                 &input
             ),
-            r#"echo '"C:\rec\a b&whoami%%PATH%%x.mp4"'"#
+            r#"echo '"C:\rec\a b&whoami%PATH%""x.mp4"'"#
         );
+    }
+
+    /// Doubling rather than dropping `"` keeps `{inputs_json}` parseable once
+    /// cmd and the C runtime have removed one layer of quoting.
+    #[test]
+    fn test_cmd_escaping_keeps_json_placeholders_intact() {
+        let input = ProcessorInput {
+            inputs: vec![r"C:\rec\a.mp4".to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Cmd,
+            "echo {inputs_json}",
+            &input,
+        );
+
+        assert_eq!(out, r#"echo "[""C:\\rec\\a.mp4""]""#);
     }
 
     /// End-to-end through `sh -c`: a path full of metacharacters reaches the
@@ -1123,6 +1268,9 @@ mod tests {
             "printf %s {input}",
             "printf %s \"{input}\"",
             "printf %s '{input}'",
+            "printf %s \"$(printf %s {input})\"",
+            "printf %s \"`printf %s {input}`\"",
+            "printf %s \"$(printf %s \"`printf %s {input}`\")\"",
         ] {
             let config = serde_json::json!({
                 "command": format!("{template} > {}", captured.display()),

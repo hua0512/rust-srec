@@ -94,7 +94,7 @@
 
 - **Custom command steps no longer trip over unusual file names**
 
-  A recording named after the stream title can end up with characters a shell reads as instructions — an apostrophe, a quote, `$`, a backtick, a semicolon. A pipeline step running a custom command would then fail on that file, or run part of the title as a command of its own. File paths, titles and streamer names are now quoted automatically wherever they appear in the command, so they always reach it as plain text. Pipes, `&&` and redirects in your own command still work, and placeholders you already wrapped in quotes yourself keep working — do not add extra escaping around them.
+  A recording named after the stream title can end up with characters a shell reads as instructions — an apostrophe, a quote, `$`, a backtick, a semicolon. A pipeline step running a custom command would then fail on that file, or run part of the title as a command of its own. File paths, titles and streamer names are now quoted automatically wherever they appear in the command, so they are passed on as text instead of being run. Pipes, `&&` and redirects in your own command still work, and placeholders you already wrapped in quotes yourself keep working — do not add extra escaping around them.
 
 ## Danmu
 
