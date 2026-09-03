@@ -66,12 +66,16 @@ const SHELL: ShellKind = if cfg!(windows) {
     ShellKind::Posix
 };
 
-/// Quoting context of a command template at a given byte offset.
+/// Context a command template is in at a given byte offset, which decides what
+/// `escape_posix` has to neutralise for a value spliced in there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuoteState {
     Unquoted,
     Single,
     Double,
+    /// Between `$((` and `))`. The text goes through the same expansions as a
+    /// double-quoted word, and `(`/`)` additionally delimit the expansion.
+    Arith,
 }
 
 /// A region the scan has entered and not yet left, carrying the `QuoteState`
@@ -88,10 +92,48 @@ enum Region {
     /// whether the region was opened by `` \` `` (a region nested inside
     /// another) or by a bare backtick, so the matching delimiter closes it.
     Backtick { outer: QuoteState, escaped: bool },
-    /// `$(( ... ))`: an arithmetic expression. Its text goes through the same
-    /// expansions as a double-quoted word, but a quoted operand is a syntax
-    /// error, so values are escaped as `QuoteState::Double`.
+    /// `$(( ... ))`: an arithmetic expression, escaped as `QuoteState::Arith`.
     Arithmetic(QuoteState),
+}
+
+/// A here-document redirection and the rules its body is read under.
+#[derive(Debug, Clone)]
+struct Heredoc {
+    /// Word that ends the body when it is the whole of a line.
+    delimiter: String,
+    /// `<<EOF` expands `$`, `` ` `` and `\` in the body; `<<'EOF'` does not.
+    expand: bool,
+    /// `<<-EOF` ignores leading tabs, on body lines and on the delimiter line.
+    strip_tabs: bool,
+}
+
+impl Heredoc {
+    /// Whether `line` (a body line, without its newline) ends the body.
+    fn ends_body(&self, line: &str) -> bool {
+        let line = if self.strip_tabs {
+            line.trim_start_matches('\t')
+        } else {
+            line
+        };
+        line == self.delimiter
+    }
+
+    /// Escape `value` for the body: with an unquoted delimiter the shell still
+    /// expands `$` and `` ` `` and honours `\`, and quotes are literal text.
+    fn escape(&self, value: &str) -> String {
+        if !self.expand {
+            return value.to_string();
+        }
+
+        let mut out = String::with_capacity(value.len());
+        for c in value.chars() {
+            if matches!(c, '\\' | '$' | '`') {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        out
+    }
 }
 
 /// Escape `value` so a POSIX shell reads it as literal text at a point where
@@ -121,6 +163,21 @@ fn escape_posix(value: &str, state: QuoteState, backtick_depth: usize) -> String
             let mut out = String::with_capacity(value.len());
             for c in value.chars() {
                 if matches!(c, '\\' | '"' | '$' | '`') {
+                    out.push('\\');
+                }
+                out.push(c);
+            }
+            out
+        }
+        // Inside `$(( ... ))` a quoted operand is a syntax error, so the value
+        // cannot be wrapped; escaping `(` and `)` on top of the double-quoted
+        // set stops it from closing the expansion and continuing as command
+        // text. The arithmetic parse then rejects anything that is not a
+        // number, which is the intended failure.
+        QuoteState::Arith => {
+            let mut out = String::with_capacity(value.len());
+            for c in value.chars() {
+                if matches!(c, '\\' | '"' | '$' | '`' | '(' | ')') {
                     out.push('\\');
                 }
                 out.push(c);
@@ -161,7 +218,9 @@ fn escape_cmd(value: &str, state: QuoteState) -> String {
     match state {
         // Quote so `&`, `|`, `<`, `>` and spaces stay inside the argument.
         QuoteState::Unquoted => format!("\"{escaped}\""),
-        QuoteState::Single | QuoteState::Double => escaped,
+        // `Single` and `Arith` never arise for cmd: substitute_placeholders
+        // only enters them on ShellKind::Posix.
+        QuoteState::Single | QuoteState::Double | QuoteState::Arith => escaped,
     }
 }
 
@@ -174,14 +233,18 @@ fn escape_cmd(value: &str, state: QuoteState) -> String {
 /// already writes `"{input}"` stays one double-quoted word instead of gaining
 /// a second layer of quoting. On `ShellKind::Posix` the scan also follows the
 /// regions listed on `Region`, whose bodies the shell re-parses rather than
-/// leaving under the surrounding quoting. The bash-only `$'...'` form is not
+/// leaving under the surrounding quoting, and the body of a here-document,
+/// where `Heredoc::escape` applies instead. The bash-only `$'...'` form is not
 /// modelled, since `Processor::process` spawns `sh`. Names `resolve` returns
 /// `None` for are left as written.
+///
+/// Fails when a value holds a line equal to the delimiter of the here-document
+/// it lands in, which is the one placement no escaping can make literal.
 fn substitute_placeholders<'a>(
     template: &str,
     shell: ShellKind,
     resolve: impl Fn(&str) -> Option<&'a str>,
-) -> String {
+) -> Result<String> {
     let mut out = String::with_capacity(template.len());
     let bytes = template.as_bytes();
     let posix = shell == ShellKind::Posix;
@@ -189,11 +252,72 @@ fn substitute_placeholders<'a>(
     // Command-substitution regions still open, innermost last.
     let mut regions: Vec<Region> = Vec::new();
     let mut backtick_depth = 0usize;
+    // Here-documents redirected on the command line being scanned, in the order
+    // the shell reads their bodies, plus the body the scan is currently inside.
+    let mut pending_heredocs: Vec<Heredoc> = Vec::new();
+    let mut open_heredoc: Option<Heredoc> = None;
     // Start of the run of template bytes not yet copied into `out`.
     let mut chunk_start = 0usize;
     let mut i = 0usize;
 
     while i < bytes.len() {
+        // A here-document body is data rather than command text: the shell
+        // reads it line by line to the delimiter line, so quoting and regions
+        // do not apply and only placeholders are touched.
+        if let Some(heredoc) = open_heredoc.take() {
+            let line_end = template[i..]
+                .find('\n')
+                .map(|offset| i + offset)
+                .unwrap_or(bytes.len());
+
+            if heredoc.ends_body(&template[i..line_end]) {
+                // A command line may redirect several here-documents; the next
+                // body starts on the line after this one.
+                if !pending_heredocs.is_empty() {
+                    open_heredoc = Some(pending_heredocs.remove(0));
+                }
+            } else {
+                let mut k = i;
+                while k < line_end {
+                    if bytes[k] != b'{' {
+                        k += 1;
+                        continue;
+                    }
+
+                    let name_start = k + 1;
+                    let Some(offset) = template[name_start..line_end].find('}') else {
+                        k += 1;
+                        continue;
+                    };
+                    let name = &template[name_start..name_start + offset];
+                    let Some(value) = resolve(name) else {
+                        k += 1;
+                        continue;
+                    };
+
+                    if value.lines().any(|line| heredoc.ends_body(line)) {
+                        return Err(crate::Error::Other(format!(
+                            "Value of {{{name}}} contains the here-document delimiter \
+                             '{}' on a line of its own, which would end the here-document \
+                             early; use a delimiter that cannot appear in the value",
+                            heredoc.delimiter
+                        )));
+                    }
+
+                    out.push_str(&template[chunk_start..k]);
+                    if !value.is_empty() {
+                        out.push_str(&heredoc.escape(value));
+                    }
+                    k = name_start + offset + 1;
+                    chunk_start = k;
+                }
+                open_heredoc = Some(heredoc);
+            }
+
+            i = bytes.len().min(line_end + 1);
+            continue;
+        }
+
         match bytes[i] {
             // Inside a `` `...` `` region a `` \` `` opens or closes a region
             // nested one level deeper, rather than standing for a literal
@@ -219,11 +343,27 @@ fn substitute_placeholders<'a>(
                 }
                 i += 2;
             }
+            // `\$(` is how a command substitution nests inside a `` `...` ``
+            // region, where a bare `$(` would be consumed by the outer strip.
+            b'\\'
+                if posix
+                    && state != QuoteState::Single
+                    && backtick_depth > 0
+                    && bytes.get(i + 1) == Some(&b'$')
+                    && bytes.get(i + 2) == Some(&b'(') =>
+            {
+                regions.push(Region::Subshell {
+                    outer: state,
+                    groups: 0,
+                });
+                state = QuoteState::Unquoted;
+                i += 3;
+            }
             // Skip past the escaped byte so `\"` does not flip `state`.
             b'\\' if posix && state != QuoteState::Single => {
                 i = bytes.len().min(i + 2);
             }
-            b'\'' if posix && state != QuoteState::Double => {
+            b'\'' if posix && matches!(state, QuoteState::Unquoted | QuoteState::Single) => {
                 state = if state == QuoteState::Single {
                     QuoteState::Unquoted
                 } else {
@@ -231,7 +371,7 @@ fn substitute_placeholders<'a>(
                 };
                 i += 1;
             }
-            b'"' if state != QuoteState::Single => {
+            b'"' if matches!(state, QuoteState::Unquoted | QuoteState::Double) => {
                 state = if state == QuoteState::Double {
                     QuoteState::Unquoted
                 } else {
@@ -245,7 +385,7 @@ fn substitute_placeholders<'a>(
                 && bytes.get(i + 2) == Some(&b'(') =>
             {
                 regions.push(Region::Arithmetic(state));
-                state = QuoteState::Double;
+                state = QuoteState::Arith;
                 i += 3;
             }
             b'$' if posix && state != QuoteState::Single && bytes.get(i + 1) == Some(&b'(') => {
@@ -304,6 +444,59 @@ fn substitute_placeholders<'a>(
                 }
                 i += 1;
             }
+            // `<<word` / `<<-word` redirect a here-document whose body starts
+            // on the next line; `<<<` is a here-string and has no body.
+            b'<' if posix
+                && state == QuoteState::Unquoted
+                && bytes.get(i + 1) == Some(&b'<')
+                && bytes.get(i + 2) != Some(&b'<') =>
+            {
+                let mut j = i + 2;
+                let strip_tabs = bytes.get(j) == Some(&b'-');
+                if strip_tabs {
+                    j += 1;
+                }
+                while matches!(bytes.get(j), Some(b' ') | Some(b'\t')) {
+                    j += 1;
+                }
+
+                let word_start = j;
+                while j < bytes.len()
+                    && !matches!(
+                        bytes[j],
+                        b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')'
+                    )
+                {
+                    j += 1;
+                }
+
+                // Quoting any part of the delimiter word makes the body literal
+                // text, so a value in it needs no escaping at all.
+                let word = &template[word_start..j];
+                let (delimiter, expand) = if word.len() >= 2
+                    && ((word.starts_with('\'') && word.ends_with('\''))
+                        || (word.starts_with('"') && word.ends_with('"')))
+                {
+                    (word[1..word.len() - 1].to_string(), false)
+                } else if word.contains('\\') {
+                    (word.replace('\\', ""), false)
+                } else {
+                    (word.to_string(), true)
+                };
+
+                if !delimiter.is_empty() {
+                    pending_heredocs.push(Heredoc {
+                        delimiter,
+                        expand,
+                        strip_tabs,
+                    });
+                }
+                i = j;
+            }
+            b'\n' if posix && state == QuoteState::Unquoted && !pending_heredocs.is_empty() => {
+                open_heredoc = Some(pending_heredocs.remove(0));
+                i += 1;
+            }
             b'{' => {
                 let name_start = i + 1;
                 let resolved = template[name_start..].find('}').and_then(|offset| {
@@ -333,7 +526,7 @@ fn substitute_placeholders<'a>(
     }
 
     out.push_str(&template[chunk_start..]);
-    out
+    Ok(out)
 }
 
 /// Processor for executing arbitrary shell commands.
@@ -357,7 +550,7 @@ impl ExecuteCommandProcessor {
     }
 
     /// Substitute variables in a command string for the shell that will run it.
-    fn substitute_variables(command: &str, input: &ProcessorInput) -> String {
+    fn substitute_variables(command: &str, input: &ProcessorInput) -> Result<String> {
         Self::substitute_variables_for(SHELL, command, input)
     }
 
@@ -369,7 +562,11 @@ impl ExecuteCommandProcessor {
     /// rather than as command syntax: the `%Y`-style placeholders belong to the
     /// template and are expanded first, which leaves a `%` arriving with a
     /// value literal.
-    fn substitute_variables_for(shell: ShellKind, command: &str, input: &ProcessorInput) -> String {
+    fn substitute_variables_for(
+        shell: ShellKind,
+        command: &str,
+        input: &ProcessorInput,
+    ) -> Result<String> {
         let template = pipeline_common::expand_path_template(command);
 
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -547,7 +744,7 @@ impl Processor for ExecuteCommandProcessor {
         // Raw string: echo hello
         let config = Self::parse_config(input)?;
 
-        let command = Self::substitute_variables(&config.command, input);
+        let command = Self::substitute_variables(&config.command, input)?;
 
         ctx.info(format!("Executing command: {}", command));
 
@@ -739,6 +936,13 @@ impl Processor for ExecuteCommandProcessor {
 mod tests {
     use super::*;
 
+    /// `ExecuteCommandProcessor::substitute_variables_for` for the templates
+    /// that are expected to substitute cleanly.
+    fn subst(shell: ShellKind, command: &str, input: &ProcessorInput) -> String {
+        ExecuteCommandProcessor::substitute_variables_for(shell, command, input)
+            .expect("template should substitute")
+    }
+
     #[test]
     fn test_execute_processor_type() {
         let processor = ExecuteCommandProcessor::new();
@@ -765,8 +969,7 @@ mod tests {
         };
 
         let command = "echo {input} {output} {streamer_id}";
-        let result =
-            ExecuteCommandProcessor::substitute_variables_for(ShellKind::Posix, command, &input);
+        let result = subst(ShellKind::Posix, command, &input);
 
         assert_eq!(result, "echo '/input.flv' '/output.mp4' 'streamer-1'");
     }
@@ -1035,7 +1238,7 @@ mod tests {
         };
 
         let cmd = "echo {input} {input0} {input1} {output} {output1} {inputs_json} {outputs_json} {streamer_id} {session_id}";
-        let out = ExecuteCommandProcessor::substitute_variables_for(ShellKind::Posix, cmd, &input);
+        let out = subst(ShellKind::Posix, cmd, &input);
 
         assert_eq!(
             out,
@@ -1052,11 +1255,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo {input3} {nope} {",
-            &input,
-        );
+        let out = subst(ShellKind::Posix, "echo {input3} {nope} {", &input);
 
         assert_eq!(out, "echo {input3} {nope} {");
     }
@@ -1076,7 +1275,7 @@ mod tests {
         };
 
         let cmd = "echo {platform} {streamer} {title} {streamer_id} {session_id}";
-        let out = ExecuteCommandProcessor::substitute_variables_for(ShellKind::Posix, cmd, &input);
+        let out = subst(ShellKind::Posix, cmd, &input);
 
         assert_eq!(
             out,
@@ -1120,33 +1319,21 @@ mod tests {
 
     #[test]
     fn test_posix_escaping_unquoted_placeholder() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo {input}",
-            &hostile_input(),
-        );
+        let out = subst(ShellKind::Posix, "echo {input}", &hostile_input());
 
         assert_eq!(out, r#"echo '/rec/a b$(id);`id`'\''q"&.mp4'"#);
     }
 
     #[test]
     fn test_posix_escaping_inside_double_quotes() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo \"{input}\"",
-            &hostile_input(),
-        );
+        let out = subst(ShellKind::Posix, "echo \"{input}\"", &hostile_input());
 
         assert_eq!(out, r#"echo "/rec/a b\$(id);\`id\`'q\"&.mp4""#);
     }
 
     #[test]
     fn test_posix_escaping_inside_single_quotes() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo '{input}'",
-            &hostile_input(),
-        );
+        let out = subst(ShellKind::Posix, "echo '{input}'", &hostile_input());
 
         assert_eq!(out, r#"echo '/rec/a b$(id);`id`'\''q"&.mp4'"#);
     }
@@ -1155,11 +1342,7 @@ mod tests {
     /// still unquoted and must be wrapped by `escape_posix`.
     #[test]
     fn test_posix_escaped_quote_does_not_open_a_quoted_region() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo \\\"{input}\\\"",
-            &hostile_input(),
-        );
+        let out = subst(ShellKind::Posix, "echo \\\"{input}\\\"", &hostile_input());
 
         assert_eq!(out, r#"echo \"'/rec/a b$(id);`id`'\''q"&.mp4'\""#);
     }
@@ -1175,7 +1358,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "echo \"{input}\" {output} '{streamer_id}'",
             &input,
@@ -1196,11 +1379,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo {input}",
-            &input,
-        );
+        let out = subst(ShellKind::Posix, "echo {input}", &input);
 
         assert_eq!(out, "echo '/rec/100%Y.mp4'");
     }
@@ -1209,7 +1388,7 @@ mod tests {
     /// command, so the enclosing double quotes do not protect it.
     #[test]
     fn test_posix_escaping_inside_command_substitution() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "echo \"$(dirname {input})\"",
             &hostile_input(),
@@ -1221,7 +1400,7 @@ mod tests {
     /// The template's quoting resumes once the subshell closes.
     #[test]
     fn test_posix_quoting_resumes_after_command_substitution() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "echo \"$(dirname {input})\" {input}",
             &hostile_input(),
@@ -1237,18 +1416,14 @@ mod tests {
     /// single-quoting the value is not enough on its own.
     #[test]
     fn test_posix_escaping_inside_backticks() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Posix,
-            "echo `dirname {input}`",
-            &hostile_input(),
-        );
+        let out = subst(ShellKind::Posix, "echo `dirname {input}`", &hostile_input());
 
         assert_eq!(out, r#"echo `dirname '/rec/a b$(id);\`id\`'\\''q"&.mp4'`"#);
     }
 
     #[test]
     fn test_posix_escaping_inside_backticks_within_double_quotes() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "echo \"`dirname {input}`\"",
             &hostile_input(),
@@ -1270,7 +1445,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "printf %s \"$(printf \"(%s)\" {input})\" {output}",
             &input,
@@ -1292,7 +1467,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "printf %s \"$( ( printf %s {input} ) )\" {output}",
             &input,
@@ -1313,7 +1488,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "printf %s \"`printf %s \"\\`printf %s {input}\\`\"`\"",
             &input,
@@ -1334,7 +1509,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "printf %s $(( {input} + 1 )) {input}",
             &input,
@@ -1343,8 +1518,8 @@ mod tests {
         assert_eq!(out, "printf %s $(( 42 + 1 )) '42'");
     }
 
-    /// Arithmetic escaping still denies the expansions the shell would run on
-    /// the expression; a value that is not a number fails the arithmetic parse.
+    /// Arithmetic escaping denies the expansions the shell would otherwise run
+    /// on the expression, leaving text the arithmetic parse rejects.
     #[test]
     fn test_posix_arithmetic_expansion_neutralises_expansion_in_a_value() {
         let input = ProcessorInput {
@@ -1352,19 +1527,141 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(ShellKind::Posix, "printf %s $(( {input} ))", &input);
+
+        assert_eq!(out, r"printf %s $(( 1+\$\(echo INJECTED\) ))");
+    }
+
+    /// `(` and `)` are escaped as well, so a value cannot end the expansion and
+    /// carry on as command text.
+    #[test]
+    fn test_posix_arithmetic_expansion_denies_a_paren_breakout() {
+        let input = ProcessorInput {
+            inputs: vec!["1)); echo INJECTED #".to_string()],
+            ..Default::default()
+        };
+
+        let out = subst(ShellKind::Posix, "printf %s $(( {input} + 1 ))", &input);
+
+        assert_eq!(out, r"printf %s $(( 1\)\); echo INJECTED # + 1 ))");
+    }
+
+    /// `\$(` is how a command substitution nests inside `` `...` ``, so the
+    /// value belongs to the substitution's own unquoted context.
+    #[test]
+    fn test_posix_escaped_command_substitution_inside_backticks() {
+        let out = subst(
             ShellKind::Posix,
-            "printf %s $(( {input} ))",
+            "printf %s `printf %s \"\\$(printf %s {input})\"`",
+            &hostile_input(),
+        );
+
+        assert_eq!(
+            out,
+            r#"printf %s `printf %s "\$(printf %s '/rec/a b$(id);\`id\`'\\''q"&.mp4')"`"#
+        );
+    }
+
+    /// A placeholder after a closed `( ... )` group is still inside the
+    /// substitution, so it is escaped for the group's unquoted context rather
+    /// than for the `"..."` the template was in before the `$(`.
+    #[test]
+    fn test_posix_placeholder_after_a_group_stays_inside_the_substitution() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec![INJECTING.to_string()],
+            ..Default::default()
+        };
+
+        let out = subst(
+            ShellKind::Posix,
+            "printf %s \"$( ( printf %s {input} ); printf %s {output} )\"",
             &input,
         );
 
-        assert_eq!(out, r"printf %s $(( 1+\$(echo INJECTED) ))");
+        assert_eq!(
+            out,
+            r#"printf %s "$( ( printf %s '/rec/a b$(id);`id`'\''q"&.mp4' ); printf %s 'x;echo INJECTED;x' )""#
+        );
+    }
+
+    /// An unquoted here-document delimiter leaves `$`, `` ` `` and `\` live in
+    /// the body, so those are backslashed; quotes are body text and are not.
+    #[test]
+    fn test_posix_heredoc_with_an_unquoted_delimiter_escapes_expansions() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            ..Default::default()
+        };
+
+        let out = subst(ShellKind::Posix, "cat <<EOF\nT={input}\nEOF\n", &input);
+
+        assert_eq!(out, "cat <<EOF\nT=/rec/a b\\$(id);\\`id\\`'q\"&.mp4\nEOF\n");
+    }
+
+    /// A quoted delimiter makes the whole body literal, so the value goes in
+    /// untouched.
+    #[test]
+    fn test_posix_heredoc_with_a_quoted_delimiter_keeps_the_value_verbatim() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            ..Default::default()
+        };
+
+        let out = subst(ShellKind::Posix, "cat <<'EOF'\nT={input}\nEOF\n", &input);
+
+        assert_eq!(out, "cat <<'EOF'\nT=/rec/a b$(id);`id`'q\"&.mp4\nEOF\n");
+    }
+
+    /// `<<-` ignores leading tabs when matching the delimiter line, and command
+    /// text following the body is scanned as command text again.
+    #[test]
+    fn test_posix_heredoc_body_ends_at_the_delimiter_line() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec![INJECTING.to_string()],
+            ..Default::default()
+        };
+
+        let out = subst(
+            ShellKind::Posix,
+            "cat <<-EOF\n\tT={input}\n\tEOF\nprintf %s {output}\n",
+            &input,
+        );
+
+        assert_eq!(
+            out,
+            "cat <<-EOF\n\tT=/rec/a b\\$(id);\\`id\\`'q\"&.mp4\n\tEOF\n\
+             printf %s 'x;echo INJECTED;x'\n"
+        );
+    }
+
+    /// No escaping can keep a value's own delimiter line from ending the body,
+    /// so substitution refuses instead of emitting command text.
+    #[test]
+    fn test_posix_heredoc_rejects_a_value_holding_the_delimiter() {
+        let input = ProcessorInput {
+            inputs: vec!["a\nEOF\necho INJECTED".to_string()],
+            ..Default::default()
+        };
+
+        let err = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "cat <<EOF\nT={input}\nEOF\n",
+            &input,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("here-document delimiter"),
+            "unexpected error: {err}"
+        );
     }
 
     /// An absent output or title contributes no token to the command.
     #[test]
     fn test_empty_values_are_spliced_in_as_nothing() {
-        let out = ExecuteCommandProcessor::substitute_variables_for(
+        let out = subst(
             ShellKind::Posix,
             "echo {output} {title}",
             &ProcessorInput::default(),
@@ -1382,31 +1679,19 @@ mod tests {
 
         // Unquoted: escape_cmd supplies the quotes.
         assert_eq!(
-            ExecuteCommandProcessor::substitute_variables_for(
-                ShellKind::Cmd,
-                "echo {input}",
-                &input
-            ),
+            subst(ShellKind::Cmd, "echo {input}", &input),
             r#"echo "C:\rec\a b&whoami%PATH%""x.mp4""#
         );
 
         // Inside the template's own quotes: no second layer.
         assert_eq!(
-            ExecuteCommandProcessor::substitute_variables_for(
-                ShellKind::Cmd,
-                "echo \"{input}\"",
-                &input
-            ),
+            subst(ShellKind::Cmd, "echo \"{input}\"", &input),
             r#"echo "C:\rec\a b&whoami%PATH%""x.mp4""#
         );
 
         // cmd has no single-quote syntax, so the placeholder is still unquoted.
         assert_eq!(
-            ExecuteCommandProcessor::substitute_variables_for(
-                ShellKind::Cmd,
-                "echo '{input}'",
-                &input
-            ),
+            subst(ShellKind::Cmd, "echo '{input}'", &input),
             r#"echo '"C:\rec\a b&whoami%PATH%""x.mp4"'"#
         );
     }
@@ -1420,11 +1705,7 @@ mod tests {
             ..Default::default()
         };
 
-        let out = ExecuteCommandProcessor::substitute_variables_for(
-            ShellKind::Cmd,
-            "echo {inputs_json}",
-            &input,
-        );
+        let out = subst(ShellKind::Cmd, "echo {inputs_json}", &input);
 
         assert_eq!(out, r#"echo "[""C:\\rec\\a.mp4""]""#);
     }
@@ -1444,36 +1725,68 @@ mod tests {
         let processor = ExecuteCommandProcessor::new();
         let ctx = ProcessorContext::noop("test");
 
-        // `printf %s a b` reuses the format, so a template naming both `{input}`
+        // `printf %s a b` reuses the format, so a command naming both `{input}`
         // and `{output}` writes the two values one after the other.
-        let cases = [
-            ("printf %s {input}", hostile.clone()),
-            ("printf %s \"{input}\"", hostile.clone()),
-            ("printf %s '{input}'", hostile.clone()),
-            ("printf %s \"$(printf %s {input})\"", hostile.clone()),
-            ("printf %s \"`printf %s {input}`\"", hostile.clone()),
+        let file = captured.display();
+        let cases: Vec<(String, String)> = vec![
+            (format!("printf %s {{input}} > '{file}'"), hostile.clone()),
             (
-                "printf %s \"$(printf %s \"`printf %s {input}`\")\"",
+                format!("printf %s \"{{input}}\" > '{file}'"),
+                hostile.clone(),
+            ),
+            (format!("printf %s '{{input}}' > '{file}'"), hostile.clone()),
+            (
+                format!("printf %s \"$(printf %s {{input}})\" > '{file}'"),
                 hostile.clone(),
             ),
             (
-                "printf %s \"`printf %s \"\\`printf %s {input}\\`\"`\"",
+                format!("printf %s \"`printf %s {{input}}`\" > '{file}'"),
                 hostile.clone(),
             ),
             (
-                "printf %s \"$(printf \"(%s)\" {input})\" {output}",
+                format!("printf %s \"$(printf %s \"`printf %s {{input}}`\")\" > '{file}'"),
+                hostile.clone(),
+            ),
+            (
+                format!("printf %s \"`printf %s \"\\`printf %s {{input}}\\`\"`\" > '{file}'"),
+                hostile.clone(),
+            ),
+            (
+                format!("printf %s \"`printf %s \"\\$(printf %s {{input}})\"`\" > '{file}'"),
+                hostile.clone(),
+            ),
+            (
+                format!("printf %s \"$(printf \"(%s)\" {{input}})\" {{output}} > '{file}'"),
                 format!("({hostile}){INJECTING}"),
             ),
             (
-                "printf %s \"$( ( printf \"[%s]\" {input} ) )\" {output}",
+                format!("printf %s \"$( ( printf \"[%s]\" {{input}} ) )\" {{output}} > '{file}'"),
                 format!("[{hostile}]{INJECTING}"),
+            ),
+            (
+                format!(
+                    "printf %s \"$( ( printf %s {{input}} ); printf %s {{output}} )\" > '{file}'"
+                ),
+                format!("{hostile}{INJECTING}"),
+            ),
+            (
+                format!("cat <<EOF > '{file}'\n{{input}}\nEOF\n"),
+                format!("{hostile}\n"),
+            ),
+            (
+                format!("cat <<'EOF' > '{file}'\n{{input}}\nEOF\n"),
+                format!("{hostile}\n"),
+            ),
+            (
+                format!(
+                    "cat <<-EOF > '{file}'\n\t{{input}}\n\tEOF\nprintf %s {{output}} >> '{file}'\n"
+                ),
+                format!("{hostile}\n{INJECTING}"),
             ),
         ];
 
-        for (template, expected) in cases {
-            let config = serde_json::json!({
-                "command": format!("{template} > '{}'", captured.display()),
-            });
+        for (command, expected) in cases {
+            let config = serde_json::json!({ "command": command });
 
             let input = ProcessorInput {
                 inputs: vec![hostile.clone()],
@@ -1487,7 +1800,84 @@ mod tests {
             assert_eq!(
                 tokio::fs::read_to_string(&captured).await.unwrap(),
                 expected,
-                "template {template} did not pass its values through literally"
+                "command {command} did not pass its values through literally"
+            );
+        }
+    }
+
+    /// End-to-end through `sh -c`: a value whose text would run a command of
+    /// its own leaves no trace, whatever the command did with it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_hostile_values_never_execute_through_sh() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker = temp_dir.path().join("EXECUTED");
+        let touch = format!("touch {}", marker.display());
+
+        let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let cases: Vec<(&str, String, String)> = vec![
+            (
+                "printf %s $(( {input} + 1 ))",
+                format!("1)); {touch} #"),
+                String::new(),
+            ),
+            (
+                "printf %s $(( {input} ))",
+                format!("1+$({touch})"),
+                String::new(),
+            ),
+            (
+                "printf %s `printf %s \"\\$(printf %s {input})\"`",
+                format!(";{touch};"),
+                String::new(),
+            ),
+            (
+                "printf %s \"$(printf \"(%s)\" {input})\" {output}",
+                "safe".to_string(),
+                format!(";{touch};"),
+            ),
+            (
+                "printf %s \"$( ( printf %s {input} ); printf %s {output} )\"",
+                "safe".to_string(),
+                format!(";{touch};"),
+            ),
+            (
+                "cat <<EOF\nT={input}\nEOF\n",
+                format!("a$({touch})b"),
+                String::new(),
+            ),
+            (
+                "cat <<EOF\nT={input}\nEOF\n",
+                format!("a`{touch}`b"),
+                String::new(),
+            ),
+        ];
+
+        for (command, input_value, output_value) in cases {
+            let config = serde_json::json!({ "command": command });
+
+            let input = ProcessorInput {
+                inputs: vec![input_value],
+                outputs: if output_value.is_empty() {
+                    vec![]
+                } else {
+                    vec![output_value]
+                },
+                config: Some(config.to_string()),
+                ..Default::default()
+            };
+
+            // The arithmetic cases make `sh` exit non-zero, which is the
+            // intended outcome; only the absence of the side effect matters.
+            let _ = processor.process(&input, &ctx).await;
+
+            assert!(
+                !marker.exists(),
+                "command {command} let its value run as a command"
             );
         }
     }
