@@ -125,8 +125,10 @@ export const fetchBackend = async <T = any>(
           // If retry failed, throw error from retry response
           await throwBackendError(retryResponse);
         } else {
-          // A 'transient' refresh keeps the session; the original 401 is still
-          // reported to the caller so the request fails rather than hanging.
+          // No usable token, so the request is not retried and the original
+          // 401 is reported below. Session handling belongs to
+          // refreshAuthTokenGlobal, which cleared it for 'rejected' and left
+          // it intact for 'transient'.
           console.log(
             `[API] Refresh ${refresh.status} for retry of ${endpoint}.`,
           );

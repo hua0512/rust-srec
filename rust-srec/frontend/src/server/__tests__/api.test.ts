@@ -17,11 +17,19 @@ vi.mock('@/utils/env', () => ({
 }));
 
 describe('fetchBackend', () => {
+  let session: {
+    data: unknown;
+    update: ReturnType<typeof vi.fn>;
+    clear: ReturnType<typeof vi.fn>;
+  };
+
   beforeEach(() => {
-    useAppSessionMock.mockResolvedValue({
+    session = {
       data: { token: { access_token: 'old-token' } },
       update: vi.fn(),
-    });
+      clear: vi.fn(),
+    };
+    useAppSessionMock.mockResolvedValue(session);
     refreshAuthTokenGlobalMock.mockResolvedValue({
       status: 'refreshed',
       accessToken: 'new-token',
@@ -54,4 +62,24 @@ describe('fetchBackend', () => {
     const retryHeaders = fetchMock.mock.calls[1][1]?.headers as Headers;
     expect(retryHeaders.get('Authorization')).toBe('Bearer new-token');
   });
+
+  it.each(['transient', 'rejected'])(
+    'reports the original 401 without retrying when the refresh is %s',
+    async (status) => {
+      refreshAuthTokenGlobalMock.mockResolvedValue({ status });
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ detail: 'unauthorized' }, { status: 401 }),
+        );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(fetchBackend('/resource')).rejects.toMatchObject({
+        status: 401,
+      } satisfies Partial<BackendApiError>);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // Clearing the session is refreshAuthTokenGlobal's decision alone.
+      expect(session.clear).not.toHaveBeenCalled();
+    },
+  );
 });

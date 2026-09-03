@@ -45,12 +45,20 @@ export type TokenRefreshResult =
 const RECENT_ROTATION_TTL_MS = 60_000;
 const MAX_MAP_SIZE = 1000;
 /**
- * Caps how long refreshAuthTokenGlobal blocks on `/auth/refresh`. A backend that
- * accepts the connection but never answers would otherwise hold the
- * inFlightRefreshByRefreshToken entry — and every caller waiting on it — open
- * indefinitely.
+ * Caps how long refreshAuthTokenGlobal blocks on `/auth/refresh`, so a backend
+ * that accepts the connection but never answers cannot hold the
+ * inFlightRefreshByRefreshToken entry — and every route guard awaiting it —
+ * open for undici's 300 s header timeout.
+ *
+ * Deliberately far larger than any refresh the backend can still complete:
+ * `/auth/refresh` rotates the token by revoking the old row and inserting the
+ * new one, and each of those writes can wait out SQLite's 30 s busy timeout
+ * under contention. An abort that lands after the revoke but before the
+ * response leaves this session holding a token the backend has already
+ * revoked, which the next attempt sees as a definitive 401 — so the bound is
+ * set where an abort means the request was never going to complete.
  */
-const REFRESH_REQUEST_TIMEOUT_MS = 10_000;
+const REFRESH_REQUEST_TIMEOUT_MS = 120_000;
 const inFlightRefreshByRefreshToken = new Map<
   string,
   Promise<PerformRefreshResult>
@@ -207,14 +215,23 @@ export async function refreshAuthTokenGlobal(): Promise<TokenRefreshResult> {
 }
 
 /**
- * `/auth/refresh` answers 401 for a revoked, expired or unknown refresh token
- * and 400 for a request body it cannot parse; re-presenting the same token can
- * never succeed in either case. Every other status — 503 while the auth service
- * is unavailable, a 5xx, a gateway error from a reverse proxy — can succeed on a
- * later attempt, so it must not cost the user the session.
+ * Whether `/auth/refresh` answered in a way that makes re-presenting the same
+ * refresh token pointless. This is the only justification for clearing the
+ * session, so each status is classified deliberately:
+ *
+ * - 401 — the token is unknown, already revoked, or past its expiry.
+ * - 403 — the account behind the token was deactivated (`ACCOUNT_DISABLED`).
+ *   Keeping the session here would strand the user in an app where every call
+ *   fails and `/login` bounces them back to `/dashboard`.
+ * - 400 / 422 — the request body was rejected before the token was ever looked
+ *   up, so the identical body will be rejected again.
+ *
+ * Everything else stays transient because it says nothing about the token:
+ * 503 while the auth service is unavailable, any 5xx, a 404 from a misrouted
+ * reverse proxy, a 429 from one placed in front of the backend.
  */
 function isDefinitiveRejection(status: number): boolean {
-  return status === 400 || status === 401;
+  return status === 400 || status === 401 || status === 403 || status === 422;
 }
 
 /** Best-effort human-readable detail from a failed refresh response body. */
@@ -244,11 +261,19 @@ async function readErrorDetail(
 }
 
 /**
+ * A failed attempt still yields tokens when a concurrent call rotated this
+ * refresh token in the meantime, so every failure path resolves through here
+ * rather than reporting the failure directly.
+ */
+function rotatedOrTransient(refreshToken: string): PerformRefreshResult {
+  const rotated = getRecentRotation(refreshToken);
+  return rotated
+    ? { status: 'refreshed', outcome: rotated }
+    : { status: 'transient' };
+}
+
+/**
  * Perform the actual token refresh.
- *
- * Every failure path consults getRecentRotation first: a concurrent call may
- * have rotated this refresh token already, and that cached outcome is
- * authoritative even though this request failed.
  */
 async function performRefresh({
   refreshToken,
@@ -272,16 +297,16 @@ async function performRefresh({
       signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
-    // fetch rejects only for transport-level problems (DNS failure, refused
-    // connection, timeout abort), so the backend never saw the token.
-    const rotated = getRecentRotation(refreshToken);
-    if (rotated) return { status: 'refreshed', outcome: rotated };
-
+    // fetch rejects for transport-level problems (DNS failure, refused
+    // connection) and for the REFRESH_REQUEST_TIMEOUT_MS abort. None of them
+    // carry an answer about the token, so the session is kept.
     console.error('[TokenRefresh] Refresh endpoint unreachable:', error);
-    return { status: 'transient' };
+    return rotatedOrTransient(refreshToken);
   }
 
   if (!response.ok) {
+    // A concurrent rotation outranks the status: our own request lost the race
+    // and its 401 describes the token the other call already replaced.
     const rotated = getRecentRotation(refreshToken);
     if (rotated) return { status: 'refreshed', outcome: rotated };
 
@@ -301,14 +326,14 @@ async function performRefresh({
     json = await response.json();
   } catch (error) {
     console.error('[TokenRefresh] Refresh response was not JSON:', error);
-    return { status: 'transient' };
+    return rotatedOrTransient(refreshToken);
   }
 
   // Guard applyOutcomeToSession: a 200 without a usable access token would
   // otherwise be written into the session and break every later request.
   if (typeof json?.access_token !== 'string' || !json.access_token) {
     console.error('[TokenRefresh] Refresh response carried no access token.');
-    return { status: 'transient' };
+    return rotatedOrTransient(refreshToken);
   }
 
   const now = Date.now();

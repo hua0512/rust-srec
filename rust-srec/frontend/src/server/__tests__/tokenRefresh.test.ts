@@ -86,6 +86,27 @@ describe('tokenRefresh', () => {
     expect(session.clear).not.toHaveBeenCalled();
   });
 
+  it('keeps the session when the refresh request is aborted, and retries on the next call', async () => {
+    const session = createSession();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException('The operation was aborted', 'TimeoutError'),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+      status: 'transient',
+    });
+    // The in-flight entry is dropped once the attempt settles, so the next
+    // caller issues its own request instead of replaying the failure.
+    await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+      status: 'transient',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(session.clear).not.toHaveBeenCalled();
+  });
+
   it('does not turn one transient failure into a rejection for concurrent callers', async () => {
     const session = createSession();
     const fetchMock = vi
@@ -119,6 +140,58 @@ describe('tokenRefresh', () => {
     expect(session.clear).toHaveBeenCalled();
     expect(user).toBeNull();
   });
+
+  it('clears the session when the account behind the token is disabled', async () => {
+    const session = createSession();
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json(
+            { code: 'ACCOUNT_DISABLED', message: 'Account is disabled' },
+            { status: 403 },
+          ),
+        ),
+    );
+
+    const user = await ensureValidToken();
+
+    expect(session.clear).toHaveBeenCalled();
+    expect(user).toBeNull();
+  });
+
+  it.each([404, 429, 500, 502, 503])(
+    'keeps the session when the refresh endpoint answers %i',
+    async (status) => {
+      const session = createSession();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response(null, { status })),
+      );
+
+      await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+        status: 'transient',
+      });
+      expect(session.clear).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([400, 422])(
+    'clears the session when the refresh endpoint answers %i',
+    async (status) => {
+      const session = createSession();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response(null, { status })),
+      );
+
+      await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+        status: 'rejected',
+      });
+      expect(session.clear).toHaveBeenCalled();
+    },
+  );
 
   it('stores the rotated tokens when the refresh succeeds', async () => {
     const session = createSession();
