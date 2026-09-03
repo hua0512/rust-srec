@@ -302,7 +302,6 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     // Transform headers array to object for Webhook
     if (data.channel_type === 'Webhook') {
       const settings = data.settings;
-      console.log(settings);
       // Transform headers array to object
       const headersMap: Record<string, string> = {};
       if (settings.headers && Array.isArray(settings.headers)) {
@@ -321,7 +320,6 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
         headers: headersMap,
         auth,
       };
-      console.log('final ', finalSettings);
     }
 
     const payload = removeEmpty({

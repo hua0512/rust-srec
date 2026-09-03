@@ -87,7 +87,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     /// * `Ok(Some(new_cookies))` - Credentials were refreshed
     /// * `Ok(None)` - Credentials are valid, no refresh needed
     /// * `Err(...)` - Error during check or refresh
-    #[instrument(skip(self), fields(streamer_id = %streamer.id, streamer_name = %streamer.name))]
+    #[instrument(skip_all, fields(streamer_id = %streamer.id, streamer_name = %streamer.name))]
     pub async fn check_and_refresh(
         &self,
         streamer: &Streamer,
@@ -108,7 +108,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     ///
     /// This is useful for hot paths that already loaded platform/template records (e.g. config
     /// resolution) and want to avoid extra DB queries just to find credential provenance.
-    #[instrument(skip(self), fields(platform = %source.platform_name, scope = %source.scope.describe()))]
+    #[instrument(skip_all, fields(platform = %source.platform_name, scope = %source.scope.describe()))]
     pub async fn check_and_refresh_source(
         &self,
         source: &CredentialSource,
@@ -152,7 +152,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     /// * `Ok(Some(new_cookies))` - Credentials were refreshed
     /// * `Ok(None)` - Credentials are valid, no refresh needed
     /// * `Err(...)` - Error during check or refresh
-    #[instrument(skip(self), fields(streamer_id = %metadata.id, streamer_name = %metadata.name))]
+    #[instrument(skip_all, fields(streamer_id = %metadata.id, streamer_name = %metadata.name))]
     pub async fn check_and_refresh_for_metadata(
         &self,
         metadata: &StreamerMetadata,
@@ -286,7 +286,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     }
 
     /// Perform credential refresh.
-    #[instrument(skip(self), fields(platform = %source.platform_name, scope = %source.scope.describe()))]
+    #[instrument(skip_all, fields(platform = %source.platform_name, scope = %source.scope.describe()))]
     async fn perform_refresh(
         &self,
         source: &CredentialSource,
@@ -495,20 +495,64 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+    use std::sync::Mutex;
+
     use sqlx::sqlite::SqlitePoolOptions;
+    use tracing_subscriber::fmt::MakeWriter;
+    use tracing_subscriber::fmt::format::FmtSpan;
+    use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
+    use crate::credentials::types::CredentialScope;
     use crate::database::repositories::{SqlxCredentialStore, config::SqlxConfigRepository};
 
-    #[tokio::test]
-    async fn notification_service_is_installed_once() {
+    /// `MakeWriter` that appends every formatted record to a buffer the test can read.
+    #[derive(Clone, Default)]
+    struct CapturedLog(Arc<Mutex<Vec<u8>>>);
+
+    impl CapturedLog {
+        fn contents(&self) -> String {
+            let bytes = self.0.lock().unwrap_or_else(|e| e.into_inner());
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    }
+
+    impl io::Write for CapturedLog {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for CapturedLog {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    fn build_service() -> CredentialRefreshService<SqlxConfigRepository> {
         let pool = SqlitePoolOptions::new()
             .connect_lazy("sqlite::memory:")
             .expect("in-memory SQLite URL should be valid");
         let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
         let resolver = Arc::new(CredentialResolver::new(repository));
         let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool));
-        let service = CredentialRefreshService::new(resolver, store);
+        CredentialRefreshService::new(resolver, store)
+    }
+
+    #[tokio::test]
+    async fn notification_service_is_installed_once() {
+        let service = build_service();
         let first = Arc::new(NotificationService::new());
 
         service.set_notification_service(Arc::clone(&first));
@@ -519,5 +563,55 @@ mod tests {
             .get()
             .expect("notification service should be installed");
         assert!(Arc::ptr_eq(installed, &first));
+    }
+
+    /// `check_and_refresh_source` must not record its `CredentialSource` argument as a
+    /// span field; `crate::logging` installs default-format `fmt` layers that prefix
+    /// every event with the enclosing span's fields.
+    #[tokio::test]
+    async fn instrumented_check_does_not_record_credential_material() {
+        let captured = CapturedLog::default();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(captured.clone())
+                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE),
+        );
+        let _default = tracing::subscriber::set_default(subscriber);
+
+        let source = CredentialSource::new(
+            CredentialScope::Platform {
+                platform_id: "platform-1".to_string(),
+                platform_name: "bilibili".to_string(),
+            },
+            "SESSDATA=cookie-sentinel".to_string(),
+            Some("refresh-sentinel".to_string()),
+            "bilibili".to_string(),
+        )
+        .with_access_token(Some("access-sentinel".to_string()));
+
+        // No manager is registered for "bilibili", so this returns before any I/O while
+        // still creating the instrumented span.
+        let service = build_service();
+        assert!(
+            service
+                .check_and_refresh_source(&source)
+                .await
+                .expect("unsupported platform should be skipped")
+                .is_none()
+        );
+
+        let output = captured.contents();
+        // Guards against the negative assertions passing because the span vanished.
+        assert!(
+            output.contains("check_and_refresh_source"),
+            "expected the instrumented span in the captured log: {output}"
+        );
+        for secret in ["cookie-sentinel", "refresh-sentinel", "access-sentinel"] {
+            assert!(
+                !output.contains(secret),
+                "span fields leaked {secret}: {output}"
+            );
+        }
     }
 }

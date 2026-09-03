@@ -54,7 +54,6 @@ function EditPlatformPage() {
   });
 
   const onSubmit = (data: EditPlatformFormValues) => {
-    console.log('updatePlatformConfig input:', data);
     updateMutation.mutate(data);
   };
 

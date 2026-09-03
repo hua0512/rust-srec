@@ -84,7 +84,7 @@ impl BilibiliCredentialManager {
 
     /// Poll the status of a QR code login.
     /// Delegates to platforms crate utility.
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn poll_qr(&self, auth_code: &str) -> Result<QrPollResult, CredentialError> {
         platforms_poll_qr(self.client(), auth_code)
             .await
