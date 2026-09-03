@@ -28,6 +28,9 @@
 
   A streamer whose monitoring hit an unexpected internal error was quietly left unwatched until rust-srec was restarted, so nothing was recorded in the meantime. Monitoring is now restarted automatically. Quickly disabling and re-enabling a streamer no longer leaves it monitored twice or not at all either.
 
+- **A sign-in saved for a single streamer is no longer lost**
+
+  Scanning the QR code to sign in to Bilibili for one streamer kept the account only until that streamer was next touched: renaming it, enabling or disabling it, changing its priority, or including it in a bulk action signed it out again, and its recordings carried on without the account. Sign-ins kept fresh for one streamer went the same way — whether renewed automatically, refreshed by hand, or handed over by the platform while checking whether the streamer was live. All of them now stay put.
 - **A full disk is reported instead of quietly breaking every recording**
 
   When the drive filled up part-way through a recording, the built-in recorder reported it as a broken recording and held it against that streamer, while every other streamer kept starting and failing the same way. Running out of space is now recognised for what it is: you get the "Output path inaccessible" alert, recordings pause, and they resume on their own within 30 seconds of space becoming available.

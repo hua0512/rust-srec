@@ -164,6 +164,21 @@ async fn resolve_extractor_config_for_url(
                             match &source.scope {
                                 CredentialScope::Streamer { .. } => {
                                     config_service.invalidate_streamer(&streamer.id);
+                                    // The refresh wrote `streamer_specific_config` directly, so
+                                    // the manager's cached copy — the row
+                                    // `StreamerManager::partial_update_streamer` rebuilds on the
+                                    // next streamer edit — still holds the previous credentials.
+                                    // The refreshed row is already durable, so a failed reload is
+                                    // logged rather than failing the parse.
+                                    if let Err(error) =
+                                        state.streamer_manager.reload_from_repo(&streamer.id).await
+                                    {
+                                        warn!(
+                                            %error,
+                                            streamer_id = %streamer.id,
+                                            "Failed to reload streamer after credential refresh; cache may be stale"
+                                        );
+                                    }
                                 }
                                 CredentialScope::Template { template_id, .. } => {
                                     if let Err(error) =
@@ -554,4 +569,94 @@ async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> Pro
     }
 
     global_proxy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{ConfigEventBroadcaster, ConfigService};
+    use crate::credentials::test_support::StubCredentialManager;
+    use crate::credentials::{CredentialRefreshService, CredentialResolver};
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::{
+        SqlxConfigRepository, SqlxCredentialStore, SqlxStreamerRepository, StreamerRepository as _,
+    };
+    use crate::database::{init_pool_with_size, run_migrations};
+    use crate::streamer::{StreamerManager, manager::StreamerUpdateParams};
+    use std::sync::Arc;
+
+    const STREAMER_ID: &str = "streamer-under-test";
+    const STREAMER_URL: &str = "https://live.bilibili.com/1";
+
+    /// Resolving a registered streamer's URL refreshes its credentials through
+    /// `CredentialStore::update_credentials`, which rewrites `streamer_specific_config` with its
+    /// own SQL and leaves the manager's metadata cache on the previous document. The reload keeps
+    /// the refreshed credentials from being rebuilt away by the next streamer edit.
+    #[tokio::test]
+    async fn refreshed_credentials_survive_a_later_streamer_edit() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let mut model = StreamerDbModel::new("Streamer", STREAMER_URL, "platform-bilibili");
+        model.id = STREAMER_ID.to_string();
+        model.streamer_specific_config =
+            Some(r#"{"cookies":"SESSDATA=old","refresh_token":"refresh-old"}"#.to_string());
+
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        streamer_repo.create_streamer(&model).await.unwrap();
+
+        let streamer_manager = Arc::new(StreamerManager::new(
+            streamer_repo.clone(),
+            ConfigEventBroadcaster::new(),
+        ));
+        streamer_manager.hydrate().await.unwrap();
+
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let mut credential_service = CredentialRefreshService::new(
+            Arc::new(CredentialResolver::new(config_repo.clone())),
+            Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone())),
+        );
+        credential_service.register_manager(Arc::new(StubCredentialManager::new(
+            "bilibili",
+            "SESSDATA=new",
+            "refresh-new",
+        )));
+
+        let state = ParseRouteState {
+            config_service: Arc::new(ConfigService::new(config_repo, streamer_repo.clone())),
+            credential_service: Arc::new(credential_service),
+            streamer_manager: streamer_manager.clone(),
+        };
+
+        let resolved = resolve_extractor_config_for_url(&state, STREAMER_URL, None).await;
+        assert_eq!(resolved.cookies.as_deref(), Some("SESSDATA=new"));
+
+        // A later edit rebuilds the whole streamers row from the manager's metadata cache.
+        streamer_manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: STREAMER_ID.to_string(),
+                name: Some("Renamed".to_string()),
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .expect("rename succeeds");
+
+        let row = streamer_repo
+            .get_streamer(STREAMER_ID)
+            .await
+            .expect("row exists");
+        let config: serde_json::Value = serde_json::from_str(
+            row.streamer_specific_config
+                .as_deref()
+                .expect("streamer carries a config document"),
+        )
+        .expect("config document is valid JSON");
+        assert_eq!(config["cookies"], "SESSDATA=new");
+        assert_eq!(config["refresh_token"], "refresh-new");
+    }
 }

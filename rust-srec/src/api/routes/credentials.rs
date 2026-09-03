@@ -12,21 +12,32 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
 use crate::credentials::{CredentialScope, CredentialSource};
+use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
+
+/// The `StreamerManager` instantiation carried by [`CredentialRouteState`].
+type CredentialStreamerManager = crate::streamer::StreamerManager<
+    crate::database::repositories::streamer::SqlxStreamerRepository,
+>;
+
+/// The `ConfigService` instantiation carried by [`CredentialRouteState`].
+type CredentialConfigService = crate::config::ConfigService<
+    crate::database::repositories::config::SqlxConfigRepository,
+    crate::database::repositories::streamer::SqlxStreamerRepository,
+>;
 
 #[derive(Clone)]
 pub struct CredentialRouteState {
-    config_service: std::sync::Arc<
-        crate::config::ConfigService<
-            crate::database::repositories::config::SqlxConfigRepository,
-            crate::database::repositories::streamer::SqlxStreamerRepository,
-        >,
-    >,
+    config_service: std::sync::Arc<CredentialConfigService>,
     credential_service: std::sync::Arc<
         crate::credentials::CredentialRefreshService<
             crate::database::repositories::config::SqlxConfigRepository,
         >,
     >,
-    streamer_repository: std::sync::Arc<dyn crate::database::repositories::StreamerRepository>,
+    /// Streamer-scoped credential writes go through the manager rather than a
+    /// `StreamerRepository`: `StreamerManager::partial_update_streamer` rebuilds the whole
+    /// `streamers` row from the manager's metadata cache, so that cache has to carry the
+    /// credentials for them to survive the next streamer edit.
+    streamer_manager: std::sync::Arc<CredentialStreamerManager>,
 }
 
 impl FromRef<AppState> for CredentialRouteState {
@@ -34,7 +45,7 @@ impl FromRef<AppState> for CredentialRouteState {
         Self {
             config_service: state.config_service.clone(),
             credential_service: state.credential_service.clone(),
-            streamer_repository: state.streamer_repository.clone(),
+            streamer_manager: state.streamer_manager.clone(),
         }
     }
 }
@@ -404,7 +415,22 @@ pub async fn refresh_streamer_credentials(
         Ok(Some(_new_cookies)) => {
             // Invalidate caches affected by the updated scope.
             match &source.scope {
-                CredentialScope::Streamer { .. } => config_service.invalidate_streamer(&id),
+                CredentialScope::Streamer { streamer_id, .. } => {
+                    config_service.invalidate_streamer(streamer_id);
+                    // `CredentialStore::update_credentials` rewrites `streamer_specific_config`
+                    // with its own SQL, leaving the previous cookies in the manager's metadata
+                    // cache, which `partial_update_streamer` would write back over the refreshed
+                    // ones. Only that column changed, so `reload_from_repo` publishes no event.
+                    // A failure here leaves the row correct and the cache stale, which the next
+                    // reload repairs, so it is logged rather than failing a refresh that landed.
+                    if let Err(error) = state.streamer_manager.reload_from_repo(streamer_id).await {
+                        tracing::warn!(
+                            streamer_id = %streamer_id,
+                            %error,
+                            "Failed to reload streamer after credential refresh; cache may be stale"
+                        );
+                    }
+                }
                 CredentialScope::Template { template_id, .. } => {
                     config_service
                         .invalidate_template(template_id)
@@ -591,6 +617,118 @@ pub async fn refresh_template_credentials(
             e.requires_relogin()
         ))),
     }
+}
+
+/// Merge freshly issued credentials into a streamer's `streamer_specific_config` document.
+///
+/// Keys other than `cookies`, `refresh_token` and `access_token` are preserved. A document that
+/// is missing, unparseable, or not a JSON object is replaced by a fresh object.
+fn merge_streamer_credentials(
+    existing: Option<&str>,
+    cookies: &str,
+    refresh_token: &str,
+    access_token: Option<&str>,
+) -> ApiResult<String> {
+    let mut config: serde_json::Value = existing
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !config.is_object() {
+        config = serde_json::json!({});
+    }
+    if let Some(map) = config.as_object_mut() {
+        map.insert(
+            "cookies".to_string(),
+            serde_json::Value::String(cookies.to_string()),
+        );
+        map.insert(
+            "refresh_token".to_string(),
+            serde_json::Value::String(refresh_token.to_string()),
+        );
+        if let Some(at) = access_token {
+            map.insert(
+                "access_token".to_string(),
+                serde_json::Value::String(at.to_string()),
+            );
+        }
+    }
+
+    serde_json::to_string(&config)
+        .map_err(|error| ApiError::internal(format!("Failed to save credentials: {error}")))
+}
+
+/// Save a completed bilibili QR login onto streamer `id`, returning the updated metadata.
+///
+/// The document the credentials are merged into comes from the manager's metadata cache, which
+/// `StreamerManager` maintains as the runtime source of truth for registered streamers, so an
+/// `id` missing from it is reported as not found rather than read back from the `streamers` table.
+///
+/// Rejects a streamer whose `platform_config_id` does not resolve to a bilibili platform config,
+/// since the credentials only make sense to the bilibili extractor.
+///
+/// `StreamerManager::partial_update_streamer` is the write path because it is the one that keeps
+/// the manager's metadata cache and the `streamers` row in step: it rebuilds the whole row from
+/// that cache, which therefore has to hold the credentials for the next streamer edit to preserve
+/// them.
+///
+/// The `ConfigUpdateEvent::StreamerMetadataUpdated` that write publishes does not carry the
+/// cookies to the streamer's actor: `StreamerConfig` holds only check intervals, priority and
+/// `batch_capable`. Downloads read cookies through `ConfigService::get_config_for_streamer`, so
+/// `ConfigService::invalidate_streamer` below is the call that makes them visible. The event has
+/// two handlers, both harmless here:
+///
+/// - `services::container::events` re-invalidates the merged config, calls
+///   `refresh_metadata_offline_check`, and for a streamer that is not
+///   `StreamerMetadata::is_active` runs `handle_streamer_disabled` — nothing to stop in those
+///   states, since no download or danmu collection is running.
+/// - `scheduler::service::handle_config_event` routes the update and calls
+///   `ensure_streamer_actor_state`, which removes the actor of an inactive streamer —
+///   `handle_state_sync` already removed it when the streamer entered that state.
+async fn save_streamer_credentials(
+    config_service: &CredentialConfigService,
+    streamer_manager: &CredentialStreamerManager,
+    id: &str,
+    cookies: &str,
+    refresh_token: &str,
+    access_token: Option<&str>,
+) -> ApiResult<StreamerMetadata> {
+    let metadata = streamer_manager
+        .get_streamer(id)
+        .ok_or_else(|| ApiError::not_found(format!("Streamer with id '{id}' not found")))?;
+
+    let platform = config_service
+        .get_platform_config(&metadata.platform_config_id)
+        .await
+        .map_err(ApiError::from)?;
+    if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
+        return Err(ApiError::bad_request(format!(
+            "Streamer {id} is not bilibili"
+        )));
+    }
+
+    let streamer_specific_config = merge_streamer_credentials(
+        metadata.streamer_specific_config.as_deref(),
+        cookies,
+        refresh_token,
+        access_token,
+    )?;
+
+    let updated = streamer_manager
+        .partial_update_streamer(StreamerUpdateParams {
+            id: metadata.id.clone(),
+            name: None,
+            url: None,
+            platform_config_id: None,
+            template_config_id: None,
+            priority: None,
+            state: None,
+            streamer_specific_config: Some(Some(streamer_specific_config)),
+        })
+        .await
+        .map_err(ApiError::from)?;
+
+    config_service.invalidate_streamer(id);
+
+    Ok(updated)
 }
 
 fn bilibili_qr_manager() -> Result<BilibiliCredentialManager, ApiError> {
@@ -787,63 +925,20 @@ pub async fn bilibili_qr_poll(
                 });
             }
             CredentialSaveScope::Streamer { id } => {
-                let cs = &state.config_service;
-                let streamer_repo = &state.streamer_repository;
-
-                let mut streamer = streamer_repo
-                    .get_streamer(id)
-                    .await
-                    .map_err(ApiError::from)?;
-                let platform = cs
-                    .get_platform_config(&streamer.platform_config_id)
-                    .await
-                    .map_err(ApiError::from)?;
-
-                if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
-                    return Err(ApiError::bad_request(format!(
-                        "Streamer {id} is not bilibili"
-                    )));
-                }
-
-                let mut config: serde_json::Value = streamer
-                    .streamer_specific_config
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok())
-                    .unwrap_or_else(|| serde_json::json!({}));
-                if !config.is_object() {
-                    config = serde_json::json!({});
-                }
-                if let Some(map) = config.as_object_mut() {
-                    map.insert(
-                        "cookies".to_string(),
-                        serde_json::Value::String(cookies.clone()),
-                    );
-                    map.insert(
-                        "refresh_token".to_string(),
-                        serde_json::Value::String(refresh_token.clone()),
-                    );
-                    if let Some(at) = access_token {
-                        map.insert(
-                            "access_token".to_string(),
-                            serde_json::Value::String(at.to_string()),
-                        );
-                    }
-                }
-
-                streamer.streamer_specific_config =
-                    Some(serde_json::to_string(&config).map_err(|error| {
-                        ApiError::internal(format!("Failed to save credentials: {error}"))
-                    })?);
-                streamer_repo
-                    .update_streamer(&streamer)
-                    .await
-                    .map_err(ApiError::from)?;
-                cs.invalidate_streamer(id);
+                let metadata = save_streamer_credentials(
+                    &state.config_service,
+                    &state.streamer_manager,
+                    id,
+                    cookies,
+                    refresh_token,
+                    access_token,
+                )
+                .await?;
                 tracing::info!(streamer_id = %id, "Saved QR credentials to streamer");
 
                 saved_scope = Some(CredentialScope::Streamer {
                     streamer_id: id.clone(),
-                    streamer_name: streamer.name.clone(),
+                    streamer_name: metadata.name,
                 });
             }
         }
@@ -858,4 +953,262 @@ pub async fn bilibili_qr_poll(
         success: result.status == QrPollStatus::Success,
         message: message.to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{ConfigEventBroadcaster, ConfigService};
+    use crate::credentials::test_support::StubCredentialManager;
+    use crate::credentials::{CredentialRefreshService, CredentialResolver};
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::{
+        SqlxConfigRepository, SqlxCredentialStore, SqlxStreamerRepository, StreamerRepository as _,
+    };
+    use crate::database::{init_pool_with_size, run_migrations};
+    use crate::streamer::StreamerManager;
+    use sqlx::SqlitePool;
+    use std::sync::Arc;
+
+    const STREAMER_ID: &str = "streamer-under-test";
+
+    /// The pieces `bilibili_qr_poll` and `refresh_streamer_credentials` reach for, over one
+    /// in-memory database holding a single streamer on `platform_config_id`.
+    ///
+    /// `platform-bilibili` and `platform-douyin` are rows seeded by the initial schema migration.
+    struct Harness {
+        pool: SqlitePool,
+        repo: Arc<SqlxStreamerRepository>,
+        config_repo: Arc<SqlxConfigRepository>,
+        manager: Arc<CredentialStreamerManager>,
+        config_service: Arc<CredentialConfigService>,
+    }
+
+    async fn harness(platform_config_id: &str, existing: Option<&str>) -> Harness {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let mut model = StreamerDbModel::new(
+            "Streamer",
+            "https://live.bilibili.com/1",
+            platform_config_id,
+        );
+        model.id = STREAMER_ID.to_string();
+        model.streamer_specific_config = existing.map(str::to_string);
+
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        repo.create_streamer(&model).await.unwrap();
+
+        let manager = Arc::new(StreamerManager::new(
+            repo.clone(),
+            ConfigEventBroadcaster::new(),
+        ));
+        manager.hydrate().await.unwrap();
+
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let config_service = Arc::new(ConfigService::new(config_repo.clone(), repo.clone()));
+
+        Harness {
+            pool,
+            repo,
+            config_repo,
+            manager,
+            config_service,
+        }
+    }
+
+    impl Harness {
+        /// The state the credential handlers extract from `AppState`, with a refresh service that
+        /// resolves and persists for real but takes its new credentials from `StubCredentialManager`
+        /// instead of a platform API.
+        fn route_state(&self, refreshed_to: &str, refresh_token: &str) -> CredentialRouteState {
+            let mut credential_service = CredentialRefreshService::new(
+                Arc::new(CredentialResolver::new(self.config_repo.clone())),
+                Arc::new(SqlxCredentialStore::new(
+                    self.pool.clone(),
+                    self.pool.clone(),
+                )),
+            );
+            credential_service.register_manager(Arc::new(StubCredentialManager::new(
+                "bilibili",
+                refreshed_to,
+                refresh_token,
+            )));
+
+            CredentialRouteState {
+                config_service: self.config_service.clone(),
+                credential_service: Arc::new(credential_service),
+                streamer_manager: self.manager.clone(),
+            }
+        }
+    }
+
+    fn saved_config(raw: Option<&str>) -> serde_json::Value {
+        serde_json::from_str(raw.expect("streamer carries a config document"))
+            .expect("config document is valid JSON")
+    }
+
+    /// Rename a streamer the way `PUT /api/streamers/{id}` does, rebuilding the whole row from
+    /// the manager's metadata cache.
+    async fn rename(manager: &CredentialStreamerManager, name: &str) {
+        manager
+            .partial_update_streamer(StreamerUpdateParams {
+                id: STREAMER_ID.to_string(),
+                name: Some(name.to_string()),
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .expect("rename succeeds");
+    }
+
+    /// `partial_update_streamer` rebuilds the whole streamers row from the manager's metadata
+    /// cache, so an unrelated edit must not roll the row back to the pre-login credentials.
+    #[tokio::test]
+    async fn saved_credentials_survive_a_later_streamer_edit() {
+        let h = harness("platform-bilibili", Some(r#"{"quality":"best"}"#)).await;
+
+        save_streamer_credentials(
+            &h.config_service,
+            &h.manager,
+            STREAMER_ID,
+            "SESSDATA=abc",
+            "refresh-1",
+            Some("access-1"),
+        )
+        .await
+        .expect("credentials are saved");
+
+        // The manager's cache answers `StreamerManager::get_streamer` for the streamer routes and
+        // the scheduler, so it has to carry the credentials as soon as the save returns.
+        let cached = saved_config(
+            h.manager
+                .get_streamer(STREAMER_ID)
+                .expect("still hydrated")
+                .streamer_specific_config
+                .as_deref(),
+        );
+        assert_eq!(cached["cookies"], "SESSDATA=abc");
+
+        rename(&h.manager, "Renamed").await;
+
+        let row = h.repo.get_streamer(STREAMER_ID).await.expect("row exists");
+        assert_eq!(row.name, "Renamed");
+
+        let persisted = saved_config(row.streamer_specific_config.as_deref());
+        assert_eq!(persisted["cookies"], "SESSDATA=abc");
+        assert_eq!(persisted["refresh_token"], "refresh-1");
+        assert_eq!(persisted["access_token"], "access-1");
+        assert_eq!(persisted["quality"], "best");
+    }
+
+    /// The credentials come from a bilibili login, so a streamer on another platform config is
+    /// refused and its row left alone.
+    #[tokio::test]
+    async fn saving_credentials_is_refused_for_a_non_bilibili_streamer() {
+        let h = harness("platform-douyin", None).await;
+
+        let error = save_streamer_credentials(
+            &h.config_service,
+            &h.manager,
+            STREAMER_ID,
+            "SESSDATA=abc",
+            "refresh-1",
+            None,
+        )
+        .await
+        .expect_err("a douyin streamer is refused");
+        assert_eq!(error.status, axum::http::StatusCode::BAD_REQUEST);
+        assert!(
+            error.message.contains("is not bilibili"),
+            "unexpected error: {}",
+            error.message
+        );
+
+        let row = h.repo.get_streamer(STREAMER_ID).await.expect("row exists");
+        assert!(row.streamer_specific_config.is_none());
+    }
+
+    #[tokio::test]
+    async fn saving_credentials_reports_an_unknown_streamer() {
+        let h = harness("platform-bilibili", None).await;
+
+        let error = save_streamer_credentials(
+            &h.config_service,
+            &h.manager,
+            "no-such-streamer",
+            "SESSDATA=abc",
+            "refresh-1",
+            None,
+        )
+        .await
+        .expect_err("an unknown streamer is refused");
+        assert_eq!(error.status, axum::http::StatusCode::NOT_FOUND);
+    }
+
+    /// `refresh_streamer_credentials` persists through `CredentialStore::update_credentials`,
+    /// which rewrites `streamer_specific_config` with its own SQL and leaves the manager's cache
+    /// on the previous document, so the handler has to reload it before the next streamer edit
+    /// rebuilds the row from that cache.
+    #[tokio::test]
+    async fn refreshed_credentials_survive_a_later_streamer_edit() {
+        let h = harness(
+            "platform-bilibili",
+            Some(r#"{"cookies":"SESSDATA=old","refresh_token":"refresh-old"}"#),
+        )
+        .await;
+
+        let response = refresh_streamer_credentials(
+            State(h.route_state("SESSDATA=new", "refresh-new")),
+            Path(STREAMER_ID.to_string()),
+        )
+        .await
+        .expect("refresh succeeds");
+        assert!(response.refreshed);
+
+        rename(&h.manager, "Renamed").await;
+
+        let persisted = saved_config(
+            h.repo
+                .get_streamer(STREAMER_ID)
+                .await
+                .expect("row exists")
+                .streamer_specific_config
+                .as_deref(),
+        );
+        assert_eq!(persisted["cookies"], "SESSDATA=new");
+        assert_eq!(persisted["refresh_token"], "refresh-new");
+    }
+
+    #[test]
+    fn merge_streamer_credentials_keeps_unrelated_keys() {
+        let merged = merge_streamer_credentials(
+            Some(r#"{"quality":"best","access_token":"stale"}"#),
+            "SESSDATA=abc",
+            "refresh-1",
+            None,
+        )
+        .expect("merge succeeds");
+
+        let config: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(config["quality"], "best");
+        assert_eq!(config["cookies"], "SESSDATA=abc");
+        assert_eq!(config["refresh_token"], "refresh-1");
+        // A poll without an access token leaves the stored one alone.
+        assert_eq!(config["access_token"], "stale");
+    }
+
+    #[test]
+    fn merge_streamer_credentials_replaces_a_non_object_document() {
+        let merged = merge_streamer_credentials(Some("[1, 2]"), "SESSDATA=abc", "refresh-1", None)
+            .expect("merge succeeds");
+
+        let config: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(config["cookies"], "SESSDATA=abc");
+        assert_eq!(config.as_object().expect("object").len(), 2);
+    }
 }
