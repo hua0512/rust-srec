@@ -43,6 +43,12 @@ export function isPasswordChangeRequiredError(error: unknown): boolean {
   return status === 403 && hasPasswordChangeRequiredCode(body);
 }
 
+// Body code the backend attaches to the 403 it returns once the account behind
+// a credential has been deactivated. It is the only 403 `/auth/refresh` itself
+// produces, which is how server/tokenRefresh.ts tells it apart from a 403
+// injected by a proxy in front of the backend.
+export const ACCOUNT_DISABLED_CODE = 'ACCOUNT_DISABLED';
+
 // Body code the backend returns when a cancel or retry targets a DAG that
 // already reached a terminal status. Mirrors DAG_ALREADY_TERMINAL_CODE in
 // `api/error.rs`.
