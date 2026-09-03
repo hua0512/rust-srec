@@ -18,6 +18,7 @@ use crate::api::auth_service::{
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::jwt::Claims;
 use crate::api::middleware::AuthLayer;
+use crate::api::rate_limit::ClientIp;
 use crate::api::server::AppState;
 use crate::database::models::{ApiKeyAccessLevel, ApiKeyDbModel};
 
@@ -221,11 +222,13 @@ where
     responses(
         (status = 200, description = "Login successful", body = LoginResponse),
         (status = 401, description = "Invalid credentials", body = crate::api::error::ApiErrorResponse),
+        (status = 429, description = "Too many failed attempts; retry after the seconds in `Retry-After`", body = crate::api::error::ApiErrorResponse),
         (status = 503, description = "Authentication service unavailable", body = crate::api::error::ApiErrorResponse)
     )
 )]
 pub async fn login(
     State(state): State<AuthRouteState>,
+    ClientIp(client_ip): ClientIp,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
@@ -234,7 +237,12 @@ pub async fn login(
         .ok_or_else(|| ApiError::service_unavailable("Authentication not configured"))?;
 
     let response = auth_service
-        .authenticate(&request.username, &request.password, request.device_info)
+        .authenticate(
+            &request.username,
+            &request.password,
+            request.device_info,
+            client_ip,
+        )
         .await
         .map_err(ApiError::from)?;
 
@@ -614,6 +622,23 @@ mod tests {
 
         const CURRENT_PASSWORD: &str = "current-pass-1";
 
+        /// Budgets for the auth services these tests build, held apart from
+        /// `LoginRateLimiter::from_env` so the suite does not read the
+        /// process environment.
+        const TEST_MAX_FAILURES: usize = 5;
+        const TEST_WINDOW: std::time::Duration = std::time::Duration::from_secs(900);
+
+        fn test_login_rate_limiter() -> crate::api::rate_limit::LoginRateLimiter {
+            crate::api::rate_limit::LoginRateLimiter::new(
+                TEST_MAX_FAILURES,
+                // High enough that the address budget never fires first; the
+                // handler tests exercise the account budget.
+                1_000,
+                TEST_WINDOW,
+                1_024,
+            )
+        }
+
         /// Serves a single user by id so `AuthService::authorize_access_token`
         /// and `AuthService::change_password` see the same forced-change row.
         struct ForcedChangeUserRepository {
@@ -745,13 +770,18 @@ mod tests {
                 "test-audience",
                 Some(3600),
             ));
-            let auth_service = Arc::new(AuthService::new(
-                Arc::new(ForcedChangeUserRepository { user }),
-                Arc::new(NoopRefreshTokenRepository),
-                Arc::new(InMemoryApiKeyRepository::default()),
-                jwt_service.clone(),
-                AuthConfig::default(),
-            ));
+            let auth_service = Arc::new(
+                AuthService::new(
+                    Arc::new(ForcedChangeUserRepository { user }),
+                    Arc::new(NoopRefreshTokenRepository),
+                    Arc::new(InMemoryApiKeyRepository::default()),
+                    jwt_service.clone(),
+                    AuthConfig::default(),
+                )
+                // Pinned so an `API_LOGIN_*` value in the developer's shell
+                // cannot change the sequence `login_throttling` expects.
+                .with_login_rate_limiter(test_login_rate_limiter()),
+            );
             let token = jwt_service
                 .generate_token(&user_id, vec!["user".to_string()])
                 .expect("token generation should succeed");
@@ -853,6 +883,113 @@ mod tests {
             let body: serde_json::Value =
                 serde_json::from_slice(&body).expect("error body should be JSON");
             assert_eq!(body["code"], "PASSWORD_CHANGE_REQUIRED");
+        }
+
+        mod login_throttling {
+            //! Exercises the failed-attempt budget `AuthService::authenticate`
+            //! enforces via `api::rate_limit::LoginRateLimiter`, through the
+            //! real `/api/auth/login` handler.
+            //!
+            //! `ForcedChangeUserRepository::find_by_username` always returns
+            //! `None`, so every attempt fails before Argon2id runs and the
+            //! test measures the counter rather than hashing throughput.
+
+            use super::*;
+            use axum::http::header::RETRY_AFTER;
+
+            async fn attempt_login(app: &Router, username: &str) -> axum::response::Response {
+                let body = serde_json::json!({
+                    "username": username,
+                    "password": "definitely-wrong-1",
+                });
+                send(
+                    app,
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/auth/login")
+                        .header(CONTENT_TYPE, "application/json")
+                        .body(Body::from(body.to_string()))
+                        .expect("test request should build"),
+                )
+                .await
+            }
+
+            #[tokio::test]
+            async fn attempt_past_the_budget_is_throttled_with_retry_after() {
+                let (app, _token) = forced_change_app();
+
+                for attempt in 1..=TEST_MAX_FAILURES {
+                    let response = attempt_login(&app, "ghost").await;
+                    assert_eq!(
+                        response.status(),
+                        StatusCode::UNAUTHORIZED,
+                        "attempt {attempt} is still within the budget"
+                    );
+                }
+
+                let throttled = attempt_login(&app, "ghost").await;
+                assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+
+                let retry_after = throttled
+                    .headers()
+                    .get(RETRY_AFTER)
+                    .expect("a 429 must tell the client when to retry")
+                    .to_str()
+                    .expect("Retry-After should be ASCII")
+                    .parse::<u64>()
+                    .expect("Retry-After should be a delay in seconds");
+                assert!(retry_after > 0);
+                assert!(retry_after <= TEST_WINDOW.as_secs());
+
+                let body = to_bytes(throttled.into_body(), usize::MAX)
+                    .await
+                    .expect("error body should be readable");
+                let body: serde_json::Value =
+                    serde_json::from_slice(&body).expect("error body should be JSON");
+                assert_eq!(body["code"], "TOO_MANY_REQUESTS");
+                assert!(
+                    !body["message"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains("ghost"),
+                    "the response must not confirm whether the username exists"
+                );
+            }
+
+            #[tokio::test]
+            async fn overlong_usernames_are_rejected_by_character_count() {
+                let (app, _token) = forced_change_app();
+                let max = crate::api::auth_service::MAX_USERNAME_LENGTH;
+
+                // 128 CJK characters are 384 bytes: a byte-based bound would
+                // refuse this, and the account could never be logged into.
+                let response = attempt_login(&app, &"用".repeat(max)).await;
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+                let response = attempt_login(&app, &"a".repeat(max + 1)).await;
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            }
+
+            #[tokio::test]
+            async fn throttling_one_username_leaves_others_alone() {
+                let (app, _token) = forced_change_app();
+
+                for _ in 0..=TEST_MAX_FAILURES {
+                    attempt_login(&app, "ghost").await;
+                }
+                assert_eq!(
+                    attempt_login(&app, "ghost").await.status(),
+                    StatusCode::TOO_MANY_REQUESTS
+                );
+
+                // `oneshot` leaves no `ConnectInfo<SocketAddr>` in the request
+                // extensions, so `ClientIp` is `None` and only the username
+                // key is counted.
+                assert_eq!(
+                    attempt_login(&app, "someone-else").await.status(),
+                    StatusCode::UNAUTHORIZED
+                );
+            }
         }
 
         mod api_key_endpoints {

@@ -24,6 +24,10 @@
 
   FFmpeg recording and post-processing no longer force the entire child process into the `C` locale. That override could prevent Unicode output paths from opening on Windows, particularly for segment-mode filenames expanded with `strftime`. Message and numeric formatting remain stable for progress parsing, while character and time handling retain the parent UTF-8 locale.
 
+- **Streamers stay monitored after an unexpected failure**
+
+  A streamer whose monitoring hit an unexpected internal error was quietly left unwatched until rust-srec was restarted, so nothing was recorded in the meantime. Monitoring is now restarted automatically. Quickly disabling and re-enabling a streamer no longer leaves it monitored twice or not at all either.
+
 ## API and integrations
 
 - **API keys for programmatic access**
@@ -37,6 +41,14 @@
 - **Dedicated API key management in the Web UI**
 
   A new **Settings → API Keys** page lets you create, inspect, and revoke API keys with custom names and expiry dates. The page also generates ready-to-copy MCP configuration snippets for Claude Code, Cursor, and standard MCP clients.
+
+- **Repeated failed sign-ins are now slowed down**
+
+  Guessing a password can no longer be retried without limit. After five failed sign-ins an account is refused for a cooling-off period, and the reply says how many seconds to wait. Signing in correctly clears the count immediately, and the message never reveals whether the username exists. A second, far more generous limit caps how much password-checking work one source can ask for; note that behind a reverse proxy — including the frontend that ships with rust-srec — every sign-in looks like it comes from the proxy, so that limit protects the server rather than telling users apart. Password checks are also queued rather than all run at once, so a flood of sign-in attempts no longer slows the rest of the app down. Both limits can be tuned with `API_LOGIN_MAX_FAILURES`, `API_LOGIN_IP_MAX_FAILURES`, and `API_LOGIN_WINDOW_SECS`. See [Configuration](../getting-started/configuration.md#login-throttling).
+
+- **Stricter browser access while sign-in is turned off**
+
+  In the local-development mode that runs without sign-in, the backend used to accept browser requests from any website you happened to have open. It now turns away requests that come from an unknown page, or that arrive under a web address other than your own machine's, so another tab cannot quietly issue commands to your recorder. Requests from the local web interface, the desktop app, and tools such as `curl` are unaffected. If you open the interface from a different address, list it in the new `API_CORS_ORIGINS` setting. Nothing changes when sign-in is on — and with sign-in on, a password or API key is what protects the API. See [Configuration](../getting-started/configuration.md#security-auth).
 
 ## Pipeline and uploads
 
@@ -95,6 +107,9 @@
 - **Custom command steps no longer trip over unusual file names**
 
   A recording named after the stream title can end up with characters a shell reads as instructions — an apostrophe, a quote, `$`, a backtick, a semicolon. A pipeline step running a custom command would then fail on that file, or run part of the title as a command of its own. File paths, titles and streamer names are now quoted automatically before the command runs, so they are passed on as text instead of being run — as a bare argument, inside quotes, inside `$(...)` or backticks, or in a here-document body. Pipes, `&&` and redirects in your own command still work, and placeholders you already wrapped in quotes yourself keep working — do not add extra escaping around them. See [DAG Pipeline](../concepts/pipeline.md#built-in-processors) for the two remaining limits.
+- **A job picked up again after a restart no longer shows stale progress**
+
+  If the app stopped while a transcode or upload was running, that job was put back in the queue on the next start but kept showing the percentage it had reached before — a job that was only waiting its turn could sit there reading "42%" until it actually started running again. The old figure is now cleared the moment the job returns to the queue.
 
 ## Danmu
 
@@ -192,7 +207,17 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+## Security
+
+- **Cookies, tokens and passwords are no longer written to the logs**
+
+  Starting a recording, saving a platform, template or streamer, and the background check that keeps platform cookies fresh, all used to write the credentials themselves into the log files, the live log view and the browser console. Anyone able to read a log file, a log export or a container's logs could pick out the cookies, refresh tokens and account passwords for your platform accounts. Logs now record only which settings were touched, never their values. Old log files are not cleaned up, so if you have shared logs with anyone, change the cookies and passwords that appeared in them.
+
 ## Deployment
+
+- **The sign-in cookie is protected automatically behind an HTTPS reverse proxy**
+
+  When the web interface is published through a reverse proxy that terminates HTTPS, the cookie that keeps you signed in was only marked HTTPS-only if you set `COOKIE_SECURE=true` by hand; otherwise the browser was willing to send it over plain HTTP as well. The scheme reported by the proxy now reaches the app intact, so the cookie is marked HTTPS-only on its own. Plain-HTTP installs on a home or office network keep working as before, and `COOKIE_SECURE` still overrides the automatic choice in either direction. If a production install is still reached over plain HTTP, a warning is logged once to point this out.
 
 - **Optional automatic container updates**
 

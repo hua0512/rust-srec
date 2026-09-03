@@ -6,6 +6,7 @@ use chrono::Utc;
 use sqlx::SqlitePool;
 use tracing::warn;
 
+use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::ConfigService;
 use crate::config::backup::{
     ConfigExport, ImportMode, ImportStats, NotificationChannelExport, PipelinePresetExport,
@@ -517,6 +518,14 @@ fn validate_import(
         for user in &config.users {
             validate_non_empty("user id", &user.id)?;
             validate_non_empty("username", &user.username)?;
+            // The same bound `AuthService::authenticate` applies, so an
+            // import cannot create a user who is then refused at login.
+            if user.username.chars().count() > MAX_USERNAME_LENGTH {
+                return validation(format!(
+                    "Username '{}' exceeds {} characters",
+                    user.username, MAX_USERNAME_LENGTH
+                ));
+            }
             if user.roles.is_empty() || user.roles.iter().any(|role| role.trim().is_empty()) {
                 return validation(format!(
                     "User '{}' must have at least one non-empty role",
@@ -1948,6 +1957,38 @@ mod tests {
             Err(ConfigurationImportError::Validation(message))
                 if message.contains("Invalid password hash")
         ));
+    }
+
+    #[test]
+    fn validation_rejects_usernames_longer_than_login_accepts() {
+        let global = GlobalConfigDbModel::default();
+        let mut config = import_config(&global);
+        config.users.push(imported_user(
+            &"a".repeat(MAX_USERNAME_LENGTH + 1),
+            vec!["admin".to_string()],
+            true,
+        ));
+
+        assert!(matches!(
+            validate_import(&config, ImportMode::Merge),
+            Err(ConfigurationImportError::Validation(message))
+                if message.contains("exceeds")
+        ));
+    }
+
+    #[test]
+    fn validation_measures_usernames_in_characters() {
+        let global = GlobalConfigDbModel::default();
+        let mut config = import_config(&global);
+        // 128 CJK characters are 384 bytes; the bound is on characters, so
+        // this name is accepted here and by `AuthService::authenticate`.
+        config.users.push(imported_user(
+            &"用".repeat(MAX_USERNAME_LENGTH),
+            vec!["admin".to_string()],
+            true,
+        ));
+
+        assert!(validate_import(&config, ImportMode::Merge).is_ok());
     }
 
     #[test]

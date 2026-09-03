@@ -39,7 +39,7 @@ impl<R: ConfigRepository> CredentialResolver<R> {
     /// # Corner Cases
     /// - Returns `None` if no cookies at any layer
     /// - Empty string cookies (`""`) are treated as "no cookies"
-    #[instrument(skip(self), fields(streamer_id = %streamer.id))]
+    #[instrument(skip_all, fields(streamer_id = %streamer.id))]
     pub async fn find_cookie_source(
         &self,
         streamer: &Streamer,
@@ -173,7 +173,7 @@ impl<R: ConfigRepository> CredentialResolver<R> {
     /// Find cookie source for StreamerMetadata (used by StreamMonitor integration).
     ///
     /// Delegates to the core logic after parsing the JSON config string.
-    #[instrument(skip(self), fields(streamer_id = %metadata.id))]
+    #[instrument(skip_all, fields(streamer_id = %metadata.id))]
     pub async fn find_cookie_source_for_metadata(
         &self,
         metadata: &StreamerMetadata,
