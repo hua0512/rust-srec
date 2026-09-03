@@ -89,6 +89,27 @@ pub struct ActorRegistry {
     /// Source of the generation stamped onto every spawned actor. Starts at 0
     /// so `next_generation` never hands out the "unregistered" value 0.
     generation_counter: u64,
+    /// Stop signals of streamer tasks that are no longer in `streamers` but may
+    /// still be running, keyed by actor ID.
+    ///
+    /// `remove_streamer` drops the handle while the task keeps going until its
+    /// in-flight `check_status` returns, which would otherwise put the only copy
+    /// of the signal out of reach and make a later `remove_streamer_awaitable`
+    /// for the same ID report `ActorRemovalOutcome::NotRegistered` for an actor
+    /// that is still writing streamer state. Entries are added by
+    /// `remove_streamer`, dropped by `handle_task_completion` when it reconciles
+    /// that generation, pruned whenever their signal has fired, and cleared by
+    /// `clear`, so the map holds at most one entry per removed-but-running task.
+    unreaped_streamers: HashMap<String, Vec<UnreapedActor>>,
+}
+
+/// A streamer task the registry has stopped tracking but not yet reconciled.
+#[derive(Debug, Clone)]
+struct UnreapedActor {
+    /// Generation the task was spawned under, matched against
+    /// `ActorTaskResult::generation` in `handle_task_completion`.
+    generation: u64,
+    stop_signal: ActorStopSignal,
 }
 
 impl ActorRegistry {
@@ -100,6 +121,7 @@ impl ActorRegistry {
             task_set: JoinSet::new(),
             cancellation_token,
             generation_counter: 0,
+            unreaped_streamers: HashMap::new(),
         }
     }
 
@@ -290,11 +312,19 @@ impl ActorRegistry {
     /// The actor task will complete and be collected by `join_next`.
     ///
     /// Returns as soon as the handle is dropped. Callers that must know the
-    /// actor's task has ended use [`Self::remove_streamer_awaitable`] instead.
+    /// actor's task has ended use [`Self::remove_streamer_awaitable`] instead;
+    /// this method still records the actor's stop signal in
+    /// `unreaped_streamers` so such a call can be made afterwards.
     pub fn remove_streamer(&mut self, id: &str) -> Option<ActorHandle<StreamerMessage>> {
         if let Some(handle) = self.streamers.remove(id) {
             debug!("Removing streamer actor: {}", id);
             handle.cancel();
+            let entries = self.unreaped_streamers.entry(id.to_string()).or_default();
+            entries.retain(|entry| !entry.stop_signal.is_stopped());
+            entries.push(UnreapedActor {
+                generation: handle.generation(),
+                stop_signal: handle.stop_signal().clone(),
+            });
             Some(handle)
         } else {
             None
@@ -310,24 +340,35 @@ impl ActorRegistry {
     /// The receipt closes that gap for callers that must not proceed while the
     /// actor can still write streamer state.
     ///
-    /// The receipt tracks the exact task that was registered under `id` at this
-    /// call, identified by its registry generation. A replacement spawned for
-    /// the same `id` carries its own generation and its own
-    /// `ActorHandle::stop_signal`, so it can neither satisfy nor extend this
-    /// wait. Nothing is stored in the registry: the receipt owns the only extra
-    /// state, and dropping it unregistered leaves the actor task untouched.
+    /// The receipt tracks every task for `id` that is not known to have ended:
+    /// the one this call removed, plus any that an earlier `remove_streamer`
+    /// dropped the handle of and `handle_task_completion` has not reconciled
+    /// yet. Each is identified by its registry generation, so a replacement
+    /// spawned for the same `id` carries its own generation and its own stop
+    /// signal and can neither satisfy nor extend a wait on an older one.
+    ///
+    /// [`ActorRemovalOutcome::NotRegistered`] therefore means no task for `id`
+    /// is running, not merely that no handle was registered.
     pub fn remove_streamer_awaitable(&mut self, id: &str) -> ActorRemoval {
-        match self.remove_streamer(id) {
-            Some(handle) => ActorRemoval {
-                actor_id: id.to_string(),
-                generation: Some(handle.generation()),
-                stop_signal: handle.stop_signal().clone(),
-            },
-            None => ActorRemoval {
-                actor_id: id.to_string(),
-                generation: None,
-                stop_signal: ActorStopSignal::already_stopped(),
-            },
+        let generation = self.remove_streamer(id).map(|handle| handle.generation());
+
+        let tracked = match self.unreaped_streamers.get_mut(id) {
+            Some(entries) => {
+                entries.retain(|entry| !entry.stop_signal.is_stopped());
+                if entries.is_empty() {
+                    self.unreaped_streamers.remove(id);
+                    Vec::new()
+                } else {
+                    entries.clone()
+                }
+            }
+            None => Vec::new(),
+        };
+
+        ActorRemoval {
+            actor_id: id.to_string(),
+            generation,
+            tracked,
         }
     }
 
@@ -406,6 +447,10 @@ impl ActorRegistry {
     pub fn clear(&mut self) {
         self.streamers.clear();
         self.platforms.clear();
+        // `Supervisor::shutdown` calls this after draining `task_set`, and
+        // `abort_all` reaps tasks without going through `handle_task_completion`,
+        // so nothing else would drop these entries.
+        self.unreaped_streamers.clear();
     }
 
     /// Handle a completed actor task.
@@ -419,6 +464,7 @@ impl ActorRegistry {
     pub fn handle_task_completion(&mut self, result: ActorTaskResult) -> CompletedTask {
         let superseded = match result.actor_type.as_str() {
             "streamer" => {
+                self.forget_unreaped_streamer(&result.actor_id, result.generation);
                 remove_if_current(&mut self.streamers, &result.actor_id, result.generation)
             }
             "platform" => {
@@ -442,6 +488,20 @@ impl ActorRegistry {
         CompletedTask { result, superseded }
     }
 
+    /// Drop `unreaped_streamers`'s record of `generation`, and of any sibling
+    /// entry whose signal has since fired, so the map tracks only tasks that may
+    /// still be running.
+    fn forget_unreaped_streamer(&mut self, actor_id: &str, generation: u64) {
+        let Some(entries) = self.unreaped_streamers.get_mut(actor_id) else {
+            return;
+        };
+
+        entries.retain(|entry| entry.generation != generation && !entry.stop_signal.is_stopped());
+        if entries.is_empty() {
+            self.unreaped_streamers.remove(actor_id);
+        }
+    }
+
     /// Get a child cancellation token for spawning actors.
     pub fn child_token(&self) -> CancellationToken {
         self.cancellation_token.child_token()
@@ -460,7 +520,7 @@ impl ActorRegistry {
 pub struct ActorRemoval {
     actor_id: String,
     generation: Option<u64>,
-    stop_signal: ActorStopSignal,
+    tracked: Vec<UnreapedActor>,
 }
 
 impl ActorRemoval {
@@ -469,24 +529,37 @@ impl ActorRemoval {
         &self.actor_id
     }
 
-    /// The registry generation whose task this receipt tracks.
+    /// The registry generation this call removed from the registry.
     ///
-    /// `None` when no actor was registered under [`Self::actor_id`], in which
-    /// case [`Self::wait`] resolves to [`ActorRemovalOutcome::NotRegistered`]
-    /// without awaiting anything.
+    /// `None` when no handle was registered under [`Self::actor_id`], which does
+    /// not by itself mean nothing is running: an earlier `remove_streamer` can
+    /// have dropped the handle of a task that is still inside `check_status`.
+    /// [`Self::wait`] covers that task too.
     pub fn generation(&self) -> Option<u64> {
         self.generation
     }
 
-    /// Wait for the removed actor's task to end, giving up after `bound`.
+    /// The generations whose tasks [`Self::wait`] waits for, newest last.
+    pub fn tracked_generations(&self) -> Vec<u64> {
+        self.tracked.iter().map(|entry| entry.generation).collect()
+    }
+
+    /// Wait for every tracked actor task to end, giving up after `bound`.
     ///
-    /// `bound` is the caller's: the registry imposes no timeout of its own.
+    /// `bound` is the caller's: the registry imposes no timeout of its own, and
+    /// it bounds the wait as a whole, not each tracked task.
     pub async fn wait(&self, bound: Duration) -> ActorRemovalOutcome {
-        if self.generation.is_none() {
+        if self.tracked.is_empty() {
             return ActorRemovalOutcome::NotRegistered;
         }
 
-        match tokio::time::timeout(bound, self.stop_signal.stopped()).await {
+        let stopped = async {
+            for entry in &self.tracked {
+                entry.stop_signal.stopped().await;
+            }
+        };
+
+        match tokio::time::timeout(bound, stopped).await {
             Ok(()) => ActorRemovalOutcome::Stopped,
             Err(_) => ActorRemovalOutcome::TimedOut,
         }
@@ -496,16 +569,18 @@ impl ActorRemoval {
 /// How an [`ActorRemoval`] wait ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActorRemovalOutcome {
-    /// No actor was registered under the ID, so there was nothing to stop.
+    /// No task for the ID was registered or still winding down, so there was
+    /// nothing to stop.
     NotRegistered,
-    /// The actor's task left the runtime.
+    /// Every task the receipt tracks left the runtime.
     Stopped,
-    /// The caller's bound expired while the task was still running.
+    /// The caller's bound expired while at least one tracked task was still
+    /// running.
     TimedOut,
 }
 
 impl ActorRemovalOutcome {
-    /// Whether the actor is known not to be running any more.
+    /// Whether no actor for the ID is running any more.
     pub fn is_stopped(&self) -> bool {
         matches!(self, Self::NotRegistered | Self::Stopped)
     }
@@ -1107,6 +1182,7 @@ mod tests {
             spawn_blocked_in_check(&mut registry, &token, "test-1", OnRelease::Return).await;
 
         let removal = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(removal.tracked_generations(), vec![first.generation()]);
 
         // A replacement takes the ID over while the first task is still inside
         // its check, and stops again.
@@ -1120,12 +1196,24 @@ mod tests {
         let second = registry.spawn_streamer(actor, handle).unwrap();
         assert!(second.generation() > first.generation());
 
+        // A receipt taken now covers both: the replacement it removes and the
+        // first task, which is still running.
         let second_removal = registry.remove_streamer_awaitable("test-1");
         assert_eq!(second_removal.generation(), Some(second.generation()));
         assert_eq!(
-            second_removal.wait(Duration::from_secs(5)).await,
-            ActorRemovalOutcome::Stopped
+            second_removal.tracked_generations(),
+            vec![first.generation(), second.generation()]
         );
+
+        // The replacement runs to completion and is reaped. Only it can finish:
+        // the first task is still blocked in its check.
+        let result = registry
+            .join_next()
+            .await
+            .expect("the replacement task should finish")
+            .expect("the task should not fail to join");
+        assert_eq!(result.generation, second.generation());
+        registry.handle_task_completion(result);
 
         // The replacement's exit says nothing about the generation the first
         // receipt tracks.
@@ -1161,15 +1249,6 @@ mod tests {
         assert_eq!(removal.generation(), Some(handle.generation()));
         drop(removal);
 
-        // Nothing is registered for the ID any more, so a second receipt has
-        // nothing to wait on.
-        let after_drop = registry.remove_streamer_awaitable("test-1");
-        assert_eq!(after_drop.generation(), None);
-        assert_eq!(
-            after_drop.wait(Duration::ZERO).await,
-            ActorRemovalOutcome::NotRegistered
-        );
-
         // The abandoned task is still reaped through the normal path.
         let result = registry
             .join_next()
@@ -1179,6 +1258,47 @@ mod tests {
         assert!(registry.handle_task_completion(result).superseded);
         assert_eq!(registry.streamer_count(), 0);
         assert_eq!(registry.pending_task_count(), 0);
+
+        // Reaping the generation cleared the registry's record of it, so a
+        // second receipt has nothing left to wait on.
+        let after_reap = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(after_reap.generation(), None);
+        assert!(after_reap.tracked_generations().is_empty());
+        assert_eq!(
+            after_reap.wait(Duration::ZERO).await,
+            ActorRemovalOutcome::NotRegistered
+        );
+
+        token.cancel();
+    }
+
+    /// `ensure_streamer_actor_state` and `handle_state_sync` reach for the
+    /// non-awaiting `remove_streamer`, which drops the handle - and with it the
+    /// only other copy of the stop signal - while the actor is still inside its
+    /// check. A retirement asking for a receipt afterwards must not be told the
+    /// actor is gone.
+    #[tokio::test]
+    async fn awaited_removal_covers_a_task_a_plain_removal_already_dropped() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+        let (handle, release) =
+            spawn_blocked_in_check(&mut registry, &token, "test-1", OnRelease::Return).await;
+
+        assert!(registry.remove_streamer("test-1").is_some());
+
+        let removal = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(removal.generation(), None);
+        assert_eq!(removal.tracked_generations(), vec![handle.generation()]);
+        assert_eq!(
+            removal.wait(Duration::from_millis(50)).await,
+            ActorRemovalOutcome::TimedOut
+        );
+
+        release.notify_one();
+        assert_eq!(
+            removal.wait(Duration::from_secs(5)).await,
+            ActorRemovalOutcome::Stopped
+        );
 
         token.cancel();
     }

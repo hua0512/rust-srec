@@ -15,10 +15,9 @@ const DRAIN_POLL_MAX: Duration = Duration::from_secs(2);
 
 /// Pipeline work still attached to a session.
 ///
-/// The three sources are deliberately combined: `dag_execution` rows go terminal
-/// before `PipelineManager::handle_dag_completion` tells the coordinator, and the
-/// coordinator emits a `CreateSessionCompleteDag` command before any row for it
-/// exists, so each source is blind to a window the others cover.
+/// The three sources are deliberately combined because each is blind to a window
+/// the others cover; see [`PipelineManager::outstanding_for_session`] for the
+/// order they have to be read in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SessionPipelineOutstanding {
     /// `job` rows carrying this `session_id` in `PENDING` or `PROCESSING`.
@@ -70,10 +69,15 @@ where
     /// to the caller, which can reach for [`Self::cancel_dag`] or
     /// [`Self::cancel_pipeline`] when a drain reports outstanding work.
     ///
-    /// `bound` is the caller's; `Duration::ZERO` makes this a single observation.
-    /// Work that starts after quiescence is observed is not covered - callers that
-    /// need the session to stay quiescent must first stop whatever would create
-    /// more work for it.
+    /// `bound` is the caller's; `Duration::ZERO` makes this a single observation
+    /// and a `bound` too large to add to the clock makes it unbounded.
+    ///
+    /// Work that has not been recorded anywhere yet is not covered: a segment the
+    /// downloader completes after quiescence is observed starts a new DAG, so
+    /// callers must first stop whatever would create more work for the session.
+    /// Once `PipelineCoordinator` has recorded that a session ended,
+    /// [`SessionCoordinationOutstanding::session_complete_owed`] does cover the
+    /// session-complete DAG that has not been created yet.
     ///
     /// Neither `job` nor `dag_execution` has a foreign key to `live_sessions` or
     /// `streamers`, so their rows survive the deletion of either and this call
@@ -85,7 +89,9 @@ where
         session_id: &str,
         bound: Duration,
     ) -> Result<SessionDrain> {
-        let deadline = tokio::time::Instant::now() + bound;
+        // `None` when `bound` overflows the clock, which reads as "no deadline"
+        // below rather than panicking on the addition.
+        let deadline = tokio::time::Instant::now().checked_add(bound);
         let mut gap = DRAIN_POLL_MIN;
 
         loop {
@@ -96,26 +102,50 @@ where
 
             // Checked after the observation so a zero bound still reports one.
             let now = tokio::time::Instant::now();
-            if now >= deadline {
-                debug!(
-                    session_id = %session_id,
-                    jobs = %outstanding.jobs,
-                    dags = %outstanding.dags,
-                    coordinated_dags = %outstanding.coordinated.pending_dags,
-                    session_complete_pending = %outstanding.coordinated.session_complete_pending,
-                    "Session pipeline drain bound expired"
-                );
-                return Ok(SessionDrain::Outstanding(outstanding));
-            }
+            let remaining = match deadline {
+                Some(deadline) if now >= deadline => {
+                    warn!(
+                        session_id = %session_id,
+                        jobs = %outstanding.jobs,
+                        dags = %outstanding.dags,
+                        coordinated_dags = %outstanding.coordinated.pending_dags,
+                        session_complete_owed = %outstanding.coordinated.session_complete_owed,
+                        "Session pipeline drain bound expired with work still in flight"
+                    );
+                    return Ok(SessionDrain::Outstanding(outstanding));
+                }
+                Some(deadline) => Some(deadline - now),
+                None => None,
+            };
 
-            // Never longer than what is left of the bound, so the loop cannot
-            // overshoot the deadline by up to `DRAIN_POLL_MAX`.
-            tokio::time::sleep_until(now + gap.min(deadline - now)).await;
+            // Clamped to what is left of the bound, so the next observation lands
+            // no later than the deadline.
+            let sleep = match remaining {
+                Some(remaining) => gap.min(remaining),
+                None => gap,
+            };
+            tokio::time::sleep(sleep).await;
             gap = (gap * 2).min(DRAIN_POLL_MAX);
         }
     }
 
     /// One observation of the pipeline work attached to `session_id`.
+    ///
+    /// Read order is load-bearing, because the three sources are updated in a
+    /// fixed order and a later read must never be able to miss what an earlier
+    /// one already ruled out:
+    ///
+    /// - Creation runs coordinator-first. `run_session_complete_pipeline` creates
+    ///   the `dag_execution` row and only then applies `SessionCompleteDagStarted`,
+    ///   and `run_segment_pipeline` applies `SegmentDagStarted` before creating
+    ///   its row; `create_dag_pipeline_internal` publishes the DAG row and its
+    ///   root `job` rows together. Reading the coordinator first therefore means
+    ///   that whenever it reports nothing owed, the rows it stopped accounting for
+    ///   already exist and the later reads see them.
+    /// - Completion runs row-first: a `job` reaches a terminal status before its
+    ///   `dag_execution` row does, and the row before `handle_dag_completion`
+    ///   reaches the coordinator. Reading jobs last therefore means a zero count
+    ///   is consistent with the DAG and coordinator reads that preceded it.
     ///
     /// The `job` and `dag_execution` counts are zero when the manager was built
     /// without the corresponding repository, which is how the non-persistent
@@ -124,27 +154,16 @@ where
         &self,
         session_id: &str,
     ) -> Result<SessionPipelineOutstanding> {
-        let jobs = match &self.job_repository {
-            Some(repo) => {
-                let mut jobs = 0;
-                // `JobFilters::status` holds one status, and the job statuses
-                // that are not terminal are exactly these two.
-                for status in [JobStatus::Pending, JobStatus::Processing] {
-                    jobs += repo
-                        .count_jobs(
-                            &JobFilters::new()
-                                .with_session_id(session_id)
-                                .with_status(status),
-                        )
-                        .await?;
-                }
-                jobs
-            }
-            None => 0,
-        };
+        let coordinated = self
+            .pipeline_coordinator
+            .session_outstanding(session_id)
+            .await
+            .unwrap_or_default();
 
         let dags = match &self.dag_scheduler {
             Some(scheduler) => {
+                // `DagRepository::count_dags` takes one status, and the DAG
+                // statuses that are not terminal are exactly these two.
                 let mut dags = 0;
                 for status in [DagExecutionStatus::Pending, DagExecutionStatus::Processing] {
                     dags += scheduler
@@ -156,14 +175,22 @@ where
             None => 0,
         };
 
+        let jobs = match &self.job_repository {
+            Some(repo) => {
+                repo.count_jobs(
+                    &JobFilters::new()
+                        .with_session_id(session_id)
+                        .with_statuses([JobStatus::Pending, JobStatus::Processing]),
+                )
+                .await?
+            }
+            None => 0,
+        };
+
         Ok(SessionPipelineOutstanding {
             jobs,
             dags,
-            coordinated: self
-                .pipeline_coordinator
-                .session_outstanding(session_id)
-                .await
-                .unwrap_or_default(),
+            coordinated,
         })
     }
 }

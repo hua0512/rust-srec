@@ -938,6 +938,56 @@ mod job_repository_tests {
         assert_eq!(result.2, "PENDING");
     }
 
+    /// `PipelineManager::drain_for_session` counts a session's unfinished jobs
+    /// with one query, which means `JobFilters::statuses` has to render an
+    /// `IN` list whose binds line up with the `session_id` bind that follows it.
+    #[tokio::test]
+    async fn test_count_jobs_by_session_and_statuses() {
+        use rust_srec::database::models::JobFilters;
+
+        let pool = setup_test_db().await;
+        let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
+
+        for (status, session_id) in [
+            (JobStatus::Pending, "session-a"),
+            (JobStatus::Processing, "session-a"),
+            (JobStatus::Completed, "session-a"),
+            (JobStatus::Failed, "session-a"),
+            (JobStatus::Cancelled, "session-a"),
+            (JobStatus::Processing, "session-b"),
+        ] {
+            let mut job = JobDbModel::new("DOWNLOAD", "{}");
+            job.status = status.as_str().to_string();
+            job.session_id = Some(session_id.to_string());
+            repo.create_job(&job).await.expect("Failed to create job");
+        }
+
+        let unfinished = |session_id: &str| {
+            JobFilters::new()
+                .with_session_id(session_id)
+                .with_statuses([JobStatus::Pending, JobStatus::Processing])
+        };
+
+        assert_eq!(repo.count_jobs(&unfinished("session-a")).await.unwrap(), 2);
+        assert_eq!(repo.count_jobs(&unfinished("session-b")).await.unwrap(), 1);
+        assert_eq!(repo.count_jobs(&unfinished("session-c")).await.unwrap(), 0);
+
+        // The single-value `status` filter still works, and combines with
+        // `statuses` by intersection.
+        assert_eq!(
+            repo.count_jobs(&unfinished("session-a").with_status(JobStatus::Pending))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            repo.count_jobs(&JobFilters::new().with_session_id("session-a"))
+                .await
+                .unwrap(),
+            5
+        );
+    }
+
     #[tokio::test]
     async fn test_job_status_update() {
         let pool = setup_test_db().await;

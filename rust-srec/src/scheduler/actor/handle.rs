@@ -32,37 +32,38 @@ pub const BACKPRESSURE_THRESHOLD: f64 = 0.8;
 /// Clones share one signal, and every clone of an [`ActorHandle`] carries the same
 /// one, so a waiter holding a clone observes the exit of the exact task that
 /// handle was spawned for - not of a later actor registered under the same ID.
+///
+/// Restricted to `scheduler::actor`: a guard handed out anywhere else would fire
+/// the signal when it is dropped, making every waiter believe the actor stopped
+/// while it is still running.
 #[derive(Debug, Clone)]
-pub struct ActorStopSignal {
+pub(super) struct ActorStopSignal {
     token: CancellationToken,
 }
 
 impl ActorStopSignal {
     /// Create a signal that has not fired.
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             token: CancellationToken::new(),
         }
-    }
-
-    /// Create a signal that has already fired, for an ID no actor is registered
-    /// under and that therefore has nothing to wait for.
-    pub fn already_stopped() -> Self {
-        let signal = Self::new();
-        signal.token.cancel();
-        signal
     }
 
     /// A guard that fires the signal when dropped.
     ///
     /// The registry moves this into the actor's task; dropping it is the only
     /// thing that fires the signal.
-    pub fn guard(&self) -> DropGuard {
+    pub(super) fn guard(&self) -> DropGuard {
         self.token.clone().drop_guard()
     }
 
+    /// Whether the task has already left the runtime.
+    pub(super) fn is_stopped(&self) -> bool {
+        self.token.is_cancelled()
+    }
+
     /// Resolve once the task has left the runtime.
-    pub async fn stopped(&self) {
+    pub(super) async fn stopped(&self) {
         self.token.cancelled().await;
     }
 }
@@ -328,7 +329,7 @@ impl<M> ActorHandle<M> {
     ///
     /// `ActorRegistry::remove_streamer_awaitable` hands a clone to its caller so
     /// the caller can await the exit `ActorHandle::cancel` only requested.
-    pub fn stop_signal(&self) -> &ActorStopSignal {
+    pub(super) fn stop_signal(&self) -> &ActorStopSignal {
         &self.stop_signal
     }
 

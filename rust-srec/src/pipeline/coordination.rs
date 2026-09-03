@@ -268,27 +268,41 @@ pub enum PipelineCommand {
 
 /// Pipeline work `PipelineCoordinator` is still tracking for one session.
 ///
-/// Every count here is reducer state, not a database row, so it covers the two
-/// windows a query over `dag_execution` cannot see: a DAG whose row is already
-/// terminal but whose `SegmentDagCompleted` event has not been applied yet, and
-/// a `CreatePairedSegmentDag` / `CreateSessionCompleteDag` command that has been
-/// emitted but whose DAG rows do not exist yet.
+/// This is reducer state, not database rows, so it covers the windows a query
+/// over `dag_execution` cannot see: a DAG whose row is already terminal but
+/// whose `SegmentDagCompleted` has not been applied yet, and the whole span in
+/// which a session-complete run is decided on and emitted but no row for it
+/// exists.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SessionCoordinationOutstanding {
     /// Segment, danmu and paired DAGs the reducer has counted as started and not
     /// yet seen complete, plus paired segments whose creation command has been
     /// emitted but whose `PairedDagStarted` has not been applied.
     pub pending_dags: u32,
-    /// A `CreateSessionCompleteDag` command has been emitted and neither
-    /// `SessionCompleteDagStarted` nor `SessionCompleteDagCreationFailed` has
-    /// come back yet.
-    pub session_complete_pending: bool,
+    /// `SessionEnded` arrived with `should_run_session_complete`, and
+    /// `SessionCompleteDagStarted` has not come back yet - so a session-complete
+    /// DAG is owed and `try_finalize` may emit its creation command at any point.
+    ///
+    /// Deliberately wider than `SessionPipelineState::pending_session_complete_start`,
+    /// which only covers the span after `is_ready` holds.
+    /// `PipelineManager::handle_session_transition` applies `ConfigureSession`,
+    /// `SessionEnded` and `SessionEndPersisted` as three separate reducer calls
+    /// with a `get_config_for_streamer` database read in front of them, and
+    /// `is_ready` requires the last of the three, so a narrower flag would read
+    /// as idle for the whole gap between them.
+    ///
+    /// A session whose artifacts never drain - `artifacts_drained_for_session_complete`
+    /// stays false because no segment ever produced a video output - keeps this
+    /// set until `PipelineCoordinatorState::cleanup_stale` drops the session.
+    /// That is truthful: the run is owed and cannot be satisfied, which is what
+    /// the caller's drain bound is for.
+    pub session_complete_owed: bool,
 }
 
 impl SessionCoordinationOutstanding {
     /// Whether the reducer is holding nothing further for the session.
     pub fn is_idle(&self) -> bool {
-        self.pending_dags == 0 && !self.session_complete_pending
+        self.pending_dags == 0 && !self.session_complete_owed
     }
 }
 
@@ -500,9 +514,15 @@ impl PipelineCoordinator {
             .await
             .is_err()
         {
-            return None;
+            // The actor stopped between the `tx` clone and the send. Read the
+            // state directly rather than reporting the session as untracked -
+            // `None` is indistinguishable from "no such session", which callers
+            // treat as idle. `cleanup_stale` falls back the same way.
+            warn!("Pipeline coordinator stopped; reading session state inline");
+            return self.session_outstanding_inline(session_id);
         }
-        rx.await.unwrap_or(None)
+        rx.await
+            .unwrap_or_else(|_| self.session_outstanding_inline(session_id))
     }
 
     pub fn session_outstanding_inline(
@@ -1326,14 +1346,19 @@ impl SessionPipelineState {
     }
 
     /// The DAG work this session is still waiting on, in the same terms
-    /// `artifacts_drained_for_session_complete` gates finalization on.
+    /// `artifacts_drained_for_session_complete` and `is_ready` gate
+    /// finalization on.
     fn outstanding(&self) -> SessionCoordinationOutstanding {
         SessionCoordinationOutstanding {
             pending_dags: self.pending_video_dags
                 + self.pending_danmu_dags
                 + self.pending_paired_dags
                 + self.pending_paired_starts.len() as u32,
-            session_complete_pending: self.pending_session_complete_start,
+            // `session_end_observed` is set only when `SessionEnded` carried
+            // `should_run_session_complete`, and `session_complete_triggered` is
+            // the reducer's record that the run is over with - either its DAG
+            // started or `try_finalize` found no pipeline to run.
+            session_complete_owed: self.session_end_observed && !self.session_complete_triggered,
         }
     }
 

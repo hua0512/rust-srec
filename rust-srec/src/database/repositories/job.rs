@@ -19,6 +19,12 @@ fn job_filter_where_clause(filters: &JobFilters) -> String {
     if filters.status.is_some() {
         conditions.push("status = ?".to_string());
     }
+    if let Some(statuses) = &filters.statuses
+        && !statuses.is_empty()
+    {
+        let placeholders = statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        conditions.push(format!("status IN ({})", placeholders));
+    }
     if filters.streamer_id.is_some() {
         conditions.push("streamer_id = ?".to_string());
     }
@@ -64,6 +70,11 @@ macro_rules! bind_job_filters {
         let mut query = $query;
         if let Some(status) = &$filters.status {
             query = query.bind(status.as_str());
+        }
+        if let Some(statuses) = &$filters.statuses {
+            for status in statuses {
+                query = query.bind(status.as_str());
+            }
         }
         if let Some(streamer_id) = &$filters.streamer_id {
             query = query.bind(streamer_id);

@@ -407,8 +407,8 @@ impl TestJobRepository {
             .status = status.as_str().to_string();
     }
 
-    /// Apply the subset of `JobFilters` these tests exercise: `status` and
-    /// `session_id`.
+    /// Apply the subset of `JobFilters` these tests exercise: `status`,
+    /// `statuses` and `session_id`.
     fn matching(&self, filters: &crate::database::models::JobFilters) -> Vec<JobDbModel> {
         self.jobs
             .lock()
@@ -418,6 +418,11 @@ impl TestJobRepository {
                 filters
                     .status
                     .is_none_or(|status| JobStatus::parse(&job.status) == Some(status))
+            })
+            .filter(|job| {
+                filters.statuses.as_ref().is_none_or(|statuses| {
+                    JobStatus::parse(&job.status).is_some_and(|status| statuses.contains(&status))
+                })
             })
             .filter(|job| {
                 filters
@@ -3551,7 +3556,7 @@ async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
         SessionDrain::Outstanding(SessionPipelineOutstanding {
             coordinated: crate::pipeline::SessionCoordinationOutstanding {
                 pending_dags: 1,
-                session_complete_pending: false,
+                session_complete_owed: false,
             },
             ..Default::default()
         })
@@ -3561,6 +3566,149 @@ async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
         PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+            outputs: Vec::new(),
+        },
+    );
+
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+}
+
+/// `handle_session_transition` applies `ConfigureSession`, `SessionEnded` and
+/// `SessionEndPersisted` as three separate reducer calls, and `try_finalize` only
+/// emits the session-complete command on the last of them. A drain landing in
+/// between sees no rows and no pending DAG counters, so it has to read
+/// `session_complete_owed` to know the session-complete DAG is still coming.
+#[tokio::test]
+async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
+            .with_dag_repository(dag_repo.clone());
+
+    let session_id = "owed-session".to_string();
+    let streamer_id = "owed-streamer".to_string();
+
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            should_run_session_complete: true,
+        });
+
+    // `SessionEndPersisted` has not been applied, so `pending_session_complete_start`
+    // is still false and every DAG counter is zero.
+    let outstanding = manager.outstanding_for_session(&session_id).await.unwrap();
+    assert_eq!(outstanding.jobs, 0);
+    assert_eq!(outstanding.dags, 0);
+    assert_eq!(outstanding.coordinated.pending_dags, 0);
+    assert!(outstanding.coordinated.session_complete_owed);
+    assert!(!outstanding.is_quiescent());
+
+    assert!(matches!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(_)
+    ));
+
+    // Still owed once the command has been emitted and before the DAG row exists.
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SessionEndPersisted {
+            session_id: session_id.clone(),
+        },
+    );
+    assert!(matches!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(_)
+    ));
+
+    // `run_session_complete_pipeline` applies this only after
+    // `create_dag_pipeline_internal` has published the DAG row, which is why the
+    // coordinator is read before `dag_execution`.
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SessionCompleteDagStarted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+        },
+    );
+    let mut dag = DagExecutionDbModel::new(
+        &DagPipelineDefinition::new(
+            "session",
+            vec![DagStep::new(
+                "A",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            )],
+        ),
+        Some(streamer_id.clone()),
+        Some(session_id.clone()),
+    );
+    dag.status = DagExecutionStatus::Processing.as_str().to_string();
+    let dag_id = dag.id.clone();
+    dag_repo.insert(dag);
+
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(SessionPipelineOutstanding {
+            dags: 1,
+            ..Default::default()
+        })
+    );
+
+    dag_repo
+        .dags
+        .lock()
+        .expect("lock poisoned")
+        .get_mut(&dag_id)
+        .expect("dag should exist")
+        .status = DagExecutionStatus::Completed.as_str().to_string();
+
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+}
+
+/// A session the coordinator never saw end has nothing owed, so a drain does not
+/// hang on the `session_complete_owed` gate.
+#[tokio::test]
+async fn test_drain_for_session_owes_nothing_before_the_session_ends() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
+
+    let session_id = "still-recording".to_string();
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+            session_id: session_id.clone(),
+            streamer_id: "streamer-1".to_string(),
+            segment_index: 0,
+            source: SourceType::Video,
+        });
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SegmentDagCompleted {
+            session_id: session_id.clone(),
+            streamer_id: "streamer-1".to_string(),
             segment_index: 0,
             source: SourceType::Video,
             outputs: Vec::new(),

@@ -25,7 +25,7 @@ mod streamer_actor;
 mod supervisor;
 
 pub use config_router::{ConfigRouter, ConfigScope, PlatformMapping, RoutingPlan, RoutingResult};
-pub use handle::{ActorHandle, ActorMetadata, ActorStopSignal, SendError};
+pub use handle::{ActorHandle, ActorMetadata, SendError};
 pub use messages::{
     BatchDetectionResult, CheckResult, DownloadEndPolicy, PlatformActorState, PlatformConfig,
     PlatformMessage, StreamerActorState, StreamerConfig, StreamerMessage,

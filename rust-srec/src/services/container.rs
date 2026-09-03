@@ -999,6 +999,14 @@ impl ServiceContainer {
     }
 
     /// Get the notification service.
+    /// The scheduler's control surface.
+    ///
+    /// `start_scheduler` moves the `Scheduler` itself into a task, so this is the
+    /// only way to reach it afterwards.
+    pub fn scheduler_handle(&self) -> &SchedulerHandle {
+        &self.scheduler_handle
+    }
+
     pub fn notification_service(&self) -> &Arc<NotificationService> {
         &self.notification_service
     }

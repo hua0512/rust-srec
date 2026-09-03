@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -39,17 +39,59 @@ use super::actor::{
     TaskCompletionAction,
 };
 
-/// Read-only scheduler state for health and diagnostics consumers.
+/// Work only the scheduler's event loop can do, requested from another task.
+///
+/// `Scheduler::run` owns the `Supervisor` by value, so everything that needs
+/// `&mut Scheduler` has to happen inside the loop. Each variant is answered with
+/// a value the requester can then use on its own task; nothing here may await
+/// anything slow, or the loop stops reaping actor tasks and consuming the lossy
+/// `download_event_rx` broadcast for that long.
+pub(crate) enum SchedulerCommand {
+    /// Remove a streamer's actor and hand back the receipt for its task's exit.
+    RemoveStreamerAwaitable {
+        streamer_id: String,
+        reply: tokio::sync::oneshot::Sender<ActorRemoval>,
+    },
+}
+
+/// Scheduler state and control available to consumers that do not own the
+/// `Scheduler` itself - which, once `ServiceContainer::start_scheduler` has moved
+/// it into its task, is all of them.
 #[derive(Clone)]
-pub(crate) struct SchedulerHandle {
+pub struct SchedulerHandle {
     stats_rx: watch::Receiver<super::actor::SupervisorStats>,
+    command_tx: mpsc::Sender<SchedulerCommand>,
 }
 
 impl SchedulerHandle {
-    pub(crate) fn stats(&self) -> super::actor::SupervisorStats {
+    pub fn stats(&self) -> super::actor::SupervisorStats {
         self.stats_rx.borrow().clone()
     }
+
+    /// Ask the scheduler's event loop to remove `streamer_id`'s actor and return
+    /// the receipt for its task.
+    ///
+    /// `None` when the scheduler task is gone, which callers must not read as
+    /// "the actor stopped": nothing observed it. Only building the receipt
+    /// happens in the loop - awaiting it with [`ActorRemoval::wait`] happens on
+    /// the caller's task, so a caller that waits minutes does not stall the loop.
+    pub async fn remove_streamer_awaitable(&self, streamer_id: &str) -> Option<ActorRemoval> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        self.command_tx
+            .send(SchedulerCommand::RemoveStreamerAwaitable {
+                streamer_id: streamer_id.to_string(),
+                reply,
+            })
+            .await
+            .ok()?;
+        rx.await.ok()
+    }
 }
+
+/// Depth of the `SchedulerCommand` channel. Commands are answered without
+/// awaiting anything, so the queue only absorbs bursts while the loop is busy
+/// with another branch.
+const SCHEDULER_COMMAND_CAPACITY: usize = 64;
 
 /// Default check interval (60 seconds).
 const DEFAULT_CHECK_INTERVAL_MS: u64 = 60_000;
@@ -117,6 +159,11 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     supervisor: Supervisor,
     /// Latest supervisor snapshot for read-only runtime consumers.
     stats_tx: watch::Sender<super::actor::SupervisorStats>,
+    /// Sender cloned into every `SchedulerHandle`; kept here so `handle()` can
+    /// be called at any point before `run` takes the receiver.
+    command_tx: mpsc::Sender<SchedulerCommand>,
+    /// Receiver for `SchedulerCommand`, taken by `run`.
+    command_rx: Option<mpsc::Receiver<SchedulerCommand>>,
     /// Platform mapping for config routing.
     platform_mapping: PlatformMapping,
     /// Platform actor handles for batch coordination.
@@ -215,6 +262,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             metadata_store,
         );
         let (stats_tx, _) = watch::channel(supervisor.stats());
+        let (command_tx, command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
 
         Self {
             streamer_manager,
@@ -224,6 +272,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             cancellation_token,
             supervisor,
             stats_tx,
+            command_tx,
+            command_rx: Some(command_rx),
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -347,6 +397,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             batch_checker,
         );
         let (stats_tx, _) = watch::channel(supervisor.stats());
+        let (command_tx, command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
 
         Self {
             streamer_manager,
@@ -356,6 +407,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             cancellation_token,
             supervisor,
             stats_tx,
+            command_tx,
+            command_rx: Some(command_rx),
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -375,9 +428,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Create a cheap read-only handle for scheduler diagnostics.
-    pub(crate) fn handle(&self) -> SchedulerHandle {
+    pub fn handle(&self) -> SchedulerHandle {
         SchedulerHandle {
             stats_rx: self.stats_tx.subscribe(),
+            command_tx: self.command_tx.clone(),
         }
     }
 
@@ -493,6 +547,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         // Take the download event receiver
         let mut download_event_rx = self.download_event_rx.take();
 
+        // Taken, not borrowed, so the select arm below does not hold a borrow of
+        // `self` that its handler needs mutably.
+        let mut command_rx = self.command_rx.take();
+
         // Initial actor spawning for all active streamers
         self.spawn_initial_actors().await?;
         self.publish_stats();
@@ -577,6 +635,24 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     // None means no pending tasks - we just continue the loop
                 }
 
+                // Handle commands from `SchedulerHandle`
+                command = async {
+                    match &mut command_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    match command {
+                        Some(command) => self.handle_command(command),
+                        None => {
+                            // Every `SchedulerHandle` was dropped. `self.command_tx`
+                            // keeps the channel open, so this is unreachable while
+                            // the scheduler exists; stop polling either way.
+                            command_rx = None;
+                        }
+                    }
+                }
+
                 // Process pending restarts
                 _ = Self::wait_for_restart(next_restart) => {
                     let restarted = self.supervisor.process_pending_restarts();
@@ -597,6 +673,19 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         );
 
         Ok(())
+    }
+
+    /// Answer a `SchedulerCommand`. Must not await: the loop is not reaping
+    /// actor tasks or draining `download_event_rx` while this runs.
+    fn handle_command(&mut self, command: SchedulerCommand) {
+        match command {
+            SchedulerCommand::RemoveStreamerAwaitable { streamer_id, reply } => {
+                let removal = self.remove_streamer_awaitable(&streamer_id);
+                // The requester gave up before the loop got here; the actor is
+                // removed and cancelled regardless.
+                let _ = reply.send(removal);
+            }
+        }
     }
 
     /// Wait for the next restart time, or forever if none pending.
@@ -1181,8 +1270,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// `remove_streamer` returns while the actor may still be inside a
     /// `check_status` call that writes streamer state. The receipt lets a caller
     /// that is retiring the streamer wait for that call to finish before it
-    /// touches the same rows; awaiting it does not block this scheduler's event
-    /// loop, which is what reaps the task afterwards.
+    /// touches the same rows.
+    ///
+    /// Building the receipt needs `&mut Scheduler`, which after
+    /// `ServiceContainer::start_scheduler` exists only inside `run`'s own
+    /// handlers - so awaiting it here would stall `join_next`, config events and
+    /// the lossy `download_event_rx` broadcast for the whole wait. Off-loop
+    /// callers go through `SchedulerHandle::remove_streamer_awaitable`, which has
+    /// the loop build the receipt and awaits it on the caller's task.
     pub fn remove_streamer_awaitable(&mut self, streamer_id: &str) -> ActorRemoval {
         self.platform_mapping.unregister(streamer_id);
         self.supervisor.remove_streamer_awaitable(streamer_id)
@@ -1197,6 +1292,116 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::StreamerState;
+    use crate::scheduler::actor::ActorRemovalOutcome;
+    use chrono::Utc;
+
+    /// A scheduler whose actors use `NoOpStatusChecker`, with `streamer_ids`
+    /// already in the shared metadata store so `spawn_initial_actors` gives each
+    /// of them an actor.
+    ///
+    /// The repository is real but unused by this path: nothing here applies a
+    /// config event, and `StreamerActor` persists through its `StatusChecker`,
+    /// not through `StreamerManager`.
+    async fn scheduler_with_streamers(
+        streamer_ids: &[&str],
+    ) -> Scheduler<crate::database::repositories::SqlxStreamerRepository> {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            dir.path().join("scheduler_test.db").to_string_lossy()
+        );
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        std::mem::forget(dir);
+
+        let repo = Arc::new(crate::database::repositories::SqlxStreamerRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let streamer_manager = Arc::new(StreamerManager::new(repo, broadcaster.clone()));
+
+        let store = streamer_manager.metadata_store();
+        for id in streamer_ids {
+            store.insert(
+                (*id).to_string(),
+                StreamerMetadata {
+                    id: (*id).to_string(),
+                    name: format!("Test {id}"),
+                    url: format!("https://twitch.tv/{id}"),
+                    platform_config_id: "twitch".to_string(),
+                    template_config_id: None,
+                    state: StreamerState::NotLive,
+                    priority: Priority::Normal,
+                    avatar_url: None,
+                    consecutive_error_count: 0,
+                    disabled_until: None,
+                    last_live_time: None,
+                    last_error: None,
+                    streamer_specific_config: None,
+                    offline_check_count: 3,
+                    offline_check_delay_ms: 20_000,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                },
+            );
+        }
+
+        Scheduler::with_full_config(
+            streamer_manager,
+            broadcaster,
+            SchedulerConfig::default(),
+            CancellationToken::new(),
+        )
+    }
+
+    /// `Scheduler::run` owns the supervisor, so `SchedulerHandle` is the only way
+    /// an off-loop caller can get a removal receipt at all. The receipt has to
+    /// come back answered, and awaiting it must not be what the loop is doing.
+    #[tokio::test]
+    async fn scheduler_handle_gets_a_removal_receipt_from_the_event_loop() {
+        let mut scheduler = scheduler_with_streamers(&["test-1"]).await;
+        let handle = scheduler.handle();
+        let token = scheduler.cancellation_token.clone();
+        let runner = tokio::spawn(async move { scheduler.run().await });
+
+        let removal = handle
+            .remove_streamer_awaitable("test-1")
+            .await
+            .expect("the scheduler loop should answer the command");
+        assert_eq!(removal.actor_id(), "test-1");
+        assert!(removal.generation().is_some());
+        assert_eq!(
+            removal.wait(Duration::from_secs(5)).await,
+            ActorRemovalOutcome::Stopped
+        );
+
+        // The loop is still serving commands after the removal, which it could
+        // not be if answering one meant awaiting the actor's exit.
+        let again = handle
+            .remove_streamer_awaitable("test-1")
+            .await
+            .expect("the scheduler loop should still be running");
+        assert_eq!(
+            again.wait(Duration::ZERO).await,
+            ActorRemovalOutcome::NotRegistered
+        );
+
+        token.cancel();
+        runner.await.unwrap().unwrap();
+    }
+
+    /// A handle whose scheduler task is gone reports `None` rather than an
+    /// outcome, so a caller cannot mistake "nobody looked" for "the actor stopped".
+    #[tokio::test]
+    async fn scheduler_handle_reports_no_answer_once_the_loop_is_gone() {
+        let scheduler = scheduler_with_streamers(&[]).await;
+        let handle = scheduler.handle();
+        drop(scheduler);
+
+        assert!(handle.remove_streamer_awaitable("test-1").await.is_none());
+    }
 
     #[test]
     fn test_scheduler_config_default() {
@@ -1242,7 +1447,11 @@ mod tests {
         }
 
         let (stats_tx, stats_rx) = watch::channel(stats(1));
-        let handle = SchedulerHandle { stats_rx };
+        let (command_tx, _command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
+        let handle = SchedulerHandle {
+            stats_rx,
+            command_tx,
+        };
         assert_eq!(handle.stats().streamer_count, 1);
 
         stats_tx.send_replace(stats(2));

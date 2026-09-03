@@ -11,6 +11,10 @@ use crate::utils::json::{self, JsonContext};
 pub struct JobFilters {
     /// Filter by job status.
     pub status: Option<JobStatus>,
+    /// Filter by any of several job statuses, for queries a single `status`
+    /// cannot express. Combined with `status` by `AND`, so setting both narrows
+    /// to their intersection.
+    pub statuses: Option<Vec<JobStatus>>,
     /// Filter by streamer ID.
     pub streamer_id: Option<String>,
     /// Filter by session ID.
@@ -38,6 +42,12 @@ impl JobFilters {
     /// Filter by status.
     pub fn with_status(mut self, status: JobStatus) -> Self {
         self.status = Some(status);
+        self
+    }
+
+    /// Filter by any of `statuses`.
+    pub fn with_statuses(mut self, statuses: impl IntoIterator<Item = JobStatus>) -> Self {
+        self.statuses = Some(statuses.into_iter().collect());
         self
     }
 
