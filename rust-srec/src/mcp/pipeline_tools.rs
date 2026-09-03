@@ -87,7 +87,9 @@ pub struct JobPresetListParams {
     pub category: Option<String>,
     /// Filter by processor type
     pub processor: Option<String>,
-    /// Search query (matches name or description)
+    /// Exact preset name; returns at most one preset
+    pub name: Option<String>,
+    /// Search query (substring of name or description)
     pub search: Option<String>,
 }
 
@@ -346,6 +348,7 @@ impl SrecMcpServer {
         let filters = PresetFilterParams {
             category: params.category,
             processor: params.processor,
+            name: params.name,
             search: params.search,
         };
         let pagination = PresetPaginationParams {
