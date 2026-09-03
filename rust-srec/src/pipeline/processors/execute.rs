@@ -79,11 +79,19 @@ enum QuoteState {
 #[derive(Debug, Clone, Copy)]
 enum Region {
     /// `$( ... )`: the body is parsed as a fresh command, so the quoting that
-    /// surrounds the region does not reach into it.
-    Subshell(QuoteState),
+    /// surrounds the region does not reach into it. `groups` counts the
+    /// unclosed `( ... )` groups opened inside it, whose `)` must not be taken
+    /// for the one closing the substitution.
+    Subshell { outer: QuoteState, groups: usize },
     /// `` `...` ``: as `Subshell`, and the shell additionally strips one layer
-    /// of `\` escapes from the body before parsing it.
-    Backtick(QuoteState),
+    /// of `\` escapes from the body before parsing it. `escaped` records
+    /// whether the region was opened by `` \` `` (a region nested inside
+    /// another) or by a bare backtick, so the matching delimiter closes it.
+    Backtick { outer: QuoteState, escaped: bool },
+    /// `$(( ... ))`: an arithmetic expression. Its text goes through the same
+    /// expansions as a double-quoted word, but a quoted operand is a syntax
+    /// error, so values are escaped as `QuoteState::Double`.
+    Arithmetic(QuoteState),
 }
 
 /// Escape `value` so a POSIX shell reads it as literal text at a point where
@@ -164,9 +172,11 @@ fn escape_cmd(value: &str, state: QuoteState) -> String {
 /// character cannot change the context seen by a later placeholder. Quote
 /// characters written by the template are preserved verbatim, so a preset that
 /// already writes `"{input}"` stays one double-quoted word instead of gaining
-/// a second layer of quoting. On `ShellKind::Posix` the scan also follows
-/// `$( ... )` and `` `...` ``, whose bodies the shell re-parses as commands in
-/// their own right. Names `resolve` returns `None` for are left as written.
+/// a second layer of quoting. On `ShellKind::Posix` the scan also follows the
+/// regions listed on `Region`, whose bodies the shell re-parses rather than
+/// leaving under the surrounding quoting. The bash-only `$'...'` form is not
+/// modelled, since `Processor::process` spawns `sh`. Names `resolve` returns
+/// `None` for are left as written.
 fn substitute_placeholders<'a>(
     template: &str,
     shell: ShellKind,
@@ -185,6 +195,30 @@ fn substitute_placeholders<'a>(
 
     while i < bytes.len() {
         match bytes[i] {
+            // Inside a `` `...` `` region a `` \` `` opens or closes a region
+            // nested one level deeper, rather than standing for a literal
+            // backtick.
+            b'\\'
+                if posix
+                    && state != QuoteState::Single
+                    && backtick_depth > 0
+                    && bytes.get(i + 1) == Some(&b'`') =>
+            {
+                if matches!(regions.last(), Some(Region::Backtick { escaped: true, .. })) {
+                    if let Some(Region::Backtick { outer, .. }) = regions.pop() {
+                        backtick_depth -= 1;
+                        state = outer;
+                    }
+                } else {
+                    regions.push(Region::Backtick {
+                        outer: state,
+                        escaped: true,
+                    });
+                    backtick_depth += 1;
+                    state = QuoteState::Unquoted;
+                }
+                i += 2;
+            }
             // Skip past the escaped byte so `\"` does not flip `state`.
             b'\\' if posix && state != QuoteState::Single => {
                 i = bytes.len().min(i + 2);
@@ -205,25 +239,66 @@ fn substitute_placeholders<'a>(
                 };
                 i += 1;
             }
+            b'$' if posix
+                && state != QuoteState::Single
+                && bytes.get(i + 1) == Some(&b'(')
+                && bytes.get(i + 2) == Some(&b'(') =>
+            {
+                regions.push(Region::Arithmetic(state));
+                state = QuoteState::Double;
+                i += 3;
+            }
             b'$' if posix && state != QuoteState::Single && bytes.get(i + 1) == Some(&b'(') => {
-                regions.push(Region::Subshell(state));
+                regions.push(Region::Subshell {
+                    outer: state,
+                    groups: 0,
+                });
                 state = QuoteState::Unquoted;
                 i += 2;
             }
-            b')' if posix && state != QuoteState::Single => {
-                if let Some(Region::Subshell(outer)) = regions.last().copied() {
-                    regions.pop();
+            b')' if posix
+                && bytes.get(i + 1) == Some(&b')')
+                && matches!(regions.last(), Some(Region::Arithmetic(_))) =>
+            {
+                if let Some(Region::Arithmetic(outer)) = regions.pop() {
                     state = outer;
+                }
+                i += 2;
+            }
+            // A `(` that opens a group is only structural while unquoted, and
+            // the `)` closing the innermost `$( ... )` is the first unquoted one
+            // left over after those groups have been matched.
+            b'(' if posix && state == QuoteState::Unquoted => {
+                if let Some(Region::Subshell { groups, .. }) = regions.last_mut() {
+                    *groups += 1;
+                }
+                i += 1;
+            }
+            b')' if posix && state == QuoteState::Unquoted => {
+                if let Some(Region::Subshell { outer, groups }) = regions.last_mut() {
+                    if *groups > 0 {
+                        *groups -= 1;
+                    } else {
+                        state = *outer;
+                        regions.pop();
+                    }
                 }
                 i += 1;
             }
             b'`' if posix && state != QuoteState::Single => {
-                if let Some(Region::Backtick(outer)) = regions.last().copied() {
-                    regions.pop();
-                    backtick_depth -= 1;
-                    state = outer;
+                if matches!(
+                    regions.last(),
+                    Some(Region::Backtick { escaped: false, .. })
+                ) {
+                    if let Some(Region::Backtick { outer, .. }) = regions.pop() {
+                        backtick_depth -= 1;
+                        state = outer;
+                    }
                 } else {
-                    regions.push(Region::Backtick(state));
+                    regions.push(Region::Backtick {
+                        outer: state,
+                        escaped: false,
+                    });
                     backtick_depth += 1;
                     state = QuoteState::Unquoted;
                 }
@@ -291,9 +366,9 @@ impl ExecuteCommandProcessor {
     ///
     /// Values carry platform-supplied text (a recording path built from the
     /// stream title, `{title}`, `{streamer}`), so they are treated as data
-    /// rather than as command syntax: time placeholders belong to the template
-    /// and are expanded first, which leaves a `%` arriving with a value literal
-    /// and keeps `escape_cmd`'s doubled `%%` intact.
+    /// rather than as command syntax: the `%Y`-style placeholders belong to the
+    /// template and are expanded first, which leaves a `%` arriving with a
+    /// value literal.
     fn substitute_variables_for(shell: ShellKind, command: &str, input: &ProcessorInput) -> String {
         let template = pipeline_common::expand_path_template(command);
 
@@ -1031,6 +1106,10 @@ mod tests {
     /// shell metacharacter `utils::filename::sanitize_filename` leaves alone.
     const HOSTILE: &str = r#"/rec/a b$(id);`id`'q"&.mp4"#;
 
+    /// A second value whose `;` runs a command of its own the moment it lands
+    /// unquoted at the top level.
+    const INJECTING: &str = "x;echo INJECTED;x";
+
     fn hostile_input() -> ProcessorInput {
         ProcessorInput {
             inputs: vec![HOSTILE.to_string()],
@@ -1181,7 +1260,108 @@ mod tests {
         );
     }
 
-    /// An absent output or title contributes no token, as before quoting.
+    /// A quoted `)` inside `$( ... )` belongs to the substitution's body, so it
+    /// must not restore the quoting the template had before the `$(`.
+    #[test]
+    fn test_posix_quoted_paren_does_not_close_command_substitution() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec![INJECTING.to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "printf %s \"$(printf \"(%s)\" {input})\" {output}",
+            &input,
+        );
+
+        assert_eq!(
+            out,
+            r#"printf %s "$(printf "(%s)" '/rec/a b$(id);`id`'\''q"&.mp4')" 'x;echo INJECTED;x'"#
+        );
+    }
+
+    /// The `)` of a `( ... )` group inside `$( ... )` likewise belongs to the
+    /// body.
+    #[test]
+    fn test_posix_group_paren_does_not_close_command_substitution() {
+        let input = ProcessorInput {
+            inputs: vec![HOSTILE.to_string()],
+            outputs: vec![INJECTING.to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "printf %s \"$( ( printf %s {input} ) )\" {output}",
+            &input,
+        );
+
+        assert_eq!(
+            out,
+            r#"printf %s "$( ( printf %s '/rec/a b$(id);`id`'\''q"&.mp4' ) )" 'x;echo INJECTED;x'"#
+        );
+    }
+
+    /// A `` \` `` inside a `` `...` `` region opens a region one level deeper,
+    /// which needs one more layer of `\` escapes than the outer one.
+    #[test]
+    fn test_posix_escaping_inside_nested_backticks() {
+        let input = ProcessorInput {
+            inputs: vec!["a\\b`c".to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "printf %s \"`printf %s \"\\`printf %s {input}\\`\"`\"",
+            &input,
+        );
+
+        assert_eq!(
+            out,
+            r#"printf %s "`printf %s "\`printf %s 'a\\\\b\\\`c'\`"`""#
+        );
+    }
+
+    /// Inside `$(( ... ))` a quoted operand is a syntax error, so a numeric
+    /// value has to arrive unquoted.
+    #[test]
+    fn test_posix_arithmetic_expansion_keeps_a_numeric_value_usable() {
+        let input = ProcessorInput {
+            inputs: vec!["42".to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "printf %s $(( {input} + 1 )) {input}",
+            &input,
+        );
+
+        assert_eq!(out, "printf %s $(( 42 + 1 )) '42'");
+    }
+
+    /// Arithmetic escaping still denies the expansions the shell would run on
+    /// the expression; a value that is not a number fails the arithmetic parse.
+    #[test]
+    fn test_posix_arithmetic_expansion_neutralises_expansion_in_a_value() {
+        let input = ProcessorInput {
+            inputs: vec!["1+$(echo INJECTED)".to_string()],
+            ..Default::default()
+        };
+
+        let out = ExecuteCommandProcessor::substitute_variables_for(
+            ShellKind::Posix,
+            "printf %s $(( {input} ))",
+            &input,
+        );
+
+        assert_eq!(out, r"printf %s $(( 1+\$(echo INJECTED) ))");
+    }
+
+    /// An absent output or title contributes no token to the command.
     #[test]
     fn test_empty_values_are_spliced_in_as_nothing() {
         let out = ExecuteCommandProcessor::substitute_variables_for(
@@ -1231,8 +1411,8 @@ mod tests {
         );
     }
 
-    /// Doubling rather than dropping `"` keeps `{inputs_json}` parseable once
-    /// cmd and the C runtime have removed one layer of quoting.
+    /// Doubled `"` keeps `{inputs_json}` parseable once cmd and the C runtime
+    /// have removed one layer of quoting.
     #[test]
     fn test_cmd_escaping_keeps_json_placeholders_intact() {
         let input = ProcessorInput {
@@ -1264,21 +1444,40 @@ mod tests {
         let processor = ExecuteCommandProcessor::new();
         let ctx = ProcessorContext::noop("test");
 
-        for template in [
-            "printf %s {input}",
-            "printf %s \"{input}\"",
-            "printf %s '{input}'",
-            "printf %s \"$(printf %s {input})\"",
-            "printf %s \"`printf %s {input}`\"",
-            "printf %s \"$(printf %s \"`printf %s {input}`\")\"",
-        ] {
+        // `printf %s a b` reuses the format, so a template naming both `{input}`
+        // and `{output}` writes the two values one after the other.
+        let cases = [
+            ("printf %s {input}", hostile.clone()),
+            ("printf %s \"{input}\"", hostile.clone()),
+            ("printf %s '{input}'", hostile.clone()),
+            ("printf %s \"$(printf %s {input})\"", hostile.clone()),
+            ("printf %s \"`printf %s {input}`\"", hostile.clone()),
+            (
+                "printf %s \"$(printf %s \"`printf %s {input}`\")\"",
+                hostile.clone(),
+            ),
+            (
+                "printf %s \"`printf %s \"\\`printf %s {input}\\`\"`\"",
+                hostile.clone(),
+            ),
+            (
+                "printf %s \"$(printf \"(%s)\" {input})\" {output}",
+                format!("({hostile}){INJECTING}"),
+            ),
+            (
+                "printf %s \"$( ( printf \"[%s]\" {input} ) )\" {output}",
+                format!("[{hostile}]{INJECTING}"),
+            ),
+        ];
+
+        for (template, expected) in cases {
             let config = serde_json::json!({
-                "command": format!("{template} > {}", captured.display()),
+                "command": format!("{template} > '{}'", captured.display()),
             });
 
             let input = ProcessorInput {
                 inputs: vec![hostile.clone()],
-                outputs: vec![],
+                outputs: vec![INJECTING.to_string()],
                 config: Some(config.to_string()),
                 ..Default::default()
             };
@@ -1287,8 +1486,8 @@ mod tests {
 
             assert_eq!(
                 tokio::fs::read_to_string(&captured).await.unwrap(),
-                hostile,
-                "template {template} did not pass the path through literally"
+                expected,
+                "template {template} did not pass its values through literally"
             );
         }
     }
