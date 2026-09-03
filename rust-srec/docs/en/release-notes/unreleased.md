@@ -50,6 +50,10 @@
 
   In the local-development mode that runs without sign-in, the backend used to accept browser requests from any website you happened to have open. It now turns away requests that come from an unknown page, or that arrive under a web address other than your own machine's, so another tab cannot quietly issue commands to your recorder. Requests from the local web interface, the desktop app, and tools such as `curl` are unaffected. If you open the interface from a different address, list it in the new `API_CORS_ORIGINS` setting. Nothing changes when sign-in is on — and with sign-in on, a password or API key is what protects the API. See [Configuration](../getting-started/configuration.md#security-auth).
 
+- **Cancelling a pipeline with `DELETE /api/pipeline/{pipeline_id}` now ends it**
+
+  This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
+
 ## Pipeline and uploads
 
 - **Upload recordings to Baidu Netdisk**
@@ -71,10 +75,6 @@
 - **Deleting a pipeline execution stops the work it was doing**
 
   Deleting a pipeline that was still running removed it from the list but left its job running in the background — the transcode or upload carried on, and the recording it belonged to kept waiting for a pipeline that no longer existed. Deleting now cancels the work first.
-
-- **Cancelling a pipeline no longer leaves it stuck at "processing"**
-
-  Cancelling a running pipeline stopped its steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. Cancelling now ends the pipeline as well, so it can be retried and the recording moves on.
 
 - **Queued jobs run oldest-first**
 

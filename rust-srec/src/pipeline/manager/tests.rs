@@ -347,6 +347,9 @@ struct TestDagRepository {
     dags: Mutex<HashMap<String, DagExecutionDbModel>>,
     steps: Mutex<HashMap<String, Vec<DagStepExecutionDbModel>>>,
     create_calls: AtomicUsize,
+    /// `get_dag` calls left before every row reads back as missing, so a test can model a
+    /// `DagScheduler::delete_dag` landing between two reads. `usize::MAX` never runs out.
+    reads_before_dags_vanish: AtomicUsize,
 }
 
 impl TestDagRepository {
@@ -355,6 +358,7 @@ impl TestDagRepository {
             dags: Mutex::new(HashMap::new()),
             steps: Mutex::new(HashMap::new()),
             create_calls: AtomicUsize::new(0),
+            reads_before_dags_vanish: AtomicUsize::new(usize::MAX),
         }
     }
 
@@ -367,6 +371,11 @@ impl TestDagRepository {
 
     fn create_calls(&self) -> usize {
         self.create_calls.load(Ordering::SeqCst)
+    }
+
+    /// Let the next `reads` calls to `get_dag` succeed, then report every id as missing.
+    fn vanish_dags_after_reads(&self, reads: usize) {
+        self.reads_before_dags_vanish.store(reads, Ordering::SeqCst);
     }
 }
 
@@ -899,6 +908,16 @@ impl DagRepository for TestDagRepository {
     }
 
     async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
+        let remaining = self
+            .reads_before_dags_vanish
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                Some(remaining.saturating_sub(1))
+            })
+            .expect("fetch_update closure always returns Some");
+        if remaining == 0 {
+            return Err(crate::Error::not_found("DAG execution", id));
+        }
+
         self.dags
             .lock()
             .expect("lock poisoned")
@@ -1543,6 +1562,116 @@ async fn test_cancel_pipeline_cancels_dag_and_releases_session_complete() {
         1,
         "cancelling the last in-flight segment DAG must release session-complete"
     );
+}
+
+/// `cancel_dag` reaches step jobs only through `dag_step_execution.job_id`, so `cancel_pipeline`
+/// also sweeps by `pipeline_id`: a job row whose step carries no `job_id` still has to be cancelled,
+/// and the jobs the DAG cancel already stood down must not be counted a second time.
+#[tokio::test]
+async fn test_cancel_pipeline_sweeps_dag_jobs_not_linked_to_a_step() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+
+    let mut dag = DagExecutionDbModel::new(
+        &DagPipelineDefinition::new(
+            "segment",
+            vec![
+                DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
+                DagStep::new("B", PipelineStep::inline("remux", serde_json::json!({}))),
+            ],
+        ),
+        None,
+        None,
+    );
+    dag.status = DagExecutionStatus::Processing.as_str().to_string();
+    let dag_id = dag.id.clone();
+    dag_repo.insert(dag);
+
+    // Step A holds the usual `job_id` back-reference; step B does not, so only its job row's
+    // `pipeline_id` still ties that job to the DAG.
+    let mut linked_step = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
+    linked_step.status = crate::database::models::DagStepStatus::Processing
+        .as_str()
+        .to_string();
+    let mut linked_job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+    linked_job.pipeline_id = Some(dag_id.clone());
+    linked_job.dag_step_execution_id = Some(linked_step.id.clone());
+    let linked_job_id = linked_job.id.clone();
+    linked_step.job_id = Some(linked_job_id.clone());
+    job_repo.insert(linked_job);
+
+    let unlinked_step = DagStepExecutionDbModel::new(&dag_id, "B", &[]);
+    let mut unlinked_job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+    unlinked_job.pipeline_id = Some(dag_id.clone());
+    unlinked_job.dag_step_execution_id = Some(unlinked_step.id.clone());
+    let unlinked_job_id = unlinked_job.id.clone();
+    job_repo.insert(unlinked_job);
+
+    dag_repo
+        .create_steps(&[linked_step, unlinked_step])
+        .await
+        .unwrap();
+
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+    assert_eq!(manager.cancel_pipeline(&dag_id).await.unwrap(), 2);
+    assert_eq!(
+        manager
+            .get_job(&linked_job_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        JobStatus::Cancelled
+    );
+    assert_eq!(
+        manager
+            .get_job(&unlinked_job_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        JobStatus::Cancelled
+    );
+    assert_eq!(
+        dag_repo.get_dag(&dag_id).await.unwrap().get_status(),
+        Some(DagExecutionStatus::Cancelled)
+    );
+}
+
+/// A DAG deleted between `get_dag_status` and `cancel_dag` leaves nothing to stand down, so the
+/// cancel reports zero jobs rather than surfacing the not-found error.
+#[tokio::test]
+async fn test_cancel_pipeline_tolerates_dag_deleted_mid_cancel() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+
+    let mut dag = DagExecutionDbModel::new(
+        &DagPipelineDefinition::new(
+            "segment",
+            vec![DagStep::new(
+                "A",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            )],
+        ),
+        None,
+        None,
+    );
+    dag.status = DagExecutionStatus::Processing.as_str().to_string();
+    let dag_id = dag.id.clone();
+    dag_repo.insert(dag);
+
+    // The row survives the status read in `cancel_pipeline` and is gone by the time
+    // `DagScheduler::cancel_dag_with_completion` re-reads it.
+    dag_repo.vanish_dags_after_reads(1);
+
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            .with_dag_repository(dag_repo);
+
+    assert_eq!(manager.cancel_pipeline(&dag_id).await.unwrap(), 0);
 }
 
 /// A pipeline id that is not a `dag_execution` row still goes through `JobQueue::cancel_pipeline`.

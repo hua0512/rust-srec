@@ -239,19 +239,24 @@ where
         self.job_queue.delete_job(id).await
     }
 
-    /// Cancel all jobs in a pipeline.
-    /// Cancels all pending and processing jobs that belong to the specified pipeline.
-    /// Returns the number of jobs cancelled.
+    /// Cancel a pipeline: the `dag_execution` row when `pipeline_id` names one, plus every pending
+    /// or processing job carrying that `pipeline_id`.
+    ///
+    /// Returns the number of jobs cancelled. An id that matches nothing, and a DAG that is already
+    /// terminal, both report zero rather than failing.
     pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<usize> {
         // `DagScheduler::build_step_job` stores the DAG id in every step job's `pipeline_id`, so a
-        // pipeline id naming a `dag_execution` row is stood down through [`Self::cancel_dag`]
-        // instead: `JobQueue::cancel_pipeline` only touches job rows, which would leave
-        // `dag_execution` and `dag_step_execution` in `PROCESSING` and skip
-        // `handle_dag_completion`.
-        if let Some(cancelled) = self.cancel_pipeline_as_dag(pipeline_id).await? {
-            return Ok(cancelled);
-        }
+        // pipeline id naming a `dag_execution` row is stood down through `cancel_dag` first:
+        // `JobQueue::cancel_pipeline` only touches job rows, which would leave `dag_execution` and
+        // `dag_step_execution` in `PROCESSING` and skip `handle_dag_completion`.
+        let dag_cancelled = self.cancel_pipeline_as_dag(pipeline_id).await?;
 
+        // The sweep runs even after `cancel_dag`, which reaches jobs only through
+        // `dag_step_execution.job_id`: a job row carrying this `pipeline_id` whose step holds no
+        // `job_id` — the shape `list_processing_steps_with_completed_jobs` reverse-links through
+        // `job.dag_step_execution_id` — would otherwise keep running with its cancellation token
+        // unfired. Jobs `cancel_dag` cancelled are terminal by now, so `cancel_jobs_by_pipeline`
+        // and the `jobs_cache` scan skip them: each job is counted and announced at most once.
         let cancelled_jobs = self.job_queue.cancel_pipeline(pipeline_id).await?;
 
         // Emit events for each cancelled job
@@ -263,16 +268,15 @@ where
             });
         }
 
-        Ok(cancelled_jobs.len())
+        Ok(dag_cancelled.unwrap_or(0) + cancelled_jobs.len())
     }
 
     /// Cancel `pipeline_id` as a DAG execution, returning the number of step jobs cancelled.
     ///
-    /// `None` means `pipeline_id` is not a DAG that needs standing down — no DAG scheduler is
-    /// configured, `DagScheduler::get_dag_status` finds no such `dag_execution` row, or the row is
-    /// already terminal and its steps have been cancelled by
-    /// `DagRepository::cancel_dag_and_cancel_steps` or `fail_step_and_cancel_dag`. In every one of
-    /// those cases the caller falls back to cancelling job rows by `pipeline_id`.
+    /// `None` means `pipeline_id` names no DAG that still needs standing down: no DAG scheduler is
+    /// configured, `DagScheduler::get_dag_status` finds no such `dag_execution` row, the row is
+    /// already terminal, or it turned terminal or was deleted between the status read and the
+    /// cancel. The caller sweeps job rows by `pipeline_id` in every case, including this one.
     async fn cancel_pipeline_as_dag(&self, pipeline_id: &str) -> Result<Option<usize>> {
         let Some(dag_scheduler) = &self.dag_scheduler else {
             return Ok(None);
@@ -282,9 +286,10 @@ where
             Ok(dag) if dag.get_status().is_some_and(|status| status.is_terminal()) => Ok(None),
             Ok(_) => match self.cancel_dag(pipeline_id).await {
                 Ok(cancelled) => Ok(Some(cancelled as usize)),
-                // The DAG turned terminal between the status read and the cancel, so its steps and
-                // jobs are already stood down and only the job sweep is left.
-                Err(Error::DagAlreadyTerminal { .. }) => Ok(None),
+                // `DagScheduler::cancel_dag_with_completion` re-reads the row, so it rejects a DAG
+                // that turned terminal or that `DagScheduler::delete_dag` removed in the meantime.
+                // Neither leaves anything to stand down.
+                Err(Error::DagAlreadyTerminal { .. } | Error::NotFound { .. }) => Ok(None),
                 Err(error) => Err(error),
             },
             Err(Error::NotFound { .. }) => Ok(None),
