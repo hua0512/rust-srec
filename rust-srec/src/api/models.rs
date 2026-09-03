@@ -841,7 +841,7 @@ pub struct SessionSegmentResponse {
 /// # Fields
 ///
 /// - `id` - Unique session identifier
-/// - `streamer_id` - Associated streamer ID
+/// - `streamer_id` - Associated streamer ID (null once that streamer is deleted)
 /// - `streamer_name` - Streamer display name
 /// - `title` - Current/last stream title
 /// - `titles` - History of title changes during the session
@@ -854,7 +854,12 @@ pub struct SessionSegmentResponse {
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct SessionResponse {
     pub id: String,
-    pub streamer_id: String,
+    /// `None` for a session whose streamer has been deleted: the
+    /// `live_sessions.streamer_id` foreign key is `ON DELETE SET NULL`, so the
+    /// recording history stays but no streamer detail page can be linked.
+    pub streamer_id: Option<String>,
+    /// Live `streamers.name` when `streamer_id` still resolves, otherwise the
+    /// name snapshotted on the session row. Empty only when neither is known.
     pub streamer_name: String,
     pub streamer_avatar: Option<String>,
     pub title: String,

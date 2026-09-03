@@ -584,7 +584,8 @@ pub async fn list_outputs(
         .map_err(ApiError::from)?;
 
     // One `WHERE id IN (...)` query for every session on the page. A failed
-    // lookup only blanks the streamer ids, as before.
+    // lookup — or a session whose streamer was deleted, leaving
+    // `live_sessions.streamer_id` NULL — only blanks the streamer ids.
     let streamer_id_by_session: HashMap<String, String> = if requested_streamer_id.is_none() {
         let session_ids: Vec<String> = outputs
             .iter()
@@ -599,7 +600,7 @@ pub async fn list_outputs(
         {
             Ok(sessions) => sessions
                 .into_iter()
-                .map(|session| (session.id, session.streamer_id))
+                .filter_map(|session| Some((session.id, session.streamer_id?)))
                 .collect(),
             Err(error) => {
                 tracing::warn!(%error, "failed to resolve sessions for output list");

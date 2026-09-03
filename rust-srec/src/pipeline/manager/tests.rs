@@ -79,7 +79,8 @@ impl SessionRepository for TestSessionRepository {
 
         Ok(LiveSessionDbModel {
             id: id.to_string(),
-            streamer_id: "streamer-1".to_string(),
+            streamer_id: Some("streamer-1".to_string()),
+            streamer_name: Some("Streamer One".to_string()),
             start_time: chrono::Utc::now().timestamp_millis(),
             end_time: *self.end_time.lock().expect("lock poisoned"),
             titles: Some("[]".to_string()),
@@ -145,7 +146,7 @@ impl SessionRepository for TestSessionRepository {
             .collect::<Vec<_>>();
 
         if let Some(streamer_id) = &filters.streamer_id {
-            sessions.retain(|session| &session.streamer_id == streamer_id);
+            sessions.retain(|session| session.streamer_id.as_ref() == Some(streamer_id));
         }
         if filters.active_only == Some(true) {
             sessions.retain(|session| session.end_time.is_none());
@@ -2566,7 +2567,8 @@ async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
 fn test_session(id: &str, streamer_id: &str, end_time: Option<i64>) -> LiveSessionDbModel {
     LiveSessionDbModel {
         id: id.to_string(),
-        streamer_id: streamer_id.to_string(),
+        streamer_id: Some(streamer_id.to_string()),
+        streamer_name: Some(format!("Name of {streamer_id}")),
         start_time: chrono::Utc::now().timestamp_millis(),
         end_time,
         titles: Some("[]".to_string()),

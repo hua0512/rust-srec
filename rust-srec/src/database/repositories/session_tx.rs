@@ -50,10 +50,15 @@ impl SessionTxOps {
     }
 
     /// Create a new session.
+    ///
+    /// `streamer_name` is denormalized into `live_sessions.streamer_name` so
+    /// the row still carries a label after its `streamers` row is deleted and
+    /// the `ON DELETE SET NULL` foreign key clears `streamer_id`.
     pub async fn create_session(
         tx: &mut SqliteConnection,
         session_id: &str,
         streamer_id: &str,
+        streamer_name: &str,
         start_time: DateTime<Utc>,
         initial_title: &str,
     ) -> Result<()> {
@@ -65,12 +70,13 @@ impl SessionTxOps {
 
         sqlx::query(
             r#"
-            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, titles, total_size_bytes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(session_id)
         .bind(streamer_id)
+        .bind(streamer_name)
         .bind(start_time.timestamp_millis())
         .bind(Option::<i64>::None)
         .bind(Some(titles_json))
@@ -137,8 +143,8 @@ impl SessionTxOps {
     /// caller owns commit.
     ///
     /// In normal operation the partial unique index
-    /// `live_sessions_one_active_per_streamer` (initial schema, line 159–161)
-    /// caps the candidate set at 0 or 1 row. The helper exists for the
+    /// `live_sessions_one_active_per_streamer` caps the candidate set at 0 or
+    /// 1 row for a non-NULL `streamer_id`. The helper exists for the
     /// self-heal path inside
     /// [`crate::database::repositories::SessionLifecycleRepository::start_or_resume`]: if a
     /// previous build ever produced multiple stale active rows (e.g. a
@@ -269,9 +275,16 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
 
         let now = Utc::now();
-        SessionTxOps::create_session(&mut tx, "sess-1", "streamer-1", now, "Test Stream")
-            .await
-            .unwrap();
+        SessionTxOps::create_session(
+            &mut tx,
+            "sess-1",
+            "streamer-1",
+            "Streamer One",
+            now,
+            "Test Stream",
+        )
+        .await
+        .unwrap();
 
         tx.commit().await.unwrap();
 
@@ -280,7 +293,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(session.streamer_id, "streamer-1");
+        assert_eq!(session.streamer_id.as_deref(), Some("streamer-1"));
+        assert_eq!(session.streamer_name.as_deref(), Some("Streamer One"));
         assert!(session.end_time.is_none());
         assert!(session.titles.is_some());
     }
@@ -291,9 +305,16 @@ mod tests {
 
         let now = Utc::now();
         let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::create_session(&mut tx, "sess-1", "streamer-1", now, "Test Stream")
-            .await
-            .unwrap();
+        SessionTxOps::create_session(
+            &mut tx,
+            "sess-1",
+            "streamer-1",
+            "Streamer One",
+            now,
+            "Test Stream",
+        )
+        .await
+        .unwrap();
         SessionTxOps::end_session(&mut tx, "sess-1", now)
             .await
             .unwrap();
@@ -335,9 +356,16 @@ mod tests {
         // Create session
         let now = Utc::now();
         let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::create_session(&mut tx, "sess-1", "streamer-1", now, "Initial Title")
-            .await
-            .unwrap();
+        SessionTxOps::create_session(
+            &mut tx,
+            "sess-1",
+            "streamer-1",
+            "Streamer One",
+            now,
+            "Initial Title",
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
         // Update with same title - should not update
