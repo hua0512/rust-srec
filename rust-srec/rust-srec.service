@@ -1,5 +1,12 @@
 # rust-srec system service.
 #
+# The account's home directory is /var/lib/rust-srec because it has to be
+# writable: systemd derives $HOME from passwd whenever User= is set, rclone
+# rewrites $HOME/.config/rclone/rclone.conf on every OAuth token refresh, and
+# BaiduPCS-Go keeps its login session under its config dir unless
+# BAIDUPCS_GO_CONFIG_DIR names another. ProtectSystem=strict leaves /opt
+# read-only, so the install directory cannot serve as a home.
+#
 # Install as root:
 #   useradd --system --home-dir /var/lib/rust-srec --shell /usr/sbin/nologin rust-srec
 #   install -D -m 0755 rust-srec /opt/rust-srec/rust-srec
@@ -8,18 +15,28 @@
 #     > /etc/rust-srec/rust-srec.env
 #   chown root:rust-srec /etc/rust-srec/rust-srec.env
 #   install -D -m 0644 rust-srec.service /etc/systemd/system/rust-srec.service
+#   # Only when these survive an earlier install. StateDirectory= and
+#   # LogsDirectory= recursively chown a directory whose owner does not match
+#   # theirs, inside exec setup, and on a large recordings tree that walk can
+#   # outlast the manager's default start timeout.
+#   [ -d /var/lib/rust-srec ] && chown -R rust-srec:rust-srec /var/lib/rust-srec
+#   [ -d /var/log/rust-srec ] && chown -R rust-srec:rust-srec /var/log/rust-srec
 #   systemctl daemon-reload && systemctl enable --now rust-srec
+#
+# StateDirectory= and LogsDirectory= below create /var/lib/rust-srec,
+# /var/lib/rust-srec/output and /var/log/rust-srec on each start, so a fresh
+# host needs nothing pre-created.
+#
+# Then set the recording directory in the web interface. The database ships
+# with output_folder = /app/output, a path that belongs to the container image
+# and that ProtectSystem=strict neither provides nor makes writable; no
+# environment variable overrides it. Until it names /var/lib/rust-srec/output
+# or a volume listed under ReadWritePaths= below, the service runs but every
+# recording fails.
 #
 # /opt/rust-srec is also the directory the Docker Compose installer defaults to
 # (RUST_SREC_DIR). Pick a different path for the binary if both deployments
 # share a host.
-#
-# StateDirectory= and LogsDirectory= below create /var/lib/rust-srec and
-# /var/log/rust-srec on every start, so nothing has to be pre-created. If either
-# already exists owned by someone other than rust-srec, systemd recursively
-# chowns everything beneath it during exec setup, which on a large recordings
-# tree can outlast TimeoutStartSec=. Run this once before the first start:
-#   chown -R rust-srec:rust-srec /var/lib/rust-srec /var/log/rust-srec
 #
 # UMask=0027 below means recordings are written -rw-r-----, readable only by
 # rust-srec and its group. Add any account that has to read them (a file
@@ -45,22 +62,24 @@ Type=exec
 User=rust-srec
 Group=rust-srec
 
-# The state directory, not the install directory: `$HOME` is taken from the
-# rust-srec account and ProtectSystem=strict leaves /opt read-only, so tools
-# that persist state next to their config — rclone rewriting
-# `$HOME/.config/rclone/rclone.conf` on every OAuth token refresh, BaiduPCS-Go
-# storing its session unless `BAIDUPCS_GO_CONFIG_DIR` is set — need a writable
-# home. `server::run` calls `load_dotenv`, which reads `.env` from here;
-# dotenvy does not overwrite variables that are already set, so it can only add
-# to what this unit provides.
+# Sets cwd only, which is what `load_dotenv` and the relative `logs` and
+# `srec.db` defaults resolve against; the account's home comes from passwd (see
+# the header). `dotenvy::dotenv` walks up from cwd and skips keys already in the
+# environment, so a `.env` here cannot change anything this unit sets — but the
+# service and its ffmpeg/rclone/streamlink children can write that file and
+# introduce variables the unit leaves unset, `FFMPEG_PATH` and the other tool
+# path overrides among them, which then apply from the next restart.
 WorkingDirectory=/var/lib/rust-srec
 ExecStart=/opt/rust-srec/rust-srec
 
-# systemd creates both directories owned by User=/Group= and adds them to the
-# writable set of the ProtectSystem=strict namespace below.
-#   /var/lib/rust-srec  SQLite database, WAL files, runtime-generation marker
-#   /var/log/rust-srec  daily-rotated rust-srec.log written by `init_logging`
-StateDirectory=rust-srec
+# systemd creates these owned by User=/Group= and adds them to the writable set
+# of the ProtectSystem=strict namespace below.
+#   /var/lib/rust-srec         SQLite database, WAL files, generation marker
+#   /var/lib/rust-srec/output  the OUTPUT_DIR root below; `probe_root_writable`
+#                              stats it at startup and `check_output_root_gate`
+#                              reports the service degraded if it is missing
+#   /var/log/rust-srec         daily-rotated rust-srec.log from `init_logging`
+StateDirectory=rust-srec rust-srec/output
 StateDirectoryMode=0750
 LogsDirectory=rust-srec
 LogsDirectoryMode=0750
@@ -93,8 +112,8 @@ Environment=RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS=2
 
 # Host-specific settings and secrets. `ServiceContainer::start_api_server`
 # refuses to start without JWT_SECRET, so this file is mandatory in practice;
-# the leading `-` turns a missing file into a warning instead of a failed
-# start, which keeps `systemctl start` reaching the binary's own diagnostics.
+# the leading `-` makes systemd ignore errors reading it silently, so
+# `systemctl start` still reaches the binary's own diagnostics.
 # Web Push (VAPID) keys and any *_PATH override for ffmpeg, rclone, streamlink
 # or DanmakuFactory belong here too.
 #

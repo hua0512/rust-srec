@@ -162,16 +162,18 @@ jobs:
       # the unit's install path needs an executable before the check runs.
       - name: Stage the ExecStart target
         run: sudo install -D -m 0755 /bin/true /opt/rust-srec/rust-srec
-      # systemd-analyze verify exits 0 for an unparseable value, an unknown
-      # system-call group, and a key in a section that ignores it (such as
-      # StartLimitIntervalSec= outside [Unit]) — each is only a warning on
-      # stderr. Exit 1 is reserved for a unit that fails to load outright, so
-      # any output at all has to count as a failure here.
+      # TEMPORARY: report how this runner's systemd treats --recursive-errors,
+      # so the flag the next step relies on is confirmed rather than assumed.
+      - name: Probe runner systemd behaviour
+        run: bash .github/scripts/systemd-verify-probe.sh
+      # Without --recursive-errors=, verify "returns zero as the exit status
+      # regardless whether warnings arise" (systemd-analyze(1)) — a misplaced
+      # key, an unparseable value or an unknown syscall group is only a warning
+      # on stderr. `no` scopes both the warnings and the exit status to this
+      # file, so those defects fail the step while warnings about unrelated
+      # units the runner image pulls in through Wants=/After= do not.
       - name: Verify the systemd unit
-        run: |
-          out=$(systemd-analyze verify rust-srec/rust-srec.service 2>&1)
-          printf '%s\n' "$out"
-          [ -z "$out" ]
+        run: systemd-analyze verify --recursive-errors=no rust-srec/rust-srec.service
 
   frontend-lint:
     name: Frontend Lint
