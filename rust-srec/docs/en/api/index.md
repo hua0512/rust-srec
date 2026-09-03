@@ -94,7 +94,7 @@ API errors use one stable envelope:
 
 `POST /api/auth/login` is rate limited per account and per source address. After five failed attempts for one account it answers `429` with code `TOO_MANY_REQUESTS` and a `Retry-After` header holding the number of seconds to wait; a successful login clears that account's count. A second, much looser budget (100 failures per window) caps password-hashing work per source address.
 
-The source address is the peer of the TCP connection. `X-Forwarded-For` and `X-Real-IP` are not trusted, so **behind the bundled frontend container, nginx, or any other reverse proxy, every login is attributed to the proxy's address** — the per-address budget is a work cap, not a per-client lockout. Usernames longer than 128 characters are rejected with `400` before either budget is consulted. Both budgets are configurable; see [Configuration](../getting-started/configuration.md#login-throttling).
+The source address is the peer of the TCP connection. `X-Forwarded-For` and `X-Real-IP` are not trusted, so **behind the bundled frontend container, nginx, or any other reverse proxy, every login is attributed to the proxy's address** — the per-address budget is a work cap, not a per-client lockout. Usernames longer than 128 characters — counted as characters, not bytes, so non-Latin names are not penalised — are rejected with `400` before either budget is consulted. A configuration import applies the same limit, so it cannot create an account that could never sign in. Both budgets are configurable; see [Configuration](../getting-started/configuration.md#login-throttling).
 
 Clients should branch on HTTP status and `code`, not parse the human-readable `message`.
 

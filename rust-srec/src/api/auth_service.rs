@@ -262,10 +262,14 @@ struct CachedApiKeyState {
 /// `authorize_api_key` does not issue an UPDATE per authenticated request.
 const API_KEY_LAST_USED_WRITE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Longest username `authenticate` will look up. `users.username` is a
-/// SQLite `TEXT` column with no length of its own, so the bound lives here:
-/// without it the request body limit (10 MiB) would set the size of a
-/// `LoginRateKey::Username` input and of every log line quoting it.
+/// Longest username `authenticate` will look up, counted in `char`s so the
+/// bound is the same for ASCII and CJK names. `users.username` is a SQLite
+/// `TEXT` column with no length of its own, so the bound lives here: without
+/// it the request body limit (10 MiB) would set the size of a
+/// `LoginRateKey::Username` input.
+///
+/// `services::config_import::validate_import` applies the same bound, so an
+/// import cannot create a user whose name is too long to log in with.
 pub const MAX_USERNAME_LENGTH: usize = 128;
 
 /// Bounds on the number of Argon2id hashes running at once; see
@@ -335,6 +339,15 @@ impl AuthService {
             login_rate_limiter: LoginRateLimiter::from_env(),
             password_work_permits: Arc::new(Semaphore::new(password_work_permits())),
         }
+    }
+
+    /// Replace the `LoginRateLimiter::from_env` default with explicit
+    /// budgets, so tests are not steered by an `API_LOGIN_*` value in the
+    /// environment they happen to run in.
+    #[cfg(test)]
+    pub(crate) fn with_login_rate_limiter(mut self, login_rate_limiter: LoginRateLimiter) -> Self {
+        self.login_rate_limiter = login_rate_limiter;
+        self
     }
 
     pub fn user_repository(&self) -> Arc<dyn UserRepository> {
@@ -574,8 +587,9 @@ impl AuthService {
         );
 
         // Bounded before the username reaches the limiter, so a caller cannot
-        // spend the request body limit on one map key.
-        if username.len() > MAX_USERNAME_LENGTH {
+        // spend the request body limit on one map key. Counted in `char`s to
+        // match the limit `MAX_USERNAME_LENGTH` and the API docs state.
+        if username.chars().count() > MAX_USERNAME_LENGTH {
             return Err(AuthError::UsernameTooLong {
                 max: MAX_USERNAME_LENGTH,
             });

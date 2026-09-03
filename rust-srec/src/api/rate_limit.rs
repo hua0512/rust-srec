@@ -37,9 +37,11 @@ pub const WINDOW_SECS_ENV: &str = "API_LOGIN_WINDOW_SECS";
 /// Env var overriding [`DEFAULT_IP_MAX_FAILED_LOGIN_ATTEMPTS`].
 pub const IP_MAX_FAILURES_ENV: &str = "API_LOGIN_IP_MAX_FAILURES";
 
-/// Hard ceiling on tracked keys. `enforce_capacity` sweeps and then evicts
-/// down to this many, so a caller cycling through usernames cannot grow the
-/// map without bound.
+/// Ceiling on tracked keys, enforced on every over-capacity insert by
+/// `enforce_capacity`: a full sweep-and-evict at most once per
+/// [`SWEEP_INTERVAL`], and a single eviction on the inserts in between. The
+/// map therefore stays at this size give or take the key being inserted,
+/// however fast a caller cycles through usernames.
 const MAX_TRACKED_KEYS: usize = 10_000;
 
 /// Minimum spacing between `sweep_expired` runs. A sweep takes every
@@ -59,8 +61,13 @@ pub enum LoginRateKey {
 }
 
 impl LoginRateKey {
-    /// Build the username key. Trimming and lowercasing first means `Alice`
-    /// and `alice` share one counter.
+    /// Build the username key.
+    ///
+    /// Normalising first means `Alice` and ` alice ` share one counter. That
+    /// is deliberately broader than `UserRepository::find_by_username`, whose
+    /// match is byte-exact: two accounts differing only by case or
+    /// surrounding whitespace are distinct rows but one budget here. The
+    /// error is on the side of throttling too much, never too little.
     pub fn username(username: &str) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(username.trim().to_lowercase().as_bytes());
@@ -244,37 +251,57 @@ impl LoginRateLimiter {
         }
     }
 
-    /// Bring the map back under `max_tracked_keys`, at most once per
-    /// [`SWEEP_INTERVAL`].
+    /// Bring the map back under `max_tracked_keys`.
+    ///
+    /// A full sweep-and-evict runs at most once per [`SWEEP_INTERVAL`]; every
+    /// over-capacity insert in between drops one entry instead, so the map
+    /// cannot grow between sweeps. Dropping a key only costs its holder a
+    /// fresh budget, which is why eviction is preferred to refusing to track:
+    /// refusing would hand an attacker who fills the map a way to stop
+    /// throttling entirely, and rejecting untracked attempts would hand them a
+    /// way to lock everyone out.
     fn enforce_capacity(&self, now: Instant) {
         if self.entries.len() <= self.max_tracked_keys {
             return;
         }
 
+        if !self.claim_sweep(now) {
+            self.evict_one();
+            return;
+        }
+
+        self.sweep_expired(now);
+        self.evict_oldest_beyond_capacity();
+    }
+
+    /// True for the one caller that may run a sweep now; false while the
+    /// previous sweep is still inside [`SWEEP_INTERVAL`], or when another
+    /// caller claimed this one.
+    fn claim_sweep(&self, now: Instant) -> bool {
         let now_nanos = now
             .duration_since(self.epoch)
             .as_nanos()
             .min(u128::from(u64::MAX)) as u64;
         let last = self.last_sweep.load(Ordering::Acquire);
         if last != 0 && now_nanos.saturating_sub(last - 1) < SWEEP_INTERVAL.as_nanos() as u64 {
-            return;
+            return false;
         }
-        if self
-            .last_sweep
+        self.last_sweep
             .compare_exchange(
                 last,
                 now_nanos.saturating_add(1),
                 Ordering::AcqRel,
                 Ordering::Acquire,
             )
-            .is_err()
-        {
-            // Another caller claimed this sweep.
-            return;
-        }
+            .is_ok()
+    }
 
-        self.sweep_expired(now);
-        self.evict_oldest_beyond_capacity();
+    /// Drop one arbitrary entry, holding no shard guard across the removal.
+    fn evict_one(&self) {
+        let victim = self.entries.iter().next().map(|entry| entry.key().clone());
+        if let Some(victim) = victim {
+            self.entries.remove(&victim);
+        }
     }
 
     /// Drop keys whose most recent failure has left the window.
@@ -574,13 +601,21 @@ mod tests {
     }
 
     #[test]
-    fn capacity_is_a_hard_cap_even_when_nothing_is_stale() {
+    fn sweeping_evicts_the_least_recently_active_key() {
         let limiter = LoginRateLimiter::new(3, 1_000, Duration::from_secs(600), 4);
         let now = Instant::now();
+        let victim = vec![LoginRateKey::username("victim")];
 
-        for index in 0..12 {
+        // Spend the victim's whole budget, so only eviction — not the window,
+        // which is far longer than this test's timeline — can admit it again.
+        for _ in 0..3 {
+            limiter.try_begin_at(&victim, now).expect("within budget");
+        }
+        assert!(limiter.try_begin_at(&victim, now).is_err());
+
+        for index in 0..12u64 {
             // Stepping past SWEEP_INTERVAL each time keeps the throttle from
-            // skipping, and gives eviction a defined oldest entry.
+            // skipping, so every insert takes the sweep-and-evict path.
             let at = now + Duration::from_secs(index * 31);
             limiter
                 .try_begin_at(&[LoginRateKey::username(&format!("user{index}"))], at)
@@ -594,40 +629,33 @@ mod tests {
         );
         assert!(
             limiter
-                .try_begin_at(&[LoginRateKey::username("user0")], now)
+                .try_begin_at(&victim, now + Duration::from_secs(12 * 31))
                 .is_ok(),
-            "the least recently active keys were the ones evicted"
+            "the victim was the least recently active key, so it was evicted \
+             and starts over — still well inside its original 600s window"
         );
     }
 
     #[test]
-    fn sweeping_is_throttled() {
+    fn map_stays_bounded_between_sweeps() {
         let limiter = LoginRateLimiter::new(3, 1_000, Duration::from_secs(600), 2);
         let now = Instant::now();
 
-        for index in 0..8u64 {
+        // Only the first insert may sweep; the rest fall inside
+        // SWEEP_INTERVAL and take the single-eviction path instead.
+        for index in 0..64u64 {
             limiter
                 .try_begin_at(
                     &[LoginRateKey::username(&format!("user{index}"))],
                     now + Duration::from_millis(index),
                 )
                 .expect("each username has its own budget");
+            assert!(
+                limiter.tracked_keys() <= 3,
+                "insert {index} grew the map past capacity: {}",
+                limiter.tracked_keys()
+            );
         }
-
-        // The first over-capacity insert sweeps and evicts; the rest land
-        // inside SWEEP_INTERVAL and are left to accumulate.
-        assert!(limiter.tracked_keys() > 2);
-        limiter
-            .try_begin_at(
-                &[LoginRateKey::username("later")],
-                now + SWEEP_INTERVAL + Duration::from_secs(1),
-            )
-            .expect("within budget");
-        assert!(
-            limiter.tracked_keys() <= 3,
-            "the next sweep after the interval brings the map back to capacity: {}",
-            limiter.tracked_keys()
-        );
     }
 
     mod client_ip {

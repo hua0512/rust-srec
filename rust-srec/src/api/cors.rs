@@ -5,7 +5,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
@@ -209,12 +209,14 @@ impl OriginGuard {
     }
 
     /// `None` when the request may proceed, otherwise why it was refused.
-    pub fn reject_reason(&self, headers: &HeaderMap) -> Option<&'static str> {
+    pub fn reject_reason(&self, headers: &HeaderMap, uri: &Uri) -> Option<&'static str> {
+        // HTTP/2 carries the authority in the request target and hyper leaves
+        // it there rather than synthesising a `Host` header, so both places
+        // have to be consulted. Neither is set by an HTTP/1.0 client.
         let host = headers
             .get(header::HOST)
-            .and_then(|host| host.to_str().ok());
-        // A missing Host only happens outside a browser (HTTP/1.0); hyper
-        // fills it from `:authority` on HTTP/2.
+            .and_then(|host| host.to_str().ok())
+            .or_else(|| uri.authority().map(|authority| authority.as_str()));
         if let Some(host) = host
             && !self.host_is_local(host)
         {
@@ -225,8 +227,9 @@ impl OriginGuard {
         if self.policy.allow_origin_value(Some(origin)).is_some() {
             return None;
         }
-        // Same-site requests carry an Origin too; comparing it with Host is
-        // what keeps the Swagger UI at `/api/docs` working.
+        // Same-site requests carry an Origin too; comparing it with the
+        // request's own authority keeps the Swagger UI at `/api/docs`
+        // working.
         if let Some(host) = host
             && origin
                 .to_str()
@@ -279,7 +282,7 @@ pub async fn origin_guard(
     request: Request,
     next: Next,
 ) -> Response {
-    if let Some(reason) = guard.reject_reason(request.headers()) {
+    if let Some(reason) = guard.reject_reason(request.headers(), request.uri()) {
         warn!(
             reason,
             origin = ?request.headers().get(header::ORIGIN),
@@ -533,8 +536,10 @@ mod tests {
         }
 
         /// A route pair standing in for `routes::job::cancel_job` and the
-        /// `routes::logging` WebSocket, behind the same middleware
-        /// `ApiServer::build_router` installs.
+        /// `routes::logging` WebSocket, wrapped in the same layer order
+        /// `ApiServer::build_router` assembles: the guard next to the routes,
+        /// the `CorsLayer` outside it so preflights are answered before the
+        /// guard ever sees them.
         fn app() -> Router {
             Router::new()
                 .route("/api/job/cancel", post(|| async { "cancelled" }))
@@ -543,6 +548,15 @@ mod tests {
                     guard(),
                     super::super::origin_guard,
                 ))
+                .layer(
+                    policy_for(
+                        false,
+                        &parse_origins(["http://localhost:15275"].into_iter()),
+                    )
+                    .layer()
+                    .allow_methods(Any)
+                    .allow_headers(Any),
+                )
         }
 
         async fn send(request: Request<Body>) -> axum::response::Response {
@@ -613,6 +627,56 @@ mod tests {
                 .body(Body::empty())
                 .expect("test request should build");
             assert_eq!(send(request).await.status(), StatusCode::FORBIDDEN);
+        }
+
+        #[tokio::test]
+        async fn listed_origin_under_a_rebound_host_is_refused() {
+            // The Host rule is independent of the Origin rule: a rebinding
+            // page can pick whatever Origin it likes.
+            let response = send(simple_post(
+                "http://localhost:15275",
+                "recorder.evil.example",
+            ))
+            .await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+
+        #[tokio::test]
+        async fn opaque_origin_is_refused() {
+            // Sandboxed iframes and some redirects send `Origin: null`; it
+            // matches no allowlist entry and no Host.
+            let response = send(simple_post("null", HOST)).await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+
+        #[tokio::test]
+        async fn preflight_is_answered_by_the_layer_while_the_guard_blocks_the_real_request() {
+            // The two halves of the boundary, through the production layer
+            // order: the CorsLayer answers the preflight itself (so the guard
+            // never runs) and withholds the allow-origin header, while the
+            // request that needs no preflight is stopped by the guard.
+            let preflight = send(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/api/job/cancel")
+                    .header(header::HOST, HOST)
+                    .header(header::ORIGIN, "https://evil.example")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .body(Body::empty())
+                    .expect("test request should build"),
+            )
+            .await;
+            assert_eq!(preflight.status(), StatusCode::OK);
+            assert!(
+                preflight
+                    .headers()
+                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                    .is_none(),
+                "the preflight must not be told the origin is allowed"
+            );
+
+            let simple = send(simple_post("https://evil.example", HOST)).await;
+            assert_eq!(simple.status(), StatusCode::FORBIDDEN);
         }
 
         #[tokio::test]
