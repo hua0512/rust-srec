@@ -196,6 +196,10 @@
 
 ## Deployment
 
+- **The sign-in cookie is protected automatically behind an HTTPS reverse proxy**
+
+  When the web interface is published through a reverse proxy that terminates HTTPS, the cookie that keeps you signed in was only marked HTTPS-only if you set `COOKIE_SECURE=true` by hand; otherwise the browser was willing to send it over plain HTTP as well. The scheme reported by the proxy now reaches the app intact, so the cookie is marked HTTPS-only on its own. Plain-HTTP installs on a home or office network keep working as before, and `COOKIE_SECURE` still overrides the automatic choice in either direction. If a production install is still reached over plain HTTP, a warning is logged once to point this out.
+
 - **Optional automatic container updates**
 
   The Docker Compose file now ships an opt-in `watchtower` service (`docker compose --profile autoupdate up -d`) that pulls new images and restarts the containers on its own — but only while the system is idle. A new unauthenticated `GET /api/health/idle` endpoint reports whether anything is recording, queued to record, or being processed by a pipeline job (upload, remux, danmaku conversion, ...); while it reports busy, the update is postponed to the next check, so a restart never cuts a recording or an upload short. Automatic updates require a mutable image tag (`VERSION=latest`). See [Upgrade and Rollback](../operations/upgrading.md#automatic-updates-watchtower).
