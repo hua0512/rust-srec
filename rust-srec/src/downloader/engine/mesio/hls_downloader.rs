@@ -314,10 +314,13 @@ impl HlsDownloader {
             writer_task,
             stream_error,
             processing_tasks,
-            &self.event_tx,
-            &streamer_id,
-            "HLS",
-            engine_signal,
+            helpers::WriterSettleContext {
+                event_tx: &self.event_tx,
+                streamer_id: &streamer_id,
+                protocol: "HLS",
+                output_dir: &config.output_dir,
+                engine_signal,
+            },
         )
         .await
         .map_err(EngineStartError::from)
@@ -413,10 +416,13 @@ impl HlsDownloader {
             writer_task,
             stream_error,
             vec![],
-            &self.event_tx,
-            &streamer_id,
-            "HLS",
-            engine_signal,
+            helpers::WriterSettleContext {
+                event_tx: &self.event_tx,
+                streamer_id: &streamer_id,
+                protocol: "HLS",
+                output_dir: &config.output_dir,
+                engine_signal,
+            },
         )
         .await
         .map_err(EngineStartError::from)
