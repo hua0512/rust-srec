@@ -59,6 +59,10 @@ Each pipeline step is executed by a specialized processor:
 | `delete` | Automatically cleans up files | - |
 | `execute` | Runs a custom Shell command/script | `command`, `scan_output_dir`, `scan_extension` |
 
+In an `execute` command, placeholder values such as `{input}`, `{output}`, `{streamer}` and `{title}` are quoted for the shell automatically, so a path or title containing spaces, quotes, `$` or `;` is passed on as plain text. The quoting matches where the placeholder sits: as a bare argument, inside `'...'` or `"..."`, inside `$(...)` or backticks, inside `$(( ... ))`, and in a here-document body. Write the placeholder as it is — with or without quotes around it — and do not add your own escaping. The rest of the command is untouched, so pipes, `&&` and redirects still work.
+
+Two limits are worth knowing. A step fails with an explanatory error if a value would end a here-document early by containing that here-document's delimiter on a line of its own — pick a delimiter that cannot appear in your paths. And on Windows, `cmd` expands a `%VAR%` reference found inside a value before the command runs, which it offers no way to escape.
+
 ### Baidu Netdisk (`baidupcs`)
 
 The `baidupcs` processor uploads recordings to Baidu Netdisk through the external [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) CLI (bundled in the Docker image; install it separately for bare-metal setups and point `BAIDUPCS_PATH` at it if it is not on `PATH`).
