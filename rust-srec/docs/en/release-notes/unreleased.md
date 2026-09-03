@@ -72,6 +72,10 @@
 
   Deleting a pipeline that was still running removed it from the list but left its job running in the background — the transcode or upload carried on, and the recording it belonged to kept waiting for a pipeline that no longer existed. Deleting now cancels the work first.
 
+- **Cancelling a pipeline no longer leaves it stuck at "processing"**
+
+  Cancelling a running pipeline stopped its steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. Cancelling now ends the pipeline as well, so it can be retried and the recording moves on.
+
 - **Queued jobs run oldest-first**
 
   With more work queued than the workers could keep up with, the most recently added job was always picked next, so an older job could be passed over indefinitely while newer recordings kept jumping ahead of it. Jobs of equal priority now run in the order they were queued; a higher priority still goes first.

@@ -243,6 +243,15 @@ where
     /// Cancels all pending and processing jobs that belong to the specified pipeline.
     /// Returns the number of jobs cancelled.
     pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<usize> {
+        // `DagScheduler::build_step_job` stores the DAG id in every step job's `pipeline_id`, so a
+        // pipeline id naming a `dag_execution` row is stood down through [`Self::cancel_dag`]
+        // instead: `JobQueue::cancel_pipeline` only touches job rows, which would leave
+        // `dag_execution` and `dag_step_execution` in `PROCESSING` and skip
+        // `handle_dag_completion`.
+        if let Some(cancelled) = self.cancel_pipeline_as_dag(pipeline_id).await? {
+            return Ok(cancelled);
+        }
+
         let cancelled_jobs = self.job_queue.cancel_pipeline(pipeline_id).await?;
 
         // Emit events for each cancelled job
@@ -255,6 +264,32 @@ where
         }
 
         Ok(cancelled_jobs.len())
+    }
+
+    /// Cancel `pipeline_id` as a DAG execution, returning the number of step jobs cancelled.
+    ///
+    /// `None` means `pipeline_id` is not a DAG that needs standing down — no DAG scheduler is
+    /// configured, `DagScheduler::get_dag_status` finds no such `dag_execution` row, or the row is
+    /// already terminal and its steps have been cancelled by
+    /// `DagRepository::cancel_dag_and_cancel_steps` or `fail_step_and_cancel_dag`. In every one of
+    /// those cases the caller falls back to cancelling job rows by `pipeline_id`.
+    async fn cancel_pipeline_as_dag(&self, pipeline_id: &str) -> Result<Option<usize>> {
+        let Some(dag_scheduler) = &self.dag_scheduler else {
+            return Ok(None);
+        };
+
+        match dag_scheduler.get_dag_status(pipeline_id).await {
+            Ok(dag) if dag.get_status().is_some_and(|status| status.is_terminal()) => Ok(None),
+            Ok(_) => match self.cancel_dag(pipeline_id).await {
+                Ok(cancelled) => Ok(Some(cancelled as usize)),
+                // The DAG turned terminal between the status read and the cancel, so its steps and
+                // jobs are already stood down and only the job sweep is left.
+                Err(Error::DagAlreadyTerminal { .. }) => Ok(None),
+                Err(error) => Err(error),
+            },
+            Err(Error::NotFound { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// List available job presets.
