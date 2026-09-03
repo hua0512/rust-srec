@@ -358,10 +358,11 @@ mod tests {
         tx.commit().await.unwrap();
     }
 
-    /// `DROP TABLE` takes the dropped table's triggers with it, so a migration that
-    /// rebuilds `job` (create new table, copy, drop, rename) silently removes these.
-    /// Pin the set by name so a rebuild that does not reinstate one fails here rather
-    /// than quietly degrading `job_execution_progress` upkeep.
+    /// `DROP TABLE` takes the dropped table's triggers with it: a migration that
+    /// rebuilds `job` (create new table, copy, drop, rename) silently removes the two
+    /// defined on `job`, and one that rebuilds `job_execution_progress` removes the
+    /// `updated_at` trigger. Pin all three by name so a rebuild that does not reinstate
+    /// one fails here rather than quietly degrading `job_execution_progress` upkeep.
     #[tokio::test]
     async fn migrated_schema_keeps_every_job_progress_trigger() {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
