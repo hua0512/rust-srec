@@ -310,13 +310,13 @@ impl Supervisor {
         // Remove from registry
         let CompletedTask { result, superseded } = self.registry.handle_task_completion(result);
 
-        // A task that outlived its `remove_streamer` can report long after a
-        // replacement actor was spawned for the same ID. That replacement is
-        // live, so neither the restart tracker nor `pending_restarts` may act
-        // on this result.
+        // A task that outlived its `remove_streamer` can report long after the
+        // supervisor stopped tracking it, possibly after a replacement actor took
+        // over the same ID. The registered state is authoritative, so neither the
+        // restart tracker nor `pending_restarts` may act on this result.
         if superseded {
             debug!(
-                "Ignoring completion from replaced actor {} ({})",
+                "Ignoring completion from untracked actor {} ({})",
                 actor_id, actor_type
             );
             return TaskCompletionAction::Superseded { actor_id };
@@ -655,8 +655,9 @@ pub enum TaskCompletionAction {
     Completed { actor_id: String },
     /// Actor crashed.
     Crashed { actor_id: String },
-    /// The completion came from a task that a newer actor with the same ID has
-    /// already replaced, so it was discarded.
+    /// The completion came from a task the registry no longer tracks - the
+    /// actor was removed, or a newer spawn took over its ID - so it was
+    /// discarded without touching the restart tracker.
     Superseded { actor_id: String },
     /// Restart has been scheduled.
     RestartScheduled { actor_id: String, backoff: Duration },
@@ -976,28 +977,44 @@ mod tests {
         token.cancel();
     }
 
-    #[test]
-    fn test_supervisor_handle_graceful_stop() {
+    #[tokio::test]
+    async fn test_supervisor_handle_graceful_stop() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        let mut supervisor = Supervisor::new(token, metadata_store);
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
-        let result = ActorTaskResult::streamer("test-1", 1, Ok(ActorOutcome::Stopped));
+        let handle = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+
+        let result =
+            ActorTaskResult::streamer("test-1", handle.generation(), Ok(ActorOutcome::Stopped));
         let action = supervisor.handle_task_completion(result);
 
         assert!(matches!(action, TaskCompletionAction::Stopped { .. }));
+
+        token.cancel();
     }
 
-    #[test]
-    fn test_supervisor_handle_cancellation() {
+    #[tokio::test]
+    async fn test_supervisor_handle_cancellation() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        let mut supervisor = Supervisor::new(token, metadata_store);
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
-        let result = ActorTaskResult::streamer("test-1", 1, Ok(ActorOutcome::Cancelled));
+        let handle = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+
+        let result =
+            ActorTaskResult::streamer("test-1", handle.generation(), Ok(ActorOutcome::Cancelled));
         let action = supervisor.handle_task_completion(result);
 
         assert!(matches!(action, TaskCompletionAction::Cancelled { .. }));
+
+        token.cancel();
     }
 
     #[tokio::test]
@@ -1113,6 +1130,39 @@ mod tests {
                 .map(|h| h.generation()),
             Some(second.generation())
         );
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn crash_reported_after_removal_is_not_restarted() {
+        let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+
+        let handle = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+        assert!(supervisor.remove_streamer("test-1"));
+
+        // The cancelled task panics on its way out, after `remove_streamer`
+        // already dropped the handle and the cached restart config.
+        let action = supervisor.handle_task_completion(ActorTaskResult::streamer(
+            "test-1",
+            handle.generation(),
+            Err(
+                crate::scheduler::actor::streamer_actor::ActorError::recoverable(
+                    "panicked while shutting down",
+                ),
+            ),
+        ));
+
+        assert!(matches!(action, TaskCompletionAction::Superseded { .. }));
+        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert_eq!(supervisor.restart_tracker().recent_failures("test-1"), 0);
+        assert!(!supervisor.registry().has_streamer("test-1"));
 
         token.cancel();
     }

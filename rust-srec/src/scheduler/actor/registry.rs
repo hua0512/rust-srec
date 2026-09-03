@@ -9,7 +9,6 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::FutureExt;
 use tokio::task::JoinSet;
@@ -88,7 +87,7 @@ pub struct ActorRegistry {
     cancellation_token: CancellationToken,
     /// Source of the generation stamped onto every spawned actor. Starts at 0
     /// so `next_generation` never hands out the "unregistered" value 0.
-    generation_counter: AtomicU64,
+    generation_counter: u64,
 }
 
 impl ActorRegistry {
@@ -99,13 +98,14 @@ impl ActorRegistry {
             platforms: HashMap::new(),
             task_set: JoinSet::new(),
             cancellation_token,
-            generation_counter: AtomicU64::new(0),
+            generation_counter: 0,
         }
     }
 
     /// Allocate the next generation for a spawn.
-    fn next_generation(&self) -> u64 {
-        self.generation_counter.fetch_add(1, Ordering::Relaxed) + 1
+    fn next_generation(&mut self) -> u64 {
+        self.generation_counter += 1;
+        self.generation_counter
     }
 
     /// Get the number of streamer actors.
@@ -364,9 +364,10 @@ impl ActorRegistry {
     ///
     /// Drops the actor's handle only when it still carries the generation the
     /// finished task was spawned under. `remove_streamer` cancels an actor but
-    /// its task keeps running until the in-flight `check_status` returns, so a
-    /// respawn of the same ID can be live by the time the old task reports; the
-    /// generation check keeps that newer handle in the map.
+    /// its task keeps running until the in-flight `check_status` returns, so by
+    /// the time the old task reports its ID may hold a respawned actor, or
+    /// nothing at all; in both cases the registered state wins and the result is
+    /// flagged on `CompletedTask::superseded`.
     pub fn handle_task_completion(&mut self, result: ActorTaskResult) -> CompletedTask {
         let superseded = match result.actor_type.as_str() {
             "streamer" => {
@@ -386,7 +387,7 @@ impl ActorRegistry {
                 actor_id = %result.actor_id,
                 actor_type = %result.actor_type,
                 generation = result.generation,
-                "Ignoring completion from an actor that has already been replaced"
+                "Ignoring completion from an actor the registry no longer tracks"
             );
         }
 
@@ -405,28 +406,30 @@ impl ActorRegistry {
 pub struct CompletedTask {
     /// The task result as reported by the actor.
     pub result: ActorTaskResult,
-    /// True when a newer actor is registered under the same ID, so this result
-    /// describes a task that outlived its `remove_streamer` / `remove_platform`.
+    /// True when the registry no longer holds the handle this result belongs
+    /// to: the actor was dropped by `remove_streamer` / `remove_platform`, or a
+    /// newer spawn already took over its ID. Either way the result describes a
+    /// task nobody is waiting on and it must not drive a restart.
     pub superseded: bool,
 }
 
 /// Drop `map`'s entry for `actor_id` when its handle carries `generation`.
 ///
-/// Returns true when a *different* generation is registered, i.e. the caller's
-/// result belongs to an actor that has already been replaced.
+/// Returns true when it does not: either a different generation is registered,
+/// or no entry is left at all. Handles enter the map only through
+/// `spawn_streamer` / `spawn_platform`, so a missing entry means the actor was
+/// deliberately dropped and its result is as stale as a replaced one.
 fn remove_if_current<M>(
     map: &mut HashMap<String, ActorHandle<M>>,
     actor_id: &str,
     generation: u64,
 ) -> bool {
-    match map.get(actor_id) {
-        Some(handle) if handle.generation() == generation => {
-            map.remove(actor_id);
-            false
-        }
-        Some(_) => true,
-        None => false,
+    if map.get(actor_id).map(ActorHandle::generation) == Some(generation) {
+        map.remove(actor_id);
+        return false;
     }
+
+    true
 }
 
 /// Render a `catch_unwind` payload, covering the `&'static str` and `String`
@@ -764,7 +767,7 @@ mod tests {
             create_noop_checker(),
         );
         let second = registry.spawn_streamer(actor, handle).unwrap();
-        assert_ne!(first.generation(), second.generation());
+        assert!(second.generation() > first.generation());
 
         let completed = registry.handle_task_completion(ActorTaskResult::streamer(
             "test-1",
@@ -787,6 +790,16 @@ mod tests {
 
         assert!(!completed.superseded);
         assert!(!registry.has_streamer("test-1"));
+
+        // Once the entry is gone there is nothing left to reconcile against, so
+        // a repeat of the same completion is stale too.
+        let completed = registry.handle_task_completion(ActorTaskResult::streamer(
+            "test-1",
+            second.generation(),
+            Ok(ActorOutcome::Stopped),
+        ));
+
+        assert!(completed.superseded);
 
         token.cancel();
     }
