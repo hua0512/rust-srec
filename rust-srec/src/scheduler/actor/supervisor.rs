@@ -20,7 +20,7 @@ use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
 use super::monitor_adapter::{BatchChecker, NoOpBatchChecker, NoOpStatusChecker, StatusChecker};
 use super::platform_actor::PlatformActor;
-use super::registry::{ActorRegistry, ActorTaskResult, CompletedTask};
+use super::registry::{ActorRegistry, ActorRemoval, ActorTaskResult, CompletedTask};
 use super::restart_tracker::{RestartTracker, RestartTrackerConfig};
 use super::streamer_actor::{ActorOutcome, StreamerActor};
 use crate::streamer::StreamerMetadata;
@@ -278,6 +278,24 @@ impl Supervisor {
 
     /// Remove a streamer actor.
     pub fn remove_streamer(&mut self, id: &str) -> bool {
+        self.forget_streamer(id);
+        self.registry.remove_streamer(id).is_some()
+    }
+
+    /// Remove a streamer actor and return a receipt for its task's exit.
+    ///
+    /// Same bookkeeping as [`Self::remove_streamer`]; see
+    /// [`ActorRegistry::remove_streamer_awaitable`] for what the receipt
+    /// guarantees.
+    pub fn remove_streamer_awaitable(&mut self, id: &str) -> ActorRemoval {
+        self.forget_streamer(id);
+        self.registry.remove_streamer_awaitable(id)
+    }
+
+    /// Drop the supervisor-side state that would otherwise outlive a removed
+    /// streamer actor: its cached spawn config, its platform sender, and its
+    /// restart bookkeeping.
+    fn forget_streamer(&mut self, id: &str) {
         self.streamer_configs.remove(id);
         self.platform_senders.remove(id);
         self.restart_tracker.remove(id);
@@ -285,7 +303,6 @@ impl Supervisor {
         // an actor for a streamer that has been removed.
         self.pending_restarts
             .retain(|r| !(r.actor_type == "streamer" && r.actor_id == id));
-        self.registry.remove_streamer(id).is_some()
     }
 
     /// Remove a platform actor.

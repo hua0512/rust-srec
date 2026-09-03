@@ -1172,6 +1172,10 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
+        async fn count_jobs(&self, _filters: &crate::database::models::JobFilters) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
         async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
             unimplemented!("not needed for these tests")
         }

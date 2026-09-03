@@ -11,6 +11,7 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 struct TestSessionRepository {
     end_time: Mutex<Option<i64>>,
@@ -396,6 +397,37 @@ impl TestJobRepository {
             .expect("lock poisoned")
             .insert(job.id.clone(), job);
     }
+
+    fn set_status(&self, id: &str, status: JobStatus) {
+        self.jobs
+            .lock()
+            .expect("lock poisoned")
+            .get_mut(id)
+            .expect("job should exist")
+            .status = status.as_str().to_string();
+    }
+
+    /// Apply the subset of `JobFilters` these tests exercise: `status` and
+    /// `session_id`.
+    fn matching(&self, filters: &crate::database::models::JobFilters) -> Vec<JobDbModel> {
+        self.jobs
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|job| {
+                filters
+                    .status
+                    .is_none_or(|status| JobStatus::parse(&job.status) == Some(status))
+            })
+            .filter(|job| {
+                filters
+                    .session_id
+                    .as_deref()
+                    .is_none_or(|session_id| job.session_id.as_deref() == Some(session_id))
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -591,20 +623,13 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         filters: &crate::database::models::JobFilters,
         _pagination: &crate::database::models::Pagination,
     ) -> Result<(Vec<JobDbModel>, u64)> {
-        let jobs: Vec<JobDbModel> = self
-            .jobs
-            .lock()
-            .expect("lock poisoned")
-            .values()
-            .filter(|job| {
-                filters
-                    .status
-                    .is_none_or(|status| JobStatus::parse(&job.status) == Some(status))
-            })
-            .cloned()
-            .collect();
+        let jobs = self.matching(filters);
         let total = jobs.len() as u64;
         Ok((jobs, total))
+    }
+
+    async fn count_jobs(&self, filters: &crate::database::models::JobFilters) -> Result<u64> {
+        Ok(self.matching(filters).len() as u64)
     }
 
     async fn list_jobs_page_filtered(
@@ -3309,5 +3334,244 @@ async fn session_complete_waits_for_in_flight_video_dags() {
         manager.pipeline_coordinator.active_session_count_inline(),
         1,
         "session-complete fires after all per-segment DAGs drain"
+    );
+}
+
+/// A session with nothing attached to it drains on the first observation, with no
+/// wait at all. A session id that was never seen behaves the same, because
+/// `drain_for_session` reads `job`, `dag_execution` and the coordinator only -
+/// never `live_sessions`.
+#[tokio::test]
+async fn test_drain_for_session_returns_immediately_when_nothing_is_attached() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
+            .with_dag_repository(dag_repo.clone());
+
+    let session_id = "drained-session";
+    let mut done = JobDbModel::new_pipeline_step(
+        "remux",
+        "[]",
+        "[]",
+        0,
+        Some("streamer-1".to_string()),
+        Some(session_id.to_string()),
+    );
+    done.status = JobStatus::Completed.as_str().to_string();
+    job_repo.insert(done);
+
+    let mut finished_dag = DagExecutionDbModel::new(
+        &DagPipelineDefinition::new(
+            "segment",
+            vec![DagStep::new(
+                "A",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            )],
+        ),
+        Some("streamer-1".to_string()),
+        Some(session_id.to_string()),
+    );
+    finished_dag.status = DagExecutionStatus::Completed.as_str().to_string();
+    dag_repo.insert(finished_dag);
+
+    let started = std::time::Instant::now();
+    assert_eq!(
+        manager
+            .drain_for_session(session_id, Duration::from_secs(30))
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+    assert_eq!(
+        manager
+            .drain_for_session("never-existed", Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "a quiescent session must not consume the bound"
+    );
+}
+
+/// The drain returns only once the job it was waiting on leaves `PROCESSING`.
+#[tokio::test]
+async fn test_drain_for_session_waits_for_a_running_job() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone());
+
+    let session_id = "running-job-session";
+    let mut running = JobDbModel::new_pipeline_step(
+        "remux",
+        "[]",
+        "[]",
+        0,
+        Some("streamer-1".to_string()),
+        Some(session_id.to_string()),
+    );
+    running.status = JobStatus::Processing.as_str().to_string();
+    let job_id = running.id.clone();
+    job_repo.insert(running);
+
+    assert_eq!(
+        manager
+            .drain_for_session(session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(SessionPipelineOutstanding {
+            jobs: 1,
+            ..Default::default()
+        })
+    );
+
+    let finisher = {
+        let job_repo = job_repo.clone();
+        let job_id = job_id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            job_repo.set_status(&job_id, JobStatus::Completed);
+        })
+    };
+
+    let started = std::time::Instant::now();
+    assert_eq!(
+        manager
+            .drain_for_session(session_id, Duration::from_secs(30))
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+    assert!(
+        started.elapsed() >= Duration::from_millis(150),
+        "the drain must not return before the job leaves PROCESSING"
+    );
+    finisher.await.unwrap();
+}
+
+/// When the caller's bound expires the drain names what it gave up on, rather
+/// than reporting a bare timeout.
+#[tokio::test]
+async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
+            .with_dag_repository(dag_repo.clone());
+
+    let session_id = "stuck-session";
+    let mut running = JobDbModel::new_pipeline_step(
+        "remux",
+        "[]",
+        "[]",
+        0,
+        Some("streamer-1".to_string()),
+        Some(session_id.to_string()),
+    );
+    running.status = JobStatus::Processing.as_str().to_string();
+    job_repo.insert(running);
+
+    // A job on another session must not be counted against this one.
+    let mut other = JobDbModel::new_pipeline_step(
+        "remux",
+        "[]",
+        "[]",
+        0,
+        Some("streamer-2".to_string()),
+        Some("other-session".to_string()),
+    );
+    other.status = JobStatus::Processing.as_str().to_string();
+    job_repo.insert(other);
+
+    let mut dag = DagExecutionDbModel::new(
+        &DagPipelineDefinition::new(
+            "segment",
+            vec![DagStep::new(
+                "A",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            )],
+        ),
+        Some("streamer-1".to_string()),
+        Some(session_id.to_string()),
+    );
+    dag.status = DagExecutionStatus::Processing.as_str().to_string();
+    dag_repo.insert(dag);
+
+    let started = std::time::Instant::now();
+    let drain = manager
+        .drain_for_session(session_id, Duration::from_millis(250))
+        .await
+        .unwrap();
+
+    assert!(!drain.is_drained());
+    assert_eq!(
+        drain,
+        SessionDrain::Outstanding(SessionPipelineOutstanding {
+            jobs: 1,
+            dags: 1,
+            ..Default::default()
+        })
+    );
+    assert!(
+        started.elapsed() >= Duration::from_millis(250),
+        "the drain must use the whole bound before reporting"
+    );
+}
+
+/// `handle_dag_completion` reaches the coordinator after the `dag_execution` row is
+/// already terminal, so a drain that only queried rows would call the session
+/// quiescent while the coordinator is still about to create the session-complete
+/// DAG.
+#[tokio::test]
+async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
+            .with_dag_repository(dag_repo.clone());
+
+    let session_id = "coordinated-session".to_string();
+    let streamer_id = "coordinated-streamer".to_string();
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+        });
+
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(SessionPipelineOutstanding {
+            coordinated: crate::pipeline::SessionCoordinationOutstanding {
+                pending_dags: 1,
+                session_complete_pending: false,
+            },
+            ..Default::default()
+        })
+    );
+
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SegmentDagCompleted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+            outputs: Vec::new(),
+        },
+    );
+
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Drained
     );
 }

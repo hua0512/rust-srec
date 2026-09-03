@@ -266,6 +266,32 @@ pub enum PipelineCommand {
     },
 }
 
+/// Pipeline work `PipelineCoordinator` is still tracking for one session.
+///
+/// Every count here is reducer state, not a database row, so it covers the two
+/// windows a query over `dag_execution` cannot see: a DAG whose row is already
+/// terminal but whose `SegmentDagCompleted` event has not been applied yet, and
+/// a `CreatePairedSegmentDag` / `CreateSessionCompleteDag` command that has been
+/// emitted but whose DAG rows do not exist yet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SessionCoordinationOutstanding {
+    /// Segment, danmu and paired DAGs the reducer has counted as started and not
+    /// yet seen complete, plus paired segments whose creation command has been
+    /// emitted but whose `PairedDagStarted` has not been applied.
+    pub pending_dags: u32,
+    /// A `CreateSessionCompleteDag` command has been emitted and neither
+    /// `SessionCompleteDagStarted` nor `SessionCompleteDagCreationFailed` has
+    /// come back yet.
+    pub session_complete_pending: bool,
+}
+
+impl SessionCoordinationOutstanding {
+    /// Whether the reducer is holding nothing further for the session.
+    pub fn is_idle(&self) -> bool {
+        self.pending_dags == 0 && !self.session_complete_pending
+    }
+}
+
 #[derive(Debug)]
 enum CoordinatorRequest {
     Apply {
@@ -280,6 +306,10 @@ enum CoordinatorRequest {
     },
     ActivePairCount {
         reply: oneshot::Sender<usize>,
+    },
+    SessionOutstanding {
+        session_id: String,
+        reply: oneshot::Sender<Option<SessionCoordinationOutstanding>>,
     },
 }
 
@@ -350,6 +380,10 @@ impl PipelineCoordinator {
             CoordinatorRequest::ActivePairCount { reply } => {
                 let count = Self::lock_state(inner).active_pair_count();
                 let _ = reply.send(count);
+            }
+            CoordinatorRequest::SessionOutstanding { session_id, reply } => {
+                let outstanding = Self::lock_state(inner).session_outstanding(&session_id);
+                let _ = reply.send(outstanding);
             }
         }
     }
@@ -441,6 +475,41 @@ impl PipelineCoordinator {
 
     pub fn active_pair_count_inline(&self) -> usize {
         Self::lock_state(&self.inner).active_pair_count()
+    }
+
+    /// What the reducer still holds for `session_id`, or `None` when it tracks
+    /// no such session - either it never saw one or `cleanup_stale` dropped it.
+    ///
+    /// `PipelineManager::drain_for_session` pairs this with its `job` and
+    /// `dag_execution` queries; neither source alone sees all in-flight work.
+    pub async fn session_outstanding(
+        &self,
+        session_id: &str,
+    ) -> Option<SessionCoordinationOutstanding> {
+        let tx = { self.tx.lock().await.clone() };
+        let Some(tx) = tx else {
+            return self.session_outstanding_inline(session_id);
+        };
+
+        let (reply, rx) = oneshot::channel();
+        if tx
+            .send(CoordinatorRequest::SessionOutstanding {
+                session_id: session_id.to_string(),
+                reply,
+            })
+            .await
+            .is_err()
+        {
+            return None;
+        }
+        rx.await.unwrap_or(None)
+    }
+
+    pub fn session_outstanding_inline(
+        &self,
+        session_id: &str,
+    ) -> Option<SessionCoordinationOutstanding> {
+        Self::lock_state(&self.inner).session_outstanding(session_id)
     }
 }
 
@@ -681,6 +750,12 @@ impl PipelineCoordinatorState {
             .or_insert_with(|| {
                 SessionPipelineState::new(session_id.to_string(), streamer_id.to_string())
             })
+    }
+
+    fn session_outstanding(&self, session_id: &str) -> Option<SessionCoordinationOutstanding> {
+        self.sessions
+            .get(session_id)
+            .map(SessionPipelineState::outstanding)
     }
 
     fn active_session_count(&self) -> usize {
@@ -1248,6 +1323,18 @@ impl SessionPipelineState {
             unmet.push("has_video_output");
         }
         unmet
+    }
+
+    /// The DAG work this session is still waiting on, in the same terms
+    /// `artifacts_drained_for_session_complete` gates finalization on.
+    fn outstanding(&self) -> SessionCoordinationOutstanding {
+        SessionCoordinationOutstanding {
+            pending_dags: self.pending_video_dags
+                + self.pending_danmu_dags
+                + self.pending_paired_dags
+                + self.pending_paired_starts.len() as u32,
+            session_complete_pending: self.pending_session_complete_start,
+        }
     }
 
     fn artifacts_drained_for_session_complete(&self) -> bool {

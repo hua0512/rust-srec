@@ -190,6 +190,8 @@ pub trait JobRepository: Send + Sync {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<Vec<JobDbModel>>;
+    /// Count jobs matching `filters`, without fetching any rows.
+    async fn count_jobs(&self, filters: &JobFilters) -> Result<u64>;
 
     // Statistics
     /// Get job counts by status.
@@ -896,6 +898,18 @@ impl JobRepository for SqlxJobRepository {
         let jobs = data_query.fetch_all(&self.pool).await?;
 
         Ok((jobs, total_count))
+    }
+
+    async fn count_jobs(&self, filters: &JobFilters) -> Result<u64> {
+        // Shares the clause/bind construction with list_jobs_filtered's count query.
+        let count_sql = format!(
+            "SELECT COUNT(*) as count FROM job {}",
+            job_filter_where_clause(filters)
+        );
+
+        let count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
+        let count_query = bind_job_filters!(count_query, filters);
+        Ok(count_query.fetch_one(&self.pool).await? as u64)
     }
 
     async fn list_jobs_page_filtered(

@@ -33,7 +33,7 @@ use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ConfigRouter, ConfigScope, DownloadEndPolicy, MonitorBatchChecker,
+    ActorHandle, ActorRemoval, ConfigRouter, ConfigScope, DownloadEndPolicy, MonitorBatchChecker,
     MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage, RoutingPlan,
     ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
     TaskCompletionAction,
@@ -1174,6 +1174,18 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     pub fn remove_streamer(&mut self, streamer_id: &str) -> bool {
         self.platform_mapping.unregister(streamer_id);
         self.supervisor.remove_streamer(streamer_id)
+    }
+
+    /// Remove a streamer dynamically and return a receipt for its actor task.
+    ///
+    /// `remove_streamer` returns while the actor may still be inside a
+    /// `check_status` call that writes streamer state. The receipt lets a caller
+    /// that is retiring the streamer wait for that call to finish before it
+    /// touches the same rows; awaiting it does not block this scheduler's event
+    /// loop, which is what reaps the task afterwards.
+    pub fn remove_streamer_awaitable(&mut self, streamer_id: &str) -> ActorRemoval {
+        self.platform_mapping.unregister(streamer_id);
+        self.supervisor.remove_streamer_awaitable(streamer_id)
     }
 
     /// Get supervisor statistics.

@@ -9,13 +9,14 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
+use std::time::Duration;
 
 use futures::FutureExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use super::handle::ActorHandle;
+use super::handle::{ActorHandle, ActorStopSignal};
 use super::messages::{PlatformMessage, StreamerMessage};
 use super::platform_actor::PlatformActor;
 use super::streamer_actor::{ActorError, ActorOutcome, ActorResult, StreamerActor};
@@ -203,6 +204,10 @@ impl ActorRegistry {
         let generation = self.next_generation();
         handle.set_generation(generation);
 
+        // Fires the handle's `ActorStopSignal` when the task below is dropped,
+        // which is what `remove_streamer_awaitable` hands its caller.
+        let stop_guard = handle.stop_signal().guard();
+
         // Clone handle for return
         let return_handle = handle.clone();
 
@@ -213,6 +218,9 @@ impl ActorRegistry {
         // recoverable `ActorError` so `Supervisor::handle_task_completion` sees
         // a crash it can restart instead of a `JoinError` that carries no ID.
         self.task_set.spawn(async move {
+            // Owned by the task so it outlives every exit path, including the
+            // one an abort takes.
+            let _stop_guard = stop_guard;
             let result = match AssertUnwindSafe(actor.run()).catch_unwind().await {
                 Ok(result) => result,
                 Err(payload) => Err(ActorError::recoverable(format!(
@@ -246,6 +254,10 @@ impl ActorRegistry {
         let generation = self.next_generation();
         handle.set_generation(generation);
 
+        // Fires the handle's `ActorStopSignal` when the task below is dropped,
+        // mirroring `spawn_streamer`.
+        let stop_guard = handle.stop_signal().guard();
+
         // Clone handle for return
         let return_handle = handle.clone();
 
@@ -256,6 +268,9 @@ impl ActorRegistry {
         // recoverable `ActorError` so `Supervisor::handle_task_completion` sees
         // a crash it can restart instead of a `JoinError` that carries no ID.
         self.task_set.spawn(async move {
+            // Owned by the task so it outlives every exit path, including the
+            // one an abort takes.
+            let _stop_guard = stop_guard;
             let result = match AssertUnwindSafe(actor.run()).catch_unwind().await {
                 Ok(result) => result,
                 Err(payload) => Err(ActorError::recoverable(format!(
@@ -273,6 +288,9 @@ impl ActorRegistry {
     ///
     /// This cancels the actor and removes its handle from the registry.
     /// The actor task will complete and be collected by `join_next`.
+    ///
+    /// Returns as soon as the handle is dropped. Callers that must know the
+    /// actor's task has ended use [`Self::remove_streamer_awaitable`] instead.
     pub fn remove_streamer(&mut self, id: &str) -> Option<ActorHandle<StreamerMessage>> {
         if let Some(handle) = self.streamers.remove(id) {
             debug!("Removing streamer actor: {}", id);
@@ -280,6 +298,36 @@ impl ActorRegistry {
             Some(handle)
         } else {
             None
+        }
+    }
+
+    /// Remove a streamer actor and return a receipt that resolves once its task
+    /// has actually left the runtime.
+    ///
+    /// Cancellation is the same as [`Self::remove_streamer`]: the handle is
+    /// dropped and `ActorHandle::cancel` is fired, and an in-flight
+    /// `StreamerActor::perform_check` keeps the task alive until it returns.
+    /// The receipt closes that gap for callers that must not proceed while the
+    /// actor can still write streamer state.
+    ///
+    /// The receipt tracks the exact task that was registered under `id` at this
+    /// call, identified by its registry generation. A replacement spawned for
+    /// the same `id` carries its own generation and its own
+    /// `ActorHandle::stop_signal`, so it can neither satisfy nor extend this
+    /// wait. Nothing is stored in the registry: the receipt owns the only extra
+    /// state, and dropping it unregistered leaves the actor task untouched.
+    pub fn remove_streamer_awaitable(&mut self, id: &str) -> ActorRemoval {
+        match self.remove_streamer(id) {
+            Some(handle) => ActorRemoval {
+                actor_id: id.to_string(),
+                generation: Some(handle.generation()),
+                stop_signal: handle.stop_signal().clone(),
+            },
+            None => ActorRemoval {
+                actor_id: id.to_string(),
+                generation: None,
+                stop_signal: ActorStopSignal::already_stopped(),
+            },
         }
     }
 
@@ -400,6 +448,69 @@ impl ActorRegistry {
     }
 }
 
+/// Receipt for a removal performed by
+/// [`ActorRegistry::remove_streamer_awaitable`].
+///
+/// Awaiting it does not depend on the scheduler event loop: the signal is fired
+/// by the actor's own task as it is dropped, not by
+/// `ActorRegistry::handle_task_completion`. A caller can therefore hold this
+/// receipt across an await without stalling the loop that would otherwise have
+/// to reap the task first.
+#[derive(Debug, Clone)]
+pub struct ActorRemoval {
+    actor_id: String,
+    generation: Option<u64>,
+    stop_signal: ActorStopSignal,
+}
+
+impl ActorRemoval {
+    /// The actor ID the removal was requested for.
+    pub fn actor_id(&self) -> &str {
+        &self.actor_id
+    }
+
+    /// The registry generation whose task this receipt tracks.
+    ///
+    /// `None` when no actor was registered under [`Self::actor_id`], in which
+    /// case [`Self::wait`] resolves to [`ActorRemovalOutcome::NotRegistered`]
+    /// without awaiting anything.
+    pub fn generation(&self) -> Option<u64> {
+        self.generation
+    }
+
+    /// Wait for the removed actor's task to end, giving up after `bound`.
+    ///
+    /// `bound` is the caller's: the registry imposes no timeout of its own.
+    pub async fn wait(&self, bound: Duration) -> ActorRemovalOutcome {
+        if self.generation.is_none() {
+            return ActorRemovalOutcome::NotRegistered;
+        }
+
+        match tokio::time::timeout(bound, self.stop_signal.stopped()).await {
+            Ok(()) => ActorRemovalOutcome::Stopped,
+            Err(_) => ActorRemovalOutcome::TimedOut,
+        }
+    }
+}
+
+/// How an [`ActorRemoval`] wait ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActorRemovalOutcome {
+    /// No actor was registered under the ID, so there was nothing to stop.
+    NotRegistered,
+    /// The actor's task left the runtime.
+    Stopped,
+    /// The caller's bound expired while the task was still running.
+    TimedOut,
+}
+
+impl ActorRemovalOutcome {
+    /// Whether the actor is known not to be running any more.
+    pub fn is_stopped(&self) -> bool {
+        matches!(self, Self::NotRegistered | Self::Stopped)
+    }
+}
+
 /// A finished actor task reconciled against the registry by
 /// `ActorRegistry::handle_task_completion`.
 #[derive(Debug)]
@@ -467,6 +578,84 @@ mod tests {
     use chrono::Utc;
     use dashmap::DashMap;
     use std::sync::Arc;
+    use tokio::sync::Notify;
+
+    /// How `BlockingStatusChecker::check_status` ends once the test releases it.
+    #[derive(Clone, Copy)]
+    enum OnRelease {
+        Return,
+        Panic,
+    }
+
+    /// Status checker whose `check_status` blocks until the test releases it,
+    /// standing in for the in-flight check that keeps an actor's task alive after
+    /// `ActorHandle::cancel`.
+    struct BlockingStatusChecker {
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+        on_release: OnRelease,
+    }
+
+    impl BlockingStatusChecker {
+        fn new(on_release: OnRelease) -> (Self, Arc<Notify>, Arc<Notify>) {
+            let entered = Arc::new(Notify::new());
+            let release = Arc::new(Notify::new());
+            (
+                Self {
+                    entered: entered.clone(),
+                    release: release.clone(),
+                    on_release,
+                },
+                entered,
+                release,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl super::super::monitor_adapter::StatusChecker for BlockingStatusChecker {
+        async fn check_status(
+            &self,
+            _streamer: &StreamerMetadata,
+        ) -> Result<(crate::scheduler::actor::messages::CheckResult, LiveStatus), CheckError>
+        {
+            // `notify_one` stores a permit when nobody is waiting yet, so neither
+            // side of the handshake can miss the other.
+            self.entered.notify_one();
+            self.release.notified().await;
+            if matches!(self.on_release, OnRelease::Panic) {
+                panic!("status check exploded");
+            }
+            Ok((
+                crate::scheduler::actor::messages::CheckResult::success(StreamerState::NotLive),
+                LiveStatus::Offline,
+            ))
+        }
+
+        async fn process_status(
+            &self,
+            _streamer: &StreamerMetadata,
+            _status: LiveStatus,
+        ) -> Result<crate::monitor::ProcessStatusResult, CheckError> {
+            Ok(crate::monitor::ProcessStatusResult::Applied)
+        }
+
+        async fn handle_error(
+            &self,
+            _streamer: &StreamerMetadata,
+            _error: &str,
+        ) -> Result<(), CheckError> {
+            Ok(())
+        }
+
+        async fn set_infra_blocked(
+            &self,
+            _streamer: &StreamerMetadata,
+            _reason: crate::monitor::InfraBlockReason,
+        ) -> Result<(), CheckError> {
+            Ok(())
+        }
+    }
 
     /// Status checker that unwinds inside `StreamerActor::perform_check`.
     struct PanickingStatusChecker;
@@ -800,6 +989,196 @@ mod tests {
         ));
 
         assert!(completed.superseded);
+
+        token.cancel();
+    }
+
+    /// Spawn a streamer actor whose `check_status` blocks, and drive it into that
+    /// check. Returns the registry handle plus the notifier that lets the check
+    /// return.
+    async fn spawn_blocked_in_check(
+        registry: &mut ActorRegistry,
+        token: &CancellationToken,
+        id: &str,
+        on_release: OnRelease,
+    ) -> (ActorHandle<StreamerMessage>, Arc<Notify>) {
+        let (checker, entered, release) = BlockingStatusChecker::new(on_release);
+        let (actor, handle) = StreamerActor::new(
+            id.to_string(),
+            create_test_metadata_store(id),
+            create_test_config(),
+            token.child_token(),
+            Arc::new(checker),
+        );
+        let handle = registry.spawn_streamer(actor, handle).unwrap();
+
+        handle
+            .send(StreamerMessage::CheckStatus)
+            .await
+            .expect("the actor should accept an immediate check");
+        entered.notified().await;
+
+        (handle, release)
+    }
+
+    #[tokio::test]
+    async fn awaited_removal_resolves_once_the_in_flight_check_returns() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+        let (handle, release) =
+            spawn_blocked_in_check(&mut registry, &token, "test-1", OnRelease::Return).await;
+
+        let removal = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(removal.generation(), Some(handle.generation()));
+        assert_eq!(registry.streamer_count(), 0);
+
+        // `remove_streamer_awaitable` fired `ActorHandle::cancel`, but the actor
+        // is inside `check_status` and cannot observe it yet.
+        assert_eq!(
+            removal.wait(Duration::from_millis(50)).await,
+            ActorRemovalOutcome::TimedOut
+        );
+
+        release.notify_one();
+        assert_eq!(
+            removal.wait(Duration::from_secs(5)).await,
+            ActorRemovalOutcome::Stopped
+        );
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn awaited_removal_of_an_unregistered_streamer_needs_no_wait() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+
+        let removal = registry.remove_streamer_awaitable("never-spawned");
+
+        assert_eq!(removal.actor_id(), "never-spawned");
+        assert_eq!(removal.generation(), None);
+        assert_eq!(
+            removal.wait(Duration::ZERO).await,
+            ActorRemovalOutcome::NotRegistered
+        );
+        assert!(removal.wait(Duration::ZERO).await.is_stopped());
+    }
+
+    #[tokio::test]
+    async fn awaited_removal_resolves_when_the_actor_panics() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+        let (_handle, release) =
+            spawn_blocked_in_check(&mut registry, &token, "panics", OnRelease::Panic).await;
+
+        let removal = registry.remove_streamer_awaitable("panics");
+        release.notify_one();
+
+        assert_eq!(
+            removal.wait(Duration::from_secs(5)).await,
+            ActorRemovalOutcome::Stopped
+        );
+
+        // The task ended by unwinding out of the check that was in flight when
+        // the removal was requested, not by observing the cancellation it fired.
+        let result = registry
+            .join_next()
+            .await
+            .expect("the actor task should finish")
+            .expect("a panic must be caught inside the task");
+        assert!(result.is_crash());
+        assert!(
+            result
+                .error_message()
+                .unwrap_or_default()
+                .contains("status check exploded"),
+            "unexpected error message: {:?}",
+            result.error_message()
+        );
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn awaited_removal_is_not_satisfied_by_a_later_generation() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+        let (first, release) =
+            spawn_blocked_in_check(&mut registry, &token, "test-1", OnRelease::Return).await;
+
+        let removal = registry.remove_streamer_awaitable("test-1");
+
+        // A replacement takes the ID over while the first task is still inside
+        // its check, and stops again.
+        let (actor, handle) = StreamerActor::new(
+            "test-1".to_string(),
+            create_test_metadata_store("test-1"),
+            create_test_config(),
+            token.child_token(),
+            create_noop_checker(),
+        );
+        let second = registry.spawn_streamer(actor, handle).unwrap();
+        assert!(second.generation() > first.generation());
+
+        let second_removal = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(second_removal.generation(), Some(second.generation()));
+        assert_eq!(
+            second_removal.wait(Duration::from_secs(5)).await,
+            ActorRemovalOutcome::Stopped
+        );
+
+        // The replacement's exit says nothing about the generation the first
+        // receipt tracks.
+        assert_eq!(
+            removal.wait(Duration::from_millis(50)).await,
+            ActorRemovalOutcome::TimedOut
+        );
+
+        release.notify_one();
+        assert_eq!(
+            removal.wait(Duration::from_secs(5)).await,
+            ActorRemovalOutcome::Stopped
+        );
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn dropping_an_awaited_removal_leaves_nothing_behind() {
+        let token = CancellationToken::new();
+        let mut registry = ActorRegistry::new(token.clone());
+
+        let (actor, handle) = StreamerActor::new(
+            "test-1".to_string(),
+            create_test_metadata_store("test-1"),
+            create_test_config(),
+            token.child_token(),
+            create_noop_checker(),
+        );
+        let handle = registry.spawn_streamer(actor, handle).unwrap();
+
+        let removal = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(removal.generation(), Some(handle.generation()));
+        drop(removal);
+
+        // Nothing is registered for the ID any more, so a second receipt has
+        // nothing to wait on.
+        let after_drop = registry.remove_streamer_awaitable("test-1");
+        assert_eq!(after_drop.generation(), None);
+        assert_eq!(
+            after_drop.wait(Duration::ZERO).await,
+            ActorRemovalOutcome::NotRegistered
+        );
+
+        // The abandoned task is still reaped through the normal path.
+        let result = registry
+            .join_next()
+            .await
+            .expect("the actor task should finish")
+            .expect("the task should not fail to join");
+        assert!(registry.handle_task_completion(result).superseded);
+        assert_eq!(registry.streamer_count(), 0);
+        assert_eq!(registry.pending_task_count(), 0);
 
         token.cancel();
     }

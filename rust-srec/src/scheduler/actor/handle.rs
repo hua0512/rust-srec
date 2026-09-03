@@ -9,7 +9,7 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 /// Default mailbox capacity for actors.
 pub const DEFAULT_MAILBOX_CAPACITY: usize = 256;
@@ -19,6 +19,59 @@ pub const DEFAULT_SEND_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Backpressure warning threshold (80% of capacity).
 pub const BACKPRESSURE_THRESHOLD: f64 = 0.8;
+
+/// Fires when the task an actor runs in has left the runtime.
+///
+/// `ActorRegistry::spawn_streamer` / `spawn_platform` move [`ActorStopSignal::guard`]
+/// into the spawned future, so the signal fires when that future is dropped: on a
+/// clean `run` return, on the `catch_unwind` path after a panic inside `run`, and
+/// on `JoinSet::abort_all` alike. It is independent of [`ActorHandle::cancel`],
+/// which only asks the actor to stop and returns while an in-flight
+/// `StreamerActor::perform_check` is still running.
+///
+/// Clones share one signal, and every clone of an [`ActorHandle`] carries the same
+/// one, so a waiter holding a clone observes the exit of the exact task that
+/// handle was spawned for - not of a later actor registered under the same ID.
+#[derive(Debug, Clone)]
+pub struct ActorStopSignal {
+    token: CancellationToken,
+}
+
+impl ActorStopSignal {
+    /// Create a signal that has not fired.
+    pub fn new() -> Self {
+        Self {
+            token: CancellationToken::new(),
+        }
+    }
+
+    /// Create a signal that has already fired, for an ID no actor is registered
+    /// under and that therefore has nothing to wait for.
+    pub fn already_stopped() -> Self {
+        let signal = Self::new();
+        signal.token.cancel();
+        signal
+    }
+
+    /// A guard that fires the signal when dropped.
+    ///
+    /// The registry moves this into the actor's task; dropping it is the only
+    /// thing that fires the signal.
+    pub fn guard(&self) -> DropGuard {
+        self.token.clone().drop_guard()
+    }
+
+    /// Resolve once the task has left the runtime.
+    pub async fn stopped(&self) {
+        self.token.cancelled().await;
+    }
+}
+
+impl Default for ActorStopSignal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Error type for send operations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -94,6 +147,9 @@ pub struct ActorHandle<M> {
     /// Registry generation stamped by `ActorRegistry::spawn_streamer` /
     /// `spawn_platform`; `0` means the handle has not been registered yet.
     generation: u64,
+    /// Fires when the task this handle's actor runs in ends. Shared by every
+    /// clone of the handle; the registry moves its guard into that task.
+    stop_signal: ActorStopSignal,
 }
 
 impl<M> ActorHandle<M> {
@@ -111,6 +167,7 @@ impl<M> ActorHandle<M> {
             metadata,
             max_capacity,
             generation: 0,
+            stop_signal: ActorStopSignal::new(),
         }
     }
 
@@ -129,6 +186,7 @@ impl<M> ActorHandle<M> {
             metadata,
             max_capacity,
             generation: 0,
+            stop_signal: ActorStopSignal::new(),
         }
     }
 
@@ -266,6 +324,14 @@ impl<M> ActorHandle<M> {
         self.generation
     }
 
+    /// The signal that fires when this handle's actor task ends.
+    ///
+    /// `ActorRegistry::remove_streamer_awaitable` hands a clone to its caller so
+    /// the caller can await the exit `ActorHandle::cancel` only requested.
+    pub fn stop_signal(&self) -> &ActorStopSignal {
+        &self.stop_signal
+    }
+
     /// Check if this is a high-priority actor.
     pub fn is_high_priority(&self) -> bool {
         self.metadata.high_priority
@@ -281,6 +347,7 @@ impl<M> Clone for ActorHandle<M> {
             metadata: self.metadata.clone(),
             max_capacity: self.max_capacity,
             generation: self.generation,
+            stop_signal: self.stop_signal.clone(),
         }
     }
 }
