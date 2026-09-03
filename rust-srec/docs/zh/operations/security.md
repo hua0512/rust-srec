@@ -12,7 +12,7 @@ Rust-Srec 会处理访问令牌、平台 Cookie、通知凭据、录制文件和
 
 ## 网络与会话安全
 
-在前端之前终止 TLS，设置 `COOKIE_SECURE=true`，并用防火墙限制两个宿主机端口。没有直接 API 消费者时保持后端私有；不要向匿名互联网客户端公开 Swagger、媒体代理或日志接口。
+在前端之前终止 TLS，仅在反向代理不发送 `X-Forwarded-Proto: https` 时设置 `COOKIE_SECURE=true`，并用防火墙限制两个宿主机端口。没有直接 API 消费者时保持后端私有；不要向匿名互联网客户端公开 Swagger、媒体代理或日志接口。
 
 流代理默认阻止私网目标。开启 `stream_proxy_allow_private_targets` 后，已认证用户可让服务请求内部地址；仅在明确的局域网摄像头或转流场景开启。
 
