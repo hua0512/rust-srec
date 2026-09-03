@@ -111,6 +111,10 @@
 
   If the app stopped while a transcode or upload was running, that job was put back in the queue on the next start but kept showing the percentage it had reached before — a job that was only waiting its turn could sit there reading "42%" until it actually started running again. The old figure is now cleared the moment the job returns to the queue.
 
+- **Large recordings can now be put in a ZIP archive**
+
+  A ZIP step gave up on any recording larger than 4 GB: it wrote most of the archive, then failed and left nothing behind. Recordings are now archived whatever their size.
+
 ## Danmu
 
 - **Chat recording now survives network interruptions**
@@ -207,6 +211,9 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+- **A workflow step no longer shows the wrong preset**
+
+  Opening a step that uses a preset could show a different preset's settings, and **Detach & Edit** then replaced the step with the preset that was shown — an upload or conversion step could quietly turn into a delete step. A step now always shows the preset it names, and a step whose preset has been renamed or deleted says so instead of falling back to an unrelated one.
 - **A brief server hiccup no longer signs you out**
 
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.
