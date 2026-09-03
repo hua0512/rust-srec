@@ -237,6 +237,10 @@
 
   The web interface and the documentation site are now built with Node.js 26. If you build rust-srec from source, update Node before running the frontend — the repository now ships an `.nvmrc`, so version managers pick the right one for you. Docker and pre-built binary installations are unaffected.
 
+- **The bundled systemd service file starts the recorder**
+
+  Installing rust-srec as a system service with the `rust-srec.service` file from the repository did not work: the service stopped immediately with a permission error, before it ever reached its database, and the directories it needed had to be created by hand first. The file now writes logs to `/var/log/rust-srec`, has systemd create and own `/var/lib/rust-srec` and `/var/log/rust-srec` on every start, and picks up `JWT_SECRET` and any other secrets from `/etc/rust-srec/rust-srec.env`. Stopping the service now waits long enough for recordings in progress to be saved, the fixed memory and CPU caps are opt-in so they cannot cut a recording short on a machine they do not suit, and the file's header lists the commands needed to install it. Docker installations are unaffected.
+
 ## Desktop
 
 - **Closing the app finishes the recording first**

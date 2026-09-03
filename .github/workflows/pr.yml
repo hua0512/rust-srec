@@ -123,6 +123,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       frontend: ${{ steps.filter.outputs.frontend }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      systemd: ${{ steps.filter.outputs.systemd }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -146,6 +147,25 @@ jobs:
               - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+            systemd:
+              - 'rust-srec/rust-srec.service'
+              - '.github/workflows/pr.yml'
+
+  systemd-unit:
+    name: systemd Unit
+    needs: check-changes
+    if: needs.check-changes.outputs.systemd == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # systemd-analyze verify resolves ExecStart= on the local file system, so
+      # the unit's install path needs an executable before the check runs.
+      - name: Stage the ExecStart target
+        run: sudo install -D -m 0755 /bin/true /opt/rust-srec/rust-srec
+      # Rejects unparseable values and keys placed in a section that ignores
+      # them, such as StartLimitIntervalSec= outside [Unit].
+      - name: Verify the systemd unit
+        run: systemd-analyze verify rust-srec/rust-srec.service
 
   frontend-lint:
     name: Frontend Lint

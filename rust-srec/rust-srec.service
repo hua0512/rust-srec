@@ -1,64 +1,146 @@
+# rust-srec system service.
+#
+# Install as root:
+#   useradd --system --home-dir /opt/rust-srec --shell /usr/sbin/nologin rust-srec
+#   install -D -m 0755 rust-srec /opt/rust-srec/rust-srec
+#   install -d -m 0750 -o root -g rust-srec /etc/rust-srec
+#   umask 027 && printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" \
+#     > /etc/rust-srec/rust-srec.env
+#   chown root:rust-srec /etc/rust-srec/rust-srec.env
+#   install -D -m 0644 rust-srec.service /etc/systemd/system/rust-srec.service
+#   systemctl daemon-reload && systemctl enable --now rust-srec
+#
+# StateDirectory= and LogsDirectory= below create and chown /var/lib/rust-srec
+# and /var/log/rust-srec on every start, so nothing else has to be pre-created.
+
 [Unit]
 Description=rust-srec Streaming Recorder Service
-Documentation=https://github.com/your-repo/rust-srec
+Documentation=https://docs.srec.rs
+Documentation=https://github.com/hua0512/rust-srec
 After=network-online.target
 Wants=network-online.target
 
-[Service]
-Type=simple
-User=rust-srec
-Group=rust-srec
-
-# Working directory
-WorkingDirectory=/opt/rust-srec
-
-# Environment
-Environment=RUST_LOG=info
-Environment=DATABASE_URL=sqlite:///var/lib/rust-srec/rust-srec.db
-Environment=OUTPUT_DIR=/var/lib/rust-srec/output
-Environment=CONFIG_DIR=/etc/rust-srec
-# Browser Notifications (Web Push / VAPID) (optional)
-# Environment=WEB_PUSH_VAPID_PUBLIC_KEY=
-# Environment=WEB_PUSH_VAPID_PRIVATE_KEY=
-# Environment=WEB_PUSH_VAPID_SUBJECT=mailto:admin@localhost
-
-# Executable
-ExecStart=/opt/rust-srec/rust-srec --config /etc/rust-srec/config.toml
-
-# Restart policy
-Restart=on-failure
-RestartSec=5
+# Start rate limiting is a [Unit] setting; systemd ignores both keys in
+# [Service]. Three failures inside a minute leave the unit failed rather than
+# looping forever on a broken install.
 StartLimitIntervalSec=60
 StartLimitBurst=3
 
-# Resource limits
-MemoryMax=4G
-MemoryHigh=3G
-CPUQuota=400%
+[Service]
+# `exec` reports a failure to launch /opt/rust-srec/rust-srec back to
+# `systemctl start` instead of reporting success and failing asynchronously.
+Type=exec
+User=rust-srec
+Group=rust-srec
+
+# `server::run` calls `load_dotenv`, which reads `.env` from this directory.
+# dotenvy does not overwrite variables that are already set, so a leftover
+# `.env` cannot override the settings below.
+WorkingDirectory=/opt/rust-srec
+ExecStart=/opt/rust-srec/rust-srec
+
+# systemd creates both directories owned by User=/Group= and adds them to the
+# writable set of the ProtectSystem=strict namespace below.
+#   /var/lib/rust-srec  SQLite database, WAL files, runtime-generation marker
+#   /var/log/rust-srec  daily-rotated rust-srec.log written by `init_logging`
+StateDirectory=rust-srec
+StateDirectoryMode=0750
+LogsDirectory=rust-srec
+LogsDirectoryMode=0750
+
+# Environment
+Environment=RUST_LOG=info
+# `sqlite_connect_options` sets create_if_missing, so only the parent directory
+# must exist; StateDirectory= supplies it. `runtime_marker_path` derives the
+# dirty-generation marker from this URL, so it also lands under /var/lib.
+Environment=DATABASE_URL=sqlite:///var/lib/rust-srec/rust-srec.db
+# `run_worker` passes LOG_DIR to `init_logging` and `install_panic_hook`.
+# Without it the directory defaults to `logs` relative to WorkingDirectory=,
+# which ProtectSystem=strict mounts read-only, and startup aborts before the
+# database is opened.
+Environment=LOG_DIR=/var/log/rust-srec
+# Read by `ServiceContainer`'s health probes and the output-root write gate.
+# The directory recordings are actually written to is the `output_folder`
+# stored in the database and edited from the web interface; point it inside
+# /var/lib/rust-srec or add the target to ReadWritePaths= below.
+Environment=OUTPUT_DIR=/var/lib/rust-srec/output
+Environment=API_BIND_ADDRESS=0.0.0.0
+Environment=API_PORT=12555
+# The supervisor's total shutdown budget. TimeoutStopSec= below must stay
+# larger, or systemd sends SIGKILL while recordings are still being finalized.
+Environment=RUST_SREC_SHUTDOWN_TIMEOUT_SECS=30
+Environment=RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS=2
+
+# Host-specific settings and secrets, listed after Environment= so its values
+# win. `ServiceContainer::start_api_server` refuses to start without
+# JWT_SECRET, so this file is mandatory in practice; the leading `-` only
+# keeps the unit loadable before it is created. Web Push (VAPID) keys and any
+# *_PATH override for ffmpeg, rclone, streamlink or DanmakuFactory belong here
+# too.
+EnvironmentFile=-/etc/rust-srec/rust-srec.env
+
+# Restart policy. `SupervisedRun::finish` exits non-zero whenever the contained
+# runtime did not terminate cleanly, so on-failure covers both a crash and a
+# fail-stop.
+Restart=on-failure
+RestartSec=5
+
+# Resource limits (opt-in). MemoryMax= is a hard cap: exceeding it kills the
+# service and any recording in flight, so pick values from the host's RAM and
+# core count rather than enabling these blindly.
+# MemoryHigh=3G
+# MemoryMax=4G
+# CPUQuota=400%
 
 # Security hardening
 NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# Hides /dev/dri and /dev/nvidia*, so ffmpeg falls back to software encoding
+# and the `nvidia-smi` GPU health probe reports the binary as unusable. For
+# hardware transcoding, override with PrivateDevices=no plus a DeviceAllow=
+# entry for the render node in a drop-in.
 PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
+# AF_NETLINK is required: glibc's resolver probes routable address families
+# over NETLINK_ROUTE, and `sysinfo` reads interface state the same way.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+LockPersonality=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+# @system-service still permits the fork/exec the runtime supervisor and the
+# pipeline's ffmpeg/rclone/streamlink children rely on.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027
 
-# Allow write access to data directories
-ReadWritePaths=/var/lib/rust-srec
-ReadWritePaths=/var/log/rust-srec
+# Directories outside StateDirectory=/LogsDirectory= that the service must
+# write to, such as a recording volume referenced by the configured
+# `output_folder`.
+# ReadWritePaths=/srv/recordings
 
 # Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=rust-srec
 
-# Graceful shutdown
-TimeoutStopSec=30
+# Graceful shutdown. Must exceed RUST_SREC_SHUTDOWN_TIMEOUT_SECS above; it
+# matches the 35s stop grace period the Compose deployment uses. KillMode=mixed
+# sends SIGTERM to the supervisor only, which then drives the worker's
+# containment handshake; SIGKILL still reaches every descendant at the timeout.
+TimeoutStopSec=35
 KillMode=mixed
 KillSignal=SIGTERM
 
