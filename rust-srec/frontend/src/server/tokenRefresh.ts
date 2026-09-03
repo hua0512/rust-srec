@@ -12,6 +12,7 @@ import type { ClientSessionData, SessionData } from '../utils/session';
 import { sanitizeClientSession, isValidSession } from '../utils/session';
 import { useAppSession } from '../utils/session.server';
 import { BASE_URL } from '../utils/env';
+import { ACCOUNT_DISABLED_CODE } from '../lib/api-error';
 
 type RefreshOutcome = {
   accessToken: string;
@@ -44,21 +45,6 @@ export type TokenRefreshResult =
 
 const RECENT_ROTATION_TTL_MS = 60_000;
 const MAX_MAP_SIZE = 1000;
-/**
- * Caps how long refreshAuthTokenGlobal blocks on `/auth/refresh`, so a backend
- * that accepts the connection but never answers cannot hold the
- * inFlightRefreshByRefreshToken entry — and every route guard awaiting it —
- * open for undici's 300 s header timeout.
- *
- * Deliberately far larger than any refresh the backend can still complete:
- * `/auth/refresh` rotates the token by revoking the old row and inserting the
- * new one, and each of those writes can wait out SQLite's 30 s busy timeout
- * under contention. An abort that lands after the revoke but before the
- * response leaves this session holding a token the backend has already
- * revoked, which the next attempt sees as a definitive 401 — so the bound is
- * set where an abort means the request was never going to complete.
- */
-const REFRESH_REQUEST_TIMEOUT_MS = 120_000;
 const inFlightRefreshByRefreshToken = new Map<
   string,
   Promise<PerformRefreshResult>
@@ -217,53 +203,75 @@ export async function refreshAuthTokenGlobal(): Promise<TokenRefreshResult> {
 /**
  * Whether `/auth/refresh` answered in a way that makes re-presenting the same
  * refresh token pointless. This is the only justification for clearing the
- * session, so each status is classified deliberately:
+ * session, so each answer is classified deliberately:
  *
  * - 401 — the token is unknown, already revoked, or past its expiry.
- * - 403 — the account behind the token was deactivated (`ACCOUNT_DISABLED`).
- *   Keeping the session here would strand the user in an app where every call
- *   fails and `/login` bounces them back to `/dashboard`.
- * - 400 / 422 — the request body was rejected before the token was ever looked
- *   up, so the identical body will be rejected again.
+ * - 403 carrying ACCOUNT_DISABLED_CODE — the account behind the token was
+ *   deactivated. Keeping the session here would strand the user in an app
+ *   where every call fails and `/login` bounces them back to `/dashboard`.
+ *   A 403 without that code came from something in front of the backend
+ *   (a WAF, an nginx `deny`) and says nothing about the token, so it stays
+ *   transient rather than signing the user out for good.
+ * - 400 / 422 — rejected by the request-body extractor, before the token was
+ *   looked up or rotated, so the identical body will be rejected again.
  *
- * Everything else stays transient because it says nothing about the token:
- * 503 while the auth service is unavailable, any 5xx, a 404 from a misrouted
- * reverse proxy, a 429 from one placed in front of the backend.
+ * Everything else stays transient: 503 while the auth service is unavailable,
+ * any 5xx, a 404 from a misrouted reverse proxy, a 429 from one in front of
+ * the backend.
  */
-function isDefinitiveRejection(status: number): boolean {
-  return status === 400 || status === 401 || status === 403 || status === 422;
+function isDefinitiveRejection(status: number, code?: string): boolean {
+  if (status === 400 || status === 401 || status === 422) return true;
+  return status === 403 && code === ACCOUNT_DISABLED_CODE;
 }
 
-/** Best-effort human-readable detail from a failed refresh response body. */
-async function readErrorDetail(
+function firstString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Best-effort read of the backend's error envelope. `code` decides the
+ * classification in isDefinitiveRejection; `detail` is only logged.
+ */
+async function readErrorBody(
   response: Response,
-): Promise<string | undefined> {
+): Promise<{ code?: string; detail?: string }> {
   try {
     const errorText = await response.text();
-    if (!errorText) return undefined;
+    if (!errorText) return {};
     try {
       const parsed = JSON.parse(errorText);
       if (parsed && typeof parsed === 'object') {
-        return (
-          (parsed as any).message ||
-          (parsed as any).detail ||
-          (parsed as any).error ||
-          JSON.stringify(parsed)
-        );
+        const record = parsed as Record<string, unknown>;
+        return {
+          code: firstString(record, ['code']),
+          detail:
+            firstString(record, ['message', 'detail', 'error']) ??
+            JSON.stringify(parsed),
+        };
       }
-      return String(parsed);
+      return { detail: String(parsed) };
     } catch {
-      return errorText;
+      return { detail: errorText };
     }
   } catch {
-    return undefined;
+    return {};
   }
 }
 
 /**
- * A failed attempt still yields tokens when a concurrent call rotated this
- * refresh token in the meantime, so every failure path resolves through here
- * rather than reporting the failure directly.
+ * Resolves a failure that carries no status to classify — a transport error,
+ * or a 200 whose body could not be used — against
+ * recentRotationByOldRefreshToken: a concurrent call may have rotated this
+ * token in the meantime, and that outcome stands. The `!response.ok` path does
+ * the same lookup inline so it can rank a cached rotation above its own status
+ * classification.
  */
 function rotatedOrTransient(refreshToken: string): PerformRefreshResult {
   const rotated = getRecentRotation(refreshToken);
@@ -290,16 +298,20 @@ async function performRefresh({
   let response: Response;
   try {
     // console.log(`[TokenRefresh] POST ${url} with token: ${refreshToken.slice(0, 10)}...`);
+    // No client-side abort: `/auth/refresh` revokes the old refresh token
+    // before it answers, so aborting a slow response would leave this session
+    // holding a token the backend has already revoked and the next attempt
+    // would read the resulting 401 as a definitive rejection. The request is
+    // bounded by undici's header timeout instead.
     response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
-      signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
     // fetch rejects for transport-level problems (DNS failure, refused
-    // connection) and for the REFRESH_REQUEST_TIMEOUT_MS abort. None of them
-    // carry an answer about the token, so the session is kept.
+    // connection, socket timeout); none of them carry an answer about the
+    // token, so the session is kept.
     console.error('[TokenRefresh] Refresh endpoint unreachable:', error);
     return rotatedOrTransient(refreshToken);
   }
@@ -310,14 +322,16 @@ async function performRefresh({
     const rotated = getRecentRotation(refreshToken);
     if (rotated) return { status: 'refreshed', outcome: rotated };
 
-    const detail = await readErrorDetail(response);
+    const { code, detail } = await readErrorBody(response);
     const wwwAuthenticate =
       response.headers.get('www-authenticate') ?? undefined;
     console.error(
       `[TokenRefresh] Refresh failed: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
     );
     return {
-      status: isDefinitiveRejection(response.status) ? 'rejected' : 'transient',
+      status: isDefinitiveRejection(response.status, code)
+        ? 'rejected'
+        : 'transient',
     };
   }
 
