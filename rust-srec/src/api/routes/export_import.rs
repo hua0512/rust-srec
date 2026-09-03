@@ -397,6 +397,11 @@ pub async fn import_config(
             crate::services::config_import::ConfigurationImportError::Database(error) => {
                 ApiError::internal(format!("Configuration import failed: {error}"))
             }
+            crate::services::config_import::ConfigurationImportError::StreamerStop(message) => {
+                ApiError::internal(format!(
+                    "Configuration import aborted before any change was written: {message}"
+                ))
+            }
         })?;
 
     // The import writes user rows in its own transaction without going

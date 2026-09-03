@@ -124,7 +124,10 @@ impl RuntimeCoordinator {
     }
 
     pub(crate) async fn handle_streamer_disabled(&self, streamer_id: &str) {
-        self.stop_streamer_work(streamer_id, StopWait::Requested)
+        // Every failure is already logged; a disable has no caller waiting to
+        // decide anything on the outcome.
+        let _ = self
+            .stop_streamer_work(streamer_id, StopWait::Requested)
             .await;
     }
 
@@ -133,18 +136,46 @@ impl RuntimeCoordinator {
     ///
     /// For callers about to remove the streamer's `streamers` row: the row's
     /// `ON DELETE CASCADE` reaches `live_sessions`, `media_outputs` and
-    /// `session_segments`, so the attempt must be finalized before the delete or
-    /// its remaining segment writes fail the foreign key.
+    /// `session_segments`, so the attempts must be finalized before the delete or
+    /// their remaining segment writes fail the foreign key. `Err` names the work
+    /// that could not be retired, so the caller can abandon the delete.
     ///
     /// Blocks for as long as the engine's graceful stop takes, so it must not run
     /// on the download coordination loop; [`Self::handle_streamer_disabled`] is
     /// the non-blocking variant used there.
-    pub(crate) async fn handle_streamer_removed(&self, streamer_id: &str) {
-        self.stop_streamer_work(streamer_id, StopWait::Finalized)
+    pub(crate) async fn handle_streamer_removed(&self, streamer_id: &str) -> crate::Result<()> {
+        let failures = self
+            .stop_streamer_work(streamer_id, StopWait::Finalized)
             .await;
+        if failures.is_empty() {
+            return Ok(());
+        }
+        Err(crate::Error::Other(format!(
+            "streamer {streamer_id} still holds runtime work: {}",
+            failures.join("; ")
+        )))
     }
 
-    async fn stop_streamer_work(&self, streamer_id: &str, wait: StopWait) {
+    /// Returns the failures that leave the streamer able to keep writing rows.
+    /// A `NotFound` from the download manager is not one: it only means the
+    /// attempt finalized between `get_active_downloads` and the stop.
+    async fn stop_streamer_work(&self, streamer_id: &str, wait: StopWait) -> Vec<String> {
+        let mut failures = Vec::new();
+
+        // Cancel queued attempts first: one waiting on a download slot is not in
+        // `get_active_downloads`, and would otherwise start after the caller's
+        // delete has cascaded its `live_sessions` row away.
+        for pending in self.download_manager.snapshot_pending() {
+            if pending.streamer_id == streamer_id {
+                self.session_cancels.cancel(&pending.session_id);
+                info!(
+                    streamer_id,
+                    session_id = %pending.session_id,
+                    "Cancelled queued download for disabled streamer"
+                );
+            }
+        }
+
         let downloads: Vec<_> = self
             .download_manager
             .get_active_downloads()
@@ -177,12 +208,20 @@ impl RuntimeCoordinator {
                     streamer_id,
                     "{outcome}"
                 ),
-                Err(error) => warn!(
+                Err(crate::Error::NotFound { .. }) => debug!(
                     download_id = %download.id,
                     streamer_id,
-                    error = %error,
-                    "Failed to cancel download for disabled streamer"
+                    "Download already finalized before the stop request"
                 ),
+                Err(error) => {
+                    warn!(
+                        download_id = %download.id,
+                        streamer_id,
+                        error = %error,
+                        "Failed to cancel download for disabled streamer"
+                    );
+                    failures.push(format!("download {}: {error}", download.id));
+                }
             }
         }
 
@@ -194,12 +233,15 @@ impl RuntimeCoordinator {
                     messages = stats.total_count,
                     "Stopped danmu collection for disabled streamer"
                 ),
-                Err(error) => warn!(
-                    streamer_id,
-                    session_id,
-                    error = %error,
-                    "Failed to stop danmu collection for disabled streamer"
-                ),
+                Err(error) => {
+                    warn!(
+                        streamer_id,
+                        session_id,
+                        error = %error,
+                        "Failed to stop danmu collection for disabled streamer"
+                    );
+                    failures.push(format!("danmu collection {session_id}: {error}"));
+                }
             }
         }
 
@@ -218,7 +260,10 @@ impl RuntimeCoordinator {
                 error = %error,
                 "Failed to end disabled streamer's session"
             );
+            failures.push(format!("session: {error}"));
         }
+
+        failures
     }
 
     pub(crate) async fn handle_monitor_event(
@@ -425,7 +470,7 @@ impl RuntimeCoordinator {
 
 #[async_trait::async_trait]
 impl crate::services::config_import::StreamerRemovalStop for RuntimeCoordinator {
-    async fn stop_for_removal(&self, streamer_id: &str) {
-        self.handle_streamer_removed(streamer_id).await;
+    async fn stop_for_removal(&self, streamer_id: &str) -> crate::Result<()> {
+        self.handle_streamer_removed(streamer_id).await
     }
 }

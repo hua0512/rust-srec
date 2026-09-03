@@ -35,8 +35,14 @@ pub(crate) enum ConfigurationImportError {
     Validation(String),
     #[error("configuration import database operation failed: {0}")]
     Database(#[from] sqlx::Error),
+    /// A streamer the bundle removes could not be taken off the runtime, so the
+    /// import stops before its transaction deletes the row out from under a
+    /// running download.
+    #[error("configuration import could not stop a removed streamer: {0}")]
+    StreamerStop(String),
 }
 
+#[derive(Debug)]
 pub(crate) struct ConfigurationImportOutcome {
     pub stats: ImportStats,
     pub warnings: Vec<String>,
@@ -50,9 +56,14 @@ pub(crate) struct ConfigurationImportOutcome {
 /// download runtime.
 #[async_trait::async_trait]
 pub(crate) trait StreamerRemovalStop: Send + Sync {
-    /// Stop the streamer's download, danmu collection and open session, and
-    /// return only once the download attempt has finalized.
-    async fn stop_for_removal(&self, streamer_id: &str);
+    /// Stop the streamer's queued and running downloads, its danmu collection
+    /// and its open session, returning only once every download attempt has
+    /// finalized.
+    ///
+    /// `Err` means the streamer may still be writing rows that the `streamers`
+    /// delete would cascade away, and aborts the import; an attempt that simply
+    /// finished on its own is not an error.
+    async fn stop_for_removal(&self, streamer_id: &str) -> crate::Result<()>;
 }
 
 /// Streamer rows the import writes, keyed by what the runtime has to do about
@@ -107,16 +118,34 @@ impl ConfigurationImportService {
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
 
+        // Resolve the bundle against the current rows before touching the
+        // runtime: `stop_for_removal` finalizes downloads and ends sessions, and
+        // nothing undoes that if the import is rejected afterwards. The
+        // connection is scoped so it returns to the single-connection write pool
+        // before `begin_immediate` asks for one.
+        let removed_streamer_ids = {
+            let mut conn = self.write_pool.acquire().await?;
+            let preflight = ImportSnapshot::load(&mut conn).await?;
+            preflight.validate_references(&config, mode)?;
+            streamers_removed_by(&preflight.streamers, &config, mode)
+        };
+
         // Retire the runtime work of every row the import is about to delete
         // before opening the write transaction: `streamers.id` cascades into
-        // `live_sessions`, `media_outputs` and `session_segments`, so a download
+        // `live_sessions`, `media_outputs` and `session_segments`, so an attempt
         // still writing segments would fail its foreign key mid-recording.
         // `apply_streamers` recomputes the delete set inside the transaction and
-        // is authoritative; this pass only pre-empts the rows it can already see.
-        for streamer_id in
-            streamers_removed_by(&load_streamer_rows(&self.write_pool).await?, &config, mode)
+        // is authoritative; this pass covers the rows the preflight snapshot saw.
+        // The stops are independent per streamer and each can wait out an
+        // engine's graceful-stop timeout, so they run together.
+        for result in futures::future::join_all(
+            removed_streamer_ids
+                .iter()
+                .map(|streamer_id| self.removal_stop.stop_for_removal(streamer_id)),
+        )
+        .await
         {
-            self.removal_stop.stop_for_removal(&streamer_id).await;
+            result.map_err(|error| ConfigurationImportError::StreamerStop(error.to_string()))?;
         }
 
         let mut tx = begin_immediate(&self.write_pool).await?;
@@ -182,54 +211,57 @@ struct ImportSnapshot {
 }
 
 impl ImportSnapshot {
-    async fn load(tx: &mut ImmediateTransaction) -> Result<Self, sqlx::Error> {
+    /// Reads over `conn` rather than the write transaction so
+    /// `ConfigurationImportService::import` can validate the bundle against the
+    /// current rows before `begin_immediate`.
+    async fn load(conn: &mut sqlx::SqliteConnection) -> Result<Self, sqlx::Error> {
         let global = sqlx::query_as::<_, GlobalConfigDbModel>(
             "SELECT * FROM global_config ORDER BY rowid LIMIT 1",
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *conn)
         .await?;
         let engines =
             sqlx::query_as::<_, EngineConfigurationDbModel>("SELECT * FROM engine_configuration")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *conn)
                 .await?
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
         let templates = sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *conn)
             .await?
             .into_iter()
             .map(|model| (model.name.clone(), model))
             .collect();
         let platforms = sqlx::query_as::<_, PlatformConfigDbModel>("SELECT * FROM platform_config")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *conn)
             .await?
             .into_iter()
             .map(|model| (model.platform_name.clone(), model))
             .collect();
-        let streamers = load_streamer_rows(&mut **tx).await?;
+        let streamers = load_streamer_rows(&mut *conn).await?;
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *conn)
                 .await?
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
         let job_presets = sqlx::query_as::<_, JobPreset>("SELECT * FROM job_presets")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *conn)
             .await?
             .into_iter()
             .map(|model| (model.name.clone(), model))
             .collect();
         let pipeline_presets =
             sqlx::query_as::<_, PipelinePreset>("SELECT * FROM pipeline_presets")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *conn)
                 .await?
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
         let users = sqlx::query_as::<_, UserDbModel>("SELECT * FROM users")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *conn)
             .await?
             .into_iter()
             .map(|model| (model.username.clone(), model))
@@ -1213,6 +1245,11 @@ fn streamer_model(
     model.platform_config_id = platform_id.to_string();
     model.template_config_id = template_id;
     model.state = imported_state(existing, &source.state);
+    if clears_error_tracking(existing, &model.state) {
+        model.consecutive_error_count = Some(0);
+        model.disabled_until = None;
+        model.last_error = None;
+    }
     model.priority = source.priority.to_ascii_uppercase();
     model.avatar = source
         .avatar_url
@@ -1245,6 +1282,29 @@ fn imported_state(existing: Option<&StreamerDbModel>, source_state: &str) -> Str
             None => not_live,
         },
     }
+}
+
+/// Whether the row's error bookkeeping (`consecutive_error_count`,
+/// `disabled_until`, `last_error`) must be dropped alongside the state
+/// [`imported_state`] chose.
+///
+/// `streamer_model` starts from `existing.cloned()`, so without this the backoff
+/// a stopped streamer accumulated survives the write and a later re-enable lands
+/// on `NOT_LIVE` with a `disabled_until` still in the future, which
+/// `StreamerMetadata::is_ready_for_check` keeps rejecting. Matches
+/// `StreamerManager::partial_update_streamer`, which calls
+/// `StreamerMetadata::clear_error_tracking` on a `Disabled` write.
+fn clears_error_tracking(existing: Option<&StreamerDbModel>, new_state: &str) -> bool {
+    let stopped =
+        |state: StreamerState| matches!(state, StreamerState::Disabled | StreamerState::Cancelled);
+    let new_state = StreamerState::parse(new_state);
+    if new_state.is_some_and(stopped) {
+        return true;
+    }
+    new_state == Some(StreamerState::NotLive)
+        && existing
+            .and_then(|row| StreamerState::parse(&row.state))
+            .is_some_and(stopped)
 }
 
 fn db_json(value: serde_json::Value) -> String {
@@ -2049,6 +2109,9 @@ mod tests {
     struct RecordingRemovalStop {
         pool: SqlitePool,
         calls: std::sync::Mutex<Vec<(String, bool)>>,
+        /// Error returned by every `stop_for_removal` call, for the case where
+        /// the runtime cannot release a streamer the bundle removes.
+        failure: Option<String>,
     }
 
     impl RecordingRemovalStop {
@@ -2059,7 +2122,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl StreamerRemovalStop for RecordingRemovalStop {
-        async fn stop_for_removal(&self, streamer_id: &str) {
+        async fn stop_for_removal(&self, streamer_id: &str) -> crate::Result<()> {
             let present: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM streamers WHERE id = ?")
                 .bind(streamer_id)
                 .fetch_one(&self.pool)
@@ -2069,6 +2132,10 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((streamer_id.to_string(), present.0 > 0));
+            match &self.failure {
+                Some(message) => Err(crate::Error::Other(message.clone())),
+                None => Ok(()),
+            }
         }
     }
 
@@ -2086,6 +2153,10 @@ mod tests {
 
     impl ImportHarness {
         async fn new() -> Self {
+            Self::with_stop_failure(None).await
+        }
+
+        async fn with_stop_failure(stop_failure: Option<String>) -> Self {
             let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
             run_migrations(&pool).await.unwrap();
             let global: GlobalConfigDbModel =
@@ -2117,6 +2188,7 @@ mod tests {
             let removal_stop = Arc::new(RecordingRemovalStop {
                 pool: pool.clone(),
                 calls: std::sync::Mutex::new(Vec::new()),
+                failure: stop_failure,
             });
 
             let service = ConfigurationImportService::new(
@@ -2523,6 +2595,125 @@ mod tests {
             &crate::config::ConfigUpdateEvent::StreamerDeleted {
                 streamer_id: seeded.id.clone(),
             }
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejected_replace_import_leaves_the_runtime_untouched() {
+        let harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
+            .await;
+
+        // No `engines` section, as an export from an older schema carries, so
+        // replace-mode `validate_references` cannot resolve
+        // `global_config.default_download_engine`.
+        let config = import_config(&harness.global);
+        let error = harness
+            .service
+            .import(config, ImportMode::Replace)
+            .await
+            .expect_err("replace import without engines should be rejected");
+
+        assert!(matches!(error, ConfigurationImportError::Validation(_)));
+        assert!(
+            harness.removal_stop.calls().is_empty(),
+            "a rejected import must not stop any recording"
+        );
+        let row: StreamerDbModel = sqlx::query_as("SELECT * FROM streamers WHERE id = ?")
+            .bind(&seeded.id)
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.state, StreamerState::Live.as_str());
+    }
+
+    #[tokio::test]
+    async fn replace_import_aborts_when_a_removed_streamer_cannot_be_stopped() {
+        let harness =
+            ImportHarness::with_stop_failure(Some("engine still running".to_string())).await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
+            .await;
+
+        let mut config = import_config(&harness.global);
+        mirror_engines(&harness.pool, &mut config).await;
+        let error = harness
+            .service
+            .import(config, ImportMode::Replace)
+            .await
+            .expect_err("a failed stop should abort the import");
+
+        assert!(matches!(error, ConfigurationImportError::StreamerStop(_)));
+        let remaining: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM streamers WHERE id = ?")
+            .bind(&seeded.id)
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining.0, 1, "the row must survive an aborted import");
+    }
+
+    #[tokio::test]
+    async fn import_clears_the_error_backoff_of_a_streamer_it_stops() {
+        let harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::NotLive)
+            .await;
+        sqlx::query(
+            "UPDATE streamers SET consecutive_error_count = 4, disabled_until = ?, \
+             last_error = 'boom' WHERE id = ?",
+        )
+        .bind(crate::database::time::now_ms() + 3_600_000)
+        .bind(&seeded.id)
+        .execute(&harness.pool)
+        .await
+        .unwrap();
+
+        let mut config = import_config(&harness.global);
+        let mut disabled = imported_streamer(&seeded.url, "huya");
+        disabled.state = StreamerState::Disabled.as_str().to_string();
+        config.streamers.push(disabled);
+        harness
+            .service
+            .import(config, ImportMode::Merge)
+            .await
+            .unwrap();
+
+        let row: StreamerDbModel = sqlx::query_as("SELECT * FROM streamers WHERE id = ?")
+            .bind(&seeded.id)
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.state, StreamerState::Disabled.as_str());
+        assert_eq!(row.consecutive_error_count, Some(0));
+        assert_eq!(row.disabled_until, None);
+        assert_eq!(row.last_error, None);
+    }
+
+    #[test]
+    fn clears_error_tracking_follows_the_stop_and_re_enable_writes() {
+        let mut not_live =
+            StreamerDbModel::new("not live", "https://example.com/live", "platform-huya");
+        not_live.state = StreamerState::NotLive.as_str().to_string();
+        let mut disabled =
+            StreamerDbModel::new("disabled", "https://example.com/other", "platform-huya");
+        disabled.state = StreamerState::Disabled.as_str().to_string();
+
+        assert!(clears_error_tracking(
+            Some(&not_live),
+            StreamerState::Disabled.as_str()
+        ));
+        assert!(clears_error_tracking(
+            Some(&disabled),
+            StreamerState::NotLive.as_str()
+        ));
+        assert!(!clears_error_tracking(
+            Some(&not_live),
+            StreamerState::NotLive.as_str()
+        ));
+        assert!(!clears_error_tracking(
+            Some(&not_live),
+            StreamerState::Live.as_str()
         ));
     }
 
