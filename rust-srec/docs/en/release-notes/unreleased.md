@@ -28,6 +28,10 @@
 
   A streamer whose monitoring hit an unexpected internal error was quietly left unwatched until rust-srec was restarted, so nothing was recorded in the meantime. Monitoring is now restarted automatically. Quickly disabling and re-enabling a streamer no longer leaves it monitored twice or not at all either.
 
+- **A full disk is reported instead of quietly breaking every recording**
+
+  When the drive filled up part-way through a recording, the built-in recorder reported it as a broken recording and held it against that streamer, while every other streamer kept starting and failing the same way. Running out of space is now recognised for what it is: you get the "Output path inaccessible" alert, recordings pause, and they resume on their own within 30 seconds of space becoming available.
+
 ## API and integrations
 
 - **API keys for programmatic access**

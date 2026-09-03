@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::downloader::engine::traits::{
-    DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo,
+    DownloadFailureKind, DownloadProgress, IoErrorKindSer, SegmentEvent, SegmentInfo,
 };
 use crate::downloader::engine::utils::observe_segment_event_send;
 
@@ -421,25 +421,46 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
 // handle_writer_result
 // ---------------------------------------------------------------------------
 
+/// Per-download context for [`handle_writer_result`].
+pub(super) struct WriterSettleContext<'a> {
+    /// Sink for the terminal `SegmentEvent` (and the `DiskFull` that may
+    /// precede it).
+    pub event_tx: &'a mpsc::Sender<SegmentEvent>,
+    pub streamer_id: &'a str,
+    /// `"FLV"` or `"HLS"`, used only in log and event message prefixes.
+    pub protocol: &'a str,
+    /// Directory the writer was told to write into
+    /// (`DownloadConfig::output_dir`). Carried in the
+    /// [`SegmentEvent::DiskFull`] payload so `OutputRootGate::resolve_root`
+    /// keys the same root the ffmpeg and streamlink stderr readers key.
+    pub output_dir: &'a Path,
+    /// How this download ended from the engine's POV — see
+    /// [`crate::downloader::EngineEndSignal`]. Callers pass `CleanDisconnect`
+    /// for mesio FLV's TCP-close path and `HlsEndlist` for HLS when the
+    /// playlist contained `#EXT-X-ENDLIST`.
+    pub engine_signal: crate::downloader::EngineEndSignal,
+}
+
 /// Await the writer and pipeline tasks, emit terminal events, and return
 /// `DownloadStats`.
 ///
-/// `processing_tasks` should be empty for raw-mode calls. `engine_signal`
-/// describes how this download ended from the engine's POV — see
-/// [`crate::downloader::EngineEndSignal`]. Caller passes `CleanDisconnect`
-/// for mesio FLV's TCP-close path and `HlsEndlist` for HLS when the
-/// playlist contained `#EXT-X-ENDLIST`.
+/// `processing_tasks` should be empty for raw-mode calls.
 ///
 /// Replaces 4 identical ~40-line match blocks (plus 2 pipeline-await blocks).
 pub(super) async fn handle_writer_result(
     writer_task: tokio::task::JoinHandle<std::result::Result<WriterStats, WriterError>>,
     stream_error: Option<(DownloadFailureKind, String)>,
     processing_tasks: Vec<tokio::task::JoinHandle<std::result::Result<(), PipelineError>>>,
-    event_tx: &mpsc::Sender<SegmentEvent>,
-    streamer_id: &str,
-    protocol: &str,
-    engine_signal: crate::downloader::EngineEndSignal,
+    context: WriterSettleContext<'_>,
 ) -> crate::Result<DownloadStats> {
+    let WriterSettleContext {
+        event_tx,
+        streamer_id,
+        protocol,
+        output_dir,
+        engine_signal,
+    } = context;
+
     let writer_result = match writer_task.await {
         Ok(result) => result,
         Err(join_error) => {
@@ -551,6 +572,7 @@ pub(super) async fn handle_writer_result(
             Err(crate::Error::Other(message))
         }
         Err(writer_error) => {
+            let writer_kind = classify_writer_error(&writer_error);
             let mut writer_message = format!(
                 "{} writer error for {}: {}",
                 protocol, streamer_id, writer_error
@@ -560,6 +582,11 @@ pub(super) async fn handle_writer_result(
                 writer_message.push_str(&processing_errors.join("; "));
             }
 
+            // A stream error that reached the writer's input channel is the
+            // root cause and keeps its own kind, but the ENOSPC probe below
+            // still runs on `writer_kind`: an `io::Error` with
+            // `ErrorKind::StorageFull` in the writer's chain is a fact about
+            // the filesystem regardless of why the stream ended.
             let (kind, message) = if let Some((kind, stream_message)) = stream_error {
                 (
                     kind,
@@ -569,8 +596,35 @@ pub(super) async fn handle_writer_result(
                     ),
                 )
             } else {
-                (DownloadFailureKind::Processing, writer_message)
+                (writer_kind, writer_message)
             };
+
+            // Must precede `DownloadFailed`: the manager's event translator
+            // breaks out of its receive loop on the terminal event, so a
+            // `DiskFull` queued afterwards would never reach
+            // `OutputRootGate::record_failure`.
+            if writer_kind
+                == (DownloadFailureKind::OutputRootUnavailable {
+                    io_kind: IoErrorKindSer::StorageFull,
+                })
+            {
+                warn!(
+                    streamer_id = %streamer_id,
+                    output_dir = %output_dir.display(),
+                    "{} writer hit ENOSPC; emitting DiskFull event for gate",
+                    protocol
+                );
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::DiskFull {
+                            output_dir: output_dir.to_path_buf(),
+                            detail: format!("mesio {}: {}", protocol, writer_error),
+                        })
+                        .await,
+                    streamer_id,
+                );
+            }
+
             observe_segment_event_send(
                 event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -582,6 +636,44 @@ pub(super) async fn handle_writer_result(
             );
             Err(crate::Error::Other(message))
         }
+    }
+}
+
+/// Classify the [`WriterError`] returned by `ProtocolWriter::run` for the
+/// terminal [`SegmentEvent::DownloadFailed`].
+///
+/// `pipeline_common::writer_task` surfaces filesystem failures through two
+/// variants: `WriterError::Io` for its own `create_dir_all`/`flush` calls, and
+/// `WriterError::Strategy` wrapping `FlvStrategyError::Io` /
+/// `HlsStrategyError::Io` for `create_writer`, `on_file_open`, `write_item`
+/// and `on_file_close`. Either way the `std::io::Error` sits one or more links
+/// down the `source()` chain, which is why this defers to
+/// [`DownloadFailureKind::from_error_chain`] instead of matching on the
+/// variant. Variants that only carry a message — `Config`, `Rotation`,
+/// `Internal` — have no `io::Error` in their chain and stay `Processing`,
+/// which is unrecoverable and counts against the engine circuit breaker.
+///
+/// Only `ENOSPC` keeps [`DownloadFailureKind::OutputRootUnavailable`], because
+/// it is the only kind [`handle_writer_result`] pairs with a
+/// [`SegmentEvent::DiskFull`]. See that kind's contract in
+/// [`DownloadFailureKind::from_error_chain`]: it is exempt from the engine
+/// circuit breaker, so the gate rejecting the next start is the only thing
+/// left to throttle retries. `EROFS`, `EACCES`, `ENOENT` and probe timeouts
+/// leave the gate Healthy — and `ensure_output_dir` is `create_dir_all`, which
+/// returns `Ok` for an existing-but-unwritable directory, so the next start
+/// would not catch them either — hence they report as
+/// [`DownloadFailureKind::Io`], which is file-scoped and still counts against
+/// the breaker.
+fn classify_writer_error(error: &WriterError) -> DownloadFailureKind {
+    let Some(kind) = DownloadFailureKind::from_error_chain(error) else {
+        return DownloadFailureKind::Processing;
+    };
+    match kind {
+        DownloadFailureKind::OutputRootUnavailable {
+            io_kind: IoErrorKindSer::StorageFull,
+        } => kind,
+        DownloadFailureKind::OutputRootUnavailable { .. } => DownloadFailureKind::Io,
+        other => other,
     }
 }
 
@@ -715,10 +807,13 @@ mod tests {
                     "upstream disconnected".to_string(),
                 )),
                 vec![processing_task],
-                &event_tx,
-                "streamer-1",
-                "FLV",
-                crate::downloader::EngineEndSignal::CleanDisconnect,
+                WriterSettleContext {
+                    event_tx: &event_tx,
+                    streamer_id: "streamer-1",
+                    protocol: "FLV",
+                    output_dir: Path::new("/rec/streamer-1"),
+                    engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+                },
             )
             .await
         });
@@ -758,5 +853,195 @@ mod tests {
         };
         assert_eq!(kind, DownloadFailureKind::Network);
         assert_eq!(event_message, message);
+    }
+
+    /// Run `handle_writer_result` against a writer task that already failed
+    /// and drain every event it emitted, in order.
+    async fn settle_failed_writer(
+        writer_error: WriterError,
+        stream_error: Option<(DownloadFailureKind, String)>,
+    ) -> Vec<SegmentEvent> {
+        let writer_task =
+            tokio::spawn(async move { Err::<WriterStats, WriterError>(writer_error) });
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+
+        let result = handle_writer_result(
+            writer_task,
+            stream_error,
+            vec![],
+            WriterSettleContext {
+                event_tx: &event_tx,
+                streamer_id: "streamer-1",
+                protocol: "FLV",
+                output_dir: Path::new("/rec/streamer-1/2026-09-03"),
+                engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+            },
+        )
+        .await;
+        assert!(result.is_err(), "a writer error must fail the run");
+
+        drop(event_tx);
+        let mut events = Vec::new();
+        while let Some(event) = event_rx.recv().await {
+            events.push(event);
+        }
+        events
+    }
+
+    #[test]
+    fn writer_enospc_is_classified_as_output_root_unavailable() {
+        // `WriterTask::flush` / `create_dir_all` path.
+        assert_eq!(
+            classify_writer_error(&WriterError::Io(std::io::Error::from(
+                std::io::ErrorKind::StorageFull
+            ))),
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::StorageFull
+            }
+        );
+        // `FormatStrategy::create_writer` / `write_item` path: the io::Error
+        // sits two links down, behind `FlvStrategyError`.
+        assert_eq!(
+            classify_writer_error(&WriterError::Strategy(Box::new(
+                flv_fix::FlvStrategyError::Io(std::io::Error::from(
+                    std::io::ErrorKind::StorageFull
+                ))
+            ))),
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::StorageFull
+            }
+        );
+        assert_eq!(
+            classify_writer_error(&WriterError::InputError(PipelineError::Io(
+                std::io::Error::from(std::io::ErrorKind::StorageFull)
+            ))),
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::StorageFull
+            }
+        );
+    }
+
+    #[test]
+    fn writer_io_errors_that_cannot_reach_the_gate_keep_the_circuit_breaker() {
+        // These kinds emit no `DiskFull`, so the gate stays Healthy and the
+        // engine circuit breaker is the only backpressure left. `Io` keeps it;
+        // `OutputRootUnavailable` would not.
+        for error in [
+            WriterError::Strategy(Box::new(flv_fix::FlvStrategyError::Io(
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            ))),
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)),
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)),
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::TimedOut)),
+            WriterError::Io(std::io::Error::other("broken pipe")),
+        ] {
+            let kind = classify_writer_error(&error);
+            assert_eq!(kind, DownloadFailureKind::Io, "{error}");
+            assert!(kind.affects_circuit_breaker(), "{error}");
+        }
+    }
+
+    #[test]
+    fn writer_errors_without_an_io_source_stay_processing() {
+        for error in [
+            WriterError::Internal("writer not open".to_string()),
+            WriterError::Rotation("rotation failed".to_string()),
+            WriterError::Config("bad template".to_string()),
+        ] {
+            assert_eq!(
+                classify_writer_error(&error),
+                DownloadFailureKind::Processing
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn writer_enospc_emits_disk_full_before_the_terminal_event() {
+        let events = settle_failed_writer(
+            WriterError::Io(std::io::Error::new(
+                std::io::ErrorKind::StorageFull,
+                "No space left on device",
+            )),
+            None,
+        )
+        .await;
+
+        let SegmentEvent::DiskFull { output_dir, detail } = &events[0] else {
+            panic!("DiskFull must precede the terminal event, got {:?}", events);
+        };
+        assert_eq!(output_dir, Path::new("/rec/streamer-1/2026-09-03"));
+        assert!(detail.contains("No space left on device"), "{detail}");
+
+        let SegmentEvent::DownloadFailed { kind, .. } = &events[1] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(
+            *kind,
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::StorageFull
+            }
+        );
+        // The recording directory filling up is infrastructure, so it must not
+        // open the engine circuit breaker, and the attempt stays retryable.
+        assert!(!kind.affects_circuit_breaker());
+        assert!(kind.is_recoverable());
+        assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn writer_enospc_still_reaches_the_gate_when_a_stream_error_came_first() {
+        let events = settle_failed_writer(
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::StorageFull)),
+            Some((
+                DownloadFailureKind::Network,
+                "upstream disconnected".to_string(),
+            )),
+        )
+        .await;
+
+        assert!(
+            matches!(events[0], SegmentEvent::DiskFull { .. }),
+            "the filesystem is full regardless of why the stream ended, got {:?}",
+            events
+        );
+        // The stream error is still the reported cause of the attempt.
+        let SegmentEvent::DownloadFailed { kind, message } = &events[1] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(*kind, DownloadFailureKind::Network);
+        assert!(message.contains("upstream disconnected"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn writer_processing_failure_stays_unrecoverable_and_skips_the_gate() {
+        let events =
+            settle_failed_writer(WriterError::Internal("writer not open".to_string()), None).await;
+
+        let SegmentEvent::DownloadFailed { kind, .. } = &events[0] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(*kind, DownloadFailureKind::Processing);
+        assert!(kind.affects_circuit_breaker());
+        assert!(!kind.is_recoverable());
+        assert_eq!(events.len(), 1, "no DiskFull for a non-I/O writer failure");
+    }
+
+    #[tokio::test]
+    async fn writer_read_only_filesystem_skips_the_gate_and_keeps_the_breaker() {
+        let events = settle_failed_writer(
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)),
+            None,
+        )
+        .await;
+
+        let SegmentEvent::DownloadFailed { kind, .. } = &events[0] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(*kind, DownloadFailureKind::Io);
+        assert!(
+            kind.affects_circuit_breaker(),
+            "nothing else throttles a retry while the gate is Healthy"
+        );
+        assert_eq!(events.len(), 1, "DiskFull would mis-report ENOSPC");
     }
 }
