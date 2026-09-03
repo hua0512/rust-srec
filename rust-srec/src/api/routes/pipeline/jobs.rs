@@ -508,13 +508,20 @@ pub async fn delete_job(
     })))
 }
 
+/// Cancel a pipeline by id.
+///
+/// A `pipeline_id` naming a DAG execution cancels the whole DAG;
+/// [`crate::pipeline::PipelineManager::cancel_pipeline`] accepts an id that matches nothing and an
+/// already-terminal DAG alike, reporting `cancelled_count: 0` rather than failing, so the only
+/// error this can answer with comes from the database.
 #[utoipa::path(
     delete,
     path = "/api/pipeline/{pipeline_id}",
     tag = "pipeline",
     params(("pipeline_id" = String, Path, description = "Pipeline ID")),
     responses(
-        (status = 200, description = "Pipeline cancelled")
+        (status = 200, description = "Pipeline cancelled"),
+        (status = 500, description = "Pipeline could not be cancelled", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
