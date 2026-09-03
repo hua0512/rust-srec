@@ -437,35 +437,10 @@ where
     StreamProxyState: FromRef<S>,
 {
     Router::new()
-        // Mounted under `/api/stream-proxy` by the main router.
-        .route("/", get(stream_proxy_get).options(stream_proxy_options))
-}
-
-/// Answers the `OPTIONS` requests that reach the route rather than being
-/// short-circuited by the router-wide `CorsLayer` (which only intercepts a
-/// preflight carrying `Access-Control-Request-Method`).
-async fn stream_proxy_options(
-    State(state): State<StreamProxyState>,
-    headers_in: HeaderMap,
-) -> impl IntoResponse {
-    let mut headers = HeaderMap::new();
-    state
-        .cors
-        .apply_allow_origin(headers_in.get(axum::http::header::ORIGIN), &mut headers);
-    headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("GET, HEAD, OPTIONS"),
-    );
-    headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("Range, Authorization"),
-    );
-    headers.insert(
-        axum::http::header::ACCESS_CONTROL_EXPOSE_HEADERS,
-        HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges"),
-    );
-
-    (StatusCode::NO_CONTENT, headers)
+        // Mounted under `/api/stream-proxy` by the main router. `OPTIONS` is
+        // not routed: the router-wide `CorsLayer` answers every `OPTIONS`
+        // itself without calling the inner service.
+        .route("/", get(stream_proxy_get))
 }
 
 pub async fn stream_proxy_get(

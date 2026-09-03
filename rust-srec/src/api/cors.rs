@@ -1,11 +1,17 @@
 //! Cross-origin policy shared by the router's `CorsLayer` and by handlers
 //! that write their own CORS headers (`routes::stream_proxy`).
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::extract::{Request, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tracing::{info, warn};
+
+use crate::api::error::ApiError;
 
 /// Comma-separated list of exact origins (`scheme://host[:port]`) allowed to
 /// call the API from a browser while authentication is disabled.
@@ -14,9 +20,10 @@ pub const CORS_ORIGINS_ENV: &str = "API_CORS_ORIGINS";
 /// Origins allowed when `API_CORS_ORIGINS` is unset and the API runs without
 /// an `AuthService`: the Vite dev server (`frontend/package.json` runs it on
 /// 15275) and the origins a Tauri v2 webview loads from.
-pub const DEFAULT_UNAUTHENTICATED_ORIGINS: [&str; 4] = [
+pub const DEFAULT_UNAUTHENTICATED_ORIGINS: [&str; 5] = [
     "http://localhost:15275",
     "http://127.0.0.1:15275",
+    "http://[::1]:15275",
     "tauri://localhost",
     "http://tauri.localhost",
 ];
@@ -26,17 +33,16 @@ pub const DEFAULT_UNAUTHENTICATED_ORIGINS: [&str; 4] = [
 pub enum CorsPolicy {
     /// Every origin, answered with `Access-Control-Allow-Origin: *`.
     ///
-    /// Used while `AppState::auth_service` is set: every route behind
-    /// `AuthLayer` needs a bearer token that a third-party page cannot obtain
-    /// from the browser, and no route reads cookies, so a permissive origin
-    /// list grants a foreign page nothing.
+    /// Used while `AppState::auth_service` is set, where `AuthLayer` — not
+    /// the origin — is what stands between a caller and a protected route.
     AnyOrigin,
     /// Only these exact origins, compared byte-for-byte against the request's
     /// `Origin` header.
     ///
-    /// Used while `AppState::auth_service` is `None`, where any origin that
-    /// passes this check can drive every route — including
-    /// `routes::pipeline` job submission — with no credential at all.
+    /// Used while `AppState::auth_service` is `None`, where no route has any
+    /// other check. On its own this variant only controls response headers,
+    /// which browsers enforce for reads; [`OriginGuard`] is what turns it
+    /// into a request-side rule.
     Exact(Arc<[HeaderValue]>),
 }
 
@@ -66,12 +72,9 @@ impl CorsPolicy {
     /// Write `Access-Control-Allow-Origin` for a request that arrived with
     /// `origin`, leaving `headers` untouched when the origin is not allowed.
     ///
-    /// `Vary: Origin` is appended whenever the value depends on the request,
-    /// so a shared cache cannot serve one origin's response to another.
+    /// `Vary: Origin` is left to the `CorsLayer`, which emits it for every
+    /// response it touches.
     pub fn apply_allow_origin(&self, origin: Option<&HeaderValue>, headers: &mut HeaderMap) {
-        if matches!(self, Self::Exact(_)) {
-            headers.append(header::VARY, HeaderValue::from_static("origin"));
-        }
         if let Some(value) = self.allow_origin_value(origin) {
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, value);
         }
@@ -167,6 +170,131 @@ fn normalize_origin(entry: &str) -> Result<HeaderValue, &'static str> {
         return Err("origins cannot contain whitespace");
     }
     HeaderValue::from_str(&value).map_err(|_| "not a valid header value")
+}
+
+/// Request-side origin and host check installed while
+/// [`CorsPolicy::Exact`] is in force.
+///
+/// `CorsLayer` alone is not a request-side boundary: it only decides which
+/// `Access-Control-Allow-Origin` goes on the response, by which point the
+/// inner service has already run. Requests that need no preflight — body-less
+/// `POST`s such as `routes::job::cancel_job`, and the WebSocket upgrades in
+/// `routes::logging` and `routes::downloads` — therefore reach their handler
+/// whatever the origin. This guard rejects them before routing.
+///
+/// Two rules, both aimed at a browser that a foreign page is driving:
+/// - an `Origin` that is neither in the allowlist nor equal to the request's
+///   own `Host` (a same-site request) is refused;
+/// - a `Host` that is neither loopback nor the configured bind address is
+///   refused, which is what makes DNS rebinding fail — a name the attacker
+///   controls that resolves to `127.0.0.1` carries no cross-site `Origin`,
+///   but it does carry its own `Host`.
+///
+/// Requests with no `Origin` header (curl, the frontend's own server-side
+/// calls) are not browser-driven and pass the first rule.
+#[derive(Clone, Debug)]
+pub struct OriginGuard {
+    policy: CorsPolicy,
+    /// `ApiServerConfig::bind_address`, accepted in `Host` alongside the
+    /// loopback names.
+    bind_address: Arc<str>,
+}
+
+impl OriginGuard {
+    pub fn new(policy: CorsPolicy, bind_address: &str) -> Self {
+        Self {
+            policy,
+            bind_address: Arc::from(bind_address.trim()),
+        }
+    }
+
+    /// `None` when the request may proceed, otherwise why it was refused.
+    pub fn reject_reason(&self, headers: &HeaderMap) -> Option<&'static str> {
+        let host = headers
+            .get(header::HOST)
+            .and_then(|host| host.to_str().ok());
+        // A missing Host only happens outside a browser (HTTP/1.0); hyper
+        // fills it from `:authority` on HTTP/2.
+        if let Some(host) = host
+            && !self.host_is_local(host)
+        {
+            return Some("host is not local");
+        }
+
+        let origin = headers.get(header::ORIGIN)?;
+        if self.policy.allow_origin_value(Some(origin)).is_some() {
+            return None;
+        }
+        // Same-site requests carry an Origin too; comparing it with Host is
+        // what keeps the Swagger UI at `/api/docs` working.
+        if let Some(host) = host
+            && origin
+                .to_str()
+                .ok()
+                .and_then(|origin| origin.split_once("://"))
+                .is_some_and(|(_, authority)| authority.eq_ignore_ascii_case(host))
+        {
+            return None;
+        }
+        Some("origin is not allowed")
+    }
+
+    /// True for `localhost`, any loopback literal, or the configured bind
+    /// address, with an optional port.
+    fn host_is_local(&self, host: &str) -> bool {
+        let host = strip_port(host);
+        if host.eq_ignore_ascii_case("localhost") {
+            return true;
+        }
+        if let Ok(address) = host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<IpAddr>()
+            && address.is_loopback()
+        {
+            return true;
+        }
+        !self.bind_address.is_empty() && self.bind_address.eq_ignore_ascii_case(host)
+    }
+}
+
+/// Split the host part off an authority, keeping a bracketed IPv6 literal
+/// intact.
+fn strip_port(authority: &str) -> &str {
+    if let Some(end) = authority.rfind(']') {
+        return &authority[..=end];
+    }
+    match authority.split_once(':') {
+        Some((host, _)) => host,
+        None => authority,
+    }
+}
+
+/// Axum middleware wrapping [`OriginGuard::reject_reason`].
+///
+/// Installed inside the `CorsLayer` so preflights, which the layer answers
+/// without calling the inner service, never reach it.
+pub async fn origin_guard(
+    State(guard): State<OriginGuard>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if let Some(reason) = guard.reject_reason(request.headers()) {
+        warn!(
+            reason,
+            origin = ?request.headers().get(header::ORIGIN),
+            host = ?request.headers().get(header::HOST),
+            path = %request.uri().path(),
+            "Rejected request while authentication is disabled"
+        );
+        return ApiError::new(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN_ORIGIN",
+            "Cross-origin requests are restricted while authentication is disabled",
+        )
+        .into_response();
+    }
+    next.run(request).await
 }
 
 /// Log the resolved policy once, at router construction.
@@ -289,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_allow_origin_varies_and_omits_disallowed_origins() {
+    fn apply_allow_origin_omits_disallowed_origins() {
         let policy = exact(&["http://localhost:15275"]);
 
         let mut allowed = HeaderMap::new();
@@ -298,12 +426,12 @@ mod tests {
             allowed.get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
             Some(&origin("http://localhost:15275"))
         );
-        assert_eq!(allowed.get(header::VARY), Some(&origin("origin")));
 
         let mut denied = HeaderMap::new();
         policy.apply_allow_origin(Some(&origin("https://evil.example")), &mut denied);
         assert!(denied.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
-        assert_eq!(denied.get(header::VARY), Some(&origin("origin")));
+        // `Vary` belongs to the CorsLayer, which sets it on every response.
+        assert!(denied.get(header::VARY).is_none());
     }
 
     mod router_preflight {
@@ -376,6 +504,127 @@ mod tests {
                     Some(&HeaderValue::from_static("*")),
                     "origin: {from}"
                 );
+            }
+        }
+    }
+
+    mod request_guard {
+        //! Covers the requests a browser sends without a preflight, which the
+        //! `CorsLayer` passes straight through to the handler: body-less
+        //! `POST`s and WebSocket upgrades.
+
+        use super::*;
+        use axum::Router;
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::{get, post};
+        use tower::ServiceExt;
+
+        const HOST: &str = "127.0.0.1:12555";
+
+        fn guard() -> OriginGuard {
+            OriginGuard::new(
+                policy_for(
+                    false,
+                    &parse_origins(["http://localhost:15275"].into_iter()),
+                ),
+                "127.0.0.1",
+            )
+        }
+
+        /// A route pair standing in for `routes::job::cancel_job` and the
+        /// `routes::logging` WebSocket, behind the same middleware
+        /// `ApiServer::build_router` installs.
+        fn app() -> Router {
+            Router::new()
+                .route("/api/job/cancel", post(|| async { "cancelled" }))
+                .route("/api/logging/ws", get(|| async { "upgraded" }))
+                .layer(axum::middleware::from_fn_with_state(
+                    guard(),
+                    super::super::origin_guard,
+                ))
+        }
+
+        async fn send(request: Request<Body>) -> axum::response::Response {
+            app()
+                .oneshot(request)
+                .await
+                .expect("router call should be infallible")
+        }
+
+        fn simple_post(origin: &str, host: &str) -> Request<Body> {
+            Request::builder()
+                .method("POST")
+                .uri("/api/job/cancel")
+                .header(header::HOST, host)
+                .header(header::ORIGIN, origin)
+                .body(Body::empty())
+                .expect("test request should build")
+        }
+
+        fn websocket_upgrade(origin: &str, host: &str) -> Request<Body> {
+            Request::builder()
+                .uri("/api/logging/ws")
+                .header(header::HOST, host)
+                .header(header::ORIGIN, origin)
+                .header(header::CONNECTION, "Upgrade")
+                .header(header::UPGRADE, "websocket")
+                .body(Body::empty())
+                .expect("test request should build")
+        }
+
+        #[tokio::test]
+        async fn foreign_origin_is_refused_before_routing() {
+            for request in [
+                simple_post("https://evil.example", HOST),
+                websocket_upgrade("https://evil.example", HOST),
+            ] {
+                let uri = request.uri().clone();
+                let response = send(request).await;
+                assert_eq!(response.status(), StatusCode::FORBIDDEN, "uri: {uri}");
+            }
+        }
+
+        #[tokio::test]
+        async fn configured_origin_reaches_the_route() {
+            for request in [
+                simple_post("http://localhost:15275", HOST),
+                websocket_upgrade("http://localhost:15275", HOST),
+            ] {
+                let uri = request.uri().clone();
+                let response = send(request).await;
+                assert_eq!(response.status(), StatusCode::OK, "uri: {uri}");
+            }
+        }
+
+        #[tokio::test]
+        async fn same_site_origin_reaches_the_route() {
+            // What the Swagger UI at `/api/docs` sends.
+            let response = send(simple_post(&format!("http://{HOST}"), HOST)).await;
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn rebound_host_is_refused_even_without_an_origin() {
+            let request = Request::builder()
+                .method("POST")
+                .uri("/api/job/cancel")
+                .header(header::HOST, "recorder.evil.example")
+                .body(Body::empty())
+                .expect("test request should build");
+            assert_eq!(send(request).await.status(), StatusCode::FORBIDDEN);
+        }
+
+        #[tokio::test]
+        async fn local_hosts_and_originless_callers_pass() {
+            for host in ["localhost:15275", "127.0.0.1:12555", "[::1]:12555"] {
+                let request = Request::builder()
+                    .method("POST")
+                    .uri("/api/job/cancel")
+                    .header(header::HOST, host)
+                    .body(Body::empty())
+                    .expect("test request should build");
+                assert_eq!(send(request).await.status(), StatusCode::OK, "host: {host}");
             }
         }
     }

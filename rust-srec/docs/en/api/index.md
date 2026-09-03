@@ -92,7 +92,9 @@ API errors use one stable envelope:
 
 `details` is omitted when unavailable. Common statuses are `400` invalid input, `401` missing/expired credentials, `403` disabled account or required password change, `404` missing resource, `409` conflict, `422` validation failure, `429` too many failed login attempts, `500` internal failure, and `503` unavailable dependency.
 
-`POST /api/auth/login` is rate limited per username and per source address. After five failed attempts it answers `429` with code `TOO_MANY_REQUESTS` and a `Retry-After` header holding the number of seconds to wait; a successful login clears the count for that username.
+`POST /api/auth/login` is rate limited per account and per source address. After five failed attempts for one account it answers `429` with code `TOO_MANY_REQUESTS` and a `Retry-After` header holding the number of seconds to wait; a successful login clears that account's count. A second, much looser budget (100 failures per window) caps password-hashing work per source address.
+
+The source address is the peer of the TCP connection. `X-Forwarded-For` and `X-Real-IP` are not trusted, so **behind the bundled frontend container, nginx, or any other reverse proxy, every login is attributed to the proxy's address** — the per-address budget is a work cap, not a per-client lockout. Usernames longer than 128 characters are rejected with `400` before either budget is consulted. Both budgets are configurable; see [Configuration](../getting-started/configuration.md#login-throttling).
 
 Clients should branch on HTTP status and `code`, not parse the human-readable `message`.
 

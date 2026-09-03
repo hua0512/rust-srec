@@ -195,6 +195,9 @@ impl From<AuthError> for ApiError {
                 ApiError::bad_request("Current password is incorrect")
             }
             AuthError::UserNotFound => ApiError::unauthorized("Invalid credentials"),
+            AuthError::UsernameTooLong { max } => {
+                ApiError::bad_request(format!("Username must be at most {max} characters"))
+            }
             // Deliberately identical whether or not the username exists, so a
             // throttled caller cannot use the 429 to enumerate accounts.
             AuthError::TooManyAttempts { retry_after_secs } => ApiError::too_many_requests(

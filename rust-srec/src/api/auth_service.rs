@@ -20,7 +20,7 @@ use argon2::{
 use chrono::{Duration, Utc};
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info, warn};
 
 use crate::api::rate_limit::{LoginRateKey, LoginRateLimiter};
@@ -177,6 +177,9 @@ pub enum AuthError {
     #[error("Too many failed login attempts")]
     TooManyAttempts { retry_after_secs: u64 },
 
+    #[error("Username must be at most {max} characters")]
+    UsernameTooLong { max: usize },
+
     #[error("Database error: {0}")]
     Database(String),
 
@@ -259,6 +262,12 @@ struct CachedApiKeyState {
 /// `authorize_api_key` does not issue an UPDATE per authenticated request.
 const API_KEY_LAST_USED_WRITE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// Longest username `authenticate` will look up. `users.username` is a
+/// SQLite `TEXT` column with no length of its own, so the bound lives here:
+/// without it the request body limit (10 MiB) would set the size of a
+/// `LoginRateKey::Username` input and of every log line quoting it.
+pub const MAX_USERNAME_LENGTH: usize = 128;
+
 /// Bounds on the number of Argon2id hashes running at once; see
 /// `AuthService::password_work_permits`.
 const MIN_PASSWORD_WORK_PERMITS: usize = 2;
@@ -301,7 +310,7 @@ pub struct AuthService {
     /// and `hash_password_blocking`. Each hash costs 19 MiB and two passes,
     /// so without this a burst of login requests would occupy every
     /// `spawn_blocking` thread and stall unrelated blocking work.
-    password_work_permits: Semaphore,
+    password_work_permits: Arc<Semaphore>,
 }
 
 impl AuthService {
@@ -323,8 +332,8 @@ impl AuthService {
             api_key_state_cache: DashMap::new(),
             api_key_cache_generation: AtomicU64::new(0),
             api_key_last_used_writes: DashMap::new(),
-            login_rate_limiter: LoginRateLimiter::default(),
-            password_work_permits: Semaphore::new(password_work_permits()),
+            login_rate_limiter: LoginRateLimiter::from_env(),
+            password_work_permits: Arc::new(Semaphore::new(password_work_permits())),
         }
     }
 
@@ -449,11 +458,15 @@ impl AuthService {
     /// (m=19456, t=2) never occupies a tokio async worker.
     /// A caller waits here rather than adding another 19 MiB hash to the
     /// blocking pool once `password_work_permits` is exhausted.
-    async fn acquire_password_work_permit(
-        &self,
-    ) -> Result<tokio::sync::SemaphorePermit<'_>, AuthError> {
+    ///
+    /// The permit is owned rather than borrowed so it can be moved into the
+    /// `spawn_blocking` closure: dropping the request future (a client that
+    /// disconnects mid-login) must not release the permit while the Argon2id
+    /// work it accounts for is still running on a blocking thread.
+    async fn acquire_password_work_permit(&self) -> Result<OwnedSemaphorePermit, AuthError> {
         self.password_work_permits
-            .acquire()
+            .clone()
+            .acquire_owned()
             .await
             .map_err(|e| AuthError::Internal(format!("Password work semaphore closed: {}", e)))
     }
@@ -463,21 +476,27 @@ impl AuthService {
         password: &str,
         hash: &str,
     ) -> Result<bool, AuthError> {
-        let _permit = self.acquire_password_work_permit().await?;
+        let permit = self.acquire_password_work_permit().await?;
         let password = password.to_owned();
         let hash = hash.to_owned();
-        tokio::task::spawn_blocking(move || Self::verify_password(&password, &hash))
-            .await
-            .map_err(|e| AuthError::Internal(format!("Password verification task failed: {}", e)))?
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            Self::verify_password(&password, &hash)
+        })
+        .await
+        .map_err(|e| AuthError::Internal(format!("Password verification task failed: {}", e)))?
     }
 
     /// Run `hash_password` on a blocking thread; see `verify_password_blocking`.
     async fn hash_password_blocking(&self, password: &str) -> Result<String, AuthError> {
-        let _permit = self.acquire_password_work_permit().await?;
+        let permit = self.acquire_password_work_permit().await?;
         let password = password.to_owned();
-        tokio::task::spawn_blocking(move || Self::hash_password(&password))
-            .await
-            .map_err(|e| AuthError::Internal(format!("Password hashing task failed: {}", e)))?
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            Self::hash_password(&password)
+        })
+        .await
+        .map_err(|e| AuthError::Internal(format!("Password hashing task failed: {}", e)))?
     }
 
     /// Generate a cryptographically secure refresh token (256 bits).
@@ -533,11 +552,15 @@ impl AuthService {
     ///
     /// `client_ip` is the peer address of the connection the request arrived
     /// on (`api::rate_limit::ClientIp`), or `None` when it is unknown; it
-    /// only feeds the failed-attempt counters, never the authorization
-    /// decision. Every outcome that the caller could have avoided by
-    /// presenting valid credentials counts against both the username and the
-    /// address, so neither an account nor a source can spend unlimited
-    /// Argon2id verifications; repository failures do not count.
+    /// only feeds the failed-attempt budgets, never the authorization
+    /// decision.
+    ///
+    /// A slot is reserved on both budgets before the user lookup, so
+    /// simultaneous requests cannot all pass a check that only one of them
+    /// should. Outcomes the caller could have avoided by presenting valid
+    /// credentials keep the slot; a repository or hashing failure hands it
+    /// back via `LoginRateLimiter::release`, and success settles it via
+    /// `commit_success`.
     pub async fn authenticate(
         &self,
         username: &str,
@@ -546,68 +569,82 @@ impl AuthService {
         client_ip: Option<IpAddr>,
     ) -> Result<AuthResponse, AuthError> {
         debug!(
-            username = %username,
             device_info = ?device_info.as_deref(),
             "Login attempt"
         );
 
-        let username_key = LoginRateKey::username(username);
-        let mut rate_keys = vec![username_key.clone()];
+        // Bounded before the username reaches the limiter, so a caller cannot
+        // spend the request body limit on one map key.
+        if username.len() > MAX_USERNAME_LENGTH {
+            return Err(AuthError::UsernameTooLong {
+                max: MAX_USERNAME_LENGTH,
+            });
+        }
+
+        let mut rate_keys = vec![LoginRateKey::username(username)];
         if let Some(ip) = client_ip {
             rate_keys.push(LoginRateKey::Ip(ip));
         }
 
-        // Checked before any repository or Argon2id work, so a throttled
+        // Reserved before any repository or Argon2id work, so a throttled
         // caller costs nothing beyond the map lookup.
-        if let Some(retry_after) = self.login_rate_limiter.check(&rate_keys) {
-            warn!(
-                username = %username,
-                client_ip = ?client_ip,
-                retry_after_secs = retry_after.as_secs(),
-                "Login throttled: too many failed attempts"
-            );
-            // Rounded up, and never zero, so a client honouring `Retry-After`
-            // does not come straight back into the same rejection.
-            let retry_after_secs =
-                retry_after.as_secs() + u64::from(retry_after.subsec_nanos() > 0);
-            return Err(AuthError::TooManyAttempts {
-                retry_after_secs: retry_after_secs.max(1),
-            });
-        }
+        let reserved_at = match self.login_rate_limiter.try_begin(&rate_keys) {
+            Ok(reserved_at) => reserved_at,
+            Err(retry_after) => {
+                warn!(
+                    client_ip = ?client_ip,
+                    retry_after_secs = retry_after.as_secs(),
+                    "Login throttled: failed-attempt budget exhausted"
+                );
+                // Rounded up, and never zero, so a client honouring
+                // `Retry-After` does not come straight back into the same
+                // rejection.
+                let retry_after_secs =
+                    retry_after.as_secs() + u64::from(retry_after.subsec_nanos() > 0);
+                return Err(AuthError::TooManyAttempts {
+                    retry_after_secs: retry_after_secs.max(1),
+                });
+            }
+        };
 
         // Find user by username
-        let user = self
-            .user_repo
-            .find_by_username(username)
-            .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
+        let user = match self.user_repo.find_by_username(username).await {
+            Ok(user) => user,
+            Err(e) => {
+                // A repository outage is not a failed credential; charging
+                // it would let a database blip lock every account out.
+                self.login_rate_limiter.release(&rate_keys, reserved_at);
+                return Err(AuthError::Database(e.to_string()));
+            }
+        };
         let Some(user) = user else {
-            self.login_rate_limiter.record_failure(&rate_keys);
             return Err(AuthError::InvalidCredentials);
         };
 
         // Check if account is active
         if !user.is_active {
-            warn!(user_id = %user.id, username = %username, "Login blocked: account disabled");
-            self.login_rate_limiter.record_failure(&rate_keys);
+            warn!(user_id = %user.id, "Login blocked: account disabled");
             return Err(AuthError::AccountDisabled);
         }
 
         // Verify password
-        if !self
+        let password_matches = match self
             .verify_password_blocking(password, &user.password_hash)
-            .await?
+            .await
         {
-            warn!(user_id = %user.id, username = %username, "Login failed: invalid credentials");
-            self.login_rate_limiter.record_failure(&rate_keys);
+            Ok(password_matches) => password_matches,
+            Err(error) => {
+                self.login_rate_limiter.release(&rate_keys, reserved_at);
+                return Err(error);
+            }
+        };
+        if !password_matches {
+            warn!(user_id = %user.id, "Login failed: invalid credentials");
             return Err(AuthError::InvalidCredentials);
         }
 
-        // Valid credentials clear the username counter so a user who mistyped
-        // a few times is not throttled on their next session. The IP counter
-        // is left alone: one account an attacker does hold must not reset the
-        // budget they are spending on the others.
-        self.login_rate_limiter.clear(&username_key);
+        self.login_rate_limiter
+            .commit_success(&rate_keys, reserved_at);
 
         // Update last login timestamp
         let now = Utc::now();

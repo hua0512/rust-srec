@@ -873,7 +873,9 @@ mod tests {
             //! test measures the counter rather than hashing throughput.
 
             use super::*;
-            use crate::api::rate_limit::{LOGIN_FAILURE_WINDOW, MAX_FAILED_LOGIN_ATTEMPTS};
+            use crate::api::rate_limit::{
+                DEFAULT_LOGIN_FAILURE_WINDOW, DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS,
+            };
             use axum::http::header::RETRY_AFTER;
 
             async fn attempt_login(app: &Router, username: &str) -> axum::response::Response {
@@ -897,7 +899,7 @@ mod tests {
             async fn attempt_past_the_budget_is_throttled_with_retry_after() {
                 let (app, _token) = forced_change_app();
 
-                for attempt in 1..=MAX_FAILED_LOGIN_ATTEMPTS {
+                for attempt in 1..=DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS {
                     let response = attempt_login(&app, "ghost").await;
                     assert_eq!(
                         response.status(),
@@ -918,7 +920,7 @@ mod tests {
                     .parse::<u64>()
                     .expect("Retry-After should be a delay in seconds");
                 assert!(retry_after > 0);
-                assert!(retry_after <= LOGIN_FAILURE_WINDOW.as_secs());
+                assert!(retry_after <= DEFAULT_LOGIN_FAILURE_WINDOW.as_secs());
 
                 let body = to_bytes(throttled.into_body(), usize::MAX)
                     .await
@@ -939,7 +941,7 @@ mod tests {
             async fn throttling_one_username_leaves_others_alone() {
                 let (app, _token) = forced_change_app();
 
-                for _ in 0..=MAX_FAILED_LOGIN_ATTEMPTS {
+                for _ in 0..=DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS {
                     attempt_login(&app, "ghost").await;
                 }
                 assert_eq!(

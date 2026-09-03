@@ -14,7 +14,7 @@ use tower_http::cors::Any;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
 
-use crate::api::cors::{self, CorsPolicy};
+use crate::api::cors::{self, CorsPolicy, OriginGuard};
 use crate::api::routes;
 use crate::database::repositories::NotificationRepository;
 use crate::error::Result;
@@ -230,10 +230,22 @@ impl ApiServer {
 
         router = router.layer(DefaultBodyLimit::max(self.config.body_limit));
 
+        let policy = self.state.cors_policy();
+        cors::log_policy(&policy);
+
+        // `CorsPolicy::Exact` only governs response headers; without
+        // `origin_guard` a foreign page could still reach handlers through
+        // requests browsers do not preflight. Installed under the CorsLayer
+        // below so preflights, which that layer answers itself, skip it.
+        if matches!(policy, CorsPolicy::Exact(_)) {
+            router = router.layer(axum::middleware::from_fn_with_state(
+                OriginGuard::new(policy.clone(), &self.config.bind_address),
+                cors::origin_guard,
+            ));
+        }
+
         // Add CORS if enabled
         if self.config.enable_cors {
-            let policy = self.state.cors_policy();
-            cors::log_policy(&policy);
             let cors = policy
                 .layer()
                 .allow_methods(Any)

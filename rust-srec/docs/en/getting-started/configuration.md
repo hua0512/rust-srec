@@ -141,6 +141,9 @@ The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including wh
 | `JWT_SECRET` | Secret key for JWT signing (**Required** unless using the local-only opt-out below) | - |
 | `AUTH_DISABLED` | Disable backend authentication for loopback-only local development | `false` |
 | `API_CORS_ORIGINS` | Comma-separated exact browser origins (`scheme://host[:port]`) allowed to call the API cross-origin while authentication is disabled | Local dev server and desktop webview origins |
+| `API_LOGIN_MAX_FAILURES` | Failed logins tolerated per account inside the window | `5` |
+| `API_LOGIN_IP_MAX_FAILURES` | Failed logins tolerated per source address inside the window | `100` |
+| `API_LOGIN_WINDOW_SECS` | Length of the failed-login window, in seconds | `900` (15m) |
 | `JWT_ISSUER` | JWT issuer identifier | `rust-srec` |
 | `JWT_AUDIENCE` | JWT audience identifier | `rust-srec-api` |
 | `SESSION_SECRET` | Frontend session encryption secret (**Required**, min 32 chars) | - |
@@ -149,7 +152,16 @@ The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including wh
 
 The backend refuses to start without a non-empty `JWT_SECRET`. For local development only, authentication can be disabled by setting both `AUTH_DISABLED=true` and `API_BIND_ADDRESS=127.0.0.1` (or `::1`). The backend rejects this opt-out for wildcard, hostname, and non-loopback bind addresses.
 
-While authentication is disabled, only the origins in `API_CORS_ORIGINS` may call the API from a browser; the default list covers `http://localhost:15275`, `http://127.0.0.1:15275`, `tauri://localhost`, and `http://tauri.localhost`. Set the variable to override it — entries must be exact origins with no trailing path, and malformed entries are skipped with a warning at startup. With authentication enabled the variable is ignored and any origin may send requests, because every protected route still requires a bearer token.
+While authentication is disabled, only the origins in `API_CORS_ORIGINS` may call the API from a browser; the default list covers `http://localhost:15275`, `http://127.0.0.1:15275`, `http://[::1]:15275`, `tauri://localhost`, and `http://tauri.localhost`. Set the variable to override it — entries must be exact origins with no trailing path, and malformed entries are skipped with a warning at startup. Requests from any other origin are refused with `403`, as are requests whose `Host` header is neither a loopback name nor the configured bind address. With authentication enabled the variable is ignored and any origin may send requests, because every protected route still requires a bearer token.
+
+### Login throttling
+
+`POST /api/auth/login` counts failed attempts in a sliding window and answers `429` with a `Retry-After` delay once a budget is spent. Two budgets apply to every attempt:
+
+- **Per account** (`API_LOGIN_MAX_FAILURES`, default 5). A successful login clears it immediately.
+- **Per source address** (`API_LOGIN_IP_MAX_FAILURES`, default 100). This one is deliberately loose. The source address is the peer of the TCP connection, and `X-Forwarded-For` is not trusted, so behind the bundled frontend container, nginx, or any other reverse proxy **every login arrives from the proxy's address**. Treat this budget as a cap on password-hashing work, not as a per-user lockout — while it is exhausted, everyone behind that proxy is throttled. Raise it if that matters more to you than the hashing cap; lower it only if browsers reach the backend directly.
+
+Both share the window length set by `API_LOGIN_WINDOW_SECS`.
 
 ### Token Expiration
 | Variable | Description | Default |

@@ -4,49 +4,74 @@
 
 use std::collections::VecDeque;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::request::Parts;
 use dashmap::DashMap;
+use sha2::{Digest, Sha256};
+use tracing::warn;
 
-/// Failures tolerated per key inside [`LOGIN_FAILURE_WINDOW`] before
-/// `LoginRateLimiter::check` starts rejecting.
-pub const MAX_FAILED_LOGIN_ATTEMPTS: usize = 5;
+/// Failures tolerated for one account inside the window before
+/// `LoginRateLimiter::try_begin` starts rejecting. Overridden by
+/// `API_LOGIN_MAX_FAILURES`.
+pub const DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS: usize = 5;
 
 /// Sliding window over which failures are counted, and the time a key stays
-/// blocked after the limit is reached.
-pub const LOGIN_FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
+/// blocked once its budget is spent. Overridden by `API_LOGIN_WINDOW_SECS`.
+pub const DEFAULT_LOGIN_FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
 
-/// Number of tracked keys above which `LoginRateLimiter::record_failure`
-/// sweeps entries whose window has fully elapsed. Bounds the map for a caller
-/// that cycles through usernames or source addresses.
+/// Failures tolerated from one source address inside the window. Much larger
+/// than the per-account budget because a single address routinely carries
+/// every login: the bundled frontend calls the API from its own server
+/// process, and a reverse proxy replaces the browser's address with its own.
+/// This budget caps Argon2id work; it is not a lockout. Overridden by
+/// `API_LOGIN_IP_MAX_FAILURES`.
+pub const DEFAULT_IP_MAX_FAILED_LOGIN_ATTEMPTS: usize = 100;
+
+/// Env var overriding [`DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS`].
+pub const MAX_FAILURES_ENV: &str = "API_LOGIN_MAX_FAILURES";
+/// Env var overriding [`DEFAULT_LOGIN_FAILURE_WINDOW`], in seconds.
+pub const WINDOW_SECS_ENV: &str = "API_LOGIN_WINDOW_SECS";
+/// Env var overriding [`DEFAULT_IP_MAX_FAILED_LOGIN_ATTEMPTS`].
+pub const IP_MAX_FAILURES_ENV: &str = "API_LOGIN_IP_MAX_FAILURES";
+
+/// Hard ceiling on tracked keys. `enforce_capacity` sweeps and then evicts
+/// down to this many, so a caller cycling through usernames cannot grow the
+/// map without bound.
 const MAX_TRACKED_KEYS: usize = 10_000;
 
+/// Minimum spacing between `sweep_expired` runs. A sweep takes every
+/// `DashMap` shard's write lock, so it must not run once per request while
+/// the map sits above capacity.
+const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
+
 /// What a failure counter is attributed to.
-///
-/// `authenticate` counts every attempt against both the username and, when
-/// the peer address is known, the caller's IP, so neither a single account
-/// nor a single source can absorb unlimited Argon2id verifications.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LoginRateKey {
-    /// Lowercased username as submitted; tracked even when no such user row
-    /// exists so a miss cannot be distinguished from a wrong password.
-    Username(String),
+    /// SHA-256 of the normalised username. Digesting keeps the key a fixed 32
+    /// bytes whatever the request body carried, so the map's cost per tracked
+    /// account is not caller-controlled.
+    Username([u8; 32]),
     /// Peer address from `ConnectInfo<SocketAddr>`.
     Ip(IpAddr),
 }
 
 impl LoginRateKey {
-    /// Build the username key, normalising case so `Alice` and `alice` share
-    /// one counter.
+    /// Build the username key. Trimming and lowercasing first means `Alice`
+    /// and `alice` share one counter.
     pub fn username(username: &str) -> Self {
-        Self::Username(username.trim().to_lowercase())
+        let mut hasher = Sha256::new();
+        hasher.update(username.trim().to_lowercase().as_bytes());
+        Self::Username(hasher.finalize().into())
     }
 }
 
-/// Failure timestamps for one key, newest last, holding at most
-/// `max_failures` entries.
+/// Failure timestamps for one key, oldest first.
+///
+/// `LoginRateLimiter::reserve_one` only pushes while the length is under the
+/// key's budget, so the deque never exceeds it.
 #[derive(Debug, Default)]
 struct FailureWindow {
     failures: VecDeque<Instant>,
@@ -63,42 +88,33 @@ impl FailureWindow {
             }
         }
     }
-
-    /// Time until the oldest failure still inside `window` leaves it, or
-    /// `None` while fewer than `max_failures` failures remain in the window.
-    ///
-    /// Read-only, so it cannot prune: expired entries are skipped instead and
-    /// removed by the next `prune` or `sweep_expired`.
-    fn retry_after(&self, now: Instant, window: Duration, max_failures: usize) -> Option<Duration> {
-        let oldest_live = self
-            .failures
-            .iter()
-            .position(|at| now.duration_since(*at) < window)?;
-        if self.failures.len() - oldest_live < max_failures {
-            return None;
-        }
-        let oldest = self.failures[oldest_live];
-        Some(window.saturating_sub(now.duration_since(oldest)))
-    }
 }
 
-/// Sliding-window counter of failed logins, keyed by [`LoginRateKey`].
+/// Sliding-window budget of failed logins, keyed by [`LoginRateKey`].
 ///
-/// All operations are synchronous and take no lock across an `.await`; the
-/// `DashMap` shard guards are temporaries of the statements that create them.
+/// Every operation is synchronous and holds each `DashMap` shard guard only
+/// for the statement that creates it, so no lock crosses an `.await`.
 #[derive(Debug)]
 pub struct LoginRateLimiter {
     entries: DashMap<LoginRateKey, FailureWindow>,
-    max_failures: usize,
+    username_max_failures: usize,
+    ip_max_failures: usize,
     window: Duration,
     max_tracked_keys: usize,
+    /// Reference point for `last_sweep`, since `Instant` is not atomic.
+    epoch: Instant,
+    /// Nanoseconds since `epoch` at the last sweep, biased by one so the
+    /// initial `0` reads as "never swept" and the first over-capacity insert
+    /// sweeps immediately.
+    last_sweep: AtomicU64,
 }
 
 impl Default for LoginRateLimiter {
     fn default() -> Self {
         Self::new(
-            MAX_FAILED_LOGIN_ATTEMPTS,
-            LOGIN_FAILURE_WINDOW,
+            DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS,
+            DEFAULT_IP_MAX_FAILED_LOGIN_ATTEMPTS,
+            DEFAULT_LOGIN_FAILURE_WINDOW,
             MAX_TRACKED_KEYS,
         )
     }
@@ -106,59 +122,159 @@ impl Default for LoginRateLimiter {
 
 impl LoginRateLimiter {
     /// Create a limiter with explicit settings. Production callers use
-    /// [`LoginRateLimiter::default`].
-    pub fn new(max_failures: usize, window: Duration, max_tracked_keys: usize) -> Self {
+    /// [`LoginRateLimiter::from_env`].
+    pub fn new(
+        username_max_failures: usize,
+        ip_max_failures: usize,
+        window: Duration,
+        max_tracked_keys: usize,
+    ) -> Self {
         Self {
             entries: DashMap::new(),
-            max_failures: max_failures.max(1),
+            username_max_failures: username_max_failures.max(1),
+            ip_max_failures: ip_max_failures.max(1),
             window,
             max_tracked_keys: max_tracked_keys.max(1),
+            epoch: Instant::now(),
+            last_sweep: AtomicU64::new(0),
         }
     }
 
-    /// Return the wait imposed by whichever of `keys` is furthest from
-    /// leaving its window, or `None` when every key is still under the limit.
-    pub fn check(&self, keys: &[LoginRateKey]) -> Option<Duration> {
-        self.check_at(keys, Instant::now())
+    /// Read the budgets from `API_LOGIN_MAX_FAILURES`,
+    /// `API_LOGIN_IP_MAX_FAILURES`, and `API_LOGIN_WINDOW_SECS`, warning and
+    /// keeping the default for a value that is not a positive integer.
+    pub fn from_env() -> Self {
+        let window_secs = positive_env(
+            WINDOW_SECS_ENV,
+            DEFAULT_LOGIN_FAILURE_WINDOW.as_secs() as usize,
+        ) as u64;
+        Self::new(
+            positive_env(MAX_FAILURES_ENV, DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS),
+            positive_env(IP_MAX_FAILURES_ENV, DEFAULT_IP_MAX_FAILED_LOGIN_ATTEMPTS),
+            Duration::from_secs(window_secs),
+            MAX_TRACKED_KEYS,
+        )
     }
 
-    fn check_at(&self, keys: &[LoginRateKey], now: Instant) -> Option<Duration> {
-        keys.iter()
-            .filter_map(|key| {
-                // The `DashMap::get` shard guard is a temporary of this
-                // statement chain, so no lock outlives `check_at`.
-                self.entries
-                    .get(key)?
-                    .retry_after(now, self.window, self.max_failures)
-            })
-            .max()
+    fn max_failures(&self, key: &LoginRateKey) -> usize {
+        match key {
+            LoginRateKey::Username(_) => self.username_max_failures,
+            LoginRateKey::Ip(_) => self.ip_max_failures,
+        }
     }
 
-    /// Count one failed attempt against every key.
-    pub fn record_failure(&self, keys: &[LoginRateKey]) {
-        self.record_failure_at(keys, Instant::now());
+    /// Take one failure slot on every key, or report how long the caller must
+    /// wait. The returned `Instant` identifies the reserved slot and must be
+    /// handed back to [`Self::commit_success`] or [`Self::release`].
+    ///
+    /// Reserving up front is what makes the budget hold under concurrency:
+    /// the count is incremented under the same shard guard that reads it, so
+    /// a burst of simultaneous requests cannot all observe a sub-limit count
+    /// and go on to `verify_password_blocking`.
+    pub fn try_begin(&self, keys: &[LoginRateKey]) -> Result<Instant, Duration> {
+        self.try_begin_at(keys, Instant::now())
     }
 
-    fn record_failure_at(&self, keys: &[LoginRateKey], now: Instant) {
-        for key in keys {
-            let mut entry = self.entries.entry(key.clone()).or_default();
-            entry.prune(now, self.window);
-            entry.failures.push_back(now);
-            while entry.failures.len() > self.max_failures {
-                entry.failures.pop_front();
+    fn try_begin_at(&self, keys: &[LoginRateKey], now: Instant) -> Result<Instant, Duration> {
+        for (index, key) in keys.iter().enumerate() {
+            if let Err(retry_after) = self.reserve_one(key, now) {
+                // Keys are reserved one at a time; give back the ones already
+                // taken so a rejection on a later key does not consume them.
+                self.release(&keys[..index], now);
+                return Err(retry_after);
             }
         }
-        // The `entry` guards above are dropped before the sweep, which takes
-        // its own shard locks via `DashMap::retain`.
-        if self.entries.len() > self.max_tracked_keys {
-            self.sweep_expired(now);
+        self.enforce_capacity(now);
+        Ok(now)
+    }
+
+    /// Prune and either take a slot or report the wait, under a single shard
+    /// guard held across the whole read-modify-write.
+    fn reserve_one(&self, key: &LoginRateKey, now: Instant) -> Result<(), Duration> {
+        let max = self.max_failures(key);
+        let mut entry = self.entries.entry(key.clone()).or_default();
+        entry.prune(now, self.window);
+        if entry.failures.len() >= max {
+            // Everything left is inside the window, so the front entry is the
+            // first one that will expire.
+            let oldest = entry.failures.front().copied().unwrap_or(now);
+            return Err(self.window.saturating_sub(now.duration_since(oldest)));
+        }
+        entry.failures.push_back(now);
+        Ok(())
+    }
+
+    /// Give back a slot reserved by [`Self::try_begin`] on every key, for
+    /// outcomes the caller could not have avoided (a repository or hashing
+    /// failure rather than a wrong credential).
+    pub fn release(&self, keys: &[LoginRateKey], reserved_at: Instant) {
+        for key in keys {
+            let mut emptied = false;
+            if let Some(mut entry) = self.entries.get_mut(key)
+                && let Some(index) = entry
+                    .failures
+                    .iter()
+                    .rposition(|failure| *failure == reserved_at)
+            {
+                entry.failures.remove(index);
+                emptied = entry.failures.is_empty();
+            }
+            // The `get_mut` guard ended with the block above; `remove` takes
+            // its own shard lock.
+            if emptied {
+                self.entries.remove(key);
+            }
         }
     }
 
-    /// Forget the counters for `key`; called after a successful login so a
-    /// user who mistyped a few times starts over.
-    pub fn clear(&self, key: &LoginRateKey) {
-        self.entries.remove(key);
+    /// Settle a successful login.
+    ///
+    /// The account's whole budget is cleared, so a user who mistyped a few
+    /// times starts over. The address only gets its own attempt back: one
+    /// account the caller does hold must not reset the budget they are
+    /// spending on the others.
+    pub fn commit_success(&self, keys: &[LoginRateKey], reserved_at: Instant) {
+        for key in keys {
+            match key {
+                LoginRateKey::Username(_) => {
+                    self.entries.remove(key);
+                }
+                LoginRateKey::Ip(_) => self.release(std::slice::from_ref(key), reserved_at),
+            }
+        }
+    }
+
+    /// Bring the map back under `max_tracked_keys`, at most once per
+    /// [`SWEEP_INTERVAL`].
+    fn enforce_capacity(&self, now: Instant) {
+        if self.entries.len() <= self.max_tracked_keys {
+            return;
+        }
+
+        let now_nanos = now
+            .duration_since(self.epoch)
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
+        let last = self.last_sweep.load(Ordering::Acquire);
+        if last != 0 && now_nanos.saturating_sub(last - 1) < SWEEP_INTERVAL.as_nanos() as u64 {
+            return;
+        }
+        if self
+            .last_sweep
+            .compare_exchange(
+                last,
+                now_nanos.saturating_add(1),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_err()
+        {
+            // Another caller claimed this sweep.
+            return;
+        }
+
+        self.sweep_expired(now);
+        self.evict_oldest_beyond_capacity();
     }
 
     /// Drop keys whose most recent failure has left the window.
@@ -172,9 +288,51 @@ impl LoginRateLimiter {
         });
     }
 
+    /// Evict the least recently active keys until the map fits, so a sweep
+    /// that frees nothing still leaves a bounded map.
+    fn evict_oldest_beyond_capacity(&self) {
+        let excess = self.entries.len().saturating_sub(self.max_tracked_keys);
+        if excess == 0 {
+            return;
+        }
+        // Collected first: the iterator holds the shard guards `remove` needs.
+        let mut activity: Vec<(LoginRateKey, Option<Instant>)> = self
+            .entries
+            .iter()
+            .map(|entry| (entry.key().clone(), entry.failures.back().copied()))
+            .collect();
+        activity.sort_unstable_by_key(|(_, newest)| *newest);
+        for (key, _) in activity.into_iter().take(excess) {
+            self.entries.remove(&key);
+        }
+    }
+
     #[cfg(test)]
     fn tracked_keys(&self) -> usize {
         self.entries.len()
+    }
+}
+
+/// Parse a positive integer env var, warning and falling back otherwise.
+fn positive_env(name: &str, default: usize) -> usize {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return default;
+    }
+    match raw.parse::<usize>() {
+        Ok(value) if value > 0 => value,
+        _ => {
+            warn!(
+                env = name,
+                value = %raw,
+                default,
+                "Expected a positive integer; keeping the default"
+            );
+            default
+        }
     }
 }
 
@@ -185,7 +343,10 @@ impl LoginRateLimiter {
 ///
 /// Deliberately ignores `X-Forwarded-For` / `X-Real-IP`: the server has no
 /// trusted-proxy configuration, so an attacker could otherwise mint a fresh
-/// rate-limit bucket per request by varying the header.
+/// budget per request by varying the header. The flip side is that behind any
+/// reverse proxy — including the frontend container this project ships —
+/// every login shares one address, which is why
+/// [`DEFAULT_IP_MAX_FAILED_LOGIN_ATTEMPTS`] is a CPU cap and not a lockout.
 #[derive(Debug, Clone, Copy)]
 pub struct ClientIp(pub Option<IpAddr>);
 
@@ -209,36 +370,50 @@ where
 mod tests {
     use super::*;
 
+    /// Account budget 3, address budget 6, so the two are distinguishable.
     fn limiter() -> LoginRateLimiter {
-        LoginRateLimiter::new(3, Duration::from_secs(60), 8)
+        LoginRateLimiter::new(3, 6, Duration::from_secs(60), 8)
     }
 
     fn alice() -> Vec<LoginRateKey> {
         vec![LoginRateKey::username("Alice")]
     }
 
+    fn ip(address: &str) -> LoginRateKey {
+        LoginRateKey::Ip(address.parse().expect("test address should be a valid IP"))
+    }
+
     #[test]
-    fn username_key_is_case_insensitive() {
+    fn username_key_is_case_insensitive_and_fixed_size() {
         assert_eq!(
             LoginRateKey::username("  AlIcE "),
-            LoginRateKey::Username("alice".to_string())
+            LoginRateKey::username("alice")
+        );
+        assert_ne!(
+            LoginRateKey::username("alice"),
+            LoginRateKey::username("alicia")
+        );
+        // A 4 KiB username costs the same key as a short one.
+        assert_eq!(
+            std::mem::size_of_val(&LoginRateKey::username(&"x".repeat(4096))),
+            std::mem::size_of::<LoginRateKey>()
         );
     }
 
     #[test]
-    fn blocks_only_after_the_limit_is_reached() {
+    fn blocks_only_after_the_budget_is_spent() {
         let limiter = limiter();
         let now = Instant::now();
 
-        for _ in 0..2 {
-            limiter.record_failure_at(&alice(), now);
-            assert!(limiter.check_at(&alice(), now).is_none());
+        for _ in 0..3 {
+            limiter
+                .try_begin_at(&alice(), now)
+                .expect("attempts within the budget are admitted");
         }
 
-        limiter.record_failure_at(&alice(), now);
         let retry_after = limiter
-            .check_at(&alice(), now)
-            .expect("the third failure should block");
+            .try_begin_at(&alice(), now)
+            .expect_err("the fourth attempt should be blocked");
         assert!(retry_after <= Duration::from_secs(60));
         assert!(retry_after > Duration::from_secs(59));
     }
@@ -249,94 +424,209 @@ mod tests {
         let now = Instant::now();
 
         for _ in 0..3 {
-            limiter.record_failure_at(&alice(), now);
+            limiter.try_begin_at(&alice(), now).expect("within budget");
         }
-        assert!(limiter.check_at(&alice(), now).is_some());
-
-        let later = now + Duration::from_secs(59);
+        assert!(limiter.try_begin_at(&alice(), now).is_err());
         assert!(
-            limiter.check_at(&alice(), later).is_some(),
+            limiter
+                .try_begin_at(&alice(), now + Duration::from_secs(59))
+                .is_err(),
             "failures inside the window still count"
         );
-
-        let after_window = now + Duration::from_secs(60);
-        assert!(limiter.check_at(&alice(), after_window).is_none());
+        assert!(
+            limiter
+                .try_begin_at(&alice(), now + Duration::from_secs(60))
+                .is_ok()
+        );
     }
 
     #[test]
     fn keys_are_isolated_from_each_other() {
         let limiter = limiter();
         let now = Instant::now();
-        let bob = vec![LoginRateKey::username("bob")];
-        let ip = vec![LoginRateKey::Ip("10.0.0.1".parse().expect("valid IP"))];
 
         for _ in 0..3 {
-            limiter.record_failure_at(&alice(), now);
+            limiter.try_begin_at(&alice(), now).expect("within budget");
         }
 
-        assert!(limiter.check_at(&alice(), now).is_some());
-        assert!(limiter.check_at(&bob, now).is_none());
-        assert!(limiter.check_at(&ip, now).is_none());
+        assert!(limiter.try_begin_at(&alice(), now).is_err());
+        assert!(
+            limiter
+                .try_begin_at(&[LoginRateKey::username("bob")], now)
+                .is_ok()
+        );
+        assert!(limiter.try_begin_at(&[ip("10.0.0.1")], now).is_ok());
     }
 
     #[test]
-    fn ip_key_blocks_across_different_usernames() {
+    fn address_budget_is_far_looser_than_the_account_budget() {
         let limiter = limiter();
         let now = Instant::now();
-        let ip = LoginRateKey::Ip("192.0.2.9".parse().expect("valid IP"));
+        let address = ip("192.0.2.9");
 
-        for name in ["a", "b", "c"] {
-            limiter.record_failure_at(&[LoginRateKey::username(name), ip.clone()], now);
+        // Six distinct accounts from one address: each keeps its own budget,
+        // and the address budget is what eventually stops them.
+        for index in 0..6 {
+            limiter
+                .try_begin_at(
+                    &[
+                        LoginRateKey::username(&format!("user{index}")),
+                        address.clone(),
+                    ],
+                    now,
+                )
+                .expect("the address budget is 6");
         }
 
         assert!(
             limiter
-                .check_at(&[LoginRateKey::username("d"), ip.clone()], now)
-                .is_some(),
-            "a fourth username from the same address is blocked by the IP key"
+                .try_begin_at(&[LoginRateKey::username("user6"), address.clone()], now)
+                .is_err(),
+            "a seventh attempt exhausts the address budget"
         );
         assert!(
             limiter
-                .check_at(&[LoginRateKey::username("d")], now)
-                .is_none(),
-            "the username itself never failed"
+                .try_begin_at(&[LoginRateKey::username("user6")], now)
+                .is_ok(),
+            "rejecting on the address must not have consumed the username slot"
         );
     }
 
     #[test]
-    fn success_clears_the_key() {
+    fn success_clears_the_account_but_only_refunds_the_address() {
         let limiter = limiter();
         let now = Instant::now();
+        let address = ip("198.51.100.4");
+        let keys = vec![LoginRateKey::username("alice"), address.clone()];
 
-        for _ in 0..3 {
-            limiter.record_failure_at(&alice(), now);
+        for _ in 0..2 {
+            limiter.try_begin_at(&keys, now).expect("within budget");
         }
-        assert!(limiter.check_at(&alice(), now).is_some());
+        let reserved = limiter.try_begin_at(&keys, now).expect("within budget");
+        limiter.commit_success(&keys, reserved);
 
-        limiter.clear(&LoginRateKey::username("alice"));
-        assert!(limiter.check_at(&alice(), now).is_none());
+        assert!(
+            limiter.try_begin_at(&alice(), now).is_ok(),
+            "the account budget was cleared"
+        );
+        // Two earlier failures remain on the address, so four of its six slots
+        // are still free.
+        for _ in 0..4 {
+            limiter
+                .try_begin_at(std::slice::from_ref(&address), now)
+                .expect("the address keeps only its earlier failures");
+        }
+        assert!(
+            limiter
+                .try_begin_at(std::slice::from_ref(&address), now)
+                .is_err()
+        );
     }
 
     #[test]
-    fn check_reports_the_longest_remaining_wait() {
+    fn release_hands_the_slot_back() {
         let limiter = limiter();
         let now = Instant::now();
-        let ip = LoginRateKey::Ip("198.51.100.4".parse().expect("valid IP"));
 
         for _ in 0..3 {
-            limiter.record_failure_at(&alice(), now);
+            let reserved = limiter.try_begin_at(&alice(), now).expect("within budget");
+            limiter.release(&alice(), reserved);
         }
-        let later = now + Duration::from_secs(30);
-        for _ in 0..3 {
-            limiter.record_failure_at(std::slice::from_ref(&ip), later);
-        }
-
-        let retry_after = limiter
-            .check_at(&[LoginRateKey::username("alice"), ip], later)
-            .expect("both keys are blocked");
         assert!(
-            retry_after > Duration::from_secs(59),
-            "the IP key, blocked 30s later, dictates the wait: {retry_after:?}"
+            limiter.try_begin_at(&alice(), now).is_ok(),
+            "released attempts do not count against the budget"
+        );
+    }
+
+    #[test]
+    fn concurrent_attempts_cannot_exceed_the_budget() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicUsize;
+
+        let limiter = Arc::new(LoginRateLimiter::new(
+            5,
+            1_000,
+            Duration::from_secs(600),
+            64,
+        ));
+        let admitted = Arc::new(AtomicUsize::new(0));
+
+        std::thread::scope(|scope| {
+            for _ in 0..64 {
+                let limiter = Arc::clone(&limiter);
+                let admitted = Arc::clone(&admitted);
+                scope.spawn(move || {
+                    if limiter
+                        .try_begin(&[LoginRateKey::username("admin")])
+                        .is_ok()
+                    {
+                        admitted.fetch_add(1, Ordering::Relaxed);
+                    }
+                });
+            }
+        });
+
+        assert_eq!(
+            admitted.load(Ordering::Relaxed),
+            5,
+            "exactly the budget may pass a concurrent check-and-reserve"
+        );
+    }
+
+    #[test]
+    fn capacity_is_a_hard_cap_even_when_nothing_is_stale() {
+        let limiter = LoginRateLimiter::new(3, 1_000, Duration::from_secs(600), 4);
+        let now = Instant::now();
+
+        for index in 0..12 {
+            // Stepping past SWEEP_INTERVAL each time keeps the throttle from
+            // skipping, and gives eviction a defined oldest entry.
+            let at = now + Duration::from_secs(index * 31);
+            limiter
+                .try_begin_at(&[LoginRateKey::username(&format!("user{index}"))], at)
+                .expect("each username has its own budget");
+        }
+
+        assert!(
+            limiter.tracked_keys() <= 5,
+            "the map stays at capacity plus the key just inserted: {}",
+            limiter.tracked_keys()
+        );
+        assert!(
+            limiter
+                .try_begin_at(&[LoginRateKey::username("user0")], now)
+                .is_ok(),
+            "the least recently active keys were the ones evicted"
+        );
+    }
+
+    #[test]
+    fn sweeping_is_throttled() {
+        let limiter = LoginRateLimiter::new(3, 1_000, Duration::from_secs(600), 2);
+        let now = Instant::now();
+
+        for index in 0..8u64 {
+            limiter
+                .try_begin_at(
+                    &[LoginRateKey::username(&format!("user{index}"))],
+                    now + Duration::from_millis(index),
+                )
+                .expect("each username has its own budget");
+        }
+
+        // The first over-capacity insert sweeps and evicts; the rest land
+        // inside SWEEP_INTERVAL and are left to accumulate.
+        assert!(limiter.tracked_keys() > 2);
+        limiter
+            .try_begin_at(
+                &[LoginRateKey::username("later")],
+                now + SWEEP_INTERVAL + Duration::from_secs(1),
+            )
+            .expect("within budget");
+        assert!(
+            limiter.tracked_keys() <= 3,
+            "the next sweep after the interval brings the map back to capacity: {}",
+            limiter.tracked_keys()
         );
     }
 
@@ -422,33 +712,5 @@ mod tests {
                 .expect("body should be readable");
             assert_eq!(&body[..], b"none");
         }
-    }
-
-    #[test]
-    fn stale_keys_are_swept_once_the_map_grows() {
-        let limiter = LoginRateLimiter::new(3, Duration::from_secs(60), 4);
-        let now = Instant::now();
-
-        for index in 0..5 {
-            limiter.record_failure_at(&[LoginRateKey::username(&format!("user{index}"))], now);
-        }
-        assert_eq!(limiter.tracked_keys(), 5, "nothing is stale yet");
-
-        let after_window = now + Duration::from_secs(120);
-        for index in 5..10 {
-            limiter.record_failure_at(
-                &[LoginRateKey::username(&format!("user{index}"))],
-                after_window,
-            );
-        }
-        assert!(
-            limiter.tracked_keys() < 10,
-            "the sweep dropped keys whose window elapsed"
-        );
-        assert!(
-            limiter
-                .check_at(&[LoginRateKey::username("user0")], after_window)
-                .is_none()
-        );
     }
 }
