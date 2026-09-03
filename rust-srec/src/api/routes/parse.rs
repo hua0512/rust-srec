@@ -164,6 +164,21 @@ async fn resolve_extractor_config_for_url(
                             match &source.scope {
                                 CredentialScope::Streamer { .. } => {
                                     config_service.invalidate_streamer(&streamer.id);
+                                    // The refresh wrote `streamer_specific_config` directly, so
+                                    // the manager's cached copy — the row
+                                    // `StreamerManager::partial_update_streamer` rebuilds on the
+                                    // next streamer edit — still holds the previous credentials.
+                                    // The refreshed row is already durable, so a failed reload is
+                                    // logged rather than failing the parse.
+                                    if let Err(error) =
+                                        state.streamer_manager.reload_from_repo(&streamer.id).await
+                                    {
+                                        warn!(
+                                            %error,
+                                            streamer_id = %streamer.id,
+                                            "Failed to reload streamer after credential refresh; cache may be stale"
+                                        );
+                                    }
                                 }
                                 CredentialScope::Template { template_id, .. } => {
                                     if let Err(error) =

@@ -180,6 +180,32 @@ pub(crate) struct LiveStatusDetails {
     pub media_extras: Option<std::collections::HashMap<String, String>>,
 }
 
+/// Bring `StreamerManager`'s metadata cache back in step with the `streamers` row after a write
+/// that went around the manager, naming the write in `context`.
+///
+/// `StreamerManager::partial_update_streamer` rebuilds the whole row from that cache, so a column
+/// written by `StreamerTxOps` or by `CredentialStore::update_credentials` — which rewrites
+/// `streamer_specific_config` with its own SQL — is lost on the next streamer edit unless the
+/// cache is reloaded. A failed reload leaves the row correct and the cache stale until the next
+/// reload, so it is logged rather than propagated to a caller that has already committed.
+///
+/// Free function rather than a method so callers inside `async move` closures that only captured
+/// an `Arc<StreamerManager<SR>>` clone can use it too.
+async fn reload_streamer_metadata<SR>(
+    streamer_manager: &StreamerManager<SR>,
+    streamer_id: &str,
+    context: &str,
+) where
+    SR: StreamerRepository + Send + Sync,
+{
+    if let Err(error) = streamer_manager.reload_from_repo(streamer_id).await {
+        warn!(
+            "Failed to reload streamer {} after {}: {}. Cache may be stale.",
+            streamer_id, context, error
+        );
+    }
+}
+
 impl<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
@@ -188,12 +214,7 @@ impl<
 > StreamMonitor<SR, FR, SSR, CR>
 {
     async fn reload_streamer_cache(&self, streamer_id: &str, context: &str) {
-        if let Err(error) = self.streamer_manager.reload_from_repo(streamer_id).await {
-            warn!(
-                "Failed to reload streamer {} after {}: {}. Cache may be stale.",
-                streamer_id, context, error
-            );
-        }
+        reload_streamer_metadata(&self.streamer_manager, streamer_id, context).await;
     }
 
     fn notify_outbox(&self) {
@@ -503,6 +524,7 @@ impl<
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
         let credential_service = self.credential_service.clone();
+        let streamer_manager = self.streamer_manager.clone();
         let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
         let platform_id = streamer.platform();
@@ -558,6 +580,15 @@ impl<
                                 match &source.scope {
                                     crate::credentials::CredentialScope::Streamer { .. } => {
                                         config_service.invalidate_streamer(streamer_id);
+                                        // The refresh wrote `streamer_specific_config` directly,
+                                        // so the manager's cached copy still holds the rotated-away
+                                        // credentials.
+                                        reload_streamer_metadata(
+                                            &streamer_manager,
+                                            streamer_id,
+                                            "credential refresh",
+                                        )
+                                        .await;
                                     }
                                     crate::credentials::CredentialScope::Template {
                                         template_id,
@@ -744,6 +775,14 @@ impl<
                                             ..
                                         } => {
                                             self.config_service.invalidate_streamer(&streamer.id);
+                                            // `persist_session_cookies` wrote
+                                            // `streamer_specific_config` directly, so the manager's
+                                            // cached copy still holds the pre-login cookies.
+                                            self.reload_streamer_cache(
+                                                &streamer.id,
+                                                "session cookie persist",
+                                            )
+                                            .await;
                                         }
                                         crate::credentials::CredentialScope::Template {
                                             template_id,

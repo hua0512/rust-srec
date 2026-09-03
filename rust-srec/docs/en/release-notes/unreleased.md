@@ -28,9 +28,9 @@
 
   A streamer whose monitoring hit an unexpected internal error was quietly left unwatched until rust-srec was restarted, so nothing was recorded in the meantime. Monitoring is now restarted automatically. Quickly disabling and re-enabling a streamer no longer leaves it monitored twice or not at all either.
 
-- **A Bilibili sign-in saved for a single streamer is no longer lost**
+- **A sign-in saved for a single streamer is no longer lost**
 
-  Scanning the QR code to sign in to Bilibili for one streamer kept the account only until that streamer was next touched: renaming it, enabling or disabling it, changing its priority, or including it in a bulk action put the streamer back to being logged out, and its recordings carried on without the account. Renewing that streamer's sign-in in the background had the same fate. Both are now kept.
+  Scanning the QR code to sign in to Bilibili for one streamer kept the account only until that streamer was next touched: renaming it, enabling or disabling it, changing its priority, or including it in a bulk action signed it out again, and its recordings carried on without the account. Sign-ins kept fresh for one streamer went the same way — whether renewed automatically, refreshed by hand, or handed over by the platform while checking whether the streamer was live. All of them now stay put.
 
 ## API and integrations
 
