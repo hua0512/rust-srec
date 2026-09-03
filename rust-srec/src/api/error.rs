@@ -37,6 +37,10 @@ pub struct ApiError {
     pub code: String,
     pub message: String,
     pub details: Option<serde_json::Value>,
+    /// Seconds emitted as the `Retry-After` response header. Only set by
+    /// [`ApiError::too_many_requests`]; every other constructor leaves it
+    /// `None` so the header is omitted.
+    pub retry_after_secs: Option<u64>,
 }
 
 impl ApiError {
@@ -47,6 +51,7 @@ impl ApiError {
             code: code.into(),
             message: message.into(),
             details: None,
+            retry_after_secs: None,
         }
     }
 
@@ -79,6 +84,14 @@ impl ApiError {
         )
     }
 
+    /// Create a 429 Too Many Requests error carrying a `Retry-After` header.
+    pub fn too_many_requests(message: impl Into<String>, retry_after_secs: u64) -> Self {
+        Self {
+            retry_after_secs: Some(retry_after_secs),
+            ..Self::new(StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", message)
+        }
+    }
+
     /// Create a 500 Internal Server Error.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", message)
@@ -96,12 +109,21 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let retry_after = self
+            .retry_after_secs
+            .and_then(|secs| axum::http::HeaderValue::from_str(&secs.to_string()).ok());
         let body = ApiErrorResponse {
             code: self.code,
             message: self.message,
             details: self.details,
         };
-        (self.status, Json(body)).into_response()
+        let mut response = (self.status, Json(body)).into_response();
+        if let Some(retry_after) = retry_after {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, retry_after);
+        }
+        response
     }
 }
 
@@ -173,6 +195,15 @@ impl From<AuthError> for ApiError {
                 ApiError::bad_request("Current password is incorrect")
             }
             AuthError::UserNotFound => ApiError::unauthorized("Invalid credentials"),
+            AuthError::UsernameTooLong { max } => {
+                ApiError::bad_request(format!("Username must be at most {max} characters"))
+            }
+            // Deliberately identical whether or not the username exists, so a
+            // throttled caller cannot use the 429 to enumerate accounts.
+            AuthError::TooManyAttempts { retry_after_secs } => ApiError::too_many_requests(
+                "Too many failed login attempts; try again later",
+                retry_after_secs,
+            ),
             AuthError::Database(error) => {
                 tracing::error!(error = %error, "Authentication database error");
                 ApiError::service_unavailable("Authentication service unavailable")

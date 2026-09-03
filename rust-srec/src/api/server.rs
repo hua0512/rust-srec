@@ -10,10 +10,11 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::Any;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
 
+use crate::api::cors::{self, CorsPolicy, OriginGuard};
 use crate::api::routes;
 use crate::database::repositories::NotificationRepository;
 use crate::error::Result;
@@ -150,6 +151,9 @@ pub struct AppState {
     pub web_push_service: Option<Arc<WebPushService>>,
     /// Services that every API instance requires.
     pub services: Arc<ApiServices>,
+    /// Origins [`Self::cors_policy`] allows while `auth_service` is `None`,
+    /// resolved once from `API_CORS_ORIGINS`.
+    unauthenticated_cors_origins: Arc<[axum::http::HeaderValue]>,
 }
 
 impl AppState {
@@ -160,7 +164,21 @@ impl AppState {
             auth_service: None,
             web_push_service: None,
             services: Arc::new(services),
+            unauthenticated_cors_origins: cors::allowed_origins_from_env(),
         }
+    }
+
+    /// Cross-origin policy for this instance.
+    ///
+    /// Without `auth_service` every route is reachable with no credential, so
+    /// only the explicit `API_CORS_ORIGINS` allowlist may reach it from a
+    /// browser; with `auth_service` set, `AuthLayer` gates the routes and a
+    /// foreign origin gains nothing from a permissive policy.
+    pub fn cors_policy(&self) -> CorsPolicy {
+        cors::policy_for(
+            self.auth_service.is_some(),
+            &self.unauthenticated_cors_origins,
+        )
     }
 
     /// Set the auth service.
@@ -212,10 +230,24 @@ impl ApiServer {
 
         router = router.layer(DefaultBodyLimit::max(self.config.body_limit));
 
+        let policy = self.state.cors_policy();
+        cors::log_policy(&policy);
+
+        // `CorsPolicy::Exact` only governs response headers; without
+        // `origin_guard` a foreign page could still reach handlers through
+        // requests browsers do not preflight. Installed under the CorsLayer
+        // below so preflights, which that layer answers itself, skip it.
+        if matches!(policy, CorsPolicy::Exact(_)) {
+            router = router.layer(axum::middleware::from_fn_with_state(
+                OriginGuard::new(policy.clone(), &self.config.bind_address),
+                cors::origin_guard,
+            ));
+        }
+
         // Add CORS if enabled
         if self.config.enable_cors {
-            let cors = CorsLayer::new()
-                .allow_origin(Any)
+            let cors = policy
+                .layer()
                 .allow_methods(Any)
                 .allow_headers(Any)
                 .expose_headers([
@@ -336,13 +368,20 @@ impl ApiServer {
         });
 
         let cancel_token = self.cancel_token.clone();
-        axum::serve(listener, router)
-            .with_graceful_shutdown(async move {
-                cancel_token.cancelled().await;
-                tracing::info!("API server shutting down...");
-            })
-            .await
-            .map_err(|e| crate::error::Error::ApiError(format!("Server error: {}", e)))?;
+        // `into_make_service_with_connect_info` is what puts
+        // `ConnectInfo<SocketAddr>` in request extensions, where
+        // `api::rate_limit::ClientIp` reads the peer address that keys the
+        // login failure counters.
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            cancel_token.cancelled().await;
+            tracing::info!("API server shutting down...");
+        })
+        .await
+        .map_err(|e| crate::error::Error::ApiError(format!("Server error: {}", e)))?;
 
         Ok(())
     }
