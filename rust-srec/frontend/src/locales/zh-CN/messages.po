@@ -276,7 +276,7 @@ msgstr "90 天"
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:505
+#: src/components/pipeline/workflows/step-config-dialog.tsx:517
 msgid "A unique ID used by other steps to reference this one."
 msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 
@@ -371,7 +371,7 @@ msgstr "添加覆盖项以自定义特定平台的行为。"
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:644
+#: src/components/pipeline/workflows/step-config-dialog.tsx:656
 msgid "Add anyway"
 msgstr "仍然添加"
 
@@ -856,8 +856,8 @@ msgid "Awaiting first check"
 msgstr "等待首次检查"
 
 #: src/components/config/platforms/platform-editor.tsx:145
-#: src/components/config/templates/template-editor.tsx:191
-#: src/components/config/templates/template-editor.tsx:194
+#: src/components/config/templates/template-editor.tsx:189
+#: src/components/config/templates/template-editor.tsx:192
 msgid "Back"
 msgstr "返回"
 
@@ -1131,7 +1131,7 @@ msgstr "缓存"
 #: src/components/config/templates/template-card.tsx:197
 #: src/components/filters/FilterDialog.tsx:264
 #: src/components/notifications/channel-card.tsx:226
-#: src/components/notifications/channel-form.tsx:457
+#: src/components/notifications/channel-form.tsx:455
 #: src/components/notifications/subscription-manager.tsx:460
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:116
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:173
@@ -1141,8 +1141,8 @@ msgstr "缓存"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:97
 #: src/components/pipeline/presets/preset-card.tsx:206
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:595
-#: src/components/pipeline/workflows/step-config-dialog.tsx:636
+#: src/components/pipeline/workflows/step-config-dialog.tsx:607
+#: src/components/pipeline/workflows/step-config-dialog.tsx:648
 #: src/components/pipeline/workflows/workflow-card.tsx:195
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:235
@@ -1249,7 +1249,7 @@ msgstr "需要修改密码"
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/notifications/channel-form.tsx:375
+#: src/components/notifications/channel-form.tsx:373
 msgid "Channel"
 msgstr "渠道"
 
@@ -1433,7 +1433,7 @@ msgstr "折叠方式"
 msgid "Collect statistics"
 msgstr "收集统计"
 
-#: src/components/notifications/channel-form.tsx:479
+#: src/components/notifications/channel-form.tsx:477
 msgid "Coming soon"
 msgstr "即将推出"
 
@@ -1552,9 +1552,9 @@ msgstr "配置目录说明"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:441
+#: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
-#: src/components/pipeline/workflows/step-config-dialog.tsx:395
+#: src/components/pipeline/workflows/step-config-dialog.tsx:386
 #: src/components/pipeline/workflows/workflow-editor.tsx:303
 #: src/lib/menu-list.ts:119
 msgid "Configuration"
@@ -1573,7 +1573,7 @@ msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
 #: src/components/config/engines/engine-card.tsx:204
-#: src/components/pipeline/workflows/step-config-dialog.tsx:297
+#: src/components/pipeline/workflows/step-config-dialog.tsx:288
 msgid "Configure"
 msgstr "配置"
 
@@ -1617,7 +1617,7 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:359
+#: src/components/notifications/channel-form.tsx:357
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
@@ -1804,6 +1804,10 @@ msgstr "无法检测该工具是否已安装。"
 msgid "Could not connect to the server. Please check your connection."
 msgstr "无法连接到服务器，请检查网络连接。"
 
+#: src/components/pipeline/workflows/step-config-dialog.tsx:418
+msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
+msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:345
 #: src/components/config/engines/forms/mesio-hls-form.tsx:390
 #: src/components/sessions/danmu-stats-panel.tsx:387
@@ -1834,7 +1838,7 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:213
+#: src/components/config/templates/template-editor.tsx:211
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:459
@@ -1865,7 +1869,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
-#: src/components/notifications/channel-form.tsx:464
+#: src/components/notifications/channel-form.tsx:462
 msgid "Create channel"
 msgstr "创建渠道"
 
@@ -1913,7 +1917,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:165
+#: src/components/config/templates/template-editor.tsx:163
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "创建模板"
@@ -2111,7 +2115,7 @@ msgstr "自定义应用主题和侧边栏布局。"
 msgid "Cutoff"
 msgstr "阈值"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:474
+#: src/components/pipeline/workflows/step-config-dialog.tsx:486
 msgid "DAG Configuration"
 msgstr "DAG 配置"
 
@@ -2277,7 +2281,7 @@ msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原�
 msgid "Default: {value}"
 msgstr "默认值：{value}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:477
+#: src/components/pipeline/workflows/step-config-dialog.tsx:489
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 
@@ -2412,7 +2416,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:621
+#: src/components/pipeline/workflows/step-config-dialog.tsx:633
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
@@ -2454,7 +2458,7 @@ msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全
 msgid "Delivery Policy"
 msgstr "投递策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:513
+#: src/components/pipeline/workflows/step-config-dialog.tsx:525
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
@@ -2516,7 +2520,7 @@ msgstr "目标根目录"
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:608
+#: src/components/pipeline/workflows/step-config-dialog.tsx:620
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
@@ -2784,7 +2788,7 @@ msgstr "例如 我喜欢的主播"
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:500
+#: src/components/pipeline/workflows/step-config-dialog.tsx:512
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
@@ -2803,7 +2807,7 @@ msgstr "例如：标准处理"
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/notifications/channel-form.tsx:353
+#: src/components/notifications/channel-form.tsx:351
 msgid "Edit channel"
 msgstr "编辑渠道"
 
@@ -2961,7 +2965,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:258
+#: src/components/config/templates/template-editor.tsx:256
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
@@ -3032,7 +3036,7 @@ msgstr "加载处理任务失败"
 msgid "Error Loading Pipeline"
 msgstr "加载处理管道失败"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:80
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:79
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
@@ -3060,10 +3064,6 @@ msgstr "加载工作流失败"
 #: src/components/streamers/edit/status-check-history.tsx:278
 msgid "Error:"
 msgstr "错误："
-
-#: src/components/pipeline/workflows/step-config-dialog.tsx:424
-msgid "Error: Could not load preset details."
-msgstr "错误：无法加载预设详情。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:597
 msgid "ETA"
@@ -3754,7 +3754,7 @@ msgstr "第一个输入文件路径"
 msgid "First output file path"
 msgstr "第一个输出文件路径"
 
-#: src/components/pipeline/presets/preset-editor.tsx:90
+#: src/components/pipeline/presets/preset-editor.tsx:88
 msgid "Fix configuration errors before saving"
 msgstr "保存前修复配置错误"
 
@@ -3770,7 +3770,7 @@ msgstr "修复 HLS 不连续性"
 msgid "Floating"
 msgstr "悬浮"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:365
+#: src/components/pipeline/workflows/step-config-dialog.tsx:356
 msgid "Flow & Dependencies"
 msgstr "流程与依赖"
 
@@ -3890,7 +3890,7 @@ msgstr "GB"
 #: src/components/config/engines/forms/mesio-form.tsx:265
 #: src/components/config/platforms/platform-editor.tsx:193
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
-#: src/components/config/templates/template-editor.tsx:248
+#: src/components/config/templates/template-editor.tsx:246
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
@@ -4756,7 +4756,7 @@ msgstr "正在加载历史日志..."
 msgid "Loading pipeline editor..."
 msgstr "正在加载处理管道编辑器..."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:385
+#: src/components/pipeline/workflows/step-config-dialog.tsx:376
 msgid "Loading preset details..."
 msgstr "正在加载预设详情..."
 
@@ -5173,7 +5173,7 @@ msgstr "分 (00-59)"
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "上传时 BaiduPCS-Go 会自动创建不存在的文件夹。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:320
+#: src/components/pipeline/workflows/step-config-dialog.tsx:311
 msgid "Modify the parameters for this processing step."
 msgstr "修改此处理步骤的参数。"
 
@@ -5275,7 +5275,7 @@ msgstr "指数退避的倍率。"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:389
+#: src/components/notifications/channel-form.tsx:387
 msgid "My Channel"
 msgstr "我的渠道"
 
@@ -5283,7 +5283,7 @@ msgstr "我的渠道"
 msgid "My Template"
 msgstr "我的模板"
 
-#: src/components/notifications/channel-form.tsx:384
+#: src/components/notifications/channel-form.tsx:382
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:224
 #: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
@@ -5351,7 +5351,7 @@ msgstr "新建"
 msgid "NEW"
 msgstr "新"
 
-#: src/components/notifications/channel-form.tsx:355
+#: src/components/notifications/channel-form.tsx:353
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
@@ -5408,7 +5408,7 @@ msgstr "未检测到更改"
 msgid "No configuration available for this processor."
 msgstr "此处理器没有可用配置。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:450
+#: src/components/pipeline/workflows/step-config-dialog.tsx:462
 msgid "No configuration form available for this processor."
 msgstr "此处理器没有可用的配置表单。"
 
@@ -5515,7 +5515,7 @@ msgstr "未添加元数据标签"
 msgid "No modules configured"
 msgstr "未配置模块"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:568
+#: src/components/pipeline/workflows/step-config-dialog.tsx:580
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
@@ -5571,6 +5571,10 @@ msgstr "响应中未找到可播放的流"
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:189
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:426
+msgid "No preset named <0>{presetName}</0> exists. It may have been renamed or deleted. Point this step at an existing preset, or replace it with a configured step."
+msgstr "不存在名为 <0>{presetName}</0> 的预设，它可能已被重命名或删除。请将此步骤指向现有预设，或替换为已配置的步骤。"
 
 #: src/components/pipeline/workflows/step-library.tsx:448
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:362
@@ -6408,7 +6412,7 @@ msgstr "平台配置可用时将显示在此处。"
 msgid "Platform name"
 msgstr "平台名称"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:82
 msgid "Platform not found"
 msgstr "未找到平台"
 
@@ -6437,7 +6441,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:268
+#: src/components/config/templates/template-editor.tsx:266
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
@@ -6575,7 +6579,7 @@ msgstr "预设详情"
 msgid "Preset not found"
 msgstr "未找到预设"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:293
+#: src/components/pipeline/workflows/step-config-dialog.tsx:284
 msgid "Preset Step"
 msgstr "预设步骤"
 
@@ -7381,17 +7385,17 @@ msgstr "星期六"
 
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:278
-#: src/components/notifications/channel-form.tsx:462
+#: src/components/notifications/channel-form.tsx:460
 #: src/components/shared/save-fab.tsx:99
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
 msgstr "保存更改"
 
 #: src/components/config/platforms/platform-editor.tsx:163
-#: src/components/config/templates/template-editor.tsx:215
+#: src/components/config/templates/template-editor.tsx:213
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:612
+#: src/components/pipeline/workflows/step-config-dialog.tsx:624
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "保存更改"
@@ -7410,7 +7414,7 @@ msgid "Saving"
 msgstr "保存中"
 
 #: src/components/config/platforms/platform-editor.tsx:161
-#: src/components/config/templates/template-editor.tsx:211
+#: src/components/config/templates/template-editor.tsx:209
 #: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7718,12 +7722,12 @@ msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:576
+#: src/components/pipeline/workflows/step-config-dialog.tsx:588
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:236
-#: src/components/notifications/channel-form.tsx:415
+#: src/components/notifications/channel-form.tsx:413
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:170
 msgid "Select type"
 msgstr "选择类型"
@@ -8108,11 +8112,11 @@ msgstr "状态"
 msgid "Stem (Filename Match)"
 msgstr "主文件名（文件名匹配）"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:358
+#: src/components/pipeline/workflows/step-config-dialog.tsx:349
 msgid "Step Configuration"
 msgstr "步骤配置"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:488
+#: src/components/pipeline/workflows/step-config-dialog.tsx:500
 msgid "Step Identifier (Unique)"
 msgstr "步骤标识符（唯一）"
 
@@ -8567,11 +8571,11 @@ msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:624
+#: src/components/pipeline/workflows/step-config-dialog.tsx:636
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的结果文件，而不是原始录制文件。若要在转码后删除原始文件，请在转码步骤上启用“成功后移除输入”。仍要添加此删除步骤吗？"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:332
+#: src/components/pipeline/workflows/step-config-dialog.tsx:323
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
@@ -8600,11 +8604,11 @@ msgstr "这会从录制的文件列表中移除 {countLabel}。此操作无法�
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API 密钥将其添加到 Claude、Cursor 或任何 MCP 客户端，让助手查看录制、分析弹幕并管理配置。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:310
+#: src/components/pipeline/workflows/step-config-dialog.tsx:301
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
 msgstr "此步骤是一个子工作流：<0>{workflowName}</0>。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:315
+#: src/components/pipeline/workflows/step-config-dialog.tsx:306
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 
@@ -9019,7 +9023,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:405
+#: src/components/notifications/channel-form.tsx:403
 msgid "Type"
 msgstr "类型"
 
@@ -9510,7 +9514,7 @@ msgstr "工作流删除成功"
 msgid "Workflow not found"
 msgstr "未找到工作流"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:291
+#: src/components/pipeline/workflows/step-config-dialog.tsx:282
 msgid "Workflow Step"
 msgstr "工作流步骤"
 

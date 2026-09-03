@@ -5,18 +5,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { useQuery } from '@tanstack/react-query';
 import { Loader2, Unlink, AlertTriangle } from 'lucide-react';
 import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
-import { listJobPresets } from '@/server/functions/job';
 import {
   usePresetProcessorMap,
   getTransformDependencyIds,
 } from './delete-warning';
+import { usePresetByName } from './preset-lookup';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input as UiInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -77,22 +76,14 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     }
   }, [open]);
 
-  // Fetch preset details if it's a string step to allow detaching
-  const { data: presetData, isLoading: isLoadingPreset } = useQuery({
-    queryKey: ['job', 'presets', 'detail', presetName],
-    queryFn: () =>
-      listJobPresets({ data: { search: presetName || undefined, limit: 1 } }),
-    enabled: isPreset && !!presetName && open,
-  });
-
-  const presetDetail = useMemo(() => {
-    if (!presetData || !presetName) return null;
-    // Find exact match by name
-    return (
-      presetData.presets.find((p) => p.name === presetName) ||
-      presetData.presets[0]
-    );
-  }, [presetData, presetName]);
+  // The preset this step names. `presetDetail.processor` picks the form shown in the read-only
+  // preview and the inline step that handleDetach/performSave write back, so it must be the
+  // preset the DAG runner would resolve — null unless a preset carries exactly `presetName`.
+  const {
+    preset: presetDetail,
+    isLoading: isLoadingPreset,
+    isError: isPresetError,
+  } = usePresetByName(presetName, isPreset && open);
 
   // 1. Determine processor definition
   const processorDef = useMemo(() => {
@@ -420,9 +411,30 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     </div>
                   )}
                   {!isLoadingPreset && !presetDetail && (
-                    <div className="flex items-center justify-center text-destructive text-sm p-6">
-                      <Trans>Error: Could not load preset details.</Trans>
-                    </div>
+                    <Alert variant="destructive" className="bg-destructive/5">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        {isPresetError ? (
+                          <Trans>
+                            Could not load the preset{' '}
+                            <strong className="text-foreground">
+                              {presetName}
+                            </strong>
+                            . Check that the server is reachable and try again.
+                          </Trans>
+                        ) : (
+                          <Trans>
+                            No preset named{' '}
+                            <strong className="text-foreground">
+                              {presetName}
+                            </strong>{' '}
+                            exists. It may have been renamed or deleted. Point
+                            this step at an existing preset, or replace it with
+                            a configured step.
+                          </Trans>
+                        )}
+                      </AlertDescription>
+                    </Alert>
                   )}
                 </div>
               ) : (

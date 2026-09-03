@@ -14,7 +14,10 @@ pub struct JobPresetFilters {
     pub category: Option<String>,
     /// Filter by processor type.
     pub processor: Option<String>,
-    /// Search query (matches name or description).
+    /// Exact preset name. `job_presets.name` is UNIQUE, so this matches at most one row —
+    /// the same identity `get_preset_by_name` resolves a `PipelineStep::Preset` by.
+    pub name: Option<String>,
+    /// Search query (substring of name or description).
     pub search: Option<String>,
 }
 
@@ -176,6 +179,11 @@ impl JobPresetRepository for SqliteJobPresetRepository {
             bind_index += 1;
         }
 
+        if filters.name.is_some() {
+            conditions.push(format!("name = ${}", bind_index));
+            bind_index += 1;
+        }
+
         if filters.search.is_some() {
             conditions.push(format!(
                 "(name LIKE ${} OR description LIKE ${})",
@@ -209,6 +217,10 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         if let Some(ref proc) = filters.processor {
             count_query = count_query.bind(proc);
         }
+        // Binds follow the order the conditions were pushed above.
+        if let Some(ref name) = filters.name {
+            count_query = count_query.bind(name);
+        }
         if let Some(ref search) = filters.search {
             let search_pattern = format!("%{}%", search);
             count_query = count_query.bind(search_pattern);
@@ -222,6 +234,9 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         }
         if let Some(ref proc) = filters.processor {
             data_query = data_query.bind(proc);
+        }
+        if let Some(ref name) = filters.name {
+            data_query = data_query.bind(name);
         }
         if let Some(ref search) = filters.search {
             let search_pattern = format!("%{}%", search);
@@ -501,5 +516,112 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::{init_pool_with_size, run_migrations};
+
+    async fn setup_repo() -> SqliteJobPresetRepository {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let pool = Arc::new(pool);
+        SqliteJobPresetRepository::new(pool.clone(), pool)
+    }
+
+    fn preset(name: &str, processor: &str, description: &str) -> JobPreset {
+        JobPreset::new(name, processor, serde_json::json!({})).with_description(description)
+    }
+
+    #[tokio::test]
+    async fn name_filter_selects_the_preset_search_ranks_behind_others() {
+        let repo = setup_repo().await;
+        // `alpha_cleanup` matches the term "remux" only through its description, and sorts ahead
+        // of `zeta_remux` under the `ORDER BY name` this query applies.
+        repo.create_preset(&preset(
+            "alpha_cleanup",
+            "delete",
+            "Safe after a remux step",
+        ))
+        .await
+        .unwrap();
+        repo.create_preset(&preset("zeta_remux", "remux", "Remux to mp4"))
+            .await
+            .unwrap();
+
+        let first_page = Pagination::new(1, 0);
+
+        let (rows, total) = repo
+            .list_presets_filtered(
+                &JobPresetFilters {
+                    search: Some("remux".to_string()),
+                    ..Default::default()
+                },
+                &first_page,
+            )
+            .await
+            .unwrap();
+        assert!(
+            total > 1,
+            "search is a substring match over name and description, so it cannot identify a preset"
+        );
+        assert_ne!(rows[0].name, "zeta_remux");
+
+        let (rows, total) = repo
+            .list_presets_filtered(
+                &JobPresetFilters {
+                    name: Some("zeta_remux".to_string()),
+                    ..Default::default()
+                },
+                &first_page,
+            )
+            .await
+            .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].name, "zeta_remux");
+        assert_eq!(rows[0].processor, "remux");
+    }
+
+    #[tokio::test]
+    async fn name_filter_combines_with_the_other_filters() {
+        let repo = setup_repo().await;
+        repo.create_preset(&preset("zeta_remux", "remux", "Remux to mp4"))
+            .await
+            .unwrap();
+
+        let first_page = Pagination::new(10, 0);
+
+        // Every active filter appends its own placeholder, so the binds must stay in the order
+        // the conditions were pushed; a swapped bind would compare `name` to the LIKE pattern.
+        let (rows, total) = repo
+            .list_presets_filtered(
+                &JobPresetFilters {
+                    processor: Some("remux".to_string()),
+                    name: Some("zeta_remux".to_string()),
+                    search: Some("remux".to_string()),
+                    ..Default::default()
+                },
+                &first_page,
+            )
+            .await
+            .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].name, "zeta_remux");
+
+        let (rows, total) = repo
+            .list_presets_filtered(
+                &JobPresetFilters {
+                    processor: Some("delete".to_string()),
+                    name: Some("zeta_remux".to_string()),
+                    ..Default::default()
+                },
+                &first_page,
+            )
+            .await
+            .unwrap();
+        assert_eq!(total, 0);
+        assert!(rows.is_empty());
     }
 }

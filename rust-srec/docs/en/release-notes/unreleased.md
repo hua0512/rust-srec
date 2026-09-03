@@ -204,6 +204,10 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+- **A workflow step no longer shows the wrong preset**
+
+  Opening a step that uses a preset could show a different preset's settings, and **Detach & Edit** then replaced the step with the preset that was shown — an upload or conversion step could quietly turn into a delete step. A step now always shows the preset it names, and a step whose preset has been renamed or deleted says so instead of falling back to an unrelated one.
+
 ## Security
 
 - **Cookies, tokens and passwords are no longer written to the logs**
