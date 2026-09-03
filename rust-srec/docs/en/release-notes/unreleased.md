@@ -108,6 +108,10 @@
 
   If the app stopped while a transcode or upload was running, that job was put back in the queue on the next start but kept showing the percentage it had reached before — a job that was only waiting its turn could sit there reading "42%" until it actually started running again. The old figure is now cleared the moment the job returns to the queue.
 
+- **Large recordings can now be put in a ZIP archive**
+
+  A ZIP step gave up on any recording larger than 4 GB: it wrote most of the archive, then failed and left nothing behind. Recordings are now archived whatever their size.
+
 ## Danmu
 
 - **Chat recording now survives network interruptions**
