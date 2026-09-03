@@ -252,8 +252,15 @@ where
             // A session whose streamer was deleted has no config to resolve and
             // no `StreamerActor` to hand the recovered state to, so it is not a
             // recovery candidate: every `PipelineCoordinationEvent` below is
-            // keyed by streamer id.
+            // keyed by streamer id. `list_ended_sessions_pending_pipeline_recovery`
+            // already filters these out, so reaching here means the session was
+            // pulled in by an in-flight coordination DAG — worth a line, same as
+            // the DAG-with-missing-session case above.
             let Some(streamer_id) = session.streamer_id.clone() else {
+                warn!(
+                    session_id = %session.id,
+                    "Skipping pipeline coordinator recovery for session whose streamer was deleted"
+                );
                 continue;
             };
             let session_id = session.id.clone();

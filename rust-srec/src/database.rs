@@ -384,6 +384,137 @@ mod tests {
         }
     }
 
+    /// A create-copy-drop-rename on `live_sessions` deletes every
+    /// `media_outputs`, `danmu_statistics`, `session_segments`,
+    /// `session_events` and `danmu_aggregator_state` row in the database unless
+    /// foreign keys are genuinely off, and every other migration test starts
+    /// from an empty database, where that is invisible. Populate the schema as
+    /// it stands immediately before the rebuild, then apply the rest and assert
+    /// nothing was lost.
+    ///
+    /// Any future `live_sessions` rebuild inherits this guard: raise
+    /// `FIXTURE_BEFORE` to the new version so the fixture lands ahead of it.
+    #[tokio::test]
+    async fn live_sessions_rebuild_preserves_every_cascade_child() {
+        /// Fixture is inserted just before this version, so the rebuild that
+        /// follows has real rows to move.
+        const FIXTURE_BEFORE: i64 = 20_260_903_000_000;
+
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+
+        let full = sqlx::migrate!("./migrations");
+        let mut prefix = sqlx::migrate!("./migrations");
+        prefix.migrations = full
+            .migrations
+            .iter()
+            .filter(|migration| migration.version < FIXTURE_BEFORE)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into();
+        assert!(
+            prefix.migrations.len() < full.migrations.len(),
+            "FIXTURE_BEFORE must sit before at least one migration"
+        );
+        prefix.run(&pool).await.unwrap();
+
+        // `platform-twitch` is seeded by the initial schema migration.
+        for statement in [
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, \
+             created_at, updated_at) \
+             VALUES ('str-1', 'Alice', 'https://example.com/alice', 'platform-twitch', \
+             'LIVE', 'NORMAL', 1700000000000, 1700000000000)",
+            "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, \
+             total_size_bytes, session_complete_dispatched) VALUES \
+             ('sess-ended', 'str-1', 1700000100000, 1700003700000, '[]', 5000, 1), \
+             ('sess-active', 'str-1', 1700010000000, NULL, '[]', 1500, 0)",
+            "INSERT INTO media_outputs (id, session_id, file_path, file_type, size_bytes, \
+             created_at) VALUES \
+             ('mo-1', 'sess-ended', '/rec/1.mp4', 'VIDEO', 4000, 1700003600000), \
+             ('mo-2', 'sess-ended', '/rec/1.jpg', 'THUMBNAIL', 1000, 1700003610000), \
+             ('mo-3', 'sess-active', '/rec/2.mp4', 'VIDEO', 1500, 1700010500000)",
+            "INSERT INTO session_segments (id, session_id, segment_index, file_path, \
+             duration_secs, size_bytes, persisted_at) VALUES \
+             ('seg-1', 'sess-ended', 0, '/rec/1.mp4', 3600.0, 5000, 1700003600000), \
+             ('seg-2', 'sess-active', 0, '/rec/2.mp4', 500.0, 1500, 1700010500000)",
+            "INSERT INTO danmu_statistics (id, session_id, total_danmus) \
+             VALUES ('ds-1', 'sess-ended', 1200)",
+            "INSERT INTO danmu_aggregator_state (session_id, version, updated_at, state) \
+             VALUES ('sess-active', 1, 1700010500000, X'0102')",
+            "INSERT INTO session_events (session_id, streamer_id, kind, occurred_at, payload) \
+             VALUES ('sess-ended', 'str-1', 'session_started', 1700000100000, NULL), \
+             ('sess-ended', 'str-1', 'session_ended', 1700003700000, NULL), \
+             ('sess-active', 'str-1', 'session_started', 1700010000000, NULL)",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+
+        let counts = |pool: DbPool| async move {
+            let mut out = Vec::new();
+            for table in [
+                "live_sessions",
+                "media_outputs",
+                "session_segments",
+                "danmu_statistics",
+                "danmu_aggregator_state",
+                "session_events",
+            ] {
+                let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+                    "SELECT COUNT(*) FROM {table}"
+                )))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                out.push((table, count));
+            }
+            out
+        };
+
+        let before = counts(pool.clone()).await;
+        assert_eq!(
+            before,
+            vec![
+                ("live_sessions", 2),
+                ("media_outputs", 3),
+                ("session_segments", 2),
+                ("danmu_statistics", 1),
+                ("danmu_aggregator_state", 1),
+                ("session_events", 3),
+            ]
+        );
+
+        // Already-applied versions are skipped, so this runs only the rebuild
+        // and anything after it.
+        full.run(&pool).await.unwrap();
+
+        assert_eq!(counts(pool.clone()).await, before, "the rebuild lost rows");
+
+        let violations: Vec<String> = sqlx::query_scalar(
+            "SELECT \"table\" || ' rowid=' || COALESCE(CAST(rowid AS TEXT), 'null') \
+             FROM pragma_foreign_key_check",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert!(violations.is_empty(), "foreign_key_check: {violations:?}");
+
+        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(integrity, "ok");
+
+        // The backfill reaches rows that predate the column.
+        let names: Vec<Option<String>> =
+            sqlx::query_scalar("SELECT streamer_name FROM live_sessions ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            names,
+            vec![Some("Alice".to_string()), Some("Alice".to_string())]
+        );
+    }
+
     /// The `live_sessions` rebuild that made `streamer_id` nullable must
     /// reinstate every index the dropped table carried plus
     /// `trg_live_session_orphan_ends`; `DROP TABLE` removes both. Pin them by

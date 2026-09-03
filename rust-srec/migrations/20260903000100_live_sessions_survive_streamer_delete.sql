@@ -99,8 +99,26 @@ CREATE INDEX IF NOT EXISTS idx_live_sessions_start_time
 -- treats that as "recording in progress" (`SessionResponse::is_live`, the
 -- `active_only` branch of `SqlxSessionRepository::list_sessions_filtered`,
 -- `PipelineManager` startup recovery) would keep reporting it as live.
--- Foreign-key actions fire row triggers, so closing the session here runs
--- inside the same statement as the `DELETE FROM streamers`.
+-- Foreign-key actions fire row triggers, so this runs inside the same
+-- statement as the `DELETE FROM streamers`.
+--
+-- Running that early means it pre-empts the lifecycle rather than
+-- complementing it. `SessionLifecycleRepository::end_for_disable` guards on
+-- `SELECT end_time IS NULL FROM live_sessions WHERE id = ?` and returns
+-- `Ok(None)` for a row this trigger has already stamped, so
+-- `SessionLifecycle::end_for_disable` skips the `session_ended` row in
+-- `session_events`, the `SessionTransition::Ended` broadcast, the in-memory
+-- `SessionState` transition out of `Recording`, and `schedule_ended_eviction`.
+-- A session torn down this way therefore carries an `end_time` but no
+-- `session_ended` entry on its timeline. Ending the session through
+-- `SessionLifecycle` before deleting the streamer keeps all of that intact and
+-- reduces this trigger to the safety net its `WHEN NEW.end_time IS NULL` guard
+-- describes.
+--
+-- `unixepoch('now','subsec')` rather than `unixepoch('now')`: the latter
+-- truncates to the second, which can place `end_time` before the session's own
+-- `start_time` when both land in the same second. `CAST` keeps the column's
+-- stored type INTEGER regardless of the multiplication's floating-point result.
 CREATE TRIGGER IF NOT EXISTS trg_live_session_orphan_ends
 AFTER UPDATE OF streamer_id ON live_sessions
 FOR EACH ROW
@@ -109,7 +127,7 @@ WHEN NEW.streamer_id IS NULL
   AND NEW.end_time IS NULL
 BEGIN
     UPDATE live_sessions
-    SET end_time = unixepoch('now') * 1000
+    SET end_time = CAST(unixepoch('now', 'subsec') * 1000 AS INTEGER)
     WHERE id = NEW.id;
 END;
 
