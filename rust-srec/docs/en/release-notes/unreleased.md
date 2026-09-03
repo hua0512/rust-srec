@@ -54,6 +54,10 @@
 
   In the local-development mode that runs without sign-in, the backend used to accept browser requests from any website you happened to have open. It now turns away requests that come from an unknown page, or that arrive under a web address other than your own machine's, so another tab cannot quietly issue commands to your recorder. Requests from the local web interface, the desktop app, and tools such as `curl` are unaffected. If you open the interface from a different address, list it in the new `API_CORS_ORIGINS` setting. Nothing changes when sign-in is on — and with sign-in on, a password or API key is what protects the API. See [Configuration](../getting-started/configuration.md#security-auth).
 
+- **Cancelling a pipeline with `DELETE /api/pipeline/{pipeline_id}` now ends it**
+
+  This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
+
 ## Pipeline and uploads
 
 - **Upload recordings to Baidu Netdisk**
@@ -114,6 +118,10 @@
 - **A job picked up again after a restart no longer shows stale progress**
 
   If the app stopped while a transcode or upload was running, that job was put back in the queue on the next start but kept showing the percentage it had reached before — a job that was only waiting its turn could sit there reading "42%" until it actually started running again. The old figure is now cleared the moment the job returns to the queue.
+
+- **Large recordings can now be put in a ZIP archive**
+
+  A ZIP step gave up on any recording larger than 4 GB: it wrote most of the archive, then failed and left nothing behind. Recordings are now archived whatever their size.
 
 ## Danmu
 
@@ -211,6 +219,9 @@
 
   User account controls have moved to a dedicated user menu popup at the bottom of the sidebar. You can now access API key management, account settings, password changes, and sign out from a single place anywhere in the interface.
 
+- **A workflow step no longer shows the wrong preset**
+
+  Opening a step that uses a preset could show a different preset's settings, and **Detach & Edit** then replaced the step with the preset that was shown — an upload or conversion step could quietly turn into a delete step. A step now always shows the preset it names, and a step whose preset has been renamed or deleted says so instead of falling back to an unrelated one.
 - **A brief server hiccup no longer signs you out**
 
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.

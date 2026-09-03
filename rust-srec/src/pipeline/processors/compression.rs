@@ -301,12 +301,20 @@ impl CompressionProcessor {
         let file = BufWriter::new(file);
         let mut zip = ZipWriter::new(file);
 
+        // Every entry gets ZIP64 sizes: `ZipWriter::write` aborts an entry as soon as more
+        // than 4 GiB have been written to it unless the entry was started with `large_file`,
+        // and recordings routinely exceed that. Deriving the flag from a stat'ed size instead
+        // would still abort on a file that grows between the stat and the `std::io::copy`
+        // below, so it is set unconditionally. It costs 40 bytes per entry: a 20-byte ZIP64
+        // extended information block in both the local header and the central directory.
+        let base_options = SimpleFileOptions::default().large_file(true);
+
         // Map compression level (0-9) to zip compression method
         let options = if config.compression_level == 0 {
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)
+            base_options.compression_method(zip::CompressionMethod::Stored)
         } else {
             // Deflate compression with level
-            SimpleFileOptions::default()
+            base_options
                 .compression_method(zip::CompressionMethod::Deflated)
                 .compression_level(Some(config.compression_level as i64))
         };
@@ -904,6 +912,90 @@ mod tests {
         );
         assert!(output.input_size_bytes.is_some());
         assert!(output.output_size_bytes.is_some());
+    }
+
+    /// Returns the extra-field bytes of the ZIP local file header that starts at byte 0 of
+    /// `archive`. The fixed part of a local file header is 30 bytes, with the file name
+    /// length at offset 26 and the extra field length at offset 28.
+    fn first_local_header_extra_field(archive: &[u8]) -> &[u8] {
+        assert_eq!(&archive[0..4], b"PK\x03\x04", "not a local file header");
+        let name_len = u16::from_le_bytes([archive[26], archive[27]]) as usize;
+        let extra_len = u16::from_le_bytes([archive[28], archive[29]]) as usize;
+        let start = 30 + name_len;
+        &archive[start..start + extra_len]
+    }
+
+    /// Whether `extra` holds a ZIP64 extended information field (header id 0x0001). Extra
+    /// fields are a sequence of 2-byte id, 2-byte payload length, payload.
+    fn has_zip64_extra_field(extra: &[u8]) -> bool {
+        let mut pos = 0;
+        while pos + 4 <= extra.len() {
+            let id = u16::from_le_bytes([extra[pos], extra[pos + 1]]);
+            let len = u16::from_le_bytes([extra[pos + 2], extra[pos + 3]]) as usize;
+            if id == 0x0001 {
+                return true;
+            }
+            pos += 4 + len;
+        }
+        false
+    }
+
+    /// Runs the processor over one small text file with `format: zip` at
+    /// `compression_level`, returning the bytes of the archive it wrote.
+    async fn zip_archive_bytes(compression_level: u8) -> Vec<u8> {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = temp_dir.path().join("input.txt");
+        let output_path = temp_dir.path().join("output.zip");
+
+        std::fs::write(&input_path, "test content for compression").unwrap();
+
+        let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![input_path.to_string_lossy().to_string()],
+            outputs: vec![output_path.to_string_lossy().to_string()],
+            config: Some(
+                serde_json::json!({"format": "zip", "compression_level": compression_level})
+                    .to_string(),
+            ),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        processor.process(&input, &ctx).await.unwrap();
+
+        std::fs::read(&output_path).unwrap()
+    }
+
+    /// Asserts the sole entry of `archive` was started with `large_file` and still reads
+    /// back. That option forces a ZIP64 extended information field into the local header
+    /// even for a tiny entry; without it `ZipWriter` aborts an entry past 4 GiB.
+    fn assert_entry_carries_zip64_sizes(archive: Vec<u8>) {
+        assert!(
+            has_zip64_extra_field(first_local_header_extra_field(&archive)),
+            "ZIP entries must be started with the large-file option"
+        );
+
+        // The ZIP64 headers must still round-trip through an ordinary reader.
+        let mut reader = zip::ZipArchive::new(std::io::Cursor::new(archive)).unwrap();
+        let mut entry = reader.by_name("input.txt").unwrap();
+        let mut content = String::new();
+        entry.read_to_string(&mut content).unwrap();
+        assert_eq!(content, "test content for compression");
+    }
+
+    #[tokio::test]
+    async fn test_deflated_zip_entries_carry_zip64_sizes() {
+        // Non-zero levels take the `CompressionMethod::Deflated` arm of `create_zip_archive`;
+        // 6 is what the seeded `archive_zip` preset asks for.
+        assert_entry_carries_zip64_sizes(zip_archive_bytes(6).await);
+    }
+
+    #[tokio::test]
+    async fn test_stored_zip_entries_carry_zip64_sizes() {
+        // Level 0 takes the `CompressionMethod::Stored` arm of `create_zip_archive`.
+        assert_entry_carries_zip64_sizes(zip_archive_bytes(0).await);
     }
 
     #[tokio::test]

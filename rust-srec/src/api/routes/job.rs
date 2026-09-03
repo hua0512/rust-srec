@@ -102,7 +102,10 @@ pub struct PresetFilterParams {
     pub category: Option<String>,
     /// Filter by processor type.
     pub processor: Option<String>,
-    /// Search query (matches name or description).
+    /// Exact preset name. Returns at most one preset (`job_presets.name` is UNIQUE); use this
+    /// to resolve a preset a pipeline step references by name.
+    pub name: Option<String>,
+    /// Search query (substring of name or description).
     pub search: Option<String>,
 }
 
@@ -165,6 +168,7 @@ pub async fn list_presets(
     let db_filters = crate::database::repositories::JobPresetFilters {
         category: filters.category,
         processor: filters.processor,
+        name: filters.name,
         search: filters.search,
     };
 
