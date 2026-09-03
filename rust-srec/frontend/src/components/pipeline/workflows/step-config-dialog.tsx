@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { Loader2, Unlink, AlertTriangle } from 'lucide-react';
+import { Loader2, Unlink, AlertTriangle, Info } from 'lucide-react';
 import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -63,7 +63,14 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const presetName = isPreset ? step.name : null;
   const isWorkflow = step?.type === 'workflow';
   const workflowName = isWorkflow ? (step as any).name : null;
-  const [isDetached, setIsDetached] = useState(false);
+  // Processor of the preset at the moment handleDetach ran. `isDetached` is derived from it, so
+  // once the user is editing a detached copy the form and performSave no longer depend on
+  // `presetDetail` — a refetch that stops resolving the preset cannot swap the processor or turn
+  // the save into a no-op.
+  const [detachedProcessor, setDetachedProcessor] = useState<string | null>(
+    null,
+  );
+  const isDetached = detachedProcessor !== null;
   // Holds the validated form data while the delete-after-transform confirmation is shown, so
   // "Add anyway" can complete the deferred save.
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -72,7 +79,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   // Reset detached state when dialog closes
   useEffect(() => {
     if (!open) {
-      setIsDetached(false);
+      setDetachedProcessor(null);
     }
   }, [open]);
 
@@ -91,10 +98,9 @@ export const StepConfigDialog = memo(function StepConfigDialog({
 
     // If it's a preset, we only have a processor definition if we've detached it locally
     if (isPreset) {
-      if (isDetached && presetDetail) {
-        return getProcessorDefinition(presetDetail.processor);
-      }
-      return null;
+      return detachedProcessor
+        ? getProcessorDefinition(detachedProcessor)
+        : null;
     }
 
     // For inline steps, use the processor directly
@@ -103,7 +109,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     }
 
     return null;
-  }, [step, isPreset, isDetached, presetDetail]);
+  }, [step, isPreset, detachedProcessor]);
 
   // 2. Create form schema (dynamically)
   const formSchema = useMemo(() => {
@@ -171,10 +177,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
 
     let finalStepContent: PipelineStep;
 
-    if (isPreset && isDetached && presetDetail) {
+    if (isPreset && detachedProcessor) {
       finalStepContent = {
         type: 'inline',
-        processor: presetDetail.processor,
+        processor: detachedProcessor,
         config: data,
       };
     } else if (step?.type === 'inline') {
@@ -269,7 +275,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     form.reset(presetForm.getValues());
 
     // Switch to "Edit" mode locally
-    setIsDetached(true);
+    setDetachedProcessor(presetDetail.processor);
   };
 
   return (
@@ -291,7 +297,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                   {(processorDef && i18n._(processorDef.label)) ||
                     (step?.type === 'inline'
                       ? step.processor
-                      : presetDetail?.processor)}
+                      : detachedProcessor)}
                 </span>
               </span>
             )}
@@ -410,29 +416,37 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                       </div>
                     </div>
                   )}
-                  {!isLoadingPreset && !presetDetail && (
+                  {!isLoadingPreset && !presetDetail && isPresetError && (
                     <Alert variant="destructive" className="bg-destructive/5">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>
-                        {isPresetError ? (
-                          <Trans>
-                            Could not load the preset{' '}
-                            <strong className="text-foreground">
-                              {presetName}
-                            </strong>
-                            . Check that the server is reachable and try again.
-                          </Trans>
-                        ) : (
-                          <Trans>
-                            No preset named{' '}
-                            <strong className="text-foreground">
-                              {presetName}
-                            </strong>{' '}
-                            exists. It may have been renamed or deleted. Point
-                            this step at an existing preset, or replace it with
-                            a configured step.
-                          </Trans>
-                        )}
+                        <Trans>
+                          Could not load the preset{' '}
+                          <strong className="text-foreground">
+                            {presetName}
+                          </strong>
+                          . Check that the server is reachable and try again.
+                        </Trans>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {/* A step naming no existing preset still runs: resolve_dag_step falls back to
+                      treating the name as a processor, so this states what happens rather than
+                      reporting a broken step. */}
+                  {!isLoadingPreset && !presetDetail && !isPresetError && (
+                    <Alert>
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        <Trans>
+                          No preset named{' '}
+                          <strong className="text-foreground">
+                            {presetName}
+                          </strong>{' '}
+                          is defined. If a processor goes by that name, this
+                          step runs it with its default settings; otherwise the
+                          pipeline fails to start. Point the step at an existing
+                          preset to see and edit its settings here.
+                        </Trans>
                       </AlertDescription>
                     </Alert>
                   )}

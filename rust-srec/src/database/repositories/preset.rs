@@ -211,13 +211,14 @@ impl JobPresetRepository for SqliteJobPresetRepository {
 
         // Execute count query
         let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
+        // Bind in the order the conditions were pushed above; each active filter consumed one
+        // placeholder, so a reordered bind would feed a value to the wrong condition.
         if let Some(ref cat) = filters.category {
             count_query = count_query.bind(cat);
         }
         if let Some(ref proc) = filters.processor {
             count_query = count_query.bind(proc);
         }
-        // Binds follow the order the conditions were pushed above.
         if let Some(ref name) = filters.name {
             count_query = count_query.bind(name);
         }
@@ -229,6 +230,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
 
         // Execute data query
         let mut data_query = sqlx::query_as::<_, JobPreset>(sqlx::AssertSqlSafe(data_sql));
+        // Same placeholder order as the count query above, then the LIMIT/OFFSET binds.
         if let Some(ref cat) = filters.category {
             data_query = data_query.bind(cat);
         }

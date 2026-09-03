@@ -276,7 +276,7 @@ msgstr "90 days"
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:517
+#: src/components/pipeline/workflows/step-config-dialog.tsx:529
 msgid "A unique ID used by other steps to reference this one."
 msgstr "A unique ID used by other steps to reference this one."
 
@@ -371,7 +371,7 @@ msgstr "Add an override to customize behavior for specific platforms."
 msgid "Add an override to customize engine behavior for this template."
 msgstr "Add an override to customize engine behavior for this template."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:656
+#: src/components/pipeline/workflows/step-config-dialog.tsx:668
 msgid "Add anyway"
 msgstr "Add anyway"
 
@@ -1141,8 +1141,8 @@ msgstr "Cache"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:97
 #: src/components/pipeline/presets/preset-card.tsx:206
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:607
-#: src/components/pipeline/workflows/step-config-dialog.tsx:648
+#: src/components/pipeline/workflows/step-config-dialog.tsx:619
+#: src/components/pipeline/workflows/step-config-dialog.tsx:660
 #: src/components/pipeline/workflows/workflow-card.tsx:195
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:235
@@ -1554,7 +1554,7 @@ msgstr "Config Path (Optional)"
 
 #: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
-#: src/components/pipeline/workflows/step-config-dialog.tsx:386
+#: src/components/pipeline/workflows/step-config-dialog.tsx:390
 #: src/components/pipeline/workflows/workflow-editor.tsx:303
 #: src/lib/menu-list.ts:119
 msgid "Configuration"
@@ -1573,7 +1573,7 @@ msgid "Configuration imported successfully"
 msgstr "Configuration imported successfully"
 
 #: src/components/config/engines/engine-card.tsx:204
-#: src/components/pipeline/workflows/step-config-dialog.tsx:288
+#: src/components/pipeline/workflows/step-config-dialog.tsx:294
 msgid "Configure"
 msgstr "Configure"
 
@@ -1804,7 +1804,7 @@ msgstr "Could not check whether this tool is installed."
 msgid "Could not connect to the server. Please check your connection."
 msgstr "Could not connect to the server. Please check your connection."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:418
+#: src/components/pipeline/workflows/step-config-dialog.tsx:421
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 
@@ -2115,7 +2115,7 @@ msgstr "Customize the application theme and sidebar layout."
 msgid "Cutoff"
 msgstr "Cutoff"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:486
+#: src/components/pipeline/workflows/step-config-dialog.tsx:498
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
@@ -2281,7 +2281,7 @@ msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resol
 msgid "Default: {value}"
 msgstr "Default: {value}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:489
+#: src/components/pipeline/workflows/step-config-dialog.tsx:501
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
@@ -2416,7 +2416,7 @@ msgstr "Delete Source XML"
 msgid "Delete Template"
 msgstr "Delete Template"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:633
+#: src/components/pipeline/workflows/step-config-dialog.tsx:645
 msgid "Delete the converted result?"
 msgstr "Delete the converted result?"
 
@@ -2458,7 +2458,7 @@ msgstr "Deletes the files produced by the previous step. Safe after an Upload st
 msgid "Delivery Policy"
 msgstr "Delivery Policy"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:525
+#: src/components/pipeline/workflows/step-config-dialog.tsx:537
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
@@ -2520,7 +2520,7 @@ msgstr "Destination Root"
 msgid "Destination Root help"
 msgstr "Destination Root help"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:620
+#: src/components/pipeline/workflows/step-config-dialog.tsx:632
 msgid "Detach & Edit"
 msgstr "Detach & Edit"
 
@@ -2788,7 +2788,7 @@ msgstr "e.g. My Favorite Streamer"
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:512
+#: src/components/pipeline/workflows/step-config-dialog.tsx:524
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
@@ -3770,7 +3770,7 @@ msgstr "Fix HLS Discontinuities"
 msgid "Floating"
 msgstr "Floating"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:356
+#: src/components/pipeline/workflows/step-config-dialog.tsx:360
 msgid "Flow & Dependencies"
 msgstr "Flow & Dependencies"
 
@@ -4756,7 +4756,7 @@ msgstr "Loading older logs..."
 msgid "Loading pipeline editor..."
 msgstr "Loading pipeline editor..."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:376
+#: src/components/pipeline/workflows/step-config-dialog.tsx:380
 msgid "Loading preset details..."
 msgstr "Loading preset details..."
 
@@ -5173,7 +5173,7 @@ msgstr "Minute (00-59)"
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "Missing folders are created by BaiduPCS-Go during upload."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:311
+#: src/components/pipeline/workflows/step-config-dialog.tsx:315
 msgid "Modify the parameters for this processing step."
 msgstr "Modify the parameters for this processing step."
 
@@ -5408,7 +5408,7 @@ msgstr "No changes detected"
 msgid "No configuration available for this processor."
 msgstr "No configuration available for this processor."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:462
+#: src/components/pipeline/workflows/step-config-dialog.tsx:474
 msgid "No configuration form available for this processor."
 msgstr "No configuration form available for this processor."
 
@@ -5515,7 +5515,7 @@ msgstr "No metadata tags added"
 msgid "No modules configured"
 msgstr "No modules configured"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:580
+#: src/components/pipeline/workflows/step-config-dialog.tsx:592
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
@@ -5572,9 +5572,9 @@ msgstr "No playable stream found in response"
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:426
-msgid "No preset named <0>{presetName}</0> exists. It may have been renamed or deleted. Point this step at an existing preset, or replace it with a configured step."
-msgstr "No preset named <0>{presetName}</0> exists. It may have been renamed or deleted. Point this step at an existing preset, or replace it with a configured step."
+#: src/components/pipeline/workflows/step-config-dialog.tsx:438
+msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
+msgstr "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 
 #: src/components/pipeline/workflows/step-library.tsx:448
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:362
@@ -6579,7 +6579,7 @@ msgstr "Preset Details"
 msgid "Preset not found"
 msgstr "Preset not found"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:284
+#: src/components/pipeline/workflows/step-config-dialog.tsx:290
 msgid "Preset Step"
 msgstr "Preset Step"
 
@@ -7395,7 +7395,7 @@ msgstr "Save changes"
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:624
+#: src/components/pipeline/workflows/step-config-dialog.tsx:636
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "Save Changes"
@@ -7722,7 +7722,7 @@ msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "Select the highest quality level you want to attempt capturing."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:588
+#: src/components/pipeline/workflows/step-config-dialog.tsx:600
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
@@ -8112,11 +8112,11 @@ msgstr "Status"
 msgid "Stem (Filename Match)"
 msgstr "Stem (Filename Match)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:349
+#: src/components/pipeline/workflows/step-config-dialog.tsx:353
 msgid "Step Configuration"
 msgstr "Step Configuration"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:500
+#: src/components/pipeline/workflows/step-config-dialog.tsx:512
 msgid "Step Identifier (Unique)"
 msgstr "Step Identifier (Unique)"
 
@@ -8571,11 +8571,11 @@ msgstr "These settings only apply to the desktop app. The server will still deli
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:636
+#: src/components/pipeline/workflows/step-config-dialog.tsx:648
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:323
+#: src/components/pipeline/workflows/step-config-dialog.tsx:327
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 
@@ -8604,11 +8604,11 @@ msgstr "This removes {countLabel} from the recording's file list. This action ca
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:301
+#: src/components/pipeline/workflows/step-config-dialog.tsx:305
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
 msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:306
+#: src/components/pipeline/workflows/step-config-dialog.tsx:310
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
 
@@ -9514,7 +9514,7 @@ msgstr "Workflow deleted successfully"
 msgid "Workflow not found"
 msgstr "Workflow not found"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:282
+#: src/components/pipeline/workflows/step-config-dialog.tsx:288
 msgid "Workflow Step"
 msgstr "Workflow Step"
 
