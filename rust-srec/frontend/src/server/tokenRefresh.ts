@@ -22,11 +22,38 @@ type RefreshOutcome = {
   mustChangePassword?: boolean;
 };
 
+/**
+ * Result of one refresh attempt.
+ *
+ * `rejected` means `/auth/refresh` answered that the presented refresh token is
+ * not usable; it is the only outcome that justifies clearing the session.
+ * `transient` covers every other failure — the endpoint was unreachable, timed
+ * out, or failed for a reason unrelated to the token. The refresh token in the
+ * session is then still whatever it was, so callers keep the session and go on
+ * using the access token they already hold.
+ */
+type PerformRefreshResult =
+  | { status: 'refreshed'; outcome: RefreshOutcome }
+  | { status: 'rejected' }
+  | { status: 'transient' };
+
+export type TokenRefreshResult =
+  | { status: 'refreshed'; accessToken: string }
+  | { status: 'rejected' }
+  | { status: 'transient' };
+
 const RECENT_ROTATION_TTL_MS = 60_000;
 const MAX_MAP_SIZE = 1000;
+/**
+ * Caps how long refreshAuthTokenGlobal blocks on `/auth/refresh`. A backend that
+ * accepts the connection but never answers would otherwise hold the
+ * inFlightRefreshByRefreshToken entry — and every caller waiting on it — open
+ * indefinitely.
+ */
+const REFRESH_REQUEST_TIMEOUT_MS = 10_000;
 const inFlightRefreshByRefreshToken = new Map<
   string,
-  Promise<RefreshOutcome | null>
+  Promise<PerformRefreshResult>
 >();
 const recentRotationByOldRefreshToken = new Map<
   string,
@@ -113,21 +140,18 @@ async function applyOutcomeToSession({
  * 1. Multiple API calls fail with 401 simultaneously
  * 2. checkAuthFn runs concurrently with API calls
  *
- * @returns The new access token if successful, null if refresh failed
+ * The session is cleared only for a `rejected` result. A `transient` result
+ * leaves the session — including its never-consumed refresh token — in place so
+ * a later call can retry.
  */
-export async function refreshAuthTokenGlobal(): Promise<string | null> {
+export async function refreshAuthTokenGlobal(): Promise<TokenRefreshResult> {
   const session = await useAppSession();
   const currentData = session.data;
   if (!isValidSession(currentData)) {
     await session.clear();
-    return null;
+    return { status: 'rejected' };
   }
-  const currentRefreshToken = currentData.token?.refresh_token;
-
-  if (!currentRefreshToken) {
-    // console.log('[TokenRefresh] No refresh token available in session.');
-    return null;
-  }
+  const currentRefreshToken = currentData.token.refresh_token;
 
   const recent = getRecentRotation(currentRefreshToken);
   if (recent) {
@@ -140,7 +164,7 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
       oldRefreshToken: currentRefreshToken,
       outcome: recent,
     });
-    return recent.accessToken;
+    return { status: 'refreshed', accessToken: recent.accessToken };
   }
 
   // If a refresh is already in progress for this refresh token, wait for it
@@ -152,8 +176,8 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
   } else {
     refreshPromise = performRefresh({
       refreshToken: currentRefreshToken,
-      fallbackAccessExpiry: currentData.token?.expires_in,
-      fallbackRefreshExpiry: currentData.token?.refresh_expires_in,
+      fallbackAccessExpiry: currentData.token.expires_in,
+      fallbackRefreshExpiry: currentData.token.refresh_expires_in,
     });
     inFlightRefreshByRefreshToken.set(currentRefreshToken, refreshPromise);
     void refreshPromise.finally(() => {
@@ -161,26 +185,70 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
     });
   }
 
-  const outcome = await refreshPromise;
+  const result = await refreshPromise;
 
-  if (!outcome) {
-    // console.log('[TokenRefresh] Refresh failed (no outcome), clearing session.');
+  if (result.status === 'rejected') {
     await session.clear();
-    return null;
+    return { status: 'rejected' };
+  }
+
+  if (result.status === 'transient') {
+    return { status: 'transient' };
   }
 
   await applyOutcomeToSession({
     session,
     currentSessionData: currentData,
     oldRefreshToken: currentRefreshToken,
-    outcome,
+    outcome: result.outcome,
   });
 
-  return outcome.accessToken;
+  return { status: 'refreshed', accessToken: result.outcome.accessToken };
+}
+
+/**
+ * `/auth/refresh` answers 401 for a revoked, expired or unknown refresh token
+ * and 400 for a request body it cannot parse; re-presenting the same token can
+ * never succeed in either case. Every other status — 503 while the auth service
+ * is unavailable, a 5xx, a gateway error from a reverse proxy — can succeed on a
+ * later attempt, so it must not cost the user the session.
+ */
+function isDefinitiveRejection(status: number): boolean {
+  return status === 400 || status === 401;
+}
+
+/** Best-effort human-readable detail from a failed refresh response body. */
+async function readErrorDetail(
+  response: Response,
+): Promise<string | undefined> {
+  try {
+    const errorText = await response.text();
+    if (!errorText) return undefined;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed && typeof parsed === 'object') {
+        return (
+          (parsed as any).message ||
+          (parsed as any).detail ||
+          (parsed as any).error ||
+          JSON.stringify(parsed)
+        );
+      }
+      return String(parsed);
+    } catch {
+      return errorText;
+    }
+  } catch {
+    return undefined;
+  }
 }
 
 /**
  * Perform the actual token refresh.
+ *
+ * Every failure path consults getRecentRotation first: a concurrent call may
+ * have rotated this refresh token already, and that cached outcome is
+ * authoritative even though this request failed.
  */
 async function performRefresh({
   refreshToken,
@@ -190,98 +258,86 @@ async function performRefresh({
   refreshToken: string;
   fallbackAccessExpiry?: number;
   fallbackRefreshExpiry?: number;
-}): Promise<RefreshOutcome | null> {
-  try {
-    // console.log('[TokenRefresh] Calling refresh endpoint...');
+}): Promise<PerformRefreshResult> {
+  const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+  const url = `${baseUrl}/auth/refresh`;
 
-    const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-    const url = `${baseUrl}/auth/refresh`;
+  let response: Response;
+  try {
     // console.log(`[TokenRefresh] POST ${url} with token: ${refreshToken.slice(0, 10)}...`);
-    const response = await fetch(url, {
+    response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS),
     });
+  } catch (error) {
+    // fetch rejects only for transport-level problems (DNS failure, refused
+    // connection, timeout abort), so the backend never saw the token.
+    const rotated = getRecentRotation(refreshToken);
+    if (rotated) return { status: 'refreshed', outcome: rotated };
 
-    if (!response.ok) {
-      const rotated = getRecentRotation(refreshToken);
-      if (rotated) {
-        // console.log(
-        //   '[TokenRefresh] Token was rotated by another request, using new token.',
-        // );
-        return rotated;
-      }
+    console.error('[TokenRefresh] Refresh endpoint unreachable:', error);
+    return { status: 'transient' };
+  }
 
-      let detail: string | undefined;
-      try {
-        const errorText = await response.text();
-        if (errorText) {
-          try {
-            const parsed = JSON.parse(errorText);
-            if (parsed && typeof parsed === 'object') {
-              detail =
-                (parsed as any).message ||
-                (parsed as any).detail ||
-                (parsed as any).error ||
-                JSON.stringify(parsed);
-            } else {
-              detail = String(parsed);
-            }
-          } catch {
-            detail = errorText;
-          }
-        }
-      } catch {
-        // ignore body parsing errors
-      }
+  if (!response.ok) {
+    const rotated = getRecentRotation(refreshToken);
+    if (rotated) return { status: 'refreshed', outcome: rotated };
 
-      const wwwAuthenticate =
-        response.headers.get('www-authenticate') ?? undefined;
-      // console.error(
-      //   `[TokenRefresh] Refresh failed with status: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
-      // );
-      throw new Error(
-        `Refresh failed: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
-      );
-    }
-
-    const json = await response.json();
-    const now = Date.now();
-
-    const computedAccessExpiry =
-      typeof json.expires_in === 'number' && Number.isFinite(json.expires_in)
-        ? now + json.expires_in * 1000
-        : (fallbackAccessExpiry ?? now);
-
-    const computedRefreshExpiry =
-      typeof json.refresh_expires_in === 'number' &&
-      Number.isFinite(json.refresh_expires_in)
-        ? now + json.refresh_expires_in * 1000
-        : (fallbackRefreshExpiry ?? now);
-
-    // console.log(
-    //   `[TokenRefresh] Token refreshed successfully. Access expiry: ${new Date(computedAccessExpiry).toLocaleString()}, Refresh expiry: ${new Date(computedRefreshExpiry).toLocaleString()}`,
-    // );
+    const detail = await readErrorDetail(response);
+    const wwwAuthenticate =
+      response.headers.get('www-authenticate') ?? undefined;
+    console.error(
+      `[TokenRefresh] Refresh failed: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
+    );
     return {
+      status: isDefinitiveRejection(response.status) ? 'rejected' : 'transient',
+    };
+  }
+
+  let json: any;
+  try {
+    json = await response.json();
+  } catch (error) {
+    console.error('[TokenRefresh] Refresh response was not JSON:', error);
+    return { status: 'transient' };
+  }
+
+  // Guard applyOutcomeToSession: a 200 without a usable access token would
+  // otherwise be written into the session and break every later request.
+  if (typeof json?.access_token !== 'string' || !json.access_token) {
+    console.error('[TokenRefresh] Refresh response carried no access token.');
+    return { status: 'transient' };
+  }
+
+  const now = Date.now();
+
+  const computedAccessExpiry =
+    typeof json.expires_in === 'number' && Number.isFinite(json.expires_in)
+      ? now + json.expires_in * 1000
+      : (fallbackAccessExpiry ?? now);
+
+  const computedRefreshExpiry =
+    typeof json.refresh_expires_in === 'number' &&
+    Number.isFinite(json.refresh_expires_in)
+      ? now + json.refresh_expires_in * 1000
+      : (fallbackRefreshExpiry ?? now);
+
+  // console.log(
+  //   `[TokenRefresh] Token refreshed successfully. Access expiry: ${new Date(computedAccessExpiry).toLocaleString()}, Refresh expiry: ${new Date(computedRefreshExpiry).toLocaleString()}`,
+  // );
+  return {
+    status: 'refreshed',
+    outcome: {
       accessToken: json.access_token,
       refreshToken: json.refresh_token || refreshToken,
-      accessExpiry: computedAccessExpiry ?? now,
-      refreshExpiry: computedRefreshExpiry ?? now,
+      accessExpiry: computedAccessExpiry,
+      refreshExpiry: computedRefreshExpiry,
       roles: json.roles,
       mustChangePassword: json.must_change_password,
-    };
-  } catch (error) {
-    console.error('[TokenRefresh] Failed to refresh token:', error);
-
-    const rotated = getRecentRotation(refreshToken);
-    if (rotated) {
-      // console.log(
-      //   '[TokenRefresh] Token was rotated by another request during error, using new token.',
-      // );
-      return rotated;
-    }
-    return null;
-  }
+    },
+  };
 }
 
 /**
@@ -318,10 +374,19 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
     // console.log(
     //   `[TokenRefresh] Access token expired or expiring soon. Now: ${new Date(now).toLocaleString()}, Expiry: ${new Date(accessExpiry).toLocaleString()}, Buffer: ${buffer}ms. Refreshing...`,
     // );
-    const newAccessToken = await refreshAuthTokenGlobal();
+    const result = await refreshAuthTokenGlobal();
 
-    if (!newAccessToken) {
+    if (result.status === 'rejected') {
       return null;
+    }
+
+    if (result.status === 'transient') {
+      // refreshAuthTokenGlobal left the session untouched, so the caller stays
+      // signed in with the access token already in it; fetchBackend refreshes
+      // again on the next 401 once the backend answers.
+      return isValidSession(session.data)
+        ? sanitizeClientSession(session.data)
+        : null;
     }
 
     // Re-read session to get updated data

@@ -22,7 +22,10 @@ describe('fetchBackend', () => {
       data: { token: { access_token: 'old-token' } },
       update: vi.fn(),
     });
-    refreshAuthTokenGlobalMock.mockResolvedValue('new-token');
+    refreshAuthTokenGlobalMock.mockResolvedValue({
+      status: 'refreshed',
+      accessToken: 'new-token',
+    });
   });
 
   afterEach(() => {
