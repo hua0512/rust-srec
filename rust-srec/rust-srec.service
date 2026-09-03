@@ -16,10 +16,9 @@
 #
 # StateDirectory= and LogsDirectory= below create /var/lib/rust-srec and
 # /var/log/rust-srec on every start, so nothing has to be pre-created. If either
-# already exists owned by someone other than rust-srec — for instance created by
-# hand to satisfy an earlier ReadWritePaths= — systemd recursively chowns
-# everything beneath it during exec setup, which on a large recordings tree can
-# outlast TimeoutStartSec=. Run this once before the first start:
+# already exists owned by someone other than rust-srec, systemd recursively
+# chowns everything beneath it during exec setup, which on a large recordings
+# tree can outlast TimeoutStartSec=. Run this once before the first start:
 #   chown -R rust-srec:rust-srec /var/lib/rust-srec /var/log/rust-srec
 #
 # UMask=0027 below means recordings are written -rw-r-----, readable only by
