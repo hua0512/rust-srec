@@ -26,7 +26,8 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 - **API State**: `AppState` (`src/api/server.rs`) is the shared context for Axum routes.
 - **Logging**: Use structured `tracing` macros; avoid `println!`.
 - **Errors**: Propagate to `crate::error::Error`; handle API-specific errors in `src/api/error.rs`.
-- **Migrations**: New schema changes must be added as new files in `migrations/`.
+- **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
+- **Table rebuilds**: `DROP TABLE` takes the table's triggers with it, so a create-copy-drop-rename must reinstate every trigger the old table carried, not just its indexes. Dropping also cascades into FK children unless `PRAGMA foreign_keys=OFF` is in effect, and it is not inside the transaction sqlx wraps each migration in, so the file must start with `-- no-transaction` and run its work in its own `BEGIN`…`COMMIT`. A `-- no-transaction` file can be replayed — sqlx records the version in `_sqlx_migrations` only after the script returns — so keep every statement re-runnable (`DROP TABLE IF EXISTS <t>_new`, `CREATE INDEX IF NOT EXISTS`). Verify the outcome with `PRAGMA foreign_key_check` against a copy of a real database before shipping; sqlx discards result sets, so the pragma inside the migration can never fail it.
 
 ## ANTI-PATTERNS
 - **Panics**: No `unwrap()`/`expect()` in services; return `Result`.

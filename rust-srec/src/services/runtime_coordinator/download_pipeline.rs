@@ -472,9 +472,12 @@ pub(super) async fn run_live_download_pipeline(
     let proxy_config = &merged_config.proxy_config;
     if proxy_config.enabled {
         if let Some(effective_proxy_url) = proxy_config.effective_url() {
+            // `ProxyConfig::effective_url` splices `username:password@` into the URL,
+            // so the bare `url` field is logged and the credentials only as a flag.
             debug!(
-                "Applying explicit proxy from merged config to download: {}",
-                effective_proxy_url
+                proxy_url = ?proxy_config.url,
+                has_auth = proxy_config.password.is_some(),
+                "Applying explicit proxy from merged config to download"
             );
             config = config.with_proxy(effective_proxy_url);
         } else if proxy_config.use_system_proxy {

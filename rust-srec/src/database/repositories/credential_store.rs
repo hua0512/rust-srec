@@ -253,7 +253,7 @@ impl SqlxCredentialStore {
 #[async_trait]
 impl CredentialStore for SqlxCredentialStore {
     #[instrument(
-        skip(self, credentials),
+        skip_all,
         fields(scope = %source.scope.describe(), platform = %source.platform_name)
     )]
     async fn update_credentials(
