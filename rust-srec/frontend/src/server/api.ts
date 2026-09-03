@@ -99,10 +99,10 @@ export const fetchBackend = async <T = any>(
       console.log(`[API] 401 Unauthorized for ${url}. Attempting refresh...`);
       try {
         // Use the global refresh mechanism to prevent race conditions
-        const newToken = await refreshAuthTokenGlobal();
-        if (newToken) {
+        const refresh = await refreshAuthTokenGlobal();
+        if (refresh.status === 'refreshed') {
           console.log(`[API] Token refreshed. Retrying ${url}...`);
-          headers.set('Authorization', `Bearer ${newToken}`);
+          headers.set('Authorization', `Bearer ${refresh.accessToken}`);
           const retryResponse = await fetch(url, {
             ...init,
             headers,
@@ -125,8 +125,12 @@ export const fetchBackend = async <T = any>(
           // If retry failed, throw error from retry response
           await throwBackendError(retryResponse);
         } else {
+          // No usable token, so the request is not retried and the original
+          // 401 is reported below. Session handling belongs to
+          // refreshAuthTokenGlobal, which cleared it for 'rejected' and left
+          // it intact for 'transient'.
           console.log(
-            `[API] Refresh failed or returned no token for retry of ${endpoint}.`,
+            `[API] Refresh ${refresh.status} for retry of ${endpoint}.`,
           );
         }
       } catch (refreshError) {
