@@ -41,11 +41,8 @@ pub fn apply_proxy_config(
                 builder = builder.proxy(proxy);
             }
             Err(error) => {
-                warn!(
-                    proxy_url = %url,
-                    error = %error,
-                    "Invalid proxy URL; disabling proxy"
-                );
+                // `url` may embed `username:password@`, so only the parse error is logged.
+                warn!(error = %error, "Invalid proxy URL; disabling proxy");
                 builder = builder.no_proxy();
             }
         }
