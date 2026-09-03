@@ -652,8 +652,29 @@ pub(super) async fn handle_writer_result(
 /// variant. Variants that only carry a message — `Config`, `Rotation`,
 /// `Internal` — have no `io::Error` in their chain and stay `Processing`,
 /// which is unrecoverable and counts against the engine circuit breaker.
+///
+/// Only `ENOSPC` keeps [`DownloadFailureKind::OutputRootUnavailable`], because
+/// it is the only kind [`handle_writer_result`] pairs with a
+/// [`SegmentEvent::DiskFull`]. See that kind's contract in
+/// [`DownloadFailureKind::from_error_chain`]: it is exempt from the engine
+/// circuit breaker, so the gate rejecting the next start is the only thing
+/// left to throttle retries. `EROFS`, `EACCES`, `ENOENT` and probe timeouts
+/// leave the gate Healthy — and `ensure_output_dir` is `create_dir_all`, which
+/// returns `Ok` for an existing-but-unwritable directory, so the next start
+/// would not catch them either — hence they report as
+/// [`DownloadFailureKind::Io`], which is file-scoped and still counts against
+/// the breaker.
 fn classify_writer_error(error: &WriterError) -> DownloadFailureKind {
-    DownloadFailureKind::from_error_chain(error).unwrap_or(DownloadFailureKind::Processing)
+    let Some(kind) = DownloadFailureKind::from_error_chain(error) else {
+        return DownloadFailureKind::Processing;
+    };
+    match kind {
+        DownloadFailureKind::OutputRootUnavailable {
+            io_kind: IoErrorKindSer::StorageFull,
+        } => kind,
+        DownloadFailureKind::OutputRootUnavailable { .. } => DownloadFailureKind::Io,
+        other => other,
+    }
 }
 
 async fn settle_processing_tasks(
@@ -868,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_io_errors_are_classified_by_the_kind_the_gate_tracks() {
+    fn writer_enospc_is_classified_as_output_root_unavailable() {
         // `WriterTask::flush` / `create_dir_all` path.
         assert_eq!(
             classify_writer_error(&WriterError::Io(std::io::Error::from(
@@ -883,26 +904,41 @@ mod tests {
         assert_eq!(
             classify_writer_error(&WriterError::Strategy(Box::new(
                 flv_fix::FlvStrategyError::Io(std::io::Error::from(
-                    std::io::ErrorKind::PermissionDenied
+                    std::io::ErrorKind::StorageFull
                 ))
             ))),
             DownloadFailureKind::OutputRootUnavailable {
-                io_kind: IoErrorKindSer::PermissionDenied
+                io_kind: IoErrorKindSer::StorageFull
             }
         );
         assert_eq!(
             classify_writer_error(&WriterError::InputError(PipelineError::Io(
-                std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)
+                std::io::Error::from(std::io::ErrorKind::StorageFull)
             ))),
             DownloadFailureKind::OutputRootUnavailable {
-                io_kind: IoErrorKindSer::ReadOnlyFilesystem
+                io_kind: IoErrorKindSer::StorageFull
             }
         );
-        // An io::Error the gate has no recovery story for stays file-scoped.
-        assert_eq!(
-            classify_writer_error(&WriterError::Io(std::io::Error::other("broken pipe"))),
-            DownloadFailureKind::Io
-        );
+    }
+
+    #[test]
+    fn writer_io_errors_that_cannot_reach_the_gate_keep_the_circuit_breaker() {
+        // These kinds emit no `DiskFull`, so the gate stays Healthy and the
+        // engine circuit breaker is the only backpressure left. `Io` keeps it;
+        // `OutputRootUnavailable` would not.
+        for error in [
+            WriterError::Strategy(Box::new(flv_fix::FlvStrategyError::Io(
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            ))),
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)),
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)),
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::TimedOut)),
+            WriterError::Io(std::io::Error::other("broken pipe")),
+        ] {
+            let kind = classify_writer_error(&error);
+            assert_eq!(kind, DownloadFailureKind::Io, "{error}");
+            assert!(kind.affects_circuit_breaker(), "{error}");
+        }
     }
 
     #[test]
@@ -988,5 +1024,24 @@ mod tests {
         assert!(kind.affects_circuit_breaker());
         assert!(!kind.is_recoverable());
         assert_eq!(events.len(), 1, "no DiskFull for a non-I/O writer failure");
+    }
+
+    #[tokio::test]
+    async fn writer_read_only_filesystem_skips_the_gate_and_keeps_the_breaker() {
+        let events = settle_failed_writer(
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)),
+            None,
+        )
+        .await;
+
+        let SegmentEvent::DownloadFailed { kind, .. } = &events[0] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(*kind, DownloadFailureKind::Io);
+        assert!(
+            kind.affects_circuit_breaker(),
+            "nothing else throttles a retry while the gate is Healthy"
+        );
+        assert_eq!(events.len(), 1, "DiskFull would mis-report ENOSPC");
     }
 }

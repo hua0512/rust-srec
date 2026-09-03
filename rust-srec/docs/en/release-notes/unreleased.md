@@ -30,7 +30,7 @@
 
 - **A full disk is reported instead of quietly breaking every recording**
 
-  When the drive filled up part-way through a recording, the built-in recorder reported it as a broken recording and held it against that streamer, while every other streamer kept starting and failing the same way. Running out of space is now recognised for what it is: you get the "Output path inaccessible" alert, recordings pause, and they resume on their own within 30 seconds of space becoming available. Other storage problems — no permission to write, a read-only disk — are likewise treated as temporary rather than as a fault of the recording itself.
+  When the drive filled up part-way through a recording, the built-in recorder reported it as a broken recording and held it against that streamer, while every other streamer kept starting and failing the same way. Running out of space is now recognised for what it is: you get the "Output path inaccessible" alert, recordings pause, and they resume on their own within 30 seconds of space becoming available.
 
 ## API and integrations
 

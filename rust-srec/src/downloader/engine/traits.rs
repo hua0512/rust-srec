@@ -528,11 +528,18 @@ impl DownloadFailureKind {
     ///
     /// Every kind the output-root gate tracks — `ENOENT`, `ENOSPC`, `EACCES`,
     /// `EROFS`, and probe timeouts, i.e. every [`IoErrorKindSer`] except
-    /// [`IoErrorKindSer::Other`] — becomes [`Self::OutputRootUnavailable`], so
-    /// [`Self::affects_circuit_breaker`] stays false and
-    /// [`Self::is_recoverable`] stays true; the recording directory being
-    /// unusable is not the engine malfunctioning. Anything else is a plain
-    /// [`Self::Io`], scoped to the single file or operation that failed.
+    /// [`IoErrorKindSer::Other`] — becomes [`Self::OutputRootUnavailable`];
+    /// anything else is a plain [`Self::Io`], scoped to the single file or
+    /// operation that failed.
+    ///
+    /// **Callers must pair `OutputRootUnavailable` with a gate record.**
+    /// [`Self::affects_circuit_breaker`] is false for that kind, so nothing
+    /// throttles a retry except `OutputRootGate` rejecting the next start;
+    /// reporting it while the root is still Healthy leaves the streamer in an
+    /// unbounded reconnect loop. `DownloadManager::prepare_output_dir_for_path`
+    /// satisfies this by calling `gate.record_failure` before it converts the
+    /// error; a caller that cannot must downgrade to [`Self::Io`], which keeps
+    /// the breaker as backpressure.
     pub(crate) fn from_error_chain(err: &(dyn std::error::Error + 'static)) -> Option<Self> {
         let io_kind = IoErrorKindSer::from_io_kind(io_error_kind_in_chain(err)?);
         Some(match io_kind {

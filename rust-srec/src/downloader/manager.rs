@@ -3414,6 +3414,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mid_stream_disk_full_event_degrades_the_gate_before_the_terminal() {
+        // Covers the engine → event translator → `record_failure` path that
+        // mesio's `handle_writer_result` and the ffmpeg/streamlink stderr
+        // readers all feed. The translator breaks out of its receive loop on
+        // the terminal event, so a `DiskFull` is only observed when it is
+        // queued ahead of `DownloadFailed`.
+        let temp = tempfile::tempdir().expect("tempdir");
+        let output_dir = temp.path().join("huya").join("X").join("20260903");
+        let (manager, _counter, gate) = manager_with_gate();
+        let mut events = manager.subscribe();
+
+        start_scripted_download(
+            &manager,
+            test_download_config(output_dir.clone(), "disk-full-session"),
+            vec![
+                SegmentEvent::DiskFull {
+                    output_dir: output_dir.clone(),
+                    detail: "mesio FLV: I/O error: No space left on device".to_string(),
+                },
+                SegmentEvent::DownloadFailed {
+                    kind: DownloadFailureKind::OutputRootUnavailable {
+                        io_kind: IoErrorKindSer::StorageFull,
+                    },
+                    message: "FLV writer error for test-streamer-id".to_string(),
+                },
+            ],
+        )
+        .await
+        .expect("scripted download should start");
+
+        let terminal = wait_for_download_terminal(&mut events).await;
+        let DownloadTerminalEvent::Failed { kind, .. } = terminal else {
+            panic!("expected a failed terminal, got {:?}", terminal);
+        };
+        assert_eq!(
+            kind,
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::StorageFull
+            }
+        );
+
+        // The root is Degraded by the time the terminal is published, so the
+        // next `check` rejects instead of letting the streamer retry blind —
+        // the backpressure that replaces the circuit breaker for this kind.
+        let blocked = gate
+            .check(&output_dir)
+            .expect_err("the root must be Degraded once DiskFull is processed");
+        assert_eq!(blocked.kind, IoErrorKindSer::StorageFull);
+        assert!(
+            blocked.message.contains("No space left on device"),
+            "{}",
+            blocked.message
+        );
+    }
+
+    #[tokio::test]
     async fn prepare_output_dir_on_unwritable_parent_trips_gate() {
         // Force create_dir_all to fail portably. GHA's Windows runner
         // runs as admin, so `C:\nonexistent\...` is creatable there;
