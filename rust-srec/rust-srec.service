@@ -32,7 +32,8 @@
 # and that ProtectSystem=strict neither provides nor makes writable; no
 # environment variable overrides it. Until it names /var/lib/rust-srec/output
 # or a volume listed under ReadWritePaths= below, the service runs but every
-# recording fails.
+# recording fails. Point RUST_SREC_OUTPUT_ROOTS= at the same directory, or the
+# write gate reports the service degraded.
 #
 # /opt/rust-srec is also the directory the Docker Compose installer defaults to
 # (RUST_SREC_DIR). Pick a different path for the binary if both deployments
@@ -75,9 +76,9 @@ ExecStart=/opt/rust-srec/rust-srec
 # systemd creates these owned by User=/Group= and adds them to the writable set
 # of the ProtectSystem=strict namespace below.
 #   /var/lib/rust-srec         SQLite database, WAL files, generation marker
-#   /var/lib/rust-srec/output  the OUTPUT_DIR root below; `probe_root_writable`
-#                              stats it at startup and `check_output_root_gate`
-#                              reports the service degraded if it is missing
+#   /var/lib/rust-srec/output  where OUTPUT_DIR below points, so recordings
+#                              have somewhere to land once `output_folder`
+#                              names it
 #   /var/log/rust-srec         daily-rotated rust-srec.log from `init_logging`
 StateDirectory=rust-srec rust-srec/output
 StateDirectoryMode=0750
@@ -103,6 +104,14 @@ Environment=LOG_DIR=/var/log/rust-srec
 # chowns everything beneath /var/lib/rust-srec whenever it finds the directory
 # owned by another user, and that walk runs inside exec setup.
 Environment=OUTPUT_DIR=/var/lib/rust-srec/output
+# Pins the write gate's roots. `collect_output_roots` inserts these verbatim,
+# while every other source goes through `resolve_root`, whose fallback keeps
+# only the root plus two components — /var/lib/rust-srec/output collapses to
+# /var/lib, which ProtectSystem=strict leaves read-only, and the startup probe
+# then reports the `output-root` component degraded. Listing the directory here
+# also makes `resolve_root` prefer it as the longest configured prefix. Keep it
+# in step with `output_folder`.
+Environment=RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output
 Environment=API_BIND_ADDRESS=0.0.0.0
 Environment=API_PORT=12555
 # The supervisor's total shutdown budget. TimeoutStopSec= below must stay
