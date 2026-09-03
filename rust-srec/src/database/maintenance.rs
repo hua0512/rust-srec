@@ -1287,7 +1287,8 @@ mod tests {
                 .session_repository
                 .create_session(&LiveSessionDbModel {
                     id: id.to_string(),
-                    streamer_id: "maintenance-streamer".to_string(),
+                    streamer_id: Some("maintenance-streamer".to_string()),
+                    streamer_name: Some("Maintenance Streamer".to_string()),
                     start_time: end_time - 1000,
                     end_time: Some(end_time),
                     titles: Some("[]".to_string()),
@@ -1421,7 +1422,8 @@ mod tests {
                 .session_repository
                 .create_session(&LiveSessionDbModel {
                     id: id.to_string(),
-                    streamer_id: "maintenance-streamer".to_string(),
+                    streamer_id: Some("maintenance-streamer".to_string()),
+                    streamer_name: Some("Maintenance Streamer".to_string()),
                     start_time: ended_at - 1000,
                     end_time: Some(ended_at),
                     titles: Some("[]".to_string()),

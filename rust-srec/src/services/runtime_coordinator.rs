@@ -8,8 +8,8 @@ use tracing::{debug, info, warn};
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
-    config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
-    streamer::SqlxStreamerRepository,
+    SessionRepository, config::SqlxConfigRepository, filter::SqlxFilterRepository,
+    session::SqlxSessionRepository, streamer::SqlxStreamerRepository,
 };
 use crate::domain::StreamerState;
 use crate::downloader::DownloadManager;
@@ -159,11 +159,21 @@ impl RuntimeCoordinator {
             }
         }
 
-        let streamer_name = self
-            .streamer_manager
-            .get_streamer(streamer_id)
-            .map(|metadata| metadata.name)
-            .unwrap_or_default();
+        // `StreamerManager` is the live registry. When it has no entry —
+        // the streamer row is already gone — fall back to the name
+        // `SessionTxOps::create_session` snapshotted onto the session row, so
+        // the `SessionTransition::Ended` broadcast still carries a label.
+        let streamer_name = match self.streamer_manager.get_streamer(streamer_id) {
+            Some(metadata) => metadata.name,
+            None => self
+                .session_repository
+                .get_active_session_for_streamer(streamer_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|session| session.streamer_name)
+                .unwrap_or_default(),
+        };
         if let Err(error) = self
             .session_lifecycle
             .end_for_disable(streamer_id, &streamer_name)

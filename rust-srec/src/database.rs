@@ -384,6 +384,36 @@ mod tests {
         }
     }
 
+    /// The `live_sessions` rebuild that made `streamer_id` nullable must
+    /// reinstate every index the dropped table carried plus
+    /// `trg_live_session_orphan_ends`; `DROP TABLE` removes both. Pin them by
+    /// name so a later rebuild that forgets one fails here.
+    #[tokio::test]
+    async fn migrated_schema_keeps_every_live_sessions_index_and_trigger() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        for (kind, name) in [
+            ("index", "live_sessions_one_active_per_streamer"),
+            ("index", "idx_live_session_streamer_id"),
+            ("index", "idx_live_session_streamer_time"),
+            ("index", "idx_live_sessions_empty_ended"),
+            ("index", "idx_live_sessions_start_time"),
+            ("trigger", "trg_live_session_orphan_ends"),
+        ] {
+            let found: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = ? AND name = ? AND tbl_name = 'live_sessions'",
+            )
+            .bind(kind)
+            .bind(name)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(found, 1, "missing {kind} {name}");
+        }
+    }
+
     #[tokio::test]
     async fn reclaiming_a_processing_job_drops_its_progress_snapshot() {
         use crate::database::models::{JobDbModel, JobExecutionProgressDbModel, JobStatus};

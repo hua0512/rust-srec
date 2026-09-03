@@ -727,7 +727,7 @@ mod session_repository_tests {
             .expect("Failed to read session");
 
         assert_eq!(result.id, session_id);
-        assert_eq!(result.streamer_id, streamer_id);
+        assert_eq!(result.streamer_id.as_deref(), Some(streamer_id.as_str()));
         assert!(result.end_time.is_none()); // Session not ended yet
     }
 

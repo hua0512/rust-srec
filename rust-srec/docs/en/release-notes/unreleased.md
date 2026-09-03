@@ -35,6 +35,10 @@
 
   When the drive filled up part-way through a recording, the built-in recorder reported it as a broken recording and held it against that streamer, while every other streamer kept starting and failing the same way. Running out of space is now recognised for what it is: you get the "Output path inaccessible" alert, recordings pause, and they resume on their own within 30 seconds of space becoming available.
 
+- **Deleting a streamer keeps its recording history**
+
+  Removing a streamer also erased every session it had ever recorded, along with the file list, segments and chat statistics attached to them — the recordings were still on disk, but nothing in the app could find them. Past sessions now stay in the list after the streamer is gone, under the name it was recorded with, and any session that was still recording is closed out rather than left showing as live.
+
 ## API and integrations
 
 - **API keys for programmatic access**

@@ -98,9 +98,11 @@ export function OverviewTab({
                   >
                     <Trans>STREAMER</Trans>
                   </Badge>
-                  <p className="text-xs font-mono text-muted-foreground">
-                    ID: {session.streamer_id}
-                  </p>
+                  {session.streamer_id && (
+                    <p className="text-xs font-mono text-muted-foreground">
+                      ID: {session.streamer_id}
+                    </p>
+                  )}
                 </div>
                 <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold tracking-tight text-foreground truncate max-w-[200px] sm:max-w-none">
                   {session.streamer_name}

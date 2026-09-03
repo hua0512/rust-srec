@@ -219,9 +219,11 @@ pub async fn list_sessions(
         .map_err(ApiError::from)?;
 
     let session_ids: Vec<String> = sessions.iter().map(|session| session.id.clone()).collect();
+    // Sessions whose streamer was deleted carry no id to look up; their label
+    // comes from the denormalized `streamer_name` below.
     let streamer_ids: Vec<String> = sessions
         .iter()
-        .map(|session| session.streamer_id.clone())
+        .filter_map(|session| session.streamer_id.clone())
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
@@ -267,13 +269,17 @@ pub async fn list_sessions(
             // Parse titles JSON
             let (titles, title) = parse_titles(&session.titles);
 
-            // Get streamer details
-            let (streamer_name, streamer_avatar) =
-                if let Some(s) = streamer_map.get(&session.streamer_id) {
-                    (s.name.clone(), s.avatar.clone())
-                } else {
-                    (String::new(), None)
-                };
+            // Prefer the live streamer row so a rename shows up immediately;
+            // fall back to the name the session was recorded under once the
+            // streamer is gone.
+            let (streamer_name, streamer_avatar) = match session
+                .streamer_id
+                .as_ref()
+                .and_then(|id| streamer_map.get(id))
+            {
+                Some(s) => (s.name.clone(), s.avatar.clone()),
+                None => (session.streamer_name.clone().unwrap_or_default(), None),
+            };
 
             SessionResponse {
                 id: session.id.clone(),
@@ -385,22 +391,26 @@ pub async fn get_session(
     // Parse titles JSON
     let (titles, title) = parse_titles(&session.titles);
 
-    // Get streamer details
-    let streamer = match streamer_repository.get_streamer(&session.streamer_id).await {
-        Ok(streamer) => Some(streamer),
-        Err(error) => {
-            tracing::warn!(
-                streamer_id = %session.streamer_id,
-                %error,
-                "Failed to load streamer for session response"
-            );
-            None
-        }
+    // Prefer the live streamer row so a rename shows up immediately; fall back
+    // to the name the session was recorded under once the streamer is gone.
+    let streamer = match session.streamer_id.as_deref() {
+        Some(streamer_id) => match streamer_repository.get_streamer(streamer_id).await {
+            Ok(streamer) => Some(streamer),
+            Err(error) => {
+                tracing::warn!(
+                    streamer_id = %streamer_id,
+                    %error,
+                    "Failed to load streamer for session response"
+                );
+                None
+            }
+        },
+        None => None,
     };
     let (streamer_name, streamer_avatar) = if let Some(s) = streamer {
         (s.name, s.avatar)
     } else {
-        (String::new(), None)
+        (session.streamer_name.clone().unwrap_or_default(), None)
     };
 
     // Count only; the full statistics are served by the dedicated

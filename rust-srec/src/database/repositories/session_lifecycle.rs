@@ -212,8 +212,8 @@ impl SessionLifecycleRepository {
         // Self-heal: end any stale active session rows for this streamer.
         //
         // The partial unique index `live_sessions_one_active_per_streamer`
-        // (initial schema) caps the candidate set at 0 or 1 row in normal
-        // operation, so this is a no-op on a healthy DB. But if the DB
+        // caps the candidate set at 0 or 1 row in normal operation, so this is
+        // a no-op on a healthy DB. But if the DB
         // nonetheless holds multiple `end_time IS NULL` rows for one
         // streamer, then without this step the next `start_or_resume`
         // would either:
@@ -296,6 +296,7 @@ impl SessionLifecycleRepository {
                     &mut tx,
                     &new_id,
                     &inputs.streamer_id,
+                    &inputs.streamer_name,
                     inputs.now,
                     &inputs.title,
                 )
