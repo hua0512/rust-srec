@@ -399,7 +399,7 @@ pub async fn import_config(
             }
             crate::services::config_import::ConfigurationImportError::StreamerStop(message) => {
                 ApiError::internal(format!(
-                    "Configuration import aborted before any change was written: {message}"
+                    "Configuration import aborted, so no configuration was changed, but                      recordings of streamers the bundle removes may already have been                      stopped: {message}"
                 ))
             }
         })?;

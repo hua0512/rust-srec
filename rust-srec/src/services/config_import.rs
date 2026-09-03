@@ -83,6 +83,15 @@ struct StreamerImportDiff {
 /// the streamer repository and publishes a config event.
 const RESYNC_CONCURRENCY: usize = 8;
 
+/// Upper bound on one [`StreamerRemovalStop::stop_for_removal`].
+///
+/// `DownloadManager::stop_download_with_reason` waits on the attempt's
+/// completion without a deadline of its own, so an engine that never finishes
+/// its graceful stop would hold the import's HTTP request open indefinitely.
+/// Generous enough to cover an engine's default `graceful_stop_timeout_secs`
+/// plus the danmu stop and the session end.
+const REMOVAL_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
 pub(crate) struct ConfigurationImportService {
     write_pool: SqlitePool,
     config_service: Arc<RuntimeConfigService>,
@@ -133,24 +142,48 @@ impl ConfigurationImportService {
         // Retire the runtime work of every row the import is about to delete
         // before opening the write transaction: `streamers.id` cascades into
         // `live_sessions`, `media_outputs` and `session_segments`, so an attempt
-        // still writing segments would fail its foreign key mid-recording.
-        // `apply_streamers` recomputes the delete set inside the transaction and
-        // is authoritative; this pass covers the rows the preflight snapshot saw.
-        // The stops are independent per streamer and each can wait out an
-        // engine's graceful-stop timeout, so they run together.
-        for result in futures::future::join_all(
-            removed_streamer_ids
-                .iter()
-                .map(|streamer_id| self.removal_stop.stop_for_removal(streamer_id)),
-        )
+        // still writing segments would fail its foreign key mid-recording. The
+        // stops are independent per streamer and each can wait out an engine's
+        // graceful-stop timeout, so they run together under one bound.
+        for result in futures::future::join_all(removed_streamer_ids.iter().map(|streamer_id| {
+            tokio::time::timeout(
+                REMOVAL_STOP_TIMEOUT,
+                self.removal_stop.stop_for_removal(streamer_id),
+            )
+        }))
         .await
         {
-            result.map_err(|error| ConfigurationImportError::StreamerStop(error.to_string()))?;
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    return Err(ConfigurationImportError::StreamerStop(error.to_string()));
+                }
+                Err(_) => {
+                    return Err(ConfigurationImportError::StreamerStop(format!(
+                        "a removed streamer did not release its recording within {} seconds",
+                        REMOVAL_STOP_TIMEOUT.as_secs()
+                    )));
+                }
+            }
         }
 
         let mut tx = begin_immediate(&self.write_pool).await?;
         let snapshot = ImportSnapshot::load(&mut tx).await?;
         snapshot.validate_references(&config, mode)?;
+
+        // The stop phase runs unlocked, so a streamer can be created or have its
+        // URL changed between the preflight snapshot and this transaction.
+        // `streamers_removed_by` and the delete loop in `apply_streamers` share
+        // the `streamer_for_update` retention rule, so this recomputation names
+        // exactly the rows `apply_streamers` would delete; anything not already
+        // stopped aborts the import and rolls the transaction back.
+        for streamer_id in streamers_removed_by(&snapshot.streamers, &config, mode) {
+            if !removed_streamer_ids.contains(&streamer_id) {
+                return Err(ConfigurationImportError::StreamerStop(format!(
+                    "streamer {streamer_id} appeared or changed while the import was stopping recordings; retry"
+                )));
+            }
+        }
 
         let (stats, invalidated_credentials, streamer_diff) =
             apply_import(&mut tx, &snapshot, &config, mode).await?;
@@ -2111,12 +2144,24 @@ mod tests {
         calls: std::sync::Mutex<Vec<(String, bool)>>,
         /// Error returned by every `stop_for_removal` call, for the case where
         /// the runtime cannot release a streamer the bundle removes.
-        failure: Option<String>,
+        failure: std::sync::Mutex<Option<String>>,
+        /// Streamer row inserted from inside the first `stop_for_removal` call,
+        /// standing in for one an operator creates while the import is stopping
+        /// recordings.
+        insert_during_stop: std::sync::Mutex<Option<StreamerDbModel>>,
     }
 
     impl RecordingRemovalStop {
         fn calls(&self) -> Vec<(String, bool)> {
             self.calls.lock().unwrap().clone()
+        }
+
+        fn fail_with(&self, message: &str) {
+            *self.failure.lock().unwrap() = Some(message.to_string());
+        }
+
+        fn insert_during_stop(&self, model: StreamerDbModel) {
+            *self.insert_during_stop.lock().unwrap() = Some(model);
         }
     }
 
@@ -2132,8 +2177,17 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((streamer_id.to_string(), present.0 > 0));
-            match &self.failure {
-                Some(message) => Err(crate::Error::Other(message.clone())),
+
+            let latecomer = self.insert_during_stop.lock().unwrap().take();
+            if let Some(model) = latecomer {
+                let mut tx = begin_immediate(&self.pool).await.unwrap();
+                persist_streamer(&mut tx, &model).await.unwrap();
+                tx.commit().await.unwrap();
+            }
+
+            let failure = self.failure.lock().unwrap().clone();
+            match failure {
+                Some(message) => Err(crate::Error::Other(message)),
                 None => Ok(()),
             }
         }
@@ -2153,10 +2207,6 @@ mod tests {
 
     impl ImportHarness {
         async fn new() -> Self {
-            Self::with_stop_failure(None).await
-        }
-
-        async fn with_stop_failure(stop_failure: Option<String>) -> Self {
             let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
             run_migrations(&pool).await.unwrap();
             let global: GlobalConfigDbModel =
@@ -2188,7 +2238,8 @@ mod tests {
             let removal_stop = Arc::new(RecordingRemovalStop {
                 pool: pool.clone(),
                 calls: std::sync::Mutex::new(Vec::new()),
-                failure: stop_failure,
+                failure: std::sync::Mutex::new(None),
+                insert_during_stop: std::sync::Mutex::new(None),
             });
 
             let service = ConfigurationImportService::new(
@@ -2630,8 +2681,8 @@ mod tests {
 
     #[tokio::test]
     async fn replace_import_aborts_when_a_removed_streamer_cannot_be_stopped() {
-        let harness =
-            ImportHarness::with_stop_failure(Some("engine still running".to_string())).await;
+        let harness = ImportHarness::new().await;
+        harness.removal_stop.fail_with("engine still running");
         let seeded = harness
             .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
             .await;
@@ -2645,12 +2696,61 @@ mod tests {
             .expect_err("a failed stop should abort the import");
 
         assert!(matches!(error, ConfigurationImportError::StreamerStop(_)));
+        assert_eq!(
+            harness.removal_stop.calls(),
+            vec![(seeded.id.clone(), true)]
+        );
         let remaining: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM streamers WHERE id = ?")
             .bind(&seeded.id)
             .fetch_one(&harness.pool)
             .await
             .unwrap();
         assert_eq!(remaining.0, 1, "the row must survive an aborted import");
+    }
+
+    #[tokio::test]
+    async fn replace_import_aborts_when_a_streamer_appears_while_stopping() {
+        let harness = ImportHarness::new().await;
+        let seeded = harness
+            .seed_streamer("https://example.com/live/alpha", StreamerState::Live)
+            .await;
+
+        // Inserted from inside the stop hook, so the preflight snapshot never saw
+        // it and nothing stopped its runtime; the transaction's delete set must
+        // not silently grow to include it.
+        let platform: PlatformConfigDbModel =
+            sqlx::query_as("SELECT * FROM platform_config WHERE platform_name = 'huya'")
+                .fetch_one(&harness.pool)
+                .await
+                .unwrap();
+        let mut latecomer =
+            StreamerDbModel::new("latecomer", "https://example.com/live/beta", &platform.id);
+        latecomer.id = "streamer-latecomer".to_string();
+        harness.removal_stop.insert_during_stop(latecomer.clone());
+
+        let mut config = import_config(&harness.global);
+        mirror_engines(&harness.pool, &mut config).await;
+        let error = harness
+            .service
+            .import(config, ImportMode::Replace)
+            .await
+            .expect_err("an unstopped streamer in the delete set should abort the import");
+
+        assert!(matches!(error, ConfigurationImportError::StreamerStop(_)));
+        assert_eq!(
+            harness.removal_stop.calls(),
+            vec![(seeded.id.clone(), true)]
+        );
+        let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
+            .fetch_all(&harness.pool)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2, "the transaction must roll back");
+        assert!(
+            rows.iter()
+                .any(|row| row.id == seeded.id && row.state == StreamerState::Live.as_str())
+        );
+        assert!(rows.iter().any(|row| row.id == latecomer.id));
     }
 
     #[tokio::test]
@@ -2714,6 +2814,20 @@ mod tests {
         assert!(!clears_error_tracking(
             Some(&not_live),
             StreamerState::Live.as_str()
+        ));
+
+        // An error row keeps its backoff: `imported_state` leaves it in ERROR, and
+        // only `StreamerManager::clear_error_state` retires that bookkeeping.
+        let mut errored =
+            StreamerDbModel::new("errored", "https://example.com/third", "platform-huya");
+        errored.state = StreamerState::Error.as_str().to_string();
+        assert_eq!(
+            imported_state(Some(&errored), StreamerState::NotLive.as_str()),
+            StreamerState::Error.as_str()
+        );
+        assert!(!clears_error_tracking(
+            Some(&errored),
+            StreamerState::Error.as_str()
         ));
     }
 

@@ -162,7 +162,23 @@ impl RuntimeCoordinator {
     async fn stop_streamer_work(&self, streamer_id: &str, wait: StopWait) -> Vec<String> {
         let mut failures = Vec::new();
 
-        // Cancel queued attempts first: one waiting on a download slot is not in
+        // Cancel the streamer's current session token first. A
+        // `run_live_download_pipeline` task past `SessionCancelTokens::register`
+        // but not yet queued shows up in neither `snapshot_pending` nor
+        // `get_active_downloads`, and its `cancel.is_cancelled()` checks are the
+        // only thing that stops it before `acquire_slot`.
+        if let Some(session_id) = self
+            .session_lifecycle
+            .current_session_id_for_streamer(streamer_id)
+        {
+            self.session_cancels.cancel(&session_id);
+            debug!(
+                streamer_id,
+                session_id, "Cancelled current session token for disabled streamer"
+            );
+        }
+
+        // Cancel queued attempts too: one waiting on a download slot is not in
         // `get_active_downloads`, and would otherwise start after the caller's
         // delete has cascaded its `live_sessions` row away.
         for pending in self.download_manager.snapshot_pending() {
@@ -232,6 +248,13 @@ impl RuntimeCoordinator {
                     session_id,
                     messages = stats.total_count,
                     "Stopped danmu collection for disabled streamer"
+                ),
+                // A collector that released its `collections` entry between
+                // `get_session_by_streamer` and the stop reports an error but
+                // holds nothing, so it cannot keep writing danmu rows.
+                Err(_) if !self.danmu_service.is_collecting(&session_id) => debug!(
+                    streamer_id,
+                    session_id, "Danmu collection already released its slot before the stop"
                 ),
                 Err(error) => {
                     warn!(
