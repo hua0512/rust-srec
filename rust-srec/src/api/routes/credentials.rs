@@ -658,21 +658,31 @@ fn merge_streamer_credentials(
 
 /// Save a completed bilibili QR login onto streamer `id`, returning the updated metadata.
 ///
+/// The document the credentials are merged into comes from the manager's metadata cache, which
+/// `StreamerManager` maintains as the runtime source of truth for registered streamers, so an
+/// `id` missing from it is reported as not found rather than read back from the `streamers` table.
+///
 /// Rejects a streamer whose `platform_config_id` does not resolve to a bilibili platform config,
 /// since the credentials only make sense to the bilibili extractor.
 ///
-/// The write goes through `StreamerManager::partial_update_streamer`, which rebuilds the whole
-/// `streamers` row from the manager's metadata cache; credentials written through
-/// `StreamerRepository::update_streamer` instead would not reach that cache and would be dropped
-/// by the next streamer edit.
+/// `StreamerManager::partial_update_streamer` is the write path because it is the one that keeps
+/// the manager's metadata cache and the `streamers` row in step: it rebuilds the whole row from
+/// that cache, which therefore has to hold the credentials for the next streamer edit to preserve
+/// them.
 ///
 /// The `ConfigUpdateEvent::StreamerMetadataUpdated` that write publishes does not carry the
 /// cookies to the streamer's actor: `StreamerConfig` holds only check intervals, priority and
 /// `batch_capable`. Downloads read cookies through `ConfigService::get_config_for_streamer`, so
-/// `ConfigService::invalidate_streamer` below is the call that makes them visible. The event's
-/// handler in `services::container::events` re-invalidates that cache and, for a streamer that is
-/// not `StreamerMetadata::is_active`, runs `handle_streamer_disabled` — a no-op in those states,
-/// where no download or danmu collection is running.
+/// `ConfigService::invalidate_streamer` below is the call that makes them visible. The event has
+/// two handlers, both harmless here:
+///
+/// - `services::container::events` re-invalidates the merged config, calls
+///   `refresh_metadata_offline_check`, and for a streamer that is not
+///   `StreamerMetadata::is_active` runs `handle_streamer_disabled` — nothing to stop in those
+///   states, since no download or danmu collection is running.
+/// - `scheduler::service::handle_config_event` routes the update and calls
+///   `ensure_streamer_actor_state`, which removes the actor of an inactive streamer —
+///   `handle_state_sync` already removed it when the streamer entered that state.
 async fn save_streamer_credentials(
     config_service: &CredentialConfigService,
     streamer_manager: &CredentialStreamerManager,
@@ -949,7 +959,8 @@ pub async fn bilibili_qr_poll(
 mod tests {
     use super::*;
     use crate::config::{ConfigEventBroadcaster, ConfigService};
-    use crate::credentials::{CredentialStore as _, RefreshedCredentials};
+    use crate::credentials::test_support::StubCredentialManager;
+    use crate::credentials::{CredentialRefreshService, CredentialResolver};
     use crate::database::models::StreamerDbModel;
     use crate::database::repositories::{
         SqlxConfigRepository, SqlxCredentialStore, SqlxStreamerRepository, StreamerRepository as _,
@@ -968,8 +979,9 @@ mod tests {
     struct Harness {
         pool: SqlitePool,
         repo: Arc<SqlxStreamerRepository>,
-        manager: CredentialStreamerManager,
-        config_service: CredentialConfigService,
+        config_repo: Arc<SqlxConfigRepository>,
+        manager: Arc<CredentialStreamerManager>,
+        config_service: Arc<CredentialConfigService>,
     }
 
     async fn harness(platform_config_id: &str, existing: Option<&str>) -> Harness {
@@ -987,19 +999,47 @@ mod tests {
         let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         repo.create_streamer(&model).await.unwrap();
 
-        let manager = StreamerManager::new(repo.clone(), ConfigEventBroadcaster::new());
+        let manager = Arc::new(StreamerManager::new(
+            repo.clone(),
+            ConfigEventBroadcaster::new(),
+        ));
         manager.hydrate().await.unwrap();
 
-        let config_service = ConfigService::new(
-            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-            repo.clone(),
-        );
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let config_service = Arc::new(ConfigService::new(config_repo.clone(), repo.clone()));
 
         Harness {
             pool,
             repo,
+            config_repo,
             manager,
             config_service,
+        }
+    }
+
+    impl Harness {
+        /// The state the credential handlers extract from `AppState`, with a refresh service that
+        /// resolves and persists for real but takes its new credentials from `StubCredentialManager`
+        /// instead of a platform API.
+        fn route_state(&self, refreshed_to: &str, refresh_token: &str) -> CredentialRouteState {
+            let mut credential_service = CredentialRefreshService::new(
+                Arc::new(CredentialResolver::new(self.config_repo.clone())),
+                Arc::new(SqlxCredentialStore::new(
+                    self.pool.clone(),
+                    self.pool.clone(),
+                )),
+            );
+            credential_service.register_manager(Arc::new(StubCredentialManager::new(
+                "bilibili",
+                refreshed_to,
+                refresh_token,
+            )));
+
+            CredentialRouteState {
+                config_service: self.config_service.clone(),
+                credential_service: Arc::new(credential_service),
+                streamer_manager: self.manager.clone(),
+            }
         }
     }
 
@@ -1110,41 +1150,25 @@ mod tests {
         assert_eq!(error.status, axum::http::StatusCode::NOT_FOUND);
     }
 
-    /// Stands for every caller that reloads after `CredentialStore::update_credentials` wrote
-    /// `streamer_specific_config` with its own SQL — `refresh_streamer_credentials`,
-    /// `monitor::service::check_streamer`, `monitor::service::process_status` and
-    /// `api::routes::parse::resolve_extractor_config_for_url`. Without the reload the manager's
-    /// cache keeps the pre-refresh document and the next streamer edit persists it again.
+    /// `refresh_streamer_credentials` persists through `CredentialStore::update_credentials`,
+    /// which rewrites `streamer_specific_config` with its own SQL and leaves the manager's cache
+    /// on the previous document, so the handler has to reload it before the next streamer edit
+    /// rebuilds the row from that cache.
     #[tokio::test]
-    async fn refreshed_credentials_survive_a_later_streamer_edit_after_a_reload() {
-        let h = harness("platform-bilibili", Some(r#"{"cookies":"SESSDATA=old"}"#)).await;
+    async fn refreshed_credentials_survive_a_later_streamer_edit() {
+        let h = harness(
+            "platform-bilibili",
+            Some(r#"{"cookies":"SESSDATA=old","refresh_token":"refresh-old"}"#),
+        )
+        .await;
 
-        let source = CredentialSource::new(
-            CredentialScope::Streamer {
-                streamer_id: STREAMER_ID.to_string(),
-                streamer_name: "Streamer".to_string(),
-            },
-            "SESSDATA=old".to_string(),
-            Some("refresh-old".to_string()),
-            "bilibili".to_string(),
-        );
-        SqlxCredentialStore::new(h.pool.clone(), h.pool.clone())
-            .update_credentials(
-                &source,
-                &RefreshedCredentials {
-                    cookies: "SESSDATA=new".to_string(),
-                    refresh_token: Some("refresh-new".to_string()),
-                    access_token: None,
-                    expires_at: None,
-                },
-            )
-            .await
-            .expect("store writes the refreshed credentials");
-
-        h.manager
-            .reload_from_repo(STREAMER_ID)
-            .await
-            .expect("reload succeeds");
+        let response = refresh_streamer_credentials(
+            State(h.route_state("SESSDATA=new", "refresh-new")),
+            Path(STREAMER_ID.to_string()),
+        )
+        .await
+        .expect("refresh succeeds");
+        assert!(response.refreshed);
 
         rename(&h.manager, "Renamed").await;
 

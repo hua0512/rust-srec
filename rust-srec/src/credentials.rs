@@ -16,6 +16,8 @@ mod manager;
 mod resolver;
 mod service;
 mod store;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod tracker;
 mod types;
 

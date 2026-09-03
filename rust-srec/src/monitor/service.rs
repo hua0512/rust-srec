@@ -582,7 +582,10 @@ impl<
                                         config_service.invalidate_streamer(streamer_id);
                                         // The refresh wrote `streamer_specific_config` directly,
                                         // so the manager's cached copy still holds the rotated-away
-                                        // credentials.
+                                        // credentials. This runs inside the future `check_streamer`
+                                        // hands to `tokio::time::timeout`, so a budget expiry
+                                        // between the refresh and this reload leaves the cache
+                                        // stale until something else reloads the streamer.
                                         reload_streamer_metadata(
                                             &streamer_manager,
                                             streamer_id,
@@ -777,7 +780,10 @@ impl<
                                             self.config_service.invalidate_streamer(&streamer.id);
                                             // `persist_session_cookies` wrote
                                             // `streamer_specific_config` directly, so the manager's
-                                            // cached copy still holds the pre-login cookies.
+                                            // cached copy still holds the previous session cookies.
+                                            // `handle_live` below reloads as well; this call is
+                                            // what covers the path where `on_live_detected`
+                                            // returns Err before reaching that reload.
                                             self.reload_streamer_cache(
                                                 &streamer.id,
                                                 "session cookie persist",
@@ -2404,6 +2410,112 @@ mod tests {
         );
 
         assert!(outbox_events(&pool).await.is_empty());
+
+        monitor.stop();
+    }
+
+    /// `persist_session_cookies` stores the session cookies an extract minted through
+    /// `CredentialStore::update_credentials`, which rewrites `streamer_specific_config` with its
+    /// own SQL, so the manager's metadata cache has to carry them before the next streamer edit
+    /// rebuilds the row from it.
+    ///
+    /// On this path both the reload next to `persist_session_cookies` and `handle_live`'s own
+    /// `reload_streamer_cache` satisfy that, so the test covers the outcome rather than isolating
+    /// either call.
+    #[tokio::test]
+    async fn session_cookies_from_extract_survive_a_later_streamer_edit() {
+        let pool = setup_monitor_test_db().await;
+
+        let mut model = StreamerDbModel::new(
+            "Reactive Login Streamer",
+            "https://play.sooplive.co.kr/streamer",
+            "platform-soop",
+        );
+        model.id = "streamer-session-cookies".to_string();
+        model.state = StreamerState::NotLive.to_string();
+        model.streamer_specific_config = Some(r#"{"cookies":"SESSION=old"}"#.to_string());
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&model)
+            .await
+            .unwrap();
+
+        let mut monitor = build_test_monitor(&pool).await;
+        // `persist_session_cookies` reaches the store directly, so no platform manager is needed.
+        monitor.set_credential_service(Arc::new(
+            crate::credentials::CredentialRefreshService::new(
+                Arc::new(crate::credentials::CredentialResolver::new(Arc::new(
+                    SqlxConfigRepository::new(pool.clone(), pool.clone()),
+                ))),
+                Arc::new(crate::database::repositories::SqlxCredentialStore::new(
+                    pool.clone(),
+                    pool.clone(),
+                )),
+            ),
+        ));
+
+        let streamer = monitor
+            .streamer_manager
+            .get_streamer(&model.id)
+            .expect("hydrated");
+
+        monitor
+            .process_status(
+                &streamer,
+                LiveStatus::Live {
+                    title: "Live".to_string(),
+                    category: None,
+                    avatar: None,
+                    started_at: None,
+                    viewer_count: None,
+                    streams: vec![platforms_parser::media::StreamInfo {
+                        url: "https://example.com/stream.m3u8".to_string(),
+                        stream_format: platforms_parser::media::StreamFormat::Flv,
+                        media_format: platforms_parser::media::formats::MediaFormat::Flv,
+                        quality: "best".to_string(),
+                        bitrate: 5_000_000,
+                        priority: 1,
+                        extras: None,
+                        codec: "h264".to_string(),
+                        fps: 30.0,
+                        is_headers_needed: false,
+                        is_audio_only: false,
+                    }],
+                    media_headers: None,
+                    media_extras: Some(std::collections::HashMap::from([(
+                        "session_cookies".to_string(),
+                        "SESSION=new".to_string(),
+                    )])),
+                    next_check_hint: None,
+                    candidates: vec![],
+                },
+            )
+            .await
+            .unwrap();
+
+        // A later edit rebuilds the whole streamers row from the manager's metadata cache.
+        monitor
+            .streamer_manager
+            .partial_update_streamer(crate::streamer::manager::StreamerUpdateParams {
+                id: model.id.clone(),
+                name: Some("Renamed".to_string()),
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: None,
+                streamer_specific_config: None,
+            })
+            .await
+            .unwrap();
+
+        let row = get_streamer(&pool, &model.id).await;
+        let config: serde_json::Value = serde_json::from_str(
+            row.streamer_specific_config
+                .as_deref()
+                .expect("streamer carries a config document"),
+        )
+        .expect("config document is valid JSON");
+        assert_eq!(config["cookies"], "SESSION=new");
 
         monitor.stop();
     }
