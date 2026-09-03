@@ -20,7 +20,7 @@ use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
 use super::monitor_adapter::{BatchChecker, NoOpBatchChecker, NoOpStatusChecker, StatusChecker};
 use super::platform_actor::PlatformActor;
-use super::registry::{ActorRegistry, ActorTaskResult};
+use super::registry::{ActorRegistry, ActorTaskResult, CompletedTask};
 use super::restart_tracker::{RestartTracker, RestartTrackerConfig};
 use super::streamer_actor::{ActorOutcome, StreamerActor};
 use crate::streamer::StreamerMetadata;
@@ -227,9 +227,11 @@ impl Supervisor {
             self.platform_senders.insert(id.clone(), sender);
         }
 
-        // Spawn in registry
-        self.registry
-            .spawn_streamer(actor, handle.clone())
+        // Spawn in registry. The returned handle is the one carrying the
+        // generation `ActorRegistry::spawn_streamer` stamped on it.
+        let handle = self
+            .registry
+            .spawn_streamer(actor, handle)
             .map_err(|e| SpawnError::RegistryError(e.to_string()))?;
 
         info!("Spawned streamer actor: {}", id);
@@ -263,9 +265,11 @@ impl Supervisor {
         // Cache config for potential restart
         self.platform_configs.insert(platform_id.clone(), config);
 
-        // Spawn in registry
-        self.registry
-            .spawn_platform(actor, handle.clone())
+        // Spawn in registry. The returned handle is the one carrying the
+        // generation `ActorRegistry::spawn_platform` stamped on it.
+        let handle = self
+            .registry
+            .spawn_platform(actor, handle)
             .map_err(|e| SpawnError::RegistryError(e.to_string()))?;
 
         info!("Spawned platform actor: {}", platform_id);
@@ -304,7 +308,19 @@ impl Supervisor {
         let actor_type = result.actor_type.clone();
 
         // Remove from registry
-        let result = self.registry.handle_task_completion(result);
+        let CompletedTask { result, superseded } = self.registry.handle_task_completion(result);
+
+        // A task that outlived its `remove_streamer` can report long after the
+        // supervisor stopped tracking it, possibly after a replacement actor took
+        // over the same ID. The registered state is authoritative, so neither the
+        // restart tracker nor `pending_restarts` may act on this result.
+        if superseded {
+            debug!(
+                "Ignoring completion from untracked actor {} ({})",
+                actor_id, actor_type
+            );
+            return TaskCompletionAction::Superseded { actor_id };
+        }
 
         if result.is_crash() {
             let error_msg = result.error_message().unwrap_or("unknown error");
@@ -430,10 +446,10 @@ impl Supervisor {
                 config,
                 platform_actor,
             } => {
-                // Remove old config (will be re-added by spawn_streamer)
-                self.streamer_configs.remove(&restart.actor_id);
-                self.platform_senders.remove(&restart.actor_id);
-
+                // `spawn_streamer` refreshes `streamer_configs`/`platform_senders`
+                // itself, and bails out with `SpawnError::ActorExists` before
+                // touching them, so a respawn that loses to an actor already
+                // holding this ID leaves the caches `get_restart_metadata` reads.
                 // Metadata is in the shared store - just pass the streamer_id
                 self.spawn_streamer(&restart.actor_id, config, platform_actor)?;
             }
@@ -441,9 +457,8 @@ impl Supervisor {
                 platform_id,
                 config,
             } => {
-                // Remove old config (will be re-added by spawn_platform)
-                self.platform_configs.remove(&platform_id);
-
+                // `spawn_platform` refreshes `platform_configs` itself and bails
+                // out before touching it when the ID is already taken.
                 self.spawn_platform(platform_id, config)?;
             }
         }
@@ -640,6 +655,10 @@ pub enum TaskCompletionAction {
     Completed { actor_id: String },
     /// Actor crashed.
     Crashed { actor_id: String },
+    /// The completion came from a task the registry no longer tracks - the
+    /// actor was removed, or a newer spawn took over its ID - so it was
+    /// discarded without touching the restart tracker.
+    Superseded { actor_id: String },
     /// Restart has been scheduled.
     RestartScheduled { actor_id: String, backoff: Duration },
     /// Restart failed.
@@ -774,6 +793,49 @@ mod tests {
             _reason: crate::monitor::InfraBlockReason,
         ) -> Result<(), CheckError> {
             unreachable!("the blocking check never applies an infrastructure block")
+        }
+    }
+
+    /// Status checker that unwinds inside `StreamerActor::perform_check`.
+    struct PanickingStatusChecker;
+
+    #[async_trait]
+    impl StatusChecker for PanickingStatusChecker {
+        async fn check_status(
+            &self,
+            _streamer: &StreamerMetadata,
+        ) -> Result<
+            (
+                crate::scheduler::actor::messages::CheckResult,
+                crate::monitor::LiveStatus,
+            ),
+            CheckError,
+        > {
+            panic!("status check exploded");
+        }
+
+        async fn process_status(
+            &self,
+            _streamer: &StreamerMetadata,
+            _status: crate::monitor::LiveStatus,
+        ) -> Result<crate::monitor::ProcessStatusResult, CheckError> {
+            unreachable!("the panicking check never produces a status")
+        }
+
+        async fn handle_error(
+            &self,
+            _streamer: &StreamerMetadata,
+            _error: &str,
+        ) -> Result<(), CheckError> {
+            unreachable!("the panicking check never produces an error")
+        }
+
+        async fn set_infra_blocked(
+            &self,
+            _streamer: &StreamerMetadata,
+            _reason: crate::monitor::InfraBlockReason,
+        ) -> Result<(), CheckError> {
+            unreachable!("the panicking check never applies an infrastructure block")
         }
     }
 
@@ -915,28 +977,44 @@ mod tests {
         token.cancel();
     }
 
-    #[test]
-    fn test_supervisor_handle_graceful_stop() {
+    #[tokio::test]
+    async fn test_supervisor_handle_graceful_stop() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        let mut supervisor = Supervisor::new(token, metadata_store);
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
-        let result = ActorTaskResult::streamer("test-1", Ok(ActorOutcome::Stopped));
+        let handle = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+
+        let result =
+            ActorTaskResult::streamer("test-1", handle.generation(), Ok(ActorOutcome::Stopped));
         let action = supervisor.handle_task_completion(result);
 
         assert!(matches!(action, TaskCompletionAction::Stopped { .. }));
+
+        token.cancel();
     }
 
-    #[test]
-    fn test_supervisor_handle_cancellation() {
+    #[tokio::test]
+    async fn test_supervisor_handle_cancellation() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        let mut supervisor = Supervisor::new(token, metadata_store);
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
-        let result = ActorTaskResult::streamer("test-1", Ok(ActorOutcome::Cancelled));
+        let handle = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+
+        let result =
+            ActorTaskResult::streamer("test-1", handle.generation(), Ok(ActorOutcome::Cancelled));
         let action = supervisor.handle_task_completion(result);
 
         assert!(matches!(action, TaskCompletionAction::Cancelled { .. }));
+
+        token.cancel();
     }
 
     #[tokio::test]
@@ -952,11 +1030,12 @@ mod tests {
 
         // Spawn an actor first so we have config for restart
         let config = create_test_config();
-        supervisor.spawn_streamer("test-1", config, None).unwrap();
+        let handle = supervisor.spawn_streamer("test-1", config, None).unwrap();
 
         // Simulate crash
         let result = ActorTaskResult::streamer(
             "test-1",
+            handle.generation(),
             Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
                 "test crash",
             )),
@@ -969,6 +1048,158 @@ mod tests {
             TaskCompletionAction::RestartScheduled { .. }
         ));
         assert_eq!(supervisor.pending_restart_count(), 1);
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn panicking_actor_is_reaped_and_scheduled_for_restart() {
+        let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+        metadata_store.insert("panics".to_string(), create_test_metadata("panics"));
+
+        let mut supervisor = Supervisor::with_checkers(
+            token.clone(),
+            SupervisorConfig::default(),
+            metadata_store,
+            Arc::new(PanickingStatusChecker),
+            Arc::new(NoOpBatchChecker),
+        );
+        let handle = supervisor
+            .spawn_streamer("panics", create_test_config(), None)
+            .expect("test actor should start");
+
+        handle
+            .send(StreamerMessage::CheckStatus)
+            .await
+            .expect("test actor should accept an immediate check");
+
+        let joined = supervisor
+            .registry_mut()
+            .join_next()
+            .await
+            .expect("the actor task should finish");
+        let result =
+            joined.expect("a panic must be caught inside the task, not become a JoinError");
+        assert_eq!(result.generation, handle.generation());
+
+        let action = supervisor.handle_task_completion(result);
+
+        assert!(matches!(
+            action,
+            TaskCompletionAction::RestartScheduled { .. }
+        ));
+        assert!(!supervisor.registry().has_streamer("panics"));
+        assert_eq!(supervisor.pending_restart_count(), 1);
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn stale_completion_neither_evicts_nor_restarts_the_replacement() {
+        let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+
+        let first = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+        supervisor.remove_streamer("test-1");
+        let second = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("replacement actor should start");
+
+        // The cancelled first task reports only after its replacement is live.
+        let action = supervisor.handle_task_completion(ActorTaskResult::streamer(
+            "test-1",
+            first.generation(),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
+                "test crash",
+            )),
+        ));
+
+        assert!(matches!(action, TaskCompletionAction::Superseded { .. }));
+        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert_eq!(supervisor.restart_tracker().recent_failures("test-1"), 0);
+        assert_eq!(
+            supervisor
+                .registry()
+                .get_streamer("test-1")
+                .map(|h| h.generation()),
+            Some(second.generation())
+        );
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn crash_reported_after_removal_is_not_restarted() {
+        let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+
+        let handle = supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+        assert!(supervisor.remove_streamer("test-1"));
+
+        // The cancelled task panics on its way out, after `remove_streamer`
+        // already dropped the handle and the cached restart config.
+        let action = supervisor.handle_task_completion(ActorTaskResult::streamer(
+            "test-1",
+            handle.generation(),
+            Err(
+                crate::scheduler::actor::streamer_actor::ActorError::recoverable(
+                    "panicked while shutting down",
+                ),
+            ),
+        ));
+
+        assert!(matches!(action, TaskCompletionAction::Superseded { .. }));
+        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert_eq!(supervisor.restart_tracker().recent_failures("test-1"), 0);
+        assert!(!supervisor.registry().has_streamer("test-1"));
+
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn execute_restart_keeps_the_restart_config_when_the_id_is_taken() {
+        let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+        supervisor
+            .spawn_streamer("test-1", create_test_config(), None)
+            .expect("test actor should start");
+
+        let restart = PendingRestart {
+            actor_id: "test-1".to_string(),
+            actor_type: "streamer".to_string(),
+            metadata: RestartMetadata::Streamer {
+                config: create_test_config(),
+                platform_actor: None,
+            },
+            restart_at: tokio::time::Instant::now(),
+        };
+
+        let error = supervisor
+            .execute_restart(restart)
+            .expect_err("the live actor should block the respawn");
+
+        assert!(matches!(error, SpawnError::ActorExists(_)));
+        assert!(supervisor.registry().has_streamer("test-1"));
+        assert!(
+            supervisor
+                .get_restart_metadata("test-1", "streamer")
+                .is_some(),
+            "a failed respawn must leave the live actor's restart metadata in place"
+        );
 
         token.cancel();
     }
@@ -994,11 +1225,12 @@ mod tests {
 
         // Spawn an actor
         let config = create_test_config();
-        supervisor.spawn_streamer("test-1", config, None).unwrap();
+        let handle = supervisor.spawn_streamer("test-1", config, None).unwrap();
 
         // Simulate crash
         let result = ActorTaskResult::streamer(
             "test-1",
+            handle.generation(),
             Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
                 "test crash",
             )),
