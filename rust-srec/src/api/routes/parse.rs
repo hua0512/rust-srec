@@ -148,7 +148,14 @@ async fn resolve_extractor_config_for_url(
     let config_service = &state.config_service;
     let credential_service = &state.credential_service;
 
-    if let Some(streamer) = state.streamer_manager.get_streamer_by_url(url) {
+    // A streamer marked deleted still owns its url until the reaper removes the
+    // row, but its configuration is no longer the user's; resolve as if the url
+    // belonged to no streamer.
+    if let Some(streamer) = state
+        .streamer_manager
+        .get_streamer_by_url(url)
+        .filter(|streamer| !streamer.is_deleted())
+    {
         match config_service.get_context_for_streamer(&streamer.id).await {
             Ok(context) => {
                 let config = &context.config;
@@ -522,7 +529,10 @@ async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> Pro
     let config_service = &state.config_service;
 
     // Priority 1: streamer merged config (final merged proxy state).
-    if let Some(streamer) = state.streamer_manager.get_streamer_by_url(url)
+    if let Some(streamer) = state
+        .streamer_manager
+        .get_streamer_by_url(url)
+        .filter(|streamer| !streamer.is_deleted())
         && let Ok(context) = config_service.get_context_for_streamer(&streamer.id).await
     {
         return context.config.proxy_config.clone();

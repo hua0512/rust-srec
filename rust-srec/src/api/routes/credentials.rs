@@ -698,8 +698,12 @@ async fn save_streamer_credentials(
     refresh_token: &str,
     access_token: Option<&str>,
 ) -> ApiResult<StreamerMetadata> {
+    // A streamer carrying `deleted_at` is gone as far as the API is concerned,
+    // and `StreamerManager::reap_deleted` is about to drop the row this would
+    // write `streamer_specific_config` to.
     let metadata = streamer_manager
         .get_streamer(id)
+        .filter(|metadata| !metadata.is_deleted())
         .ok_or_else(|| ApiError::not_found(format!("Streamer with id '{id}' not found")))?;
 
     let platform = config_service

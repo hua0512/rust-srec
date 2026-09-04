@@ -57,6 +57,25 @@ impl ServiceContainer {
         );
     }
 
+    /// Apply one [`ConfigUpdateEvent`] on the caller's task, through the same
+    /// handler [`Self::setup_config_event_subscriptions`] spawns.
+    ///
+    /// Lets a test observe what the handler does to a single event instead of
+    /// racing the spawned task for it.
+    #[cfg(test)]
+    pub(super) async fn apply_config_event_for_test(&self, event: ConfigUpdateEvent) {
+        ConfigEventHandler {
+            streamer_manager: self.streamer_manager.clone(),
+            config_service: self.config_service.clone(),
+            download_manager: self.download_manager.clone(),
+            pipeline_manager: self.pipeline_manager.clone(),
+            runtime_coordinator: self.runtime_coordinator.clone(),
+            gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
+        }
+        .handle_event(event)
+        .await;
+    }
+
     /// Set up download event subscriptions to pipeline manager.
     pub(super) fn setup_download_event_subscriptions(&self) {
         let Some(coordination_receiver) = self.download_coordination_receiver.lock().take() else {
@@ -260,6 +279,41 @@ impl ConfigEventHandler {
         }
     }
 
+    /// Stop the streamer's downloads, danmu collection and session, unless a
+    /// `streamers.deleted_at` marker says `RuntimeCoordinator::retire_streamer`
+    /// owns that stop.
+    ///
+    /// The marker is written before the runtime is told anything, so
+    /// `StreamerManager::mark_deleting`'s
+    /// `ConfigUpdateEvent::StreamerStateSyncedFromDb { is_active: false }`
+    /// arrives here while the retirement is running the same stops on its own
+    /// task. Both would call `SessionLifecycle::end_for_disable`, and this one
+    /// wins because it does not wait on `AttemptCompletion` — which leaves the
+    /// retirement looking at a session somebody else ended, and
+    /// `RuntimeCoordinator::retire_streamer` needs to know that its own pass is
+    /// the one during which the session ended before it may trust
+    /// `PipelineManager::drain_for_session`.
+    ///
+    /// The guard is on `is_deleted`, not on `is_active`: a merely disabled
+    /// streamer has no retirement behind it and still needs this stop.
+    async fn stop_streamer_unless_retiring(&self, streamer_id: &str) {
+        if self
+            .streamer_manager
+            .get_streamer(streamer_id)
+            .is_some_and(|metadata| metadata.is_deleted())
+        {
+            debug!(
+                streamer_id,
+                "Streamer is marked deleted; its retirement owns the stop"
+            );
+            return;
+        }
+
+        self.runtime_coordinator
+            .handle_streamer_disabled(streamer_id)
+            .await;
+    }
+
     async fn handle_event(&self, event: ConfigUpdateEvent) {
         match event {
             ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
@@ -288,9 +342,7 @@ impl ConfigEventHandler {
                             "Streamer {} is inactive after update (state: {}), initiating cleanup",
                             streamer_id, metadata.state
                         );
-                        self.runtime_coordinator
-                            .handle_streamer_disabled(&streamer_id)
-                            .await;
+                        self.stop_streamer_unless_retiring(&streamer_id).await;
                     }
                     Some(_) => {}
                     None => {
@@ -300,9 +352,7 @@ impl ConfigEventHandler {
                             "Streamer {} not found after update, initiating best-effort cleanup",
                             streamer_id
                         );
-                        self.runtime_coordinator
-                            .handle_streamer_disabled(&streamer_id)
-                            .await;
+                        self.stop_streamer_unless_retiring(&streamer_id).await;
                     }
                 }
             }
@@ -437,9 +487,7 @@ impl ConfigEventHandler {
                         "Streamer {} became inactive, initiating cleanup",
                         streamer_id
                     );
-                    self.runtime_coordinator
-                        .handle_streamer_disabled(&streamer_id)
-                        .await;
+                    self.stop_streamer_unless_retiring(&streamer_id).await;
                 }
             }
             ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {

@@ -58,20 +58,17 @@ struct StreamerWorkStopped {
     /// download that finalized on its own between the snapshot and the stop is
     /// not one of them.
     failures: Vec<String>,
-    /// The session `SessionLifecycle::end_for_disable` resolved, if there was
-    /// one. It is the only session that can still gain pipeline work for the
-    /// streamer, so it is what a retirement drains.
-    session_id: Option<String>,
-    /// Whether this call is the one that moved [`Self::session_id`] out of
-    /// `Recording`/`Hysteresis`, as opposed to finding it already `Ended` and
-    /// only retro-correcting its terminal cause.
+    /// The session `SessionLifecycle::end_for_disable` resolved, if any.
     ///
-    /// A caller that just ended a session cannot conclude anything from
-    /// `PipelineManager::drain_for_session` yet: the
-    /// `SessionTransition::Ended` this published still has to reach
-    /// `PipelineCoordinator` before the session-complete DAG it owes is
-    /// observable.
-    session_ended_now: bool,
+    /// `Some` means the streamer's session is still in `SessionLifecycle`'s
+    /// in-memory map — either this call ended it, or it ended within
+    /// `session::lifecycle::ENDED_RETENTION_DEFAULT` and `schedule_ended_eviction` has not
+    /// dropped it yet. Both are windows in which the
+    /// `SessionTransition::Ended` broadcast may not have reached
+    /// `PipelineCoordinator`, so `RuntimeCoordinator::retire_streamer` treats it
+    /// as "no conclusion available from `PipelineManager::drain_for_session`".
+    /// `None` means the end is settled and the drain answers for it.
+    session_id: Option<String>,
 }
 
 /// Coordinates required side effects for configuration, monitor, and session events.
@@ -326,29 +323,12 @@ impl RuntimeCoordinator {
             }
         }
 
-        // Read before the end so the result can be attributed: an in-memory
-        // session that is already `Ended` sends `end_for_disable` down its
-        // retro-correction path, which returns the same session id without
-        // moving anything. No in-memory entry at all means the repository is
-        // about to close a row that was left `end_time IS NULL`, which is a real
-        // end.
-        let was_recording = self
-            .session_lifecycle
-            .current_session_id_for_streamer(streamer_id)
-            .is_none()
-            || self
-                .session_lifecycle
-                .has_active_session_for_streamer(streamer_id);
-
         match self
             .session_lifecycle
             .end_for_disable(streamer_id, streamer_name)
             .await
         {
-            Ok(session_id) => {
-                stopped.session_ended_now = session_id.is_some() && was_recording;
-                stopped.session_id = session_id;
-            }
+            Ok(session_id) => stopped.session_id = session_id,
             Err(error) => {
                 warn!(
                     streamer_id,

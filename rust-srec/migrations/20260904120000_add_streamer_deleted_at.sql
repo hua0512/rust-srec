@@ -21,11 +21,10 @@
 -- the recovery pass `ServiceContainer` runs at startup finds nothing on the
 -- upgrade itself.
 
+-- No index: marked rows are enumerated from `StreamerManager`'s in-memory cache
+-- (`get_pending_deletion`), and every SQL query added alongside this column
+-- filters `deleted_at IS NULL`, which is the common case rather than a
+-- selective one.
+
 ALTER TABLE streamers
     ADD COLUMN deleted_at INTEGER;
-
--- Serves the startup recovery and the periodic reaper sweep, both of which
--- enumerate only marked rows; partial so it stays empty in the steady state.
-CREATE INDEX IF NOT EXISTS idx_streamers_deleted_at
-    ON streamers(deleted_at)
-    WHERE deleted_at IS NOT NULL;

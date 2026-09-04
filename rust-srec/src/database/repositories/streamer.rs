@@ -48,13 +48,6 @@ pub trait StreamerRepository: Send + Sync {
     /// as "somebody else already started retiring this streamer".
     async fn mark_streamer_deleted(&self, id: &str) -> Result<bool>;
 
-    /// Rows carrying a `deleted_at` marker, whatever their `state`.
-    ///
-    /// Drives the startup recovery and periodic sweep in
-    /// `ServiceContainer::spawn_streamer_reaper`: every row here is one whose
-    /// retirement has to be (re)attempted before the physical delete.
-    async fn list_streamers_pending_deletion(&self) -> Result<Vec<StreamerDbModel>>;
-
     /// Physically remove a marked row.
     ///
     /// Refuses unmarked rows so the reaper can only ever finish a deletion some
@@ -380,15 +373,6 @@ impl StreamerRepository for SqlxStreamerRepository {
     async fn mark_streamer_deleted(&self, id: &str) -> Result<bool> {
         let mut conn = self.write_pool.acquire().await?;
         Ok(mark_streamer_deleted(&mut *conn, id, crate::database::time::now_ms()).await?)
-    }
-
-    async fn list_streamers_pending_deletion(&self) -> Result<Vec<StreamerDbModel>> {
-        let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE deleted_at IS NOT NULL ORDER BY deleted_at",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(streamers)
     }
 
     async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {

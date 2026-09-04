@@ -59,6 +59,12 @@ impl Harness {
             .await
             .expect("service container should initialize");
 
+        // The config-event handler is what reacts to the
+        // `StreamerStateSyncedFromDb { is_active: false }` that
+        // `StreamerManager::mark_deleting` publishes, so a retirement is only
+        // exercised against the real concurrency when it is running.
+        container.setup_config_event_subscriptions();
+
         Self {
             container,
             pool,
@@ -228,38 +234,117 @@ async fn deleting_a_recording_streamer_ends_its_session_through_the_lifecycle() 
         "the lifecycle path must write the session_ended audit row"
     );
 
-    // Ending a recording defers the physical delete by one pass: the transition
-    // just published has not reached `PipelineCoordinator`, so nothing can yet
-    // tell whether a session-complete DAG is owed.
+    // Ending a recording defers the physical delete: the transition just
+    // published has not reached `PipelineCoordinator`, so nothing can yet tell
+    // whether a session-complete DAG is owed. The reap is proved by the tests
+    // below, which start from a session `SessionLifecycle` no longer holds;
+    // reaching that state here would mean waiting out
+    // `session::lifecycle::ENDED_RETENTION_DEFAULT`.
     assert!(
         harness
             .streamer_row()
             .await
             .is_some_and(|row| row.deleted_at.is_some())
     );
-    assert_eq!(
-        harness
-            .container
-            .runtime_coordinator
-            .reap_marked_streamers(OBSERVE_RETIREMENT)
-            .await,
-        1
-    );
-    assert!(harness.streamer_row().await.is_none());
 
-    // The recording history survives the delete.
+    // The recording history is already detached from the streamer.
     let session = harness
         .session_repository()
         .get_session(SESSION_ID)
         .await
         .expect("the session row must survive the streamer delete");
-    assert_eq!(session.streamer_id, None);
     assert_eq!(session.streamer_name.as_deref(), Some(STREAMER_NAME));
     assert!(session.end_time.is_some());
+}
+
+/// The `StreamerStateSyncedFromDb` that `StreamerManager::mark_deleting`
+/// publishes must not make `ConfigEventHandler` run its own
+/// `handle_streamer_disabled`. That stop does not wait on `AttemptCompletion`,
+/// so it would end the session before `RuntimeCoordinator::retire_streamer`
+/// gets there, and every delete would run two concurrent stops.
+#[tokio::test]
+async fn the_config_event_handler_leaves_a_marked_streamers_stop_to_the_retirement() {
+    let harness = Harness::new().await;
+    harness.seed_streamer().await;
+    harness.seed_active_session().await;
+
+    harness
+        .container
+        .streamer_manager
+        .mark_deleting(STREAMER_ID)
+        .await
+        .expect("marking should succeed")
+        .expect("the streamer should be markable");
+
+    harness
+        .container
+        .apply_config_event_for_test(
+            crate::config::ConfigUpdateEvent::StreamerStateSyncedFromDb {
+                streamer_id: STREAMER_ID.to_string(),
+                is_active: false,
+            },
+        )
+        .await;
+
     assert_eq!(
         harness.session_ended_events().await,
-        1,
-        "the reaping pass must not write a second audit row"
+        0,
+        "the retirement owns the session end for a marked streamer"
+    );
+    let session = harness
+        .session_repository()
+        .get_session(SESSION_ID)
+        .await
+        .expect("the session row should exist");
+    assert_eq!(session.end_time, None);
+
+    // A merely disabled streamer still gets the stop.
+    harness
+        .container
+        .apply_config_event_for_test(
+            crate::config::ConfigUpdateEvent::StreamerStateSyncedFromDb {
+                streamer_id: "unknown-streamer".to_string(),
+                is_active: false,
+            },
+        )
+        .await;
+}
+
+/// The deferral has to hold whoever ended the session, not just when the
+/// retirement ended it: a download attempt's terminal outcome reaching
+/// `SessionLifecycle` during `stop_download_with_reason` ends it just as well,
+/// and `PipelineCoordinator` is no more likely to have seen that end.
+#[tokio::test]
+async fn a_session_ended_by_another_task_still_defers_the_reap() {
+    let harness = Harness::new().await;
+    harness.start_scheduler().await;
+    harness.seed_streamer().await;
+    harness.seed_active_session().await;
+
+    // Stands in for whatever ends the session first; what matters to the
+    // retirement is that `SessionLifecycle` still holds the ended session.
+    harness
+        .container
+        .session_lifecycle
+        .end_for_disable(STREAMER_ID, STREAMER_NAME)
+        .await
+        .expect("the session should end")
+        .expect("a session should have been ended");
+
+    assert!(
+        harness
+            .container
+            .runtime_coordinator
+            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
+            .await
+            .expect("delete should succeed")
+    );
+    assert!(
+        harness
+            .streamer_row()
+            .await
+            .is_some_and(|row| row.deleted_at.is_some()),
+        "a session end this pass could not have observed must defer the reap"
     );
 }
 
@@ -444,23 +529,14 @@ async fn the_api_and_batch_delete_routes_share_the_retirement_path() {
             1,
             "both routes must end the session through the lifecycle"
         );
-        // Both leave the row marked for one pass, because ending a recording is
-        // what defers the reap; the reaper then removes it.
+        // Both leave the row marked, because ending a recording is what defers
+        // the reap.
         assert!(
             harness
                 .streamer_row()
                 .await
                 .is_some_and(|row| row.deleted_at.is_some())
         );
-        assert_eq!(
-            harness
-                .container
-                .runtime_coordinator
-                .reap_marked_streamers(OBSERVE_RETIREMENT)
-                .await,
-            1
-        );
-        assert!(harness.streamer_row().await.is_none());
     }
 }
 

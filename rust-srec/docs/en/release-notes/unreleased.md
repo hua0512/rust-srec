@@ -43,6 +43,8 @@
 
   Deleting a streamer used to remove it immediately while its recording was still running, so the last part could end with an error, the session's timeline was left incomplete and post-processing could fail on a streamer that no longer existed. Deleting now takes the streamer off the list right away and finishes its recording properly first: the recording is closed out and saved, its post-processing is allowed to finish, and only then is the streamer removed for good. If post-processing is still running, the streamer disappears from the list immediately and is cleaned up in the background as soon as it finishes — including after a restart. This applies to every way of deleting a streamer: the delete button, bulk delete, the API, and importing a configuration that no longer contains it.
 
+  One thing to know if you script this: for the short while a deleted streamer is still being cleaned up, its address stays reserved. Adding a streamer with the same address again — or importing a configuration that still contains it — is refused with "still being removed; try again shortly" until the clean-up finishes. Deleting a template a still-departing streamer used is refused the same way.
+
 - **Importing a configuration no longer disturbs your running recordings**
 
   Importing a backup used to briefly flip every live streamer to offline, which produced a duplicate "went live" notification and made the streamer bounce between states on the dashboard. Streamers that were live stay live, and their recordings keep running untouched. New streamers in the imported file also start being monitored right away instead of waiting for the next restart, and an import that is rejected no longer stops anything at all.

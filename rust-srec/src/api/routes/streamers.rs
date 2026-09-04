@@ -707,13 +707,21 @@ pub async fn update_streamer(
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
 
-    // Check URL uniqueness if URL is being changed (case-insensitive)
+    // Check URL uniqueness if URL is being changed (case-insensitive). Same two
+    // conflicts as `create_streamer`: a streamer marked deleted still owns its
+    // URL under `streamers.url COLLATE NOCASE UNIQUE` until the reaper removes
+    // the row.
     if let Some(ref new_url) = request.url
         && streamer_manager.url_exists_for_other(new_url, &id)
     {
-        return Err(ApiError::conflict(
-            "A streamer with this URL already exists",
-        ));
+        let retiring = streamer_manager
+            .get_streamer_by_url(new_url)
+            .is_some_and(|existing| existing.is_deleted());
+        return Err(if retiring {
+            ApiError::conflict("A streamer with this URL is still being removed; try again shortly")
+        } else {
+            ApiError::conflict("A streamer with this URL already exists")
+        });
     }
 
     let current = live_streamer(streamer_manager, &id)?;

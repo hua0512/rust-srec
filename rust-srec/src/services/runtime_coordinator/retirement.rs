@@ -158,17 +158,21 @@ impl RuntimeCoordinator {
         // `ConfigService::get_config_for_streamer` no longer resolves once the
         // row is reaped.
         //
-        // A session this call itself ended is deliberately not drained. The
-        // `SessionTransition::Ended` it published is applied by
+        // A session `SessionLifecycle` still holds in memory is deliberately not
+        // drained. Its `SessionTransition::Ended` is applied by
         // `PipelineManager::handle_session_transition` on another task, and
         // until `PipelineCoordinator` has recorded the end,
         // `SessionCoordinationOutstanding::session_complete_owed` is still zero
         // — the drain would call the session quiescent moments before it owes a
-        // session-complete DAG. The reaper's next sweep, which finds the session
-        // already `Ended`, observes it after the fact; that is what the
-        // `deleted_at` marker buys.
-        if stop.session_ended_now {
-            let session_id = stop.session_id.unwrap_or_default();
+        // session-complete DAG. The condition is deliberately "in memory" rather
+        // than "this call ended it": the download attempt's terminal outcome
+        // reaching `SessionLifecycle` during `stop_streamer_work`'s
+        // `stop_download_with_reason` ends the session just as well, and the
+        // retirement cannot tell whose end it is looking at. `end_for_disable`
+        // reports `None` once `schedule_ended_eviction` has dropped the entry,
+        // which bounds the wait at `session::lifecycle::ENDED_RETENTION_DEFAULT` past the
+        // end, and the next reaper sweep then observes the coordinator.
+        if let Some(session_id) = stop.session_id {
             info!(
                 streamer_id,
                 session_id, "Recording ended; the streamer's removal waits for its post-processing"
@@ -179,30 +183,27 @@ impl RuntimeCoordinator {
             return retirement;
         }
 
-        // Otherwise the session end is already settled, so the drain sees
-        // whatever the coordinator, `dag_execution` and `job` still hold. When
-        // there was no session to end at all, the streamer's most recent one is
-        // the only candidate that can still be running post-processing.
-        let session_id = match stop.session_id {
-            Some(session_id) => Some(session_id),
-            None => match self
-                .session_repository
-                .list_sessions_for_streamer(streamer_id, 1)
-                .await
-            {
-                Ok(sessions) => sessions.into_iter().next().map(|session| session.id),
-                Err(error) => {
-                    warn!(
-                        streamer_id,
-                        error = %error,
-                        "Failed to resolve the streamer's most recent session"
-                    );
-                    retirement
-                        .outstanding
-                        .push(format!("session lookup: {error}"));
-                    None
-                }
-            },
+        // With no session left in memory the end is settled, so the drain sees
+        // whatever the coordinator, `dag_execution` and `job` still hold for the
+        // streamer's most recent session — the only one that can still be
+        // running post-processing.
+        let session_id = match self
+            .session_repository
+            .list_sessions_for_streamer(streamer_id, 1)
+            .await
+        {
+            Ok(sessions) => sessions.into_iter().next().map(|session| session.id),
+            Err(error) => {
+                warn!(
+                    streamer_id,
+                    error = %error,
+                    "Failed to resolve the streamer's most recent session"
+                );
+                retirement
+                    .outstanding
+                    .push(format!("session lookup: {error}"));
+                None
+            }
         };
 
         if let Some(session_id) = session_id {

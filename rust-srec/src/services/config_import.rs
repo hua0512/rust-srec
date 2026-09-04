@@ -178,6 +178,11 @@ struct ImportSnapshot {
     // can hold several rows; streamer_for_update picks the row an import writes to
     // and apply_import deletes (Replace) or warns about (Merge) the rest.
     streamers: HashMap<String, Vec<StreamerDbModel>>,
+    // Lowercased urls of rows carrying a `deleted_at` marker. They are absent
+    // from `streamers`, but still hold their url under
+    // `streamers.url COLLATE NOCASE UNIQUE`, so validate_references has to
+    // reject a bundle that would insert over one.
+    retiring_streamer_urls: HashSet<String>,
     channels: HashMap<String, NotificationChannelDbModel>,
     job_presets: HashMap<String, JobPreset>,
     pipeline_presets: HashMap<String, PipelinePreset>,
@@ -229,6 +234,14 @@ impl ImportSnapshot {
             // fetch order.
             rows.sort_by(|a, b| a.id.cmp(&b.id));
         }
+        let retiring_streamer_urls = sqlx::query_scalar::<_, String>(
+            "SELECT url FROM streamers WHERE deleted_at IS NOT NULL",
+        )
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .map(|url| url.to_ascii_lowercase())
+        .collect();
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
                 .fetch_all(&mut **tx)
@@ -262,6 +275,7 @@ impl ImportSnapshot {
             templates,
             platforms,
             streamers,
+            retiring_streamer_urls,
             channels,
             job_presets,
             pipeline_presets,
@@ -347,6 +361,20 @@ impl ImportSnapshot {
                 return validation(format!(
                     "Unknown template '{}' for streamer '{}'",
                     template, streamer.name
+                ));
+            }
+            // No live row to update, but a marked one still owns the url, so
+            // persist_streamer's INSERT would hit the url UNIQUE constraint and
+            // fail the whole import on a bare sqlx error. Say what it is
+            // instead, in the same terms the create-streamer route uses.
+            if self.streamer_for_update(&streamer.url).is_none()
+                && self
+                    .retiring_streamer_urls
+                    .contains(&streamer.url.to_ascii_lowercase())
+            {
+                return validation(format!(
+                    "A streamer with the URL '{}' is still being removed; try again shortly",
+                    streamer.url
                 ));
             }
         }
@@ -2376,6 +2404,55 @@ mod tests {
             logs.contains("https://example.com/live/alpha")
                 && logs.contains("https://example.com/live/Alpha"),
             "warning should name the colliding URLs, got: {logs}"
+        );
+    }
+
+    /// A streamer whose retirement has not reached its reap yet is absent from
+    /// the snapshot but still owns its URL under
+    /// `streamers.url COLLATE NOCASE UNIQUE`, so a bundle naming that URL would
+    /// have `persist_streamer` insert a fresh id straight into the constraint.
+    /// `validate_references` has to name the conflict instead.
+    #[tokio::test]
+    async fn import_rejects_a_bundle_naming_a_retiring_streamers_url() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel =
+            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let platform: PlatformConfigDbModel =
+            sqlx::query_as("SELECT * FROM platform_config WHERE platform_name = 'huya'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let model =
+            StreamerDbModel::new("retiring", "https://example.com/live/alpha", &platform.id);
+        let mut setup_tx = begin_immediate(&pool).await.unwrap();
+        persist_streamer(&mut setup_tx, &model).await.unwrap();
+        setup_tx.commit().await.unwrap();
+        assert!(
+            mark_streamer_deleted(&pool, &model.id, crate::database::time::now_ms())
+                .await
+                .unwrap()
+        );
+
+        let mut config = import_config(&global);
+        config
+            .streamers
+            .push(imported_streamer(&model.url, &platform.platform_name));
+
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        let error = snapshot
+            .validate_references(&config, ImportMode::Merge)
+            .expect_err("the retiring URL should be reported, not left to the UNIQUE constraint");
+
+        assert!(
+            matches!(&error, ConfigurationImportError::Validation(message)
+                if message.contains("still being removed")),
+            "{error}"
         );
     }
 

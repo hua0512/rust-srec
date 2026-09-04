@@ -401,13 +401,23 @@ pub async fn delete_template(
         }
     })?;
 
-    // Check if any streamers are using this template
-    let streamers_using = streamer_manager.get_by_template(&id);
-    if !streamers_using.is_empty() {
+    // Check if any streamers are using this template. The guard counts rows
+    // rather than visible streamers: `streamers.template_config_id` is a
+    // foreign key with no `ON DELETE` action, so a streamer that is marked
+    // deleted and waiting for `StreamerManager::reap_deleted` still makes
+    // SQLite refuse the delete.
+    let streamers_using = streamer_manager.get_by_template(&id).len();
+    let rows_referencing = streamer_manager.template_reference_count(&id);
+    if streamers_using > 0 {
         return Err(ApiError::conflict(format!(
             "Cannot delete template '{}': {} streamer(s) are using it",
-            id,
-            streamers_using.len()
+            id, streamers_using
+        )));
+    }
+    if rows_referencing > 0 {
+        return Err(ApiError::conflict(format!(
+            "Cannot delete template '{}': a streamer using it is still being removed; try again shortly",
+            id
         )));
     }
 

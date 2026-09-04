@@ -597,7 +597,11 @@ where
     /// Metadata of every streamer carrying a `deleted_at` marker.
     ///
     /// Read from the cache rather than the repository, so it reflects the same
-    /// rows the runtime is standing down.
+    /// rows the runtime is standing down. The cache holds every marked row:
+    /// [`Self::hydrate`] loads them all through
+    /// `StreamerRepository::list_all_streamers`, and
+    /// `ServiceContainer::initialize` propagates a hydration failure, so there
+    /// is no partially-populated state in which a marker could be missed.
     pub fn get_pending_deletion(&self) -> Vec<StreamerMetadata> {
         self.metadata
             .iter()
@@ -685,6 +689,21 @@ where
     /// Get streamers by template.
     pub fn get_by_template(&self, template_id: &str) -> Vec<StreamerMetadata> {
         self.get_filtered(|metadata| metadata.template_config_id.as_deref() == Some(template_id))
+    }
+
+    /// Number of `streamers` rows referencing `template_id`, including ones
+    /// marked deleted.
+    ///
+    /// `streamers.template_config_id` is a foreign key with no `ON DELETE`
+    /// action, so any row still in the table blocks
+    /// `DELETE FROM template_config` whether or not the user can still see it.
+    /// [`Self::get_by_template`] answers the narrower "streamers the user has"
+    /// question the usage counts report.
+    pub fn template_reference_count(&self, template_id: &str) -> usize {
+        self.metadata
+            .iter()
+            .filter(|entry| entry.template_config_id.as_deref() == Some(template_id))
+            .count()
     }
 
     /// Get streamers sorted by priority (High first, then Normal, then Low).
@@ -1021,17 +1040,6 @@ mod tests {
                 }
                 None => Ok(false),
             }
-        }
-
-        async fn list_streamers_pending_deletion(&self) -> Result<Vec<StreamerDbModel>> {
-            Ok(self
-                .streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|s| s.deleted_at.is_some())
-                .cloned()
-                .collect())
         }
 
         async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {
