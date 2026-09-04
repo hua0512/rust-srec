@@ -70,10 +70,10 @@ The `compression` processor bundles its input files into a single archive. It do
 | Key | Description | Default |
 |-----|-------------|---------|
 | `format` | `zip` or `targz` (gzipped tar) | `zip` |
-| `compression_level` | `0`–`9`. `0` stores without compressing, which is the sensible choice for already-compressed video. | `6` |
-| `output_path` | Archive to write. When omitted, the step's own output path is used, otherwise a path is derived from the first input's name plus the format's extension. | derived |
+| `compression_level` | `0`–`9`. `0` skips compression — stored entries for `zip`, an uncompressed gzip stream for `targz` — which is the sensible choice for already-compressed video. A value above `9` fails the step rather than being clamped. | `6` |
+| `output_path` | Archive to write. When omitted, it is derived from the first input: same directory, same name, with the input's extension replaced by the format's, so `/rec/video.flv` produces `/rec/video.zip`. | derived |
 | `overwrite` | Replace an existing archive at that path. With `false`, the step fails instead. | `true` |
-| `preserve_paths` | Keep each input's directory structure inside the archive. With `false`, every entry is a bare filename at the archive root. | `false` |
+| `preserve_paths` | Store each input under its full path inside the archive, minus the leading separator: `/srv/recordings/x/a.mp4` becomes the entry `srv/recordings/x/a.mp4`. The paths are not made relative to a common base. With `false`, every entry is a bare filename at the archive root. | `false` |
 
 The processor accepts a batch, so a step that receives several files from its dependencies produces one archive containing all of them. Its output is the archive path only — the inputs are not deleted, and a `delete` step depending on it removes the archive, not the sources.
 

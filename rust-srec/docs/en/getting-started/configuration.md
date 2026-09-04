@@ -25,7 +25,7 @@ For a complete success check, follow [Make Your First Recording](./first-recordi
 
 ### Global Settings
 
-Access via **Settings** → **Global Config**. The settings are organized into several categories:
+Access via **Settings** → **Global**. The settings are organized into several categories:
 
 #### File Configuration
 | Setting | Description | Default |
@@ -113,11 +113,11 @@ The following environment variables can be configured in your <a :href="withBase
 |----------|-------------|---------|
 | `DATA_DIR` | Directory for application data | `./data` |
 | `CONFIG_DIR` | Directory for platform configuration files | `./config` |
-| `OUTPUT_DIR` | Output root that the write gate and the disk-space health probe watch. Under Docker Compose this is the host directory bind-mounted to `/app/output`, and the container itself is given `OUTPUT_DIR=/app/output`. It does **not** decide where recordings are written — see below. | `./output` |
+| `OUTPUT_DIR` | Output root the startup write probe and the disk-space health probe watch. (The write gate's own roots come from `RUST_SREC_OUTPUT_ROOTS`.) Under Docker Compose this is the host directory bind-mounted to `/app/output`, and the container itself is given `OUTPUT_DIR=/app/output`. It does **not** decide where recordings are written — see below. | `./output` |
 | `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files do not land inside the state directory. See [Installation](./installation.md). | `./logs` |
 
 ::: warning `OUTPUT_DIR` is not the recording directory
-The directory recordings are written to is the `output_folder` setting stored in the database and edited under **Settings** → **Global Config**, with optional overrides per platform, template, and streamer. No environment variable overrides it, and the resolved path shown by the application is authoritative.
+The directory recordings are written to is the `output_folder` setting stored in the database and edited under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. No environment variable overrides it, and the resolved path shown by the application is authoritative.
 
 Under the standard Docker setup the two agree without you doing anything: `output_folder` ships as `/app/output`, which is exactly where the bind mount lands. On a binary or system-service install they do not. Setting `OUTPUT_DIR` to a writable path while `output_folder` still names `/app/output` leaves the service running and every recording failing.
 

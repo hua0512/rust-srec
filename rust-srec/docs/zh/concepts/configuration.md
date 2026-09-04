@@ -94,8 +94,9 @@ flowchart TB
 
 `offline_check_delay_ms` 控制离线确认检查间隔及相关的会话迟滞窗口，不控制冷却时长。
 
-这两个值在每一层都会被收敛到下限：`offline_check_count` 最小为 `1`，
-`offline_check_delay_ms` 最小为 `1000`。
+这两个值最终都不会低于各自的下限：`offline_check_count` 至少为 `1`，
+`offline_check_delay_ms` 至少为 `1000`。收敛发生在平台、模板和主播层，构建合并配置时还会
+再做一次，因此即使全局层填了低于下限的值，也会在被读取之前得到修正。
 
 ::: warning 已弃用的兼容格式
 序列化 `StreamerMetadata` 中的别名 `effective_offline_check_count` 和
@@ -178,15 +179,15 @@ Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `c
 优先级（由高到低）：
 
 1. 主播覆盖：`streamer_specific_config.cookies`
-   （可选附带 `streamer_specific_config.refresh_token`）
+   （可选附带 `streamer_specific_config.refresh_token` / `access_token`）
 2. 模板：`template_config.cookies`
-   （可选附带 `template_config.platform_overrides[platform].refresh_token`）
+   （可选附带 `template_config.platform_overrides[platform].refresh_token` / `access_token`）
 3. 平台：`platform_config.cookies`
-   （可选附带 `platform_config.platform_specific_config.refresh_token`）
+   （可选附带 `platform_config.platform_specific_config.refresh_token` / `access_token`）
 
 与 `MergedConfig.cookies` 不同，空字符串或只有空白字符的 `cookies` **不会**成为凭据来源：
-该层会被跳过，继续考察下一层。`refresh_token` 只会从 cookies 胜出的那一层读取，
-因此主播没有配置自己的 cookies 时，主播层的 `refresh_token` 会被忽略。
+该层会被跳过，继续考察下一层。`refresh_token` 和 `access_token` 都只会从 cookies 胜出的
+那一层读取，因此主播没有配置自己的 cookies 时，主播层的 `refresh_token` 会被忽略。
 
 平台层也可以在没有 cookies 的情况下产生凭据来源：对于 SOOP，
 `platform_specific_config` 中配置了 `username` 和 `password` 时会得到一个凭据来源，
@@ -210,12 +211,20 @@ Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `c
 
 由凭据子系统使用、不属于 `MergedConfig` 的键：
 
-- `refresh_token`
+- `refresh_token`、`access_token`
+
+两者都只从 cookies 胜出的那一层读取。它们属于在并入 `platform_extras` 之前会从每一层剥离的
+五个键——`refresh_token`、`access_token`、`session_cookies`、`last_cookie_check_date` 和
+`last_cookie_check_result`。
 
 ::: tip 无效 JSON 会被忽略
 平台/模板/全局记录中的多数 JSON 字段都采用尽力而为的解析方式。解析失败时，解析器会
 记录一条警告，并回退到默认值或上一层的值。`streamer_specific_config` 内部同理：
 某个键的值结构不对时会被跳过并继承低优先级层，而不会让整次解析失败。
+
+`platform_extras` 是例外。它的值会被原样取用，不做结构检查；而只要合并的任一侧不是对象，
+合并就退化为“上层直接胜出”——因此在这里写标量或数组会替换掉从低优先级层累积下来的
+extras，而不是被跳过。
 :::
 
 ## 引擎与提取器选择
@@ -281,6 +290,29 @@ Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `c
 把共用设置放进模板，而不是在每个主播上重复配置。之后修改一次模板即可让所有关联主播
 重新解析配置，无需逐个主播修改。
 :::
+
+### 修改何时影响正在进行的录制
+
+让缓存失效并不等于改变一个已经在跑的下载。下面的情况都不需要重启服务，区别只在于新值是
+立即生效，还是等到下一次下载才生效。
+
+正在进行的下载会采纳：
+
+- `min_segment_size_bytes`，以及分段管道和会话完成管道的定义——每个分段结束时都会重新从
+  合并配置读取。在配置中清空某个管道并不会让已经在跑的会话也清空它：这次重读只会替换
+  「有值」的管道。
+- `GlobalUpdated` 事件下的 `max_concurrent_downloads`、排队刷新阈值、GPU 探测间隔和管道
+  工作线程并发数。
+- 新的监控间隔，由调度器下发给每个在线主播的 actor——但仅当 `streamer_check_delay_ms`、
+  `offline_check_delay_ms` 或 `offline_check_count` 确实发生了变化。已经到达检查时间的主播
+  会先完成那次检查，之后才应用新的间隔。
+
+它不会采纳 `output_folder`、`output_filename_template`、`output_file_format`、
+`max_download_duration_secs` 和 `max_part_size_bytes`。这些值在下载开始时解析一次，此后
+在整个下载期间保持不变，分段轮换也不例外——轮换出的分段沿用开始时确定的基础文件名。修改
+它们只对该主播的下一次下载生效，而不是当前下载的下一个分段。
+
+已经排队的管道任务会继续沿用创建时携带的 DAG 定义。
 
 关于运行时行为以及这些更新在系统中的传递路径，参见：
 

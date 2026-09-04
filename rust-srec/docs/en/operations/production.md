@@ -57,7 +57,7 @@ On a systemd host, also verify:
 
 - `systemctl is-enabled rust-srec` returns `enabled`, so the service comes back after a reboot.
 - `/etc/rust-srec/rust-srec.env` is mode `0640` owned `root:rust-srec`, and contains `JWT_SECRET`.
-- **Global Settings > Output Folder** names a writable directory, and `RUST_SREC_OUTPUT_ROOTS` names the same one.
+- **Settings → Global → Output Folder** names a writable directory, and `RUST_SREC_OUTPUT_ROOTS` names the same one.
 - An external recording volume is listed under `ReadWritePaths=`, already exists, and is owned by `rust-srec`.
 - `TimeoutStopSec=` exceeds `RUST_SREC_SHUTDOWN_TIMEOUT_SECS`, so recordings finalize before `SIGKILL`.
 

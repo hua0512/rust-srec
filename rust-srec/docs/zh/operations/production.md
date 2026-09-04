@@ -57,7 +57,7 @@ systemd 主机还需确认：
 
 - `systemctl is-enabled rust-srec` 返回 `enabled`，重启后服务会自动恢复。
 - `/etc/rust-srec/rust-srec.env` 权限为 `0640`、属主为 `root:rust-srec`，且包含 `JWT_SECRET`。
-- **全局设置 > 输出文件夹**指向可写目录，且 `RUST_SREC_OUTPUT_ROOTS` 指向同一目录。
+- **设置 → 全局 → 输出文件夹**指向可写目录，且 `RUST_SREC_OUTPUT_ROOTS` 指向同一目录。
 - 外部录制卷已写入 `ReadWritePaths=`、已存在，且属主为 `rust-srec`。
 - `TimeoutStopSec=` 大于 `RUST_SREC_SHUTDOWN_TIMEOUT_SECS`，录制能在 `SIGKILL` 之前收尾。
 

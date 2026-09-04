@@ -34,7 +34,7 @@ Open **System Health** and inspect the output-root component:
 - `read_only`: restore the filesystem to read-write operation.
 - `timed_out`: investigate a stalled network mount or block device.
 
-Only a full disk is detected while a recording is running: a write that fails with no space left reports `storage_full` immediately. The other kinds are found when a recording starts or by the write test that runs at startup, so a root that turns read-only or loses permissions under an active recording shows up as a failed recording first and only appears here on the next attempt.
+Only a full disk is detected while a recording is running: a write that fails with no space left reports `storage_full` immediately. The other kinds are found by the write test that runs at startup, and at recording start only when the output path still has a directory left to create — the pre-start check creates missing directories, and an existing directory passes it even when it is unwritable. Because the dated output directory usually already exists, a root that turns read-only or loses permissions under an active recording shows up as a failed recording first and normally appears here only after a restart.
 
 Do not rename or replace the bind-mounted root while the container is running. Delete files inside the existing directory, use `docker exec`, or stop the service before changing the mount. See [Docker bind-mount troubleshooting](./docker.md#storage-cleanup).
 

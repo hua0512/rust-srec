@@ -37,23 +37,28 @@ umask 027 && printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" \
   > /etc/rust-srec/rust-srec.env
 chown root:rust-srec /etc/rust-srec/rust-srec.env
 install -D -m 0644 rust-srec.service /etc/systemd/system/rust-srec.service
-systemctl daemon-reload && systemctl enable --now rust-srec
 ```
 
-The account's home directory has to be `/var/lib/rust-srec` and has to be writable: systemd derives `$HOME` from passwd, and rclone and BaiduPCS-Go rewrite their session files under it. `ProtectSystem=strict` leaves `/opt` read-only, so the install directory cannot serve as a home.
-
-`StateDirectory=` and `LogsDirectory=` create `/var/lib/rust-srec`, `/var/lib/rust-srec/output`, and `/var/log/rust-srec` on each start, so a fresh host needs nothing pre-created.
-
-`/etc/rust-srec/rust-srec.env` is loaded through `EnvironmentFile=`. The service refuses to start without `JWT_SECRET`, so that file is mandatory in practice. Web Push (VAPID) keys and any `*_PATH` override for ffmpeg, rclone, streamlink, or DanmakuFactory belong there too. Every assignment in it overrides the unit's own `Environment=` lines.
-
-Take ownership before the first start, but only when `/var/lib/rust-srec` or `/var/log/rust-srec` survive an earlier install:
+On a reinstall, where `/var/lib/rust-srec` or `/var/log/rust-srec` survive from an earlier install, take ownership before the first start:
 
 ```bash
 [ -d /var/lib/rust-srec ] && chown -R rust-srec:rust-srec /var/lib/rust-srec
 [ -d /var/log/rust-srec ] && chown -R rust-srec:rust-srec /var/log/rust-srec
 ```
 
-`StateDirectory=` and `LogsDirectory=` recursively chown a directory whose owner does not match theirs, inside exec setup, and on a large recordings tree that walk can outlast the manager's default start timeout.
+Skipping this leaves systemd to fix the ownership itself during unit start, and on a large recordings tree that can outlast the start timeout and fail the start.
+
+Then start the service:
+
+```bash
+systemctl daemon-reload && systemctl enable --now rust-srec
+```
+
+The account's home directory has to be `/var/lib/rust-srec` and has to be writable — rclone and BaiduPCS-Go rewrite their session files there. The install directory under `/opt` cannot serve as a home; the unit's hardening keeps it read-only.
+
+`StateDirectory=` and `LogsDirectory=` create `/var/lib/rust-srec`, `/var/lib/rust-srec/output`, and `/var/log/rust-srec` on each start, so a fresh host needs nothing pre-created.
+
+`/etc/rust-srec/rust-srec.env` is loaded through `EnvironmentFile=`. The service refuses to start without `JWT_SECRET`, so that file is mandatory in practice. Web Push (VAPID) keys and any `*_PATH` override for ffmpeg, rclone, streamlink, or DanmakuFactory belong there too. Every assignment in it overrides the unit's own `Environment=` lines.
 
 `/opt/rust-srec` is also the directory the Docker Compose installer defaults to (`RUST_SREC_DIR`). Pick a different path for the binary if both deployments share a host.
 
@@ -61,14 +66,14 @@ Verify the service:
 
 ```bash
 systemctl status rust-srec
-journalctl -u rust-srec -f
+journalctl -u rust-srec --since "5 min ago"
 curl http://localhost:12555/api/health/live
 ```
 
 ### Set the Recording Directory
 
 ::: warning Recordings fail until the output folder is set
-The database ships with `output_folder` set to `/app/output`, a path that belongs to the Docker image and that `ProtectSystem=strict` neither provides nor makes writable. No environment variable overrides it. Until **Global Settings > Output Folder** names `/var/lib/rust-srec/output` or a volume listed under `ReadWritePaths=`, the service starts normally and every recording fails.
+The database ships with `output_folder` set to `/app/output`, a path that belongs to the Docker image and that `ProtectSystem=strict` neither provides nor makes writable. No environment variable overrides it. Until **Settings → Global → Output Folder** names `/var/lib/rust-srec/output` or a volume listed under `ReadWritePaths=`, the service starts normally and every recording fails.
 :::
 
 Keep `RUST_SREC_OUTPUT_ROOTS` in step with that value, or the output-root write gate reports the service degraded. The unit ships both pointing at `/var/lib/rust-srec/output`.
@@ -140,7 +145,7 @@ Important backend settings:
 | `DATABASE_URL` | SQLite database location | `sqlite:./srec.db` |
 | `API_BIND_ADDRESS` | Network interface to listen on | `0.0.0.0` |
 | `API_PORT` | API port | `8080` |
-| `OUTPUT_DIR` | Recording output directory | `./output` |
+| `OUTPUT_DIR` | Output root the write gate and disk-space probe watch; it does not set where recordings are written | `./output` |
 | `RUST_LOG` | Log level | `info` |
 
 Generate a secret with `openssl rand -hex 32`. In PowerShell:

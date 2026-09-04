@@ -37,23 +37,28 @@ umask 027 && printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" \
   > /etc/rust-srec/rust-srec.env
 chown root:rust-srec /etc/rust-srec/rust-srec.env
 install -D -m 0644 rust-srec.service /etc/systemd/system/rust-srec.service
-systemctl daemon-reload && systemctl enable --now rust-srec
 ```
 
-该账号的家目录必须是 `/var/lib/rust-srec`，且必须可写：systemd 会从 passwd 读取 `$HOME`，rclone 和 BaiduPCS-Go 都会在其中改写会话文件。`ProtectSystem=strict` 让 `/opt` 只读，因此安装目录不能作为家目录。
-
-`StateDirectory=` 和 `LogsDirectory=` 会在每次启动时创建 `/var/lib/rust-srec`、`/var/lib/rust-srec/output` 和 `/var/log/rust-srec`，全新主机无需预先准备任何目录。
-
-`/etc/rust-srec/rust-srec.env` 通过 `EnvironmentFile=` 加载。服务缺少 `JWT_SECRET` 会拒绝启动，因此该文件实际上是必需的。Web Push（VAPID）密钥，以及 ffmpeg、rclone、streamlink 或 DanmakuFactory 的 `*_PATH` 覆盖项也应写在这里。文件中的每一项都会覆盖 unit 自身的 `Environment=` 设置。
-
-只有当 `/var/lib/rust-srec` 或 `/var/log/rust-srec` 是上一次安装遗留下来的目录时，才需要在首次启动前修正所有权：
+重装时，如果 `/var/lib/rust-srec` 或 `/var/log/rust-srec` 是上一次安装遗留下来的目录，请在首次启动前修正所有权：
 
 ```bash
 [ -d /var/lib/rust-srec ] && chown -R rust-srec:rust-srec /var/lib/rust-srec
 [ -d /var/log/rust-srec ] && chown -R rust-srec:rust-srec /var/log/rust-srec
 ```
 
-`StateDirectory=` 和 `LogsDirectory=` 发现目录属主与自身不一致时会递归 chown，且该操作发生在 exec setup 阶段；在庞大的录制目录树上，这次遍历可能超过管理器默认的启动超时。
+跳过这一步会把修正所有权的工作留给 systemd 在 unit 启动过程中完成；在庞大的录制目录树上，这可能超过启动超时并导致启动失败。
+
+然后启动服务：
+
+```bash
+systemctl daemon-reload && systemctl enable --now rust-srec
+```
+
+该账号的家目录必须是 `/var/lib/rust-srec`，且必须可写——rclone 和 BaiduPCS-Go 都会在其中改写会话文件。`/opt` 下的安装目录不能作为家目录，unit 的加固设置让它保持只读。
+
+`StateDirectory=` 和 `LogsDirectory=` 会在每次启动时创建 `/var/lib/rust-srec`、`/var/lib/rust-srec/output` 和 `/var/log/rust-srec`，全新主机无需预先准备任何目录。
+
+`/etc/rust-srec/rust-srec.env` 通过 `EnvironmentFile=` 加载。服务缺少 `JWT_SECRET` 会拒绝启动，因此该文件实际上是必需的。Web Push（VAPID）密钥，以及 ffmpeg、rclone、streamlink 或 DanmakuFactory 的 `*_PATH` 覆盖项也应写在这里。文件中的每一项都会覆盖 unit 自身的 `Environment=` 设置。
 
 `/opt/rust-srec` 同时也是 Docker Compose 安装脚本的默认目录（`RUST_SREC_DIR`）。两种部署共用一台主机时，请为二进制选择其他路径。
 
@@ -61,14 +66,14 @@ systemctl daemon-reload && systemctl enable --now rust-srec
 
 ```bash
 systemctl status rust-srec
-journalctl -u rust-srec -f
+journalctl -u rust-srec --since "5 min ago"
 curl http://localhost:12555/api/health/live
 ```
 
 ### 设置录制目录
 
 ::: warning 未设置输出文件夹时录制必然失败
-数据库出厂时 `output_folder` 为 `/app/output`，该路径属于 Docker 镜像，`ProtectSystem=strict` 既不会提供它也不会让它可写，且没有任何环境变量能覆盖它。在**全局设置 > 输出文件夹**填入 `/var/lib/rust-srec/output` 或 `ReadWritePaths=` 列出的卷之前，服务能正常启动，但每次录制都会失败。
+数据库出厂时 `output_folder` 为 `/app/output`，该路径属于 Docker 镜像，`ProtectSystem=strict` 既不会提供它也不会让它可写，且没有任何环境变量能覆盖它。在**设置 → 全局 → 输出文件夹**填入 `/var/lib/rust-srec/output` 或 `ReadWritePaths=` 列出的卷之前，服务能正常启动，但每次录制都会失败。
 :::
 
 `RUST_SREC_OUTPUT_ROOTS` 必须与该值保持一致，否则输出根写入门控会把服务报告为降级。unit 出厂时两者都指向 `/var/lib/rust-srec/output`。
@@ -140,7 +145,7 @@ cp .env.example .env
 | `DATABASE_URL` | SQLite 数据库位置 | `sqlite:./srec.db` |
 | `API_BIND_ADDRESS` | 监听的网络接口 | `0.0.0.0` |
 | `API_PORT` | API 端口 | `8080` |
-| `OUTPUT_DIR` | 录制输出目录 | `./output` |
+| `OUTPUT_DIR` | 写入门和磁盘空间探测所监视的输出根目录；它不决定录制文件写到哪里 | `./output` |
 | `RUST_LOG` | 日志级别 | `info` |
 
 可用 `openssl rand -hex 32` 生成密钥。PowerShell 命令如下：
