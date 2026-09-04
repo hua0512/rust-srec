@@ -25,7 +25,7 @@ For a complete success check, follow [Make Your First Recording](./first-recordi
 
 ### Global Settings
 
-Access via **Settings** → **Global Config**. The settings are organized into several categories:
+Access via **Settings** → **Global**. The settings are organized into several categories:
 
 #### File Configuration
 | Setting | Description | Default |
@@ -77,6 +77,8 @@ longer than what is tracked.
 | `download_engine` | Engine used for recording (`ffmpeg`, `mesio`, etc.) | `mesio` |
 | `queue_freshness_threshold` | When a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60 Secs` |
 
+Which extractor resolves the stream URL is a separate setting from `download_engine`, is not exposed here, and is set per platform, template, or streamer. See [Engine and extractor selection](../concepts/configuration.md#engine-and-extractor-selection).
+
 #### Network & System
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -111,8 +113,16 @@ The following environment variables can be configured in your <a :href="withBase
 |----------|-------------|---------|
 | `DATA_DIR` | Directory for application data | `./data` |
 | `CONFIG_DIR` | Directory for platform configuration files | `./config` |
-| `OUTPUT_DIR` | Directory where recordings are stored | `/app/output` |
-| `LOG_DIR` | Directory for log files | `./logs` |
+| `OUTPUT_DIR` | Output root the startup write probe and the disk-space health probe watch. (The write gate's own roots come from `RUST_SREC_OUTPUT_ROOTS`.) Under Docker Compose this is the host directory bind-mounted to `/app/output`, and the container itself is given `OUTPUT_DIR=/app/output`. It does **not** decide where recordings are written — see below. | `./output` |
+| `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files do not land inside the state directory. See [Installation](./installation.md). | `./logs` |
+
+::: warning `OUTPUT_DIR` is not the recording directory
+The directory recordings are written to is the `output_folder` setting stored in the database and edited under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. No environment variable overrides it, and the resolved path shown by the application is authoritative.
+
+Under the standard Docker setup the two agree without you doing anything: `output_folder` ships as `/app/output`, which is exactly where the bind mount lands. On a binary or system-service install they do not. Setting `OUTPUT_DIR` to a writable path while `output_folder` still names `/app/output` leaves the service running and every recording failing.
+
+Set `output_folder` in the web interface first, then point `OUTPUT_DIR` — and `RUST_SREC_OUTPUT_ROOTS`, below — at the same directory, so the write gate and the free-space probes watch the volume that is actually filling up.
+:::
 
 ### Shutdown
 | Variable | Description | Default |
@@ -180,9 +190,11 @@ Both share the window length set by `API_LOGIN_WINDOW_SECS`.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `RUST_LOG` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
-| `DATABASE_URL` | SQL database connection string | `sqlite:///app/data/rust-srec.db` |
+| `DATABASE_URL` | SQL database connection string. The value shown is the one the Docker `.env` sets. Left unset the backend falls back to `sqlite:srec.db?mode=rwc`, relative to the working directory; the bundled system service sets `sqlite:///var/lib/rust-srec/rust-srec.db`. The runtime generation marker is derived from this URL and lands beside the database file. | `sqlite:///app/data/rust-srec.db` (Docker) |
 | `RUST_SREC_LOCALE` | Locale for backend-emitted notification strings. Affects every notification event — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, credential events. Supported: `en`, `zh-CN`. | `en` |
 | `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of **absolute** paths to treat as output-root boundaries for the write gate. If unset, the gate uses a heuristic that takes the first **two named components** of each resolved output path (e.g. `/rec/huya` for `/rec/huya/X/20260415`, `/home/user` for `/home/user/recordings/X/20260415`). Two named components is the smallest safe default — it avoids accidentally sharing a gate key across unrelated users in `/home/...` layouts. For a single-mount `/rec`-style layout where you want one gate key per mount (and therefore one aggregated notification on failure instead of one per platform), set this explicitly: `RUST_SREC_OUTPUT_ROOTS=/rec`. | - |
+
+The heuristic is worth checking whenever the output directory sits more than two components deep. `/var/lib/rust-srec/output` collapses to `/var/lib`, which a hardened system service leaves read-only — the startup probe then reports the `output-root` component degraded even though the recording directory itself is perfectly writable. Setting `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` pins the root to the real directory; a configured path is also preferred as the longest matching prefix, so it wins over the heuristic. Keep the value in step with `output_folder`.
 
 ### Resource Limits (Docker)
 | Variable | Description | Default |

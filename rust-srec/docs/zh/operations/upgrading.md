@@ -30,7 +30,23 @@ curl http://localhost:12555/api/health/live
 
 登录后验证带认证的就绪检查、系统健康页、主播数量、最近会话、一次平台检查和一个非关键录制/管道。观察期结束前保留升级前备份。
 
+## systemd 升级
+
+原地替换二进制并重启 unit。`install` 是替换文件而不是写入原文件，因此重启之前正在运行的进程不受影响：
+
+```bash
+install -D -m 0755 rust-srec /opt/rust-srec/rust-srec
+systemctl restart rust-srec
+systemctl status rust-srec
+journalctl -u rust-srec --since "5 min ago"
+curl http://localhost:12555/api/health/live
+```
+
+只有当某个版本修改了 unit 文件本身时，才需要把 `rust-srec.service` 重新安装到 `/etc/systemd/system/` 并执行 `systemctl daemon-reload`；出现这种情况时发布说明会写明。之后按 Docker 升级同样的项目做升级后检查。
+
 ## 自动更新（Watchtower）
+
+Watchtower 属于 Docker 部署，对 systemd 服务无效；systemd 服务按上文手动升级。
 
 Compose 文件内置了一个可选的 `watchtower` 服务，可自动拉取新镜像并重建容器。默认不启用，通过以下命令开启：
 
@@ -57,7 +73,7 @@ docker compose --profile autoupdate up -d
 
 1. 停止前后端服务。
 2. 恢复升级前数据库和配置快照。
-3. 把 `VERSION` 恢复为上一标签或镜像摘要。
+3. 把 `VERSION` 恢复为上一标签或镜像摘要，或把上一版本的二进制重新安装到 `/opt/rust-srec/rust-srec`。
 4. 启动两个服务并重复健康与录制检查。
 
 快照后创建的会话和配置会丢失。如这些变更重要，应单独保留失败升级的数据用于取证恢复，不要直接合并回已恢复数据库。

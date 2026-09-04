@@ -30,7 +30,23 @@ curl http://localhost:12555/api/health/live
 
 After signing in, verify authenticated readiness, the System Health page, streamer count, recent sessions, one platform check, and a noncritical recording/pipeline. Keep the pre-upgrade backup until the observation period ends.
 
+## systemd Upgrade
+
+Swap the binary in place and restart the unit. `install` replaces the file rather than writing into it, so the running process is unaffected until the restart:
+
+```bash
+install -D -m 0755 rust-srec /opt/rust-srec/rust-srec
+systemctl restart rust-srec
+systemctl status rust-srec
+journalctl -u rust-srec --since "5 min ago"
+curl http://localhost:12555/api/health/live
+```
+
+Reinstall `rust-srec.service` to `/etc/systemd/system/` and run `systemctl daemon-reload` only when the release changes the unit itself; a release note says so when it does. Then repeat the same post-upgrade checks as the Docker path.
+
 ## Automatic Updates (Watchtower)
+
+Watchtower is part of the Docker deployment and does not apply to the systemd service, which is upgraded by hand as above.
 
 The Compose file ships an optional `watchtower` service that pulls new images and recreates the containers automatically. It is off by default; enable it with:
 
@@ -57,7 +73,7 @@ Do not start an older binary against a database already migrated by a newer rele
 
 1. Stop both services.
 2. Restore the pre-upgrade database and configuration snapshot.
-3. Reset `VERSION` to the previous tag or image digest.
+3. Reset `VERSION` to the previous tag or image digest, or reinstall the previous binary over `/opt/rust-srec/rust-srec`.
 4. Start both services and repeat the health and recording checks.
 
 Any sessions or configuration created after the snapshot will be lost. If those changes matter, preserve the failed-upgrade data separately for forensic recovery rather than merging it directly into the restored database.

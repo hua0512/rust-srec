@@ -34,15 +34,25 @@
 4. 快照或复制 `DATA_DIR`、`CONFIG_DIR`、`OUTPUT_DIR`、`.env` 和 `docker-compose.yml`。只有事件保留政策要求时才备份 `LOG_DIR`。
 5. 执行 `docker compose up -d`，并验证存活检查。
 
-`.env` 和备份媒体的保护强度不得低于在线服务。至少保留一份主机外备份，并定期校验完整性。
+systemd 服务的流程相同，只是换成 unit 自己的路径：
+
+1. 下载一份最新配置导出。
+2. 禁止新录制任务或安排维护窗口。
+3. 执行 `systemctl stop rust-srec`，确保 SQLite 和活跃媒体文件一致。
+4. 快照或复制 `/var/lib/rust-srec`（数据库、WAL 文件和默认输出目录）、`/etc/rust-srec/rust-srec.env`，以及 `ReadWritePaths=` 中列出的录制卷。只有事件保留政策要求时才备份 `/var/log/rust-srec`。
+5. 执行 `systemctl start rust-srec`，并验证存活检查。
+
+`.env`、`/etc/rust-srec/rust-srec.env` 和备份媒体的保护强度不得低于在线服务。至少保留一份主机外备份，并定期校验完整性。
 
 ## 恢复演练
 
 1. 准备空间充足的干净主机，并使用同一固定 Rust-Srec 版本。
 2. 保持服务停止，把目录恢复到相同绝对路径，并恢复所有权和权限。
-3. 恢复 `.env` 与 Compose 配置。等价恢复时不要重新生成 `JWT_SECRET`，除非有意让全部访问令牌失效。
+3. 恢复 `.env` 与 Compose 配置，或恢复 `/etc/rust-srec/rust-srec.env` 与 unit 文件。等价恢复时不要重新生成 `JWT_SECRET`，除非有意让全部访问令牌失效。
 4. 启动服务并检查 `/api/health/live`。
 5. 登录后检查带认证的 `/api/health/ready`，核对主播和会话，并播放或校验代表性媒体。
 6. 用一个非关键频道测试录制和管道。
+
+会话可以比它所属的主播存在得更久：`live_sessions.streamer_id` 允许为空，删除主播时会保留会话、媒体记录和会话上保存的主播名。因此恢复出的数据库中出现找不到对应主播的会话是正常现象，并不说明恢复有问题。
 
 记录恢复耗时和实际丢失的数据时间范围；这才是你的真实 RTO 和 RPO。

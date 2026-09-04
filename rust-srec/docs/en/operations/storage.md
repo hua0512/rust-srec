@@ -27,6 +27,22 @@ Use a safety factor of at least 1.2, and more when streams are unpredictable or 
 
 Use absolute host paths in production. Make sure the container user can create, rename, and delete files in every configured output root. Do not point `OUTPUT_DIR` at the operating system volume unless its capacity and alerts are intentionally shared.
 
+## System Service Paths
+
+An installation running under the bundled `rust-srec.service` unit uses these instead:
+
+| Path | Contents |
+|---|---|
+| `/var/lib/rust-srec` | SQLite database, WAL files, and the runtime generation marker; also the service account's home directory |
+| `/var/lib/rust-srec/output` | Recording volume the unit points `OUTPUT_DIR` and `RUST_SREC_OUTPUT_ROOTS` at |
+| `/var/log/rust-srec` | Daily-rotated application log |
+
+systemd creates all three on every start, owned by the service account, so a fresh host needs nothing pre-created.
+
+Give a recordings tree that will grow past a few hundred gigabytes its own volume, and list that volume under `ReadWritePaths=` instead of nesting it below `/var/lib/rust-srec`. `StateDirectory=` recursively chowns everything under the state directory whenever it finds it owned by another user, and that walk runs during unit start — on a large tree it can outlast the start timeout. A path listed under `ReadWritePaths=` must already exist and be owned by the service account; systemd neither creates nor chowns it.
+
+The directory recordings are written to is the `output_folder` setting in the database, not `OUTPUT_DIR`. Keep them in step — including `RUST_SREC_OUTPUT_ROOTS`, which is what the write gate itself watches — or the health probes report on a volume nothing is being written to. See [Environment Variables](../getting-started/configuration.md#environment-variables).
+
 ## Capacity Controls
 
 - Set `max_concurrent_downloads` to cap simultaneous writers.
@@ -34,6 +50,8 @@ Use absolute host paths in production. Make sure the container user can create, 
 - Keep CPU and IO pipeline concurrency below the sustained capacity of the host.
 - Configure job and notification-event history retention separately; those settings do not delete media files.
 - Use a tested pipeline move/upload step only after verifying the destination and delete-source behavior on noncritical data.
+
+Deleting a streamer reclaims nothing. Its sessions and the media-output rows, segments, and danmaku statistics recorded against them are kept on purpose. To reclaim space, delete the media outputs you no longer need with the option to remove the file from disk, then delete the sessions. That order matters: deleting a session also removes its media-output rows, and those rows hold the only paths the application has to the files. See [Deletion Semantics](./data-governance.md#deletion-semantics).
 
 Rust-Srec does not replace an organizational media lifecycle policy. Automate media deletion or archival outside the application if your retention requirement demands it, and protect that automation against deleting active files.
 

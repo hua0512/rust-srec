@@ -22,12 +22,23 @@ There is no `/metrics` endpoint. Scrape the JSON health endpoints above, or coll
 
 ## Logs
 
+In Docker:
+
 ```bash
 docker compose logs --since=30m rust-srec
 docker compose logs --since=30m frontend
 ```
 
-The example Compose file rotates container JSON logs. The application also writes to `LOG_DIR`. Centralize logs when incident history must survive host loss, and filter access because paths and platform metadata may be sensitive even though credentials are redacted by the application.
+With the systemd service:
+
+```bash
+journalctl -u rust-srec --since "30 min ago"
+journalctl -u rust-srec -f
+```
+
+The example Compose file rotates container JSON logs. The unit sets `StandardOutput=journal` and `StandardError=journal` with `SyslogIdentifier=rust-srec`, so process output goes to the journal and is subject to the host's journald retention.
+
+In both deployments the application also writes its own daily-rotated log files to `LOG_DIR`, which the unit points at `/var/log/rust-srec`. Centralize logs when incident history must survive host loss, and filter access because paths and platform metadata may be sensitive even though credentials are redacted by the application.
 
 ## Minimum Alert Set
 

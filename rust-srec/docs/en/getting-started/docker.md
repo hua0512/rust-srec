@@ -46,6 +46,10 @@ For a reviewed release, set an explicit version. Example for Linux/macOS:
 curl -fsSL https://docs.srec.rs/install.sh | RUST_SREC_DIR=/opt/rust-srec VERSION=v0.5.1 bash
 ```
 
+::: warning Path Collision with the systemd Service
+The [systemd service](./installation.md#systemd-service-linux) installs the backend binary at `/opt/rust-srec/rust-srec`. Choose a different `RUST_SREC_DIR` if both deployments share a host.
+:::
+
 ## Manual Setup
 
 1. Create a directory and download both files:

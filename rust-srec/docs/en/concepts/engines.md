@@ -2,6 +2,8 @@
 
 Downloaders are the core of the application. They are responsible for downloading the video stream from the source. The application supports three downloaders: `Mesio`, `FFMPEG`, and `Streamlink`. Each downloader has its own features and limitations.
 
+`Streamlink` appears on two independent axes and the names are easy to conflate. As a *downloader* it is the process that writes the recording, chosen with `download_engine` and described on this page. As an *extractor* it is what resolves the stream URL before any downloader runs, chosen with `extractor`; see [Engine and extractor selection](./configuration.md#engine-and-extractor-selection). Either can be set without the other.
+
 > [!TIP]
 > For **Mesio** users, it is **highly recommended** to enable both **FLV Consistency Fix** and **HLS Consistency Fix**. These pipelines correct or isolate timestamp and stream-structure changes so one bad transition is less likely to make the rest of a recording undecodable. Media that the source never delivered cannot be recovered.
 

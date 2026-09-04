@@ -51,7 +51,7 @@ Each pipeline step is executed by a specialized processor:
 | `ass_burnin` | Hard-burn subtitles into video | Processor preset configuration |
 | `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
-| `compression` | Transcodes video | Codec and quality settings |
+| `compression` | Bundles files into a ZIP or tar.gz archive | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
 | `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
 | `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | Copies or moves local files | Destination and operation settings |
@@ -62,6 +62,22 @@ Each pipeline step is executed by a specialized processor:
 In an `execute` command, placeholder values such as `{input}`, `{output}`, `{streamer}` and `{title}` are quoted for the shell automatically, so a path or title containing spaces, quotes, `$` or `;` is passed on as plain text. The quoting matches where the placeholder sits: as a bare argument, inside `'...'` or `"..."`, inside `$(...)` or backticks, inside `$(( ... ))`, and in a here-document body. Write the placeholder as it is — with or without quotes around it — and do not add your own escaping. The rest of the command is untouched, so pipes, `&&` and redirects still work.
 
 Two limits are worth knowing. A step fails with an explanatory error if a value would end a here-document early by containing that here-document's delimiter on a line of its own — pick a delimiter that cannot appear in your paths. And on Windows, `cmd` expands a `%VAR%` reference found inside a value before the command runs, which it offers no way to escape.
+
+### Archives (`compression`)
+
+The `compression` processor bundles its input files into a single archive. It does not re-encode media; the files go in as they are.
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `format` | `zip` or `targz` (gzipped tar) | `zip` |
+| `compression_level` | `0`–`9`. `0` skips compression — stored entries for `zip`, an uncompressed gzip stream for `targz` — which is the sensible choice for already-compressed video. A value above `9` fails the step rather than being clamped. | `6` |
+| `output_path` | Archive to write. When omitted, it is derived from the first input: same directory, same name, with the input's extension replaced by the format's, so `/rec/video.flv` produces `/rec/video.zip`. | derived |
+| `overwrite` | Replace an existing archive at that path. With `false`, the step fails instead. | `true` |
+| `preserve_paths` | Store each input under its full path inside the archive, minus the leading separator: `/srv/recordings/x/a.mp4` becomes the entry `srv/recordings/x/a.mp4`. The paths are not made relative to a common base. With `false`, every entry is a bare filename at the archive root. | `false` |
+
+The processor accepts a batch, so a step that receives several files from its dependencies produces one archive containing all of them. Its output is the archive path only — the inputs are not deleted, and a `delete` step depending on it removes the archive, not the sources.
+
+ZIP entries are always written with ZIP64 sizes, so a single recording larger than 4 GiB archives correctly. The cost is 40 bytes per entry, and the archives still open with ordinary ZIP tools.
 
 ### Baidu Netdisk (`baidupcs`)
 
@@ -92,7 +108,7 @@ For a chain `A -> B -> C`, step `C` receives only the outputs reported by `B`. I
 
 Processor outputs are also significant:
 
-- Transform processors such as `remux` and `compression` output the transformed file.
+- `remux` outputs the converted file; `compression` outputs the archive it wrote, not the files it archived.
 - Derivative processors such as `thumbnail` and `audio_extract` output only the generated derivative, not their source file.
 - `rclone` `copy` and `sync` pass their local input paths through; `rclone` `move` produces no local outputs because it consumes the local files.
 - `baidupcs` passes its local input paths through, unless **Delete local files after upload** is enabled, in which case the consumed files are dropped from its outputs.
@@ -139,8 +155,8 @@ Each step performs a single processing task:
 | `thumbnail` | Extract thumbnail image |
 | `rclone` | Upload to cloud storage |
 | `delete` | Delete files produced by its direct dependencies |
-| `preset` | Run one step from a named job preset |
-| `workflow` | Expand a named pipeline preset as a sub-DAG |
+| `preset` | Run one step from a job preset with exactly this name. A name matching no preset is treated as a processor id instead, so `{"type": "preset", "name": "thumbnail"}` still runs the `thumbnail` processor with its defaults. |
+| `workflow` | Expand the pipeline preset with exactly this name as a sub-DAG. A name matching no pipeline preset fails the pipeline. |
 | `inline` | Run a processor with configuration embedded in the DAG |
 
 ### Dependencies
@@ -231,3 +247,11 @@ Save DAG definitions as reusable presets:
 - **Fail-fast**: When a step fails, pending downstream steps are cancelled
 - **Retry**: Failed steps can be retried manually or automatically
 - **Logs**: Each step maintains execution logs for debugging
+
+### Cancelling a Running Pipeline
+
+`DELETE /api/pipeline/{pipeline_id}` cancels a pipeline. When the id names a DAG execution, the whole DAG is stood down: in-flight step jobs are cancelled and the DAG itself reaches a terminal cancelled state instead of staying in processing, so the session that is waiting on it stops waiting and the pipeline no longer reappears as in-flight after a restart.
+
+A cancelled DAG can be retried afterwards. Retry re-runs the steps that ended failed or cancelled; steps that had already completed are not repeated.
+
+The request is idempotent: an id that matches no pipeline, and a DAG that is already in a terminal state, both answer with `cancelled_count: 0` rather than an error.
