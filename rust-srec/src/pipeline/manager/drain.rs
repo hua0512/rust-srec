@@ -135,13 +135,16 @@ where
     /// fixed order and a later read must never be able to miss what an earlier
     /// one already ruled out:
     ///
-    /// - Creation runs coordinator-first. `run_session_complete_pipeline` creates
-    ///   the `dag_execution` row and only then applies `SessionCompleteDagStarted`,
-    ///   and `run_segment_pipeline` applies `SegmentDagStarted` before creating
-    ///   its row; `create_dag_pipeline_internal` publishes the DAG row and its
-    ///   root `job` rows together. Reading the coordinator first therefore means
-    ///   that whenever it reports nothing owed, the rows it stopped accounting for
-    ///   already exist and the later reads see them.
+    /// - Creation is recorded in the coordinator before any row exists, for every
+    ///   kind of DAG: `try_finalize` sets `pending_session_complete_start` before
+    ///   emitting `CreateSessionCompleteDag`, `try_trigger_paired` fills
+    ///   `pending_paired_starts` before emitting `CreatePairedSegmentDag`, and
+    ///   `on_source_artifact` fills `pending_segment_starts` before emitting
+    ///   `CreateSegmentDag` - all three are part of what
+    ///   `PipelineCoordinator::session_outstanding` reports. Reading the
+    ///   coordinator first therefore means that whenever it reports nothing
+    ///   outstanding, no DAG has been commanded whose rows do not exist yet, and
+    ///   the later reads see every row that does.
     /// - Completion runs row-first: a `job` reaches a terminal status before its
     ///   `dag_execution` row does, and the row before `handle_dag_completion`
     ///   reaches the coordinator. Reading jobs last therefore means a zero count

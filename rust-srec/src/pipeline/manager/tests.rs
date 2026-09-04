@@ -3599,6 +3599,45 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
     let session_id = "owed-session".to_string();
     let streamer_id = "owed-streamer".to_string();
 
+    // Without a captured `session_complete_pipeline`, `try_finalize` settles the
+    // session instead of emitting a command, and nothing is owed.
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            danmu_enabled: false,
+            segment_pipeline: None,
+            paired_segment_pipeline: None,
+            session_complete_pipeline: Some(DagPipelineDefinition::new(
+                "session",
+                vec![DagStep::new(
+                    "session-step",
+                    PipelineStep::inline("remux", serde_json::json!({})),
+                )],
+            )),
+        });
+
+    // One completed segment DAG, so `has_video_output` holds and the finalize
+    // gate can open once the session end is persisted.
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+        });
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SegmentDagCompleted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+            outputs: vec![PathBuf::from("/out0.mp4")],
+        },
+    );
+
     manager
         .pipeline_coordinator
         .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
@@ -3717,6 +3756,201 @@ async fn test_drain_for_session_owes_nothing_before_the_session_ends() {
         },
     );
 
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+}
+
+/// A session that ends before any segment DAG completes can never satisfy the
+/// finalize gate - `artifacts_drained_for_session_complete` requires
+/// `has_video_output`, and nothing is left that could produce one. Reporting it
+/// as owed would make every drain burn its whole bound on a session that
+/// recorded nothing, which `TerminalCause::should_run_session_complete_pipeline`
+/// makes routine: it is true for `Failed` as well as `StreamerOffline`.
+#[tokio::test]
+async fn test_drain_for_session_owes_nothing_when_the_finalize_gate_cannot_open() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
+
+    let session_id = "recorded-nothing".to_string();
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+            session_id: session_id.clone(),
+            streamer_id: "streamer-1".to_string(),
+            should_run_session_complete: true,
+        });
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SessionEndPersisted {
+            session_id: session_id.clone(),
+        },
+    );
+
+    let started = std::time::Instant::now();
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::from_secs(30))
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "a session whose finalize gate cannot open must not consume the bound"
+    );
+}
+
+/// `run_session_complete_pipeline` does not retry a failed
+/// `create_dag_pipeline_internal`, so the failure report has to settle the
+/// session rather than leave a DAG owed that nobody will ever create.
+#[tokio::test]
+async fn test_drain_for_session_stops_owing_after_a_failed_session_complete_creation() {
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
+
+    let session_id = "creation-failed".to_string();
+    let streamer_id = "creation-failed-streamer".to_string();
+    for event in [
+        PipelineCoordinationEvent::SegmentDagStarted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+        },
+        PipelineCoordinationEvent::SegmentDagCompleted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+            outputs: vec![PathBuf::from("/out0.mp4")],
+        },
+        PipelineCoordinationEvent::SessionEnded {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            should_run_session_complete: true,
+        },
+    ] {
+        manager.pipeline_coordinator.apply_event_inline(event);
+    }
+
+    assert!(matches!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(_)
+    ));
+
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
+            session_id: session_id.clone(),
+        },
+    );
+
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Drained
+    );
+}
+
+/// `on_source_artifact` emits `CreateSegmentDag` before anything else records the
+/// DAG, and `run_segment_pipeline` publishes its rows only after applying
+/// `SegmentDagStarted`. `pending_segment_starts` is what covers that window, and
+/// it is why `outstanding_for_session` can read the coordinator before the rows.
+#[tokio::test]
+async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts() {
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let job_repo = Arc::new(TestJobRepository::new());
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
+            .with_dag_repository(dag_repo.clone());
+
+    let session_id = "commanded-segment".to_string();
+    let streamer_id = "commanded-streamer".to_string();
+    let segment_pipeline = DagPipelineDefinition::new(
+        "segment",
+        vec![DagStep::new(
+            "A",
+            PipelineStep::inline("remux", serde_json::json!({})),
+        )],
+    );
+
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            danmu_enabled: false,
+            segment_pipeline: Some(segment_pipeline),
+            paired_segment_pipeline: None,
+            session_complete_pipeline: None,
+        });
+
+    let commands = manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::VideoSegmentCompleted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            path: PathBuf::from("/segment0.flv"),
+        },
+    );
+    assert!(matches!(
+        commands.as_slice(),
+        [PipelineCommand::CreateSegmentDag { .. }]
+    ));
+
+    // The command has been emitted and nothing has been published for it.
+    assert_eq!(
+        manager
+            .drain_for_session(&session_id, Duration::ZERO)
+            .await
+            .unwrap(),
+        SessionDrain::Outstanding(SessionPipelineOutstanding {
+            coordinated: crate::pipeline::SessionCoordinationOutstanding {
+                pending_dags: 1,
+                session_complete_owed: false,
+            },
+            ..Default::default()
+        })
+    );
+
+    // `SegmentDagStarted` moves it from commanded to running, still outstanding.
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+        });
+    assert_eq!(
+        manager
+            .outstanding_for_session(&session_id)
+            .await
+            .unwrap()
+            .coordinated
+            .pending_dags,
+        1
+    );
+
+    manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SegmentDagCompleted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            source: SourceType::Video,
+            outputs: vec![PathBuf::from("/out0.mp4")],
+        },
+    );
     assert_eq!(
         manager
             .drain_for_session(&session_id, Duration::ZERO)

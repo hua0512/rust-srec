@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -61,6 +62,13 @@ pub(crate) enum SchedulerCommand {
 pub struct SchedulerHandle {
     stats_rx: watch::Receiver<super::actor::SupervisorStats>,
     command_tx: mpsc::Sender<SchedulerCommand>,
+    /// True between `Scheduler::run` taking the command receiver and returning.
+    ///
+    /// A `Scheduler` that has been built but not started still owns the live
+    /// receiver, so a send would be buffered by a loop that will never poll it
+    /// and the reply would never arrive. `ServiceContainer` holds exactly such a
+    /// value in its `Mutex<Option<Scheduler>>` until `start_scheduler` runs.
+    loop_running: Arc<AtomicBool>,
 }
 
 impl SchedulerHandle {
@@ -71,11 +79,18 @@ impl SchedulerHandle {
     /// Ask the scheduler's event loop to remove `streamer_id`'s actor and return
     /// the receipt for its task.
     ///
-    /// `None` when the scheduler task is gone, which callers must not read as
-    /// "the actor stopped": nothing observed it. Only building the receipt
-    /// happens in the loop - awaiting it with [`ActorRemoval::wait`] happens on
-    /// the caller's task, so a caller that waits minutes does not stall the loop.
+    /// `None` when the scheduler's event loop is not running - it has not been
+    /// started, or it has already returned - which callers must not read as "the
+    /// actor stopped": nothing observed it. Only building the receipt happens in
+    /// the loop; awaiting it with [`ActorRemoval::wait`] happens on the caller's
+    /// task, so a caller that waits minutes does not stall the loop.
     pub async fn remove_streamer_awaitable(&self, streamer_id: &str) -> Option<ActorRemoval> {
+        // Racing a `run` that is about to start yields a spurious `None`, which
+        // is the same safe answer as any other unobserved removal.
+        if !self.loop_running.load(Ordering::Acquire) {
+            return None;
+        }
+
         let (reply, rx) = tokio::sync::oneshot::channel();
         self.command_tx
             .send(SchedulerCommand::RemoveStreamerAwaitable {
@@ -164,6 +179,8 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     command_tx: mpsc::Sender<SchedulerCommand>,
     /// Receiver for `SchedulerCommand`, taken by `run`.
     command_rx: Option<mpsc::Receiver<SchedulerCommand>>,
+    /// Shared with every `SchedulerHandle`; see `SchedulerHandle::loop_running`.
+    loop_running: Arc<AtomicBool>,
     /// Platform mapping for config routing.
     platform_mapping: PlatformMapping,
     /// Platform actor handles for batch coordination.
@@ -274,6 +291,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             stats_tx,
             command_tx,
             command_rx: Some(command_rx),
+            loop_running: Arc::new(AtomicBool::new(false)),
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -409,6 +427,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             stats_tx,
             command_tx,
             command_rx: Some(command_rx),
+            loop_running: Arc::new(AtomicBool::new(false)),
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -432,6 +451,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         SchedulerHandle {
             stats_rx: self.stats_tx.subscribe(),
             command_tx: self.command_tx.clone(),
+            loop_running: self.loop_running.clone(),
         }
     }
 
@@ -550,6 +570,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         // Taken, not borrowed, so the select arm below does not hold a borrow of
         // `self` that its handler needs mutably.
         let mut command_rx = self.command_rx.take();
+        // Set before the first await so no command can be buffered for a loop
+        // that is not yet polling; cleared below once it stops.
+        self.loop_running.store(true, Ordering::Release);
 
         // Initial actor spawning for all active streamers
         self.spawn_initial_actors().await?;
@@ -663,6 +686,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             }
             self.publish_stats();
         }
+
+        self.loop_running.store(false, Ordering::Release);
 
         // Graceful shutdown
         let report = self.shutdown().await;
@@ -1313,7 +1338,9 @@ mod tests {
         );
         let pool = crate::database::init_pool(&db_url).await.unwrap();
         crate::database::run_migrations(&pool).await.unwrap();
-        std::mem::forget(dir);
+        // The database outlives the guard on purpose; `keep` expresses that
+        // without leaking the guard itself.
+        let _ = dir.keep();
 
         let repo = Arc::new(crate::database::repositories::SqlxStreamerRepository::new(
             pool.clone(),
@@ -1356,6 +1383,23 @@ mod tests {
         )
     }
 
+    /// Retry until the spawned `Scheduler::run` has entered its loop.
+    ///
+    /// `SchedulerHandle::remove_streamer_awaitable` answers `None` until then,
+    /// and a `None` removes nothing, so retrying is free of side effects.
+    async fn removal_once_running(handle: &SchedulerHandle, streamer_id: &str) -> ActorRemoval {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(removal) = handle.remove_streamer_awaitable(streamer_id).await {
+                    return removal;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the scheduler loop should start and answer the command")
+    }
+
     /// `Scheduler::run` owns the supervisor, so `SchedulerHandle` is the only way
     /// an off-loop caller can get a removal receipt at all. The receipt has to
     /// come back answered, and awaiting it must not be what the loop is doing.
@@ -1366,10 +1410,7 @@ mod tests {
         let token = scheduler.cancellation_token.clone();
         let runner = tokio::spawn(async move { scheduler.run().await });
 
-        let removal = handle
-            .remove_streamer_awaitable("test-1")
-            .await
-            .expect("the scheduler loop should answer the command");
+        let removal = removal_once_running(&handle, "test-1").await;
         assert_eq!(removal.actor_id(), "test-1");
         assert!(removal.generation().is_some());
         assert_eq!(
@@ -1392,14 +1433,25 @@ mod tests {
         runner.await.unwrap().unwrap();
     }
 
-    /// A handle whose scheduler task is gone reports `None` rather than an
-    /// outcome, so a caller cannot mistake "nobody looked" for "the actor stopped".
+    /// A handle reports `None` rather than an outcome whenever no event loop
+    /// looked at the request, so a caller cannot mistake "nobody looked" for
+    /// "the actor stopped". A scheduler that was built but never started owns a
+    /// live command receiver nothing polls, so it has to answer `None` too
+    /// rather than leaving the caller waiting for a reply that cannot come.
     #[tokio::test]
-    async fn scheduler_handle_reports_no_answer_once_the_loop_is_gone() {
+    async fn scheduler_handle_reports_no_answer_without_a_running_loop() {
         let scheduler = scheduler_with_streamers(&[]).await;
         let handle = scheduler.handle();
-        drop(scheduler);
 
+        let never_started = tokio::time::timeout(
+            Duration::from_secs(5),
+            handle.remove_streamer_awaitable("test-1"),
+        )
+        .await
+        .expect("a scheduler that was never started must not hang the caller");
+        assert!(never_started.is_none());
+
+        drop(scheduler);
         assert!(handle.remove_streamer_awaitable("test-1").await.is_none());
     }
 
@@ -1451,6 +1503,7 @@ mod tests {
         let handle = SchedulerHandle {
             stats_rx,
             command_tx,
+            loop_running: Arc::new(AtomicBool::new(false)),
         };
         assert_eq!(handle.stats().streamer_count, 1);
 

@@ -14,6 +14,9 @@ pub struct JobFilters {
     /// Filter by any of several job statuses, for queries a single `status`
     /// cannot express. Combined with `status` by `AND`, so setting both narrows
     /// to their intersection.
+    ///
+    /// An empty list means "no status filter", not "no rows", matching how
+    /// `job_types` treats an empty list.
     pub statuses: Option<Vec<JobStatus>>,
     /// Filter by streamer ID.
     pub streamer_id: Option<String>,
