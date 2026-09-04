@@ -22,7 +22,7 @@ The built-in Mesio engine does not need either tool. The standard Docker image c
 
 ## Where are recordings stored?
 
-The standard Docker configuration maps host `./output` to container `/app/output`. Global, platform, template, and streamer settings can override the output path, so the resolved path shown by the application is authoritative. See [Storage and Capacity](../operations/storage.md).
+The standard Docker configuration maps host `./output` to container `/app/output`. The path itself comes from the `output_folder` setting in the database, which global, platform, template, and streamer settings can override; `OUTPUT_DIR` does not set it. The resolved path shown by the application is authoritative. See [Storage and Capacity](../operations/storage.md).
 
 ## I freed disk space, but recording did not resume
 
@@ -33,6 +33,8 @@ Open **System Health** and inspect the output-root component:
 - `permission_denied`: correct ownership and mode on the host path.
 - `read_only`: restore the filesystem to read-write operation.
 - `timed_out`: investigate a stalled network mount or block device.
+
+Only a full disk is detected while a recording is running: a write that fails with no space left reports `storage_full` immediately. The other kinds are found when a recording starts or by the write test that runs at startup, so a root that turns read-only or loses permissions under an active recording shows up as a failed recording first and only appears here on the next attempt.
 
 Do not rename or replace the bind-mounted root while the container is running. Delete files inside the existing directory, use `docker exec`, or stop the service before changing the mount. See [Docker bind-mount troubleshooting](./docker.md#storage-cleanup).
 

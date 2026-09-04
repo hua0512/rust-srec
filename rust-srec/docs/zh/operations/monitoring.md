@@ -22,12 +22,23 @@ curl http://localhost:12555/api/health/ready \
 
 ## 日志
 
+Docker 部署：
+
 ```bash
 docker compose logs --since=30m rust-srec
 docker compose logs --since=30m frontend
 ```
 
-示例 Compose 会轮转容器 JSON 日志，应用也会向 `LOG_DIR` 写入日志。事件历史需要跨主机故障保留时，应集中采集日志；即使应用已隐藏凭据，路径和平台元数据仍可能敏感，因此要限制访问。
+systemd 服务：
+
+```bash
+journalctl -u rust-srec --since "30 min ago"
+journalctl -u rust-srec -f
+```
+
+示例 Compose 会轮转容器 JSON 日志。unit 设置了 `StandardOutput=journal`、`StandardError=journal` 和 `SyslogIdentifier=rust-srec`，因此进程输出进入 journal，并遵循主机 journald 的保留策略。
+
+两种部署下，应用都会另外向 `LOG_DIR` 写入按天轮转的日志文件，unit 将其指向 `/var/log/rust-srec`。事件历史需要跨主机故障保留时，应集中采集日志；即使应用已隐藏凭据，路径和平台元数据仍可能敏感，因此要限制访问。
 
 ## 最小告警集
 

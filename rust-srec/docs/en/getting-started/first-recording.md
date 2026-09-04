@@ -57,7 +57,7 @@ Success means all three are true:
 
 ## 5. Stop or Disable Monitoring
 
-Open the streamer's action menu and select **Disable** when you no longer want automatic checks. Disabling monitoring does not delete existing sessions or files.
+Open the streamer's action menu and select **Disable** when you no longer want automatic checks. Disabling monitoring only stops the checks; the streamer and its configuration stay. Neither disabling nor deleting a streamer removes its recorded sessions or the files on disk — a deleted streamer's sessions are kept, labelled with the name it had. Delete sessions and files separately when you actually want them gone.
 
 ## When Nothing Is Recorded
 

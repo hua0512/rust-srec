@@ -46,6 +46,10 @@ $env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
 curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh RUST_SREC_DIR=/opt/rust-srec VERSION=v0.5.1 bash
 ```
 
+::: warning 与 systemd 服务的路径冲突
+[systemd 服务](./installation.md#systemd-服务-linux)会把后端二进制安装到 `/opt/rust-srec/rust-srec`。两种部署共用一台主机时，请改用其他 `RUST_SREC_DIR`。
+:::
+
 ## 手动安装
 
 1. 创建目录并下载两个文件：

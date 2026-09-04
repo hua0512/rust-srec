@@ -20,11 +20,17 @@ Rust-Srec 会处理访问令牌、平台 Cookie、通知凭据、录制文件和
 ## 密钥与文件
 
 - 限制 `.env`、`DATA_DIR`、`CONFIG_DIR`、`LOG_DIR`、配置导出和备份媒体的访问。
+- systemd 主机上，后端密钥位于 `/etc/rust-srec/rust-srec.env`，权限 `0640`、属主 `root:rust-srec`，其中包含 `JWT_SECRET`、VAPID 密钥和各类工具路径覆盖项。文件中的每一项都会覆盖 unit 自身的 `Environment=` 设置，因此修改它等于修改服务配置，而不只是修改密钥。
+- unit 中的 `UMask=0027` 让录制文件写为 `-rw-r-----`，对 `rust-srec` 用户组保持可读；把某个账号加入该组，就等于授予它读取全部录制文件和状态目录的权限。应有意识地授予该权限，而不是直接调低 `UMask=`。
 - 平台 Cookie 和密码可能出现在配置导出中；通知渠道可能包含 SMTP 密码、机器人令牌、Webhook 密钥和自定义请求头。
 - 百度网盘登录会话保存在 BaiduPCS-Go 的配置目录中（`BAIDUPCS_GO_CONFIG_DIR`，Docker 中为 `/app/config/BaiduPCS-Go`），请像保护 Cookie 一样保护并备份该目录。勾选“记住凭据以便自动重新登录”后，登录凭据还会以明文保存在应用数据库（`tool_credentials` 表）中，与平台 Cookie 相同；退出登录时会删除。登录（包括自动重新登录）期间，凭据会短暂出现在 BaiduPCS-Go 进程的命令行参数中，本机其他进程可能观察到；应将主机 Shell 访问权限视同网盘账号访问权限。
 - 分享日志或截图前，隐藏令牌、私有 URL、用户名、Cookie 和文件系统路径。
 - 容器不要挂载不必要的宿主机目录或设备；只有所选管道需要时才添加 GPU 设备。
 - 把 `execute`、上传、移动或删除源文件等管道步骤视为具有文件系统和网络权限的代码来审查。
+
+仓库提供的 [systemd unit](../getting-started/installation.md#systemd-服务-linux) 已经以非特权方式运行服务，并启用 `ProtectSystem=strict`、`NoNewPrivileges=yes`、空的 `CapabilityBoundingSet=` 和 `SystemCallFilter=@system-service`，因此除状态目录、日志目录和 `ReadWritePaths=` 之外，进程看到的系统都是只读的。请保留这些设置，需要写权限时逐个路径添加。
+
+`PrivateDevices=yes` 会隐藏 `/dev/dri` 和 `/dev/nvidia*`：系统健康页不会出现 GPU 区块，ffmpeg 也会回退到软件编码。启用硬件转码需要在 drop-in 中设置 `PrivateDevices=no`，并为渲染节点添加 `DeviceAllow=`；这属于有意放宽沙箱，应按此对待。
 
 ## 漏洞处理
 

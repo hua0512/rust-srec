@@ -20,11 +20,17 @@ The stream proxy blocks private-network targets by default. Enabling `stream_pro
 ## Secrets and Files
 
 - Restrict `.env`, `DATA_DIR`, `CONFIG_DIR`, `LOG_DIR`, configuration exports, and backup media.
+- On a systemd host the backend's secrets are in `/etc/rust-srec/rust-srec.env`, mode `0640` owned `root:rust-srec`: `JWT_SECRET`, the VAPID keys, and any tool-path override. Every assignment in it overrides the unit's own `Environment=` lines, so treat an edit there as a change to the service's configuration, not just to its secrets.
+- `UMask=0027` in the shipped unit writes recordings `-rw-r-----`. They stay readable to the `rust-srec` group, so adding an account to that group grants it read access to every recording and to the state directory. Grant that deliberately rather than lowering `UMask=`.
 - Platform cookies and passwords can be present in configuration exports. Notification channels can contain SMTP passwords, bot tokens, webhook secrets, and custom headers.
 - The Baidu Netdisk login session lives in BaiduPCS-Go's config directory (`BAIDUPCS_GO_CONFIG_DIR`, `/app/config/BaiduPCS-Go` in Docker) — protect and back it up like a cookie store. With **Remember for automatic re-login** enabled, the login material is additionally stored plaintext in the application database (`tool_credentials`), like platform cookies; logging out deletes it. During a login (including automatic re-login) the credentials briefly appear on the BaiduPCS-Go process command line, which other local processes can observe; treat host shell access as equivalent to account access.
 - Redact tokens, private URLs, usernames, cookies, and filesystem paths before sharing logs or screenshots.
 - Run containers without unnecessary host mounts or device access. Add GPU devices only when the selected pipeline requires them.
 - Review any `execute`, upload, move, or delete-source pipeline step as code with filesystem and network access.
+
+The shipped [systemd unit](../getting-started/installation.md#systemd-service-linux) already runs the service unprivileged under `ProtectSystem=strict`, `NoNewPrivileges=yes`, an empty `CapabilityBoundingSet=`, and `SystemCallFilter=@system-service`, so the process sees the system read-only apart from its state, log, and `ReadWritePaths=` directories. Keep those in place and add write access one path at a time.
+
+`PrivateDevices=yes` hides `/dev/dri` and `/dev/nvidia*`: the System Health page shows no GPU section and ffmpeg falls back to software encoding. Hardware transcoding requires a drop-in setting `PrivateDevices=no` plus a `DeviceAllow=` entry for the render node; treat that as a deliberate relaxation of the sandbox.
 
 ## Vulnerability Handling
 

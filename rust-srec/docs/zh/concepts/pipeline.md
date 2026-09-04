@@ -51,7 +51,7 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 | `ass_burnin` | 将字幕硬烧录进视频 | 处理器预设配置 |
 | `thumbnail` | 从视频中提取画面作为图片 | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate` |
-| `compression` | 视频转码 | 编解码器与质量设置 |
+| `compression` | 将文件打包为 ZIP 或 tar.gz 归档 | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
 | `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `args` |
 | `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
@@ -62,6 +62,22 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 `execute` 命令中的 `{input}`、`{output}`、`{streamer}`、`{title}` 等占位符，其取值会自动加引号后再交给 Shell，因此包含空格、引号、`$` 或 `;` 的路径和标题都会以纯文本形式传入。转义方式会跟随占位符所处的位置：直接作为参数、位于 `'...'` 或 `"..."` 中、位于 `$(...)` 或反引号中、位于 `$(( ... ))` 中，以及位于 here-document 正文中。占位符按原样书写即可（加不加引号都行），不需要自己再做转义。命令的其余部分不受影响，管道符、`&&` 和重定向照常可用。
 
 有两点限制需要注意。如果某个取值中单独一行正好是所在 here-document 的结束标记，会提前结束该 here-document，此时步骤会带着提示信息失败——请选用不会在路径中出现的结束标记。另外在 Windows 上，`cmd` 会在命令执行前展开取值中出现的 `%VAR%`，而它没有提供任何转义方式。
+
+### 归档（`compression`）
+
+`compression` 处理器把输入文件打包成一个归档文件。它不会重新编码媒体，文件按原样放入归档。
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `format` | `zip` 或 `targz`（gzip 压缩的 tar） | `zip` |
+| `compression_level` | `0`–`9`。`0` 表示只打包不压缩，对已经压缩过的视频来说通常是更合适的选择。 | `6` |
+| `output_path` | 要写入的归档路径。省略时使用该步骤自身的输出路径；若也没有，则根据第一个输入文件名加上对应格式的扩展名推导。 | 自动推导 |
+| `overwrite` | 覆盖该路径上已存在的归档。设为 `false` 时步骤会直接失败。 | `true` |
+| `preserve_paths` | 在归档内保留每个输入文件的目录结构。设为 `false` 时，所有条目都以文件名平铺在归档根目录。 | `false` |
+
+该处理器支持批量输入，因此一个从依赖步骤收到多个文件的步骤会生成一个包含全部文件的归档。它的输出只有归档路径——输入文件不会被删除，而依赖它的 `delete` 步骤删除的是归档本身，而不是源文件。
+
+ZIP 条目始终按 ZIP64 尺寸写入，因此单个超过 4 GiB 的录制文件也能正确打包。代价是每个条目多 40 字节，生成的归档仍可用常规 ZIP 工具打开。
 
 ### 百度网盘（`baidupcs`）
 
@@ -92,7 +108,7 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 
 处理器的输出语义同样重要：
 
-- `remux`、`compression` 等转换处理器输出转换后的文件。
+- `remux` 输出转换后的文件；`compression` 输出它写出的归档文件，而不是被打包的那些文件。
 - `thumbnail`、`audio_extract` 等衍生文件处理器只输出新生成的衍生文件，不会透传源文件。
 - `rclone` 的 `copy` 和 `sync` 会透传本地输入路径；`rclone` 的 `move` 会消耗本地文件，因此没有本地输出。
 - `baidupcs` 会透传本地输入路径；若开启了“上传后删除本地文件”，被删除的文件不会出现在输出中。
@@ -139,8 +155,8 @@ flowchart LR
 | `thumbnail` | 提取缩略图 |
 | `rclone` | 上传到云存储 |
 | `delete` | 删除其直接依赖步骤产出的文件 |
-| `preset` | 使用命名的任务预设运行一个步骤 |
-| `workflow` | 将命名的管道预设展开为子 DAG |
+| `preset` | 运行名称与之完全一致的任务预设中的一个步骤。若没有任何预设与之同名，该名称会被当作处理器 ID 处理，因此 `{"type": "preset", "name": "thumbnail"}` 仍会以默认配置运行 `thumbnail` 处理器。 |
+| `workflow` | 将名称与之完全一致的管道预设展开为子 DAG。若没有任何管道预设与之同名，整个管道会失败。 |
 | `inline` | 使用 DAG 中内嵌的配置运行处理器 |
 
 ### 依赖关系
@@ -231,3 +247,11 @@ stateDiagram-v2
 - **快速失败（Fail-fast）**：某个步骤失败时，取消尚未执行的下游步骤。
 - **重试**：可以手动或自动重试失败步骤。
 - **日志**：每个步骤都会保存执行日志，便于排查问题。
+
+### 取消运行中的管道
+
+`DELETE /api/pipeline/{pipeline_id}` 用于取消管道。当该 ID 指向一次 DAG 执行时，整个 DAG 都会被停下：进行中的步骤任务被取消，DAG 本身也会进入已取消的终态，而不是停留在处理中——因此等待它的会话不会一直等下去，管道也不会在重启后又变回进行中。
+
+已取消的 DAG 之后可以重试。重试会重新运行处于失败或已取消状态的步骤，已完成的步骤不会重复执行。
+
+该请求是幂等的：无论 ID 未匹配到任何管道，还是对应的 DAG 已处于终态，都会返回 `cancelled_count: 0` 而不是报错。

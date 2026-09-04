@@ -75,6 +75,8 @@ rust-srec 使用 **4 层配置层级** 实现灵活控制。详见 [配置层级
 | `download_engine` | 录制引擎 (`ffmpeg`, `mesio` 等) | `mesio` |
 | `queue_freshness_threshold` | 当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60 秒` |
 
+由哪个提取器解析流地址是与 `download_engine` 相互独立的设置，此处不提供，需要在平台、模板或主播层级配置。参见[引擎与提取器选择](../concepts/configuration.md#引擎与提取器选择)。
+
 #### 网络与系统 (Network & System)
 | 设置 | 说明 | 默认值 |
 |------|------|--------|
@@ -109,8 +111,16 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 |------|------|--------|
 | `DATA_DIR` | 应用数据目录 | `./data` |
 | `CONFIG_DIR` | 平台配置文件目录 | `./config` |
-| `OUTPUT_DIR` | 录制文件存储目录 | `/app/output` |
-| `LOG_DIR` | 日志文件目录 | `./logs` |
+| `OUTPUT_DIR` | 写入门和磁盘空间健康探测所监视的输出根目录。在 Docker Compose 中，它是绑定挂载到 `/app/output` 的宿主机目录，容器内部则被设置为 `OUTPUT_DIR=/app/output`。它**不决定**录制文件写到哪里——详见下文。 | `./output` |
+| `LOG_DIR` | 日志文件目录。相对路径按进程工作目录解析；随附的系统服务单元会显式设为 `/var/log/rust-srec`，以免日志文件落进状态目录。参见[安装](./installation.md)。 | `./logs` |
+
+::: warning `OUTPUT_DIR` 不是录制目录
+录制文件实际写入的目录，是保存在数据库中、在 **设置** → **全局配置** 里编辑的 `output_folder`，并可按平台、模板和主播分别覆盖。没有任何环境变量可以覆盖它，应以应用显示的解析后路径为准。
+
+在标准 Docker 部署下，两者天然一致：`output_folder` 出厂值就是 `/app/output`，而绑定挂载正好落在这里。二进制或系统服务部署则不同：把 `OUTPUT_DIR` 指向一个可写路径、而 `output_folder` 仍然是 `/app/output` 时，服务照常运行，但每一次录制都会失败。
+
+请先在网页端设置好 `output_folder`，再把 `OUTPUT_DIR`（以及下文的 `RUST_SREC_OUTPUT_ROOTS`）指向同一个目录，这样写入门和剩余空间探测监视的才是真正被写满的那个卷。
+:::
 
 ### 关闭
 | 变量 | 说明 | 默认值 |
@@ -178,9 +188,11 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `RUST_LOG` | 日志级别 (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
-| `DATABASE_URL` | SQL 数据库连接字符串 | `sqlite:///app/data/rust-srec.db` |
+| `DATABASE_URL` | SQL 数据库连接字符串。表中所列是 Docker `.env` 设置的值。未设置时后端回退到 `sqlite:srec.db?mode=rwc`，相对工作目录解析；随附的系统服务单元则设为 `sqlite:///var/lib/rust-srec/rust-srec.db`。运行世代标记由该 URL 推导，与数据库文件放在一起。 | `sqlite:///app/data/rust-srec.db`（Docker） |
 | `RUST_SREC_LOCALE` | 后端通知字符串的语言环境。影响所有通知事件——直播上/下线、录制生命周期、分段、流水线任务、系统告警、凭据事件。支持：`en`、`zh-CN`。 | `en` |
 | `RUST_SREC_OUTPUT_ROOTS` | 以逗号分隔的**绝对**路径列表，作为写入门（write gate）的输出根边界。未设置时，写入门会对每个解析后的输出路径取前**两段有名分量**作为默认（例如 `/rec/huya/X/20260415` → `/rec/huya`，`/home/user/recordings/X/20260415` → `/home/user`）。两段是最小安全默认值——它可以避免意外将 `/home/...` 布局下不同用户合并到同一个门键。如果您是 `/rec` 这种单挂载布局，且希望一个挂载点对应一个门键（从而在故障时只收到一条聚合通知、而不是按平台分别通知），请显式设置：`RUST_SREC_OUTPUT_ROOTS=/rec`。 | - |
+
+只要输出目录的层级超过两段，就值得核对一下这个默认推导。`/var/lib/rust-srec/output` 会被收敛成 `/var/lib`，而经过安全加固的系统服务会把它置为只读——于是即便录制目录本身完全可写，启动探测仍会把 `output-root` 组件报为降级。设置 `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` 可以把输出根钉在真实目录上；显式配置的路径还会作为最长匹配前缀被优先采用，从而覆盖默认推导。请让该值与 `output_folder` 保持一致。
 
 ### 资源限制 (Docker)
 | 变量 | 说明 | 默认值 |

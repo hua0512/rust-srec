@@ -48,7 +48,7 @@ Key fields (grouped by concern):
 - Limits: `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
 - Danmu: `record_danmu`, `danmu_statistics`
 - Network: `proxy_config`, `cookies`
-- Engine: `download_engine`, `download_retry_policy`, `engines_override`
+- Engine: `download_engine`, `extractor`, `download_retry_policy`, `engines_override`
 - Stream selection: `stream_selection`
 - Pipelines: `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline`
 - Platform extractor options: `platform_extras`
@@ -70,10 +70,12 @@ builder actually read.
 - Template-only: `platform_overrides`, `engines_override`
 - Streamer-only: `streamer_specific_config` (JSON object; see below)
 
-::: tip Stream selection naming
-Platform and template store `stream_selection_config` (JSON) which becomes
-`MergedConfig.stream_selection`.
-Streamer overrides also use the key `stream_selection_config`.
+::: tip Column names differ between layers
+Platform and template store `stream_selection_config` (JSON), which becomes
+`MergedConfig.stream_selection`; streamer overrides use the same key `stream_selection_config`.
+The global layer names its engine and extractor defaults `default_download_engine` and
+`default_extractor`, while platform, template and streamer use `download_engine` and
+`extractor`.
 :::
 
 ## Merge rules (important details)
@@ -101,6 +103,9 @@ download progress clears the accumulated failure state.
 `offline_check_delay_ms` controls the interval between offline confirmation checks and the
 related session hysteresis window. It does not control the cooldown duration.
 
+Both values have floors applied at every layer: `offline_check_count` is clamped to at least `1`
+and `offline_check_delay_ms` to at least `1000`.
+
 ::: warning Deprecated compatibility formats
 The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
 `effective_offline_check_delay_ms` are deprecated. Persisted `TransientError` events that omit
@@ -126,6 +131,7 @@ Stream selection is merged with special semantics:
 - `preferred_formats`: overrides only if `Some(non_empty_vec)`
 - `preferred_media_formats`, `preferred_qualities`, `preferred_cdns`: override only if non-empty
 - `min_bitrate`, `max_bitrate`: override only if non-zero
+- `blacklisted_cdns`: unioned instead of replaced, so a higher layer can only add exclusions
 
 This allows a template to specify only the parts it cares about without losing platform defaults.
 
@@ -133,6 +139,11 @@ This allows a template to specify only the parts it cares about without losing p
 
 Pipelines are parsed from JSON into a `DagPipelineDefinition`. When a layer provides a pipeline,
 it replaces the previous pipeline definition as a whole (there is no step-by-step merge).
+
+A template can also carry pipelines inside `platform_overrides[platform_name]`. Those are more
+specific than the template's own top-level `pipeline`, `session_complete_pipeline` and
+`paired_segment_pipeline` fields, so the resolver applies them after the template layer and they
+win over it.
 
 See:
 
@@ -165,8 +176,10 @@ layer cannot "unset" a lower-layer key via `null`; it can only override with a n
 The same merge function is applied each time in layer order.
 
 ::: tip About credentials in platform extras
-Some platform records may contain credential-related keys (e.g. `refresh_token`). These keys are
-stripped out when producing `platform_extras` so extractor config never carries credentials.
+Platform, template and streamer records may all contain credential-related keys. Each layer is
+stripped of `refresh_token`, `access_token`, `session_cookies`, `last_cookie_check_date` and
+`last_cookie_check_result` before it is merged into `platform_extras`, so extractor config never
+carries credentials.
 :::
 
 ## Credentials (`cookies` + `refresh_token`) are resolved separately
@@ -184,6 +197,15 @@ Precedence (highest to lowest):
 3. Platform: `platform_config.cookies`
    (+ optional `platform_config.platform_specific_config.refresh_token`)
 
+Unlike `MergedConfig.cookies`, an empty or whitespace-only `cookies` value does **not** claim the
+credential source: that layer is skipped and the next one down is considered. A `refresh_token`
+is only picked up from the layer whose cookies won, so a `refresh_token` on a streamer with no
+streamer-level cookies is ignored.
+
+A platform can also produce a credential source without cookies: for SOOP, a
+`platform_specific_config` carrying `username` and `password` yields a credential source whose
+cookies are minted on first use.
+
 ## Streamer overrides: `streamer_specific_config`
 
 `streamer_specific_config` is an untyped JSON object. Unknown keys are ignored.
@@ -192,8 +214,8 @@ Supported keys that affect `MergedConfig`:
 
 - `output_folder`, `output_filename_template`, `output_file_format`
 - `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- `record_danmu`, `danmu_statistics`, `cookies`, `download_engine`, `offline_check_count`,
-  `offline_check_delay_ms`
+- `record_danmu`, `danmu_statistics`, `cookies`, `download_engine`, `extractor`,
+  `offline_check_count`, `offline_check_delay_ms`
 - `proxy_config` (JSON object)
 - `stream_selection_config` (JSON object)
 - `download_retry_policy` (JSON object)
@@ -206,10 +228,12 @@ Keys used by the credentials subsystem (not part of `MergedConfig`):
 
 ::: tip Invalid JSON is ignored
 Most JSON fields in platform/template/global records are parsed best-effort. If JSON parsing
-fails, the resolver logs a warning and falls back to defaults or the previous layer.
+fails, the resolver logs a warning and falls back to defaults or the previous layer. The same
+applies inside `streamer_specific_config`: a key whose value has the wrong shape is skipped and
+the lower layer is inherited, rather than failing the whole resolve.
 :::
 
-## Engine selection and `engines_override`
+## Engine and extractor selection
 
 ### `download_engine`
 
@@ -217,6 +241,20 @@ fails, the resolver logs a warning and falls back to defaults or the previous la
 
 - A built-in engine type string (`ffmpeg`, `streamlink`, `mesio`)
 - A custom engine configuration ID stored in the `engine_configuration` table
+
+An ID that matches neither falls back to the manager's default engine.
+
+### `extractor`
+
+`extractor` selects which extractor resolves the stream URL. It is independent of
+`download_engine`, which only decides how the resolved URL is pulled. Valid values:
+
+- `auto` (the default): dispatch on the URL regex registry
+- `streamlink`: resolve through Streamlink
+
+A layer that stores `NULL` or an empty string expresses no preference and inherits from the layer
+below. An unrecognized name is logged and ignored the same way, so a typo degrades to inheritance
+instead of failing the resolve.
 
 ### `engines_override` (template-only)
 
@@ -228,8 +266,15 @@ When a download starts, the Download Manager checks whether there is an override
 selected engine ID. If so, it:
 
 1. Loads the base engine config (default config for built-in types, DB config for custom IDs)
-2. Applies the override using JSON Merge Patch semantics (`json_patch::merge`)
-3. Creates a dedicated engine instance for that override
+2. Applies the override with JSON Merge Patch semantics: nested objects are merged key by key,
+   and a `null` in the override removes that key
+3. Creates a dedicated engine instance for that override, keyed by a hash of the override so its
+   circuit-breaker state stays separate from the un-overridden engine
+
+::: tip `null` means something different here
+`engines_override` removes a key when the override sets it to `null`, whereas `platform_extras`
+ignores `null` in the overlay.
+:::
 
 ## Hot reload, cache, and update events
 
@@ -249,6 +294,11 @@ Typical invalidation patterns:
 - `TemplateUpdated`: invalidate streamers using that template
 - `StreamerMetadataUpdated`: invalidate that streamer
 - `EngineUpdated`: invalidate all streamers (engine usage is not tracked)
+
+::: tip Prefer templates
+Put shared settings in a template rather than repeating them per streamer. Changing one template
+then re-resolves every streamer assigned to it, instead of requiring an edit per streamer.
+:::
 
 For the runtime behavior and how these updates route through the system, see:
 
