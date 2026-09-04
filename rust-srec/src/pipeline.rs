@@ -21,8 +21,8 @@ mod worker_pool;
 
 pub use crate::database::models::JobStatus;
 pub use coordination::{
-    PipelineCommand, PipelineCoordinationEvent, PipelineCoordinator, SegmentOutput, SessionOutputs,
-    SourceType,
+    PipelineCommand, PipelineCoordinationEvent, PipelineCoordinator, SegmentOutput,
+    SessionCoordinationOutstanding, SessionOutputs, SourceType,
 };
 pub use dag_scheduler::{DagCreationResult, DagScheduler};
 pub use job_queue::{
@@ -32,6 +32,7 @@ pub use job_queue::{
 pub(crate) use manager::PipelineRuntimeDependencies;
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
+    SessionDrain, SessionPipelineOutstanding,
 };
 pub use processors::{
     AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, BaiduPcsConfig, BaiduPcsPolicy,

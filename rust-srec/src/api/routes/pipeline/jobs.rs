@@ -74,6 +74,7 @@ pub async fn list_jobs(
     // Convert API filter params to database filter types
     let db_filters = JobFilters {
         status: filters.status.map(api_status_to_job_status),
+        statuses: None,
         streamer_id: filters.streamer_id,
         session_id: filters.session_id,
         pipeline_id: filters.pipeline_id,
@@ -128,6 +129,7 @@ pub async fn list_jobs_page(
 
     let db_filters = JobFilters {
         status: filters.status.map(api_status_to_job_status),
+        statuses: None,
         streamer_id: filters.streamer_id,
         session_id: filters.session_id,
         pipeline_id: filters.pipeline_id,
