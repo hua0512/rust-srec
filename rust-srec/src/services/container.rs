@@ -1003,6 +1003,14 @@ impl ServiceContainer {
         &self.notification_service
     }
 
+    /// The scheduler's control surface.
+    ///
+    /// `start_scheduler` moves the `Scheduler` itself into a task, so this is the
+    /// only way to reach it afterwards.
+    pub fn scheduler_handle(&self) -> &SchedulerHandle {
+        &self.scheduler_handle
+    }
+
     /// Return the configuration service used by the runtime.
     pub fn config_service(
         &self,

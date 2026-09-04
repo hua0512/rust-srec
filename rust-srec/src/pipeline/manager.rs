@@ -48,10 +48,13 @@ use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::utils::filename::sanitize_filename;
 
 mod dag;
+mod drain;
 mod events;
 mod jobs;
 mod recovery;
 mod runtime;
+
+pub use drain::{SessionDrain, SessionPipelineOutstanding};
 
 type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
 

@@ -19,6 +19,12 @@ fn job_filter_where_clause(filters: &JobFilters) -> String {
     if filters.status.is_some() {
         conditions.push("status = ?".to_string());
     }
+    if let Some(statuses) = &filters.statuses
+        && !statuses.is_empty()
+    {
+        let placeholders = statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        conditions.push(format!("status IN ({})", placeholders));
+    }
     if filters.streamer_id.is_some() {
         conditions.push("streamer_id = ?".to_string());
     }
@@ -64,6 +70,11 @@ macro_rules! bind_job_filters {
         let mut query = $query;
         if let Some(status) = &$filters.status {
             query = query.bind(status.as_str());
+        }
+        if let Some(statuses) = &$filters.statuses {
+            for status in statuses {
+                query = query.bind(status.as_str());
+            }
         }
         if let Some(streamer_id) = &$filters.streamer_id {
             query = query.bind(streamer_id);
@@ -190,6 +201,8 @@ pub trait JobRepository: Send + Sync {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<Vec<JobDbModel>>;
+    /// Count jobs matching `filters`, without fetching any rows.
+    async fn count_jobs(&self, filters: &JobFilters) -> Result<u64>;
 
     // Statistics
     /// Get job counts by status.
@@ -896,6 +909,18 @@ impl JobRepository for SqlxJobRepository {
         let jobs = data_query.fetch_all(&self.pool).await?;
 
         Ok((jobs, total_count))
+    }
+
+    async fn count_jobs(&self, filters: &JobFilters) -> Result<u64> {
+        // Shares the clause/bind construction with list_jobs_filtered's count query.
+        let count_sql = format!(
+            "SELECT COUNT(*) as count FROM job {}",
+            job_filter_where_clause(filters)
+        );
+
+        let count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
+        let count_query = bind_job_filters!(count_query, filters);
+        Ok(count_query.fetch_one(&self.pool).await? as u64)
     }
 
     async fn list_jobs_page_filtered(

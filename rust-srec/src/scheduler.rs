@@ -30,5 +30,4 @@ pub use actor::{
 };
 
 // Scheduler service
-pub(crate) use service::SchedulerHandle;
-pub use service::{Scheduler, SchedulerConfig};
+pub use service::{Scheduler, SchedulerConfig, SchedulerHandle};

@@ -266,6 +266,48 @@ pub enum PipelineCommand {
     },
 }
 
+/// Pipeline work `PipelineCoordinator` is still tracking for one session.
+///
+/// This is reducer state, not database rows, so it covers the windows a query
+/// over `dag_execution` cannot see: a DAG whose row is already terminal but
+/// whose `SegmentDagCompleted` has not been applied yet, and the whole span in
+/// which a session-complete run is decided on and emitted but no row for it
+/// exists.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SessionCoordinationOutstanding {
+    /// Segment, danmu and paired DAGs the reducer has counted as started and not
+    /// yet seen complete, plus paired segments whose creation command has been
+    /// emitted but whose `PairedDagStarted` has not been applied.
+    pub pending_dags: u32,
+    /// `SessionEnded` arrived with `should_run_session_complete`, a
+    /// `CreateSessionCompleteDag` command can still be emitted for the session,
+    /// and none has been settled yet - so a session-complete DAG is owed and
+    /// `try_finalize` may emit its creation command at any point.
+    ///
+    /// Deliberately wider than `SessionPipelineState::pending_session_complete_start`,
+    /// which only covers the span after `is_ready` holds.
+    /// `PipelineManager::handle_session_transition` applies `ConfigureSession`,
+    /// `SessionEnded` and `SessionEndPersisted` as three separate reducer calls
+    /// with a `get_config_for_streamer` database read in front of them, and
+    /// `is_ready` requires the last of the three, so a narrower flag would read
+    /// as idle for the whole gap between them.
+    ///
+    /// It is also narrower than "the session ended": see
+    /// `SessionPipelineState::session_complete_possible`, which drops the flag
+    /// for sessions whose finalize gate can no longer open, and
+    /// `session_complete_settled`, which drops it once no further command can
+    /// come. Both matter because the only other bound is
+    /// `PipelineCoordinatorState::cleanup_stale`, two days out.
+    pub session_complete_owed: bool,
+}
+
+impl SessionCoordinationOutstanding {
+    /// Whether the reducer is holding nothing further for the session.
+    pub fn is_idle(&self) -> bool {
+        self.pending_dags == 0 && !self.session_complete_owed
+    }
+}
+
 #[derive(Debug)]
 enum CoordinatorRequest {
     Apply {
@@ -280,6 +322,10 @@ enum CoordinatorRequest {
     },
     ActivePairCount {
         reply: oneshot::Sender<usize>,
+    },
+    SessionOutstanding {
+        session_id: String,
+        reply: oneshot::Sender<Option<SessionCoordinationOutstanding>>,
     },
 }
 
@@ -350,6 +396,10 @@ impl PipelineCoordinator {
             CoordinatorRequest::ActivePairCount { reply } => {
                 let count = Self::lock_state(inner).active_pair_count();
                 let _ = reply.send(count);
+            }
+            CoordinatorRequest::SessionOutstanding { session_id, reply } => {
+                let outstanding = Self::lock_state(inner).session_outstanding(&session_id);
+                let _ = reply.send(outstanding);
             }
         }
     }
@@ -441,6 +491,47 @@ impl PipelineCoordinator {
 
     pub fn active_pair_count_inline(&self) -> usize {
         Self::lock_state(&self.inner).active_pair_count()
+    }
+
+    /// What the reducer still holds for `session_id`, or `None` when it tracks
+    /// no such session - either it never saw one or `cleanup_stale` dropped it.
+    ///
+    /// `PipelineManager::drain_for_session` pairs this with its `job` and
+    /// `dag_execution` queries; neither source alone sees all in-flight work.
+    pub async fn session_outstanding(
+        &self,
+        session_id: &str,
+    ) -> Option<SessionCoordinationOutstanding> {
+        let tx = { self.tx.lock().await.clone() };
+        let Some(tx) = tx else {
+            return self.session_outstanding_inline(session_id);
+        };
+
+        let (reply, rx) = oneshot::channel();
+        if tx
+            .send(CoordinatorRequest::SessionOutstanding {
+                session_id: session_id.to_string(),
+                reply,
+            })
+            .await
+            .is_err()
+        {
+            // The actor stopped between the `tx` clone and the send. Read the
+            // state directly rather than reporting the session as untracked -
+            // `None` is indistinguishable from "no such session", which callers
+            // treat as idle. `cleanup_stale` falls back the same way.
+            warn!("Pipeline coordinator stopped; reading session state inline");
+            return self.session_outstanding_inline(session_id);
+        }
+        rx.await
+            .unwrap_or_else(|_| self.session_outstanding_inline(session_id))
+    }
+
+    pub fn session_outstanding_inline(
+        &self,
+        session_id: &str,
+    ) -> Option<SessionCoordinationOutstanding> {
+        Self::lock_state(&self.inner).session_outstanding(session_id)
     }
 }
 
@@ -573,6 +664,7 @@ impl PipelineCoordinatorState {
                 let session = self.session_mut(&session_id, &streamer_id);
                 session.pending_session_complete_start = false;
                 session.session_complete_triggered = true;
+                session.session_complete_settled = true;
                 Vec::new()
             }
             PipelineCoordinationEvent::SessionCompleteDagCreationFailed { session_id } => {
@@ -580,6 +672,11 @@ impl PipelineCoordinatorState {
                     return Vec::new();
                 };
                 session.pending_session_complete_start = false;
+                // `run_session_complete_pipeline` does not retry a failed
+                // `create_dag_pipeline_internal`, and `is_ready` stays false
+                // because the gate that produced this command has not changed,
+                // so no further command is coming for this session.
+                session.session_complete_settled = true;
                 Vec::new()
             }
             PipelineCoordinationEvent::SegmentDagStarted {
@@ -683,6 +780,12 @@ impl PipelineCoordinatorState {
             })
     }
 
+    fn session_outstanding(&self, session_id: &str) -> Option<SessionCoordinationOutstanding> {
+        self.sessions
+            .get(session_id)
+            .map(SessionPipelineState::outstanding)
+    }
+
     fn active_session_count(&self) -> usize {
         self.sessions.len()
     }
@@ -735,6 +838,15 @@ pub struct SessionPipelineState {
     session_end_observed: bool,
     session_end_persisted: bool,
     session_complete_triggered: bool,
+    /// Set once no further `CreateSessionCompleteDag` command can come from this
+    /// session: its DAG started, `try_finalize` found no pipeline definition to
+    /// run, or `run_session_complete_pipeline` failed to create the DAG and
+    /// reported `SessionCompleteDagCreationFailed`.
+    ///
+    /// Separate from `session_complete_triggered` so that recording the last of
+    /// those three does not also change what `is_ready` allows. Read only by
+    /// `SessionCoordinationOutstanding::session_complete_owed`.
+    session_complete_settled: bool,
     pending_session_complete_start: bool,
     /// When `PipelineCoordinator` first observed this session (via any reducer
     /// event). Distinct from `live_sessions.created_at`, which is the DB row
@@ -762,6 +874,23 @@ pub struct SessionPipelineState {
     /// DAGs. The gate in `artifacts_drained_for_session_complete` rejects
     /// finalization while this set is non-empty.
     pending_paired_starts: HashSet<u32>,
+    /// Segments for which `on_source_artifact` / `recover_source_artifact` emitted
+    /// a `CreateSegmentDag` command but `on_segment_dag_started` has not been
+    /// applied. `PipelineManager::run_segment_pipeline` applies
+    /// `SegmentDagStarted` before `create_dag_pipeline_internal` publishes any
+    /// row, so this is the only record of a segment DAG in that window.
+    ///
+    /// Unlike `pending_paired_starts` this does not gate `try_finalize`; it
+    /// exists so `SessionCoordinationOutstanding::pending_dags` stays a
+    /// time-superset of the `dag_execution` rows, which is what lets
+    /// `PipelineManager::outstanding_for_session` read the coordinator first.
+    ///
+    /// An entry is only ever cleared by the command it was inserted for reaching
+    /// `PipelineManager::execute_pipeline_commands`, so every emitter has to hand
+    /// its commands on: `handle_download_event` and `recover_sessions` both do.
+    /// A command emitted and then dropped leaves the session reported as busy for
+    /// the length of a caller's `drain_for_session` bound.
+    pending_segment_starts: HashSet<(SourceType, u32)>,
 }
 
 impl SessionPipelineState {
@@ -777,6 +906,7 @@ impl SessionPipelineState {
             session_end_observed: false,
             session_end_persisted: false,
             session_complete_triggered: false,
+            session_complete_settled: false,
             pending_session_complete_start: false,
             created_at: now,
             last_activity: now,
@@ -791,6 +921,7 @@ impl SessionPipelineState {
             started_paired_dags: HashSet::new(),
             triggered_paired_segments: HashSet::new(),
             pending_paired_starts: HashSet::new(),
+            pending_segment_starts: HashSet::new(),
         }
     }
 
@@ -859,6 +990,7 @@ impl SessionPipelineState {
                 }
             };
             if should_start_dag && let Some(pipeline) = self.segment_pipeline.clone() {
+                self.pending_segment_starts.insert((source, segment_index));
                 commands.push(PipelineCommand::CreateSegmentDag {
                     session_id: self.session_id.clone(),
                     streamer_id: self.streamer_id.clone(),
@@ -910,6 +1042,7 @@ impl SessionPipelineState {
                 }
             };
             if should_start_dag && let Some(pipeline) = self.segment_pipeline.clone() {
+                self.pending_segment_starts.insert((source, segment_index));
                 return vec![PipelineCommand::CreateSegmentDag {
                     session_id: self.session_id.clone(),
                     streamer_id: self.streamer_id.clone(),
@@ -941,6 +1074,10 @@ impl SessionPipelineState {
             self.danmu_observed = true;
         }
 
+        // The DAG's outcome is known, so nothing is waiting on a start event for
+        // it any more.
+        self.pending_segment_starts.remove(&(source, segment_index));
+
         let outputs = dedup_paths_preserve_order(outputs);
         let artifact = self.segment_mut(segment_index).artifact_mut(source);
         artifact.dag_started = true;
@@ -963,6 +1100,8 @@ impl SessionPipelineState {
         if source == SourceType::Danmu {
             self.danmu_observed = true;
         }
+
+        self.pending_segment_starts.remove(&(source, segment_index));
 
         let artifact = self.segment_mut(segment_index).artifact_mut(source);
         artifact.dag_started = true;
@@ -987,6 +1126,10 @@ impl SessionPipelineState {
 
     fn on_segment_dag_started(&mut self, source: SourceType, segment_index: u32) {
         self.last_activity = Instant::now();
+        // Removing an absent key is a no-op, so a recovery-driven
+        // `SegmentDagStarted` with no `CreateSegmentDag` behind it in this
+        // process does not desync the set.
+        self.pending_segment_starts.remove(&(source, segment_index));
         if !self.started_segment_dags.insert((source, segment_index)) {
             trace!(
                 session_id = %self.session_id,
@@ -1183,6 +1326,7 @@ impl SessionPipelineState {
                 "Session became ready but no session_complete_pipeline definition was captured"
             );
             self.session_complete_triggered = true;
+            self.session_complete_settled = true;
             return Vec::new();
         };
 
@@ -1248,6 +1392,51 @@ impl SessionPipelineState {
             unmet.push("has_video_output");
         }
         unmet
+    }
+
+    /// The DAG work this session is still waiting on, in the same terms
+    /// `artifacts_drained_for_session_complete` and `is_ready` gate
+    /// finalization on.
+    fn outstanding(&self) -> SessionCoordinationOutstanding {
+        let pending_dags = self.pending_dag_count();
+        SessionCoordinationOutstanding {
+            pending_dags,
+            // `session_end_observed` is set only when `SessionEnded` carried
+            // `should_run_session_complete`.
+            session_complete_owed: self.session_end_observed
+                && !self.session_complete_settled
+                && self.session_complete_possible(pending_dags),
+        }
+    }
+
+    /// Segment, danmu and paired DAGs this session has started or commanded and
+    /// not yet seen finish.
+    fn pending_dag_count(&self) -> u32 {
+        self.pending_video_dags
+            + self.pending_danmu_dags
+            + self.pending_paired_dags
+            + self.pending_paired_starts.len() as u32
+            + self.pending_segment_starts.len() as u32
+    }
+
+    /// Whether `try_finalize` can still emit a `CreateSessionCompleteDag`.
+    ///
+    /// `is_ready` runs through `artifacts_drained_for_session_complete`, which
+    /// requires `has_video_output`; only `on_segment_dag_completed` and the
+    /// recovery paths can make that true, and they need a DAG to report. So once
+    /// the session has ended with no video output recorded and no DAG in flight
+    /// or commanded, the gate can never open and nothing further is owed. This is
+    /// reached by any session that ended before a segment DAG completed -
+    /// `TerminalCause::should_run_session_complete_pipeline` is true for `Failed`,
+    /// `StreamerOffline`, `UserDisabled` and `OutOfSchedule` alike.
+    ///
+    /// A gate left unsatisfiable for one of the other reasons
+    /// `unmet_completion_conditions` reports - danmu that is expected and
+    /// observed but never completes, say - still reads as owed. Such a session
+    /// keeps at least one `pending_*` count or an unmet danmu flag that a caller
+    /// can see in the drain report.
+    fn session_complete_possible(&self, pending_dags: u32) -> bool {
+        self.pending_session_complete_start || self.has_video_output() || pending_dags > 0
     }
 
     fn artifacts_drained_for_session_complete(&self) -> bool {

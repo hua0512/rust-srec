@@ -40,7 +40,9 @@ pub use monitor_adapter::{
     NoOpStatusChecker, StatusChecker,
 };
 pub use platform_actor::PlatformActor;
-pub use registry::{ActorRegistry, ActorTaskResult, RegistryError};
+pub use registry::{
+    ActorRegistry, ActorRemoval, ActorRemovalOutcome, ActorTaskResult, RegistryError,
+};
 pub use restart_tracker::{RestartTracker, RestartTrackerConfig, RestartTrackerStats};
 pub use streamer_actor::{
     ActorError, ActorOutcome, ActorResult, PersistedActorState, PersistedConfig, StreamerActor,
