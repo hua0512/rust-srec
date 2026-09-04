@@ -874,6 +874,7 @@ mod tests {
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
+            deleted_at: None,
             updated_at: Utc::now(),
         }
     }

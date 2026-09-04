@@ -40,6 +40,8 @@ mod api;
 mod builder;
 mod events;
 mod health;
+#[cfg(test)]
+mod streamer_retirement_tests;
 
 /// Build the recovery hook closure for the output-root write gate.
 ///
@@ -237,6 +239,13 @@ const BACKGROUND_TASK_MIN_GRACE_PERIOD: Duration = Duration::from_secs(2);
 /// aborted task proves its future was dropped, which is when an engine child
 /// spawned with `kill_on_drop` is killed.
 const ABORT_REAP_WINDOW: Duration = Duration::from_secs(5);
+
+/// Gap between two passes of `ServiceContainer::spawn_streamer_reaper`.
+///
+/// A pass costs one `PipelineManager::outstanding_for_session` observation per
+/// marked row and nothing at all when none is marked, so the cadence is set by
+/// how long a finished deletion may keep its row rather than by cost.
+const STREAMER_REAP_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Absolute deadlines consumed by the service shutdown module.
 ///
@@ -621,6 +630,11 @@ impl ServiceContainer {
 
         let scheduler_start_ms = scheduler_start.elapsed().as_millis();
 
+        // After the scheduler, so `RuntimeCoordinator::retire_streamer` can get
+        // an answer from `SchedulerHandle::remove_streamer_awaitable` on its
+        // first pass instead of treating every actor as unobserved.
+        self.spawn_streamer_reaper();
+
         info!(
             elapsed_ms = scheduler_start_ms,
             "Startup: scheduler task started"
@@ -641,6 +655,36 @@ impl ServiceContainer {
             "Startup: initialize summary"
         );
         Ok(())
+    }
+
+    /// Start the task that finishes deletions the runtime has not let go of yet.
+    ///
+    /// Every row with `streamers.deleted_at` set is a deletion whose physical
+    /// `DELETE` is still owed: either an interactive delete whose
+    /// `RuntimeCoordinator::retire_streamer` bound expired while the session's
+    /// post-processing was running, or a row a crash left between the mark and
+    /// the reap. The first pass runs immediately, which is the startup recovery;
+    /// after that one pass per `STREAMER_REAP_INTERVAL` observes each owner once
+    /// and reaps whatever has gone quiet.
+    fn spawn_streamer_reaper(&self) {
+        let runtime_coordinator = self.runtime_coordinator.clone();
+        let cancellation_token = self.cancellation_token.child_token();
+
+        self.task_supervisor.spawn("streamer reaper", async move {
+            loop {
+                let reaped = runtime_coordinator
+                    .reap_marked_streamers(crate::services::runtime_coordinator::OBSERVE_RETIREMENT)
+                    .await;
+                if reaped > 0 {
+                    info!(reaped, "Removed streamers whose retirement completed");
+                }
+
+                tokio::select! {
+                    () = cancellation_token.cancelled() => break,
+                    () = tokio::time::sleep(STREAMER_REAP_INTERVAL) => {}
+                }
+            }
+        });
     }
 
     /// Start the scheduler service in a background task.

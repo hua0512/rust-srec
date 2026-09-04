@@ -321,10 +321,9 @@ mod tests {
 
         repo.insert(&row(outcome::LIVE, 100)).await.unwrap();
 
-        SqlxStreamerRepository::new(pool.clone(), pool.clone())
-            .delete_streamer("s1")
-            .await
-            .unwrap();
+        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+        streamer_repo.mark_streamer_deleted("s1").await.unwrap();
+        streamer_repo.delete_marked_streamer("s1").await.unwrap();
 
         let rows = repo.list_recent("s1", 50).await.unwrap();
         assert!(

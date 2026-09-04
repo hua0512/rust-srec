@@ -39,6 +39,7 @@ pub struct StreamerRouteState {
     >,
     streamer_check_history_repository:
         std::sync::Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
+    runtime_coordinator: std::sync::Arc<crate::services::runtime_coordinator::RuntimeCoordinator>,
 }
 
 impl FromRef<AppState> for StreamerRouteState {
@@ -47,8 +48,56 @@ impl FromRef<AppState> for StreamerRouteState {
             config_service: state.config_service.clone(),
             streamer_manager: state.streamer_manager.clone(),
             streamer_check_history_repository: state.streamer_check_history_repository.clone(),
+            runtime_coordinator: state.services.runtime_coordinator.clone(),
         }
     }
+}
+
+impl StreamerRouteState {
+    /// Assemble the route state from a `ServiceContainer`'s services directly,
+    /// for tests that drive these handlers without standing up an `AppState`
+    /// (which needs a `LoggingConfig`, and with it a global tracing subscriber).
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        config_service: std::sync::Arc<StreamerConfigService>,
+        streamer_manager: std::sync::Arc<
+            crate::streamer::StreamerManager<
+                crate::database::repositories::streamer::SqlxStreamerRepository,
+            >,
+        >,
+        streamer_check_history_repository: std::sync::Arc<
+            dyn crate::database::repositories::StreamerCheckHistoryRepository,
+        >,
+        runtime_coordinator: std::sync::Arc<
+            crate::services::runtime_coordinator::RuntimeCoordinator,
+        >,
+    ) -> Self {
+        Self {
+            config_service,
+            streamer_manager,
+            streamer_check_history_repository,
+            runtime_coordinator,
+        }
+    }
+}
+
+/// Metadata for a streamer the caller may still act on.
+///
+/// A row carrying `deleted_at` is gone as far as the API is concerned:
+/// `RuntimeCoordinator::retire_streamer` is standing its runtime down and the
+/// reaper removes the row once that finishes. `StreamerManager::get_streamer`
+/// keeps returning it because the runtime decides on
+/// `StreamerMetadata::is_active`, so every route has to reject it here.
+fn live_streamer(
+    streamer_manager: &crate::streamer::StreamerManager<
+        crate::database::repositories::streamer::SqlxStreamerRepository,
+    >,
+    id: &str,
+) -> ApiResult<StreamerMetadata> {
+    streamer_manager
+        .get_streamer(id)
+        .filter(|metadata| !metadata.is_deleted())
+        .ok_or_else(|| ApiError::not_found(format!("Streamer with id '{}' not found", id)))
 }
 
 /// Create the streamers router.
@@ -236,10 +285,15 @@ pub async fn create_streamer(
 
     // Check URL uniqueness (case-insensitive) before resolving, so a duplicate never pays for
     // the streamlink probe.
-    if streamer_manager.url_exists(&request.url) {
-        return Err(ApiError::conflict(
-            "A streamer with this URL already exists",
-        ));
+    // A streamer marked deleted still owns its URL under the
+    // `streamers.url COLLATE NOCASE UNIQUE` constraint until the reaper removes
+    // the row, so say which of the two conflicts this is.
+    if let Some(existing) = streamer_manager.get_streamer_by_url(&request.url) {
+        return Err(if existing.is_deleted() {
+            ApiError::conflict("A streamer with this URL is still being removed; try again shortly")
+        } else {
+            ApiError::conflict("A streamer with this URL already exists")
+        });
     }
 
     // The platform configuration is derived from the URL; `request.platform_config_id` is ignored.
@@ -283,6 +337,7 @@ pub async fn create_streamer(
         offline_check_delay_ms: 20_000,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+        deleted_at: None,
     };
 
     // Create streamer using manager
@@ -505,6 +560,7 @@ pub async fn batch_streamers(
                 BatchStreamerAction::SetEnabled { enabled } => {
                     let current = streamer_manager
                         .get_streamer(&id)
+                        .filter(|metadata| !metadata.is_deleted())
                         .ok_or_else(|| crate::Error::not_found("Streamer", &id))?;
                     if let Some(new_state) = state_for_enabled(Some(current.state), *enabled)
                         && new_state != current.state
@@ -552,10 +608,21 @@ pub async fn batch_streamers(
                         .await?;
                 }
                 BatchStreamerAction::Delete => {
-                    if streamer_manager.get_streamer(&id).is_none() {
+                    // `OBSERVE_RETIREMENT` rather than the single-delete bounds:
+                    // these run in sequence for up to `MAX_BATCH_SIZE` ids, so
+                    // waiting per streamer would add up inside one request.
+                    // Everything still in flight keeps its `deleted_at` marker
+                    // and `ServiceContainer::spawn_streamer_reaper` removes it.
+                    if !state
+                        .runtime_coordinator
+                        .delete_streamer(
+                            &id,
+                            crate::services::runtime_coordinator::OBSERVE_RETIREMENT,
+                        )
+                        .await?
+                    {
                         return Err(crate::Error::not_found("Streamer", &id));
                     }
-                    streamer_manager.delete_streamer(&id).await?;
                 }
             }
             Ok(())
@@ -614,9 +681,7 @@ pub async fn get_streamer(
     let streamer_manager = &state.streamer_manager;
 
     // Get streamer by ID
-    let metadata = streamer_manager
-        .get_streamer(&id)
-        .ok_or_else(|| ApiError::not_found(format!("Streamer with id '{}' not found", id)))?;
+    let metadata = live_streamer(streamer_manager, &id)?;
 
     Ok(Json(metadata_to_response(&metadata)))
 }
@@ -651,8 +716,8 @@ pub async fn update_streamer(
         ));
     }
 
-    let current = streamer_manager.get_streamer(&id);
-    let current_state = current.as_ref().map(|m| m.state);
+    let current = live_streamer(streamer_manager, &id)?;
+    let current_state = Some(current.state);
 
     tracing::debug!(
         streamer_id = %id,
@@ -667,9 +732,7 @@ pub async fn update_streamer(
     let platform_config_id = match request.url.as_deref() {
         Some(new_url) => {
             let url = StreamerUrl::new(new_url).map_err(|e| ApiError::validation(e.to_string()))?;
-            let url_changed = current
-                .as_ref()
-                .is_none_or(|m| !m.url.eq_ignore_ascii_case(new_url));
+            let url_changed = !current.url.eq_ignore_ascii_case(new_url);
 
             // The streamlink probe spawns a subprocess, so only pay for it when the URL actually
             // changed; an unchanged URL that no regex claims keeps the id it already has.
@@ -740,27 +803,35 @@ pub async fn delete_streamer(
     State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    // Get streamer manager from state
-    let streamer_manager = &state.streamer_manager;
-
-    // Check if streamer exists first
-    if streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!(
-            "Streamer with id '{}' not found",
-            id
-        )));
-    }
-
-    // Delete the streamer
-    streamer_manager
-        .delete_streamer(&id)
-        .await
-        .map_err(ApiError::from)?;
+    live_streamer(&state.streamer_manager, &id)?;
+    // `false` means another caller already owns this streamer's retirement,
+    // which for the client is the same outcome as this call performing it.
+    let _marked = delete_streamer_through_runtime(&state, &id).await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
         "message": format!("Streamer '{}' deleted successfully", id)
     })))
+}
+
+/// The one deletion path behind `DELETE /api/streamers/{id}`,
+/// `BatchStreamerAction::Delete` and the MCP `streamer_delete` tool.
+///
+/// `RuntimeCoordinator::delete_streamer` commits the `streamers.deleted_at`
+/// marker before it waits on anything, so the streamer is gone from every list
+/// the moment this returns whether or not its last recording's post-processing
+/// has finished; `ServiceContainer::spawn_streamer_reaper` removes the row when
+/// it has. `Ok(false)` means no row was marked, which after
+/// [`live_streamer`] can only be a concurrent delete of the same streamer.
+async fn delete_streamer_through_runtime(state: &StreamerRouteState, id: &str) -> ApiResult<bool> {
+    state
+        .runtime_coordinator
+        .delete_streamer(
+            id,
+            crate::services::runtime_coordinator::INTERACTIVE_RETIREMENT,
+        )
+        .await
+        .map_err(ApiError::from)
 }
 
 #[utoipa::path(
@@ -781,13 +852,7 @@ pub async fn clear_error(
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
 
-    // Check if streamer exists first
-    if streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!(
-            "Streamer with id '{}' not found",
-            id
-        )));
-    }
+    live_streamer(streamer_manager, &id)?;
 
     // Clear error state (resets consecutive_error_count and disabled_until)
     streamer_manager
@@ -823,13 +888,7 @@ pub async fn update_priority(
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
 
-    // Check if streamer exists first
-    if streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!(
-            "Streamer with id '{}' not found",
-            id
-        )));
-    }
+    live_streamer(streamer_manager, &id)?;
 
     // Update priority
     streamer_manager
@@ -964,6 +1023,7 @@ mod tests {
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
             created_at: chrono::Utc::now(),
+            deleted_at: None,
             updated_at: chrono::Utc::now(),
         };
 
@@ -999,6 +1059,7 @@ mod tests {
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
             created_at: chrono::Utc::now(),
+            deleted_at: None,
             updated_at: chrono::Utc::now(),
         };
 
@@ -1165,9 +1226,7 @@ pub async fn get_check_history(
 ) -> ApiResult<Json<StreamerCheckHistoryResponse>> {
     // Confirm the streamer exists so a 404 is unambiguous (vs. "no rows yet"
     // for a brand-new streamer, which we want to render as an empty strip).
-    if state.streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!("Streamer {} not found", id)));
-    }
+    live_streamer(&state.streamer_manager, &id)?;
 
     let limit = params
         .limit

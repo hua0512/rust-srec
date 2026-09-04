@@ -12,7 +12,10 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
 use crate::credentials::{CredentialScope, CredentialSource};
-use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
+use crate::streamer::{
+    StreamerMetadata,
+    manager::{ReloadPublish, StreamerUpdateParams},
+};
 
 /// The `StreamerManager` instantiation carried by [`CredentialRouteState`].
 type CredentialStreamerManager = crate::streamer::StreamerManager<
@@ -423,7 +426,11 @@ pub async fn refresh_streamer_credentials(
                     // ones. Only that column changed, so `reload_from_repo` publishes no event.
                     // A failure here leaves the row correct and the cache stale, which the next
                     // reload repairs, so it is logged rather than failing a refresh that landed.
-                    if let Err(error) = state.streamer_manager.reload_from_repo(streamer_id).await {
+                    if let Err(error) = state
+                        .streamer_manager
+                        .reload_from_repo(streamer_id, ReloadPublish::StateOnly)
+                        .await
+                    {
                         tracing::warn!(
                             streamer_id = %streamer_id,
                             %error,

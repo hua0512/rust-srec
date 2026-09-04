@@ -490,6 +490,18 @@ impl SessionLifecycle {
         );
     }
 
+    /// Id of the streamer's current in-memory session, whatever state it is in.
+    ///
+    /// For callers holding a `SessionCancelTokens` handle: a
+    /// `run_live_download_pipeline` task that has already called
+    /// `SessionCancelTokens::register` but has not reached `acquire_slot` owns a
+    /// token and appears in neither `DownloadManager::snapshot_pending` nor
+    /// `get_active_downloads`, so its session id is only reachable here.
+    pub(crate) fn current_session_id_for_streamer(&self, streamer_id: &str) -> Option<String> {
+        self.current_session_for_streamer(streamer_id)
+            .map(|(session_id, _)| session_id)
+    }
+
     fn current_session_for_streamer(&self, streamer_id: &str) -> Option<(String, SessionState)> {
         let session_id = self
             .streamer_current_sessions

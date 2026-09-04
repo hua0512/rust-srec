@@ -39,6 +39,14 @@
 
   Removing a streamer also erased every session it had ever recorded, along with the file list, segments and chat statistics attached to them — the recordings were still on disk, but nothing in the app could find them. Past sessions now stay in the list after the streamer is gone, under the name it was recorded with, and any session that was still recording is closed out rather than left showing as live.
 
+- **Deleting a streamer stops its recording cleanly first**
+
+  Deleting a streamer used to remove it immediately while its recording was still running, so the last part could end with an error, the session's timeline was left incomplete and post-processing could fail on a streamer that no longer existed. Deleting now takes the streamer off the list right away and finishes its recording properly first: the recording is closed out and saved, its post-processing is allowed to finish, and only then is the streamer removed for good. If post-processing is still running, the streamer disappears from the list immediately and is cleaned up in the background as soon as it finishes — including after a restart. This applies to every way of deleting a streamer: the delete button, bulk delete, the API, and importing a configuration that no longer contains it.
+
+- **Importing a configuration no longer disturbs your running recordings**
+
+  Importing a backup used to briefly flip every live streamer to offline, which produced a duplicate "went live" notification and made the streamer bounce between states on the dashboard. Streamers that were live stay live, and their recordings keep running untouched. New streamers in the imported file also start being monitored right away instead of waiting for the next restart, and an import that is rejected no longer stops anything at all.
+
 ## API and integrations
 
 - **API keys for programmatic access**

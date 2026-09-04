@@ -16,6 +16,7 @@ use crate::credentials::{
     CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
 };
 use crate::domain::ProxyConfig;
+use crate::streamer::manager::ReloadPublish;
 use crate::utils::json::{self, JsonContext};
 
 #[derive(Clone)]
@@ -170,8 +171,10 @@ async fn resolve_extractor_config_for_url(
                                     // next streamer edit — still holds the previous credentials.
                                     // The refreshed row is already durable, so a failed reload is
                                     // logged rather than failing the parse.
-                                    if let Err(error) =
-                                        state.streamer_manager.reload_from_repo(&streamer.id).await
+                                    if let Err(error) = state
+                                        .streamer_manager
+                                        .reload_from_repo(&streamer.id, ReloadPublish::StateOnly)
+                                        .await
                                     {
                                         warn!(
                                             %error,

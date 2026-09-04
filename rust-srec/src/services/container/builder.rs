@@ -470,6 +470,7 @@ impl ServiceContainer {
                     pipeline_manager: pipeline_manager.clone(),
                     session_lifecycle: session_lifecycle.clone(),
                     task_supervisor: task_supervisor.clone(),
+                    scheduler_handle: scheduler_handle.clone(),
                 },
             ),
         );

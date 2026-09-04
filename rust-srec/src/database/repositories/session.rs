@@ -1607,7 +1607,16 @@ mod tests {
             .unwrap();
         }
 
-        streamer_repo.delete_streamer("streamer-1").await.unwrap();
+        // The physical delete is what the reaper runs once a retirement
+        // acknowledges, and it only touches rows carrying the marker.
+        streamer_repo
+            .mark_streamer_deleted("streamer-1")
+            .await
+            .unwrap();
+        streamer_repo
+            .delete_marked_streamer("streamer-1")
+            .await
+            .unwrap();
 
         for session_id in ["session-ended", "session-active"] {
             let session = repo.get_session(session_id).await.unwrap();
@@ -1680,7 +1689,16 @@ mod tests {
         .await
         .unwrap();
 
-        streamer_repo.delete_streamer("streamer-1").await.unwrap();
+        // The physical delete is what the reaper runs once a retirement
+        // acknowledges, and it only touches rows carrying the marker.
+        streamer_repo
+            .mark_streamer_deleted("streamer-1")
+            .await
+            .unwrap();
+        streamer_repo
+            .delete_marked_streamer("streamer-1")
+            .await
+            .unwrap();
 
         let (found, total) = repo
             .list_sessions_filtered(
@@ -1734,7 +1752,16 @@ mod tests {
             .unwrap();
         assert_eq!(pending.len(), 1, "owned session is a recovery candidate");
 
-        streamer_repo.delete_streamer("streamer-1").await.unwrap();
+        // The physical delete is what the reaper runs once a retirement
+        // acknowledges, and it only touches rows carrying the marker.
+        streamer_repo
+            .mark_streamer_deleted("streamer-1")
+            .await
+            .unwrap();
+        streamer_repo
+            .delete_marked_streamer("streamer-1")
+            .await
+            .unwrap();
 
         let pending = repo
             .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))

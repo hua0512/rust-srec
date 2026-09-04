@@ -1231,7 +1231,11 @@ mod filter_repository_tests {
         // Delete streamer (should cascade delete filters)
         let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
         streamer_repo
-            .delete_streamer(&streamer_id)
+            .mark_streamer_deleted(&streamer_id)
+            .await
+            .expect("Failed to mark streamer deleted");
+        streamer_repo
+            .delete_marked_streamer(&streamer_id)
             .await
             .expect("Failed to delete streamer");
 
@@ -1458,6 +1462,7 @@ mod end_to_end_tests {
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
+            deleted_at: None,
             updated_at: Utc::now(),
         }
     }
