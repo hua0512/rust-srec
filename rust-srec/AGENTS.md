@@ -1,16 +1,18 @@
 # Backend AGENTS.md
 
+These backend-specific rules apply to `src/`, `migrations/`, `proto/`, and backend build/deployment files in this package. The frontend, docs, and desktop wrapper use their own nested rules plus the repository-wide guidance; backend service conventions do not apply to their unrelated work.
+
 ## OVERVIEW
 Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 
 ## STRUCTURE
-- `api/`: Axum server, JWT auth, and route handlers.
-- `scheduler/`: Streamer monitoring and job management.
-- `pipeline/`: Post-processing DAG logic (segment, session completion).
-- `downloader/`: Manager for `ffmpeg`, `streamlink`, and `mesio` engines.
-- `database/`: SQLx repositories, models, and SQLite migrations.
-- `notification/`: Event-driven system (Discord, Email, Webhooks, Web Push).
-- `credentials/`: Platform-specific credential/cookie management.
+- `src/api/`: Axum server, JWT auth, and route handlers.
+- `src/scheduler/`: Streamer monitoring and job management.
+- `src/pipeline/`: Post-processing DAG logic (segment, session completion).
+- `src/downloader/`: Manager for `ffmpeg`, `streamlink`, and `mesio` engines.
+- `src/database/`: SQLx repositories and models; migrations are in `migrations/`.
+- `src/notification/`: Event-driven system (Discord, Email, Webhooks, Web Push).
+- `src/credentials/`: Platform-specific credential/cookie management.
 
 ## WHERE TO LOOK
 - `src/pipeline/manager.rs`: Pipeline execution engine (hotspot).
@@ -24,16 +26,14 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 ## CONVENTIONS
 - **State**: Use `Arc<ServiceContainer>` for shared ownership across services.
 - **API State**: `AppState` (`src/api/server.rs`) is the shared context for Axum routes.
-- **Logging**: Use structured `tracing` macros; avoid `println!`.
 - **Errors**: Propagate to `crate::error::Error`; handle API-specific errors in `src/api/error.rs`.
 - **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
-- **Table rebuilds**: `DROP TABLE` takes the table's triggers with it, so a create-copy-drop-rename must reinstate every trigger the old table carried, not just its indexes. Dropping also cascades into FK children unless `PRAGMA foreign_keys=OFF` is in effect, and it is not inside the transaction sqlx wraps each migration in, so the file must start with `-- no-transaction` and run its work in its own `BEGIN`…`COMMIT`. A `-- no-transaction` file can be replayed — sqlx records the version in `_sqlx_migrations` only after the script returns — so keep every statement re-runnable (`DROP TABLE IF EXISTS <t>_new`, `CREATE INDEX IF NOT EXISTS`). Verify the outcome with `PRAGMA foreign_key_check` against a copy of a real database before shipping; sqlx discards result sets, so the pragma inside the migration can never fail it.
+- **Table rebuilds**: Preserve data, triggers, indexes, and foreign-key integrity, and account for interrupted migration replay. Read the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) when changing a migration that rebuilds a table; it specifies fixture checks and when a real-data rehearsal is needed.
 
 ## ANTI-PATTERNS
-- **Panics**: No `unwrap()`/`expect()` in services; return `Result`.
-- **Isolation**: Do not instantiate services manually outside of `ServiceContainer`.
+- **Isolation**: Wire production services through `ServiceContainer`; focused tests may construct the service under test directly.
 - **Blocking**: Avoid long-running synchronous work in async handlers; use `spawn_blocking`.
-- **Locks**: Never hold `MutexGuard` across an `.await` point.
+- **Locks**: Never hold a synchronous mutex guard across `.await`. Keep async-lock critical sections short and await while holding one only when the operation requires that serialization.
 
 ## COMMANDS
 - **Run (Dev)**: `cargo run -p rust-srec --bin rust-srec`

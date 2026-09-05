@@ -1,161 +1,92 @@
-This file is for agentic coding tools operating in this repository.
+# Repository guidance
 
-Repo overview
+## Scope and reading
 
-- Rust workspace (edition 2024) with multiple crates and binaries.
-- Backend app: `rust-srec/` (package `rust-srec`) - REST API + scheduler + pipeline + SQLite.
-- CLIs: `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`).
-- Libraries: `crates/*` (protocol/container + platform extractors + download engine).
-- Frontend UI: `rust-srec/frontend/` (Vite/TanStack + Tailwind, pnpm).
-- Docs site: `rust-srec/docs/` (VitePress, pnpm).
+This file and the `AGENTS.md` files governing the area being changed define project conventions, subject to higher-priority instructions and the user's task scope. Read the applicable rules when entering an area; reuse context already read unless it has changed. Tool-specific entrypoints should refer here for shared rules.
 
-Build / lint / test
+Use the map below to locate the task. Read supporting docs, examples, and skills only when they answer a concrete question or supply a procedure needed for the work. A link is a lookup aid, not a requirement to read every referenced file before each edit.
 
-Rust (run from repo root; match CI by adding `--locked`)
+| Area | Location / task-specific guidance |
+| --- | --- |
+| Backend: REST API, scheduler, pipeline, SQLite | `rust-srec/`, package `rust-srec`; [backend rules](rust-srec/AGENTS.md) |
+| CLIs | `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`) |
+| Protocols, containers, platform extractors, download engine | `crates/*`; use the affected crate's `Cargo.toml` for its package name |
+| Web UI and desktop frontend | `rust-srec/frontend/`; [frontend rules](rust-srec/frontend/AGENTS.md) |
+| Desktop wrapper | `rust-srec/src-tauri/`; [desktop rules](rust-srec/src-tauri/AGENTS.md) |
+| Documentation site | `rust-srec/docs/`; [docs rules](rust-srec/docs/AGENTS.md) |
+| Application release planning, preparation, or publishing | Read the [release skill](.claude/skills/release-rust-srec/SKILL.md) only for a `rust-srec` release/version task; it is the canonical procedure even if the tool does not discover `.claude/skills` automatically |
 
-- Build default applications (debug, excludes desktop): `cargo build`
-- Build default applications (release, excludes desktop): `cargo build --release`
-- Build the full workspace: `cargo build --workspace`
-- Build specific package: `cargo build -p rust-srec` (or `-p strev`, `-p mesio`)
-- Format: `cargo fmt --all`
-- Lint (CI): `cargo clippy --locked --all-targets --all-features -- -D warnings`
-  **Windows note**: do not use `--all-features` on Windows; OpenSSL is not available. Use default features instead.
-- Test (nextest, preferred; used in CI): `cargo nextest run --locked --workspace`
-- Test (Cargo fallback if nextest not installed): `cargo test --locked --workspace`
-- Doctests (nextest does not run doctests; CI runs on ubuntu): `cargo test --locked --workspace --doc`
+## Toolchain and command reference
 
-Run / debug (Rust)
+- Rust edition and minimum supported version: [Cargo.toml](Cargo.toml). Development toolchain and components: [rust-toolchain.toml](rust-toolchain.toml).
+- Node: [.nvmrc](.nvmrc). pnpm and scripts: [frontend package.json](rust-srec/frontend/package.json) and [docs package.json](rust-srec/docs/package.json). Install dependencies when needed with `pnpm install --frozen-lockfile` in the relevant directory.
+- Rust builds involving protobuf generation need `protoc` on PATH; the CI version is in [.github/actions/setup-protoc/action.yml](.github/actions/setup-protoc/action.yml).
+- Exact CI targets, platform prerequisites, and feature combinations live in [.github/workflows/pr.yml](.github/workflows/pr.yml). Release build combinations live in the corresponding `.github/workflows/release-*.yml` files. Consult these when reproducing CI or changing build/release behavior.
 
-- Run backend (dev): `cargo run -p rust-srec --bin rust-srec`
-- Run backend (release): `cargo run -p rust-srec --release --bin rust-srec`
-- Run CLI (strev): `cargo run -p strev -- --help`
-- Run CLI (mesio): `cargo run -p mesio -- --help`
+Run Rust commands from the repository root. Replace `<package>` and `<test_name>` with the affected package and test filter:
 
-Common env vars (backend)
+```sh
+cargo build --locked                         # default applications, excludes desktop
+cargo build --locked -p <package>
+cargo fmt --all -- --check
+cargo clippy --locked -p <package> --all-targets -- -D warnings
+cargo nextest run --locked -p <package>
+cargo nextest run --locked -p <package> -E 'test(<test_name>)'
+cargo test --locked -p <package> <test_name>  # fallback if nextest is unavailable
+cargo test --locked -p <package> --doc       # when doctests are affected
+```
 
-- `DATABASE_URL` default: `sqlite:srec.db?mode=rwc` (see `rust-srec/src/main.rs`)
-- `LOG_DIR` default: `logs` (see `rust-srec/src/main.rs`)
-- `API_BIND_ADDRESS`, `API_PORT` (see `rust-srec/src/api/server.rs`)
+Use `cargo fmt --all` to apply formatting, and review the diff for unrelated changes. Add `--release` when release-mode behavior or a release artifact is relevant. Use default features on Windows; do not use `--all-features` there with the current OpenSSL prerequisites. On Linux, reproduce the specific CI feature selection when it is relevant rather than assuming `--all-features` is equivalent.
 
-Release build notes (CI parity)
+For broader integration checks, use `--workspace --exclude rust-srec-desktop` in place of `-p <package>`. Desktop validation is separate because it needs frontend and platform dependencies. Full workspace builds including desktop use `cargo build --locked --workspace` when those prerequisites and that scope apply.
 
-- CI builds cross-target releases with `--locked` and uses `static-ssl` for musl builds.
-  Example (static Linux): `cargo build -p rust-srec --locked --release --target x86_64-unknown-linux-musl --features static-ssl --bins`
-  Example (static Linux strev): `cargo build -p strev --locked --release --target x86_64-unknown-linux-musl --features static-ssl`
+Run/debug examples:
 
-Test runner (cargo-nextest, preferred; used in CI)
+```sh
+cargo run --locked -p rust-srec --bin rust-srec
+cargo run --locked -p strev -- --help
+cargo run --locked -p mesio -- --help
+```
 
-- Install: `cargo install cargo-nextest --locked`
-- Run full suite: `cargo nextest run --locked --workspace`
-- Run a single package: `cargo nextest run --locked -p rust-srec`
-- Run a single test binary: `cargo nextest run --locked -p rust-srec --test <test_target_name>`
-- Filter by test name substring (nextest expression):
-  `cargo nextest run --locked -p rust-srec -E 'test(name ~ "some_substring")'`
+Frontend and docs commands are in their respective `AGENTS.md` files. [CONTRIBUTING.md](CONTRIBUTING.md) contains contributor setup and broader local command examples.
 
-Run a single test (Cargo fallback)
+## Validation by task
 
-- Unit test by substring: `cargo test -p rust-srec -- <substring>`
-- Integration test target: `cargo test -p rust-srec --test <test_target_name>`
-- Specific test in a module: `cargo test -p rust-srec some::module::tests::test_name`
+Choose checks from the changed behavior and its consumers. These are local validation requirements, not a requirement to reproduce every CI job for every edit.
 
-Protobuf toolchain
+| Change | Local validation |
+| --- | --- |
+| Agent rules, prose, spelling | Review the diff; verify affected paths, commands, links, and factual claims. No Rust/frontend build or new tests solely for prose changes. |
+| Docs navigation, configuration, or complex Markdown | Build the docs site and check affected links; preview pages when layout or rendering needs inspection. |
+| Local Rust behavior | Formatting, affected-package Clippy, and focused tests covering the behavior. Add or adjust regression tests where they protect an observable contract. |
+| Frontend behavior | Formatting check, lint, and relevant tests. Add type checking for type/interface changes, web build for routing/bundling/SSR changes, and desktop build for affected CSR integration. |
+| Shared interfaces, dependencies, features, cross-component changes | Expand checks to affected consumers and build/platform combinations; use the wider workspace suite when the impact crosses package boundaries. |
+| SQLite migrations | Migration upgrade/integrity checks; for table rebuilds use the conditional procedure in [CONTRIBUTING.md](CONTRIBUTING.md#sqlite-table-rebuilds). |
+| Release preparation | Version/lockfile consistency, release-note provenance and locale parity, links, and docs build as described in the release skill. |
 
-- CI installs `protoc` (see `.github/actions/setup-protoc/action.yml`, version default 33.2).
-- If you touch `prost-build` outputs / proto generation, ensure `protoc` is on PATH locally.
+Prefer deterministic tests without real network calls unless testing an integration explicitly. Put unit tests beside the module and integration tests under the crate's `tests/`. Use Tokio's test harness for async tests; bound waits that could otherwise hang. Nextest does not run doctests, so run Cargo doctests when documentation examples or the APIs they exercise change.
 
-Frontend (run from `rust-srec/frontend/`)
+After relevant checks pass, repeat or broaden them only for new changes, failures, or unresolved risks. If a tool or platform is unavailable, complete independent work and applicable alternative checks, then report the exact unverified portion and its impact. Do not describe blocked validation as passed or a release as ready when required evidence is missing. CI remains the integration gate; see its workflow for the full matrix.
 
-- Install: `pnpm install` (CI uses `pnpm install --frozen-lockfile`)
-- Dev server: `pnpm dev` (uses port 15275)
-- Build: `pnpm build`
-- Lint: `pnpm run lint` (oxlint)
-- Format: `pnpm run format` (oxfmt)
-- Test: `pnpm test` (vitest)
+## Rust engineering conventions
 
-Frontend toolchain
+- Use rustfmt defaults and idiomatic names. Group explicit imports as `std`, external crates, then `crate`/`super`.
+- Prefer extending an existing module unless the change introduces a separate logical component. Use `src/foo.rs` / `src/foo/`; do not introduce `mod.rs` files.
+- Comments explain invariants, caller contracts, ordering constraints, and non-obvious reasons. Avoid restating code or narrating a chat/PR history. A relevant upstream issue may support a workaround, but explain the constraint locally so the comment stands on its own.
+- Collapse nested `if` statements with let chains when equivalent and clearer, following Clippy. Keep stylistic cleanup within the task's changed area.
+- Prefer explicit types over string-based APIs; validate strings at boundaries. Prefer `Arc<T>` for shared ownership and release locks before `.await` where possible; never hold a synchronous mutex guard across an await.
+- Do not introduce `unwrap()` / `expect()` in production paths. Propagate errors with context and use targeted `thiserror` variants before flattening errors to strings. `anyhow::Result<()>` is acceptable at binary entrypoints.
+- Do not silently discard an unhandled `Result`. Use `?` for propagation or an explicit recovery path with appropriate logging/metrics. `let _ = call()?;` propagates errors and discards the success value; use `call()?;` when no binding is needed. Propagation alone does not require a duplicate log.
+- Backend errors use `rust-srec/src/error.rs`; path-related IO should use `Error::io_path(op, path, source)`. Library errors belong to the library's own error type.
+- Use structured `tracing` fields. Add `#[instrument]` where context is useful, with `skip(...)` for secrets or unsuitable fields. Log-and-continue only when proceeding is safe; redact tokens, cookies, stream keys, and private data.
+- Preserve runtime and architecture boundaries: backend orchestration in `rust-srec/src/main.rs`, services in `rust-srec/src/services/`, Tokio tasks, and the existing allocator setup. Avoid blocking async handlers and unnecessary allocations in hot paths; prefer borrowing or `Bytes` for byte-oriented data.
 
-- pnpm is pinned via `packageManager` in `rust-srec/frontend/package.json` (`pnpm@10.28.1`).
-- CI uses Node 22 for frontend jobs (see `.github/workflows/pr.yml`).
+## Completion, commits, and cleanup
 
-Docs site (run from `rust-srec/docs/`)
+A task is complete when the requested scope is implemented, necessary related docs/generated outputs are updated, relevant validation is accounted for, and the final diff has been reviewed. Report what changed, the checks and their results, and any remaining limitation. A review-only task ends with findings and recommendations, following any requested approval boundary.
 
-- Install: `pnpm install` (CI uses `pnpm install --frozen-lockfile`)
-- Dev: `pnpm run docs:dev`
-- Build: `pnpm run docs:build`
-- Preview: `pnpm run docs:preview`
+Continue authorized work through implementation and validation. Existing user instructions or an agreed issue establish scope; do not reopen that decision for routine implementation choices. If essential information is missing, ask once with the concrete dependency and continue work that does not depend on the answer. Explain an actual blocker rather than stopping at a plan or treating optional checks as mandatory approval gates.
 
-Docs toolchain
+Commit, open a PR, push, or tag according to the task's existing authorization; a request for a PR includes the needed task branch, commit, and branch push. Release tags/publication follow the release skill's separate scope. Review the staged diff and include only the task's files/hunks. An unrequested commit or a completely clean worktree is not a completion requirement.
 
-- pnpm is pinned via `packageManager` in `rust-srec/docs/package.json` (`pnpm@10.28.1`).
-- CI uses Node 24 for docs deploy (see `.github/workflows/deploy-docs.yml`).
-
-Code style / engineering conventions
-
-Authoritative local rules
-
-- This `AGENTS.md` and any more-specific nested `AGENTS.md` files are the enforced policy.
-- Copilot instructions: none found (`.github/copilot-instructions.md` is absent).
-
-Rust style
-
-- Formatting: use rustfmt defaults (`cargo fmt --all`); no `rustfmt.toml` present.
-- Imports: group as `std` -> external crates -> `crate`/`super` modules; keep imports explicit.
-  Example: `rust-srec/src/credentials/service.rs`.
-- Modules/files: do not introduce `mod.rs` modules; prefer `src/foo.rs` / `src/foo/` layout.
-- Comments/doc: avoid “organizational” comments; only write comments explaining non-obvious "why".
-- Collapsible ifs: always collapse nested `if` statements using `if let ... && condition` syntax.
-  Example: prefer `if let Some(x) = opt && !x.is_empty() { ... }` over nested `if let` + `if`.
-
-Naming / API shape
-
-- Use idiomatic Rust naming: `PascalCase` for types/traits, `snake_case` for fns/modules/vars.
-- Prefer small, explicit types over `Stringly-typed` APIs; when you must use strings, validate early.
-- Prefer `Arc<T>` for shared state across async tasks; avoid holding locks across `.await`.
-
-Error handling
-
-- Avoid panics: do not add `unwrap()` / `expect()` in production code.
-- Never silently discard errors:
-  avoid `let _ = fallible_call()?;` or `let _ = fallible_call();`.
-  If ignoring errors is required, do it explicitly and with visibility (log/metrics).
-- App-wide errors (`rust-srec`): prefer `rust-srec/src/error.rs` (thiserror enum + `Result<T>` alias).
-- Prefer adding context instead of flattening errors into `String` too early; use targeted variants.
-- For path-related IO, prefer `Error::io_path(op, path, source)` (see `rust-srec/src/error.rs`).
-- Library crate errors: prefer `thiserror` enums in `crates/*/src/error.rs` (e.g. `crates/tars-codec/src/error.rs`).
-- Binary entrypoints: `anyhow::Result<()>` is acceptable at the outermost boundary for user-facing errors.
-  Example: `rust-srec/src/main.rs`, `rust-srec/src/bin/rust-srec-vapid.rs`.
-
-Logging / observability
-
-- Use `tracing` for logging; prefer structured fields (e.g. `warn!(error = %e, ...)`).
-  Examples: `rust-srec/src/notification/web_push.rs`, `rust-srec/src/database/maintenance.rs`.
-- For async functions with important context, use `#[instrument]` and `skip(...)` to avoid logging secrets.
-  Examples: `rust-srec/src/credentials/service.rs`, `crates/mesio/src/hls/fetcher.rs`.
-- Keep a clear fatal vs non-fatal boundary: log-and-continue only when the system can safely proceed.
-  Example: startup/shutdown notifications in `rust-srec/src/main.rs`.
-
-Testing conventions
-
-- Prefer deterministic tests; avoid real network calls unless explicitly testing integrations.
-- Put unit tests next to the module; integration tests live under each crate's `tests/` (Cargo standard).
-- When adding async tests, use Tokio's test harness (`#[tokio::test]`) and keep timeouts explicit.
-
-Performance / runtime conventions
-
-- Backend uses Tokio (`#[tokio::main]`) and a global mimalloc allocator.
-  Example: `rust-srec/src/main.rs`.
-- Avoid unnecessary allocations in hot paths; prefer borrowing / `Bytes` for byte-oriented code.
-  See zero-copy patterns in `crates/tars-codec/`.
-
-When adding new code
-
-- Prefer extending existing modules over creating lots of tiny files.
-- Follow existing abstraction boundaries: app orchestration in `rust-srec/src/main.rs` and services in `rust-srec/src/services/`.
-- Add/adjust tests close to the crate you changed; use nextest to verify quickly.
-
-CI parity checklist (before PR)
-
-- `cargo fmt --all`
-- `cargo clippy --locked --all-targets --all-features -- -D warnings`
-- `cargo nextest run --locked --workspace` (or `cargo test --locked --workspace` if nextest not available)
-- If frontend changed: from `rust-srec/frontend/` run `pnpm run lint` and `pnpm run build`
+Remove only clearly disposable temporary artifacts created by this task. Preserve pre-existing changes, untracked work, local data, and useful caches. Avoid repository-wide formatting, unrelated fixes, destructive cleanup, or deleting files merely to make `git status` clean.
