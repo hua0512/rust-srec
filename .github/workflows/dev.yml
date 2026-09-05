@@ -35,7 +35,9 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: dev-clippy
+          # Main populates the same dependency cache used by PR checks.
+          shared-key: pr-clippy
+          save-if: false
       - name: Clippy check
         run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
       - name: sccache stats
@@ -75,7 +77,8 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: dev-test
+          shared-key: pr-test
+          save-if: false
       - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
@@ -137,8 +140,10 @@ jobs:
           file: rust-srec/Dockerfile
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-backend
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-backend
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-dev-${{ env.PLATFORM_PAIR }}
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-release-${{ env.PLATFORM_PAIR }}
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-dev-${{ env.PLATFORM_PAIR }},mode=max
       
       - name: Export digest backend
         run: |
@@ -154,8 +159,10 @@ jobs:
           file: rust-srec/frontend/Dockerfile
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-frontend
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-frontend
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-dev-${{ env.PLATFORM_PAIR }}
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-release-${{ env.PLATFORM_PAIR }}
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-dev-${{ env.PLATFORM_PAIR }},mode=max
 
       - name: Export digest frontend
         run: |

@@ -1,0 +1,8 @@
+name: "Setup Tauri CLI"
+description: "Install the prebuilt Tauri CLI after pnpm/action-setup and actions/setup-node"
+runs:
+  using: "composite"
+  steps:
+    - name: Install Tauri CLI
+      shell: bash
+      run: pnpm add --global @tauri-apps/cli@2.11.4
