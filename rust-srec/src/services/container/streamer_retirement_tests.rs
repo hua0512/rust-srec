@@ -212,6 +212,7 @@ async fn deleting_a_recording_streamer_ends_its_session_through_the_lifecycle() 
         .await
         .expect("an Ended transition should be broadcast")
         .expect("the transition channel should stay open");
+    let pipeline_transition = transition.clone();
     match transition {
         SessionTransition::Ended {
             session_id,
@@ -234,12 +235,7 @@ async fn deleting_a_recording_streamer_ends_its_session_through_the_lifecycle() 
         "the lifecycle path must write the session_ended audit row"
     );
 
-    // Ending a recording defers the physical delete: the transition just
-    // published has not reached `PipelineCoordinator`, so nothing can yet tell
-    // whether a session-complete DAG is owed. The reap is proved by the tests
-    // below, which start from a session `SessionLifecycle` no longer holds;
-    // reaching that state here would mean waiting out
-    // `session::lifecycle::ENDED_RETENTION_DEFAULT`.
+    // The end consumer has not acknowledged this session yet.
     assert!(
         harness
             .streamer_row()
@@ -255,6 +251,31 @@ async fn deleting_a_recording_streamer_ends_its_session_through_the_lifecycle() 
         .expect("the session row must survive the streamer delete");
     assert_eq!(session.streamer_name.as_deref(), Some(STREAMER_NAME));
     assert!(session.end_time.is_some());
+
+    harness
+        .container
+        .pipeline_manager
+        .handle_session_transition(pipeline_transition)
+        .await;
+    assert!(
+        harness
+            .container
+            .session_lifecycle
+            .session_snapshot(SESSION_ID)
+            .is_some()
+    );
+    assert_eq!(
+        harness
+            .container
+            .runtime_coordinator
+            .reap_marked_streamers(OBSERVE_RETIREMENT)
+            .await,
+        1
+    );
+    assert!(
+        harness.streamer_row().await.is_none(),
+        "a durable receipt permits reaping without waiting for cache eviction"
+    );
 }
 
 /// The `StreamerStateSyncedFromDb` that `StreamerManager::mark_deleting`
@@ -298,16 +319,26 @@ async fn the_config_event_handler_leaves_a_marked_streamers_stop_to_the_retireme
         .expect("the session row should exist");
     assert_eq!(session.end_time, None);
 
-    // A merely disabled streamer still gets the stop.
-    harness
+    // A merely disabled streamer still gets the stop, with a real open session.
+    let disabled = Harness::new().await;
+    disabled.seed_streamer().await;
+    disabled.seed_active_session().await;
+    sqlx::query("UPDATE streamers SET state = 'DISABLED' WHERE id = ?")
+        .bind(STREAMER_ID)
+        .execute(&disabled.write_pool)
+        .await
+        .unwrap();
+    disabled.hydrate().await;
+    disabled
         .container
         .apply_config_event_for_test(
             crate::config::ConfigUpdateEvent::StreamerStateSyncedFromDb {
-                streamer_id: "unknown-streamer".to_string(),
+                streamer_id: STREAMER_ID.to_string(),
                 is_active: false,
             },
         )
         .await;
+    assert_eq!(disabled.session_ended_events().await, 1);
 }
 
 /// The deferral has to hold whoever ended the session, not just when the
@@ -435,7 +466,7 @@ async fn a_row_left_marked_by_a_crash_is_reaped_at_startup() {
 /// pipeline work outstanding, so the reap must not run. Once the job completes,
 /// the next sweep removes the row.
 #[tokio::test]
-async fn outstanding_pipeline_work_defers_the_reap() {
+async fn an_older_sessions_pipeline_work_defers_the_reap() {
     let harness = Harness::new().await;
     harness.start_scheduler().await;
     harness.seed_streamer().await;
@@ -447,6 +478,16 @@ async fn outstanding_pipeline_work_defers_the_reap() {
         .end_session(SESSION_ID, crate::database::time::now_ms())
         .await
         .expect("session should end");
+    harness
+        .session_repository()
+        .mark_session_complete_dispatched(SESSION_ID)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO live_sessions(id, streamer_id, start_time, end_time, session_complete_dispatched) VALUES ('newer-session', ?, ?, ?, 1)")
+        .bind(STREAMER_ID)
+        .bind(crate::database::time::now_ms() + 1)
+        .bind(crate::database::time::now_ms() + 2)
+        .execute(&harness.write_pool).await.unwrap();
 
     let mut job = JobDbModel::new("remux", "{}");
     job.session_id = Some(SESSION_ID.to_string());
@@ -494,6 +535,120 @@ async fn outstanding_pipeline_work_defers_the_reap() {
 /// directly — and `BatchStreamerAction::Delete` both go through
 /// `RuntimeCoordinator::delete_streamer`, so both end the recording through
 /// `SessionLifecycle` and neither can remove a row the runtime still holds.
+#[tokio::test]
+async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() {
+    use crate::database::models::{
+        DagPipelineDefinition, DagStep, JobPreset, PipelineStep, SessionSegmentDbModel,
+    };
+
+    let harness = Harness::new().await;
+    harness.start_scheduler().await;
+    harness.seed_streamer().await;
+    harness.seed_active_session().await;
+    harness
+        .session_repository()
+        .end_session(SESSION_ID, crate::database::time::now_ms())
+        .await
+        .unwrap();
+    let input = harness._temp_dir.path().join("input.mp4");
+    tokio::fs::write(&input, b"recorded segment").await.unwrap();
+    harness
+        .session_repository()
+        .create_session_segment(&SessionSegmentDbModel::new(
+            SESSION_ID,
+            0,
+            input.to_str().unwrap(),
+            1.0,
+            16,
+            Default::default(),
+            Default::default(),
+        ))
+        .await
+        .unwrap();
+    let definition = DagPipelineDefinition::new(
+        "finish",
+        vec![DagStep::new(
+            "finish",
+            PipelineStep::Preset {
+                name: "retirement-finish".to_string(),
+            },
+        )],
+    );
+    sqlx::query("UPDATE global_config SET session_complete_pipeline = ?, pipeline = NULL, paired_segment_pipeline = NULL, record_danmu = 0, auto_thumbnail = 0")
+        .bind(serde_json::to_string(&definition).unwrap()).execute(&harness.write_pool).await.unwrap();
+    harness
+        .container
+        .config_service
+        .invalidate_streamer(STREAMER_ID);
+    harness
+        .container
+        .streamer_manager
+        .mark_deleting(STREAMER_ID)
+        .await
+        .unwrap()
+        .unwrap();
+    harness
+        .container
+        .pipeline_manager
+        .recover_jobs()
+        .await
+        .unwrap();
+    assert_eq!(
+        harness
+            .container
+            .runtime_coordinator
+            .reap_marked_streamers(OBSERVE_RETIREMENT)
+            .await,
+        0
+    );
+    assert!(harness.streamer_row().await.is_some());
+    assert!(
+        !harness
+            .session_repository()
+            .session_pipeline_settled(SESSION_ID)
+            .await
+            .unwrap()
+    );
+
+    harness
+        .container
+        .pipeline_manager
+        .create_preset(&JobPreset {
+            id: "retirement-finish-preset".to_string(),
+            name: "retirement-finish".to_string(),
+            description: None,
+            category: None,
+            processor: "remux".to_string(),
+            config: "{}".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        harness
+            .container
+            .runtime_coordinator
+            .reap_marked_streamers(OBSERVE_RETIREMENT)
+            .await,
+        0
+    );
+    let published: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution WHERE session_id = ? AND segment_source = 'session_complete'")
+        .bind(SESSION_ID).fetch_one(&harness.pool).await.unwrap();
+    assert_eq!(published, 1);
+    assert!(
+        harness
+            .session_repository()
+            .session_pipeline_settled(SESSION_ID)
+            .await
+            .unwrap()
+    );
+    assert!(
+        harness.streamer_row().await.is_some(),
+        "the published job still needs its streamer metadata"
+    );
+}
+
 #[tokio::test]
 async fn the_api_and_batch_delete_routes_share_the_retirement_path() {
     for use_batch in [false, true] {

@@ -161,7 +161,7 @@ where
             offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
         }
 
-        if let Some(config_service) = &self.config_service {
+        if self.config_service.is_some() {
             let mut offset = 0;
             loop {
                 let pagination = Pagination::new(COORDINATOR_RECOVERY_PAGE_LIMIT, offset);
@@ -170,30 +170,14 @@ where
                     .await?;
                 let page_len = page.len();
                 for session in page {
-                    // `list_ended_sessions_pending_pipeline_recovery` already
-                    // filters `streamer_id IS NOT NULL`; the guard keeps the
-                    // config lookup total.
-                    let Some(streamer_id) = session.streamer_id.clone() else {
-                        continue;
-                    };
-                    let has_session_complete_pipeline = config_service
-                        .get_config_for_streamer(&streamer_id)
-                        .await
-                        .ok()
-                        .and_then(|config| config.session_complete_pipeline.clone())
-                        .is_some_and(|pipeline| !pipeline.is_empty());
-                    if has_session_complete_pipeline {
-                        sessions
-                            .entry(session.id.clone())
-                            .and_modify(|recovered| {
-                                recovered.needs_session_complete_recovery = true;
-                            })
-                            .or_insert(RecoveredCoordinatorSession {
-                                session,
-                                has_in_flight_coordination_dag: false,
-                                needs_session_complete_recovery: true,
-                            });
-                    }
+                    sessions
+                        .entry(session.id.clone())
+                        .and_modify(|recovered| recovered.needs_session_complete_recovery = true)
+                        .or_insert(RecoveredCoordinatorSession {
+                            session,
+                            has_in_flight_coordination_dag: false,
+                            needs_session_complete_recovery: true,
+                        });
                 }
 
                 if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
@@ -264,13 +248,15 @@ where
                 continue;
             };
             let session_id = session.id.clone();
-            let config = if let Some(config_service) = &self.config_service {
-                config_service
-                    .get_config_for_streamer(&streamer_id)
-                    .await
-                    .ok()
-            } else {
-                None
+            let config = match &self.config_service {
+                Some(service) => match service.get_config_for_streamer(&streamer_id).await {
+                    Ok(config) => Some(config),
+                    Err(error) => {
+                        warn!(%session_id, %streamer_id, %error, "Pipeline recovery waits for session configuration");
+                        continue;
+                    }
+                },
+                None => None,
             };
 
             let danmu_enabled = config
@@ -560,6 +546,9 @@ where
             }
 
             self.execute_pipeline_commands(commands).await;
+            if recover_ended_session {
+                self.record_session_pipeline_settlement(&session_id).await;
+            }
             recovered += 1;
         }
 

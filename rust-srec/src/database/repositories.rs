@@ -5,6 +5,7 @@
 
 pub mod api_key;
 pub mod config;
+pub(crate) mod config_retirement;
 pub mod credential_store;
 pub mod dag;
 pub mod filter;

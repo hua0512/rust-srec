@@ -12,8 +12,6 @@ use std::time::Duration;
 
 use tracing::{debug, info, warn};
 
-use crate::database::repositories::session::SessionRepository;
-use crate::pipeline::SessionDrain;
 use crate::scheduler::actor::ActorRemovalOutcome;
 
 use super::{RuntimeCoordinator, StopWait};
@@ -153,92 +151,31 @@ impl RuntimeCoordinator {
             .await;
         retirement.outstanding.extend(stop.failures);
 
-        // Pipeline work is scoped to a session, and draining it is what stops
-        // `PipelineManager` from creating a DAG whose
-        // `ConfigService::get_config_for_streamer` no longer resolves once the
-        // row is reaped.
-        //
-        // A session `SessionLifecycle` still holds in memory is deliberately not
-        // drained. Its `SessionTransition::Ended` is applied by
-        // `PipelineManager::handle_session_transition` on another task, and
-        // until `PipelineCoordinator` has recorded the end,
-        // `SessionCoordinationOutstanding::session_complete_owed` is still zero
-        // — the drain would call the session quiescent moments before it owes a
-        // session-complete DAG. The condition is deliberately "in memory" rather
-        // than "this call ended it": the download attempt's terminal outcome
-        // reaching `SessionLifecycle` during `stop_streamer_work`'s
-        // `stop_download_with_reason` ends the session just as well, and the
-        // retirement cannot tell whose end it is looking at. `end_for_disable`
-        // reports `None` once `schedule_ended_eviction` has dropped the entry,
-        // which bounds the wait at `session::lifecycle::ENDED_RETENTION_DEFAULT` past the
-        // end, and the next reaper sweep then observes the coordinator.
         if let Some(session_id) = stop.session_id {
-            info!(
+            debug!(
                 streamer_id,
-                session_id, "Recording ended; the streamer's removal waits for its post-processing"
+                session_id, "Session stop observed; waiting for its durable pipeline receipt"
             );
-            retirement
-                .outstanding
-                .push(format!("session {session_id} post-processing"));
-            return retirement;
         }
-
-        // With no session left in memory the end is settled, so the drain sees
-        // whatever the coordinator, `dag_execution` and `job` still hold for the
-        // streamer's most recent session — the only one that can still be
-        // running post-processing.
-        let session_id = match self
-            .session_repository
-            .list_sessions_for_streamer(streamer_id, 1)
+        match self
+            .pipeline_manager
+            .drain_for_streamer(streamer_id, bounds.pipeline)
             .await
         {
-            Ok(sessions) => sessions.into_iter().next().map(|session| session.id),
+            Ok(drain) if drain.is_drained() => debug!(streamer_id, "All session pipelines settled"),
+            Ok(drain) => {
+                info!(streamer_id, sessions = ?drain.sessions, jobs = drain.jobs, "Recording post-processing still prevents streamer removal");
+                retirement.outstanding.push(format!(
+                    "pipeline work: {} unsettled sessions, {} jobs",
+                    drain.sessions.len(),
+                    drain.jobs
+                ));
+            }
             Err(error) => {
-                warn!(
-                    streamer_id,
-                    error = %error,
-                    "Failed to resolve the streamer's most recent session"
-                );
+                warn!(streamer_id, %error, "Failed to observe streamer pipeline settlement");
                 retirement
                     .outstanding
-                    .push(format!("session lookup: {error}"));
-                None
-            }
-        };
-
-        if let Some(session_id) = session_id {
-            match self
-                .pipeline_manager
-                .drain_for_session(&session_id, bounds.pipeline)
-                .await
-            {
-                Ok(SessionDrain::Drained) => {
-                    debug!(streamer_id, session_id, "Session pipeline work drained");
-                }
-                Ok(SessionDrain::Outstanding(outstanding)) => {
-                    info!(
-                        streamer_id,
-                        session_id,
-                        jobs = outstanding.jobs,
-                        dags = outstanding.dags,
-                        session_complete_owed = outstanding.coordinated.session_complete_owed,
-                        "Session post-processing still running; deferring the streamer's removal"
-                    );
-                    retirement
-                        .outstanding
-                        .push(format!("session {session_id} post-processing"));
-                }
-                Err(error) => {
-                    warn!(
-                        streamer_id,
-                        session_id,
-                        error = %error,
-                        "Failed to observe the session's pipeline work"
-                    );
-                    retirement
-                        .outstanding
-                        .push(format!("session {session_id} pipeline: {error}"));
-                }
+                    .push(format!("pipeline settlement: {error}"));
             }
         }
 

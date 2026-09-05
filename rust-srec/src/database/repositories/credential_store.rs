@@ -252,6 +252,53 @@ impl SqlxCredentialStore {
 
 #[async_trait]
 impl CredentialStore for SqlxCredentialStore {
+    async fn reload_source(
+        &self,
+        source: &CredentialSource,
+    ) -> Result<CredentialSource, CredentialError> {
+        let (sql, id) = match &source.scope {
+            CredentialScope::Platform { platform_id, .. } => (
+                "SELECT cookies, platform_specific_config FROM platform_config WHERE id = ?",
+                platform_id,
+            ),
+            CredentialScope::Template { template_id, .. } => (
+                "SELECT cookies, platform_overrides FROM template_config WHERE id = ?",
+                template_id,
+            ),
+            CredentialScope::Streamer { streamer_id, .. } => (
+                "SELECT json_extract(streamer_specific_config, '$.cookies'), streamer_specific_config FROM streamers WHERE id = ? AND deleted_at IS NULL",
+                streamer_id,
+            ),
+        };
+        let (cookies, config): (Option<String>, Option<String>) = sqlx::query_as(sql)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or(CredentialError::NoCredentials)?;
+        let config: serde_json::Value = config
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or_default();
+        let fields = if matches!(source.scope, CredentialScope::Template { .. }) {
+            &config[&source.platform_name]
+        } else {
+            &config
+        };
+        let mut current = source.clone();
+        current.cookies = cookies.unwrap_or_default();
+        current.refresh_token = fields["refresh_token"].as_str().map(str::to_owned);
+        current.access_token = fields["access_token"].as_str().map(str::to_owned);
+        if matches!(source.scope, CredentialScope::Platform { .. }) {
+            current.reauth_extra =
+                crate::credentials::platform_reauth_extra(&current.platform_name, Some(fields));
+        }
+        if current.cookies.trim().is_empty() && !current.has_reauth_extra() {
+            return Err(CredentialError::NoCredentials);
+        }
+        Ok(current)
+    }
+
     #[instrument(
         skip_all,
         fields(scope = %source.scope.describe(), platform = %source.platform_name)

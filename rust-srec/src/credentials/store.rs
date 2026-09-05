@@ -11,6 +11,13 @@ use super::types::{CredentialScope, CredentialSource};
 
 #[async_trait]
 pub trait CredentialStore: Send + Sync {
+    /// Read the current credentials at exactly this scope. Callers hold the
+    /// scope's refresh lock so a queued refresh cannot reuse a rotated token.
+    async fn reload_source(
+        &self,
+        source: &CredentialSource,
+    ) -> Result<CredentialSource, CredentialError>;
+
     /// Persist refreshed credentials to the correct configuration layer.
     async fn update_credentials(
         &self,

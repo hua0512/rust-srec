@@ -4,6 +4,18 @@
 
 ## Recording
 
+- **Streamer removal waits for every recording's post-processing**
+
+  An older recording could still be processing when a newer recording finished, allowing streamer removal to leave the older work without the information needed to resume after a restart. Removal now waits for all unfinished recordings. Final post-processing that could not be started remains pending and can be retried after its missing preset is restored.
+
+- **Replace imports retain configurations needed by finishing recordings**
+
+  Replacing a backup that omitted both a streamer and its template could fail and roll back the import. Omitted templates and presets may now remain visible temporarily, with an import warning, until the departing recordings finish their post-processing. Editing a retained definition, reimporting it, or assigning a retained template to an active streamer keeps it.
+
+- **Shared platform logins no longer refresh concurrently**
+
+  Several recordings sharing a login could refresh it at the same time and incorrectly report that signing in again was required. Refreshes now wait for one another, and waiting recordings receive the updated cookies.
+
 - **Recordings are finished properly when the app is stopped**
 
   Stopping rust-srec — Ctrl+C, `docker compose down`, a container restart, or a system shutdown — could cut a recording short. The recording tool was sometimes killed before it finished writing, leaving the last part truncated, missing from the session's file list, or without its chat file. Shutdown now stops taking on new work first, lets the recordings that are already running finish and be saved, and only then closes down. Recording tools are now tied to the app itself as well, so none of them are left running after it exits.
@@ -76,6 +88,10 @@
   This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
 
 ## Pipeline and uploads
+
+- **Retry workflows without leaving cancelled branches stuck**
+
+  Retrying just one job in a failed workflow could leave its other branches stuck indefinitely. Workflow jobs now direct you to retry the whole workflow, which restarts its failed and cancelled branches together.
 
 - **Upload recordings to Baidu Netdisk**
 
@@ -245,6 +261,10 @@
 
 ## Security
 
+- **Successful logins preserve other failed-login attempts**
+
+  Simultaneous login requests could cause one successful request to erase another request's failure from the login limit. Releasing a successful attempt now preserves other attempts from the same address.
+
 - **Cookies, tokens and passwords are no longer written to the logs**
 
   Starting a recording, saving a platform, template or streamer, and the background check that keeps platform cookies fresh, all used to write the credentials themselves into the log files, the live log view and the browser console. Anyone able to read a log file, a log export or a container's logs could pick out the cookies, refresh tokens and account passwords for your platform accounts. Logs now record only which settings were touched, never their values. Old log files are not cleaned up, so if you have shared logs with anyone, change the cookies and passwords that appeared in them.
@@ -290,5 +310,4 @@
 - **Actionable boot failure and recovery screen**
 
   When the desktop application encounters an unrecoverable startup error (such as a locked database, permission denial, full storage, or a corrupted database image), it now displays a dedicated safe-mode recovery screen instead of silently crashing or failing to launch. The interface highlights the exact failure stage and error kind, provides actionable troubleshooting guidance, lets you open the data and log folders directly, and allows one-click copying of full diagnostic details.
-
 

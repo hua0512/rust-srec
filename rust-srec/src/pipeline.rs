@@ -32,7 +32,7 @@ pub use job_queue::{
 pub(crate) use manager::PipelineRuntimeDependencies;
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
-    SessionDrain, SessionPipelineOutstanding,
+    SessionDrain, SessionPipelineOutstanding, StreamerDrain,
 };
 pub use processors::{
     AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, BaiduPcsConfig, BaiduPcsPolicy,

@@ -376,10 +376,13 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
         let result = sqlx::query("DELETE FROM streamers WHERE id = ? AND deleted_at IS NOT NULL")
             .bind(id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
+        super::config_retirement::reap(&mut tx).await?;
+        tx.commit().await?;
         Ok(result.rows_affected() > 0)
     }
 

@@ -173,9 +173,17 @@ where
 
         let mut commands = Vec::new();
         let should_run_session_complete = cause.should_run_session_complete_pipeline();
-        if let Some(config_service) = &self.config_service
-            && let Ok(config) = config_service.get_config_for_streamer(&streamer_id).await
-        {
+        let config = match &self.config_service {
+            Some(service) => match service.get_config_for_streamer(&streamer_id).await {
+                Ok(config) => Some(config),
+                Err(error) => {
+                    warn!(%session_id, %streamer_id, %error, "Session pipeline configuration remains unresolved");
+                    return;
+                }
+            },
+            None => None,
+        };
+        if let Some(config) = config {
             commands.extend(
                 self.pipeline_coordinator
                     .apply_event(PipelineCoordinationEvent::ConfigureSession {
@@ -228,6 +236,11 @@ where
         }
 
         self.execute_pipeline_commands(commands).await;
+        if should_run_session_complete {
+            self.record_session_pipeline_settlement(&session_id).await;
+        } else {
+            self.mark_session_complete_dispatched(&session_id).await;
+        }
     }
 
     /// Handle danmu service events.

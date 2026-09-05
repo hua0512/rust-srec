@@ -13,6 +13,19 @@ const DRAIN_POLL_MIN: Duration = Duration::from_millis(100);
 /// rather than paying the query cost of the fast first checks throughout.
 const DRAIN_POLL_MAX: Duration = Duration::from_secs(2);
 
+/// Recording sessions whose dispatch receipt or pipeline work is unfinished.
+#[derive(Debug, Default)]
+pub struct StreamerDrain {
+    pub sessions: Vec<String>,
+    pub jobs: u64,
+}
+
+impl StreamerDrain {
+    pub fn is_drained(&self) -> bool {
+        self.sessions.is_empty() && self.jobs == 0
+    }
+}
+
 /// Pipeline work still attached to a session.
 ///
 /// The three sources are deliberately combined because each is blind to a window
@@ -60,6 +73,64 @@ where
     CR: ConfigRepository + Send + Sync + 'static,
     SR: StreamerRepository + Send + Sync + 'static,
 {
+    /// Observe every session that can still need this streamer's configuration.
+    /// Runtime callers stop producers first. Retry an already-observed final
+    /// dispatch when its dependencies have settled. Only a durable dispatch/skip
+    /// receipt acknowledges the end consumer; cache retention cannot do that.
+    pub async fn drain_for_streamer(
+        &self,
+        streamer_id: &str,
+        bound: Duration,
+    ) -> Result<StreamerDrain> {
+        let repo = self.session_repo.as_ref().ok_or_else(|| {
+            Error::Validation(
+                "Session repository is required to acknowledge streamer retirement".to_string(),
+            )
+        })?;
+        let deadline = tokio::time::Instant::now().checked_add(bound);
+        let mut result = StreamerDrain::default();
+        for session in repo.list_sessions_for_retirement(streamer_id).await? {
+            if let Some(outstanding) = self
+                .pipeline_coordinator
+                .session_outstanding(&session.id)
+                .await
+                && outstanding.end_processed
+                && outstanding.session_complete_owed
+                && outstanding.pending_dags == 0
+                && !repo.session_pipeline_settled(&session.id).await?
+            {
+                let commands = self
+                    .pipeline_coordinator
+                    .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
+                        session_id: session.id.clone(),
+                    })
+                    .await;
+                self.execute_pipeline_commands(commands).await;
+                self.record_session_pipeline_settlement(&session.id).await;
+            }
+            let settled = repo.session_pipeline_settled(&session.id).await?;
+            let remaining = deadline
+                .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
+                .unwrap_or(bound);
+            let drained = self.drain_for_session(&session.id, remaining).await?;
+            if !settled || !drained.is_drained() {
+                result.sessions.push(session.id);
+            }
+        }
+        // Standalone jobs, or jobs whose session was explicitly removed, still
+        // carry the streamer id and must finish before its metadata is removed.
+        if let Some(repo) = &self.job_repository {
+            result.jobs = repo
+                .count_jobs(
+                    &JobFilters::new()
+                        .with_streamer_id(streamer_id)
+                        .with_statuses([JobStatus::Pending, JobStatus::Processing]),
+                )
+                .await?;
+        }
+        Ok(result)
+    }
+
     /// Wait until no pipeline work is attached to `session_id`, giving up after
     /// `bound`.
     ///

@@ -19,6 +19,7 @@ use crate::database::models::{
 };
 use crate::database::repositories::{
     config::SqlxConfigRepository,
+    config_retirement::{RetiredConfigKind, delete_or_defer},
     streamer::{SqlxStreamerRepository, mark_streamer_deleted},
 };
 use crate::database::{ImmediateTransaction, begin_immediate};
@@ -98,6 +99,10 @@ impl ConfigurationImportService {
 
         let (stats, invalidated_credentials, streamers) =
             apply_import(&mut tx, &snapshot, &config, mode).await?;
+        let retained_definitions: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
+                .fetch_one(&mut *tx)
+                .await?;
         tx.commit().await?;
 
         for scope in invalidated_credentials {
@@ -105,6 +110,11 @@ impl ConfigurationImportService {
         }
 
         let mut warnings = Vec::new();
+        if retained_definitions > 0 {
+            warnings.push(format!(
+                "{retained_definitions} omitted templates or presets remain available until recording post-processing finishes"
+            ));
+        }
 
         // Announce the `deleted_at` markers the transaction committed before
         // touching anything else: `StreamerManager::note_deleted` is what turns
@@ -1061,10 +1071,8 @@ async fn apply_streamers(
 
 /// Replace-mode deletion of snapshot templates absent from the bundle; no-op
 /// in merge mode. Must run after apply_streamers: until persist_streamer
-/// rewrites each retained row's template_config_id (Replace-mode template_ids
-/// resolves bundle templates only) and the unretained rows are deleted,
-/// snapshot streamer rows may still reference the template_config rows
-/// removed here.
+/// rewrites each retained row's template_config_id. Definitions still used by
+/// retiring streamers stay available until their post-processing settles.
 async fn delete_unimported_templates(
     tx: &mut ImmediateTransaction,
     snapshot: &ImportSnapshot,
@@ -1082,10 +1090,7 @@ async fn delete_unimported_templates(
         .collect();
     for (name, existing) in &snapshot.templates {
         if !imported_templates.contains(name.as_str()) {
-            sqlx::query("DELETE FROM template_config WHERE id = ?")
-                .bind(&existing.id)
-                .execute(&mut **tx)
-                .await?;
+            delete_or_defer(tx, RetiredConfigKind::Template, &existing.id).await?;
             changes
                 .invalidated_credentials
                 .push(CredentialScope::Template {
@@ -1389,10 +1394,7 @@ async fn apply_job_presets(
             .collect();
         for (name, existing) in &snapshot.job_presets {
             if !imported.contains(name.as_str()) {
-                sqlx::query("DELETE FROM job_presets WHERE id = ?")
-                    .bind(&existing.id)
-                    .execute(&mut **tx)
-                    .await?;
+                delete_or_defer(tx, RetiredConfigKind::JobPreset, &existing.id).await?;
                 stats.job_presets_deleted += 1;
             }
         }
@@ -1459,10 +1461,7 @@ async fn apply_pipeline_presets(
             .collect();
         for (name, existing) in &snapshot.pipeline_presets {
             if !imported.contains(name.as_str()) {
-                sqlx::query("DELETE FROM pipeline_presets WHERE id = ?")
-                    .bind(&existing.id)
-                    .execute(&mut **tx)
-                    .await?;
+                delete_or_defer(tx, RetiredConfigKind::PipelinePreset, &existing.id).await?;
                 stats.pipeline_presets_deleted += 1;
             }
         }
@@ -2170,6 +2169,89 @@ mod tests {
             Err(ConfigurationImportError::Validation(message))
                 if message.contains("at least one active user")
         ));
+    }
+
+    #[tokio::test]
+    async fn replace_import_retains_configuration_until_its_streamer_is_reaped() {
+        use crate::database::repositories::streamer::StreamerRepository;
+
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel = sqlx::query_as("SELECT * FROM global_config LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO template_config(id, name) VALUES ('retained-template', 'retained-template')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO streamers(id, name, url, platform_config_id, template_config_id, state) VALUES ('retiring', 'Retiring', 'https://example.com/retiring', 'platform-huya', 'retained-template', 'NOT_LIVE')")
+            .execute(&pool).await.unwrap();
+        let preset_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_presets")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(preset_count > 0);
+        let mut config = import_config(&global);
+        config.global_config.default_download_engine = "review-engine".to_string();
+        config.engines.push(crate::config::backup::EngineExport {
+            name: "review-engine".to_string(),
+            engine_type: "MESIO".to_string(),
+            config: serde_json::json!({}),
+        });
+        config
+            .users
+            .push(imported_user("admin", vec!["admin".to_string()], true));
+        validate_import(&config, ImportMode::Replace).unwrap();
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot
+            .validate_references(&config, ImportMode::Replace)
+            .unwrap();
+        apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let marked: bool = sqlx::query_scalar(
+            "SELECT deleted_at IS NOT NULL FROM streamers WHERE id = 'retiring'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(marked);
+        let held: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM template_config WHERE id = 'retained-template'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(held, 1);
+        let held_presets: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_presets")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(held_presets, preset_count);
+        assert!(
+            SqlxStreamerRepository::new(pool.clone(), pool.clone())
+                .delete_marked_streamer("retiring")
+                .await
+                .unwrap()
+        );
+        let held: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM template_config WHERE id = 'retained-template'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(held, 0);
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining, 0);
+        let violations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(violations, 0);
     }
 
     #[tokio::test]
