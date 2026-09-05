@@ -9,15 +9,15 @@ Describe the change and the motivation.
 
 ## How to test
 
-Steps reviewers can run to validate locally.
+List checks actually run, their results, and useful reproduction steps. Mark checks not applicable to this change as N/A; explain unavailable or failed checks and their impact. Use the task-based validation guidance in AGENTS.md.
 
 ## Checklist
 
-- [ ] I ran formatting (`cargo fmt --all`) if Rust code changed
-- [ ] I ran lint (`cargo clippy ...`) if Rust code changed
-- [ ] I ran tests (`cargo test` or `cargo nextest run`) if feasible
-- [ ] I updated docs/config examples if behavior changed
-- [ ] I avoided logging secrets and redacted sensitive info in screenshots/logs
+- Formatting for affected files: passed / N/A / limitation
+- Lint and relevant tests for affected behavior: passed / N/A / limitation
+- Additional checks for affected interfaces, builds, migrations, or releases: passed / N/A / limitation
+- Related docs, config examples, and generated outputs: updated / N/A
+- Final diff reviewed; unrelated changes excluded and shared logs/screenshots redacted: done / limitation
 
 ## Related issues
 
