@@ -1,5 +1,7 @@
 # rust-srec-desktop AGENTS.md
 
+Applies to the desktop wrapper. Follow root workflow rules; apply parent backend service conventions only when changing the embedded backend integration.
+
 ## OVERVIEW
 - Tauri wrapper for `rust-srec`.
 - Runs backend in-process (scheduler + API server).
@@ -27,9 +29,14 @@
 - **Environment mutation**: Prefer reading `JWT_SECRET` from file in app data dir rather than forcing system env vars.
 
 ## COMMANDS
+
+Run Tauri commands from `rust-srec/`, with the frontend and platform prerequisites installed. Node and pnpm versions come from the root `.nvmrc` and frontend `package.json`.
+
 - Dev: `cargo tauri dev`
   - Uses frontend dev server at `http://localhost:15275`.
 - Build: `cargo tauri build`
-- Check: `cargo check -p rust-srec-desktop`
+- Check: `cargo check --locked -p rust-srec-desktop`
 
-*Note: For core backend or frontend commands, see root `AGENTS.md` and `rust-srec/frontend/README.md` respectively.*
+For a local wrapper change, start with the package check and relevant tests. Build the desktop frontend when its integration changes; use a Tauri build for changes affecting packaging, capabilities, or application startup. Exercise affected startup/persistence behavior on a supported platform. Full desktop checks are not prerequisites for unrelated backend or prose changes.
+
+For core backend or frontend commands, see [root AGENTS.md](../../AGENTS.md) and the [frontend guide](../frontend/AGENTS.md).

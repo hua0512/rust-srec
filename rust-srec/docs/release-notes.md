@@ -11,16 +11,11 @@ The GitHub release workflow now reads `rust-srec/docs/release-notes-body.md` dir
 
 Update that file before tagging a release if you want the published GitHub Release body to match the curated notes.
 
-## Suggested release workflow
+## Release workflow
 
-1. Run `node scripts/bump-rust-srec-version.mjs <X.Y.Z> --docs`
-2. If you want the new localized pages to start from the latest version's structure, add `--from-latest`
-3. Fill in:
-   - `./release-notes-body.md`
-   - `./en/release-notes/vX.Y.Z.md`
-   - `./zh/release-notes/vX.Y.Z.md`
-4. Review archive links and sidebar entries
-5. Tag the release as `rust-srec-vX.Y.Z`
+Follow the [application release procedure](../../.claude/skills/release-rust-srec/SKILL.md) for the canonical steps and validation. It distinguishes read-only planning, drafting notes, preparing version/docs changes, and publishing an explicitly authorized release tag. A version-only bump does not promote or reset release notes.
+
+Preparation includes the version/lockfile update, curated en/zh notes, the GitHub body, and index/sidebar checks. Tagging and pushing are a separate publication stage; a request to prepare or draft a release does not authorize it. Reuse existing explicit publication authorization without asking again.
 
 ## Docs release pages
 

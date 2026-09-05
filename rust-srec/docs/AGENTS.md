@@ -1,5 +1,7 @@
 # Documentation AGENTS.md
 
+Applies to `rust-srec/docs/`; backend-specific service rules in the parent directory do not govern docs work. Use the repository-wide workflow and read referenced material only for the task at hand.
+
 ## OVERVIEW
 VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH). 
 
@@ -16,9 +18,9 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 - `public/`: Place images and shared assets here.
 
 ## CONVENTIONS / ANTI-PATTERNS
-- **Sync**: Maintain parity between `en/` and `zh/` content and file structure.
-- **Node Version**: CI uses **Node 26**, pinned in the repo-root `.nvmrc`. Ensure local environment compatibility.
-- **Sidebars**: New pages must be manually added to `sidebar` in `config.mts`.
+- **Sync**: Keep changed facts, interfaces, and navigation structure aligned between the corresponding `en/` and `zh/` pages. A wording or spelling fix in one language does not require a mechanical edit to the other or a full-site translation audit.
+- **Toolchain**: Use Node from the repo-root `.nvmrc` and pnpm from this directory's `package.json`.
+- **Sidebars**: Add new navigable pages to the appropriate locale's `sidebar` in `config.mts`. Auxiliary or intentionally unlisted pages need no sidebar entry.
 - **Assets**: Reference assets in `public/` using root-relative paths (e.g., `/stream-rec.svg`).
 - **Dead Links**: Backend-managed links (e.g., `/api/docs`) are ignored via `ignoreDeadLinks` in config.
 
@@ -32,3 +34,7 @@ Run from `rust-srec/docs/`:
 ## NOTES
 - **Generated Folders**: `.vitepress/dist/` and `.vitepress/cache/` are build/cache outputs and are git-ignored. 
 - **Mermaid**: Support for diagrams is included via the `mermaid` dependency.
+
+## VALIDATION
+
+For prose-only edits, check the affected facts and links. Run `pnpm run docs:build` for navigation/configuration changes, complex Markdown, or release-page preparation; preview affected pages when rendering or layout needs inspection. Report unavailable build prerequisites and remaining validation without blocking unrelated work. Docs changes do not require backend/frontend application builds.
