@@ -4,6 +4,18 @@
 
 ## Recording
 
+- **Streamer removal waits for every recording's post-processing**
+
+  An older recording could still be processing when a newer recording finished, allowing streamer removal to leave the older work without the information needed to resume after a restart. Removal now waits for all unfinished recordings. Final post-processing that could not be started remains pending and can be retried after its missing preset is restored.
+
+- **Replace imports retain configurations needed by finishing recordings**
+
+  Replacing a backup that omitted both a streamer and its template could fail and roll back the import. Omitted templates and presets may now remain visible temporarily, with an import warning, until the departing recordings finish their post-processing. Editing a retained definition, reimporting it, or assigning a retained template to an active streamer keeps it.
+
+- **Shared platform logins no longer refresh concurrently**
+
+  Several recordings sharing a login could refresh it at the same time and incorrectly report that signing in again was required. Refreshes now wait for one another, and waiting recordings receive the updated cookies.
+
 - **Recordings are finished properly when the app is stopped**
 
   Stopping rust-srec — Ctrl+C, `docker compose down`, a container restart, or a system shutdown — could cut a recording short. The recording tool was sometimes killed before it finished writing, leaving the last part truncated, missing from the session's file list, or without its chat file. Shutdown now stops taking on new work first, lets the recordings that are already running finish and be saved, and only then closes down. Recording tools are now tied to the app itself as well, so none of them are left running after it exits.
@@ -39,6 +51,16 @@
 
   Removing a streamer also erased every session it had ever recorded, along with the file list, segments and chat statistics attached to them — the recordings were still on disk, but nothing in the app could find them. Past sessions now stay in the list after the streamer is gone, under the name it was recorded with, and any session that was still recording is closed out rather than left showing as live.
 
+- **Deleting a streamer stops its recording cleanly first**
+
+  Deleting a streamer used to remove it immediately while its recording was still running, so the last part could end with an error, the session's timeline was left incomplete and post-processing could fail on a streamer that no longer existed. Deleting now takes the streamer off the list right away and finishes its recording properly first: the recording is closed out and saved, its post-processing is allowed to finish, and only then is the streamer removed for good. If post-processing is still running, the streamer disappears from the list immediately and is cleaned up in the background as soon as it finishes — including after a restart. This applies to every way of deleting a streamer: the delete button, bulk delete, the API, and importing a configuration that no longer contains it.
+
+  One thing to know if you script this: for the short while a deleted streamer is still being cleaned up, its address stays reserved. Adding a streamer with the same address again — or importing a configuration that still contains it — is refused with "still being removed; try again shortly" until the clean-up finishes. Deleting a template a still-departing streamer used is refused the same way.
+
+- **Importing a configuration no longer disturbs your running recordings**
+
+  Importing a backup used to briefly flip every live streamer to offline, which produced a duplicate "went live" notification and made the streamer bounce between states on the dashboard. Streamers that were live stay live, and their recordings keep running untouched. New streamers in the imported file also start being monitored right away instead of waiting for the next restart, and an import that is rejected no longer stops anything at all.
+
 ## API and integrations
 
 - **API keys for programmatic access**
@@ -66,6 +88,10 @@
   This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
 
 ## Pipeline and uploads
+
+- **Retry workflows without leaving cancelled branches stuck**
+
+  Retrying just one job in a failed workflow could leave its other branches stuck indefinitely. Workflow jobs now direct you to retry the whole workflow, which restarts its failed and cancelled branches together.
 
 - **Upload recordings to Baidu Netdisk**
 
@@ -235,6 +261,10 @@
 
 ## Security
 
+- **Successful logins preserve other failed-login attempts**
+
+  Simultaneous login requests could cause one successful request to erase another request's failure from the login limit. Releasing a successful attempt now preserves other attempts from the same address.
+
 - **Cookies, tokens and passwords are no longer written to the logs**
 
   Starting a recording, saving a platform, template or streamer, and the background check that keeps platform cookies fresh, all used to write the credentials themselves into the log files, the live log view and the browser console. Anyone able to read a log file, a log export or a container's logs could pick out the cookies, refresh tokens and account passwords for your platform accounts. Logs now record only which settings were touched, never their values. Old log files are not cleaned up, so if you have shared logs with anyone, change the cookies and passwords that appeared in them.
@@ -280,5 +310,4 @@
 - **Actionable boot failure and recovery screen**
 
   When the desktop application encounters an unrecoverable startup error (such as a locked database, permission denial, full storage, or a corrupted database image), it now displays a dedicated safe-mode recovery screen instead of silently crashing or failing to launch. The interface highlights the exact failure stage and error kind, provides actionable troubleshooting guidance, lets you open the data and log folders directly, and allows one-click copying of full diagnostic details.
-
 

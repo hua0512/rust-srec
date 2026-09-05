@@ -24,7 +24,9 @@ use crate::database::repositories::{
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
-use crate::streamer::{StreamerManager, StreamerMetadata, download_failure_threshold};
+use crate::streamer::{
+    StreamerManager, StreamerMetadata, download_failure_threshold, manager::ReloadPublish,
+};
 use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
@@ -198,7 +200,10 @@ async fn reload_streamer_metadata<SR>(
 ) where
     SR: StreamerRepository + Send + Sync,
 {
-    if let Err(error) = streamer_manager.reload_from_repo(streamer_id).await {
+    if let Err(error) = streamer_manager
+        .reload_from_repo(streamer_id, ReloadPublish::StateOnly)
+        .await
+    {
         warn!(
             "Failed to reload streamer {} after {}: {}. Cache may be stale.",
             streamer_id, context, error
@@ -2038,7 +2043,10 @@ mod tests {
 
         monitor
             .streamer_manager
-            .reload_from_repo("streamer-4")
+            .reload_from_repo(
+                "streamer-4",
+                crate::streamer::manager::ReloadPublish::StateOnly,
+            )
             .await
             .unwrap();
         let live_streamer = monitor.streamer_manager.get_streamer("streamer-4").unwrap();
@@ -2136,7 +2144,10 @@ mod tests {
             .unwrap();
         monitor
             .streamer_manager
-            .reload_from_repo("streamer-5")
+            .reload_from_repo(
+                "streamer-5",
+                crate::streamer::manager::ReloadPublish::StateOnly,
+            )
             .await
             .unwrap();
 

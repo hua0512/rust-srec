@@ -1195,7 +1195,71 @@ fn test_pipeline_manager_creation() {
 }
 
 #[tokio::test]
-async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
+async fn whole_workflow_retry_restarts_failed_and_cancelled_root_jobs() {
+    use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let definition = DagPipelineDefinition::new(
+        "parallel",
+        ["failed", "cancelled"]
+            .into_iter()
+            .map(|id| {
+                crate::database::models::DagStep::new(
+                    id,
+                    PipelineStep::Inline {
+                        processor: "remux".to_string(),
+                        config: serde_json::json!({}),
+                    },
+                )
+            })
+            .collect(),
+    );
+    let mut dag = DagExecutionDbModel::new(&definition, None, None);
+    dag.status = "FAILED".to_string();
+    dags.create_dag(&dag).await.unwrap();
+    let mut ids = Vec::new();
+    for (id, status) in [("failed", "FAILED"), ("cancelled", "CANCELLED")] {
+        let mut step = DagStepExecutionDbModel::new(&dag.id, id, &[]);
+        step.status = status.to_string();
+        dags.create_step(&step).await.unwrap();
+        let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+        job.status = status.to_string();
+        job.pipeline_id = Some(dag.id.clone());
+        job.dag_step_execution_id = Some(step.id.clone());
+        jobs.create_job(&job).await.unwrap();
+        step.job_id = Some(job.id.clone());
+        dags.update_step(&step).await.unwrap();
+        ids.push(job.id);
+    }
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone())
+            .with_dag_repository(dags.clone());
+    assert!(matches!(
+        manager.retry_job(&ids[0]).await,
+        Err(Error::Validation(_))
+    ));
+    assert_eq!(dags.get_dag(&dag.id).await.unwrap().status, "FAILED");
+    let result = manager.retry_dag(&dag.id).await.unwrap();
+    assert_eq!(result.retried_steps, 2);
+    for id in ids {
+        assert_eq!(jobs.get_job(&id).await.unwrap().status, "PENDING");
+    }
+    assert!(
+        dags.get_steps_by_dag(&dag.id)
+            .await
+            .unwrap()
+            .iter()
+            .all(|step| step.status == "PROCESSING")
+    );
+}
+
+#[tokio::test]
+async fn test_retry_job_rejects_failed_dag_when_job_is_dag_step() {
     let job_repo = Arc::new(TestJobRepository::new());
     let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
 
@@ -1238,16 +1302,13 @@ async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
     let manager: PipelineManager =
         PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
 
-    let retried = manager.retry_job(&job_id).await.unwrap();
-    assert_eq!(retried.status, crate::pipeline::JobStatus::Pending);
-    assert_eq!(retried.retry_count, 1);
-    assert!(retried.error.is_none());
-
-    assert_eq!(dag_repo.reset_calls(), 1);
+    let error = manager.retry_job(&job_id).await.unwrap_err();
+    assert!(matches!(error, Error::Validation(_)));
+    assert_eq!(dag_repo.reset_calls(), 0);
 }
 
 #[tokio::test]
-async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
+async fn test_retry_job_rejects_cancelled_dag_when_job_is_dag_step() {
     let job_repo = Arc::new(TestJobRepository::new());
     let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
 
@@ -1294,9 +1355,9 @@ async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
     let manager: PipelineManager =
         PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
 
-    let retried = manager.retry_job(&job_id).await.unwrap();
-    assert_eq!(retried.status, crate::pipeline::JobStatus::Pending);
-    assert_eq!(dag_repo.reset_calls(), 1);
+    let error = manager.retry_job(&job_id).await.unwrap_err();
+    assert!(matches!(error, Error::Validation(_)));
+    assert_eq!(dag_repo.reset_calls(), 0);
 }
 
 #[tokio::test]
@@ -3557,6 +3618,7 @@ async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
             .unwrap(),
         SessionDrain::Outstanding(SessionPipelineOutstanding {
             coordinated: crate::pipeline::SessionCoordinationOutstanding {
+                end_processed: false,
                 pending_dags: 1,
                 session_complete_owed: false,
             },
@@ -3708,6 +3770,10 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
             .unwrap(),
         SessionDrain::Outstanding(SessionPipelineOutstanding {
             dags: 1,
+            coordinated: crate::pipeline::SessionCoordinationOutstanding {
+                end_processed: true,
+                ..Default::default()
+            },
             ..Default::default()
         })
     );
@@ -3805,11 +3871,10 @@ async fn test_drain_for_session_owes_nothing_when_the_finalize_gate_cannot_open(
     );
 }
 
-/// `run_session_complete_pipeline` does not retry a failed
-/// `create_dag_pipeline_internal`, so the failure report has to settle the
-/// session rather than leave a DAG owed that nobody will ever create.
+/// A creation failure leaves no durable DAG, so its dispatch remains owed until
+/// recovery can publish it or a caller explicitly changes the pipeline policy.
 #[tokio::test]
-async fn test_drain_for_session_stops_owing_after_a_failed_session_complete_creation() {
+async fn test_drain_for_session_keeps_owing_after_a_failed_session_complete_creation() {
     let job_repo = Arc::new(TestJobRepository::new());
     let manager: PipelineManager =
         PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
@@ -3853,13 +3918,13 @@ async fn test_drain_for_session_stops_owing_after_a_failed_session_complete_crea
         },
     );
 
-    assert_eq!(
+    assert!(matches!(
         manager
             .drain_for_session(&session_id, Duration::ZERO)
             .await
             .unwrap(),
-        SessionDrain::Drained
-    );
+        SessionDrain::Outstanding(_)
+    ));
 }
 
 /// `on_source_artifact` emits `CreateSegmentDag` before anything else records the
@@ -3916,6 +3981,7 @@ async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts(
             .unwrap(),
         SessionDrain::Outstanding(SessionPipelineOutstanding {
             coordinated: crate::pipeline::SessionCoordinationOutstanding {
+                end_processed: false,
                 pending_dags: 1,
                 session_complete_owed: false,
             },

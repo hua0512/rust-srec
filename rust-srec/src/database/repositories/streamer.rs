@@ -21,6 +21,11 @@ pub trait StreamerRepository: Send + Sync {
     }
     async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel>;
     async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>>;
+    /// Every row, including ones carrying a `deleted_at` marker.
+    ///
+    /// `StreamerManager::hydrate` needs the marked rows: their cached metadata
+    /// is what makes `StreamerMetadata::is_active` false after a restart, so no
+    /// actor is spawned for a streamer the reaper is still retiring.
     async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>>;
@@ -36,7 +41,19 @@ pub trait StreamerRepository: Send + Sync {
     async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()>;
     async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()>;
     async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()>;
-    async fn delete_streamer(&self, id: &str) -> Result<()>;
+
+    /// Stamp `streamers.deleted_at` so every runtime owner stands down.
+    ///
+    /// `Ok(false)` when the row is missing or already marked, which callers read
+    /// as "somebody else already started retiring this streamer".
+    async fn mark_streamer_deleted(&self, id: &str) -> Result<bool>;
+
+    /// Physically remove a marked row.
+    ///
+    /// Refuses unmarked rows so the reaper can only ever finish a deletion some
+    /// caller committed through [`Self::mark_streamer_deleted`]; `Ok(false)`
+    /// means the row was already gone or was never marked.
+    async fn delete_marked_streamer(&self, id: &str) -> Result<bool>;
 
     // Methods for StreamerManager
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
@@ -53,6 +70,31 @@ pub trait StreamerRepository: Send + Sync {
         id: &str,
         last_live_time: Option<DateTime<Utc>>,
     ) -> Result<()>;
+}
+
+/// Stamp `streamers.deleted_at` for `id`, leaving an already-marked row alone.
+///
+/// Takes an executor rather than a pool so a caller that already owns a
+/// transaction marks the row inside it: `ConfigurationImportService::import`
+/// does exactly that, which is what makes a rejected import stop nothing.
+///
+/// `Ok(false)` means no row moved from unmarked to marked, so the caller is not
+/// the one that owns this retirement.
+pub(crate) async fn mark_streamer_deleted<'e, E>(
+    executor: E,
+    id: &str,
+    now_ms: i64,
+) -> std::result::Result<bool, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let result =
+        sqlx::query("UPDATE streamers SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL")
+            .bind(now_ms)
+            .bind(id)
+            .execute(executor)
+            .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// SQLx implementation of StreamerRepository.
@@ -106,7 +148,7 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>> {
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers ORDER BY priority DESC, name",
+            "SELECT * FROM streamers WHERE deleted_at IS NULL ORDER BY priority DESC, name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -115,7 +157,7 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>> {
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE state = ? ORDER BY priority DESC, name",
+            "SELECT * FROM streamers WHERE state = ? AND deleted_at IS NULL ORDER BY priority DESC, name",
         )
         .bind(state)
         .fetch_all(&self.pool)
@@ -125,7 +167,7 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>> {
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE priority = ? ORDER BY name",
+            "SELECT * FROM streamers WHERE priority = ? AND deleted_at IS NULL ORDER BY name",
         )
         .bind(priority)
         .fetch_all(&self.pool)
@@ -135,7 +177,7 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_streamers_by_platform(&self, platform_id: &str) -> Result<Vec<StreamerDbModel>> {
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE platform_config_id = ? ORDER BY priority DESC, name",
+            "SELECT * FROM streamers WHERE platform_config_id = ? AND deleted_at IS NULL ORDER BY priority DESC, name",
         )
         .bind(platform_id)
         .fetch_all(&self.pool)
@@ -145,7 +187,7 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>> {
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE template_config_id = ? ORDER BY priority DESC, name",
+            "SELECT * FROM streamers WHERE template_config_id = ? AND deleted_at IS NULL ORDER BY priority DESC, name",
         )
         .bind(template_id)
         .fetch_all(&self.pool)
@@ -160,6 +202,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             r#"
             SELECT * FROM streamers 
             WHERE state NOT IN ('CANCELLED', 'FATAL_ERROR', 'NOT_FOUND')
+            AND deleted_at IS NULL
             AND (disabled_until IS NULL OR disabled_until < ?)
             ORDER BY priority DESC, name
             "#,
@@ -327,12 +370,20 @@ impl StreamerRepository for SqlxStreamerRepository {
         Ok(())
     }
 
-    async fn delete_streamer(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM streamers WHERE id = ?")
+    async fn mark_streamer_deleted(&self, id: &str) -> Result<bool> {
+        let mut conn = self.write_pool.acquire().await?;
+        Ok(mark_streamer_deleted(&mut *conn, id, crate::database::time::now_ms()).await?)
+    }
+
+    async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        let result = sqlx::query("DELETE FROM streamers WHERE id = ? AND deleted_at IS NOT NULL")
             .bind(id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
-        Ok(())
+        super::config_retirement::reap(&mut tx).await?;
+        tx.commit().await?;
+        Ok(result.rows_affected() > 0)
     }
 
     async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>> {

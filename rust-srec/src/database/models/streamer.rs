@@ -34,6 +34,17 @@ pub struct StreamerDbModel {
     pub created_at: i64,
     /// Unix epoch milliseconds (UTC) when last updated.
     pub updated_at: i64,
+    /// Unix epoch milliseconds (UTC) when the streamer was deleted, or `None`
+    /// while it is a normal streamer.
+    ///
+    /// Set by `StreamerRepository::mark_streamer_deleted` (or, for a
+    /// configuration import, by the same statement inside the import's
+    /// transaction). While it is set the row still exists but
+    /// `StreamerMetadata::is_active` is false, so no runtime owner starts new
+    /// work for it; `StreamerManager::reap_deleted` issues the physical
+    /// `DELETE` once `RuntimeCoordinator::retire_streamer` reports the owners
+    /// have stopped.
+    pub deleted_at: Option<i64>,
 }
 
 impl StreamerDbModel {
@@ -60,6 +71,7 @@ impl StreamerDbModel {
             last_error: None,
             created_at: now,
             updated_at: now,
+            deleted_at: None,
         }
     }
 }

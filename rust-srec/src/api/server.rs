@@ -138,6 +138,10 @@ pub struct ApiServices {
     /// Validated, transactional configuration import application service.
     pub(crate) configuration_import_service:
         Arc<crate::services::config_import::ConfigurationImportService>,
+    /// Runtime side-effect policy. Routes reach it for streamer deletion, which
+    /// has to stand the scheduler actor, download and session down before the
+    /// `streamers` row can go.
+    pub(crate) runtime_coordinator: Arc<crate::services::runtime_coordinator::RuntimeCoordinator>,
 }
 
 /// Shared application state.

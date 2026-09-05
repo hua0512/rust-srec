@@ -16,6 +16,7 @@ use crate::credentials::{
     CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
 };
 use crate::domain::ProxyConfig;
+use crate::streamer::manager::ReloadPublish;
 use crate::utils::json::{self, JsonContext};
 
 #[derive(Clone)]
@@ -147,7 +148,14 @@ async fn resolve_extractor_config_for_url(
     let config_service = &state.config_service;
     let credential_service = &state.credential_service;
 
-    if let Some(streamer) = state.streamer_manager.get_streamer_by_url(url) {
+    // A streamer marked deleted still owns its url until the reaper removes the
+    // row, but its configuration is no longer the user's; resolve as if the url
+    // belonged to no streamer.
+    if let Some(streamer) = state
+        .streamer_manager
+        .get_streamer_by_url(url)
+        .filter(|streamer| !streamer.is_deleted())
+    {
         match config_service.get_context_for_streamer(&streamer.id).await {
             Ok(context) => {
                 let config = &context.config;
@@ -170,8 +178,10 @@ async fn resolve_extractor_config_for_url(
                                     // next streamer edit — still holds the previous credentials.
                                     // The refreshed row is already durable, so a failed reload is
                                     // logged rather than failing the parse.
-                                    if let Err(error) =
-                                        state.streamer_manager.reload_from_repo(&streamer.id).await
+                                    if let Err(error) = state
+                                        .streamer_manager
+                                        .reload_from_repo(&streamer.id, ReloadPublish::StateOnly)
+                                        .await
                                     {
                                         warn!(
                                             %error,
@@ -519,7 +529,10 @@ async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> Pro
     let config_service = &state.config_service;
 
     // Priority 1: streamer merged config (final merged proxy state).
-    if let Some(streamer) = state.streamer_manager.get_streamer_by_url(url)
+    if let Some(streamer) = state
+        .streamer_manager
+        .get_streamer_by_url(url)
+        .filter(|streamer| !streamer.is_deleted())
         && let Ok(context) = config_service.get_context_for_streamer(&streamer.id).await
     {
         return context.config.proxy_config.clone();

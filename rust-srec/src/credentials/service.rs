@@ -125,22 +125,21 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             return Ok(None);
         }
 
-        // Check if we already checked today
-        if let Some(cached_status) = self.daily_tracker.get_cached_status(&source.scope) {
-            return self.handle_cached_status(source, cached_status).await;
-        }
-
-        // Acquire lock for this credential scope
+        // Cached NeedsRefresh can call the provider, so it shares the same
+        // ownership as an initial check and the resulting persistence.
         let lock = self.get_refresh_lock(&source.scope);
         let _guard = lock.lock().await;
 
-        // Double-check after acquiring lock (another task may have checked)
-        if let Some(cached_status) = self.daily_tracker.get_cached_status(&source.scope) {
-            return self.handle_cached_status(source, cached_status).await;
-        }
-
-        // First check of the day - call platform API
-        self.perform_check_and_refresh(source).await
+        let current = self.store.reload_source(source).await?;
+        let refreshed = if let Some(status) = self.daily_tracker.get_cached_status(&source.scope) {
+            self.handle_cached_status(&current, status).await?
+        } else {
+            self.perform_check_and_refresh(&current).await?
+        };
+        // Waiters may still hold an extractor configuration assembled before
+        // the owner rotated its cookies. Return the committed cookies to them
+        // as well, without calling the provider or notifying a second time.
+        Ok(refreshed.or_else(|| (current.cookies != source.cookies).then_some(current.cookies)))
     }
 
     /// Check and refresh credentials for a StreamerMetadata.
@@ -433,10 +432,13 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             return Ok(());
         }
 
+        let lock = self.get_refresh_lock(&source.scope);
+        let _guard = lock.lock().await;
+        let current = self.store.reload_source(source).await?;
         let new_creds = RefreshedCredentials {
             cookies,
-            refresh_token: source.refresh_token.clone(),
-            access_token: source.access_token.clone(),
+            refresh_token: current.refresh_token.clone(),
+            access_token: current.access_token.clone(),
             expires_at: None,
         };
 
@@ -506,6 +508,119 @@ mod tests {
     use super::*;
     use crate::credentials::types::CredentialScope;
     use crate::database::repositories::{SqlxCredentialStore, config::SqlxConfigRepository};
+
+    struct PausedRefresh {
+        calls: std::sync::atomic::AtomicUsize,
+        started: tokio::sync::Notify,
+        release: tokio::sync::Semaphore,
+    }
+
+    #[async_trait::async_trait]
+    impl CredentialManager for PausedRefresh {
+        fn platform_id(&self) -> &'static str {
+            "bilibili"
+        }
+
+        async fn check_status(&self, _cookies: &str) -> Result<CredentialStatus, CredentialError> {
+            Ok(CredentialStatus::NeedsRefresh {
+                refresh_deadline: None,
+            })
+        }
+
+        async fn refresh(
+            &self,
+            state: &RefreshState,
+        ) -> Result<RefreshedCredentials, CredentialError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            assert_eq!(state.cookies, "stored-cookie");
+            assert_eq!(state.refresh_token.as_deref(), Some("stored-token"));
+            self.started.notify_one();
+            self.release.acquire().await.unwrap().forget();
+            Ok(RefreshedCredentials {
+                cookies: "rotated-cookie".to_string(),
+                refresh_token: Some("rotated-token".to_string()),
+                access_token: None,
+                expires_at: None,
+            })
+        }
+
+        async fn validate(&self, _cookies: &str) -> Result<bool, CredentialError> {
+            Ok(true)
+        }
+    }
+
+    #[tokio::test]
+    async fn cached_refresh_waits_for_its_owner_and_reads_current_credentials() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        sqlx::query("UPDATE platform_config SET cookies = 'stored-cookie', platform_specific_config = '{\"refresh_token\":\"stored-token\"}' WHERE id = 'platform-bilibili'")
+            .execute(&pool).await.unwrap();
+        let resolver = Arc::new(CredentialResolver::new(Arc::new(
+            SqlxConfigRepository::new(pool.clone(), pool.clone()),
+        )));
+        let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone()));
+        let provider = Arc::new(PausedRefresh {
+            calls: AtomicUsize::new(0),
+            started: tokio::sync::Notify::new(),
+            release: tokio::sync::Semaphore::new(0),
+        });
+        let mut service = CredentialRefreshService::new(resolver, store);
+        service.register_manager(provider.clone());
+        let service = Arc::new(service);
+        let source = CredentialSource::new(
+            CredentialScope::Platform {
+                platform_id: "platform-bilibili".to_string(),
+                platform_name: "bilibili".to_string(),
+            },
+            "stale-cookie".to_string(),
+            Some("stale-token".to_string()),
+            "bilibili".to_string(),
+        );
+        service.daily_tracker.record_check(
+            &source.scope,
+            CredentialStatus::NeedsRefresh {
+                refresh_deadline: None,
+            },
+        );
+        let first = {
+            let service = service.clone();
+            let source = source.clone();
+            tokio::spawn(async move { service.check_and_refresh_source(&source).await })
+        };
+        tokio::time::timeout(Duration::from_secs(2), provider.started.notified())
+            .await
+            .unwrap();
+        let second = service.check_and_refresh_source(&source);
+        tokio::pin!(second);
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+        provider.release.add_permits(1);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), first)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .as_deref(),
+            Some("rotated-cookie")
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), second)
+                .await
+                .unwrap()
+                .unwrap()
+                .as_deref(),
+            Some("rotated-cookie"),
+        );
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+        let token: String = sqlx::query_scalar("SELECT json_extract(platform_specific_config, '$.refresh_token') FROM platform_config WHERE id = 'platform-bilibili'").fetch_one(&pool).await.unwrap();
+        assert_eq!(token, "rotated-token");
+    }
 
     /// `MakeWriter` that appends every formatted record to a buffer the test can read.
     #[derive(Clone, Default)]

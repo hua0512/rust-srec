@@ -40,6 +40,22 @@ where
     broadcaster: ConfigEventBroadcaster,
 }
 
+/// What [`StreamerManager::reload_from_repo`] announces about the row it just
+/// read back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReloadPublish {
+    /// Only the `StreamerStateSyncedFromDb` the reload already emits when the
+    /// row's state or active status moved. For callers that changed a column no
+    /// consumer routes on, and for pure cache resyncs after a transaction.
+    StateOnly,
+    /// Additionally publish `ConfigUpdateEvent::StreamerMetadataUpdated`, which
+    /// is what makes `Scheduler::handle_config_event` re-derive the actor's
+    /// `StreamerConfig` and `ConfigEventHandler` re-resolve the streamer's
+    /// `offline_check_*` values. For callers that wrote the `streamers` row
+    /// outside this manager.
+    MetadataUpdated,
+}
+
 /// Parameters for partially updating a streamer.
 pub struct StreamerUpdateParams {
     pub id: String,
@@ -78,6 +94,11 @@ where
     /// to `NotLive`. This ensures that after an app restart, the normal detection flow
     /// (`NotLive → Live`) will correctly trigger download starts. Without this reset,
     /// hysteresis would suppress `Live → Live` transitions and no download would start.
+    ///
+    /// Rows carrying a `deleted_at` marker are hydrated too, so
+    /// [`StreamerMetadata::is_active`] keeps the scheduler from spawning an actor
+    /// for a streamer whose retirement the reaper still has to finish; the query
+    /// helpers below skip them.
     pub async fn hydrate(&self) -> Result<usize> {
         info!("Hydrating streamer metadata from database");
 
@@ -252,12 +273,20 @@ where
     ///
     /// # Event Emission
     ///
-    /// This method emits a `ConfigUpdateEvent::StreamerStateSyncedFromDb` event
-    /// ONLY if the streamer's active status or state actually changed.
-    /// This prevents unnecessary event spam when no real change occurred.
+    /// Emits `ConfigUpdateEvent::StreamerStateSyncedFromDb` ONLY if the
+    /// streamer's active status or state actually changed, which prevents event
+    /// spam when no real change occurred. [`ReloadPublish::MetadataUpdated`]
+    /// adds `ConfigUpdateEvent::StreamerMetadataUpdated` on top, for callers
+    /// that wrote the row themselves and need the same observable sequence as
+    /// [`Self::create_streamer`] / [`Self::partial_update_streamer`].
+    ///
     /// Resolved offline-check values are preserved because they live only in
     /// the runtime cache rather than on the streamer database row.
-    pub async fn reload_from_repo(&self, id: &str) -> Result<Option<StreamerMetadata>> {
+    pub async fn reload_from_repo(
+        &self,
+        id: &str,
+        publish: ReloadPublish,
+    ) -> Result<Option<StreamerMetadata>> {
         // Preserve resolved runtime-only configuration, which is not stored
         // on the streamer row being reloaded.
         let old_state = self.metadata.get(id).map(|e| {
@@ -266,24 +295,34 @@ where
                 e.is_active(),
                 e.offline_check_count,
                 e.offline_check_delay_ms,
+                e.url.to_lowercase(),
             )
         });
 
         match self.repo.get_streamer(id).await {
             Ok(model) => {
                 let mut metadata = StreamerMetadata::from_db_model(&model);
-                if let Some((_, _, offline_check_count, offline_check_delay_ms)) = old_state {
-                    metadata.offline_check_count = offline_check_count;
-                    metadata.offline_check_delay_ms = offline_check_delay_ms;
+                if let Some((_, _, offline_check_count, offline_check_delay_ms, _)) = &old_state {
+                    metadata.offline_check_count = *offline_check_count;
+                    metadata.offline_check_delay_ms = *offline_check_delay_ms;
                 }
                 let new_is_active = metadata.is_active();
                 let new_state = metadata.state;
+                // Keep `url_index` in step with `metadata` so `get_streamer_by_url`
+                // resolves rows this reload introduced or re-pointed.
+                let new_url = metadata.url.to_lowercase();
+                if let Some((_, _, _, _, old_url)) = &old_state
+                    && old_url != &new_url
+                {
+                    self.url_index.remove(old_url);
+                }
+                self.url_index.insert(new_url, id.to_string());
                 self.metadata.insert(id.to_string(), metadata.clone());
 
                 // Only emit event if state or active status actually changed
-                let should_emit = match old_state {
-                    Some((old_s, old_active, _, _)) => {
-                        old_s != new_state || old_active != new_is_active
+                let should_emit = match &old_state {
+                    Some((old_s, old_active, _, _, _)) => {
+                        old_s != &new_state || old_active != &new_is_active
                     }
                     None => true, // New entry, always emit
                 };
@@ -292,7 +331,7 @@ where
                     debug!(
                         "Streamer {} state changed: {:?} -> {:?} (active: {})",
                         id,
-                        old_state.map(|(state, _, _, _)| state),
+                        old_state.as_ref().map(|(state, _, _, _, _)| *state),
                         new_state,
                         new_is_active
                     );
@@ -303,13 +342,23 @@ where
                         });
                 }
 
+                if publish == ReloadPublish::MetadataUpdated {
+                    self.broadcaster
+                        .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
+                            streamer_id: id.to_string(),
+                        });
+                }
+
                 Ok(Some(metadata))
             }
             Err(crate::Error::NotFound { .. }) => {
-                let was_present = self.metadata.remove(id).is_some();
+                let removed = self.metadata.remove(id);
+                if let Some((_, entry)) = &removed {
+                    self.url_index.remove(&entry.url.to_lowercase());
+                }
 
                 // Only emit if we actually removed something
-                if was_present {
+                if removed.is_some() {
                     self.broadcaster
                         .publish(ConfigUpdateEvent::StreamerStateSyncedFromDb {
                             streamer_id: id.to_string(),
@@ -330,7 +379,11 @@ where
     pub async fn reload_multiple_from_repo(&self, ids: &[&str]) -> Result<usize> {
         let mut reloaded = 0;
         for id in ids {
-            if self.reload_from_repo(id).await?.is_some() {
+            if self
+                .reload_from_repo(id, ReloadPublish::StateOnly)
+                .await?
+                .is_some()
+            {
                 reloaded += 1;
             }
         }
@@ -484,28 +537,77 @@ where
         Ok(metadata)
     }
 
-    /// Delete a streamer.
+    /// Mark a streamer deleted, so every runtime owner stands down before the
+    /// row is removed.
     ///
-    /// Removes from database first, then from in-memory cache.
-    /// Broadcasts a StreamerDeleted event to trigger cleanup of active resources.
-    pub async fn delete_streamer(&self, id: &str) -> Result<()> {
-        debug!("Deleting streamer: {}", id);
+    /// Writes `streamers.deleted_at` and reloads the row, which turns
+    /// [`StreamerMetadata::is_active`] false and publishes
+    /// `StreamerStateSyncedFromDb { is_active: false }`. That is what retires
+    /// the scheduler actor and runs `RuntimeCoordinator::handle_streamer_disabled`.
+    /// The physical delete belongs to [`Self::reap_deleted`], which
+    /// `RuntimeCoordinator::retire_streamer` gates on the owners having stopped.
+    ///
+    /// Returns the marked metadata, or `None` when the row is missing or was
+    /// already marked by an earlier caller that owns its retirement.
+    pub async fn mark_deleting(&self, id: &str) -> Result<Option<StreamerMetadata>> {
+        if !self.repo.mark_streamer_deleted(id).await? {
+            debug!("Streamer {} is missing or already marked deleted", id);
+            return Ok(None);
+        }
 
-        // Remove from database
-        self.repo.delete_streamer(id).await?;
+        info!("Marked streamer {} deleted; retiring its runtime work", id);
+        self.reload_from_repo(id, ReloadPublish::StateOnly).await
+    }
 
-        // Remove from in-memory cache
+    /// Announce a `deleted_at` marker some other writer committed.
+    ///
+    /// For `ConfigurationImportService::import`, which stamps the marker inside
+    /// its own transaction so a rejected bundle stops nothing; the runtime only
+    /// learns about it once that transaction commits.
+    pub async fn note_deleted(&self, id: &str) -> Result<Option<StreamerMetadata>> {
+        self.reload_from_repo(id, ReloadPublish::StateOnly).await
+    }
+
+    /// Delete a marked streamer's row and drop it from the caches.
+    ///
+    /// Refuses rows without a `deleted_at` marker, so the only way to remove a
+    /// streamer is [`Self::mark_deleting`] followed by a retirement that
+    /// acknowledged. Broadcasts `StreamerDeleted` so the scheduler drops any
+    /// actor that outlived the mark and `ConfigService` evicts its cache entry.
+    ///
+    /// `Ok(false)` when the row was already reaped.
+    pub async fn reap_deleted(&self, id: &str) -> Result<bool> {
+        let reaped = self.repo.delete_marked_streamer(id).await?;
+
         if let Some((_, entry)) = self.metadata.remove(id) {
             self.url_index.remove(&entry.url.to_lowercase());
         }
 
-        // Broadcast deletion event to trigger cleanup of active resources
         self.broadcaster
             .publish(ConfigUpdateEvent::StreamerDeleted {
                 streamer_id: id.to_string(),
             });
 
-        Ok(())
+        if reaped {
+            info!("Reaped deleted streamer {}", id);
+        }
+        Ok(reaped)
+    }
+
+    /// Metadata of every streamer carrying a `deleted_at` marker.
+    ///
+    /// Read from the cache rather than the repository, so it reflects the same
+    /// rows the runtime is standing down. The cache holds every marked row:
+    /// [`Self::hydrate`] loads them all through
+    /// `StreamerRepository::list_all_streamers`, and
+    /// `ServiceContainer::initialize` propagates a hydration failure, so there
+    /// is no partially-populated state in which a marker could be missed.
+    pub fn get_pending_deletion(&self) -> Vec<StreamerMetadata> {
+        self.metadata
+            .iter()
+            .filter(|entry| entry.is_deleted())
+            .map(|entry| entry.value().clone())
+            .collect()
     }
 
     /// Refresh the cached `offline_check_*` values on a streamer's metadata
@@ -523,36 +625,44 @@ where
 
     // ========== Query Operations (From Memory) ==========
 
-    /// Get streamer metadata by ID.
+    /// Get streamer metadata by ID, including one marked deleted.
+    ///
+    /// Marked rows are deliberately visible here: every runtime owner reads this
+    /// and decides on [`StreamerMetadata::is_active`], and
+    /// `run_live_download_pipeline` starts a recording when it finds no metadata
+    /// at all. Callers acting on the user's behalf reject
+    /// [`StreamerMetadata::is_deleted`] themselves; the bulk queries below
+    /// already do.
     pub fn get_streamer(&self, id: &str) -> Option<StreamerMetadata> {
         self.metadata.get(id).map(|entry| entry.clone())
     }
 
     /// Get streamer metadata by URL (case-insensitive).
+    ///
+    /// Includes a streamer marked deleted, so the URL a pending retirement still
+    /// holds resolves to the row that holds it rather than to nothing.
     pub fn get_streamer_by_url(&self, url: &str) -> Option<StreamerMetadata> {
         let url_lower = url.to_lowercase();
         let id = self.url_index.get(&url_lower)?;
         self.get_streamer(id.value())
     }
 
-    /// Get all streamers.
+    /// Get all streamers the user still has, skipping ones marked deleted.
     pub fn get_all(&self) -> Vec<StreamerMetadata> {
-        self.metadata
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect()
+        self.get_filtered(|_| true)
     }
 
-    /// Clone only the streamers `predicate` accepts. `list_streamers` pages a
-    /// filtered view of the map, so filtering during the shard walk copies the
-    /// matching entries instead of every `StreamerMetadata`.
+    /// Clone only the streamers `predicate` accepts, skipping ones marked
+    /// deleted. `list_streamers` pages a filtered view of the map, so filtering
+    /// during the shard walk copies the matching entries instead of every
+    /// `StreamerMetadata`.
     pub fn get_filtered(
         &self,
         predicate: impl Fn(&StreamerMetadata) -> bool,
     ) -> Vec<StreamerMetadata> {
         self.metadata
             .iter()
-            .filter(|entry| predicate(entry.value()))
+            .filter(|entry| !entry.is_deleted() && predicate(entry.value()))
             .map(|entry| entry.value().clone())
             .collect()
     }
@@ -561,40 +671,39 @@ where
     ///
     /// Returns streamers in active states (NotLive, Live, OutOfSchedule, InspectingLive).
     pub fn get_all_active(&self) -> Vec<StreamerMetadata> {
-        self.metadata
-            .iter()
-            .filter(|entry| entry.is_active())
-            .map(|entry| entry.value().clone())
-            .collect()
+        self.get_filtered(|metadata| metadata.is_active())
     }
 
     /// Get streamers by priority level.
     ///
     /// Returns streamers sorted by priority (High first).
     pub fn get_by_priority(&self, priority: Priority) -> Vec<StreamerMetadata> {
-        self.metadata
-            .iter()
-            .filter(|entry| entry.priority == priority)
-            .map(|entry| entry.value().clone())
-            .collect()
+        self.get_filtered(|metadata| metadata.priority == priority)
     }
 
     /// Get streamers by platform.
     pub fn get_by_platform(&self, platform_id: &str) -> Vec<StreamerMetadata> {
-        self.metadata
-            .iter()
-            .filter(|entry| entry.platform_config_id == platform_id)
-            .map(|entry| entry.value().clone())
-            .collect()
+        self.get_filtered(|metadata| metadata.platform_config_id == platform_id)
     }
 
     /// Get streamers by template.
     pub fn get_by_template(&self, template_id: &str) -> Vec<StreamerMetadata> {
+        self.get_filtered(|metadata| metadata.template_config_id.as_deref() == Some(template_id))
+    }
+
+    /// Number of `streamers` rows referencing `template_id`, including ones
+    /// marked deleted.
+    ///
+    /// `streamers.template_config_id` is a foreign key with no `ON DELETE`
+    /// action, so any row still in the table blocks
+    /// `DELETE FROM template_config` whether or not the user can still see it.
+    /// [`Self::get_by_template`] answers the narrower "streamers the user has"
+    /// question the usage counts report.
+    pub fn template_reference_count(&self, template_id: &str) -> usize {
         self.metadata
             .iter()
             .filter(|entry| entry.template_config_id.as_deref() == Some(template_id))
-            .map(|entry| entry.value().clone())
-            .collect()
+            .count()
     }
 
     /// Get streamers sorted by priority (High first, then Normal, then Low).
@@ -723,9 +832,9 @@ where
 
     // ========== Statistics ==========
 
-    /// Get the total number of streamers.
+    /// Get the total number of streamers, excluding ones marked deleted.
     pub fn count(&self) -> usize {
-        self.metadata.len()
+        self.metadata.iter().filter(|e| !e.is_deleted()).count()
     }
 
     /// Get the number of active streamers.
@@ -735,14 +844,17 @@ where
 
     /// Get the number of disabled streamers.
     pub fn disabled_count(&self) -> usize {
-        self.metadata.iter().filter(|e| e.is_disabled()).count()
+        self.metadata
+            .iter()
+            .filter(|e| !e.is_deleted() && e.is_disabled())
+            .count()
     }
 
     /// Get the number of live streamers.
     pub fn live_count(&self) -> usize {
         self.metadata
             .iter()
-            .filter(|e| e.state == StreamerState::Live)
+            .filter(|e| !e.is_deleted() && e.state == StreamerState::Live)
             .count()
     }
 
@@ -807,6 +919,7 @@ where
             streamer_specific_config: metadata.streamer_specific_config.clone(),
             created_at: metadata.created_at.timestamp_millis(),
             updated_at: metadata.updated_at.timestamp_millis(),
+            deleted_at: metadata.deleted_at.map(|dt| dt.timestamp_millis()),
         }
     }
 }
@@ -915,9 +1028,25 @@ mod tests {
             Ok(())
         }
 
-        async fn delete_streamer(&self, id: &str) -> Result<()> {
-            self.streamers.lock().unwrap().retain(|s| s.id != id);
-            Ok(())
+        async fn mark_streamer_deleted(&self, id: &str) -> Result<bool> {
+            let mut streamers = self.streamers.lock().unwrap();
+            match streamers
+                .iter_mut()
+                .find(|s| s.id == id && s.deleted_at.is_none())
+            {
+                Some(streamer) => {
+                    streamer.deleted_at = Some(crate::database::time::now_ms());
+                    Ok(true)
+                }
+                None => Ok(false),
+            }
+        }
+
+        async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {
+            let mut streamers = self.streamers.lock().unwrap();
+            let before = streamers.len();
+            streamers.retain(|s| !(s.id == id && s.deleted_at.is_some()));
+            Ok(streamers.len() < before)
         }
 
         async fn update_streamer_state(&self, _id: &str, _state: &str) -> Result<()> {
@@ -1040,6 +1169,7 @@ mod tests {
             offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            deleted_at: None,
         }
     }
 
@@ -1081,7 +1211,16 @@ mod tests {
                 .is_some()
         );
 
-        manager.delete_streamer("s1").await.unwrap();
+        // The URL stays resolvable while the streamer is only marked: the row
+        // still holds it under `streamers.url`'s UNIQUE constraint.
+        manager.mark_deleting("s1").await.unwrap().unwrap();
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/one")
+                .is_some_and(|metadata| metadata.is_deleted())
+        );
+
+        manager.reap_deleted("s1").await.unwrap();
         assert!(
             manager
                 .get_streamer_by_url("https://example.com/one")
@@ -1105,6 +1244,7 @@ mod tests {
             streamer_specific_config: None,
             created_at: Utc::now().timestamp_millis(),
             updated_at: Utc::now().timestamp_millis(),
+            deleted_at: None,
         }
     }
 
@@ -1146,6 +1286,7 @@ mod tests {
             offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            deleted_at: None,
         };
 
         manager.create_streamer(metadata.clone()).await.unwrap();
@@ -1204,9 +1345,74 @@ mod tests {
             metadata.offline_check_delay_ms = 45_000;
         }
 
-        let reloaded = manager.reload_from_repo("s1").await.unwrap().unwrap();
+        let reloaded = manager
+            .reload_from_repo("s1", ReloadPublish::StateOnly)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(reloaded.offline_check_count, 7);
         assert_eq!(reloaded.offline_check_delay_ms, 45_000);
+    }
+
+    /// `ReloadPublish::MetadataUpdated` is what a caller that wrote the row
+    /// itself uses to reach `Scheduler::handle_config_event`; the state-only
+    /// variant must not produce that event.
+    #[tokio::test]
+    async fn reload_publishes_a_metadata_update_only_when_asked() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let mut events = broadcaster.subscribe();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+        while events.try_recv().is_ok() {}
+
+        manager
+            .reload_from_repo("s1", ReloadPublish::StateOnly)
+            .await
+            .unwrap();
+        assert!(events.try_recv().is_err());
+
+        manager
+            .reload_from_repo("s1", ReloadPublish::MetadataUpdated)
+            .await
+            .unwrap();
+        assert_eq!(
+            events.try_recv().unwrap(),
+            ConfigUpdateEvent::StreamerMetadataUpdated {
+                streamer_id: "s1".to_string(),
+            }
+        );
+    }
+
+    /// A reload that finds the row gone must drop the URL index entry too, or
+    /// `get_streamer_by_url` keeps resolving a streamer that no longer exists.
+    #[tokio::test]
+    async fn reload_of_a_removed_row_clears_the_url_index() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo = Arc::new(repo);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(repo.clone(), broadcaster);
+        manager.hydrate().await.unwrap();
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/s1")
+                .is_some()
+        );
+
+        repo.streamers.lock().unwrap().clear();
+        manager
+            .reload_from_repo("s1", ReloadPublish::StateOnly)
+            .await
+            .unwrap();
+
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/s1")
+                .is_none()
+        );
+        assert!(!manager.url_exists("https://example.com/s1"));
     }
 
     #[tokio::test]
@@ -1308,19 +1514,62 @@ mod tests {
         assert!(metadata.last_live_time.is_some());
     }
 
+    /// A marked streamer stays readable by id — the runtime decides on
+    /// `is_active` — but leaves every list the user sees, and only the reap
+    /// removes the row.
     #[tokio::test]
-    async fn test_delete_streamer() {
+    async fn mark_deleting_hides_the_streamer_and_reap_removes_it() {
         let repo =
             MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo = Arc::new(repo);
         let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        let mut events = broadcaster.subscribe();
+        let manager = StreamerManager::new(repo.clone(), broadcaster);
+        manager.hydrate().await.unwrap();
+        while events.try_recv().is_ok() {}
+
+        let marked = manager.mark_deleting("s1").await.unwrap().unwrap();
+        assert!(marked.is_deleted());
+        assert!(!marked.is_active());
+        assert_eq!(
+            events.try_recv().unwrap(),
+            ConfigUpdateEvent::StreamerStateSyncedFromDb {
+                streamer_id: "s1".to_string(),
+                is_active: false,
+            }
+        );
+        assert!(manager.get_streamer("s1").is_some());
+        assert!(manager.get_all().is_empty());
+        assert_eq!(manager.count(), 0);
+        assert_eq!(repo.streamers.lock().unwrap().len(), 1);
+
+        // Marking is owned by exactly one caller.
+        assert!(manager.mark_deleting("s1").await.unwrap().is_none());
+
+        assert!(manager.reap_deleted("s1").await.unwrap());
+        assert!(manager.get_streamer("s1").is_none());
+        assert!(repo.streamers.lock().unwrap().is_empty());
+        assert_eq!(
+            events.try_recv().unwrap(),
+            ConfigUpdateEvent::StreamerDeleted {
+                streamer_id: "s1".to_string(),
+            }
+        );
+    }
+
+    /// The reap refuses a row nobody marked, so no path can delete a streamer
+    /// whose runtime owners were never stood down.
+    #[tokio::test]
+    async fn reap_refuses_an_unmarked_streamer() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo = Arc::new(repo);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(repo.clone(), broadcaster);
         manager.hydrate().await.unwrap();
 
-        assert!(manager.get_streamer("s1").is_some());
-
-        manager.delete_streamer("s1").await.unwrap();
-
-        assert!(manager.get_streamer("s1").is_none());
+        assert!(!manager.reap_deleted("s1").await.unwrap());
+        assert_eq!(repo.streamers.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -1371,6 +1620,7 @@ mod tests {
             offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            deleted_at: None,
         };
 
         let result = manager.update_streamer(metadata).await;

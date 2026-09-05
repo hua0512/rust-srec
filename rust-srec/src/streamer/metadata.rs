@@ -77,6 +77,14 @@ pub struct StreamerMetadata {
     pub created_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
+    /// When the streamer was deleted, mirroring `streamers.deleted_at`.
+    ///
+    /// Set while `RuntimeCoordinator::retire_streamer` stands the streamer's
+    /// runtime owners down and cleared only by the row leaving the database.
+    /// [`Self::is_active`] reads it, which is the single point every owner
+    /// consults.
+    #[serde(default)]
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 fn default_offline_check_count() -> u32 {
@@ -117,6 +125,7 @@ impl StreamerMetadata {
                 .map(crate::database::time::ms_to_datetime),
             created_at: crate::database::time::ms_to_datetime(model.created_at),
             updated_at: crate::database::time::ms_to_datetime(model.updated_at),
+            deleted_at: model.deleted_at.map(crate::database::time::ms_to_datetime),
         }
     }
 
@@ -149,16 +158,32 @@ impl StreamerMetadata {
             .unwrap_or(false)
     }
 
+    /// Whether the streamer has been deleted and is waiting to be reaped.
+    ///
+    /// The row still exists — `StreamerManager::reap_deleted` removes it once
+    /// `RuntimeCoordinator::retire_streamer` reports the runtime owners have
+    /// stopped — but nothing may treat it as a streamer the user still has.
+    pub fn is_deleted(&self) -> bool {
+        self.deleted_at.is_some()
+    }
+
     /// Check if the streamer is in an active state (can be checked/recorded).
+    ///
+    /// False for a deleted streamer whatever its `state`, which is what makes
+    /// `Scheduler::ensure_streamer_actor_state` retire its actor,
+    /// `run_live_download_pipeline` refuse to start a recording, and
+    /// `ConfigEventHandler` call `RuntimeCoordinator::handle_streamer_disabled`
+    /// — the whole runtime stands down off this one predicate.
     pub fn is_active(&self) -> bool {
-        matches!(
-            self.state,
-            StreamerState::NotLive
-                | StreamerState::Live
-                | StreamerState::OutOfSchedule
-                | StreamerState::InspectingLive
-                | StreamerState::TemporalDisabled
-        )
+        !self.is_deleted()
+            && matches!(
+                self.state,
+                StreamerState::NotLive
+                    | StreamerState::Live
+                    | StreamerState::OutOfSchedule
+                    | StreamerState::InspectingLive
+                    | StreamerState::TemporalDisabled
+            )
     }
 
     /// Check if the streamer is ready for live checking.
@@ -217,6 +242,7 @@ mod tests {
             offline_check_delay_ms: default_offline_check_delay_ms(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            deleted_at: None,
         }
     }
 
@@ -263,6 +289,20 @@ mod tests {
 
         metadata.state = StreamerState::Error;
         assert!(!metadata.is_active());
+    }
+
+    /// `deleted_at` overrides the state entirely: every runtime owner reads
+    /// `is_active` to decide whether to keep working on a streamer.
+    #[test]
+    fn deleted_metadata_is_never_active() {
+        let mut metadata = create_test_metadata();
+        metadata.state = StreamerState::Live;
+        assert!(metadata.is_active());
+
+        metadata.deleted_at = Some(Utc::now());
+        assert!(metadata.is_deleted());
+        assert!(!metadata.is_active());
+        assert!(!metadata.is_ready_for_check());
     }
 
     #[test]

@@ -216,7 +216,6 @@ impl LoginRateLimiter {
     /// failure rather than a wrong credential).
     pub fn release(&self, keys: &[LoginRateKey], reserved_at: Instant) {
         for key in keys {
-            let mut emptied = false;
             if let Some(mut entry) = self.entries.get_mut(key)
                 && let Some(index) = entry
                     .failures
@@ -224,13 +223,10 @@ impl LoginRateLimiter {
                     .rposition(|failure| *failure == reserved_at)
             {
                 entry.failures.remove(index);
-                emptied = entry.failures.is_empty();
             }
-            // The `get_mut` guard ended with the block above; `remove` takes
-            // its own shard lock.
-            if emptied {
-                self.entries.remove(key);
-            }
+            // Keep empty windows for the bounded map's normal eviction. A
+            // separate removal could erase a reservation admitted after this
+            // guard is released.
         }
     }
 
@@ -563,6 +559,22 @@ mod tests {
             limiter.try_begin_at(&alice(), now).is_ok(),
             "released attempts do not count against the budget"
         );
+    }
+
+    #[test]
+    fn releasing_attempts_preserves_other_in_flight_failures() {
+        let limiter = limiter();
+        let now = Instant::now();
+        let address = vec![ip("198.51.100.7")];
+        let refunded = limiter.try_begin_at(&address, now).unwrap();
+        let failed = now + Duration::from_nanos(1);
+        limiter.try_begin_at(&address, failed).unwrap();
+        limiter.release(&address, refunded);
+        limiter.release(&address, refunded);
+        for _ in 0..5 {
+            limiter.try_begin_at(&address, failed).unwrap();
+        }
+        assert!(limiter.try_begin_at(&address, failed).is_err());
     }
 
     #[test]

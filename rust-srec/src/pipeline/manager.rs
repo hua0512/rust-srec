@@ -54,7 +54,7 @@ mod jobs;
 mod recovery;
 mod runtime;
 
-pub use drain::{SessionDrain, SessionPipelineOutstanding};
+pub use drain::{SessionDrain, SessionPipelineOutstanding, StreamerDrain};
 
 type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
 
@@ -641,6 +641,15 @@ pub struct PipelineCreationResult {
     pub total_steps: usize,
     /// List of all steps in the pipeline.
     pub steps: Vec<String>,
+}
+
+/// Outcome of retrying the failed and cancelled branches of a workflow.
+#[derive(Debug)]
+pub struct DagRetryResult {
+    pub dag_id: String,
+    pub retried_steps: usize,
+    pub job_ids: Vec<String>,
+    pub message: String,
 }
 
 #[cfg(test)]

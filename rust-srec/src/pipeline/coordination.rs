@@ -275,6 +275,9 @@ pub enum PipelineCommand {
 /// exists.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SessionCoordinationOutstanding {
+    /// `SessionEndPersisted` reached the final-pipeline gate. End causes that
+    /// skip this gate record their durable skip receipt directly.
+    pub end_processed: bool,
     /// Segment, danmu and paired DAGs the reducer has counted as started and not
     /// yet seen complete, plus paired segments whose creation command has been
     /// emitted but whose `PairedDagStarted` has not been applied.
@@ -672,11 +675,9 @@ impl PipelineCoordinatorState {
                     return Vec::new();
                 };
                 session.pending_session_complete_start = false;
-                // `run_session_complete_pipeline` does not retry a failed
-                // `create_dag_pipeline_internal`, and `is_ready` stays false
-                // because the gate that produced this command has not changed,
-                // so no further command is coming for this session.
-                session.session_complete_settled = true;
+                // Publication failed, so the required dispatch is still owed.
+                // Recovery can retry it while its streamer/configuration remains.
+                session.session_complete_settled = false;
                 Vec::new()
             }
             PipelineCoordinationEvent::SegmentDagStarted {
@@ -838,14 +839,9 @@ pub struct SessionPipelineState {
     session_end_observed: bool,
     session_end_persisted: bool,
     session_complete_triggered: bool,
-    /// Set once no further `CreateSessionCompleteDag` command can come from this
-    /// session: its DAG started, `try_finalize` found no pipeline definition to
-    /// run, or `run_session_complete_pipeline` failed to create the DAG and
-    /// reported `SessionCompleteDagCreationFailed`.
-    ///
-    /// Separate from `session_complete_triggered` so that recording the last of
-    /// those three does not also change what `is_ready` allows. Read only by
-    /// `SessionCoordinationOutstanding::session_complete_owed`.
+    /// Set when the final DAG was published or `try_finalize` found no
+    /// definition. Publication failures clear this flag so retirement retains
+    /// the dispatch and its configuration for another attempt.
     session_complete_settled: bool,
     pending_session_complete_start: bool,
     /// When `PipelineCoordinator` first observed this session (via any reducer
@@ -1400,6 +1396,7 @@ impl SessionPipelineState {
     fn outstanding(&self) -> SessionCoordinationOutstanding {
         let pending_dags = self.pending_dag_count();
         SessionCoordinationOutstanding {
+            end_processed: self.session_end_persisted,
             pending_dags,
             // `session_end_observed` is set only when `SessionEnded` carried
             // `should_run_session_complete`.

@@ -8,6 +8,14 @@ where
     SR: StreamerRepository + Send + Sync + 'static,
 {
     pub(super) async fn handle_dag_completion(&self, completion: DagCompletionInfo) {
+        let session_id = completion.session_id.clone();
+        self.apply_dag_completion(completion).await;
+        if let Some(session_id) = session_id {
+            self.record_session_pipeline_settlement(&session_id).await;
+        }
+    }
+
+    async fn apply_dag_completion(&self, completion: DagCompletionInfo) {
         let dag_id = completion.dag_id.clone();
 
         debug!(
@@ -306,7 +314,7 @@ where
     /// Logged rather than propagated: the DAG this marks is already durable, and the
     /// `segment_source = 'session_complete'` check in that query keeps a failed write from
     /// producing a duplicate run.
-    async fn mark_session_complete_dispatched(&self, session_id: &str) {
+    pub(super) async fn mark_session_complete_dispatched(&self, session_id: &str) {
         let Some(repo) = self.session_repo.as_ref() else {
             return;
         };
@@ -316,6 +324,20 @@ where
                 error = %e,
                 "Failed to mark session-complete pipeline as dispatched"
             );
+        }
+    }
+
+    /// The end consumer records an explicit skip when no final work is needed.
+    /// A failed creation stays owed, and a publication records its own receipt.
+    pub(super) async fn record_session_pipeline_settlement(&self, session_id: &str) {
+        if let Some(outstanding) = self
+            .pipeline_coordinator
+            .session_outstanding(session_id)
+            .await
+            && outstanding.end_processed
+            && outstanding.is_idle()
+        {
+            self.mark_session_complete_dispatched(session_id).await;
         }
     }
 

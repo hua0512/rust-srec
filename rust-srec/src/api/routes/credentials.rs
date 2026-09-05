@@ -12,7 +12,10 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
 use crate::credentials::{CredentialScope, CredentialSource};
-use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
+use crate::streamer::{
+    StreamerMetadata,
+    manager::{ReloadPublish, StreamerUpdateParams},
+};
 
 /// The `StreamerManager` instantiation carried by [`CredentialRouteState`].
 type CredentialStreamerManager = crate::streamer::StreamerManager<
@@ -423,7 +426,11 @@ pub async fn refresh_streamer_credentials(
                     // ones. Only that column changed, so `reload_from_repo` publishes no event.
                     // A failure here leaves the row correct and the cache stale, which the next
                     // reload repairs, so it is logged rather than failing a refresh that landed.
-                    if let Err(error) = state.streamer_manager.reload_from_repo(streamer_id).await {
+                    if let Err(error) = state
+                        .streamer_manager
+                        .reload_from_repo(streamer_id, ReloadPublish::StateOnly)
+                        .await
+                    {
                         tracing::warn!(
                             streamer_id = %streamer_id,
                             %error,
@@ -691,8 +698,12 @@ async fn save_streamer_credentials(
     refresh_token: &str,
     access_token: Option<&str>,
 ) -> ApiResult<StreamerMetadata> {
+    // A streamer carrying `deleted_at` is gone as far as the API is concerned,
+    // and `StreamerManager::reap_deleted` is about to drop the row this would
+    // write `streamer_specific_config` to.
     let metadata = streamer_manager
         .get_streamer(id)
+        .filter(|metadata| !metadata.is_deleted())
         .ok_or_else(|| ApiError::not_found(format!("Streamer with id '{id}' not found")))?;
 
     let platform = config_service
