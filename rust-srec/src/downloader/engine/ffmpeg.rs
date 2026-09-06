@@ -13,11 +13,11 @@ use tracing::{debug, error, info, warn};
 
 use super::traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError,
-    EngineType, SegmentEvent, SegmentInfo,
+    EngineType, IoErrorKindSer, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_disk_full_line,
-    is_segment_start, observe_segment_event_send, parse_opened_path, parse_progress,
+    OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_segment_start,
+    observe_segment_event_send, output_io_error_kind, parse_opened_path, parse_progress,
     redact_process_args, terminate_and_reap,
 };
 use crate::database::models::engine::FfmpegEngineConfig;
@@ -411,10 +411,8 @@ impl DownloadEngine for FfmpegEngine {
             let mut has_active_segment_fs_bytes = false;
             let mut last_active_segment_stat_at = Instant::now();
             let mut last_progress_snapshot: Option<(u64, f64, f64)> = None;
-            // Set once when a disk-full signature is detected in stderr, so
-            // a later ProcessExit path doesn't double-emit DiskFull for the
-            // same incident.
-            let mut disk_full_reported = false;
+            // Preserve the output failure through process exit without reporting it twice.
+            let mut output_io_kind = None;
             let mut cleanup_unconfirmed = false;
 
             if let Some(path) = single_output_path {
@@ -604,26 +602,19 @@ impl DownloadEngine for FfmpegEngine {
                                     warn!("FFmpeg error for {}: {}", streamer_id, line);
                                 }
 
-                                // Detect mid-stream disk-full. ffmpeg prints the
-                                // verbatim "No space left on device" string (and
-                                // often a "-28" errno reference) when ENOSPC hits
-                                // the muxer. Catching it here lets the manager
-                                // trip the output-root write gate BEFORE ffmpeg
-                                // exits; once the dated output dir exists,
-                                // prepare_output_dir has nothing left to create
-                                // and never sees ENOSPC, so this stderr scan is
-                                // the only mid-stream signal.
-                                if !disk_full_reported && is_disk_full_line(&line) {
-                                    disk_full_reported = true;
+                                // Existing output directories can become unwritable mid-stream.
+                                if output_io_kind.is_none() && let Some(io_kind) = output_io_error_kind(&line) {
+                                    output_io_kind = Some(io_kind);
                                     warn!(
                                         streamer_id = %streamer_id,
                                         output_dir = %output_dir.display(),
-                                        "FFmpeg signalled disk full; emitting DiskFull event for gate"
+                                        "FFmpeg signalled output I/O failure; notifying the output-root gate"
                                     );
                                     observe_segment_event_send(
                                         event_tx
-                                            .send(SegmentEvent::DiskFull {
+                                            .send(SegmentEvent::OutputIoError {
                                                 output_dir: output_dir.clone(),
+                                                io_kind,
                                                 detail: format!("ffmpeg: {}", line),
                                             })
                                             .await,
@@ -698,7 +689,7 @@ impl DownloadEngine for FfmpegEngine {
             }
 
             match process_exit {
-                FfmpegProcessExit::Status(Some(0)) => {
+                FfmpegProcessExit::Status(Some(0)) if output_io_kind.is_none() => {
                     // Exit code 0 - success. Subprocess exit alone is
                     // ambiguous: it could mean EOF or it could mean
                     // ffmpeg was killed cleanly. SessionLifecycle treats
@@ -719,24 +710,23 @@ impl DownloadEngine for FfmpegEngine {
                 }
                 FfmpegProcessExit::Status(Some(code)) => {
                     // If ffmpeg exited with code 228 and we didn't already
-                    // detect ENOSPC from stderr, emit DiskFull as a fallback.
+                    // detect ENOSPC from stderr, emit an output failure as a fallback.
                     // This is the conventional ffmpeg exit code for
                     // "I/O error during writing" and is a strong disk-full
                     // signal when combined with stderr that mentioned the
                     // muxer writing path.
-                    if code == 228 && !disk_full_reported {
-                        // The stderr loop has already exited by this point,
-                        // so we don't need to update `disk_full_reported` —
-                        // the variable will not be read again.
+                    if code == 228 && output_io_kind.is_none() {
+                        output_io_kind = Some(IoErrorKindSer::StorageFull);
                         warn!(
                             streamer_id = %streamer_id,
                             output_dir = %output_dir.display(),
-                            "FFmpeg exited with code 228; assuming disk-full and emitting DiskFull event"
+                            "FFmpeg exited with code 228; reporting disk-full to the output-root gate"
                         );
                         observe_segment_event_send(
                             event_tx
-                                .send(SegmentEvent::DiskFull {
+                                .send(SegmentEvent::OutputIoError {
                                     output_dir: output_dir.clone(),
+                                    io_kind: IoErrorKindSer::StorageFull,
                                     detail: "ffmpeg exit 228 (I/O error, likely ENOSPC)"
                                         .to_string(),
                                 })
@@ -749,7 +739,12 @@ impl DownloadEngine for FfmpegEngine {
                     observe_segment_event_send(
                         event_tx
                             .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                                kind: output_io_kind.map_or(
+                                    DownloadFailureKind::ProcessExit { code: Some(code) },
+                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
+                                        io_kind,
+                                    },
+                                ),
                                 message: format!("FFmpeg exited with code {}", code),
                             })
                             .await,
@@ -760,7 +755,12 @@ impl DownloadEngine for FfmpegEngine {
                     observe_segment_event_send(
                         event_tx
                             .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::ProcessExit { code: None },
+                                kind: output_io_kind.map_or(
+                                    DownloadFailureKind::ProcessExit { code: None },
+                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
+                                        io_kind,
+                                    },
+                                ),
                                 message: "FFmpeg exited without an exit code".to_string(),
                             })
                             .await,
@@ -771,7 +771,12 @@ impl DownloadEngine for FfmpegEngine {
                     observe_segment_event_send(
                         event_tx
                             .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::ProcessExit { code: None },
+                                kind: output_io_kind.map_or(
+                                    DownloadFailureKind::ProcessExit { code: None },
+                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
+                                        io_kind,
+                                    },
+                                ),
                                 message,
                             })
                             .await,
@@ -845,6 +850,26 @@ impl DownloadEngine for FfmpegEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_error_precedes_terminal_even_when_ffmpeg_exits_zero() {
+        use super::super::utils::test_support::{assert_output_failure, script};
+        let dir = tempfile::tempdir().unwrap();
+        let binary = script(
+            dir.path(),
+            "ffmpeg",
+            "printf '%s\\n' 'Error opening output file: Permission denied' >&2\nexit 0\n",
+        );
+        let engine = FfmpegEngine {
+            config: FfmpegEngineConfig {
+                binary_path: binary,
+                ..Default::default()
+            },
+            version: None,
+        };
+        assert_output_failure(&engine, dir.path()).await;
+    }
 
     fn engine_with_output_args(output_args: &[&str]) -> FfmpegEngine {
         FfmpegEngine {

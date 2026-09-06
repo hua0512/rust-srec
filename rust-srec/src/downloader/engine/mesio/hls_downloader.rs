@@ -525,7 +525,7 @@ mod tests {
                     SegmentEvent::Progress(_) => "Progress",
                     SegmentEvent::DownloadCompleted { .. } => "DownloadCompleted",
                     SegmentEvent::DownloadFailed { .. } => "DownloadFailed",
-                    SegmentEvent::DiskFull { .. } => "DiskFull",
+                    SegmentEvent::OutputIoError { .. } => "OutputIoError",
                 })
                 .collect::<Vec<_>>()
         );

@@ -4,6 +4,10 @@
 
 ## Recording
 
+- **Output write failures pause recording retries reliably**
+
+  A failed buffered write during shutdown is now preserved even when the stream also disconnected. Disk-full, read-only, permission, missing-path, and output timeout failures reach the output-root gate before the recording failure is published. FFmpeg and Streamlink retain recognized output failures even after a zero exit code. Input network errors do not mark storage unavailable, and retries remain throttled if no output-root gate is attached.
+
 - **Streamer removal waits for every recording's post-processing**
 
   An older recording could still be processing when a newer recording finished, allowing streamer removal to leave the older work without the information needed to resume after a restart. Removal now waits for all unfinished recordings. Final post-processing that could not be started remains pending and can be retried after its missing preset is restored.
@@ -310,4 +314,3 @@
 - **Actionable boot failure and recovery screen**
 
   When the desktop application encounters an unrecoverable startup error (such as a locked database, permission denial, full storage, or a corrupted database image), it now displays a dedicated safe-mode recovery screen instead of silently crashing or failing to launch. The interface highlights the exact failure stage and error kind, provides actionable troubleshooting guidance, lets you open the data and log folders directly, and allows one-click copying of full diagnostic details.
-

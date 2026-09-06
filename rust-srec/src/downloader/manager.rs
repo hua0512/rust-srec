@@ -3414,59 +3414,96 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mid_stream_disk_full_event_degrades_the_gate_before_the_terminal() {
-        // Covers the engine → event translator → `record_failure` path that
-        // mesio's `handle_writer_result` and the ffmpeg/streamlink stderr
-        // readers all feed. The translator breaks out of its receive loop on
-        // the terminal event, so a `DiskFull` is only observed when it is
-        // queued ahead of `DownloadFailed`.
-        let temp = tempfile::tempdir().expect("tempdir");
-        let output_dir = temp.path().join("huya").join("X").join("20260903");
-        let (manager, _counter, gate) = manager_with_gate();
-        let mut events = manager.subscribe();
-
-        start_scripted_download(
-            &manager,
-            test_download_config(output_dir.clone(), "disk-full-session"),
-            vec![
-                SegmentEvent::DiskFull {
-                    output_dir: output_dir.clone(),
-                    detail: "mesio FLV: I/O error: No space left on device".to_string(),
-                },
-                SegmentEvent::DownloadFailed {
-                    kind: DownloadFailureKind::OutputRootUnavailable {
-                        io_kind: IoErrorKindSer::StorageFull,
+    async fn mid_stream_output_io_degrades_the_gate_before_the_terminal() {
+        for io_kind in [
+            IoErrorKindSer::StorageFull,
+            IoErrorKindSer::PermissionDenied,
+            IoErrorKindSer::ReadOnlyFilesystem,
+            IoErrorKindSer::NotFound,
+            IoErrorKindSer::TimedOut,
+        ] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let output_dir = temp.path().join("recording");
+            let (manager, _, gate) = manager_with_gate();
+            let mut events = manager.subscribe();
+            start_scripted_download(
+                &manager,
+                test_download_config(output_dir.clone(), "output-io-session"),
+                vec![
+                    SegmentEvent::OutputIoError {
+                        output_dir: output_dir.clone(),
+                        io_kind,
+                        detail: "output fault".to_owned(),
                     },
-                    message: "FLV writer error for test-streamer-id".to_string(),
+                    SegmentEvent::DownloadFailed {
+                        kind: DownloadFailureKind::OutputRootUnavailable { io_kind },
+                        message: "writer failed".to_owned(),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+            let terminal = wait_for_download_terminal(&mut events).await;
+            assert!(
+                matches!(terminal, DownloadTerminalEvent::Failed { kind: DownloadFailureKind::OutputRootUnavailable { io_kind: actual }, .. } if actual == io_kind)
+            );
+            let blocked = gate
+                .check(&output_dir)
+                .expect_err("gate must reject before the terminal is observed");
+            assert_eq!(blocked.kind, io_kind);
+            assert_eq!(blocked.message, "output fault");
+        }
+    }
+
+    #[tokio::test]
+    async fn output_failures_without_a_gate_record_keep_the_circuit_breaker() {
+        for attach_gate in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let output_dir = temp.path().join("recording");
+            let (manager, gate) = if attach_gate {
+                let (manager, _, gate) = manager_with_gate();
+                (manager, Some(gate))
+            } else {
+                (DownloadManager::new(), None)
+            };
+            let mut events = manager.subscribe();
+            let output_error = SegmentEvent::OutputIoError {
+                output_dir: output_dir.clone(),
+                io_kind: IoErrorKindSer::PermissionDenied,
+                detail: "denied".to_owned(),
+            };
+            let terminal = SegmentEvent::DownloadFailed {
+                kind: DownloadFailureKind::OutputRootUnavailable {
+                    io_kind: IoErrorKindSer::PermissionDenied,
                 },
-            ],
-        )
-        .await
-        .expect("scripted download should start");
-
-        let terminal = wait_for_download_terminal(&mut events).await;
-        let DownloadTerminalEvent::Failed { kind, .. } = terminal else {
-            panic!("expected a failed terminal, got {:?}", terminal);
-        };
-        assert_eq!(
-            kind,
-            DownloadFailureKind::OutputRootUnavailable {
-                io_kind: IoErrorKindSer::StorageFull
+                message: "writer failed".to_owned(),
+            };
+            // Either the event is correctly ordered but there is no gate, or
+            // the gate is attached but the engine sent its terminal too early.
+            let scripted = if attach_gate {
+                vec![terminal, output_error]
+            } else {
+                vec![output_error, terminal]
+            };
+            start_scripted_download(
+                &manager,
+                test_download_config(output_dir.clone(), "unpaired-output-failure"),
+                scripted,
+            )
+            .await
+            .unwrap();
+            let terminal = wait_for_download_terminal(&mut events).await;
+            assert!(matches!(
+                terminal,
+                DownloadTerminalEvent::Failed {
+                    kind: DownloadFailureKind::Io,
+                    ..
+                }
+            ));
+            if let Some(gate) = gate {
+                assert!(gate.check(&output_dir).is_ok());
             }
-        );
-
-        // The root is Degraded by the time the terminal is published, so the
-        // next `check` rejects instead of letting the streamer retry blind —
-        // the backpressure that replaces the circuit breaker for this kind.
-        let blocked = gate
-            .check(&output_dir)
-            .expect_err("the root must be Degraded once DiskFull is processed");
-        assert_eq!(blocked.kind, IoErrorKindSer::StorageFull);
-        assert!(
-            blocked.message.contains("No space left on device"),
-            "{}",
-            blocked.message
-        );
+        }
     }
 
     #[tokio::test]
