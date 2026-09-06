@@ -9,6 +9,7 @@
 mod discord;
 mod email;
 mod gotify;
+mod http;
 mod telegram;
 mod webhook;
 

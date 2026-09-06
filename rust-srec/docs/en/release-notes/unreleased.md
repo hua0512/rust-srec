@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Notifications
+
+- **Failed notification deliveries finish within a time limit and protect credentials**
+
+  Discord and Telegram requests now time out after 30 seconds. Gotify and webhook timeouts are capped at five minutes; zero uses the 30-second default. Rate-limit retries wait at most 30 seconds each and stop after three attempts. Invalid retry delays no longer cause a panic. Delivery errors retain the failure category or HTTP status without exposing token-bearing URLs or server response bodies.
+
 ## Recording
 
 - **Streamer removal waits for every recording's post-processing**
@@ -310,4 +316,3 @@
 - **Actionable boot failure and recovery screen**
 
   When the desktop application encounters an unrecoverable startup error (such as a locked database, permission denial, full storage, or a corrupted database image), it now displays a dedicated safe-mode recovery screen instead of silently crashing or failing to launch. The interface highlights the exact failure stage and error kind, provides actionable troubleshooting guidance, lets you open the data and log folders directly, and allows one-click copying of full diagnostic details.
-

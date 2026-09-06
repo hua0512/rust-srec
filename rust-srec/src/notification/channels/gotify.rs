@@ -3,12 +3,13 @@
 //! Sends messages via the Gotify REST API (`POST /message?token=<app_token>`).
 
 use async_trait::async_trait;
-use reqwest::Client;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::NotificationChannel;
+use super::http::{HttpDelivery, RetryPolicy};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
 
@@ -75,7 +76,7 @@ impl Default for GotifyConfig {
 /// Gotify notification channel.
 pub struct GotifyChannel {
     config: GotifyConfig,
-    client: Client,
+    http: HttpDelivery,
     /// Pre-computed message endpoint (without token query param).
     message_url: String,
 }
@@ -83,15 +84,14 @@ pub struct GotifyChannel {
 impl GotifyChannel {
     /// Create a new Gotify channel.
     pub fn new(config: GotifyConfig) -> Self {
-        crate::utils::http_client::install_rustls_provider();
         let message_url = format!("{}/message", config.server_url.trim_end_matches('/'));
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(config.timeout_secs))
-            .build()
-            .unwrap_or_default();
+        let http = HttpDelivery::new(
+            "gotify",
+            std::time::Duration::from_secs(config.timeout_secs),
+        );
         Self {
             config,
-            client,
+            http,
             message_url,
         }
     }
@@ -136,24 +136,12 @@ impl NotificationChannel for GotifyChannel {
 
         let payload = self.build_payload(event);
 
-        let response = self
-            .client
-            .post(&self.message_url)
+        let request = self
+            .http
+            .request(Method::POST, &self.message_url)?
             .query(&[("token", &self.config.app_token)])
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| crate::Error::Other(format!("Gotify request failed: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            warn!("Gotify request failed: {} - {}", status, body);
-            return Err(crate::Error::Other(format!(
-                "Gotify request failed: {} - {}",
-                status, body
-            )));
-        }
+            .json(&payload);
+        self.http.send(request, RetryPolicy::None).await?;
 
         debug!("Gotify notification sent: {}", event.event_type());
         Ok(())

@@ -67,6 +67,12 @@ pub enum Error {
     #[error("{0}")]
     Other(String),
 
+    #[error("{channel} notification delivery failed: {message}")]
+    NotificationDelivery {
+        channel: &'static str,
+        message: String,
+    },
+
     #[error("Duplicate URL: a streamer with URL '{0}' already exists")]
     DuplicateUrl(String),
 }
