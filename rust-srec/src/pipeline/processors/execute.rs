@@ -841,8 +841,7 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Err(e)) => return Err(e),
             Err(_) => {
                 ctx.error(format!("Command timed out after {}s", self.timeout_secs));
-                // run_command_with_logs enables kill_on_drop, so dropping its
-                // future here also terminates the child.
+                // Dropping the command future terminates its contained process tree.
                 return Err(crate::Error::Other("Command timed out".to_string()));
             }
         };

@@ -1,20 +1,22 @@
 //! Utility functions for processors.
 
-use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
-use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use process_utils::ContainedChild;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, warn};
 
-use super::traits::ProcessorContext;
-use process_utils::NoWindowExt;
+use super::traits::{JobLogSink, ProcessorContext};
+use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
+use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;
@@ -113,7 +115,7 @@ pub struct CommandOutput {
 
 async fn wait_for_reader_task(
     stream_name: &'static str,
-    handle: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
+    handle: Option<AbortOnDropHandle<std::io::Result<()>>>,
 ) -> crate::Result<()> {
     let Some(handle) = handle else {
         return Ok(());
@@ -282,15 +284,6 @@ fn push_overlong_summary(
     }
 }
 
-/// Child-process settings shared by every spawn helper in this module:
-/// hide the console window on Windows and kill the child when the owning
-/// future is dropped, because worker cancellation and job timeouts drop
-/// the processor future mid-run and the child must not outlive its job.
-fn configure_child_process(command: &mut Command) {
-    command.no_window();
-    command.kill_on_drop(true);
-}
-
 /// Build a sibling temp path for `final_path` (`<name>.tmp-<uuid>`).
 /// Writing to this path and renaming into place keeps a crashed or
 /// cancelled job from leaving a partial file under the final name.
@@ -302,112 +295,147 @@ pub(super) fn tmp_output_path(final_path: &Path) -> std::path::PathBuf {
     ))
 }
 
-/// Run a command and capture its output (stdout/stderr) as logs.
-/// This helper handles spawning the process, reading output streams asynchronously,
-/// and collecting them into a structured log format.
-pub async fn run_command_with_logs(
+#[derive(Clone)]
+enum CommandMode {
+    Plain,
+    Ffmpeg(ProgressReporter),
+    Rclone(ProgressReporter),
+    BaiduPcs(ProgressReporter),
+}
+
+#[derive(Clone)]
+struct ReaderContext {
+    mode: CommandMode,
+    tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    dropped_count: Arc<AtomicUsize>,
+    overlong_count: Arc<AtomicUsize>,
+    log_sink: Option<JobLogSink>,
+}
+
+async fn consume_command_stream<R: AsyncRead + Unpin>(
+    reader: R,
+    stdout: bool,
+    context: ReaderContext,
+) -> std::io::Result<()> {
+    if let CommandMode::Rclone(progress) = &context.mode {
+        return consume_rclone_stderr(
+            reader,
+            progress.clone(),
+            context.tx,
+            context.dropped_count,
+            context.overlong_count,
+        )
+        .await;
+    }
+    if let CommandMode::BaiduPcs(progress) = &context.mode {
+        return consume_baidupcs_stream(
+            reader,
+            progress.clone(),
+            context.log_sink,
+            context.tx,
+            context.dropped_count,
+            context.overlong_count,
+        )
+        .await;
+    }
+    let mut lines = CappedLines::new(reader, context.overlong_count);
+    if stdout && let CommandMode::Ffmpeg(progress) = &context.mode {
+        let mut state = FfmpegProgressState::default();
+        while let Some(line) = lines.next_line().await? {
+            if let Some(snapshot) = parse_ffmpeg_kv_line(&line, &mut state) {
+                progress.report(snapshot);
+            }
+        }
+        return Ok(());
+    }
+    while let Some(line) = lines.next_line().await? {
+        let level = if stdout {
+            LogLevel::Info
+        } else if matches!(&context.mode, CommandMode::Ffmpeg(_)) {
+            determine_ffmpeg_log_level(&line)
+        } else if line.starts_with("[error]")
+            || line.contains("Error ")
+            || line.contains("error:")
+            || line.contains("failed")
+            || line.contains("Invalid ")
+        {
+            LogLevel::Error
+        } else {
+            LogLevel::Info
+        };
+        if matches!(&context.mode, CommandMode::Plain) {
+            debug!(stdout, %line, "Command output");
+        }
+        if context.tx.try_send(create_log_entry(level, line)).is_err() {
+            context.dropped_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}
+
+/// Own the process tree and its pipe readers for the lifetime of the command.
+/// Worker cancellation and deadlines drop this future; containment then stops
+/// descendants and the reader guards close pipes without leaving detached tasks.
+async fn run_logged_command(
     command: &mut Command,
-    log_sink: Option<super::traits::JobLogSink>,
+    mode: CommandMode,
+    log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
-
-    configure_child_process(command);
-
-    // Ensure pipes are set up
-    command.stdout(Stdio::piped());
+    command.stdin(Stdio::null());
+    command.stdout(if matches!(&mode, CommandMode::Rclone(_)) {
+        Stdio::null()
+    } else {
+        Stdio::piped()
+    });
     command.stderr(Stdio::piped());
+    let mut child = ContainedChild::spawn(command)
+        .map_err(|error| crate::Error::Other(format!("Failed to spawn command: {error}")))?;
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(LOG_CHANNEL_CAPACITY);
     let dropped_count = Arc::new(AtomicUsize::new(0));
     let overlong_count = Arc::new(AtomicUsize::new(0));
-
-    // Handle stdout
-    let stdout_handle = if let Some(stdout) = child.stdout.take() {
-        let tx = tx.clone();
-        let dropped_count = dropped_count.clone();
-        let mut lines = CappedLines::new(stdout, overlong_count.clone());
-        Some(tokio::spawn(async move {
-            while let Some(line) = lines.next_line().await? {
-                debug!("stdout: {}", line);
-                if tx.try_send(create_log_entry(LogLevel::Info, line)).is_err() {
-                    dropped_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            Ok(())
-        }))
-    } else {
-        None
+    let context = ReaderContext {
+        mode,
+        tx,
+        dropped_count: dropped_count.clone(),
+        overlong_count: overlong_count.clone(),
+        log_sink: log_sink.clone(),
     };
-
-    // Handle stderr
-    let stderr_handle = if let Some(stderr) = child.stderr.take() {
-        let tx = tx.clone();
-        let dropped_count = dropped_count.clone();
-        let mut lines = CappedLines::new(stderr, overlong_count.clone());
-        Some(tokio::spawn(async move {
-            while let Some(line) = lines.next_line().await? {
-                // FFmpeg outputs progress to stderr, so we check for error indicators
-                // Use more specific patterns to avoid false positives
-                let level = if line.starts_with("[error]")
-                    || line.contains("Error ")
-                    || line.contains("error:")
-                    || line.contains("failed")
-                    || line.contains("Invalid ")
-                {
-                    warn!("stderr: {}", line);
-                    LogLevel::Error
-                } else {
-                    debug!("stderr: {}", line);
-                    LogLevel::Info
-                };
-
-                if tx.try_send(create_log_entry(level, line)).is_err() {
-                    dropped_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            Ok(())
-        }))
-    } else {
-        None
-    };
-
-    // Drop original sender so channel closes when tasks complete
-    drop(tx);
+    let stdout_handle = child.take_stdout().map(|stdout| {
+        AbortOnDropHandle::new(tokio::spawn(consume_command_stream(
+            stdout,
+            true,
+            context.clone(),
+        )))
+    });
+    let stderr_handle = child.take_stderr().map(|stderr| {
+        AbortOnDropHandle::new(tokio::spawn(consume_command_stream(
+            stderr,
+            false,
+            context.clone(),
+        )))
+    });
+    drop(context);
 
     let mut logs = VecDeque::new();
     let mut truncated_count = 0usize;
-
-    // Drain logs while waiting for the process to exit so the bounded channel
-    // doesn't fill up and drop important trailing output.
-    let mut status: Option<std::process::ExitStatus> = None;
+    let mut status = None;
     let mut wait_fut = Box::pin(child.wait());
-
     loop {
         tokio::select! {
-            res = &mut wait_fut, if status.is_none() => {
-                status = Some(res.map_err(|e| {
-                    crate::Error::Other(format!("Failed to wait for command: {}", e))
-                })?);
+            result = &mut wait_fut, if status.is_none() => {
+                status = Some(result.map_err(|error| crate::Error::Other(format!("Failed to wait for command: {error}")))?);
             }
             entry = rx.recv() => {
                 match entry {
                     Some(entry) => {
-                        if let Some(sink) = &log_sink {
-                            sink.try_send(entry.clone());
-                        }
+                        if let Some(sink) = &log_sink { sink.try_send(entry.clone()); }
                         push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count);
                     }
                     None => {
-                        // All reader tasks finished and dropped their senders.
-                        // If the process hasn't exited yet (e.g. no pipes), wait for it now.
                         if status.is_none() {
-                            status = Some(wait_fut.await.map_err(|e| {
-                                crate::Error::Other(format!("Failed to wait for command: {}", e))
-                            })?);
+                            status = Some(wait_fut.await.map_err(|error| crate::Error::Other(format!("Failed to wait for command: {error}")))?);
                         }
                         break;
                     }
@@ -415,24 +443,21 @@ pub async fn run_command_with_logs(
             }
         }
     }
-
-    // Wait for reader tasks to complete to ensure streams are fully consumed.
-    let stdout_result = wait_for_reader_task("command stdout", stdout_handle).await;
-    let stderr_result = wait_for_reader_task("command stderr", stderr_handle).await;
+    let (stdout_result, stderr_result) = tokio::join!(
+        wait_for_reader_task("command stdout", stdout_handle),
+        wait_for_reader_task("command stderr", stderr_handle),
+    );
     stdout_result?;
     stderr_result?;
 
-    let duration = start.elapsed().as_secs_f64();
     let status =
-        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
-
+        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_owned()))?;
     let dropped = dropped_count.load(Ordering::Relaxed);
     if dropped > 0 {
         push_log_with_cap(
             &mut logs,
             JobLogEntry::warn(format!(
-                "Dropped {} log lines due to backpressure (capacity={})",
-                dropped, LOG_CHANNEL_CAPACITY
+                "Dropped {dropped} log lines due to backpressure (capacity={LOG_CHANNEL_CAPACITY})"
             )),
             MAX_LOG_ENTRIES,
             &mut truncated_count,
@@ -443,19 +468,25 @@ pub async fn run_command_with_logs(
         push_log_with_cap(
             &mut logs,
             JobLogEntry::warn(format!(
-                "Truncated {} older log entries (kept last {} entries)",
-                truncated_count, MAX_LOG_ENTRIES
+                "Truncated {truncated_count} older log entries (kept last {MAX_LOG_ENTRIES} entries)"
             )),
             MAX_LOG_ENTRIES,
             &mut truncated_count,
         );
     }
-
     Ok(CommandOutput {
         status,
-        duration,
+        duration: start.elapsed().as_secs_f64(),
         logs: logs.into_iter().collect(),
     })
+}
+
+/// Run a command and capture bounded stdout/stderr logs.
+pub async fn run_command_with_logs(
+    command: &mut Command,
+    log_sink: Option<JobLogSink>,
+) -> crate::Result<CommandOutput> {
+    run_logged_command(command, CommandMode::Plain, log_sink).await
 }
 
 #[derive(Default)]
@@ -735,116 +766,9 @@ fn determine_rclone_log_level(line: &str) -> LogLevel {
 pub async fn run_ffmpeg_with_progress(
     command: &mut Command,
     progress: &ProgressReporter,
-    log_sink: Option<super::traits::JobLogSink>,
+    log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
-    let start = std::time::Instant::now();
-
-    configure_child_process(command);
-
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
-    let dropped_count = Arc::new(AtomicUsize::new(0));
-    let overlong_count = Arc::new(AtomicUsize::new(0));
-
-    let stdout_handle = if let Some(stdout) = child.stdout.take() {
-        let progress = progress.clone();
-        let mut lines = CappedLines::new(stdout, overlong_count.clone());
-        Some(tokio::spawn(async move {
-            let mut state = FfmpegProgressState::default();
-            while let Some(line) = lines.next_line().await? {
-                if let Some(snapshot) = parse_ffmpeg_kv_line(&line, &mut state) {
-                    progress.report(snapshot);
-                }
-            }
-            Ok(())
-        }))
-    } else {
-        None
-    };
-
-    let stderr_handle = if let Some(stderr) = child.stderr.take() {
-        let tx = tx.clone();
-        let dropped_count = dropped_count.clone();
-        let mut lines = CappedLines::new(stderr, overlong_count.clone());
-        Some(tokio::spawn(async move {
-            while let Some(line) = lines.next_line().await? {
-                // Determine log level based on content
-                let level = determine_ffmpeg_log_level(&line);
-                if tx.try_send(create_log_entry(level, line)).is_err() {
-                    dropped_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            Ok(())
-        }))
-    } else {
-        None
-    };
-
-    drop(tx);
-
-    let mut logs = VecDeque::new();
-    let mut truncated_count = 0usize;
-    let mut status: Option<std::process::ExitStatus> = None;
-    let mut wait_fut = Box::pin(child.wait());
-
-    loop {
-        tokio::select! {
-            res = &mut wait_fut, if status.is_none() => {
-                status = Some(res.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
-            }
-            entry = rx.recv() => {
-                match entry {
-                    Some(entry) => {
-                        if let Some(sink) = &log_sink {
-                            sink.try_send(entry.clone());
-                        }
-                        push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
-                    },
-                    None => {
-                        if status.is_none() {
-                            status = Some(wait_fut.await.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let stdout_result = wait_for_reader_task("ffmpeg progress", stdout_handle).await;
-    let stderr_result = wait_for_reader_task("ffmpeg stderr", stderr_handle).await;
-    stdout_result?;
-    stderr_result?;
-
-    let duration = start.elapsed().as_secs_f64();
-    let status =
-        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
-
-    let dropped = dropped_count.load(Ordering::Relaxed);
-    if dropped > 0 {
-        push_log_with_cap(
-            &mut logs,
-            JobLogEntry::warn(format!(
-                "Dropped {} log lines due to backpressure (capacity={})",
-                dropped, LOG_CHANNEL_CAPACITY
-            )),
-            MAX_LOG_ENTRIES,
-            &mut truncated_count,
-        );
-    }
-    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
-
-    Ok(CommandOutput {
-        status,
-        duration,
-        logs: logs.into_iter().collect(),
-    })
+    run_logged_command(command, CommandMode::Ffmpeg(progress.clone()), log_sink).await
 }
 
 /// Reads rclone stderr to EOF, routing each line through
@@ -879,89 +803,9 @@ async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
 pub async fn run_rclone_with_progress(
     command: &mut Command,
     progress: &ProgressReporter,
-    log_sink: Option<super::traits::JobLogSink>,
+    log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
-    let start = std::time::Instant::now();
-
-    configure_child_process(command);
-
-    command.stdout(Stdio::null());
-    command.stderr(Stdio::piped());
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
-    let dropped_count = Arc::new(AtomicUsize::new(0));
-    let overlong_count = Arc::new(AtomicUsize::new(0));
-
-    let stderr_handle = child.stderr.take().map(|stderr| {
-        tokio::spawn(consume_rclone_stderr(
-            stderr,
-            progress.clone(),
-            tx.clone(),
-            dropped_count.clone(),
-            overlong_count.clone(),
-        ))
-    });
-
-    drop(tx);
-
-    let mut logs = VecDeque::new();
-    let mut truncated_count = 0usize;
-    let mut status: Option<std::process::ExitStatus> = None;
-    let mut wait_fut = Box::pin(child.wait());
-
-    loop {
-        tokio::select! {
-            res = &mut wait_fut, if status.is_none() => {
-                status = Some(res.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
-            }
-            entry = rx.recv() => {
-                match entry {
-                    Some(entry) => {
-                        if let Some(sink) = &log_sink {
-                            sink.try_send(entry.clone());
-                        }
-                        push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
-                    },
-                    None => {
-                        if status.is_none() {
-                            status = Some(wait_fut.await.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    wait_for_reader_task("rclone stderr", stderr_handle).await?;
-
-    let duration = start.elapsed().as_secs_f64();
-    let status =
-        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
-
-    let dropped = dropped_count.load(Ordering::Relaxed);
-    if dropped > 0 {
-        push_log_with_cap(
-            &mut logs,
-            JobLogEntry::warn(format!(
-                "Dropped {} log lines due to backpressure (capacity={})",
-                dropped, LOG_CHANNEL_CAPACITY
-            )),
-            MAX_LOG_ENTRIES,
-            &mut truncated_count,
-        );
-    }
-    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
-
-    Ok(CommandOutput {
-        status,
-        duration,
-        logs: logs.into_iter().collect(),
-    })
+    run_logged_command(command, CommandMode::Rclone(progress.clone()), log_sink).await
 }
 
 /// Minimum seconds between progress-bar lines forwarded to the live log
@@ -1073,108 +917,212 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
 pub async fn run_baidupcs_with_logs(
     command: &mut Command,
     progress: &ProgressReporter,
-    log_sink: Option<super::traits::JobLogSink>,
+    log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
-    let start = std::time::Instant::now();
-
-    configure_child_process(command);
-
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<JobLogEntry>(LOG_CHANNEL_CAPACITY);
-    let dropped_count = Arc::new(AtomicUsize::new(0));
-    let overlong_count = Arc::new(AtomicUsize::new(0));
-
-    let stdout_handle = child.stdout.take().map(|stdout| {
-        tokio::spawn(consume_baidupcs_stream(
-            stdout,
-            progress.clone(),
-            log_sink.clone(),
-            tx.clone(),
-            dropped_count.clone(),
-            overlong_count.clone(),
-        ))
-    });
-    let stderr_handle = child.stderr.take().map(|stderr| {
-        tokio::spawn(consume_baidupcs_stream(
-            stderr,
-            progress.clone(),
-            log_sink.clone(),
-            tx.clone(),
-            dropped_count.clone(),
-            overlong_count.clone(),
-        ))
-    });
-
-    drop(tx);
-
-    let mut logs = VecDeque::new();
-    let mut truncated_count = 0usize;
-    let mut status: Option<std::process::ExitStatus> = None;
-    let mut wait_fut = Box::pin(child.wait());
-
-    loop {
-        tokio::select! {
-            res = &mut wait_fut, if status.is_none() => {
-                status = Some(res.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
-            }
-            entry = rx.recv() => {
-                match entry {
-                    Some(entry) => {
-                        if let Some(sink) = &log_sink {
-                            sink.try_send(entry.clone());
-                        }
-                        push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
-                    },
-                    None => {
-                        if status.is_none() {
-                            status = Some(wait_fut.await.map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let stdout_result = wait_for_reader_task("BaiduPCS-Go stdout", stdout_handle).await;
-    let stderr_result = wait_for_reader_task("BaiduPCS-Go stderr", stderr_handle).await;
-    stdout_result?;
-    stderr_result?;
-
-    let duration = start.elapsed().as_secs_f64();
-    let status =
-        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
-
-    let dropped = dropped_count.load(Ordering::Relaxed);
-    if dropped > 0 {
-        push_log_with_cap(
-            &mut logs,
-            JobLogEntry::warn(format!(
-                "Dropped {} log lines due to backpressure (capacity={})",
-                dropped, LOG_CHANNEL_CAPACITY
-            )),
-            MAX_LOG_ENTRIES,
-            &mut truncated_count,
-        );
-    }
-    push_overlong_summary(&mut logs, &overlong_count, &mut truncated_count);
-
-    Ok(CommandOutput {
-        status,
-        duration,
-        logs: logs.into_iter().collect(),
-    })
+    run_logged_command(command, CommandMode::BaiduPcs(progress.clone()), log_sink).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const HELPER_MODE: &str = "RUST_SREC_PROCESSOR_COMMAND_HELPER";
+    const HEARTBEAT_PATH: &str = "RUST_SREC_PROCESSOR_COMMAND_HEARTBEAT";
+
+    fn helper_command(mode: &str) -> Command {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["processor_command_helper", "--nocapture"])
+            .env(HELPER_MODE, mode);
+        command
+    }
+
+    fn command_modes() -> [CommandMode; 4] {
+        [
+            CommandMode::Plain,
+            CommandMode::Ffmpeg(ProgressReporter::noop("test")),
+            CommandMode::Rclone(ProgressReporter::noop("test")),
+            CommandMode::BaiduPcs(ProgressReporter::noop("test")),
+        ]
+    }
+
+    #[test]
+    #[expect(
+        clippy::zombie_processes,
+        reason = "The tree-exit fixture deliberately leaves its descendant for the containing process to terminate"
+    )]
+    fn processor_command_helper() {
+        use std::io::{Read, Write};
+        let Ok(mode) = std::env::var(HELPER_MODE) else {
+            return;
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        match mode.as_str() {
+            "stdin" => {
+                assert_eq!(std::io::stdin().read(&mut [0u8; 1]).unwrap(), 0);
+            }
+            "exit-7" => std::process::exit(7),
+            "logs" => {
+                let stdout = std::thread::spawn(|| {
+                    let mut stdout = std::io::stdout().lock();
+                    stdout
+                        .write_all(&vec![b'x'; MAX_LINE_BYTES + 1024])
+                        .unwrap();
+                    writeln!(stdout).unwrap();
+                    for i in 0..5000 {
+                        writeln!(stdout, "stdout {i}").unwrap();
+                    }
+                });
+                let mut stderr = std::io::stderr().lock();
+                stderr
+                    .write_all(&vec![b'x'; MAX_LINE_BYTES + 1024])
+                    .unwrap();
+                writeln!(stderr).unwrap();
+                for i in 0..5000 {
+                    writeln!(stderr, "stderr {i}").unwrap();
+                }
+                writeln!(stderr, "[error] final diagnostic").unwrap();
+                stdout.join().unwrap();
+            }
+            "tree-parent" | "tree-exit" => {
+                let heartbeat = std::env::var_os(HEARTBEAT_PATH).unwrap();
+                let mut command = process_utils::std_command(std::env::current_exe().unwrap());
+                command
+                    .args(["processor_command_helper", "--nocapture"])
+                    .env(HELPER_MODE, "tree-leaf")
+                    .env(HEARTBEAT_PATH, &heartbeat)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit());
+                let mut leaf = command.spawn().unwrap();
+                while std::time::Instant::now() < deadline {
+                    if mode == "tree-exit"
+                        && std::fs::metadata(&heartbeat).is_ok_and(|m| m.len() > 0)
+                    {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                if let Err(error) = leaf.kill() {
+                    eprintln!("helper cleanup failed: {error}");
+                }
+                leaf.wait().unwrap();
+            }
+            "tree-leaf" => {
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(std::env::var_os(HEARTBEAT_PATH).unwrap())
+                    .unwrap();
+                while std::time::Instant::now() < deadline {
+                    file.write_all(b"x").unwrap();
+                    file.flush().unwrap();
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+            _ => panic!("unknown helper mode"),
+        }
+    }
+
+    async fn wait_for_heartbeat(path: &Path) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if tokio::fs::metadata(path).await.is_ok_and(|m| m.len() > 0) {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("descendant must start");
+    }
+
+    async fn assert_heartbeat_stopped(path: &Path) {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        let before = tokio::fs::metadata(path).await.unwrap().len();
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        assert_eq!(
+            tokio::fs::metadata(path).await.unwrap().len(),
+            before,
+            "descendant must stop after command cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn command_modes_close_stdin_preserve_exit_status_and_bound_logs() {
+        for mode in command_modes() {
+            for helper in ["stdin", "exit-7", "logs"] {
+                let mut command = helper_command(helper);
+                let output = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    run_logged_command(&mut command, mode.clone(), None),
+                )
+                .await
+                .expect("pipes must not deadlock")
+                .unwrap();
+                assert_eq!(
+                    output.status.code(),
+                    Some(if helper == "exit-7" { 7 } else { 0 })
+                );
+                assert!(output.logs.len() <= MAX_LOG_ENTRIES);
+                if helper == "logs" {
+                    assert!(
+                        output
+                            .logs
+                            .iter()
+                            .any(|entry| entry.message.contains("Skipped")
+                                && entry.message.contains("output lines longer"))
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn command_cancellation_and_timeout_stop_descendants_in_every_mode() {
+        for mode in command_modes() {
+            for timeout in [false, true] {
+                let dir = tempfile::tempdir().unwrap();
+                let heartbeat = dir.path().join("heartbeat");
+                let mut command = helper_command("tree-parent");
+                command.env(HEARTBEAT_PATH, &heartbeat);
+                let mut work = Box::pin(run_logged_command(&mut command, mode.clone(), None));
+                tokio::select! {
+                    result = &mut work => panic!("parent must still be running: {:?}", result.map(|output| output.status)),
+                    () = wait_for_heartbeat(&heartbeat) => {},
+                }
+                if timeout {
+                    assert!(
+                        tokio::time::timeout(std::time::Duration::from_millis(30), work)
+                            .await
+                            .is_err()
+                    );
+                } else {
+                    drop(work);
+                }
+                assert_heartbeat_stopped(&heartbeat).await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn exited_parent_does_not_leave_descendants_holding_pipes_open() {
+        for mode in command_modes() {
+            let dir = tempfile::tempdir().unwrap();
+            let heartbeat = dir.path().join("heartbeat");
+            let mut command = helper_command("tree-exit");
+            command.env(HEARTBEAT_PATH, &heartbeat);
+            let output = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                run_logged_command(&mut command, mode, None),
+            )
+            .await
+            .expect("exited descendants must not hold pipes open")
+            .unwrap();
+            assert!(output.status.success());
+            assert_heartbeat_stopped(&heartbeat).await;
+        }
+    }
 
     // Captured from rclone v1.72.1 stderr under the flag set built by
     // RcloneProcessor (`--use-json-log --stats 1s --stats-log-level NOTICE`),

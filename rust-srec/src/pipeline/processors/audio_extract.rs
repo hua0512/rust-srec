@@ -238,13 +238,17 @@ impl AudioExtractProcessor {
             "csv=p=0",
             input_path,
         ]);
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| crate::Error::Other(format!("Failed to run ffprobe: {}", e)))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.trim() == "audio")
+        let output = super::utils::run_command_with_logs(&mut cmd, None).await?;
+        if !output.status.success() {
+            return Err(crate::Error::PipelineError(format!(
+                "ffprobe failed with exit status {}",
+                output.status
+            )));
+        }
+        Ok(output.logs.iter().any(|entry| {
+            entry.level == crate::pipeline::job_queue::LogLevel::Info
+                && entry.message.trim() == "audio"
+        }))
     }
 
     async fn process_one(
