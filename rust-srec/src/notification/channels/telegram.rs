@@ -4,20 +4,16 @@
 //! Handles 429 rate limits by respecting the `parameters.retry_after` field
 //! returned in the JSON response body.
 
-use std::time::Duration;
-
 use async_trait::async_trait;
-use reqwest::Client;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::NotificationChannel;
+use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
-
-/// Maximum number of retries for rate-limited requests.
-const MAX_RATE_LIMIT_RETRIES: u32 = 3;
 
 /// Telegram `sendMessage` text limit (UTF-8 characters).
 const TELEGRAM_MESSAGE_LIMIT: usize = 4096;
@@ -71,16 +67,15 @@ impl Default for TelegramConfig {
 /// Telegram notification channel.
 pub struct TelegramChannel {
     config: TelegramConfig,
-    client: Client,
+    http: HttpDelivery,
 }
 
 impl TelegramChannel {
     /// Create a new Telegram channel.
     pub fn new(config: TelegramConfig) -> Self {
-        crate::utils::http_client::install_rustls_provider();
         Self {
             config,
-            client: Client::new(),
+            http: HttpDelivery::new("telegram", DEFAULT_TIMEOUT),
         }
     }
 
@@ -115,68 +110,18 @@ impl TelegramChannel {
         truncate_message(&text, TELEGRAM_MESSAGE_LIMIT)
     }
 
-    /// Send request with rate limit handling.
     async fn send_with_retry(&self, payload: &serde_json::Value) -> Result<()> {
-        let url = format!(
-            "https://api.telegram.org/bot{}/sendMessage",
-            self.config.bot_token
-        );
-        let mut attempts = 0;
-
-        loop {
-            attempts += 1;
-
-            let response = self
-                .client
-                .post(&url)
-                .json(payload)
-                .send()
-                .await
-                .map_err(|e| crate::Error::Other(format!("Telegram request failed: {}", e)))?;
-
-            let status = response.status();
-
-            if status.is_success() {
-                return Ok(());
-            }
-
-            if status.as_u16() == 429 {
-                let body: serde_json::Value = response.json().await.unwrap_or_default();
-
-                let retry_after = body
-                    .get("parameters")
-                    .and_then(|p| p.get("retry_after"))
-                    .and_then(|v| v.as_u64())
-                    .map(Duration::from_secs);
-
-                if attempts >= MAX_RATE_LIMIT_RETRIES {
-                    warn!(
-                        "Telegram rate limit: max retries ({}) exceeded, last retry_after was {:?}",
-                        MAX_RATE_LIMIT_RETRIES, retry_after
-                    );
-                    return Err(crate::Error::Other(format!(
-                        "Telegram rate limit exceeded after {} retries",
-                        MAX_RATE_LIMIT_RETRIES
-                    )));
-                }
-
-                let wait_duration = retry_after.unwrap_or(Duration::from_secs(1));
-                debug!(
-                    "Telegram rate limited (429), waiting {:?} before retry (attempt {}/{})",
-                    wait_duration, attempts, MAX_RATE_LIMIT_RETRIES
-                );
-                tokio::time::sleep(wait_duration).await;
-                continue;
-            }
-
-            // Other error
-            let body = response.text().await.unwrap_or_default();
-            warn!("Telegram sendMessage failed: {} - {}", status, body);
-            return Err(crate::Error::Other(format!(
-                "Telegram sendMessage failed: {} - {}",
-                status, body
-            )));
-        }
+        let request = self
+            .http
+            .request(
+                Method::POST,
+                &format!(
+                    "https://api.telegram.org/bot{}/sendMessage",
+                    self.config.bot_token
+                ),
+            )?
+            .json(payload);
+        self.http.send(request, RetryPolicy::Telegram).await
     }
 }
 

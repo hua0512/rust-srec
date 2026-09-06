@@ -1,12 +1,13 @@
 //! Generic webhook notification channel.
 
 use async_trait::async_trait;
-use reqwest::{Client, header::HeaderMap};
+use reqwest::{Method, header::HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::NotificationChannel;
+use super::http::{HttpDelivery, RetryPolicy};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
 
@@ -86,19 +87,18 @@ impl Default for WebhookConfig {
 /// Generic webhook notification channel.
 pub struct WebhookChannel {
     config: WebhookConfig,
-    client: Client,
+    http: HttpDelivery,
 }
 
 impl WebhookChannel {
     /// Create a new Webhook channel.
     pub fn new(config: WebhookConfig) -> Self {
-        crate::utils::http_client::install_rustls_provider();
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(config.timeout_secs))
-            .build()
-            .unwrap_or_default();
+        let http = HttpDelivery::new(
+            "webhook",
+            std::time::Duration::from_secs(config.timeout_secs),
+        );
 
-        Self { config, client }
+        Self { config, http }
     }
 
     /// Build the request headers.
@@ -185,9 +185,9 @@ impl NotificationChannel for WebhookChannel {
         let headers = self.build_headers();
 
         let mut request = match self.config.method.to_uppercase().as_str() {
-            "POST" => self.client.post(&self.config.url),
-            "PUT" => self.client.put(&self.config.url),
-            _ => self.client.post(&self.config.url),
+            "POST" => self.http.request(Method::POST, &self.config.url)?,
+            "PUT" => self.http.request(Method::PUT, &self.config.url)?,
+            _ => self.http.request(Method::POST, &self.config.url)?,
         };
 
         request = request.headers(headers).json(&payload);
@@ -197,20 +197,7 @@ impl NotificationChannel for WebhookChannel {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|e| crate::Error::Other(format!("Webhook request failed: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            warn!("Webhook failed: {} - {}", status, body);
-            return Err(crate::Error::Other(format!(
-                "Webhook failed: {} - {}",
-                status, body
-            )));
-        }
+        self.http.send(request, RetryPolicy::None).await?;
 
         debug!("Webhook notification sent: {}", event.event_type());
         Ok(())

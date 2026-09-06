@@ -5,20 +5,16 @@
 //! - Parses response headers (X-RateLimit-*)
 //! - Retries on 429 responses respecting Retry-After header
 
-use std::time::Duration;
-
 use async_trait::async_trait;
-use reqwest::Client;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::NotificationChannel;
+use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
-
-/// Maximum number of retries for rate-limited requests.
-const MAX_RATE_LIMIT_RETRIES: u32 = 3;
 
 /// Discord channel configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,16 +63,15 @@ impl Default for DiscordConfig {
 /// Discord notification channel.
 pub struct DiscordChannel {
     config: DiscordConfig,
-    client: Client,
+    http: HttpDelivery,
 }
 
 impl DiscordChannel {
     /// Create a new Discord channel.
     pub fn new(config: DiscordConfig) -> Self {
-        crate::utils::http_client::install_rustls_provider();
         Self {
             config,
-            client: Client::new(),
+            http: HttpDelivery::new("discord", DEFAULT_TIMEOUT),
         }
     }
 
@@ -116,79 +111,12 @@ impl DiscordChannel {
         payload
     }
 
-    /// Send request with rate limit handling.
-    /// Retries on 429 responses respecting the Retry-After header.
     async fn send_with_retry(&self, payload: &serde_json::Value) -> Result<()> {
-        let mut attempts = 0;
-
-        loop {
-            attempts += 1;
-
-            let response = self
-                .client
-                .post(&self.config.webhook_url)
-                .json(payload)
-                .send()
-                .await
-                .map_err(|e| crate::Error::Other(format!("Discord request failed: {}", e)))?;
-
-            let status = response.status();
-
-            if status.is_success() {
-                return Ok(());
-            }
-
-            if status.as_u16() == 429 {
-                // Rate limited - parse retry_after from response
-                let retry_after = self.parse_retry_after(&response).await;
-
-                if attempts >= MAX_RATE_LIMIT_RETRIES {
-                    warn!(
-                        "Discord rate limit: max retries ({}) exceeded, last retry_after was {:?}",
-                        MAX_RATE_LIMIT_RETRIES, retry_after
-                    );
-                    return Err(crate::Error::Other(format!(
-                        "Discord rate limit exceeded after {} retries",
-                        MAX_RATE_LIMIT_RETRIES
-                    )));
-                }
-
-                let wait_duration = retry_after.unwrap_or(Duration::from_secs(1));
-                debug!(
-                    "Discord rate limited (429), waiting {:?} before retry (attempt {}/{})",
-                    wait_duration, attempts, MAX_RATE_LIMIT_RETRIES
-                );
-                tokio::time::sleep(wait_duration).await;
-                continue;
-            }
-
-            // Other error - don't retry
-            let body = response.text().await.unwrap_or_default();
-            warn!("Discord webhook failed: {} - {}", status, body);
-            return Err(crate::Error::Other(format!(
-                "Discord webhook failed: {} - {}",
-                status, body
-            )));
-        }
-    }
-
-    /// Parse the Retry-After duration from a 429 response.
-    async fn parse_retry_after(&self, response: &reqwest::Response) -> Option<Duration> {
-        // Try Retry-After header first (Discord sets this)
-        if let Some(retry_after) = response.headers().get("Retry-After")
-            && let Ok(secs) = retry_after.to_str().ok()?.parse::<f64>()
-        {
-            return Some(Duration::from_secs_f64(secs));
-        }
-
-        // Fallback: try X-RateLimit-Reset-After header
-        if let Some(reset_after) = response.headers().get("X-RateLimit-Reset-After")
-            && let Ok(secs) = reset_after.to_str().ok()?.parse::<f64>()
-        {
-            return Some(Duration::from_secs_f64(secs));
-        }
-
-        None
+        let request = self
+            .http
+            .request(Method::POST, &self.config.webhook_url)?
+            .json(payload);
+        self.http.send(request, RetryPolicy::Discord).await
     }
 }
 
