@@ -417,6 +417,17 @@ pub enum IoErrorKindSer {
 }
 
 impl IoErrorKindSer {
+    pub(crate) fn to_io_kind(self) -> std::io::ErrorKind {
+        match self {
+            Self::NotFound => std::io::ErrorKind::NotFound,
+            Self::StorageFull => std::io::ErrorKind::StorageFull,
+            Self::PermissionDenied => std::io::ErrorKind::PermissionDenied,
+            Self::ReadOnlyFilesystem => std::io::ErrorKind::ReadOnlyFilesystem,
+            Self::TimedOut => std::io::ErrorKind::TimedOut,
+            Self::Other => std::io::ErrorKind::Other,
+        }
+    }
+
     /// Classify a [`std::io::ErrorKind`] into the gate's narrower enum.
     pub fn from_io_kind(kind: std::io::ErrorKind) -> Self {
         match kind {
@@ -638,22 +649,16 @@ pub enum SegmentEvent {
         /// Human-readable error message for logging and display.
         message: String,
     },
-    /// The recording output filesystem appears unwritable mid-stream
-    /// (e.g., ffmpeg emitted `"No space left on device"` or exited with
-    /// code 228). Emitted by engines *before* propagating the underlying
-    /// failure, so the download manager can route it into the output-root
-    /// write gate via `gate.record_failure` without having to parse the
-    /// generic `DownloadFailed` message field.
-    ///
-    /// This is how the gate detects mid-stream ENOSPC — the common 508
-    /// scenario where the disk fills while today's date directory already
-    /// exists, meaning `prepare_output_dir` is a no-op and cannot catch
-    /// the failure on its own.
-    DiskFull {
+    /// The recording output filesystem failed. Must precede the terminal
+    /// event so the manager records the failure before ending event consumption.
+    /// Only output-side errors belong here; input/network I/O must not gate storage.
+    OutputIoError {
         /// Resolved output directory the engine was writing to. The
         /// manager passes this to `gate.record_failure` so `resolve_root`
         /// can determine the gate key.
         output_dir: PathBuf,
+        /// Filesystem failure classification, independent of diagnostic text.
+        io_kind: IoErrorKindSer,
         /// Human-readable detail from the engine (e.g., "ffmpeg: No space
         /// left on device, exit 228"). Shown in logs and the gate's
         /// RootMeta.last_error_msg.
