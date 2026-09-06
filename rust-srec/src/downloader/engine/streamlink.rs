@@ -15,11 +15,11 @@ use tracing::{debug, error, info, warn};
 
 use super::traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError,
-    EngineType, SegmentEvent, SegmentInfo,
+    EngineType, IoErrorKindSer, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_disk_full_line,
-    is_segment_start, observe_segment_event_send, parse_opened_path, parse_progress,
+    OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_segment_start,
+    observe_segment_event_send, output_io_error_kind, parse_opened_path, parse_progress,
     redact_process_args, terminate_and_reap,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
@@ -822,10 +822,8 @@ impl DownloadEngine for StreamlinkEngine {
             let mut segments_completed = 0u32;
             let mut total_bytes = 0u64;
             let mut total_duration = 0.0f64;
-            // Set once when a disk-full signature is detected in stderr so a
-            // later ProcessExit path doesn't double-emit DiskFull. See the
-            // matching comment in ffmpeg.rs for the rationale.
-            let mut disk_full_reported = false;
+            // Preserve the output failure through process exit without reporting it twice.
+            let mut output_io_kind = None;
             let mut bytes_completed = 0u64;
             let mut media_duration_offset_secs = 0.0f64;
             let mut media_duration_total_secs = 0.0f64;
@@ -1016,17 +1014,18 @@ impl DownloadEngine for StreamlinkEngine {
                                 // for the rationale. Streamlink feeds stderr
                                 // from the spawned ffmpeg process, so the
                                 // same signatures apply.
-                                if !disk_full_reported && is_disk_full_line(&line) {
-                                    disk_full_reported = true;
+                                if output_io_kind.is_none() && let Some(io_kind) = output_io_error_kind(&line) {
+                                    output_io_kind = Some(io_kind);
                                     warn!(
                                         streamer_id = %streamer_id_clone,
                                         output_dir = %output_dir_clone.display(),
-                                        "Streamlink+FFmpeg signalled disk full; emitting DiskFull event for gate"
+                                        "Streamlink+FFmpeg signalled output I/O failure; notifying the output-root gate"
                                     );
                                     observe_segment_event_send(
                                         event_tx_clone
-                                            .send(SegmentEvent::DiskFull {
+                                            .send(SegmentEvent::OutputIoError {
                                                 output_dir: output_dir_clone.clone(),
+                                                io_kind,
                                                 detail: format!("streamlink+ffmpeg: {}", line),
                                             })
                                             .await,
@@ -1101,7 +1100,7 @@ impl DownloadEngine for StreamlinkEngine {
             }
 
             match pipeline_exit {
-                StreamlinkPipelineExit::Ffmpeg(Some(0)) => {
+                StreamlinkPipelineExit::Ffmpeg(Some(0)) if output_io_kind.is_none() => {
                     // Exit code 0 — same caveat as ffmpeg: the subprocess
                     // exited cleanly but that doesn't prove the upstream
                     // stream is over. SessionLifecycle treats
@@ -1120,12 +1119,10 @@ impl DownloadEngine for StreamlinkEngine {
                     );
                 }
                 StreamlinkPipelineExit::Ffmpeg(Some(code)) => {
-                    // Fallback DiskFull emission for exit code 228 if we
+                    // Fallback output failure for exit code 228 if we
                     // didn't already catch it from stderr. Mirrors ffmpeg.rs.
-                    if code == 228 && !disk_full_reported {
-                        // The stderr loop has already exited by this point,
-                        // so we don't need to update `disk_full_reported` —
-                        // the variable will not be read again.
+                    if code == 228 && output_io_kind.is_none() {
+                        output_io_kind = Some(IoErrorKindSer::StorageFull);
                         warn!(
                             streamer_id = %streamer_id_clone,
                             output_dir = %output_dir_clone.display(),
@@ -1133,8 +1130,9 @@ impl DownloadEngine for StreamlinkEngine {
                         );
                         observe_segment_event_send(
                             event_tx_clone
-                                .send(SegmentEvent::DiskFull {
+                                .send(SegmentEvent::OutputIoError {
                                     output_dir: output_dir_clone.clone(),
+                                    io_kind: IoErrorKindSer::StorageFull,
                                     detail: "streamlink+ffmpeg exit 228 (I/O error, likely ENOSPC)"
                                         .to_string(),
                                 })
@@ -1147,7 +1145,12 @@ impl DownloadEngine for StreamlinkEngine {
                     observe_segment_event_send(
                         event_tx_clone
                             .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                                kind: output_io_kind.map_or(
+                                    DownloadFailureKind::ProcessExit { code: Some(code) },
+                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
+                                        io_kind,
+                                    },
+                                ),
                                 message: format!("Streamlink/FFmpeg exited with code {}", code),
                             })
                             .await,
@@ -1158,7 +1161,12 @@ impl DownloadEngine for StreamlinkEngine {
                     observe_segment_event_send(
                         event_tx_clone
                             .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::ProcessExit { code: None },
+                                kind: output_io_kind.map_or(
+                                    DownloadFailureKind::ProcessExit { code: None },
+                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
+                                        io_kind,
+                                    },
+                                ),
                                 message: "Streamlink/FFmpeg exited without an exit code"
                                     .to_string(),
                             })
@@ -1169,7 +1177,12 @@ impl DownloadEngine for StreamlinkEngine {
                 StreamlinkPipelineExit::Failed { kind, message } => {
                     observe_segment_event_send(
                         event_tx_clone
-                            .send(SegmentEvent::DownloadFailed { kind, message })
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: output_io_kind.map_or(kind, |io_kind| {
+                                    DownloadFailureKind::OutputRootUnavailable { io_kind }
+                                }),
+                                message,
+                            })
                             .await,
                         &streamer_id_clone,
                     );
@@ -1266,6 +1279,27 @@ mod tests {
     use super::*;
     use crate::downloader::engine::utils::parse_time;
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_error_precedes_terminal_in_streamlink_pipeline() {
+        use super::super::utils::test_support::{assert_output_failure, script};
+        let dir = tempfile::tempdir().unwrap();
+        let ffmpeg_path = script(
+            dir.path(),
+            "ffmpeg",
+            "printf '%s\\n' 'Error opening output file: Permission denied' >&2\nexit 0\n",
+        );
+        let binary_path = script(dir.path(), "streamlink", "sleep 1\nexit 0\n");
+        let engine = StreamlinkEngine {
+            config: StreamlinkEngineConfig {
+                binary_path,
+                ..Default::default()
+            },
+            ffmpeg_path,
+            version: None,
+        };
+        assert_output_failure(&engine, dir.path()).await;
+    }
     #[test]
     fn test_engine_type() {
         let engine = StreamlinkEngine::new();

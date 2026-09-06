@@ -4,7 +4,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::split_reason::SplitReason;
 use crate::{PipelineError, PipelineReceiver};
@@ -216,6 +216,14 @@ pub enum WriterError {
 
     #[error("Input stream error: {0}")]
     InputError(#[source] PipelineError),
+
+    /// Keep the output failure in the source chain so callers can classify it.
+    #[error("Input stream error: {input}; failed to close output: {close}")]
+    InputAndClose {
+        input: PipelineError,
+        #[source]
+        close: Box<WriterError>,
+    },
 }
 
 /// Internal error type for the writer task (keeps strategy error generic).
@@ -713,11 +721,10 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                 }
                 Err(e) => {
                     if let Err(close_error) = self.close() {
-                        warn!(
-                            error = %close_error,
-                            input_error = %e,
-                            "failed to close writer after input error"
-                        );
+                        return Err(WriterError::InputAndClose {
+                            input: e,
+                            close: Box::new(close_error),
+                        });
                     }
                     return Err(WriterError::InputError(e));
                 }
@@ -954,6 +961,117 @@ mod tests {
         let content = fs::read_to_string(expected_file_path).unwrap();
         assert_eq!(content, "HEADER\nitem1\nitem2\nFOOTER\n");
         assert_eq!(task.get_state().items_written_total, 2);
+    }
+
+    struct FailingSink(io::ErrorKind);
+
+    impl Write for FailingSink {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(self.0.into())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(self.0.into())
+        }
+    }
+
+    struct FailingCloseStrategy {
+        kind: io::ErrorKind,
+        fail_in_strategy: bool,
+    }
+
+    impl FormatStrategy<Vec<u8>> for FailingCloseStrategy {
+        type Writer = BufWriter<FailingSink>;
+        type StrategyError = io::Error;
+
+        fn create_writer(&self, _path: &Path) -> io::Result<Self::Writer> {
+            Ok(BufWriter::with_capacity(1024, FailingSink(self.kind)))
+        }
+        fn write_item(&mut self, writer: &mut Self::Writer, item: &Vec<u8>) -> io::Result<u64> {
+            writer.write_all(item)?;
+            Ok(item.len() as u64)
+        }
+        fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
+            false
+        }
+        fn next_file_path(&self, config: &WriterConfig, _state: &WriterState) -> PathBuf {
+            config.base_path.join("output.flv")
+        }
+        fn on_file_open(
+            &mut self,
+            _writer: &mut Self::Writer,
+            _path: &Path,
+            _config: &WriterConfig,
+            _state: &WriterState,
+        ) -> io::Result<u64> {
+            Ok(0)
+        }
+        fn on_file_close(
+            &mut self,
+            _writer: &mut Self::Writer,
+            _path: &Path,
+            _config: &WriterConfig,
+            _state: &WriterState,
+        ) -> io::Result<u64> {
+            if self.fail_in_strategy {
+                Err(self.kind.into())
+            } else {
+                Ok(0)
+            }
+        }
+    }
+
+    #[test]
+    fn simultaneous_input_and_buffered_close_failure_preserves_both_causes() {
+        for kind in [
+            io::ErrorKind::StorageFull,
+            io::ErrorKind::ReadOnlyFilesystem,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::NotFound,
+            io::ErrorKind::TimedOut,
+        ] {
+            for fail_in_strategy in [false, true] {
+                let dir = tempdir().unwrap();
+                let config =
+                    WriterConfig::new(dir.path().to_owned(), "output".to_owned(), "flv".to_owned());
+                let mut writer = WriterTask::new(
+                    config,
+                    FailingCloseStrategy {
+                        kind,
+                        fail_in_strategy,
+                    },
+                );
+                let (tx, rx) = tokio::sync::mpsc::channel(2);
+                tx.blocking_send(Ok(vec![1, 2, 3])).unwrap();
+                tx.blocking_send(Err(PipelineError::Io(io::Error::new(
+                    io::ErrorKind::ConnectionReset,
+                    "upstream reset",
+                ))))
+                .unwrap();
+                drop(tx);
+                let error = writer
+                    .run_from_channel(PipelineReceiver::from_items(rx), |_, _| true)
+                    .unwrap_err();
+                assert!(
+                    matches!(&error, WriterError::InputAndClose { input: PipelineError::Io(input), .. } if input.kind() == io::ErrorKind::ConnectionReset)
+                );
+                assert!(error.to_string().contains("upstream reset"));
+                let mut source: &(dyn std::error::Error + 'static) = &error;
+                loop {
+                    if let Some(io) = source.downcast_ref::<io::Error>() {
+                        assert_eq!(io.kind(), kind);
+                        break;
+                    }
+                    source = source
+                        .source()
+                        .expect("close failure must remain in the source chain");
+                }
+                assert_eq!(
+                    writer.get_state().bytes_written_total,
+                    3,
+                    "data reached the buffer before close failed"
+                );
+            }
+        }
     }
 
     #[test]

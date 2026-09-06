@@ -488,6 +488,7 @@ impl DownloadManager {
                 .unwrap_or_else(Instant::now);
             let mut engine_to_session: HashMap<u32, u32> = HashMap::new();
             let mut engine_segment_paths: HashMap<u32, String> = HashMap::new();
+            let mut output_failure_recorded = false;
 
             let natural_terminal = loop {
                 let Some(event) = segment_rx.recv().await else {
@@ -669,18 +670,33 @@ impl DownloadManager {
                             stop_cause: None,
                         };
                     }
-                    SegmentEvent::DiskFull { output_dir, detail } => {
+                    SegmentEvent::OutputIoError {
+                        output_dir,
+                        io_kind,
+                        detail,
+                    } => {
                         if let Some(gate) = output_root_gate_ref.as_ref() {
                             let synthetic_io_err =
-                                std::io::Error::new(std::io::ErrorKind::StorageFull, detail);
+                                std::io::Error::new(io_kind.to_io_kind(), detail);
                             gate.record_failure(&output_dir, &synthetic_io_err);
+                            output_failure_recorded = true;
                         } else {
                             debug!(
-                                "DiskFull event received but no output-root gate attached; ignoring"
+                                "Output I/O event received without an output-root gate; retaining circuit-breaker backpressure"
                             );
                         }
                     }
                     SegmentEvent::DownloadFailed { kind, message } => {
+                        // An engine must not bypass both storage gating and the breaker,
+                        // including early failures delivered by the engine fallback.
+                        let kind =
+                            if matches!(kind, DownloadFailureKind::OutputRootUnavailable { .. })
+                                && !output_failure_recorded
+                            {
+                                DownloadFailureKind::Io
+                            } else {
+                                kind
+                            };
                         if let Some(download) =
                             translator_active_downloads.get(&translator_download_id)
                         {
