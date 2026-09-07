@@ -1801,6 +1801,10 @@ fn test_set_worker_concurrency_clamps_to_max_workers() {
     manager.set_worker_concurrency(1, 3);
     assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
     assert_eq!(manager.io_pool.desired_max_workers(), 3);
+
+    manager.set_worker_concurrency(0, 0);
+    assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
+    assert_eq!(manager.io_pool.desired_max_workers(), 1);
 }
 
 #[tokio::test]

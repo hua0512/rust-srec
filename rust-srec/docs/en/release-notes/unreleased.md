@@ -10,6 +10,10 @@
 
 ## Post-processing
 
+- **Lower worker limits take effect while jobs are running**
+
+  Reducing CPU or I/O concurrency now restricts subsequent job admission immediately. Already-admitted jobs finish normally, and released capacity follows the latest limit without requiring another settings change. Rapid limit changes and worker cancellation do not leave stale permit reservations.
+
 - **Workflow edits keep dependencies and preset warnings accurate**
 
   Renaming a step updates its dependents in both workflow editors, and empty or duplicate IDs are rejected. Labels and delete-after-transform checks resolve referenced presets by exact name regardless of the preset count. Inline steps display their own processor. Loading, failed, or missing preset lookups are shown explicitly, and saving a potentially destructive step with unresolved presets requires confirmation.

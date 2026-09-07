@@ -308,8 +308,8 @@ where
     /// Adjust CPU/IO worker pool concurrency at runtime.
     ///
     /// Notes:
-    /// - This updates the *desired* concurrency only; it cannot increase beyond each pool's
-    ///   `max_workers()` without restarting the pipeline manager.
+    /// - New admissions use the limit immediately; already-admitted jobs finish normally.
+    /// - It cannot increase beyond each pool's `max_workers()` without restarting the manager.
     pub fn set_worker_concurrency(&self, cpu_jobs: usize, io_jobs: usize) {
         let cpu_jobs = cpu_jobs.max(1);
         let io_jobs = io_jobs.max(1);

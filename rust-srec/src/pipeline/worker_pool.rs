@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
+use tokio::sync::broadcast;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -136,14 +136,10 @@ pub struct WorkerPool {
     worker_type: WorkerType,
     /// Configuration.
     config: WorkerPoolConfig,
-    /// Semaphore for concurrency control.
-    semaphore: Arc<Semaphore>,
+    /// Admission limit, including workers currently claiming a job.
+    concurrency: Arc<WorkerConcurrency>,
     /// Active worker count.
     active_workers: Arc<AtomicUsize>,
-    /// Desired max concurrency for this pool (<= config.max_workers).
-    desired_workers: Arc<AtomicUsize>,
-    /// Reserved permits to reduce effective concurrency.
-    reserved_permits: Arc<parking_lot::Mutex<Vec<OwnedSemaphorePermit>>>,
     /// EWMA of observed runtime (milliseconds) for this pool.
     avg_runtime_ms: Arc<AtomicU64>,
     /// Cancellation token.
@@ -152,31 +148,59 @@ pub struct WorkerPool {
     tasks: parking_lot::Mutex<Option<JoinSet<()>>>,
 }
 
-fn set_desired_with_handles(
-    semaphore: &Arc<Semaphore>,
-    reserved_permits: &parking_lot::Mutex<Vec<OwnedSemaphorePermit>>,
-    desired_workers: &AtomicUsize,
+struct WorkerConcurrency {
     max_workers: usize,
-    desired: usize,
-) -> usize {
-    let desired = desired.min(max_workers);
-    desired_workers.store(desired, Ordering::SeqCst);
+    state: parking_lot::Mutex<AdmissionState>,
+}
 
-    let target_reserved = max_workers.saturating_sub(desired);
-    let mut reserved = reserved_permits.lock();
+struct AdmissionState {
+    limit: usize,
+    admitted: usize,
+}
 
-    while reserved.len() > target_reserved {
-        reserved.pop();
-    }
-
-    while reserved.len() < target_reserved {
-        match semaphore.clone().try_acquire_owned() {
-            Ok(p) => reserved.push(p),
-            Err(_) => break,
+impl WorkerConcurrency {
+    fn new(max_workers: usize) -> Self {
+        Self {
+            max_workers,
+            state: parking_lot::Mutex::new(AdmissionState {
+                limit: max_workers,
+                admitted: 0,
+            }),
         }
     }
 
-    desired
+    fn limit(&self) -> usize {
+        self.state.lock().limit
+    }
+
+    fn set_limit(&self, desired: usize) -> usize {
+        let mut state = self.state.lock();
+        state.limit = desired.min(self.max_workers);
+        state.limit
+    }
+
+    fn try_acquire(self: &Arc<Self>) -> Option<WorkerPermit> {
+        // Serialize admission with limit changes. A decrease can leave already-admitted
+        // jobs above the limit, but no new claim starts until enough of them finish.
+        let mut state = self.state.lock();
+        if state.admitted >= state.limit {
+            return None;
+        }
+        state.admitted += 1;
+        Some(WorkerPermit {
+            concurrency: Arc::clone(self),
+        })
+    }
+}
+
+struct WorkerPermit {
+    concurrency: Arc<WorkerConcurrency>,
+}
+
+impl Drop for WorkerPermit {
+    fn drop(&mut self) {
+        self.concurrency.state.lock().admitted -= 1;
+    }
 }
 
 fn update_avg_runtime_ms(avg_runtime_ms: &AtomicU64, sample_ms: u64) {
@@ -203,20 +227,19 @@ impl WorkerPool {
         let max_workers = config.max_workers;
         Self {
             worker_type,
-            semaphore: Arc::new(Semaphore::new(max_workers)),
+            concurrency: Arc::new(WorkerConcurrency::new(max_workers)),
             config,
             active_workers: Arc::new(AtomicUsize::new(0)),
-            desired_workers: Arc::new(AtomicUsize::new(max_workers)),
-            reserved_permits: Arc::new(parking_lot::Mutex::new(Vec::new())),
             avg_runtime_ms: Arc::new(AtomicU64::new(0)),
             cancellation_token: CancellationToken::new(),
             tasks: parking_lot::Mutex::new(Some(JoinSet::new())),
         }
     }
 
-    /// Get the desired effective concurrency for this pool.
+    /// Get the current admission limit. Jobs admitted before a decrease may temporarily
+    /// exceed this limit while they finish.
     pub fn desired_max_workers(&self) -> usize {
-        self.desired_workers.load(Ordering::SeqCst)
+        self.concurrency.limit()
     }
 
     /// Get the configured maximum worker count for this pool.
@@ -227,15 +250,9 @@ impl WorkerPool {
         self.config.max_workers
     }
 
-    /// Set the desired effective concurrency for this pool (clamped to `config.max_workers`).
+    /// Set the admission limit (clamped to `config.max_workers`) without interrupting jobs.
     pub fn set_desired_max_workers(&self, desired: usize) -> usize {
-        set_desired_with_handles(
-            &self.semaphore,
-            &self.reserved_permits,
-            &self.desired_workers,
-            self.config.max_workers,
-            desired,
-        )
+        self.concurrency.set_limit(desired)
     }
 
     /// Start the worker pool.
@@ -257,7 +274,7 @@ impl WorkerPool {
         event_tx: Option<broadcast::Sender<PipelineEvent>>,
     ) {
         let worker_type = self.worker_type;
-        let semaphore = self.semaphore.clone();
+        let concurrency = self.concurrency.clone();
         let cancellation_token = self.cancellation_token.clone();
         let poll_interval = std::time::Duration::from_millis(self.config.poll_interval_ms.max(1));
         let max_poll_interval = std::time::Duration::from_millis(
@@ -303,7 +320,7 @@ impl WorkerPool {
         let mut tasks = self.tasks.lock();
         if let Some(ref mut join_set) = *tasks {
             for i in 0..self.config.max_workers {
-                let semaphore = semaphore.clone();
+                let concurrency = concurrency.clone();
                 let cancellation_token = cancellation_token.clone();
                 let job_queue = job_queue.clone();
                 let processors = processors.clone();
@@ -353,7 +370,7 @@ impl WorkerPool {
                         }
 
                         // Try to acquire a permit
-                        let Ok(permit) = semaphore.clone().try_acquire_owned() else {
+                        let Some(permit) = concurrency.try_acquire() else {
                             continue; // No permits available
                         };
 
@@ -399,9 +416,7 @@ impl WorkerPool {
             if self.config.adaptive.enabled {
                 let adaptive = self.config.adaptive.clone();
                 let max_workers = self.config.max_workers;
-                let desired_workers = self.desired_workers.clone();
-                let reserved_permits = self.reserved_permits.clone();
-                let semaphore = self.semaphore.clone();
+                let concurrency = self.concurrency.clone();
                 let job_queue = job_queue.clone();
                 let supported_job_types = supported_job_types.clone();
                 let cancellation_token = self.cancellation_token.clone();
@@ -456,7 +471,7 @@ impl WorkerPool {
                         };
                         target = target.clamp(adaptive.min_workers.min(max_workers), max_workers);
 
-                        let current = desired_workers.load(Ordering::SeqCst);
+                        let current = concurrency.limit();
                         let mut next = current;
 
                         if target > current {
@@ -468,13 +483,7 @@ impl WorkerPool {
                         }
 
                         if next != current {
-                            let applied = set_desired_with_handles(
-                                &semaphore,
-                                &reserved_permits,
-                                &desired_workers,
-                                max_workers,
-                                next,
-                            );
+                            let applied = concurrency.set_limit(next);
                             debug!(
                                 "Adaptive {} pool concurrency: pending={}, active={}, avg_ms={}, desired={}/{} (target={})",
                                 worker_type, pending, active, avg_ms, applied, max_workers, target
@@ -1293,6 +1302,244 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::pipeline::{Job, JobStatus, ProcessorOutput, ProcessorType};
+
+    #[test]
+    fn lower_limit_waits_for_existing_admissions_without_another_update() {
+        let pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 4,
+                ..Default::default()
+            },
+        );
+        let mut permits: Vec<_> = (0..4)
+            .map(|_| pool.concurrency.try_acquire().unwrap())
+            .collect();
+        assert_eq!(pool.set_desired_max_workers(1), 1);
+        for _ in 0..3 {
+            drop(permits.pop());
+            assert!(pool.concurrency.try_acquire().is_none());
+        }
+        drop(permits);
+        let permit = pool.concurrency.try_acquire().unwrap();
+        assert!(pool.concurrency.try_acquire().is_none());
+        drop(permit);
+        assert!(pool.concurrency.try_acquire().is_some());
+    }
+
+    #[test]
+    fn latest_limit_wins_with_busy_and_independent_pools() {
+        let cpu = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 3,
+                ..Default::default()
+            },
+        );
+        let io = WorkerPool::with_config(
+            WorkerType::Io,
+            WorkerPoolConfig {
+                max_workers: 2,
+                ..Default::default()
+            },
+        );
+        let held: Vec<_> = (0..3)
+            .map(|_| cpu.concurrency.try_acquire().unwrap())
+            .collect();
+        cpu.set_desired_max_workers(0);
+        cpu.set_desired_max_workers(2);
+        cpu.set_desired_max_workers(1);
+        assert_eq!(cpu.set_desired_max_workers(usize::MAX), 3);
+        assert!(cpu.concurrency.try_acquire().is_none());
+        drop(held);
+        let held: Vec<_> = (0..3)
+            .map(|_| cpu.concurrency.try_acquire().unwrap())
+            .collect();
+        assert!(cpu.concurrency.try_acquire().is_none());
+        assert_eq!(io.desired_max_workers(), 2);
+        let first_io = io.concurrency.try_acquire().unwrap();
+        let second_io = io.concurrency.try_acquire().unwrap();
+        io.set_desired_max_workers(0);
+        drop((first_io, second_io));
+        assert!(io.concurrency.try_acquire().is_none());
+        assert_eq!(cpu.desired_max_workers(), 3);
+        drop(held);
+
+        let disabled = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(disabled.set_desired_max_workers(1), 0);
+        assert!(disabled.concurrency.try_acquire().is_none());
+    }
+
+    #[tokio::test]
+    async fn aborted_claim_returns_admission_capacity() {
+        let concurrency = Arc::new(WorkerConcurrency::new(2));
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let task_concurrency = concurrency.clone();
+        let task = tokio::spawn(async move {
+            let _permit = task_concurrency.try_acquire().unwrap();
+            ready_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        tokio::time::timeout(Duration::from_secs(1), ready_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        concurrency.set_limit(0);
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(concurrency.state.lock().admitted, 0);
+        concurrency.set_limit(1);
+        let _permit = concurrency.try_acquire().unwrap();
+        assert!(concurrency.try_acquire().is_none());
+    }
+
+    struct GatedProcessor(tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<()>>);
+
+    #[async_trait]
+    impl Processor for GatedProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["gated"]
+        }
+        fn name(&self) -> &'static str {
+            "gated"
+        }
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            self.0.send(release_tx).unwrap();
+            release_rx.await.unwrap();
+            Ok(ProcessorOutput::default())
+        }
+    }
+
+    async fn wait_for_admissions(pool: &WorkerPool, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pool.concurrency.state.lock().admitted != expected {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn busy_workers_apply_reduction_to_queued_jobs() {
+        let queue = Arc::new(JobQueue::new());
+        let pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 3,
+                poll_interval_ms: 1,
+                ..Default::default()
+            },
+        );
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        for _ in 0..6 {
+            queue
+                .enqueue(Job::new("gated", vec![], vec![], "streamer", "session"))
+                .await
+                .unwrap();
+        }
+        pool.start(queue, vec![Arc::new(GatedProcessor(started_tx))]);
+        let mut releases = Vec::new();
+        for _ in 0..3 {
+            releases.push(
+                tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        pool.set_desired_max_workers(1);
+        for remaining in (1..3).rev() {
+            releases.pop().unwrap().send(()).unwrap();
+            wait_for_admissions(&pool, remaining).await;
+            assert!(pool.concurrency.try_acquire().is_none());
+            assert!(started_rx.try_recv().is_err());
+        }
+        releases.pop().unwrap().send(()).unwrap();
+        for _ in 0..3 {
+            let release = tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            tokio::time::advance(Duration::from_millis(20)).await;
+            assert!(
+                started_rx.try_recv().is_err(),
+                "only one queued job may run at the reduced limit"
+            );
+            release.send(()).unwrap();
+        }
+        wait_for_admissions(&pool, 0).await;
+        tokio::time::timeout(Duration::from_secs(1), pool.stop())
+            .await
+            .unwrap();
+        assert_eq!(pool.concurrency.state.lock().admitted, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn adaptive_pool_can_resume_from_zero_and_stop() {
+        let queue = Arc::new(JobQueue::new());
+        let pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 2,
+                poll_interval_ms: 1,
+                adaptive: AdaptiveWorkerPoolConfig {
+                    enabled: true,
+                    min_workers: 0,
+                    interval_ms: 100,
+                    scale_down_idle_ticks: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let (event_tx, mut event_rx) = broadcast::channel(8);
+        pool.start_with_dag_scheduler(
+            queue.clone(),
+            vec![Arc::new(NoopProcessor)],
+            None,
+            None,
+            Some(event_tx),
+        );
+        assert_eq!(pool.desired_max_workers(), 0);
+        queue
+            .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !matches!(
+                event_rx.recv().await.unwrap(),
+                PipelineEvent::JobCompleted { .. }
+            ) {}
+        })
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pool.desired_max_workers() != 0 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), pool.stop())
+            .await
+            .unwrap();
+        assert_eq!(pool.concurrency.state.lock().admitted, 0);
+    }
 
     struct SleepProcessor;
 
