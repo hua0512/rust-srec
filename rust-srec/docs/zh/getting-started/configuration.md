@@ -111,15 +111,15 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 |------|------|--------|
 | `DATA_DIR` | 应用数据目录 | `./data` |
 | `CONFIG_DIR` | 平台配置文件目录 | `./config` |
-| `OUTPUT_DIR` | 启动写入探测和磁盘空间健康探测所监视的输出根目录。（写入门自身的根目录来自 `RUST_SREC_OUTPUT_ROOTS`。）在 Docker Compose 中，它是绑定挂载到 `/app/output` 的宿主机目录，容器内部则被设置为 `OUTPUT_DIR=/app/output`。它**不决定**录制文件写到哪里——详见下文。 | `./output` |
+| `OUTPUT_DIR` | 独立后端创建全新数据库时的初始录制文件夹，同时供启动和磁盘空间健康探测监视。在 Docker Compose 中它是宿主机绑定挂载目录，容器内使用 `OUTPUT_DIR=/app/output`。已有数据库设置会保留。 | `./output` |
 | `LOG_DIR` | 日志文件目录。相对路径按进程工作目录解析；随附的系统服务单元会显式设为 `/var/log/rust-srec`，以免日志文件落进状态目录。参见[安装](./installation.md)。 | `./logs` |
 
-::: warning `OUTPUT_DIR` 不是录制目录
-录制文件实际写入的目录，是保存在数据库中、在 **设置** → **全局** → **输出文件夹** 里编辑的 `output_folder`，并可按平台、模板和主播分别覆盖。没有任何环境变量可以覆盖它，应以应用显示的解析后路径为准。
+::: tip 初始录制目录与已保存的录制目录
+独立后端使用 `OUTPUT_DIR` 初始化全新数据库的 `output_folder`，未设置或为空白时使用 `./output`。相对路径按启动工作目录解析并保存为绝对路径。Docker Compose 和 systemd unit 分别提供 `/app/output` 和 `/var/lib/rust-srec/output`。
 
-在标准 Docker 部署下，两者天然一致：`output_folder` 出厂值就是 `/app/output`，而绑定挂载正好落在这里。二进制或系统服务部署则不同：把 `OUTPUT_DIR` 指向一个可写路径、而 `output_folder` 仍然是 `/app/output` 时，服务照常运行，但每一次录制都会失败。
+之后启动时保留已保存的设置。如需更改，请编辑 **设置** → **全局** → **输出文件夹**，也可按平台、模板和主播分别覆盖。应以应用显示的解析后路径为准。已有二进制或系统服务安装若仍使用 `/app/output`，需要将该设置改为可写目录。
 
-请先在网页端设置好 `output_folder`，再把 `OUTPUT_DIR`（以及下文的 `RUST_SREC_OUTPUT_ROOTS`）指向同一个目录，这样写入门和剩余空间探测监视的才是真正被写满的那个卷。
+请让 `OUTPUT_DIR` 和 `RUST_SREC_OUTPUT_ROOTS` 与已保存的文件夹保持一致，使写入门和健康探测监视实际录制卷。
 :::
 
 ### 关闭

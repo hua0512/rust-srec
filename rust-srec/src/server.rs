@@ -1,5 +1,6 @@
 //! Standalone server process composition.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -109,11 +110,8 @@ async fn run_worker() -> anyhow::Result<()> {
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
     info!("Connecting to database: {}", database_url);
-    let (pool, write_pool) = init_database_pools(&database_url).await?;
-
-    info!("Running database migrations...");
-    run_migrations(&pool).await?;
-    info!("Database migrations complete");
+    let output_dir = std::env::var("OUTPUT_DIR").ok();
+    let (pool, write_pool) = initialize_database(&database_url, output_dir.as_deref()).await?;
 
     info!("Initializing services...");
     let container = Arc::new(ServiceContainer::new(pool, write_pool).await?);
@@ -197,6 +195,50 @@ async fn run_worker() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn initialize_database(
+    database_url: &str,
+    output_dir: Option<&str>,
+) -> crate::Result<(crate::database::DbPool, crate::database::WritePool)> {
+    let (pool, write_pool) = init_database_pools(database_url).await?;
+    // Check before migrations seed the Docker default. An existing installation
+    // may have deliberately saved that same path, so its value is not evidence
+    // that it should be replaced.
+    let has_tables: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema \
+         WHERE type = 'table' AND name NOT LIKE 'sqlite_%')",
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    let initial_output = if has_tables {
+        None
+    } else {
+        let path = Path::new(
+            output_dir
+                .filter(|dir| !dir.trim().is_empty())
+                .unwrap_or("./output"),
+        );
+        Some(std::path::absolute(path).map_err(|error| {
+            crate::Error::io_path("resolving initial output directory", path, error)
+        })?)
+    };
+
+    run_migrations(&pool).await?;
+    if let Some(path) = initial_output {
+        let output_folder = path
+            .to_str()
+            .ok_or_else(|| crate::Error::config("Initial output directory must be valid UTF-8"))?;
+        sqlx::query(
+            "UPDATE global_config SET output_folder = ? WHERE output_folder = '/app/output'",
+        )
+        .bind(output_folder)
+        .execute(&write_pool)
+        .await?;
+        info!(output_folder, "Initialized recording output directory");
+    }
+    Ok((pool, write_pool))
+}
+
 fn fail_stop_worker(reason: &str) -> ! {
     // The supervisor only sees the exit status, so `reason` is the sole record
     // of which condition ended this worker. Log before exiting: the parent
@@ -268,4 +310,73 @@ fn supervisor_shutdown_signal()
             _ = ctrl_break.recv() => WorkerShutdownReason::Signal,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn stored_output(pool: &crate::database::DbPool) -> String {
+        sqlx::query_scalar("SELECT output_folder FROM global_config")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn fresh_database_uses_output_dir_or_local_default() {
+        for output_dir in [None, Some(""), Some("  "), Some("./custom recordings")] {
+            let dir = tempfile::tempdir().unwrap();
+            let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+            let (pool, write_pool) = initialize_database(&database_url, output_dir)
+                .await
+                .unwrap();
+            let expected = std::path::absolute(
+                output_dir
+                    .filter(|dir| !dir.trim().is_empty())
+                    .unwrap_or("./output"),
+            )
+            .unwrap();
+            assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
+            write_pool.close().await;
+            pool.close().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_database_preserves_absolute_docker_or_service_output_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let output = dir.path().join("recordings");
+        let (pool, write_pool) = initialize_database(&database_url, output.to_str())
+            .await
+            .unwrap();
+        assert_eq!(stored_output(&pool).await, output.to_str().unwrap());
+        write_pool.close().await;
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn existing_database_keeps_saved_output_including_docker_default() {
+        for saved in ["/app/output", "./operator recordings", ""] {
+            let dir = tempfile::tempdir().unwrap();
+            let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+            let (pool, write_pool) = init_database_pools(&database_url).await.unwrap();
+            run_migrations(&pool).await.unwrap();
+            sqlx::query("UPDATE global_config SET output_folder = ?")
+                .bind(saved)
+                .execute(&write_pool)
+                .await
+                .unwrap();
+            write_pool.close().await;
+            pool.close().await;
+
+            let (pool, write_pool) = initialize_database(&database_url, Some("./replacement"))
+                .await
+                .unwrap();
+            assert_eq!(stored_output(&pool).await, saved);
+            write_pool.close().await;
+            pool.close().await;
+        }
+    }
 }

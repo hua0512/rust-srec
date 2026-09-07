@@ -76,9 +76,7 @@ ExecStart=/opt/rust-srec/rust-srec
 # systemd creates these owned by User=/Group= and adds them to the writable set
 # of the ProtectSystem=strict namespace below.
 #   /var/lib/rust-srec         SQLite database, WAL files, generation marker
-#   /var/lib/rust-srec/output  where OUTPUT_DIR below points, so recordings
-#                              have somewhere to land once `output_folder`
-#                              names it
+#   /var/lib/rust-srec/output  initial recording folder for a fresh database
 #   /var/log/rust-srec         daily-rotated rust-srec.log from `init_logging`
 StateDirectory=rust-srec rust-srec/output
 StateDirectoryMode=0750
@@ -96,9 +94,10 @@ Environment=DATABASE_URL=sqlite:///var/lib/rust-srec/rust-srec.db
 # in the state directory; LogsDirectory= above already provides the path
 # journald-adjacent tooling expects.
 Environment=LOG_DIR=/var/log/rust-srec
-# Read by `ServiceContainer`'s health probes and the output-root write gate.
-# The directory recordings are actually written to is the `output_folder`
-# stored in the database and edited from the web interface. Give a collection
+# Seeds `output_folder` only when the standalone backend creates a fresh database;
+# existing installations retain the folder saved in the web interface.
+# Also read by `ServiceContainer`'s health probes and the output-root write gate.
+# Give a collection
 # that grows past a few hundred GB its own volume and list it under
 # ReadWritePaths= below rather than nesting it here: StateDirectory= recursively
 # chowns everything beneath /var/lib/rust-srec whenever it finds the directory
