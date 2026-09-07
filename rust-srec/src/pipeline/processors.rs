@@ -9,6 +9,9 @@ mod danmaku_factory;
 mod delete;
 mod execute;
 mod metadata;
+#[cfg(test)]
+mod output_tests;
+mod outputs;
 mod rclone;
 mod remux;
 #[cfg(test)]

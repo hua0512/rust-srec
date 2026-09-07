@@ -5567,6 +5567,7 @@ dependencies = [
  "rmcp",
  "rust-i18n",
  "rustls",
+ "same-file",
  "schemars 1.2.2",
  "serde",
  "serde_json",

@@ -3,8 +3,9 @@
 use async_trait::async_trait;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::{debug, warn};
+use tracing::debug;
 
+use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_image, is_video, parse_config_or_default};
 use crate::Result;
@@ -77,6 +78,7 @@ impl ThumbnailProcessor {
         output_override: Option<&str>,
         config: &ThumbnailConfig,
         ctx: &ProcessorContext,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
@@ -165,6 +167,8 @@ impl ThumbnailProcessor {
                 .to_string()
         };
         let output_path = output_string.as_str();
+        let temp_path = batch.stage(Path::new(output_path), true).await?;
+        let temp_name = temp_path.to_string_lossy();
 
         ctx.info(format!(
             "Extracting thumbnail from {} at {:.2}s{}",
@@ -210,7 +214,7 @@ impl ThumbnailProcessor {
             &config.quality.to_string(),
             "-update",
             "1",
-            output_path,
+            &temp_name,
         ]);
 
         // Execute command and capture logs
@@ -239,6 +243,7 @@ impl ThumbnailProcessor {
                 || stderr.contains("Invalid data found")
                 || stderr.contains("no video stream")
             {
+                batch.discard(&temp_path);
                 ctx.info(format!(
                     "Input file has no extractable video frames, passing through: {}",
                     input_path
@@ -269,6 +274,7 @@ impl ThumbnailProcessor {
             )));
         }
 
+        let output_size_bytes = Some(output_size(&temp_path).await?);
         debug!("ffmpeg exited successfully");
 
         ctx.info(format!(
@@ -278,7 +284,6 @@ impl ThumbnailProcessor {
 
         // Get file sizes for metrics
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
-        let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
 
         let width_str = if config.preserve_resolution {
             "native".to_string()
@@ -348,12 +353,15 @@ impl Processor for ThumbnailProcessor {
             ));
         }
 
+        let mut batch = OutputBatch::new(&input.inputs);
         if input.inputs.len() == 1 {
             let input_path = input.inputs[0].as_str();
             let output_override = input.outputs.first().map(|s| s.as_str());
-            return self
-                .process_one(input_path, output_override, &config, ctx)
-                .await;
+            let output = self
+                .process_one(input_path, output_override, &config, ctx, &mut batch)
+                .await?;
+            batch.commit().await?;
+            return Ok(output);
         }
 
         if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
@@ -373,32 +381,17 @@ impl Processor for ThumbnailProcessor {
 
         for (idx, input_path) in input.inputs.iter().enumerate() {
             let output_override = input.outputs.get(idx).map(|s| s.as_str());
-            match self
-                .process_one(input_path, output_override, &config, ctx)
-                .await
-            {
-                Ok(one) => {
-                    duration_secs += one.duration_secs;
-                    outputs.extend(one.outputs);
-                    items_produced.extend(one.items_produced);
-                    skipped_inputs.extend(one.skipped_inputs);
-                    succeeded_inputs.extend(one.succeeded_inputs);
-                    logs.extend(one.logs);
-                }
-                Err(e) => {
-                    for produced in &items_produced {
-                        if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
-                            warn!(
-                                path = %produced,
-                                error = %cleanup_error,
-                                "Failed to remove thumbnail output after batch failure"
-                            );
-                        }
-                    }
-                    return Err(e);
-                }
-            }
+            let one = self
+                .process_one(input_path, output_override, &config, ctx, &mut batch)
+                .await?;
+            duration_secs += one.duration_secs;
+            outputs.extend(one.outputs);
+            items_produced.extend(one.items_produced);
+            skipped_inputs.extend(one.skipped_inputs);
+            succeeded_inputs.extend(one.succeeded_inputs);
+            logs.extend(one.logs);
         }
+        batch.commit().await?;
 
         Ok(ProcessorOutput {
             outputs,

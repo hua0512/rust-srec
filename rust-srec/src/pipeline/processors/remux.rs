@@ -2,10 +2,11 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
+use super::outputs::{TempOutputGuard, promote_output as promote_remux_output};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
 use crate::Result;
@@ -57,71 +58,6 @@ async fn comparison_key(path: &str) -> String {
     }
 
     make_absolute(path).await
-}
-
-struct TempOutputGuard {
-    path: PathBuf,
-}
-
-impl TempOutputGuard {
-    fn new(output_path: &Path) -> Self {
-        let mut file_name = output_path
-            .file_stem()
-            .map(std::ffi::OsString::from)
-            .unwrap_or_default();
-        file_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
-        if let Some(extension) = output_path.extension() {
-            file_name.push(".");
-            file_name.push(extension);
-        }
-
-        Self {
-            path: output_path.with_file_name(file_name),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempOutputGuard {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_file(&self.path)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            warn!(
-                %error,
-                path = %self.path.display(),
-                "Failed to remove temporary remux output"
-            );
-        }
-    }
-}
-
-async fn promote_remux_output(
-    temp_output: TempOutputGuard,
-    output_path: &Path,
-    overwrite: bool,
-) -> Result<()> {
-    if !overwrite {
-        return tokio::fs::hard_link(temp_output.path(), output_path)
-            .await
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    crate::Error::PipelineError(format!(
-                        "Output file already exists and overwrite is disabled: {}",
-                        output_path.display()
-                    ))
-                } else {
-                    crate::Error::io_path("hard_link", output_path, error)
-                }
-            });
-    }
-
-    tokio::fs::rename(temp_output.path(), output_path)
-        .await
-        .map_err(|error| crate::Error::io_path("rename", output_path, error))
 }
 
 /// Video codec options.

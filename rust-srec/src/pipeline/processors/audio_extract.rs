@@ -11,6 +11,7 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
+use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_image, is_media, parse_config_or_default};
 use crate::Result;
@@ -115,9 +116,12 @@ impl AudioExtractProcessor {
     }
 
     /// Create with a custom ffmpeg path.
-    #[expect(
-        dead_code,
-        reason = "retained for optional runtime paths and diagnostics"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for optional runtime paths and diagnostics"
+        )
     )]
     pub fn with_ffmpeg_path(path: impl Into<String>) -> Self {
         Self {
@@ -257,6 +261,7 @@ impl AudioExtractProcessor {
         output_override: Option<&str>,
         config: &AudioExtractConfig,
         ctx: &ProcessorContext,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
@@ -361,6 +366,7 @@ impl AudioExtractProcessor {
 
         // Determine output path
         let output_path = self.determine_output_path(input_path, config, &dummy_input);
+        let temp_path = batch.stage(Path::new(&output_path), true).await?;
 
         info!(
             "Extracting audio from {} -> {} (format: {:?})",
@@ -368,7 +374,7 @@ impl AudioExtractProcessor {
         );
 
         // Build ffmpeg arguments
-        let args = self.build_args(input_path, &output_path, config);
+        let args = self.build_args(input_path, &temp_path.to_string_lossy(), config);
         debug!("FFmpeg args: {:?}", args);
 
         // Build ffmpeg command
@@ -398,6 +404,7 @@ impl AudioExtractProcessor {
             if stderr_output.contains("does not contain any stream")
                 || stderr_output.contains("Output file does not contain any stream")
             {
+                batch.discard(&temp_path);
                 info!(
                     "Input file contains no audio stream (detected by ffmpeg), passing through: {}",
                     input_path
@@ -445,10 +452,7 @@ impl AudioExtractProcessor {
 
         // Get file sizes for metrics
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
-        let output_size_bytes = tokio::fs::metadata(&output_path)
-            .await
-            .ok()
-            .map(|m| m.len());
+        let output_size_bytes = Some(output_size(&temp_path).await?);
 
         // Only return the newly produced audio file (no additive passthrough)
         Ok(ProcessorOutput {
@@ -506,8 +510,6 @@ impl Processor for AudioExtractProcessor {
         input: &ProcessorInput,
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
-        let start = std::time::Instant::now();
-
         let config: AudioExtractConfig =
             parse_config_or_default(input.config.as_deref(), ctx, "audio_extract", None);
 
@@ -517,6 +519,7 @@ impl Processor for AudioExtractProcessor {
             ));
         }
 
+        let mut batch = OutputBatch::new(&input.inputs);
         if input.inputs.len() > 1 {
             // Batch mode: output_path is ambiguous when multiple inputs exist.
             if config.output_path.is_some() {
@@ -542,32 +545,17 @@ impl Processor for AudioExtractProcessor {
 
             for (idx, input_path) in input.inputs.iter().enumerate() {
                 let output_override = input.outputs.get(idx).map(|s| s.as_str());
-                match self
-                    .process_one(input_path, output_override, &config, ctx)
-                    .await
-                {
-                    Ok(one) => {
-                        duration_secs += one.duration_secs;
-                        outputs.extend(one.outputs);
-                        items_produced.extend(one.items_produced);
-                        skipped_inputs.extend(one.skipped_inputs);
-                        succeeded_inputs.extend(one.succeeded_inputs);
-                        logs.extend(one.logs);
-                    }
-                    Err(e) => {
-                        for produced in &items_produced {
-                            if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
-                                warn!(
-                                    path = %produced,
-                                    error = %cleanup_error,
-                                    "Failed to remove audio output after batch failure"
-                                );
-                            }
-                        }
-                        return Err(e);
-                    }
-                }
+                let one = self
+                    .process_one(input_path, output_override, &config, ctx, &mut batch)
+                    .await?;
+                duration_secs += one.duration_secs;
+                outputs.extend(one.outputs);
+                items_produced.extend(one.items_produced);
+                skipped_inputs.extend(one.skipped_inputs);
+                succeeded_inputs.extend(one.succeeded_inputs);
+                logs.extend(one.logs);
             }
+            batch.commit().await?;
 
             return Ok(ProcessorOutput {
                 outputs,
@@ -590,220 +578,17 @@ impl Processor for AudioExtractProcessor {
             });
         }
 
-        // Get input path
-        let input_path = input.inputs.first().ok_or_else(|| {
-            crate::Error::PipelineError("No input file specified for audio extraction".to_string())
-        })?;
-
-        // Check if input file exists
-        if !Path::new(input_path).exists() {
-            return Err(crate::Error::PipelineError(format!(
-                "Input file does not exist: {}",
-                input_path
-            )));
-        }
-
-        // Get extension once for reuse
-        let ext = get_extension(input_path).unwrap_or_default();
-
-        // Check if input is an image - pass through as-is
-        if is_image(&ext) {
-            let duration = start.elapsed().as_secs_f64();
-            info!("Input is an image, passing through: {}", input_path);
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.clone()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "already_image",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.clone(),
-                    "input is an image, no audio to extract".to_string(),
-                )],
-                ..Default::default()
-            });
-        }
-
-        // Check if input is a supported media format
-        if !is_media(&ext) {
-            let duration = start.elapsed().as_secs_f64();
-            info!(
-                "Input file is not a supported media format for audio extraction, passing through: {}",
-                input_path
-            );
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.clone()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "unsupported_media_format",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.clone(),
-                    "not a supported media format for audio extraction".to_string(),
-                )],
-                ..Default::default()
-            });
-        }
-
-        // Check if input has audio stream
-        // If no audio stream, pass through the input file instead of failing
-        match self.has_audio_stream(input_path).await {
-            Ok(true) => {}
-            Ok(false) => {
-                let duration = start.elapsed().as_secs_f64();
-                info!(
-                    "Input file contains no audio stream, passing through: {}",
-                    input_path
-                );
-                return Ok(ProcessorOutput {
-                    outputs: vec![input_path.clone()],
-                    duration_secs: duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "status": "skipped",
-                            "reason": "no_audio_stream",
-                            "input": input_path,
-                        })
-                        .to_string(),
-                    ),
-                    skipped_inputs: vec![(
-                        input_path.clone(),
-                        "input file contains no audio stream".to_string(),
-                    )],
-                    ..Default::default()
-                });
-            }
-            Err(e) => {
-                // If ffprobe fails, we'll try to extract anyway and let ffmpeg report the error
-                warn!("Could not verify audio stream presence: {}", e);
-            }
-        }
-
-        // Determine output path
-        let output_path = self.determine_output_path(input_path, &config, input);
-
-        info!(
-            "Extracting audio from {} -> {} (format: {:?})",
-            input_path, output_path, config.format
-        );
-
-        // Build ffmpeg arguments
-        let args = self.build_args(input_path, &output_path, &config);
-        debug!("FFmpeg args: {:?}", args);
-
-        // Build ffmpeg command
-        let mut cmd = Command::new(&self.ffmpeg_path);
-        crate::utils::configure_ffmpeg_locale(&mut cmd);
-        cmd.args(&args);
-
-        // Execute command and capture logs
-        let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
-            &mut cmd,
-            &ctx.progress,
-            Some(ctx.log_sink.clone()),
-        )
-        .await?;
-
-        if !command_output.status.success() {
-            // Reconstruct stderr for error analysis
-            let stderr_output = command_output
-                .logs
-                .iter()
-                .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info) // Assuming warnings/errors are interested
-                .map(|l| l.message.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            // Check for no audio stream error - pass through instead of failing
-            if stderr_output.contains("does not contain any stream")
-                || stderr_output.contains("Output file does not contain any stream")
-            {
-                info!(
-                    "Input file contains no audio stream (detected by ffmpeg), passing through: {}",
-                    input_path
-                );
-                return Ok(ProcessorOutput {
-                    outputs: vec![input_path.to_string()],
-                    duration_secs: command_output.duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "status": "skipped",
-                            "reason": "no_audio_stream",
-                            "input": input_path,
-                        })
-                        .to_string(),
-                    ),
-                    skipped_inputs: vec![(
-                        input_path.to_string(),
-                        "input file contains no audio stream".to_string(),
-                    )],
-                    logs: command_output.logs,
-                    ..Default::default()
-                });
-            }
-
-            let error_msg = command_output
-                .logs
-                .iter()
-                .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                .map(|l| l.message.clone())
-                .unwrap_or_else(|| "Unknown ffmpeg error".to_string());
-
-            error!("ffmpeg failed: {}", error_msg);
-
-            return Err(crate::Error::PipelineError(format!(
-                "ffmpeg failed with exit code {}: {}",
-                command_output.status.code().unwrap_or(-1),
-                error_msg
-            )));
-        }
-
-        info!(
-            "Audio extraction completed in {:.2}s: {}",
-            command_output.duration, output_path
-        );
-
-        // Get file sizes for metrics
-        let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
-        let output_size_bytes = tokio::fs::metadata(&output_path)
-            .await
-            .ok()
-            .map(|m| m.len());
-
-        // Only return the newly produced audio file (no additive passthrough)
-        Ok(ProcessorOutput {
-            outputs: vec![output_path.clone()],
-            duration_secs: command_output.duration,
-            metadata: Some(
-                serde_json::json!({
-                    "format": config.format.as_ref().map(|f| format!("{:?}", f)),
-                    "bitrate": config.bitrate,
-                    "sample_rate": config.sample_rate,
-                    "channels": config.channels,
-                    "input": input_path,
-                    "output": output_path,
-                })
-                .to_string(),
-            ),
-            items_produced: vec![output_path],
-            input_size_bytes,
-            output_size_bytes,
-            failed_inputs: vec![],
-            succeeded_inputs: vec![input_path.clone()],
-            skipped_inputs: vec![],
-            uploads: vec![],
-            logs: command_output.logs,
-        })
+        let output = self
+            .process_one(
+                &input.inputs[0],
+                input.outputs.first().map(String::as_str),
+                &config,
+                ctx,
+                &mut batch,
+            )
+            .await?;
+        batch.commit().await?;
+        Ok(output)
     }
 }
 
