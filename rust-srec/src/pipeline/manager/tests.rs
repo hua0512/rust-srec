@@ -13,6 +13,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+mod danmu_recovery;
+
 struct TestSessionRepository {
     end_time: Mutex<Option<i64>>,
     sessions: Mutex<HashMap<String, LiveSessionDbModel>>,
