@@ -15,8 +15,6 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { getStepColor, getStepIcon } from '@/components/pipeline/constants';
-import { listJobPresets } from '@/server/functions/job';
-import { useQuery } from '@tanstack/react-query';
 import { DagStepDefinition } from '@/api/schemas';
 import {
   getCategoryName,
@@ -26,6 +24,8 @@ import {
   buildPresetProcessorMap,
   getDeleteAfterTransformStepIds,
 } from './delete-warning';
+import { findPresetByName, useReferencedPresets } from './preset-lookup';
+import { PresetLookupStatus } from './preset-lookup-status';
 
 interface StepsListProps {
   steps: DagStepDefinition[];
@@ -46,27 +46,20 @@ export const StepsList = memo(
     onReplace,
   }: StepsListProps) => {
     const { i18n } = useLingui();
-    // Fetch available job presets to get metadata (icons, colors, desc)
-    const { data: presetsData } = useQuery({
-      queryKey: ['job', 'presets', 'all'],
-      queryFn: () => listJobPresets({ data: { limit: 100 } }),
-    });
-
-    const presets = presetsData?.presets || [];
+    const lookup = useReferencedPresets(steps);
+    const { presets } = lookup;
 
     // Flag delete steps wired after a transform step: they would delete the converted artifact
     // produced by that step, not the original recording.
     const warnedStepIds = useMemo(
       () =>
-        getDeleteAfterTransformStepIds(
-          steps,
-          buildPresetProcessorMap(presetsData?.presets),
-        ),
-      [steps, presetsData],
+        getDeleteAfterTransformStepIds(steps, buildPresetProcessorMap(presets)),
+      [steps, presets],
     );
 
     return (
       <div className="rounded-2xl border border-dashed border-border/60 bg-muted/5 min-h-[120px] p-4 sm:p-6 h-full flex flex-col relative">
+        <PresetLookupStatus {...lookup} />
         {steps.length > 0 ? (
           <Reorder.Group
             axis="y"
@@ -79,12 +72,11 @@ export const StepsList = memo(
                 const { step, id } = dagStep;
                 const stepName =
                   step.type === 'inline' ? step.processor : step.name;
-                // Prioritize exact name match over processor type match
-                // to avoid returning wrong preset when multiple presets share the same processor type
                 const presetInfo =
-                  presets.find((p) => p.name === stepName) ||
-                  presets.find((p) => p.processor === stepName);
-                const Icon = getStepIcon(stepName);
+                  step.type === 'preset'
+                    ? findPresetByName(presets, step.name)
+                    : null;
+                const Icon = getStepIcon(presetInfo?.processor ?? stepName);
                 const isInline = step.type === 'inline';
                 // Use different color style for inline detached steps to distinguish them
                 let stepColorClass = presetInfo

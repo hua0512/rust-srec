@@ -1,7 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
 import { DagStepDefinition } from '@/api/schemas';
-import { listJobPresets } from '@/server/functions/job';
 
 // Processors that produce a NEW primary artifact distinct from their input (e.g. the remux
 // family transcodes to a new file). The DAG feeds each step the outputs of the steps it
@@ -76,13 +73,23 @@ export function getDeleteAfterTransformStepIds(
   return ids;
 }
 
-// Shared preset name -> processor map. Reuses a single query (deduped by key across the step
-// editor dialog and the graph view).
-export function usePresetProcessorMap(enabled = true): Map<string, string> {
-  const { data } = useQuery({
-    queryKey: ['job', 'presets', 'processor-map'],
-    queryFn: () => listJobPresets({ data: { limit: 200 } }),
-    enabled,
-  });
-  return useMemo(() => buildPresetProcessorMap(data?.presets), [data]);
+export function hasUnresolvedDeleteRisk(
+  step: DagStepDefinition,
+  allSteps: DagStepDefinition[],
+  presetProcessorByName: Map<string, string>,
+): boolean {
+  if (!step.depends_on?.length) return false;
+  const processor = resolveStepProcessor(step, presetProcessorByName);
+  if (step.step.type === 'preset' && processor === null) return true;
+  return (
+    processor === 'delete' &&
+    step.depends_on.some((id) => {
+      const dependency = allSteps.find((candidate) => candidate.id === id);
+      return (
+        !dependency ||
+        (dependency.step.type === 'preset' &&
+          resolveStepProcessor(dependency, presetProcessorByName) === null)
+      );
+    })
+  );
 }

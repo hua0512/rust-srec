@@ -12,10 +12,13 @@ import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import {
-  usePresetProcessorMap,
+  buildPresetProcessorMap,
   getTransformDependencyIds,
+  hasUnresolvedDeleteRisk,
 } from './delete-warning';
-import { usePresetByName } from './preset-lookup';
+import { usePresetByName, useReferencedPresets } from './preset-lookup';
+import { PresetLookupStatus } from './preset-lookup-status';
+import { getStepIdError } from './step-operations';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input as UiInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -173,7 +176,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   }, [open, step, formValuesJson]);
 
   const performSave = (data: any) => {
-    if (!dagStep) return;
+    if (!dagStep || idError) return;
 
     let finalStepContent: PipelineStep;
 
@@ -201,9 +204,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   };
 
   const handleSubmit = (data: any) => {
+    if (idError) return;
     // Block saving a delete step wired after a transform until the user confirms. The dialog
     // alert and canvas badge explain why; "Add anyway" in the confirmation runs performSave.
-    if (transformDependencyIds.length > 0) {
+    if (transformDependencyIds.length > 0 || unresolvedDeleteRisk) {
       setPendingData(data);
       setConfirmOpen(true);
       return;
@@ -241,6 +245,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const [dependsOn, setDependsOn] = useState<string[]>(
     dagStep?.depends_on || [],
   );
+  const idError = getStepIdError(allSteps, currentStepIndex, idValue);
 
   useEffect(() => {
     if (open && dagStep) {
@@ -252,18 +257,46 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   // Warn when this delete step depends on a transform step: the DAG feeds it that step's
   // produced (converted) file, so deleting would discard the result rather than the source.
   // Uses the live `dependsOn` state so the warning tracks edits made in this dialog.
-  const presetProcessorByName = usePresetProcessorMap(open);
+  const warningStep = dagStep
+    ? {
+        ...dagStep,
+        depends_on: dependsOn,
+        step: detachedProcessor
+          ? {
+              type: 'inline' as const,
+              processor: detachedProcessor,
+              config: {},
+            }
+          : dagStep.step,
+      }
+    : null;
+  const lookup = useReferencedPresets(
+    warningStep
+      ? [
+          ...allSteps.filter((_, index) => index !== currentStepIndex),
+          warningStep,
+        ]
+      : allSteps,
+    open,
+  );
+  const presetProcessorByName = useMemo(
+    () => buildPresetProcessorMap(lookup.presets),
+    [lookup.presets],
+  );
   const transformDependencyIds = useMemo(
     () =>
-      dagStep
+      warningStep
         ? getTransformDependencyIds(
-            { ...dagStep, depends_on: dependsOn },
+            warningStep,
             allSteps,
             presetProcessorByName,
           )
         : [],
-    [dagStep, dependsOn, allSteps, presetProcessorByName],
+    [warningStep, allSteps, presetProcessorByName],
   );
+  const unresolvedDeleteRisk = warningStep
+    ? hasUnresolvedDeleteRisk(warningStep, allSteps, presetProcessorByName)
+    : false;
 
   const transformDepLabel = transformDependencyIds.join(', ');
 
@@ -521,12 +554,27 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                       </div>
                       <UiInput
                         id="step-id"
+                        aria-invalid={!!idError}
+                        aria-describedby={idError ? 'step-id-error' : undefined}
                         value={idValue}
                         onChange={(e) => setIdValue(e.target.value)}
                         placeholder={i18n._(msg`e.g., process-video`)}
                         className="pl-7 bg-background/50 font-mono text-sm"
                       />
                     </div>
+                    {idError && (
+                      <p
+                        id="step-id-error"
+                        role="alert"
+                        className="text-sm text-destructive"
+                      >
+                        {idError === 'empty' ? (
+                          <Trans>Step ID is required.</Trans>
+                        ) : (
+                          <Trans>Step ID must be unique.</Trans>
+                        )}
+                      </p>
+                    )}
                     <p className="text-[10px] text-muted-foreground">
                       <Trans>
                         A unique ID used by other steps to reference this one.
@@ -611,6 +659,9 @@ export const StepConfigDialog = memo(function StepConfigDialog({
           </TabsContent>
         </Tabs>
 
+        <div className="px-6">
+          <PresetLookupStatus {...lookup} />
+        </div>
         {/* Footer Actions */}
         <div className="p-6 pt-4 border-t bg-background/50 backdrop-blur shrink-0 flex justify-between items-center z-10">
           <Button
@@ -634,7 +685,11 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                 <Trans>Detach & Edit</Trans>
               </Button>
             )}
-            <Button type="submit" onClick={form.handleSubmit(handleSubmit)}>
+            <Button
+              type="submit"
+              disabled={!!idError}
+              onClick={form.handleSubmit(handleSubmit)}
+            >
               <Trans>Save Changes</Trans>
             </Button>
           </div>
@@ -644,17 +699,30 @@ export const StepConfigDialog = memo(function StepConfigDialog({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <Trans>Delete the converted result?</Trans>
+              {unresolvedDeleteRisk ? (
+                <Trans>Save with incomplete delete checks?</Trans>
+              ) : (
+                <Trans>Delete the converted result?</Trans>
+              )}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <Trans>
-                This Delete step depends on{' '}
-                <strong className="text-foreground">{transformDepLabel}</strong>{' '}
-                and will delete the converted result, not your original
-                recording. To delete the original after converting, enable
-                "Remove Input on Success" on the transcode step. Add this Delete
-                step anyway?
-              </Trans>
+              {unresolvedDeleteRisk ? (
+                <Trans>
+                  Some referenced presets could not be resolved. This step may
+                  delete a converted result. Save anyway?
+                </Trans>
+              ) : (
+                <Trans>
+                  This Delete step depends on{' '}
+                  <strong className="text-foreground">
+                    {transformDepLabel}
+                  </strong>{' '}
+                  and will delete the converted result, not your original
+                  recording. To delete the original after converting, enable
+                  "Remove Input on Success" on the transcode step. Add this
+                  Delete step anyway?
+                </Trans>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
