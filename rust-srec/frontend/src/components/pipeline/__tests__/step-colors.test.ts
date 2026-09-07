@@ -24,8 +24,9 @@ const ALL_VARIANTS: [string, string][] = [
   ['default badge', DEFAULT_STEP_COLOR.badge],
 ];
 
-/** Preset names shipped by the migrations; workflow steps store these verbatim. */
+/** Every preset name shipped by the migrations; workflow steps store these verbatim. */
 const BUILT_IN_PRESET_NAMES = [
+  'remux',
   'remux_mkv',
   'remux_faststart',
   'remux_clean',
@@ -34,6 +35,7 @@ const BUILT_IN_PRESET_NAMES = [
   'compress_archive',
   'compress_hevc_max',
   'compress_ultrafast',
+  'thumbnail',
   'thumbnail_hd',
   'thumbnail_fullhd',
   'thumbnail_max',
@@ -46,13 +48,21 @@ const BUILT_IN_PRESET_NAMES = [
   'delete_source',
   'copy',
   'move',
+  'upload',
   'upload_and_delete',
+  'baidupcs_upload',
   'add_metadata',
+  'execute',
   'custom_ffmpeg',
   'danmu_to_ass',
+  'ass_burnin',
   'nvenc_h264_fast',
+  'nvenc_h264_hq',
+  'nvenc_h264_lowlatency',
+  'nvenc_hevc_fast',
   'nvenc_hevc_hq',
   'nvenc_av1_fast',
+  'nvenc_av1_hq',
 ];
 
 describe('step colours', () => {

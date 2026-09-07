@@ -592,7 +592,7 @@ msgstr "Alerts when disk space is running low."
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:339
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:100
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:398
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:281
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:267
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:176
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:460
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
@@ -712,7 +712,6 @@ msgid "Apply template settings."
 msgstr "Apply template settings."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:48
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:72
 msgid "Archive"
 msgstr "Archive"
 
@@ -798,7 +797,6 @@ msgstr "Attempts to get origin quality by replacing the audio stream. May result
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:230
 #: src/lib/media-file-type.ts:41
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
 msgid "Audio"
 msgstr "Audio"
 
@@ -1232,7 +1230,7 @@ msgstr "Cache"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:483
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -1446,7 +1444,6 @@ msgstr "Choose your display language"
 #: src/components/pipeline/presets/default-presets-i18n.ts:50
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
 msgid "Cleanup"
 msgstr "Cleanup"
 
@@ -1477,11 +1474,11 @@ msgstr "Client Type (ctype)"
 #: src/components/config/templates/template-card.tsx:122
 #: src/components/pipeline/presets/preset-card.tsx:126
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:254
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:506
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:492
 msgid "Clone"
 msgstr "Clone"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:471
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:457
 msgid "Clone Preset"
 msgstr "Clone Preset"
 
@@ -1490,7 +1487,7 @@ msgid "Clone Template"
 msgstr "Clone Template"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:252
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:504
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:490
 msgid "Cloning..."
 msgstr "Cloning..."
 
@@ -1582,7 +1579,6 @@ msgstr "Compress video for storage, upload to cloud, then delete local file to s
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
 msgid "Compression"
 msgstr "Compression"
 
@@ -1939,7 +1935,7 @@ msgstr "Create"
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:225
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:474
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:460
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "Create a copy of \"{0}\" with a new name."
 
@@ -2000,7 +1996,7 @@ msgstr "Create New Workflow"
 msgid "Create Pipeline"
 msgstr "Create Pipeline"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:381
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:367
 msgid "Create Preset"
 msgstr "Create Preset"
 
@@ -2017,7 +2013,7 @@ msgstr "Create Template"
 msgid "Create Workflow"
 msgstr "Create Workflow"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:371
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:357
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "Create your first job preset to define reusable processor configurations for your pipelines."
 
@@ -2144,7 +2140,6 @@ msgstr "Current Password"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:524
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:340
 msgid "Custom"
 msgstr "Custom"
@@ -2215,7 +2210,6 @@ msgstr "DAG Graph"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:54
 #: src/lib/media-file-type.ts:51
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:78
 msgid "Danmaku"
 msgstr "Danmaku"
 
@@ -3089,7 +3083,7 @@ msgid "English (International)"
 msgstr "English (International)"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:239
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:488
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:474
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
@@ -3121,7 +3115,7 @@ msgstr "Enter your credentials to access your account"
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:111
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:386
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:329
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:233
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:219
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:141
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "Error"
@@ -3392,7 +3386,7 @@ msgid "Failed to check this link. Please try again."
 msgstr "Failed to check this link. Please try again."
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:194
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:180
 msgid "Failed to clone preset: {0}"
 msgstr "Failed to clone preset: {0}"
 
@@ -3469,7 +3463,7 @@ msgid "Failed to delete pipeline"
 msgstr "Failed to delete pipeline"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:176
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:162
 msgid "Failed to delete preset: {0}"
 msgstr "Failed to delete preset: {0}"
 
@@ -3566,7 +3560,7 @@ msgid "Failed to load platforms: {0}"
 msgstr "Failed to load platforms: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:236
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:222
 msgid "Failed to load presets: {0}"
 msgstr "Failed to load presets: {0}"
 
@@ -3766,10 +3760,6 @@ msgstr "File Extension Filter"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
 msgid "File Operations"
 msgstr "File Operations"
-
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:75
-msgid "File Ops"
-msgstr "File Ops"
 
 #: src/components/pipeline/outputs/output-card.tsx:73
 msgid "File path copied to clipboard"
@@ -5260,7 +5250,6 @@ msgstr "Messages"
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 #: src/components/pipeline/presets/preset-templates.ts:81
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:77
 msgid "Metadata"
 msgstr "Metadata"
 
@@ -5517,7 +5506,7 @@ msgstr "New Password"
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:482
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:468
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
@@ -5731,11 +5720,11 @@ msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by th
 msgstr "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 
 #: src/components/pipeline/workflows/step-library.tsx:449
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:362
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:348
 msgid "No presets found"
 msgstr "No presets found"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:364
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:350
 msgid "No presets yet"
 msgstr "No presets yet"
 
@@ -6399,7 +6388,7 @@ msgstr "Pending Jobs"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:597
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:518
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:393
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:379
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:274
 msgid "Per page:"
 msgstr "Per page:"
@@ -6720,7 +6709,7 @@ msgstr "Preserve Paths"
 msgid "preset"
 msgstr "preset"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:182
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:168
 msgid "Preset cloned successfully"
 msgstr "Preset cloned successfully"
 
@@ -6728,7 +6717,7 @@ msgstr "Preset cloned successfully"
 msgid "Preset created successfully"
 msgstr "Preset created successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:172
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:158
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
@@ -6748,7 +6737,7 @@ msgstr "Preset Step"
 msgid "Preset updated successfully"
 msgstr "Preset updated successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:266
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:252
 msgid "presets"
 msgstr "presets"
 
@@ -6757,7 +6746,7 @@ msgstr "presets"
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:248
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:234
 msgid "Presets"
 msgstr "Presets"
 
@@ -7223,7 +7212,6 @@ msgstr "Removes each local file once its upload (or skip) is confirmed. The loca
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:68
 msgid "Remux"
 msgstr "Remux"
 
@@ -7424,7 +7412,7 @@ msgstr "Retry selected"
 msgid "Return Previous Page"
 msgstr "Return Previous Page"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:236
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "Reusable processor configurations for pipeline steps"
 
@@ -7675,7 +7663,7 @@ msgstr "Search platform..."
 msgid "Search platforms..."
 msgstr "Search platforms..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:259
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:245
 msgid "Search presets..."
 msgstr "Search presets..."
 
@@ -8501,7 +8489,6 @@ msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:55
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:79
 msgid "Subtitle"
 msgstr "Subtitle"
 
@@ -8844,7 +8831,6 @@ msgstr "Throughput"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/lib/media-file-type.ts:46
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:70
 msgid "Thumbnail"
 msgstr "Thumbnail"
 
@@ -9160,7 +9146,7 @@ msgstr "Try adjusting your search or filters, or add a new streamer to start mon
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:580
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:500
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:369
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:355
 msgid "Try adjusting your search or filters."
 msgstr "Try adjusting your search or filters."
 
@@ -9318,7 +9304,6 @@ msgid "upload"
 msgstr "upload"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:49
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:73
 msgid "Upload"
 msgstr "Upload"
 

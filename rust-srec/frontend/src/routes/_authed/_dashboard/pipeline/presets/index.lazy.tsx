@@ -22,6 +22,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { PresetCard } from '@/components/pipeline/presets/preset-card';
+import { getCategoryName } from '@/components/pipeline/presets/default-presets-i18n';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -63,21 +64,6 @@ export const Route = createLazyFileRoute(
 )({
   component: PresetsPage,
 });
-
-const CATEGORY_LABELS: Record<string, any> = {
-  remux: msg`Remux`,
-  compression: msg`Compression`,
-  thumbnail: msg`Thumbnail`,
-  audio: msg`Audio`,
-  archive: msg`Archive`,
-  upload: msg`Upload`,
-  cleanup: msg`Cleanup`,
-  file_ops: msg`File Ops`,
-  custom: msg`Custom`,
-  metadata: msg`Metadata`,
-  danmu: msg`Danmaku`,
-  subtitle: msg`Subtitle`,
-};
 
 const PAGE_SIZES = [12, 24, 48, 96];
 
@@ -293,7 +279,7 @@ function PresetsPage() {
               }`}
             >
               <span className="relative z-10 capitalize">
-                {i18n._(CATEGORY_LABELS[cat] || cat)}
+                {getCategoryName(cat, i18n)}
               </span>
             </button>
           ))}

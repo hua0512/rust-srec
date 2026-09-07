@@ -592,7 +592,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:339
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:100
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:398
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:281
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:267
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:176
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:460
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
@@ -712,7 +712,6 @@ msgid "Apply template settings."
 msgstr "应用模板设置。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:48
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:72
 msgid "Archive"
 msgstr "归档"
 
@@ -798,7 +797,6 @@ msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:230
 #: src/lib/media-file-type.ts:41
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
 msgid "Audio"
 msgstr "音频"
 
@@ -1232,7 +1230,7 @@ msgstr "缓存"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:483
 msgid "Cancel"
 msgstr "取消"
 
@@ -1446,7 +1444,6 @@ msgstr "选择你的显示语言"
 #: src/components/pipeline/presets/default-presets-i18n.ts:50
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
 msgid "Cleanup"
 msgstr "清理"
 
@@ -1477,11 +1474,11 @@ msgstr "客户端类型 (ctype)"
 #: src/components/config/templates/template-card.tsx:122
 #: src/components/pipeline/presets/preset-card.tsx:126
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:254
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:506
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:492
 msgid "Clone"
 msgstr "克隆"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:471
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:457
 msgid "Clone Preset"
 msgstr "克隆预设"
 
@@ -1490,7 +1487,7 @@ msgid "Clone Template"
 msgstr "克隆模板"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:252
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:504
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:490
 msgid "Cloning..."
 msgstr "正在克隆..."
 
@@ -1582,7 +1579,6 @@ msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
 msgid "Compression"
 msgstr "压缩"
 
@@ -1939,7 +1935,7 @@ msgstr "创建"
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:225
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:474
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:460
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "创建“{0}”的副本并使用新名称。"
 
@@ -2000,7 +1996,7 @@ msgstr "创建新工作流"
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:381
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:367
 msgid "Create Preset"
 msgstr "创建预设"
 
@@ -2017,7 +2013,7 @@ msgstr "创建模板"
 msgid "Create Workflow"
 msgstr "创建工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:371
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:357
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "创建你的第一个预设，用于为处理管道定义可复用的处理器配置。"
 
@@ -2144,7 +2140,6 @@ msgstr "当前密码"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:524
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:340
 msgid "Custom"
 msgstr "自定义"
@@ -2215,7 +2210,6 @@ msgstr "DAG 图"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:54
 #: src/lib/media-file-type.ts:51
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:78
 msgid "Danmaku"
 msgstr "弹幕"
 
@@ -3089,7 +3083,7 @@ msgid "English (International)"
 msgstr "英语（国际）"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:239
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:488
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:474
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
@@ -3121,7 +3115,7 @@ msgstr "输入你的凭据以登录账户"
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:111
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:386
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:329
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:233
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:219
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:141
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "Error"
@@ -3392,7 +3386,7 @@ msgid "Failed to check this link. Please try again."
 msgstr "检查该链接失败，请重试。"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:194
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:180
 msgid "Failed to clone preset: {0}"
 msgstr "克隆预设失败：{0}"
 
@@ -3469,7 +3463,7 @@ msgid "Failed to delete pipeline"
 msgstr "删除处理管道失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:176
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:162
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
@@ -3566,7 +3560,7 @@ msgid "Failed to load platforms: {0}"
 msgstr "加载平台列表失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:236
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:222
 msgid "Failed to load presets: {0}"
 msgstr "加载预设失败：{0}"
 
@@ -3765,10 +3759,6 @@ msgstr "文件扩展名过滤"
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
 msgid "File Operations"
-msgstr "文件操作"
-
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:75
-msgid "File Ops"
 msgstr "文件操作"
 
 #: src/components/pipeline/outputs/output-card.tsx:73
@@ -5260,7 +5250,6 @@ msgstr "消息数"
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 #: src/components/pipeline/presets/preset-templates.ts:81
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:77
 msgid "Metadata"
 msgstr "元数据"
 
@@ -5517,7 +5506,7 @@ msgstr "新密码"
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:482
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:468
 msgid "New Preset Name"
 msgstr "新预设名称"
 
@@ -5731,11 +5720,11 @@ msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by th
 msgstr "没有名为 <0>{presetName}</0> 的预设。如果存在同名的处理器，此步骤会以其默认设置运行该处理器；否则管道将无法启动。请将此步骤指向一个现有预设，即可在这里查看和编辑它的设置。"
 
 #: src/components/pipeline/workflows/step-library.tsx:449
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:362
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:348
 msgid "No presets found"
 msgstr "未找到预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:364
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:350
 msgid "No presets yet"
 msgstr "暂无预设"
 
@@ -6399,7 +6388,7 @@ msgstr "待处理任务"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:597
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:518
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:393
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:379
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:274
 msgid "Per page:"
 msgstr "每页："
@@ -6720,7 +6709,7 @@ msgstr "保留路径"
 msgid "preset"
 msgstr "预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:182
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:168
 msgid "Preset cloned successfully"
 msgstr "预设克隆成功"
 
@@ -6728,7 +6717,7 @@ msgstr "预设克隆成功"
 msgid "Preset created successfully"
 msgstr "预设创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:172
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:158
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
@@ -6748,7 +6737,7 @@ msgstr "预设步骤"
 msgid "Preset updated successfully"
 msgstr "预设更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:266
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:252
 msgid "presets"
 msgstr "预设"
 
@@ -6757,7 +6746,7 @@ msgstr "预设"
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:248
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:234
 msgid "Presets"
 msgstr "预设"
 
@@ -7223,7 +7212,6 @@ msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:68
 msgid "Remux"
 msgstr "重封装"
 
@@ -7424,7 +7412,7 @@ msgstr "重试所选"
 msgid "Return Previous Page"
 msgstr "返回上一页"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:236
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "处理管道步骤可复用的处理器配置"
 
@@ -7675,7 +7663,7 @@ msgstr "搜索平台…"
 msgid "Search platforms..."
 msgstr "搜索平台..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:259
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:245
 msgid "Search presets..."
 msgstr "搜索预设..."
 
@@ -8501,7 +8489,6 @@ msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:55
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:79
 msgid "Subtitle"
 msgstr "字幕"
 
@@ -8844,7 +8831,6 @@ msgstr "吞吐量"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/lib/media-file-type.ts:46
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:70
 msgid "Thumbnail"
 msgstr "缩略图"
 
@@ -9160,7 +9146,7 @@ msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:580
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:500
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:369
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:355
 msgid "Try adjusting your search or filters."
 msgstr "尝试调整搜索或过滤器。"
 
@@ -9318,7 +9304,6 @@ msgid "upload"
 msgstr "上传"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:49
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:73
 msgid "Upload"
 msgstr "上传"
 

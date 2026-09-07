@@ -159,7 +159,7 @@ export function WorkflowCard({
               >
                 <StepIcon className="h-3 w-3" />
                 {id && (
-                  <span className="text-[9px] font-mono opacity-50 mr-0.5 border-r border-current border-opacity-20 pr-1 leading-none h-2.5 flex items-center">
+                  <span className="text-[9px] font-mono opacity-50 mr-0.5 border-r border-current/20 pr-1 leading-none h-2.5 flex items-center">
                     {id}
                   </span>
                 )}

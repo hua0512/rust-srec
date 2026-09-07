@@ -268,9 +268,9 @@
 
 ## Web interface
 
-- **Notification, preset and workflow cards show their colours again**
+- **Notification and preset cards show their colors again**
 
-  The round icon at the top of every notification channel and processing preset card sat on a plain grey background, and the step chips listed on a workflow card were colourless boxes. Each icon now carries its own tint again — indigo for Discord, blue for e-mail, green for uploads and so on — and every workflow step is tinted to match what it does.
+  The rounded tile behind the icon at the top of every notification-channel and processing-preset card had lost its colored tint and sat on a plain background. Each tile is tinted again to match the kind of channel or processing step it stands for — indigo for Discord, blue for e-mail, green for uploads, and so on.
 
 - **Configuration editors respond faster while typing**
 
