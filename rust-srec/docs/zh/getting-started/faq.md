@@ -22,7 +22,7 @@
 
 ## 录制文件在哪里？
 
-标准 Docker 配置把宿主机 `./output` 映射到容器 `/app/output`。路径本身取自数据库中的 `output_folder` 设置，全局、平台、模板和主播配置都可能覆盖它；`OUTPUT_DIR` 并不决定该路径。因此应以应用显示的解析后路径为准。参见[存储与容量](../operations/storage.md)。
+标准 Docker 配置把宿主机 `./output` 映射到容器 `/app/output`。独立后端使用 `OUTPUT_DIR` 初始化全新数据库的录制文件夹（默认 `./output`，保存为绝对路径）。已有数据库保留已保存的 `output_folder`，全局、平台、模板和主播设置可分别覆盖。应以应用显示的解析后路径为准。参见[存储与容量](../operations/storage.md)。
 
 ## 清理磁盘后录制仍未恢复
 

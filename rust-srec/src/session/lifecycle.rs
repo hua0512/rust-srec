@@ -25,6 +25,7 @@
 //! [`crate::monitor::MonitorEventBroadcaster`] and
 //! [`crate::downloader::DownloadManager`] broadcast channels.
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -33,7 +34,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use parking_lot::Mutex;
-use tokio::sync::{RwLock, RwLockReadGuard, broadcast};
+use tokio::sync::{Mutex as AsyncMutex, MutexGuard, RwLock, RwLockReadGuard, broadcast};
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
@@ -136,6 +137,12 @@ pub struct SessionLifecycle {
     /// channel, which guarantees that no admitted operation can publish
     /// behind the channel's shutdown marker.
     operation_gate: RwLock<()>,
+    /// Fixed stripes bound lock storage even as streamers are added/deleted.
+    /// A stripe covers DB commit, memory mutation, and transition publication.
+    /// Public entrypoints acquire admission then a stripe; private FSM helpers
+    /// rely on their caller's stripe. Owned timers acquire only the stripe and
+    /// are contained separately by shutdown's timer join.
+    streamer_operations: [AsyncMutex<()>; 256],
     accepting_operations: AtomicBool,
     hysteresis_tasks: Mutex<JoinSet<()>>,
     hysteresis_shutdown: AtomicBool,
@@ -194,6 +201,7 @@ impl SessionLifecycle {
             transition_tx,
             required_transition_tx: None,
             operation_gate: RwLock::new(()),
+            streamer_operations: std::array::from_fn(|_| AsyncMutex::new(())),
             accepting_operations: AtomicBool::new(true),
             hysteresis_tasks: Mutex::new(JoinSet::new()),
             hysteresis_shutdown: AtomicBool::new(false),
@@ -331,6 +339,14 @@ impl SessionLifecycle {
             ));
         }
         Ok(guard)
+    }
+
+    async fn lock_streamer(&self, streamer_id: &str) -> MutexGuard<'_, ()> {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        streamer_id.hash(&mut hasher);
+        self.streamer_operations[hasher.finish() as usize % self.streamer_operations.len()]
+            .lock()
+            .await
     }
 
     pub(crate) fn with_required_transition_sender(
@@ -602,6 +618,7 @@ impl SessionLifecycle {
         args: LiveDetectedArgs<'_>,
     ) -> Result<StartSessionOutcome> {
         let _operation = self.begin_operation().await?;
+        let _streamer = self.lock_streamer(args.streamer_id).await;
 
         // Step 1: Hysteresis resume.
         //
@@ -693,27 +710,10 @@ impl SessionLifecycle {
         args: OfflineDetectedArgs<'_>,
     ) -> Result<EndSessionOutcome> {
         let _operation = self.begin_operation().await?;
+        let _streamer = self.lock_streamer(args.streamer_id).await;
 
-        // Early dedup: if the in-memory map says this session is already in
-        // `Ended` state (within `ended_retention`), short-circuit before we
-        // hit the DB. Without this guard a duplicate authoritative-end —
-        // observed in production when the monitor races and emits two
-        // `OfflineDetected` events ~5 ms apart — would re-run `repo.end`
-        // and write a second `session_ended` audit row before the in-memory
-        // CAS check at the top of `enter_ended_state` kicks in.
-        if let Some(id) = args.session_id
-            && self.sessions.get(id).is_some_and(|e| e.value().is_ended())
-        {
-            debug!(
-                session_id = id,
-                "on_offline_detected: session already Ended in memory, skipping"
-            );
-            return Ok(EndSessionOutcome {
-                resolved_session_id: Some(id.to_string()),
-                offline_event_emitted: false,
-            });
-        }
-
+        // The repository deduplicates session ends. Always apply the offline
+        // observation: a download may already have ended while state is LIVE.
         // Resolve cause and via_hysteresis BEFORE the DB write so the audit
         // row inside `repo.end`'s atomic transaction carries the same values
         // the in-memory `SessionTransition::Ended` broadcast will carry.
@@ -807,6 +807,7 @@ impl SessionLifecycle {
         event: &DownloadTerminalEvent,
     ) -> Result<()> {
         let _operation = self.begin_operation().await?;
+        let _streamer = self.lock_streamer(event.streamer_id()).await;
 
         let session_id = event.session_id();
         let streamer_id = event.streamer_id();
@@ -872,6 +873,12 @@ impl SessionLifecycle {
                 cause = cause.as_str(),
                 "on_download_terminal: session already ended in memory — ignoring"
             );
+            return Ok(());
+        }
+
+        if !self.sessions.contains_key(session_id)
+            && !self.repo.is_session_active(session_id).await?
+        {
             return Ok(());
         }
 
@@ -1061,6 +1068,12 @@ impl SessionLifecycle {
                     let Some(lifecycle) = lifecycle.upgrade() else {
                         return;
                     };
+                    let _streamer = lifecycle.lock_streamer(&strm_id).await;
+                    // Resume may cancel this timer and arm a replacement while
+                    // this task waits. Never claim the replacement's handle.
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     if let Err(e) = lifecycle.enter_ended_state(EndedStateTransition {
                         session_id: &sid,
                         streamer_id: &strm_id,
@@ -1349,7 +1362,8 @@ impl SessionLifecycle {
             }
             DbWritePath::EndSessionOnly => {
                 if !session_id.is_empty() {
-                    self.repo
+                    let ended = self
+                        .repo
                         .end_session_only(
                             streamer_id,
                             Some(session_id),
@@ -1358,6 +1372,9 @@ impl SessionLifecycle {
                             ended_at,
                         )
                         .await?;
+                    if ended.is_none() {
+                        return Ok(());
+                    }
                 }
             }
         }
@@ -1423,10 +1440,10 @@ impl SessionLifecycle {
     ///   pipeline-manager runs session-complete (captured bytes deserve
     ///   processing) and notification-service skips `StreamOffline`.
     ///
-    /// CAS-loss path (rare: the hysteresis timer fires concurrently with
-    /// the disable cleanup): we retro-actively rewrite the most recent
-    /// `session_ended` audit row's cause to `user_disabled` and patch the
-    /// in-memory `Ended.cause` to match. The original `SessionTransition::
+    /// If a hysteresis timer already ended the session with an ambiguous
+    /// cause, reattribute that audit row to `user_disabled` and patch the
+    /// in-memory `Ended.cause` to match. Authoritative end causes are
+    /// preserved. The original `SessionTransition::
     /// Ended` broadcast (with the stale cause) has already shipped — we do
     /// NOT re-broadcast, because subscribers like the notification service
     /// would re-fire on the second event. The trade-off: in this rare
@@ -1445,6 +1462,7 @@ impl SessionLifecycle {
         streamer_name: &str,
     ) -> Result<Option<String>> {
         let _operation = self.begin_operation().await?;
+        let _streamer = self.lock_streamer(streamer_id).await;
 
         let now = Utc::now();
 
@@ -1479,11 +1497,9 @@ impl SessionLifecycle {
 
         let lost_cas = was_in_hysteresis && claim.is_none();
 
-        // Step 3: retro-update path. Either the session is already Ended
-        // (some other path wrote it) or we lost the CAS to a concurrent
-        // timer/authoritative-end. Rewrite the audit row's cause to
-        // user_disabled and patch the in-memory snapshot.
-        if was_already_ended || lost_cas {
+        // Only an existing timer end is eligible for reattribution. Missing
+        // timer ownership alone never means the active DB row was closed.
+        if was_already_ended {
             let Some(sid) = session_id_hint else {
                 debug!(
                     streamer_id,
@@ -1496,7 +1512,7 @@ impl SessionLifecycle {
                 .await;
         }
 
-        // Step 4: normal path. DB write first (commit → in-memory →
+        // Normal path. DB write first (commit → in-memory →
         // broadcast). Repo handles the active-session lookup if we don't
         // have a session_id hint (cold-start / process-restart safety).
         let resolved = self
@@ -1575,6 +1591,7 @@ impl SessionLifecycle {
         old_state: StreamerState,
     ) -> Result<Option<String>> {
         let _operation = self.begin_operation().await?;
+        let _streamer = self.lock_streamer(streamer_id).await;
 
         let now = Utc::now();
 
@@ -1675,8 +1692,8 @@ impl SessionLifecycle {
     /// Helper for [`Self::end_for_disable`] — retro-actively rewrite the
     /// most recent `session_ended` audit row's cause to `user_disabled`
     /// and update the in-memory snapshot. Used when the FSM state is
-    /// already `Ended` by the time disable cleanup runs (CAS lost to a
-    /// hysteresis timer or other authoritative path).
+    /// already `Ended` by the time disable cleanup runs. The repository only
+    /// accepts ambiguous timer ends; authoritative end causes are preserved.
     ///
     /// Does NOT broadcast a fresh `SessionTransition::Ended`. The original
     /// broadcast (with the stale cause) has already shipped to subscribers
@@ -1700,9 +1717,9 @@ impl SessionLifecycle {
             .await?;
 
         if !updated {
-            warn!(
+            debug!(
                 streamer_id,
-                session_id, lost_cas, "end_for_disable: no session_ended audit row to retro-update"
+                session_id, lost_cas, "end_for_disable: no eligible timer end to reattribute"
             );
             return Ok(None);
         }

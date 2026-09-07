@@ -22,7 +22,7 @@ The built-in Mesio engine does not need either tool. The standard Docker image c
 
 ## Where are recordings stored?
 
-The standard Docker configuration maps host `./output` to container `/app/output`. The path itself comes from the `output_folder` setting in the database, which global, platform, template, and streamer settings can override; `OUTPUT_DIR` does not set it. The resolved path shown by the application is authoritative. See [Storage and Capacity](../operations/storage.md).
+The standard Docker configuration maps host `./output` to container `/app/output`. The standalone backend initializes a fresh database's recording folder from `OUTPUT_DIR` (default `./output`, saved as an absolute path). Existing databases retain their saved `output_folder`, with optional overrides in global, platform, template, and streamer settings. The resolved path shown by the application is authoritative. See [Storage and Capacity](../operations/storage.md).
 
 ## I freed disk space, but recording did not resume
 

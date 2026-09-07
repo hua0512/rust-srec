@@ -14,11 +14,19 @@
 
   Built-in presets and templates updated during credential refresh now display correct dates. Preset, template, and configuration-import writes consistently store integer milliseconds while the API keeps its existing date-string format. A new migration converts historical date strings without rounding fractional milliseconds or altering existing integers. Invalid historical values stop the migration without changing the data; see [timestamp repair guidance](../operations/upgrading.md#preset-and-template-timestamps).
 
+- **Fresh standalone installations use the configured recording directory**
+
+  A new standalone database initializes its output folder from `OUTPUT_DIR`, falling back to `./output` resolved against the startup working directory. The bundled systemd unit and Docker Compose configuration now supply the initial recording location. Existing databases retain their saved folder, including an explicitly saved `/app/output`.
+
 - **Bilibili quality overrides preserve inheritance**
 
   Opening an inherited platform-options form no longer writes a quality override. Template and streamer forms show an inherited choice; selecting it clears the override. Platform defaults and quality codes now match the Bilibili extractor. Template options saved by the UI are applied by the resolver, while existing flat configurations remain supported.
 
 ## Post-processing
+
+- **Execute jobs can run programs without a shell**
+
+  The execute processor accepts `program` and an optional `args` array. Each argument expands placeholders once and retains spaces, quotes, empty values, and shell metacharacters as literal data. Existing `command` configurations remain supported. Both modes use the same timeout, process cleanup, and output scanning; ambiguous configurations and Windows batch files in program mode are rejected.
 
 - **Lower worker limits take effect while jobs are running**
 
@@ -43,6 +51,14 @@
   Discord and Telegram requests now time out after 30 seconds. Gotify and webhook timeouts are capped at five minutes; zero uses the 30-second default. Rate-limit retries wait at most 30 seconds each and stop after three attempts. Invalid retry delays no longer cause a panic. Delivery errors retain the failure category or HTTP status without exposing token-bearing URLs or server response bodies.
 
 ## Recording
+
+- **Sessions reconcile correctly after restart**
+
+  The first confirmed offline check closes an unfinished session left by the previous process and makes its final post-processing recoverable. Failed or suppressed checks remain retryable. A broadcast that is still live continues its existing session, and normal offline grace periods remain in effect.
+
+- **Concurrent session events preserve one completion and its cause**
+
+  Live checks, offline checks, download completion, timers, and user stops now serialize their session changes for each streamer. Late or duplicate events cannot overwrite a completed session's end time or repeat its completion, and an old session's offline signal cannot stop its live successor. Disabling a streamer preserves authoritative offline causes and still closes an active session when its timer handle is missing.
 
 - **Output write failures pause recording retries reliably**
 

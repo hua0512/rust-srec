@@ -113,15 +113,17 @@ The following environment variables can be configured in your <a :href="withBase
 |----------|-------------|---------|
 | `DATA_DIR` | Directory for application data | `./data` |
 | `CONFIG_DIR` | Directory for platform configuration files | `./config` |
-| `OUTPUT_DIR` | Output root the startup write probe and the disk-space health probe watch. (The write gate's own roots come from `RUST_SREC_OUTPUT_ROOTS`.) Under Docker Compose this is the host directory bind-mounted to `/app/output`, and the container itself is given `OUTPUT_DIR=/app/output`. It does **not** decide where recordings are written — see below. | `./output` |
+| `OUTPUT_DIR` | Initial recording folder when the standalone backend creates a fresh database; also watched by startup and disk-space health probes. Under Docker Compose this is the host bind-mount directory, while the container receives `OUTPUT_DIR=/app/output`. Existing database settings are preserved. | `./output` |
 | `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files do not land inside the state directory. See [Installation](./installation.md). | `./logs` |
 
-::: warning `OUTPUT_DIR` is not the recording directory
-The directory recordings are written to is the `output_folder` setting stored in the database and edited under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. No environment variable overrides it, and the resolved path shown by the application is authoritative.
+::: tip Initial and saved recording directories
+The standalone backend initializes a fresh database's `output_folder` from `OUTPUT_DIR`, using `./output` when unset or blank. It resolves relative paths against the startup working directory and saves an absolute path. Docker Compose and the systemd unit provide `/app/output` and `/var/lib/rust-srec/output`, respectively.
 
-Under the standard Docker setup the two agree without you doing anything: `output_folder` ships as `/app/output`, which is exactly where the bind mount lands. On a binary or system-service install they do not. Setting `OUTPUT_DIR` to a writable path while `output_folder` still names `/app/output` leaves the service running and every recording failing.
+If initial migrations or saving the output folder fail, the next start resumes initialization with the absolute path selected on the first attempt, even if `OUTPUT_DIR` or the working directory changes.
 
-Set `output_folder` in the web interface first, then point `OUTPUT_DIR` — and `RUST_SREC_OUTPUT_ROOTS`, below — at the same directory, so the write gate and the free-space probes watch the volume that is actually filling up.
+Later starts preserve the saved setting. Change it under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. The resolved path shown by the application is authoritative. An existing binary or system-service installation that still has `/app/output` needs this setting changed to a writable directory.
+
+Keep `OUTPUT_DIR` and `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder so the write gate and health probes watch the recording volume.
 :::
 
 ### Shutdown

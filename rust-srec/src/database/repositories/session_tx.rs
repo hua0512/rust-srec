@@ -108,7 +108,7 @@ impl SessionTxOps {
             UPDATE live_sessions
             SET end_time = ?,
                 total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM media_outputs WHERE session_id = ?)
-            WHERE id = ?
+            WHERE id = ? AND end_time IS NULL
             "#,
         )
         .bind(end_time.timestamp_millis())

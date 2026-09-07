@@ -57,7 +57,22 @@ Each pipeline step is executed by a specialized processor:
 | `copy_move` | Copies or moves local files | Destination and operation settings |
 | `metadata` | Writes metadata (nfo, json) | - |
 | `delete` | Automatically cleans up files | - |
-| `execute` | Runs a custom Shell command/script | `command`, `scan_output_dir`, `scan_extension` |
+| `execute` | Runs a program or custom shell command | `program`, `args` or `command`, `scan_output_dir`, `scan_extension` |
+
+### Execute (`execute`)
+
+Use `program` and `args` to run an executable directly, without a shell:
+
+```json
+{
+  "program": "ffmpeg",
+  "args": ["-nostdin", "-n", "-i", "{input}", "-c", "copy", "{output}"]
+}
+```
+
+`program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
+
+Omitting `args` passes no arguments. Use either `program` with optional `args`, or `command`; combining them fails the step. On Windows, `program` rejects `.bat` and `.cmd` files because Windows would run them through a shell. Use `command` for batch scripts. Both modes retain output-directory scanning, pipeline output handling, timeouts, and process cleanup.
 
 In an `execute` command, placeholder values such as `{input}`, `{output}`, `{streamer}` and `{title}` are quoted for the shell automatically, so a path or title containing spaces, quotes, `$` or `;` is passed on as plain text. The quoting matches where the placeholder sits: as a bare argument, inside `'...'` or `"..."`, inside `$(...)` or backticks, inside `$(( ... ))`, and in a here-document body. Write the placeholder as it is — with or without quotes around it — and do not add your own escaping. The rest of the command is untouched, so pipes, `&&` and redirects still work.
 

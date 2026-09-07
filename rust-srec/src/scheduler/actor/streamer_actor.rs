@@ -105,6 +105,10 @@ pub struct StreamerActor {
     platform_actor: Option<mpsc::Sender<PlatformMessage>>,
     /// Current actor state (runtime scheduling state only).
     state: StreamerActorState,
+    /// Hydration resets Live metadata but keeps unfinished database sessions.
+    /// Apply one initial live/offline observation before suppressing redundant
+    /// offline checks; failed or suppressed writes must leave recovery pending.
+    initial_status_pending: bool,
     /// Floor for the next Live watchdog wake after a failed watchdog check.
     ///
     /// `perform_check` sets this when `is_live_watchdog` is true and the check
@@ -166,6 +170,7 @@ impl StreamerActor {
             self_handle: tx,
             platform_actor: None,
             state,
+            initial_status_pending: true,
             live_watchdog_backoff_until: None,
             metadata_store,
             config,
@@ -216,6 +221,7 @@ impl StreamerActor {
             self_handle: tx,
             platform_actor: None,
             state,
+            initial_status_pending: true,
             live_watchdog_backoff_until: None,
             metadata_store,
             config,
@@ -696,6 +702,11 @@ impl StreamerActor {
                 let previous_runtime_state = self.state.clone();
                 let next_state = result.state;
                 let error_count = self.get_error_count();
+                let reconcile_offline = self.initial_status_pending
+                    && matches!(status, LiveStatus::Offline)
+                    && !self.state.hysteresis.was_live();
+                let settles_initial_status =
+                    matches!(status, LiveStatus::Live { .. } | LiveStatus::Offline);
 
                 self.force_live_reemit_if_stalled(next_state, "check");
 
@@ -706,10 +717,13 @@ impl StreamerActor {
                 // Record the check result and get hysteresis decision
                 let should_emit = self.state.record_check(result, &self.config, error_count);
 
-                // Call process_status only if hysteresis allows it
-                if should_emit {
+                if should_emit || reconcile_offline {
                     match self.status_checker.process_status(&metadata, status).await {
-                        Ok(ProcessStatusResult::Applied) => {}
+                        Ok(ProcessStatusResult::Applied) => {
+                            if settles_initial_status {
+                                self.initial_status_pending = false;
+                            }
+                        }
                         Ok(ProcessStatusResult::Suppressed(suppression)) => {
                             if next_state == StreamerState::Live {
                                 self.handle_suppressed_live_status(
@@ -946,6 +960,11 @@ impl StreamerActor {
 
         // Record the check result and get hysteresis decision.
         // Reconciliation must precede the Live-result refresh below.
+        let reconcile_offline = self.initial_status_pending
+            && matches!(result.status, LiveStatus::Offline)
+            && !self.state.hysteresis.was_live();
+        let settles_initial_status =
+            matches!(result.status, LiveStatus::Live { .. } | LiveStatus::Offline);
         self.force_live_reemit_if_stalled(next_state, "batch");
 
         if next_state == StreamerState::Live {
@@ -956,8 +975,7 @@ impl StreamerActor {
             .state
             .record_check(result.result, &self.config, error_count);
 
-        // Call process_status only if hysteresis allows it
-        if should_emit {
+        if should_emit || reconcile_offline {
             // Fetch fresh metadata for process_status
             if let Some(metadata) = self.get_metadata() {
                 match self
@@ -965,7 +983,11 @@ impl StreamerActor {
                     .process_status(&metadata, result.status)
                     .await
                 {
-                    Ok(ProcessStatusResult::Applied) => {}
+                    Ok(ProcessStatusResult::Applied) => {
+                        if settles_initial_status {
+                            self.initial_status_pending = false;
+                        }
+                    }
                     Ok(ProcessStatusResult::Suppressed(suppression)) => {
                         if next_state == StreamerState::Live {
                             self.handle_suppressed_live_status(suppression, previous_runtime_state);
@@ -1717,14 +1739,14 @@ mod tests {
     #[derive(Debug)]
     struct SequenceStatusChecker {
         checks: Mutex<VecDeque<(CheckResult, LiveStatus)>>,
-        outcomes: Mutex<VecDeque<ProcessStatusResult>>,
+        outcomes: Mutex<VecDeque<Result<ProcessStatusResult, CheckError>>>,
     }
 
     impl SequenceStatusChecker {
         fn new(checks: Vec<(CheckResult, LiveStatus)>, outcomes: Vec<ProcessStatusResult>) -> Self {
             Self {
                 checks: Mutex::new(VecDeque::from(checks)),
-                outcomes: Mutex::new(VecDeque::from(outcomes)),
+                outcomes: Mutex::new(outcomes.into_iter().map(Ok).collect()),
             }
         }
     }
@@ -1747,12 +1769,11 @@ mod tests {
             _streamer: &StreamerMetadata,
             _status: LiveStatus,
         ) -> Result<ProcessStatusResult, CheckError> {
-            Ok(self
-                .outcomes
+            self.outcomes
                 .lock()
                 .unwrap()
                 .pop_front()
-                .unwrap_or(ProcessStatusResult::Applied))
+                .unwrap_or(Ok(ProcessStatusResult::Applied))
         }
 
         async fn handle_error(
@@ -1769,6 +1790,187 @@ mod tests {
             _reason: crate::monitor::InfraBlockReason,
         ) -> Result<(), CheckError> {
             Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn initial_offline_reconciliation_retries_until_applied_then_suppresses_duplicates() {
+        for batch in [false, true] {
+            let checker = Arc::new(SequenceStatusChecker::new(
+                (0..4)
+                    .map(|_| {
+                        (
+                            CheckResult::success(StreamerState::NotLive),
+                            LiveStatus::Offline,
+                        )
+                    })
+                    .collect(),
+                vec![
+                    ProcessStatusResult::Suppressed(
+                        ProcessStatusSuppression::TemporarilyDisabled {
+                            retry_after: Some(Duration::from_secs(1)),
+                        },
+                    ),
+                    ProcessStatusResult::Applied,
+                    ProcessStatusResult::Applied,
+                ],
+            ));
+            checker
+                .outcomes
+                .lock()
+                .unwrap()
+                .push_front(Err(CheckError::transient("database busy")));
+            let (mut actor, _handle) = if batch {
+                StreamerActor::with_priority_channel(
+                    "test-streamer".to_string(),
+                    create_test_metadata_store(),
+                    create_test_config(),
+                    CancellationToken::new(),
+                    checker.clone(),
+                )
+            } else {
+                StreamerActor::new(
+                    "test-streamer".to_string(),
+                    create_test_metadata_store(),
+                    create_test_config(),
+                    CancellationToken::new(),
+                    checker.clone(),
+                )
+            };
+            for (pending, remaining) in [(true, 3), (true, 2), (false, 1), (false, 1)] {
+                if batch {
+                    actor
+                        .handle_batch_result(BatchDetectionResult {
+                            streamer_id: "test-streamer".to_string(),
+                            result: CheckResult::success(StreamerState::NotLive),
+                            status: LiveStatus::Offline,
+                        })
+                        .await
+                        .unwrap();
+                } else {
+                    actor.perform_check().await.unwrap();
+                }
+                assert_eq!(actor.initial_status_pending, pending);
+                assert_eq!(checker.outcomes.lock().unwrap().len(), remaining);
+                assert!(actor.state.next_check.is_some());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn restored_live_actor_retries_failed_offline_at_grace_threshold() {
+        for batch in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let state_dir = dir.path().to_path_buf();
+            let mut previous_metadata = create_test_metadata();
+            previous_metadata.state = StreamerState::Live;
+            let persisted = PersistedActorState::from_state(
+                "test-streamer",
+                &StreamerActorState::from_metadata(&previous_metadata),
+                &create_test_config(),
+            );
+            tokio::fs::write(
+                state_dir.join("test-streamer.json"),
+                serde_json::to_vec(&persisted).unwrap(),
+            )
+            .await
+            .unwrap();
+            let checker = Arc::new(SequenceStatusChecker::new(
+                (0..5)
+                    .map(|_| {
+                        (
+                            CheckResult::success(StreamerState::NotLive),
+                            LiveStatus::Offline,
+                        )
+                    })
+                    .collect(),
+                vec![ProcessStatusResult::Applied, ProcessStatusResult::Applied],
+            ));
+            checker
+                .outcomes
+                .lock()
+                .unwrap()
+                .push_front(Err(CheckError::transient("database busy")));
+            let (mut actor, _handle) = if batch {
+                StreamerActor::with_priority_and_restored_state(
+                    "test-streamer".to_string(),
+                    create_test_metadata_store(),
+                    create_test_config(),
+                    CancellationToken::new(),
+                    Some(&state_dir),
+                    checker.clone(),
+                )
+                .await
+            } else {
+                StreamerActor::with_restored_state(
+                    "test-streamer".to_string(),
+                    create_test_metadata_store(),
+                    create_test_config(),
+                    CancellationToken::new(),
+                    Some(&state_dir),
+                    checker.clone(),
+                )
+                .await
+            };
+            assert_eq!(actor.state.streamer_state, StreamerState::Live);
+            for (pending, remaining) in [(true, 3), (true, 3), (true, 2), (false, 1), (false, 1)] {
+                if batch {
+                    actor
+                        .handle_batch_result(BatchDetectionResult {
+                            streamer_id: "test-streamer".to_string(),
+                            result: CheckResult::success(StreamerState::NotLive),
+                            status: LiveStatus::Offline,
+                        })
+                        .await
+                        .unwrap();
+                } else {
+                    actor.perform_check().await.unwrap();
+                }
+                assert_eq!(actor.initial_status_pending, pending);
+                assert_eq!(checker.outcomes.lock().unwrap().len(), remaining);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn initial_reconciliation_keeps_known_live_offline_grace_period() {
+        for batch in [false, true] {
+            let store = create_test_metadata_store();
+            store.get_mut("test-streamer").unwrap().state = StreamerState::Live;
+            let checker = Arc::new(SequenceStatusChecker::new(
+                (0..3)
+                    .map(|_| {
+                        (
+                            CheckResult::success(StreamerState::NotLive),
+                            LiveStatus::Offline,
+                        )
+                    })
+                    .collect(),
+                vec![ProcessStatusResult::Applied],
+            ));
+            let (mut actor, _handle) = StreamerActor::new(
+                "test-streamer".to_string(),
+                store,
+                create_test_config(),
+                CancellationToken::new(),
+                checker.clone(),
+            );
+            for remaining in [1, 1, 0] {
+                if batch {
+                    actor
+                        .handle_batch_result(BatchDetectionResult {
+                            streamer_id: "test-streamer".to_string(),
+                            result: CheckResult::success(StreamerState::NotLive),
+                            status: LiveStatus::Offline,
+                        })
+                        .await
+                        .unwrap();
+                } else {
+                    actor.perform_check().await.unwrap();
+                }
+                assert_eq!(checker.outcomes.lock().unwrap().len(), remaining);
+            }
+            assert!(!actor.initial_status_pending);
         }
     }
 

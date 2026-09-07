@@ -21,6 +21,8 @@ Docker 已打包后端、前端和所需运行时依赖。请先按 [Docker 部�
 
 `rust-srec` 可执行文件运行后端。完整的浏览器使用体验还需要单独部署前端，或直接采用 Docker 部署。向其他机器开放后端之前，必须生成至少 32 字符且唯一的 `JWT_SECRET`。
 
+独立后端创建全新数据库时，会使用 `OUTPUT_DIR` 初始化录制文件夹；未设置或为空白时使用 `./output`。相对路径会按启动时的工作目录解析并保存为绝对路径。之后启动时始终保留已保存的设置，即使 `OUTPUT_DIR` 已改变。已有安装请在**设置 → 全局 → 输出文件夹**中修改录制目录。
+
 ## systemd 服务（Linux）
 
 仓库提供了 `rust-srec/rust-srec.service`，这是一个已做安全加固的 unit，用于把预编译后端二进制作为系统服务运行。它只托管后端；完整的浏览器使用体验仍需单独部署前端，或改用 Docker 部署。
@@ -72,9 +74,7 @@ curl http://localhost:12555/api/health/live
 
 ### 设置录制目录
 
-::: warning 未设置输出文件夹时录制必然失败
-数据库出厂时 `output_folder` 为 `/app/output`，该路径属于 Docker 镜像，`ProtectSystem=strict` 既不会提供它也不会让它可写，且没有任何环境变量能覆盖它。在**设置 → 全局 → 输出文件夹**填入 `/var/lib/rust-srec/output` 或 `ReadWritePaths=` 列出的卷之前，服务能正常启动，但每次录制都会失败。
-:::
+全新数据库会使用 unit 的 `OUTPUT_DIR=/var/lib/rust-srec/output` 作为录制文件夹。已有数据库会保留已保存的 `output_folder`，包括旧的默认值 `/app/output`。这些安装需要在**设置 → 全局 → 输出文件夹**中填入 `/var/lib/rust-srec/output` 或 `ReadWritePaths=` 列出的卷；`ProtectSystem=strict` 不会让 `/app/output` 可写。
 
 `RUST_SREC_OUTPUT_ROOTS` 必须与该值保持一致，否则输出根写入门控会把服务报告为降级。unit 出厂时两者都指向 `/var/lib/rust-srec/output`。
 
@@ -145,7 +145,7 @@ cp .env.example .env
 | `DATABASE_URL` | SQLite 数据库位置 | `sqlite:./srec.db` |
 | `API_BIND_ADDRESS` | 监听的网络接口 | `0.0.0.0` |
 | `API_PORT` | API 端口 | `8080` |
-| `OUTPUT_DIR` | 写入门和磁盘空间探测所监视的输出根目录；它不决定录制文件写到哪里 | `./output` |
+| `OUTPUT_DIR` | 独立后端全新数据库的初始录制文件夹，同时供健康探测监视；不覆盖已保存的设置 | `./output` |
 | `RUST_LOG` | 日志级别 | `info` |
 
 可用 `openssl rand -hex 32` 生成密钥。PowerShell 命令如下：
