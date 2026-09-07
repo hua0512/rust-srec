@@ -78,7 +78,7 @@ export const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
 
 export const RcloneConfigSchema = z.object({
   rclone_path: z.string().default('rclone'),
-  max_retries: z.number().default(3),
+  max_retries: z.number().int().default(3),
   destination_root: z.string().optional(),
   config_path: z.string().optional(),
   remote_path: z.string().optional(), // Legacy support or direct override
@@ -120,8 +120,8 @@ export const BaiduPcsConfigSchema = z.object({
 // --- Thumbnail Processor ---
 export const ThumbnailConfigSchema = z.object({
   timestamp_secs: z.number().min(0).default(10),
-  width: z.number().positive().default(320), // Match backend default
-  quality: z.number().min(1).max(31).default(2), // 1-31 for qscale
+  width: z.number().int().positive().default(320), // Match backend default
+  quality: z.number().int().min(1).max(31).default(2), // 1-31 for qscale
   output_pattern: z.string().optional(),
 });
 
@@ -142,7 +142,7 @@ export const ArchiveFormatSchema = z.enum(['zip', 'targz']);
 
 export const CompressionConfigSchema = z.object({
   format: ArchiveFormatSchema.default('zip'),
-  compression_level: z.number().min(0).max(9).default(6),
+  compression_level: z.number().int().min(0).max(9).default(6),
   output_path: z.string().optional(),
   overwrite: z.boolean().default(true),
   preserve_paths: z.boolean().default(false),
@@ -163,8 +163,8 @@ export const CopyMoveConfigSchema = z.object({
 
 // --- Delete Processor ---
 export const DeleteConfigSchema = z.object({
-  max_retries: z.number().default(3),
-  retry_delay_ms: z.number().default(100),
+  max_retries: z.number().int().default(3),
+  retry_delay_ms: z.number().int().default(100),
 });
 
 // --- Metadata Processor ---
@@ -213,7 +213,7 @@ export const AssBurninConfigSchema = z.object({
   output_extension: z.string().optional(),
   video_codec: z.string().default('libx264'),
   audio_codec: z.string().default('copy'),
-  crf: z.number().min(0).max(51).default(23),
+  crf: z.number().int().min(0).max(51).default(23),
   preset: PresetSchema.default('veryfast'),
   overwrite: z.boolean().default(true),
   fonts_dir: z.string().optional(),

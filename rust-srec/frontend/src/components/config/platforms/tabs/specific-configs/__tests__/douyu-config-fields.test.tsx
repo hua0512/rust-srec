@@ -81,8 +81,10 @@ describe('Douyu configuration', () => {
 
     expect(cdnInput().value).toBe('');
     expect(retriesInput().value).toBe('');
+    // Null rather than an absent key, so the cleared value still overrides a
+    // legacy flat template setting instead of falling through to it.
     expect(stored().cdn).toBeNull();
-    expect(stored().request_retries).toBeUndefined();
+    expect(stored().request_retries).toBeNull();
   });
 
   it('keeps a retry count of zero', () => {

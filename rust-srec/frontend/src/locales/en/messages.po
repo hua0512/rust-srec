@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - Session: {0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:928
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:948
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:997
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1017
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -53,7 +53,7 @@ msgstr "\"{0}\" will stop working immediately. This cannot be undone."
 msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:192
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:183
 msgid "(Delete source)"
 msgstr "(Delete source)"
 
@@ -61,11 +61,11 @@ msgstr "(Delete source)"
 msgid "(empty)"
 msgstr "(empty)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:203
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:194
 msgid "(Mirror source)"
 msgstr "(Mirror source)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:181
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:172
 msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
@@ -75,7 +75,7 @@ msgid "{0, plural, one {# active upload} other {# active uploads}}"
 msgstr "{0, plural, one {# active upload} other {# active uploads}}"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
-#: src/components/notifications/subscription-manager.tsx:454
+#: src/components/notifications/subscription-manager.tsx:460
 msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, one {# available} other {# available}}"
 
@@ -131,7 +131,7 @@ msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File}
 msgstr "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 
 #. placeholder {0}: selectedEvents.length
-#: src/components/notifications/subscription-manager.tsx:449
+#: src/components/notifications/subscription-manager.tsx:455
 msgid "{0, plural, one {# selected} other {# selected}}"
 msgstr "{0, plural, one {# selected} other {# selected}}"
 
@@ -166,13 +166,13 @@ msgid "{0} at {1}"
 msgstr "{0} at {1}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:118
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:237
 msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
 #. placeholder {0}: formatBytes(status.quota_used_bytes)
 #. placeholder {1}: formatBytes(status.quota_total_bytes)
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:247
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:248
 msgid "{0} of {1} used"
 msgstr "{0} of {1} used"
 
@@ -246,7 +246,7 @@ msgstr "{used} of {total} used ({percent}%)"
 msgid "* * * * * *"
 msgstr "* * * * * *"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:323
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:314
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
@@ -254,7 +254,7 @@ msgstr "/path/to/rclone.conf"
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg or ffmpeg"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:267
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:268
 msgid "/usr/share/fonts"
 msgstr "/usr/share/fonts"
 
@@ -266,15 +266,15 @@ msgstr "^Started.*"
 msgid "<0>{selectedCount}</0><1>selected</1>"
 msgstr "<0>{selectedCount}</0><1>selected</1>"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:631
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:619
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:105
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:103
 msgid "0 (None) - 9 (Best)"
 msgstr "0 (None) - 9 (Best)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:644
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:632
 msgid "0 = unlimited"
 msgstr "0 = unlimited"
 
@@ -282,15 +282,15 @@ msgstr "0 = unlimited"
 msgid "0 = Unlimited"
 msgstr "0 = Unlimited"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1545
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1551
 msgid "0 disables the limit."
 msgstr "0 disables the limit."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:981
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1050
 msgid "0:v:0"
 msgstr "0:v:0"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:121
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
 
@@ -326,7 +326,7 @@ msgstr "44100"
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
-#: src/components/notifications/forms/email-form.tsx:68
+#: src/components/notifications/forms/email-form.tsx:69
 msgid "587"
 msgstr "587"
 
@@ -358,7 +358,7 @@ msgstr "Absolute path or 'ffmpeg' if in PATH"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:879
+#: src/components/config/engines/forms/mesio-hls-form.tsx:885
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "Accept Invalid Certs (Default: Off)"
 
@@ -405,11 +405,11 @@ msgstr "Active Recordings"
 msgid "Activity resolution (seconds)"
 msgstr "Activity resolution (seconds)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1027
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1033
 msgid "Adaptive Refresh (Default: On)"
 msgstr "Adaptive Refresh (Default: On)"
 
-#: src/components/notifications/forms/webhook-form.tsx:394
+#: src/components/notifications/forms/webhook-form.tsx:396
 msgid "Add"
 msgstr "Add"
 
@@ -449,7 +449,7 @@ msgstr "Add argument template"
 msgid "Add at least one step"
 msgstr "Add at least one step"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:660
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:657
 msgid "Add BaiduPCS-Go argument"
 msgstr "Add BaiduPCS-Go argument"
 
@@ -457,11 +457,11 @@ msgstr "Add BaiduPCS-Go argument"
 msgid "Add Channel"
 msgstr "Add Channel"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:108
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:151
 msgid "Add Custom Tag"
 msgstr "Add Custom Tag"
 
-#: src/components/notifications/forms/email-form.tsx:158
+#: src/components/notifications/forms/email-form.tsx:157
 msgid "Add email and press Enter"
 msgstr "Add email and press Enter"
 
@@ -498,7 +498,7 @@ msgstr "Add module..."
 msgid "Add Override"
 msgstr "Add Override"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:152
+#: src/components/config/engines/forms/mesio-hls-form.tsx:158
 msgid "Add parameter"
 msgstr "Add parameter"
 
@@ -510,7 +510,7 @@ msgstr "Add Pipeline Step"
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "Add randomness to retry delays to prevent thundering herd."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:827
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:809
 msgid "Add rclone argument"
 msgstr "Add rclone argument"
 
@@ -527,7 +527,7 @@ msgstr "Add Stream"
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1012
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1081
 msgid "Add Tag"
 msgstr "Add Tag"
 
@@ -535,7 +535,7 @@ msgstr "Add Tag"
 msgid "Additional arguments appended to the command."
 msgstr "Additional arguments appended to the command."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1030
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1036
 msgid "Adjust rate based on target duration"
 msgstr "Adjust rate based on target duration"
 
@@ -548,9 +548,9 @@ msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:334
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:239
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:335
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:128
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:313
 #: src/components/streamers/streamer-editor.tsx:169
 msgid "Advanced"
 msgstr "Advanced"
@@ -568,7 +568,7 @@ msgstr "Advanced Options"
 msgid "Advanced scheduling"
 msgstr "Advanced scheduling"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:231
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:232
 msgid "Advanced Settings"
 msgstr "Advanced Settings"
 
@@ -577,7 +577,7 @@ msgstr "Advanced Settings"
 msgid "AFTER: {0}"
 msgstr "AFTER: {0}"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:188
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:231
 msgid "Album"
 msgstr "Album"
 
@@ -641,7 +641,7 @@ msgstr "Also delete files from disk"
 msgid "Always use Streamlink"
 msgstr "Always use Streamlink"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:177
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:200
 msgid "An error occurred"
 msgstr "An error occurred"
 
@@ -679,7 +679,7 @@ msgstr "API Keys"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
@@ -687,7 +687,7 @@ msgstr "API Request Retries"
 msgid "API Settings"
 msgstr "API Settings"
 
-#: src/components/notifications/forms/gotify-form.tsx:55
+#: src/components/notifications/forms/gotify-form.tsx:56
 msgid "App Token"
 msgstr "App Token"
 
@@ -695,11 +695,11 @@ msgstr "App Token"
 msgid "Appearance & style"
 msgstr "Appearance & style"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:952
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1021
 msgid "Appended before output filename"
 msgstr "Appended before output filename"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:736
+#: src/components/config/engines/forms/mesio-hls-form.tsx:742
 msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgstr "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 
@@ -762,8 +762,8 @@ msgstr "Args inserted before -i input_url"
 msgid "Args used for processing/encoding"
 msgstr "Args used for processing/encoding"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:150
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:155
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:193
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:198
 msgid "Artist"
 msgstr "Artist"
 
@@ -795,17 +795,17 @@ msgid "Attempts to get origin quality by replacing the audio stream. May result 
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:230
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:304
 #: src/lib/media-file-type.ts:41
 msgid "Audio"
 msgstr "Audio"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:529
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:603
 msgid "Audio Bitrate"
 msgstr "Audio Bitrate"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:85
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:364
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
 msgid "Audio Codec"
 msgstr "Audio Codec"
 
@@ -822,14 +822,14 @@ msgstr "Audio Extract"
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:515
+#: src/components/config/engines/forms/mesio-hls-form.tsx:521
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:111
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:130
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:131
 msgid "Audio only"
 msgstr "Audio only"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:743
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:812
 msgid "Audio Processing"
 msgstr "Audio Processing"
 
@@ -837,26 +837,26 @@ msgstr "Audio Processing"
 msgid "Audio Properties"
 msgstr "Audio Properties"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:355
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:429
 msgid "Audio Settings"
 msgstr "Audio Settings"
 
-#: src/components/notifications/forms/webhook-form.tsx:177
+#: src/components/notifications/forms/webhook-form.tsx:179
 msgid "Auth Type"
 msgstr "Auth Type"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:29
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:30
 #: src/components/config/shared/network-settings-card.tsx:162
-#: src/components/notifications/forms/webhook-form.tsx:166
+#: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "Authentication"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:775
+#: src/components/config/engines/forms/mesio-hls-form.tsx:781
 msgid "Auto"
 msgstr "Auto"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:780
+#: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
 
@@ -864,7 +864,7 @@ msgstr "Auto (Default)"
 msgid "Auto Layout"
 msgstr "Auto Layout"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:238
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:239
 msgid "Auto re-login"
 msgstr "Auto re-login"
 
@@ -980,11 +980,11 @@ msgstr "Backup & Restore"
 msgid "Baidu Netdisk"
 msgstr "Baidu Netdisk"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:160
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:161
 msgid "Baidu Netdisk Account"
 msgstr "Baidu Netdisk Account"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:381
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:382
 msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 msgstr "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 
@@ -997,8 +997,8 @@ msgstr "Baidu Netdisk Login"
 msgid "Baidu Netdisk login failed"
 msgstr "Baidu Netdisk login failed"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:132
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:140
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:133
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:141
 msgid "Baidu Netdisk logout failed"
 msgstr "Baidu Netdisk logout failed"
 
@@ -1014,44 +1014,44 @@ msgstr "Baidu Netdisk Upload"
 msgid "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:593
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:590
 msgid "BaiduPCS-Go"
 msgstr "BaiduPCS-Go"
 
 #. placeholder {0}: status?.resolved_binary_path
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:194
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:195
 msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:589
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:586
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:407
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:399
 msgid "Bandwidth"
 msgstr "Bandwidth"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:416
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:408
 msgid "Bandwidth Limit"
 msgstr "Bandwidth Limit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:418
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:410
 msgid "Bandwidth Limit help"
 msgstr "Bandwidth Limit help"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1654
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1660
 msgid "Base"
 msgstr "Base"
 
-#: src/components/pipeline/presets/processors/delete-config-form.tsx:91
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:90
 msgid "Base delay between retries"
 msgstr "Base delay between retries"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:262
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:253
 msgid "Base path for remote storage. Supports metadata and time placeholders."
 msgstr "Base path for remote storage. Supports metadata and time placeholders."
 
-#: src/components/notifications/forms/webhook-form.tsx:218
+#: src/components/notifications/forms/webhook-form.tsx:220
 msgid "Basic Auth"
 msgstr "Basic Auth"
 
@@ -1084,7 +1084,7 @@ msgstr "Batch URLs"
 msgid "BDUSS + STOKEN"
 msgstr "BDUSS + STOKEN"
 
-#: src/components/notifications/forms/webhook-form.tsx:215
+#: src/components/notifications/forms/webhook-form.tsx:217
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
@@ -1096,7 +1096,7 @@ msgstr "best"
 msgid "BETA"
 msgstr "BETA"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:192
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:215
 msgid "Bilibili QR Login"
 msgstr "Bilibili QR Login"
 
@@ -1143,7 +1143,7 @@ msgstr "Bot Name"
 msgid "Bot Token"
 msgstr "Bot Token"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:431
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:423
 msgid "both directions at 10 MiB/s"
 msgstr "both directions at 10 MiB/s"
 
@@ -1177,7 +1177,7 @@ msgstr "Browser Notifications"
 msgid "Browser Status"
 msgstr "Browser Status"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1594
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1600
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
 
@@ -1185,7 +1185,7 @@ msgstr "Buffer Limits"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:696
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:680
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
 msgstr "Burst capacity for TPS Limit (--tpslimit-burst)."
 
@@ -1201,7 +1201,7 @@ msgstr "Bytes"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 msgid "Cache"
 msgstr "Cache"
 
@@ -1212,7 +1212,7 @@ msgstr "Cache"
 #: src/components/layout/themes/import-modal.tsx:117
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:455
-#: src/components/notifications/subscription-manager.tsx:464
+#: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:230
@@ -1267,7 +1267,7 @@ msgstr "Cancelled"
 msgid "Cancelled {0} steps in pipeline"
 msgstr "Cancelled {0} steps in pipeline"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:458
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:450
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "Caps overall transfer bandwidth (rclone --bwlimit)."
 
@@ -1283,7 +1283,7 @@ msgstr "Capture real-time comments and chat messages if available."
 msgid "Capture separate stream data."
 msgstr "Capture separate stream data."
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:43
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:44
 msgid "Capture Settings"
 msgstr "Capture Settings"
 
@@ -1326,7 +1326,7 @@ msgstr "Changing Password..."
 msgid "Channel"
 msgstr "Channel"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1135
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1141
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "Channel buffer size multiplier for processed segments."
 
@@ -1372,7 +1372,7 @@ msgstr "Chat ID"
 msgid "Chatters tracked"
 msgstr "Chatters tracked"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:578
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:568
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 
@@ -1401,11 +1401,11 @@ msgstr "Check this streamer and record when it goes live."
 msgid "Check triggered"
 msgstr "Check triggered"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:568
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:558
 msgid "Checkers"
 msgstr "Checkers"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:570
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:560
 msgid "Checkers help"
 msgstr "Checkers help"
 
@@ -1425,7 +1425,7 @@ msgstr "Checking stream status..."
 msgid "Chinese Simplified"
 msgstr "Chinese Simplified"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:210
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:201
 msgid "Choose how files are transferred to the remote."
 msgstr "Choose how files are transferred to the remote."
 
@@ -1442,7 +1442,7 @@ msgid "Choose your display language"
 msgstr "Choose your display language"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:50
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:326
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
 msgid "Cleanup"
 msgstr "Cleanup"
@@ -1497,7 +1497,7 @@ msgstr "Cloning..."
 msgid "Close"
 msgstr "Close"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:512
+#: src/components/config/engines/forms/mesio-hls-form.tsx:518
 msgid "Closest to bitrate"
 msgstr "Closest to bitrate"
 
@@ -1535,7 +1535,7 @@ msgstr "Command Arguments"
 msgid "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders."
 msgstr "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders."
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:226
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:269
 msgid "Comment"
 msgstr "Comment"
 
@@ -1569,7 +1569,7 @@ msgstr "Component"
 msgid "Component Status"
 msgstr "Component Status"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:485
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:477
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 
@@ -1595,7 +1595,7 @@ msgid "Compression Level"
 msgstr "Compression Level"
 
 #: src/components/config/global/concurrency-card.tsx:78
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:516
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:508
 msgid "Concurrency"
 msgstr "Concurrency"
 
@@ -1607,11 +1607,11 @@ msgstr "Concurrency limit reached"
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "Concurrency limits, pipeline timeouts, and engine defaults."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:598
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:586
 msgid "Concurrent checkers (--checkers)."
 msgstr "Concurrent checkers (--checkers)."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:555
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:545
 msgid "Concurrent file transfers (--transfers)."
 msgstr "Concurrent file transfers (--transfers)."
 
@@ -1620,15 +1620,15 @@ msgstr "Concurrent file transfers (--transfers)."
 msgid "Config"
 msgstr "Config"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:612
 msgid "Config Directory (Optional)"
 msgstr "Config Directory (Optional)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:616
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:613
 msgid "Config Directory help"
 msgstr "Config Directory help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:319
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:310
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
@@ -1725,7 +1725,7 @@ msgstr "Confirmed via backstop timer."
 msgid "Connect an AI assistant (MCP)"
 msgstr "Connect an AI assistant (MCP)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:679
+#: src/components/config/engines/forms/mesio-hls-form.tsx:685
 msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
@@ -1763,7 +1763,7 @@ msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:400
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:474
 msgid "Container"
 msgstr "Container"
 
@@ -1809,17 +1809,17 @@ msgstr "Copied"
 msgid "Copied!"
 msgstr "Copied!"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:90
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:91
 msgid "copy"
 msgstr "copy"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:178
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Copy"
 msgstr "Copy"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:283
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:379
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:357
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:453
 msgid "Copy (Passthrough)"
 msgstr "Copy (Passthrough)"
 
@@ -1895,8 +1895,8 @@ msgstr "Could not load presets: {0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:345
-#: src/components/config/engines/forms/mesio-hls-form.tsx:390
+#: src/components/config/engines/forms/mesio-hls-form.tsx:351
+#: src/components/config/engines/forms/mesio-hls-form.tsx:396
 #: src/components/sessions/danmu-stats-panel.tsx:387
 msgid "Count"
 msgstr "Count"
@@ -1921,7 +1921,7 @@ msgstr "CPU Job Timeout"
 msgid "CPU Usage"
 msgstr "CPU Usage"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:450
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:524
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
@@ -2078,11 +2078,11 @@ msgstr "Credentials remembered for automatic re-login"
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:105
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:106
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:452
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:526
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF (Constant Rate Factor)"
 
@@ -2137,8 +2137,8 @@ msgstr "Current password"
 msgid "Current Password"
 msgstr "Current Password"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:228
-#: src/components/config/engines/forms/mesio-hls-form.tsx:524
+#: src/components/config/engines/forms/mesio-hls-form.tsx:234
+#: src/components/config/engines/forms/mesio-hls-form.tsx:530
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:333
 msgid "Custom"
@@ -2156,15 +2156,15 @@ msgstr "Custom Configuration"
 msgid "Custom FFmpeg"
 msgstr "Custom FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:913
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:982
 msgid "Custom Flags"
 msgstr "Custom Flags"
 
-#: src/components/notifications/forms/webhook-form.tsx:221
+#: src/components/notifications/forms/webhook-form.tsx:223
 msgid "Custom Header"
 msgstr "Custom Header"
 
-#: src/components/notifications/forms/webhook-form.tsx:378
+#: src/components/notifications/forms/webhook-form.tsx:380
 msgid "Custom Headers"
 msgstr "Custom Headers"
 
@@ -2180,7 +2180,7 @@ msgstr "Custom proxy URL for Twitch playlists"
 msgid "Custom rate"
 msgstr "Custom rate"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:246
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:289
 msgid "Custom Tags"
 msgstr "Custom Tags"
 
@@ -2196,7 +2196,7 @@ msgstr "Customize specific engine settings for this template."
 msgid "Customize the application theme and sidebar layout."
 msgstr "Customize the application theme and sidebar layout."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:766
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:748
 msgid "Cutoff"
 msgstr "Cutoff"
 
@@ -2281,13 +2281,13 @@ msgstr "Database"
 msgid "Database queries"
 msgstr "Database queries"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:206
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:249
 msgid "Date"
 msgstr "Date"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:397
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:398
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:278
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:269
 msgid "Date placeholder anchor"
 msgstr "Date placeholder anchor"
 
@@ -2295,7 +2295,7 @@ msgstr "Date placeholder anchor"
 msgid "Date range:"
 msgstr "Date range:"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:190
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:199
 msgid "Day (01-31)"
 msgstr "Day (01-31)"
 
@@ -2303,11 +2303,11 @@ msgstr "Day (01-31)"
 msgid "Days"
 msgstr "Days"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1682
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
 msgid "Decryption"
 msgstr "Decryption"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1434
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1440
 msgid "Decryption Key TTL (ms)"
 msgstr "Decryption Key TTL (ms)"
 
@@ -2316,9 +2316,9 @@ msgstr "Decryption Key TTL (ms)"
 msgid "default"
 msgstr "default"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:222
-#: src/components/config/engines/forms/mesio-hls-form.tsx:322
-#: src/components/config/engines/forms/mesio-hls-form.tsx:503
+#: src/components/config/engines/forms/mesio-hls-form.tsx:228
+#: src/components/config/engines/forms/mesio-hls-form.tsx:328
+#: src/components/config/engines/forms/mesio-hls-form.tsx:509
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
@@ -2336,7 +2336,7 @@ msgstr "Default Douyu quality"
 msgid "Default Engine"
 msgstr "Default Engine"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:677
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:663
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 
@@ -2352,7 +2352,7 @@ msgstr "Default password for password-protected rooms. Can be overridden per str
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1519
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1525
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 
@@ -2442,11 +2442,11 @@ msgstr "Delete filter"
 msgid "Delete Job"
 msgstr "Delete Job"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:517
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:518
 msgid "Delete local files after upload"
 msgstr "Delete local files after upload"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:891
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:960
 msgid "Delete original file after successful remux"
 msgstr "Delete original file after successful remux"
 
@@ -2483,15 +2483,15 @@ msgstr "Delete selected streamers?"
 msgid "Delete Source"
 msgstr "Delete Source"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:357
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:358
 msgid "Delete Source ASS"
 msgstr "Delete Source ASS"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:294
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:337
 msgid "Delete source file after successful processing"
 msgstr "Delete source file after successful processing"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:337
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:338
 msgid "Delete Source Videos"
 msgstr "Delete Source Videos"
 
@@ -2550,7 +2550,7 @@ msgstr "Deletes all existing configurations before importing. This action cannot
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 
-#: src/components/notifications/forms/webhook-form.tsx:128
+#: src/components/notifications/forms/webhook-form.tsx:131
 msgid "Delivery Policy"
 msgstr "Delivery Policy"
 
@@ -2571,7 +2571,7 @@ msgstr "Description"
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
-#: src/components/notifications/subscription-manager.tsx:367
+#: src/components/notifications/subscription-manager.tsx:370
 msgid "Deselect All"
 msgstr "Deselect All"
 
@@ -2588,7 +2588,7 @@ msgstr "Desktop Notifications"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "Desktop notifications are shown by the operating system even when the app is minimized."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:342
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:343
 msgid "Destination"
 msgstr "Destination"
 
@@ -2600,19 +2600,19 @@ msgstr "Destination copied"
 msgid "Destination Directory"
 msgstr "Destination Directory"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:354
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:355
 msgid "Destination Folder"
 msgstr "Destination Folder"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:355
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:356
 msgid "Destination Folder help"
 msgstr "Destination Folder help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:228
 msgid "Destination Root"
 msgstr "Destination Root"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:238
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:229
 msgid "Destination Root help"
 msgstr "Destination Root help"
 
@@ -2636,11 +2636,11 @@ msgstr "Detecting…"
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "Determined from the URL. Platform settings apply automatically."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:559
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:633
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:618
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 
@@ -2648,7 +2648,7 @@ msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). 
 msgid "Directory path copied"
 msgstr "Directory path copied"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:271
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:280
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
@@ -2657,7 +2657,7 @@ msgstr "Directory to scan for new files after command execution"
 msgid "Disable"
 msgstr "Disable"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:491
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:492
 msgid "Disable rapid upload"
 msgstr "Disable rapid upload"
 
@@ -2666,7 +2666,7 @@ msgstr "Disable rapid upload"
 msgid "Disable selected"
 msgstr "Disable selected"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:225
+#: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:102
 #: src/components/streamers/card/use-streamer-status.tsx:50
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
@@ -2703,8 +2703,8 @@ msgstr "Dolby Vision (30000)"
 msgid "Done"
 msgstr "Done"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:664
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:831
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:661
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:813
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
@@ -2746,7 +2746,7 @@ msgstr "Download All"
 msgid "Download Backup"
 msgstr "Download Backup"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1101
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1107
 msgid "Download Concurrency"
 msgstr "Download Concurrency"
 
@@ -2804,15 +2804,15 @@ msgstr "Dual Format"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:80
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:751
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:568
 msgid "Duration"
 msgstr "Duration"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:367
-#: src/components/config/engines/forms/mesio-hls-form.tsx:409
+#: src/components/config/engines/forms/mesio-hls-form.tsx:373
+#: src/components/config/engines/forms/mesio-hls-form.tsx:415
 msgid "Duration (ms)"
 msgstr "Duration (ms)"
 
@@ -2824,19 +2824,19 @@ msgstr "Duration limit"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:629
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:626
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "e.g. /app/config/BaiduPCS-Go"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:264
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:273
 msgid "e.g. /output/processed/"
 msgstr "e.g. /output/processed/"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:374
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "e.g. /rust-srec/{streamer}/%Y-%m"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:985
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1054
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "e.g. 0:v:0, 0:a:0"
 
@@ -2844,7 +2844,7 @@ msgstr "e.g. 0:v:0, 0:a:0"
 msgid "e.g. 1080p, source, 原画"
 msgstr "e.g. 1080p, source, 原画"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:451
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:443
 msgid "e.g. 10M"
 msgstr "e.g. 10M"
 
@@ -2852,11 +2852,11 @@ msgstr "e.g. 10M"
 msgid "e.g. 128k, 320k"
 msgstr "e.g. 128k, 320k"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:495
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:487
 msgid "e.g. 1M"
 msgstr "e.g. 1M"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:788
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:770
 msgid "e.g. 250M"
 msgstr "e.g. 250M"
 
@@ -2880,7 +2880,7 @@ msgstr "e.g. echo {input} > {output}"
 msgid "e.g. flv, hls"
 msgstr "e.g. flv, hls"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:255
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
 msgid "e.g. gdrive:/videos"
 msgstr "e.g. gdrive:/videos"
 
@@ -2888,7 +2888,7 @@ msgstr "e.g. gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:290
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:299
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
@@ -2971,7 +2971,7 @@ msgstr "Enable advanced HLS segment reconstruction"
 msgid "Enable monitoring"
 msgstr "Enable monitoring"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1579
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1585
 msgid "Enable Output Metrics (Default: On)"
 msgstr "Enable Output Metrics (Default: On)"
 
@@ -2997,15 +2997,15 @@ msgstr "Enable selected"
 msgid "Enabled"
 msgstr "Enabled"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:128
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:129
 msgid "Encoder Preset"
 msgstr "Encoder Preset"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:317
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
 msgid "Encoding Preset"
 msgstr "Encoding Preset"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:54
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:55
 msgid "Encoding Settings"
 msgstr "Encoding Settings"
 
@@ -3021,7 +3021,7 @@ msgstr "End of History"
 msgid "End Stream On Danmu Close"
 msgstr "End Stream On Danmu Close"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:712
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
 msgid "End Time"
 msgstr "End Time"
 
@@ -3037,7 +3037,7 @@ msgstr "ENDED"
 msgid "Endpoint"
 msgstr "Endpoint"
 
-#: src/components/notifications/forms/webhook-form.tsx:71
+#: src/components/notifications/forms/webhook-form.tsx:74
 msgid "Endpoint Configuration"
 msgstr "Endpoint Configuration"
 
@@ -3192,7 +3192,7 @@ msgstr "Event Types"
 msgid "Events"
 msgstr "Events"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:426
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:418
 msgid "Examples:"
 msgstr "Examples:"
 
@@ -3206,7 +3206,7 @@ msgstr "Exceptional states"
 msgid "Exclude"
 msgstr "Exclude"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:305
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:306
 msgid "Exclude ASS from Passthrough"
 msgstr "Exclude ASS from Passthrough"
 
@@ -3272,7 +3272,7 @@ msgstr "Exit selection mode"
 msgid "Experimental"
 msgstr "Experimental"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:260
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
@@ -3306,9 +3306,9 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:162
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:645
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:642
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:812
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:794
 msgid "Extra Arguments"
 msgstr "Extra Arguments"
 
@@ -3342,12 +3342,12 @@ msgstr "Extraction API Mode"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:42
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:30
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:46
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:28
 msgid "Extraction Settings"
 msgstr "Extraction Settings"
 
-#: src/components/notifications/forms/webhook-form.tsx:252
+#: src/components/notifications/forms/webhook-form.tsx:254
 msgid "ey..."
 msgstr "ey..."
 
@@ -3604,7 +3604,7 @@ msgstr "Failed to process selected pipelines"
 msgid "Failed to process selected streamers"
 msgstr "Failed to process selected streamers"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:188
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:189
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "Failed to query BaiduPCS-Go status."
 
@@ -3673,7 +3673,7 @@ msgstr "Failed to update settings"
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
 
-#: src/components/notifications/subscription-manager.tsx:251
+#: src/components/notifications/subscription-manager.tsx:254
 msgid "Failed to update subscriptions"
 msgstr "Failed to update subscriptions"
 
@@ -3687,7 +3687,7 @@ msgstr "Failed to update template: {0}"
 msgid "Failed to update workflow: {0}"
 msgstr "Failed to update workflow: {0}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:600
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:597
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 
@@ -3738,23 +3738,23 @@ msgstr "Fetch"
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1670
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1676
 msgid "Fetcher"
 msgstr "Fetcher"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:247
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:248
 msgid "ffmpeg"
 msgstr "ffmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:752
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:821
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg Audio Filter (-af)"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:242
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg Path"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:615
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:684
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
@@ -3762,12 +3762,12 @@ msgstr "FFmpeg Video Filter"
 msgid "File Configuration"
 msgstr "File Configuration"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:286
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:295
 msgid "File Extension Filter"
 msgstr "File Extension Filter"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:300
 msgid "File Operations"
 msgstr "File Operations"
 
@@ -3775,11 +3775,11 @@ msgstr "File Operations"
 msgid "File path copied to clipboard"
 msgstr "File path copied to clipboard"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:795
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:777
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "File size threshold (--multi-thread-cutoff)."
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:155
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:153
 msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "Filename pattern (e.g., thumb.jpg)"
 
@@ -3792,7 +3792,7 @@ msgstr "Filename Template"
 msgid "files"
 msgstr "files"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:772
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:754
 msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 msgstr "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 
@@ -3816,7 +3816,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:106
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:125
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -3859,11 +3859,11 @@ msgstr "Filters"
 msgid "Fine tune brand and surface colors."
 msgstr "Fine tune brand and surface colors."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:79
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:88
 msgid "First input file path"
 msgstr "First input file path"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:86
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:95
 msgid "First output file path"
 msgstr "First output file path"
 
@@ -3899,19 +3899,19 @@ msgstr "FLV stream fixing pipeline"
 msgid "FLV Tuning"
 msgstr "FLV Tuning"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:862
+#: src/components/config/engines/forms/mesio-hls-form.tsx:868
 msgid "Follow Redirects (Default: On)"
 msgstr "Follow Redirects (Default: On)"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:262
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "Fonts Directory"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:896
+#: src/components/config/engines/forms/mesio-hls-form.tsx:902
 msgid "Force IPv4 (Default: Off)"
 msgstr "Force IPv4 (Default: Off)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:913
+#: src/components/config/engines/forms/mesio-hls-form.tsx:919
 msgid "Force IPv6 (Default: Off)"
 msgstr "Force IPv6 (Default: Off)"
 
@@ -3925,7 +3925,7 @@ msgstr "Force Mobile API"
 msgid "Force Origin Quality"
 msgstr "Force Origin Quality"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:869
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:938
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
@@ -3937,18 +3937,18 @@ msgstr "Force requesting the highest origin quality available (Direct stream)."
 msgid "Force specific output format."
 msgstr "Force specific output format."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:268
 msgid "Form"
 msgstr "Form"
 
 #: src/components/config/global/file-config-card.tsx:99
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:286
 msgid "Format"
 msgstr "Format"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:590
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:664
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
@@ -3970,7 +3970,7 @@ msgctxt "Comparison table column"
 msgid "From"
 msgstr "From"
 
-#: src/components/notifications/forms/email-form.tsx:130
+#: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "From Address"
 
@@ -3998,7 +3998,7 @@ msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in 
 msgid "Full Processing"
 msgstr "Full Processing"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1502
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1508
 msgid "Gap Eval Interval (ms)"
 msgstr "Gap Eval Interval (ms)"
 
@@ -4011,9 +4011,9 @@ msgstr "GB"
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
 #: src/components/config/templates/template-editor.tsx:277
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:203
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:329
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:122
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
 #: src/components/streamers/streamer-editor.tsx:149
 msgid "General"
 msgstr "General"
@@ -4050,11 +4050,11 @@ msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:168
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:191
 msgid "Generate new QR code"
 msgstr "Generate new QR code"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:123
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:146
 msgid "Generating QR code..."
 msgstr "Generating QR code..."
 
@@ -4089,7 +4089,7 @@ msgstr "Global Configuration"
 msgid "Global Default"
 msgstr "Global Default"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:660
+#: src/components/config/engines/forms/mesio-hls-form.tsx:666
 msgid "Global Timeout (ms)"
 msgstr "Global Timeout (ms)"
 
@@ -4117,7 +4117,7 @@ msgstr "Go to page {p}"
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
-#: src/components/notifications/forms/gotify-form.tsx:61
+#: src/components/notifications/forms/gotify-form.tsx:62
 msgid "Gotify application token"
 msgstr "Gotify application token"
 
@@ -4169,11 +4169,11 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:802
+#: src/components/config/engines/forms/mesio-hls-form.tsx:808
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 Keep-Alive (ms)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:790
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:859
 msgid "Hardware Acceleration"
 msgstr "Hardware Acceleration"
 
@@ -4189,7 +4189,7 @@ msgstr "HD (150)"
 msgid "HD Thumbnail"
 msgstr "HD Thumbnail"
 
-#: src/components/notifications/forms/webhook-form.tsx:332
+#: src/components/notifications/forms/webhook-form.tsx:334
 msgid "Header Key"
 msgstr "Header Key"
 
@@ -4197,7 +4197,7 @@ msgstr "Header Key"
 msgid "Header received"
 msgstr "Header received"
 
-#: src/components/notifications/forms/webhook-form.tsx:352
+#: src/components/notifications/forms/webhook-form.tsx:354
 msgid "Header Value"
 msgstr "Header Value"
 
@@ -4211,7 +4211,7 @@ msgstr "Health"
 msgid "Healthy"
 msgstr "Healthy"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:575
+#: src/components/config/engines/forms/mesio-hls-form.tsx:581
 msgid "Height"
 msgstr "Height"
 
@@ -4272,11 +4272,11 @@ msgstr "High-priority slot waiting (concurrency limit reached)"
 msgid "High+"
 msgstr "High+"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:535
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:527
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:506
+#: src/components/config/engines/forms/mesio-hls-form.tsx:512
 msgid "Highest bitrate"
 msgstr "Highest bitrate"
 
@@ -4302,7 +4302,7 @@ msgstr "HLS Tuning"
 msgid "Home"
 msgstr "Home"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:197
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:206
 msgid "Hour (00-23)"
 msgstr "Hour (00-23)"
 
@@ -4314,7 +4314,7 @@ msgstr "Hours"
 msgid "How chat activity is summarised on the session page."
 msgstr "How chat activity is summarised on the session page."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:474
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:475
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 msgstr "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 
@@ -4322,7 +4322,7 @@ msgstr "How files that already exist at the destination are handled (--policy). 
 msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 msgstr "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1332
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1338
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "How long to keep decrypted/processed segments in cache."
 
@@ -4342,7 +4342,7 @@ msgstr "How many CPU-bound pipeline steps, such as transcodes, may run at the sa
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:530
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:522
 msgid "How many files rclone uploads in parallel."
 msgstr "How many files rclone uploads in parallel."
 
@@ -4350,7 +4350,7 @@ msgstr "How many files rclone uploads in parallel."
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "How many pipeline upload steps may run at the same time."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:671
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:657
 msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
 msgstr "How many requests can briefly burst above TPS Limit before throttling kicks in."
 
@@ -4370,7 +4370,7 @@ msgstr "How often rust-srec runs nvidia-smi to detect when the container loses G
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:198
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
 
@@ -4386,15 +4386,15 @@ msgstr "HTTP middleware"
 msgid "HTTP requests"
 msgstr "HTTP requests"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:767
+#: src/components/config/engines/forms/mesio-hls-form.tsx:773
 msgid "HTTP Version Preference"
 msgstr "HTTP Version Preference"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:786
+#: src/components/config/engines/forms/mesio-hls-form.tsx:792
 msgid "HTTP/1.1 Only"
 msgstr "HTTP/1.1 Only"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:783
+#: src/components/config/engines/forms/mesio-hls-form.tsx:789
 msgid "HTTP/2 Only"
 msgstr "HTTP/2 Only"
 
@@ -4402,7 +4402,7 @@ msgstr "HTTP/2 Only"
 msgid "https://..."
 msgstr "https://..."
 
-#: src/components/notifications/forms/webhook-form.tsx:86
+#: src/components/notifications/forms/webhook-form.tsx:89
 msgid "https://api.example.com/webhook"
 msgstr "https://api.example.com/webhook"
 
@@ -4410,7 +4410,7 @@ msgstr "https://api.example.com/webhook"
 msgid "https://discord.com/api/webhooks/..."
 msgstr "https://discord.com/api/webhooks/..."
 
-#: src/components/notifications/forms/gotify-form.tsx:40
+#: src/components/notifications/forms/gotify-form.tsx:41
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
@@ -4525,6 +4525,7 @@ msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:51
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:39
 #: src/components/config/shared/offline-check-card.tsx:78
 #: src/components/config/shared/offline-check-card.tsx:110
 msgid "Inherited"
@@ -4543,7 +4544,7 @@ msgstr "INITIAL"
 msgid "Initial Delay (ms)"
 msgstr "Initial Delay (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:941
+#: src/components/config/engines/forms/mesio-hls-form.tsx:947
 msgid "Initial Fetch Timeout (ms)"
 msgstr "Initial Fetch Timeout (ms)"
 
@@ -4563,7 +4564,7 @@ msgstr "Input"
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:922
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:991
 msgid "Input Options (-i flags)"
 msgstr "Input Options (-i flags)"
 
@@ -4613,7 +4614,7 @@ msgstr "Interval between offline checks."
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:254
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:163
 msgid "Invalid JSON: {error}"
 msgstr "Invalid JSON: {error}"
 
@@ -4653,8 +4654,8 @@ msgstr "Job configurations"
 msgid "Job creation time"
 msgstr "Job creation time"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:412
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:293
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:413
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:284
 msgid "Job creation time (default)"
 msgstr "Job creation time (default)"
 
@@ -4693,15 +4694,15 @@ msgstr "Jobs"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "Jobs will appear here when recordings are processed."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:284
 msgid "JSON"
 msgstr "JSON"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:93
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:102
 msgid "JSON array of all inputs"
 msgstr "JSON array of all inputs"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:100
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:109
 msgid "JSON array of all outputs"
 msgstr "JSON array of all outputs"
 
@@ -4709,11 +4710,11 @@ msgstr "JSON array of all outputs"
 msgid "KB"
 msgstr "KB"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
 msgid "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
 msgstr "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:133
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:131
 msgid "Keep directory structure"
 msgstr "Keep directory structure"
 
@@ -4721,22 +4722,22 @@ msgstr "Keep directory structure"
 msgid "Keep Running"
 msgstr "Keep Running"
 
-#: src/components/notifications/forms/webhook-form.tsx:415
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
+#: src/components/notifications/forms/webhook-form.tsx:420
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:113
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:144
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:175
 msgid "Key"
 msgstr "Key"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1355
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1361
 msgid "Key Cache TTL (ms)"
 msgstr "Key Cache TTL (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1273
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1279
 msgid "Key Retry Delay (ms)"
 msgstr "Key Retry Delay (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1235
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1241
 msgid "Key Timeout (ms)"
 msgstr "Key Timeout (ms)"
 
@@ -4801,7 +4802,7 @@ msgstr "Let the player proxy sources on private or local networks."
 msgid "Level"
 msgstr "Level"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:71
 msgid "libx264"
 msgstr "libx264"
 
@@ -4817,7 +4818,7 @@ msgstr "Limits"
 msgid "Limits & Validation"
 msgstr "Limits & Validation"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:479
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:471
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "Limits each individual file's transfer rate rather than the overall total."
 
@@ -4846,7 +4847,7 @@ msgstr "Live"
 msgid "LIVE"
 msgstr "LIVE"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1554
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1560
 msgid "Live Gap Strategy"
 msgstr "Live Gap Strategy"
 
@@ -4863,7 +4864,7 @@ msgstr "Live polling notifications enabled"
 msgid "Live Preview"
 msgstr "Live Preview"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:960
+#: src/components/config/engines/forms/mesio-hls-form.tsx:966
 msgid "Live Refresh Interval (ms)"
 msgstr "Live Refresh Interval (ms)"
 
@@ -4926,7 +4927,7 @@ msgstr "Local Archive"
 msgid "Log Files"
 msgstr "Log Files"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:285
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:244
 msgid "Log in"
 msgstr "Log in"
@@ -4935,11 +4936,11 @@ msgstr "Log in"
 msgid "Log levels & modules"
 msgstr "Log levels & modules"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:275
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:276
 msgid "Log out"
 msgstr "Log out"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:219
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:220
 msgid "Logged in"
 msgstr "Logged in"
 
@@ -4956,7 +4957,7 @@ msgstr "Logged in to Baidu Netdisk"
 msgid "Logged in to Baidu Netdisk as {0}"
 msgstr "Logged in to Baidu Netdisk as {0}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:130
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:131
 msgid "Logged out of Baidu Netdisk"
 msgstr "Logged out of Baidu Netdisk"
 
@@ -4976,7 +4977,7 @@ msgstr "Logging paused"
 msgid "Login failed"
 msgstr "Login failed"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:156
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:179
 msgid "Login successful!"
 msgstr "Login successful!"
 
@@ -5016,7 +5017,7 @@ msgstr "Low (80)"
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:480
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:554
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
@@ -5024,7 +5025,7 @@ msgstr "Lower value = Higher Quality"
 msgid "Lowest (0)"
 msgstr "Lowest (0)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:509
+#: src/components/config/engines/forms/mesio-hls-form.tsx:515
 msgid "Lowest bitrate"
 msgstr "Lowest bitrate"
 
@@ -5046,7 +5047,7 @@ msgstr "Maintenance"
 msgid "Manage credentials and session cookies."
 msgstr "Manage credentials and session cookies."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:127
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:246
 msgid "Manage specialized extraction and identification options."
 msgstr "Manage specialized extraction and identification options."
 
@@ -5054,7 +5055,7 @@ msgstr "Manage specialized extraction and identification options."
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
-#: src/components/notifications/subscription-manager.tsx:321
+#: src/components/notifications/subscription-manager.tsx:324
 msgid "Manage Subscriptions"
 msgstr "Manage Subscriptions"
 
@@ -5070,7 +5071,7 @@ msgstr "Manage your application configuration."
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:189
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:190
 msgid "Manifest (Pair by Order)"
 msgstr "Manifest (Pair by Order)"
 
@@ -5086,15 +5087,15 @@ msgstr "Mark Read"
 msgid "Marked all as read"
 msgstr "Marked all as read"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:174
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:175
 msgid "Match Strategy"
 msgstr "Match Strategy"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:521
+#: src/components/config/engines/forms/mesio-hls-form.tsx:527
 msgid "Matching resolution"
 msgstr "Matching resolution"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:543
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:544
 msgid "Max Attempts"
 msgstr "Max Attempts"
 
@@ -5102,7 +5103,7 @@ msgstr "Max Attempts"
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1621
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1627
 msgid "Max Bytes"
 msgstr "Max Bytes"
 
@@ -5129,11 +5130,11 @@ msgstr "Max Duration"
 msgid "Max HEVC Compression"
 msgstr "Max HEVC Compression"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:821
+#: src/components/config/engines/forms/mesio-hls-form.tsx:827
 msgid "Max Idle per Host"
 msgstr "Max Idle per Host"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1069
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1075
 msgid "Max Interval (ms)"
 msgstr "Max Interval (ms)"
 
@@ -5142,15 +5143,15 @@ msgstr "Max Interval (ms)"
 msgid "Max IO Jobs"
 msgstr "Max IO Jobs"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1254
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1260
 msgid "Max Key Retries"
 msgstr "Max Key Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1292
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1298
 msgid "Max Key Retry Delay (ms)"
 msgstr "Max Key Retry Delay (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:149
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:169
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "Max number of retry attempts for metadata fetching."
 
@@ -5159,7 +5160,7 @@ msgstr "Max number of retry attempts for metadata fetching."
 msgid "Max Part Size"
 msgstr "Max Part Size"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1534
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1540
 msgid "Max Pending Init Segments"
 msgstr "Max Pending Init Segments"
 
@@ -5167,33 +5168,33 @@ msgstr "Max Pending Init Segments"
 msgid "Max Quality Thumbnail"
 msgstr "Max Quality Thumbnail"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:979
+#: src/components/config/engines/forms/mesio-hls-form.tsx:985
 msgid "Max Refresh Retries"
 msgstr "Max Refresh Retries"
 
 #: src/components/config/shared/retry-policy-form.tsx:52
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:374
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:365
 msgid "Max Retries"
 msgstr "Max Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1216
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1222
 msgid "Max Retry Delay (ms)"
 msgstr "Max Retry Delay (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1178
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1184
 msgid "Max Segment Retries"
 msgstr "Max Segment Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1602
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1608
 msgid "Max Segments"
 msgstr "Max Segments"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1517
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1523
 msgid "Max Stall Duration (ms)"
 msgstr "Max Stall Duration (ms)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:651
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:637
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "Max transactions/second to the remote API (--tpslimit)."
 
@@ -5210,7 +5211,7 @@ msgstr "Maximum compression to minimize storage usage, then delete original."
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1112
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1118
 msgid "Maximum number of concurrent segment downloads."
 msgstr "Maximum number of concurrent segment downloads."
 
@@ -5275,15 +5276,15 @@ msgstr "Metadata"
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:999
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1068
 msgid "Metadata Tags"
 msgstr "Metadata Tags"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:127
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:136
 msgid "Metadata Variables"
 msgstr "Metadata Variables"
 
-#: src/components/notifications/forms/webhook-form.tsx:102
+#: src/components/notifications/forms/webhook-form.tsx:105
 msgid "Method"
 msgstr "Method"
 
@@ -5291,7 +5292,7 @@ msgstr "Method"
 msgid "Min Bitrate (bps)"
 msgstr "Min Bitrate (bps)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1050
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1056
 msgid "Min Interval (ms)"
 msgstr "Min Interval (ms)"
 
@@ -5321,11 +5322,11 @@ msgstr "Mins"
 msgid "Mint Integrity Token"
 msgstr "Mint Integrity Token"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:204
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:213
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:363
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:364
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "Missing folders are created by BaiduPCS-Go during upload."
 
@@ -5363,7 +5364,7 @@ msgstr "Monitoring Stopped"
 msgid "Month"
 msgstr "Month"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:183
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:192
 msgid "Month (01-12)"
 msgstr "Month (01-12)"
 
@@ -5380,7 +5381,7 @@ msgstr "More pages"
 msgid "Morning"
 msgstr "Morning"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:180
 msgid "Move"
 msgstr "Move"
 
@@ -5408,19 +5409,19 @@ msgstr "MP"
 msgid "ms"
 msgstr "ms"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:710
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:694
 msgid "Multi-Thread Copy"
 msgstr "Multi-Thread Copy"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:769
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:751
 msgid "Multi-Thread Cutoff help"
 msgstr "Multi-Thread Cutoff help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:723
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:707
 msgid "Multi-Thread Streams help"
 msgstr "Multi-Thread Streams help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:778
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:760
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 
@@ -5481,7 +5482,7 @@ msgstr "Native"
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:357
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:358
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
@@ -5489,7 +5490,7 @@ msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and tim
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
 msgid "Network & Content"
 msgstr "Network & Content"
 
@@ -5581,11 +5582,11 @@ msgstr "No configuration."
 msgid "No credentials found."
 msgstr "No credentials found."
 
-#: src/components/notifications/forms/webhook-form.tsx:401
+#: src/components/notifications/forms/webhook-form.tsx:403
 msgid "No custom headers configured"
 msgstr "No custom headers configured"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:97
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:140
 msgid "No custom tags added"
 msgstr "No custom tags added"
 
@@ -5656,7 +5657,7 @@ msgstr "No logs available for this execution."
 msgid "No logs to display"
 msgstr "No logs to display"
 
-#: src/components/notifications/subscription-manager.tsx:386
+#: src/components/notifications/subscription-manager.tsx:389
 msgid "No matching events found"
 msgstr "No matching events found"
 
@@ -5668,7 +5669,7 @@ msgstr "No media outputs generated yet."
 msgid "No media outputs yet"
 msgstr "No media outputs yet"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1063
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:128
 msgid "No metadata tags added"
 msgstr "No metadata tags added"
 
@@ -5692,7 +5693,7 @@ msgstr "No outputs found"
 msgid "No overrides configured"
 msgstr "No overrides configured"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:117
+#: src/components/config/engines/forms/mesio-hls-form.tsx:120
 msgid "No parameters configured."
 msgstr "No parameters configured."
 
@@ -5766,7 +5767,7 @@ msgstr "No results found"
 msgid "No running pipelines selected"
 msgstr "No running pipelines selected"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:178
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
 msgid "No specialized options available for this platform."
 msgstr "No specialized options available for this platform."
 
@@ -5820,8 +5821,8 @@ msgstr "No workflows found"
 msgid "No workflows yet"
 msgstr "No workflows yet"
 
-#: src/components/notifications/forms/webhook-form.tsx:212
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:801
+#: src/components/notifications/forms/webhook-form.tsx:214
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:870
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:462
 msgid "None"
@@ -5831,7 +5832,7 @@ msgstr "None"
 msgid "None (Default)"
 msgstr "None (Default)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:386
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:460
 msgid "None (Strip Audio)"
 msgstr "None (Strip Audio)"
 
@@ -5869,7 +5870,7 @@ msgstr "Not Found"
 msgid "Not installed"
 msgstr "Not installed"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:230
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:231
 msgid "Not logged in"
 msgstr "Not logged in"
 
@@ -5909,7 +5910,7 @@ msgstr "Notification Service"
 msgid "Notifications"
 msgstr "Notifications"
 
-#: src/components/notifications/forms/email-form.tsx:135
+#: src/components/notifications/forms/email-form.tsx:134
 msgid "notifier@example.com"
 msgstr "notifier@example.com"
 
@@ -5917,15 +5918,15 @@ msgstr "notifier@example.com"
 msgid "Now"
 msgstr "Now"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:108
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:117
 msgid "Nth input: {input0}, {input1}..."
 msgstr "Nth input: {input0}, {input1}..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:117
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:126
 msgid "Nth output: {output0}, {output1}..."
 msgstr "Nth output: {output0}, {output1}..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:385
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:377
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
@@ -6016,7 +6017,7 @@ msgstr "Offline Detection"
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1376
 msgid "Offload Decryption (Default: On)"
 msgstr "Offload Decryption (Default: On)"
 
@@ -6036,15 +6037,15 @@ msgstr "One word per line"
 msgid "Ongoing"
 msgstr "Ongoing"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:297
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:306
 msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:732
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:716
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:844
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:913
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "Only supported for MP4/MOV/M4V"
 
@@ -6063,11 +6064,11 @@ msgid "Open quality options"
 msgstr "Open quality options"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:149
 msgid "Operation"
 msgstr "Operation"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:146
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
 msgid "Operation Mode"
 msgstr "Operation Mode"
 
@@ -6081,7 +6082,7 @@ msgstr "Optimize Stream Headers"
 
 #: src/components/config/shared/proxy-settings-card.tsx:190
 #: src/components/config/shared/proxy-settings-card.tsx:210
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:242
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:251
 msgid "Optional"
 msgstr "Optional"
 
@@ -6089,7 +6090,7 @@ msgstr "Optional"
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:118
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:116
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:175
 msgid "Options"
 msgstr "Options"
@@ -6123,11 +6124,11 @@ msgstr "Out of space"
 msgid "Out of Space"
 msgstr "Out of Space"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1694
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1700
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:153
 #: src/components/config/templates/template-card.tsx:163
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
 msgstr "Output"
 
@@ -6147,7 +6148,7 @@ msgstr "Output Configuration"
 msgid "Output deleted"
 msgstr "Output deleted"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:239
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:248
 msgid "Output Detection"
 msgstr "Output Detection"
 
@@ -6161,11 +6162,11 @@ msgid "Output folder unavailable"
 msgstr "Output folder unavailable"
 
 #: src/components/config/shared/output-settings-card.tsx:126
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:409
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:483
 msgid "Output Format"
 msgstr "Output Format"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:942
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1011
 msgid "Output Options"
 msgstr "Output Options"
 
@@ -6177,7 +6178,7 @@ msgstr "Output Path"
 msgid "Output paths, templates, and formats."
 msgstr "Output paths, templates, and formats."
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:145
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:143
 msgid "Output Pattern (Optional)"
 msgstr "Output Pattern (Optional)"
 
@@ -6233,8 +6234,8 @@ msgstr "Override output folder."
 msgid "Overview"
 msgstr "Overview"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:153
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:268
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:151
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:311
 msgid "Overwrite"
 msgstr "Overwrite"
 
@@ -6246,17 +6247,17 @@ msgstr "Overwrite Existing"
 msgid "Overwrite existing .ass files"
 msgstr "Overwrite existing .ass files"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:466
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:271
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:467
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:314
 msgid "Overwrite existing files"
 msgstr "Overwrite existing files"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:226
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:866
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:935
 msgid "Overwrite Files"
 msgstr "Overwrite Files"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:469
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:470
 msgid "Overwrite only when size changed"
 msgstr "Overwrite only when size changed"
 
@@ -6289,7 +6290,7 @@ msgstr "Paired Segment"
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:572
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:562
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "Parallel integrity checks (e.g. comparing source / destination hashes)."
 
@@ -6323,17 +6324,17 @@ msgstr "Parsing Stream..."
 msgid "Parsing..."
 msgstr "Parsing..."
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:285
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:286
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:222
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:68
 #: src/components/config/shared/proxy-settings-card.tsx:204
-#: src/components/notifications/forms/email-form.tsx:107
-#: src/components/notifications/forms/email-form.tsx:113
-#: src/components/notifications/forms/webhook-form.tsx:298
-#: src/components/notifications/forms/webhook-form.tsx:305
+#: src/components/notifications/forms/email-form.tsx:106
+#: src/components/notifications/forms/email-form.tsx:112
+#: src/components/notifications/forms/webhook-form.tsx:300
+#: src/components/notifications/forms/webhook-form.tsx:307
 #: src/routes/_public/login.lazy.tsx:190
 msgid "Password"
 msgstr "Password"
@@ -6374,7 +6375,7 @@ msgstr "Path"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:73
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:82
 msgid "Path Variables"
 msgstr "Path Variables"
 
@@ -6411,15 +6412,15 @@ msgstr "Pending Jobs"
 msgid "Per page:"
 msgstr "Per page:"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:473
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:465
 msgid "Per-File Bandwidth Limit"
 msgstr "Per-File Bandwidth Limit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:476
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:468
 msgid "Per-File Bandwidth Limit help"
 msgstr "Per-File Bandwidth Limit help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:502
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:494
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 
@@ -6436,7 +6437,7 @@ msgstr "Per-segment Pipeline"
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:850
 #: src/components/sessions/overview-tab.tsx:205
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:561
 msgid "Performance"
@@ -6576,7 +6577,7 @@ msgstr "Platform configuration updated successfully"
 msgid "Platform configurations will appear here when available."
 msgstr "Platform configurations will appear here when available."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:161
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:170
 msgid "Platform name"
 msgstr "Platform name"
 
@@ -6596,7 +6597,7 @@ msgstr "Platform Override Settings"
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:123
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:242
 msgid "Platform Specific Configuration"
 msgstr "Platform Specific Configuration"
 
@@ -6630,7 +6631,7 @@ msgstr "Playback Error"
 msgid "Player"
 msgstr "Player"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1658
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1664
 msgid "Playlist"
 msgstr "Playlist"
 
@@ -6639,7 +6640,7 @@ msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "Playlist Gone"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1396
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1402
 msgid "Playlist TTL (ms)"
 msgstr "Playlist TTL (ms)"
 
@@ -6675,11 +6676,11 @@ msgstr "Please wait while we resolve the stream URL."
 msgid "Podcast Extraction"
 msgstr "Podcast Extraction"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:840
+#: src/components/config/engines/forms/mesio-hls-form.tsx:846
 msgid "Pool Idle Timeout (ms)"
 msgstr "Pool Idle Timeout (ms)"
 
-#: src/components/notifications/forms/email-form.tsx:62
+#: src/components/notifications/forms/email-form.tsx:63
 msgid "Port"
 msgstr "Port"
 
@@ -6703,7 +6704,7 @@ msgstr "Prefer Manifest"
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:59
 msgid "Preferred CDN"
 msgstr "Preferred CDN"
 
@@ -6727,7 +6728,7 @@ msgstr "Preferred Quality (QN)"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:130
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:128
 msgid "Preserve Paths"
 msgstr "Preserve Paths"
 
@@ -6776,7 +6777,7 @@ msgstr "presets"
 msgid "Presets"
 msgstr "Presets"
 
-#: src/components/notifications/forms/email-form.tsx:163
+#: src/components/notifications/forms/email-form.tsx:162
 msgid "Press Enter to add recipient"
 msgstr "Press Enter to add recipient"
 
@@ -6871,11 +6872,11 @@ msgstr "Processed {0} pipelines; {1} failed"
 msgid "Processed {0} streamers; {1} failed"
 msgstr "Processed {0} streamers; {1} failed"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1124
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1130
 msgid "Processed Buffer Multiplier"
 msgstr "Processed Buffer Multiplier"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1321
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1327
 msgid "Processed Segment TTL (ms)"
 msgstr "Processed Segment TTL (ms)"
 
@@ -6894,7 +6895,7 @@ msgstr "Processing Behavior"
 msgid "Processing nodes"
 msgstr "Processing nodes"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1676
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1682
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:152
 msgid "Processor"
 msgstr "Processor"
@@ -6946,7 +6947,7 @@ msgstr "Proxy Strategy"
 msgid "Proxy URL"
 msgstr "Proxy URL"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:165
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:188
 msgid "QR code expired"
 msgstr "QR code expired"
 
@@ -6959,15 +6960,15 @@ msgstr "QR Login"
 msgid "Quality"
 msgstr "Quality"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:107
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:106
 msgid "Quality (qscale)"
 msgstr "Quality (qscale)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:512
 msgid "Quality Control"
 msgstr "Quality Control"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:88
 msgid "Quality Rate"
 msgstr "Quality Rate"
 
@@ -6975,7 +6976,7 @@ msgstr "Quality Rate"
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:734
+#: src/components/config/engines/forms/mesio-hls-form.tsx:740
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
@@ -7008,11 +7009,11 @@ msgstr "RAM utilization"
 msgid "Random"
 msgstr "Random"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:610
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:598
 msgid "Rate Limiting"
 msgstr "Rate Limiting"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:624
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:612
 msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 
@@ -7021,7 +7022,7 @@ msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 
 msgid "Ratio"
 msgstr "Ratio"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:240
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
@@ -7030,20 +7031,20 @@ msgstr "Raw JSON Editor"
 msgid "Rclone"
 msgstr "Rclone"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:689
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:675
 msgid "rclone default: 1"
 msgstr "rclone default: 1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:548
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:744
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:540
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:728
 msgid "rclone default: 4"
 msgstr "rclone default: 4"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:591
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:581
 msgid "rclone default: 8"
 msgstr "rclone default: 8"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:339
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:330
 msgid "Rclone Executable"
 msgstr "Rclone Executable"
 
@@ -7052,7 +7053,7 @@ msgstr "Rclone Executable"
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:698
+#: src/components/config/engines/forms/mesio-hls-form.tsx:704
 msgid "Read Timeout (ms)"
 msgstr "Read Timeout (ms)"
 
@@ -7186,7 +7187,7 @@ msgstr "Refresh"
 msgid "Refresh failed: Manual login required"
 msgstr "Refresh failed: Manual login required"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:170
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:171
 msgid "Refresh status"
 msgstr "Refresh status"
 
@@ -7215,7 +7216,7 @@ msgstr "Reload Player"
 msgid "Remember for automatic re-login"
 msgstr "Remember for automatic re-login"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:141
+#: src/components/config/engines/forms/mesio-hls-form.tsx:147
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:165
 msgid "Remove"
 msgstr "Remove"
@@ -7224,15 +7225,15 @@ msgstr "Remove"
 msgid "Remove {tag}"
 msgstr "Remove {tag}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:888
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:957
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:291
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:334
 msgid "Remove source on success"
 msgstr "Remove source on success"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:520
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:521
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 
@@ -7275,11 +7276,11 @@ msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the c
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1464
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1470
 msgid "Reorder Duration (ms)"
 msgstr "Reorder Duration (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1483
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1489
 msgid "Reorder Max Segments"
 msgstr "Reorder Max Segments"
 
@@ -7291,7 +7292,7 @@ msgstr "Replace All"
 msgid "Replace destination files if they exist"
 msgstr "Replace destination files if they exist"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:156
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:154
 msgid "Replace output files"
 msgstr "Replace output files"
 
@@ -7312,11 +7313,11 @@ msgstr "Replace Step"
 msgid "Request AAC audio without a video track."
 msgstr "Request AAC audio without a video track."
 
-#: src/components/notifications/forms/webhook-form.tsx:153
+#: src/components/notifications/forms/webhook-form.tsx:155
 msgid "Request timeout duration"
 msgstr "Request timeout duration"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:211
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:212
 msgid "Require Subtitles"
 msgstr "Require Subtitles"
 
@@ -7338,7 +7339,7 @@ msgstr "Reset"
 msgid "Resolution"
 msgstr "Resolution"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:643
 msgid "Resolution (Scale)"
 msgstr "Resolution (Scale)"
 
@@ -7408,12 +7409,12 @@ msgstr "Retry"
 msgid "Retry All Failed"
 msgstr "Retry All Failed"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:998
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1004
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "Retry Delay (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1197
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1203
 msgid "Retry Delay Base (ms)"
 msgstr "Retry Delay Base (ms)"
 
@@ -7426,7 +7427,7 @@ msgid "Retry Pipeline"
 msgstr "Retry Pipeline"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:362
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:353
 msgid "Retry Policy"
 msgstr "Retry Policy"
 
@@ -7486,7 +7487,7 @@ msgstr "Run a custom FFmpeg command. Edit the args to customize."
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1372
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1378
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
@@ -7540,7 +7541,7 @@ msgstr "S"
 msgid "Same as server"
 msgstr "Same as server"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:448
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:449
 msgid "Same-name policy"
 msgstr "Same-name policy"
 
@@ -7553,11 +7554,11 @@ msgstr "Sample Rate"
 msgid "Sample Rate (Hz)"
 msgstr "Sample Rate (Hz)"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:154
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:163
 msgid "Sanitized session title"
 msgstr "Sanitized session title"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:147
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:156
 msgid "Sanitized streamer name"
 msgstr "Sanitized streamer name"
 
@@ -7575,7 +7576,7 @@ msgstr "Save changes"
 
 #: src/components/config/platforms/platform-editor.tsx:170
 #: src/components/config/templates/template-editor.tsx:247
-#: src/components/notifications/subscription-manager.tsx:474
+#: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:693
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
@@ -7606,23 +7607,23 @@ msgstr "Saving"
 msgid "Saving..."
 msgstr "Saving..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:247
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:256
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:260
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:269
 msgid "Scan Directory"
 msgstr "Scan Directory"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:195
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:218
 msgid "Scan the QR code with Bilibili app to login and save credentials"
 msgstr "Scan the QR code with Bilibili app to login and save credentials"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:135
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:158
 msgid "Scan with Bilibili mobile app"
 msgstr "Scan with Bilibili mobile app"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:147
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:170
 msgid "Scanned! Please confirm on your phone"
 msgstr "Scanned! Please confirm on your phone"
 
@@ -7635,7 +7636,7 @@ msgstr "Schedule recording times"
 msgid "Scheduled"
 msgstr "Scheduled"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1664
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1670
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:359
 msgid "Scheduler"
 msgstr "Scheduler"
@@ -7665,7 +7666,7 @@ msgstr "Search comments..."
 msgid "Search engines..."
 msgstr "Search engines..."
 
-#: src/components/notifications/subscription-manager.tsx:352
+#: src/components/notifications/subscription-manager.tsx:355
 msgid "Search events..."
 msgstr "Search events..."
 
@@ -7713,7 +7714,7 @@ msgstr "Search templates..."
 msgid "Search workflows..."
 msgstr "Search workflows..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:211
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:220
 msgid "Second (00-59)"
 msgstr "Second (00-59)"
 
@@ -7722,7 +7723,7 @@ msgstr "Second (00-59)"
 msgid "Secondary"
 msgstr "Secondary"
 
-#: src/components/notifications/forms/webhook-form.tsx:359
+#: src/components/notifications/forms/webhook-form.tsx:361
 msgid "secret"
 msgstr "secret"
 
@@ -7746,11 +7747,11 @@ msgstr "Segment finished"
 msgid "Segment started"
 msgstr "Segment started"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1159
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1165
 msgid "Segment Timeout (ms)"
 msgstr "Segment Timeout (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1415
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1421
 msgid "Segment TTL (ms)"
 msgstr "Segment TTL (ms)"
 
@@ -7772,7 +7773,7 @@ msgstr "Select a default engine"
 msgid "Select a format"
 msgstr "Select a format"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 
@@ -7793,7 +7794,7 @@ msgid "Select a streamer"
 msgstr "Select a streamer"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:182
-#: src/components/notifications/subscription-manager.tsx:370
+#: src/components/notifications/subscription-manager.tsx:373
 msgid "Select All"
 msgstr "Select All"
 
@@ -7817,8 +7818,8 @@ msgstr "Select category"
 msgid "Select Client Type"
 msgstr "Select Client Type"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:373
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:351
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:447
 msgid "Select codec"
 msgstr "Select codec"
 
@@ -7827,9 +7828,9 @@ msgstr "Select codec"
 msgid "Select current page"
 msgstr "Select current page"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:406
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:407
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:141
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:278
 msgid "Select date anchor"
 msgstr "Select date anchor"
 
@@ -7846,7 +7847,7 @@ msgid "Select format"
 msgstr "Select format"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:168
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:159
 msgid "Select operation"
 msgstr "Select operation"
 
@@ -7866,11 +7867,11 @@ msgstr "Select parse mode"
 msgid "Select pipelines"
 msgstr "Select pipelines"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:457
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:458
 msgid "Select policy"
 msgstr "Select policy"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:330
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:404
 msgid "Select preset"
 msgstr "Select preset"
 
@@ -7878,7 +7879,7 @@ msgstr "Select preset"
 msgid "Select priority"
 msgstr "Select priority"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:183
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:184
 msgid "Select strategy"
 msgstr "Select strategy"
 
@@ -7895,7 +7896,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:324
+#: src/components/notifications/subscription-manager.tsx:327
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
@@ -7939,7 +7940,7 @@ msgid "Server not configured"
 msgstr "Server not configured"
 
 #: src/components/notifications/channel-card.tsx:133
-#: src/components/notifications/forms/gotify-form.tsx:35
+#: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
 msgstr "Server URL"
 
@@ -7989,7 +7990,7 @@ msgstr "Session ended. Additional details are unavailable."
 msgid "Session entered pending confirmation. Additional details are unavailable."
 msgstr "Session entered pending confirmation. Additional details are unavailable."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:140
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:149
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:401
 msgid "Session ID"
 msgstr "Session ID"
@@ -8140,19 +8141,19 @@ msgstr "Size and duration constraints for recordings."
 msgid "Size limit"
 msgstr "Size limit"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:334
+#: src/components/config/engines/forms/mesio-hls-form.tsx:340
 msgid "Skip after both"
 msgstr "Skip after both"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:328
+#: src/components/config/engines/forms/mesio-hls-form.tsx:334
 msgid "Skip after count"
 msgstr "Skip after count"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:331
+#: src/components/config/engines/forms/mesio-hls-form.tsx:337
 msgid "Skip after duration"
 msgstr "Skip after duration"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:463
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:464
 msgid "Skip existing files (default)"
 msgstr "Skip existing files (default)"
 
@@ -8168,15 +8169,15 @@ msgstr "Skipped"
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:494
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:495
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 
-#: src/components/notifications/forms/email-form.tsx:41
+#: src/components/notifications/forms/email-form.tsx:42
 msgid "SMTP Host"
 msgstr "SMTP Host"
 
-#: src/components/notifications/forms/email-form.tsx:46
+#: src/components/notifications/forms/email-form.tsx:47
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
@@ -8214,7 +8215,7 @@ msgstr "Specific"
 msgid "Specific TTWID Cookie"
 msgstr "Specific TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:74
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
@@ -8243,7 +8244,7 @@ msgstr "Split only on codec configuration changes. Reduces false splits."
 msgid "Split Reason: {formattedReason}"
 msgstr "Split Reason: {formattedReason}"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:726
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:710
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "Splits a single large file into N parallel chunks for faster upload."
 
@@ -8263,7 +8264,7 @@ msgstr "Start"
 msgid "Start Over"
 msgstr "Start Over"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:652
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:721
 msgid "Start Time"
 msgstr "Start Time"
 
@@ -8291,7 +8292,7 @@ msgstr "State"
 msgid "Status"
 msgstr "Status"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:192
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:193
 msgid "Stem (Filename Match)"
 msgstr "Stem (Filename Match)"
 
@@ -8351,7 +8352,7 @@ msgstr "Stream Details"
 msgid "Stream lookup"
 msgstr "Stream lookup"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:975
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1044
 msgid "Stream Mapping (-map)"
 msgstr "Stream Mapping (-map)"
 
@@ -8391,9 +8392,9 @@ msgstr "Stream Player"
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:415
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:416
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:153
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:296
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
 msgid "Stream start time"
 msgstr "Stream start time"
 
@@ -8432,7 +8433,7 @@ msgstr "Streamer created successfully"
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:133
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:142
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:407
 msgid "Streamer ID"
 msgstr "Streamer ID"
@@ -8489,11 +8490,11 @@ msgstr "Streaming services"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:720
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:704
 msgid "Streams"
 msgstr "Streams"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:965
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1034
 msgid "Streams & Metadata"
 msgstr "Streams & Metadata"
 
@@ -8502,7 +8503,7 @@ msgstr "Streams & Metadata"
 msgid "Streams extracted"
 msgstr "Streams extracted"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:751
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:733
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "Streams per file (--multi-thread-streams)."
 
@@ -8510,7 +8511,7 @@ msgstr "Streams per file (--multi-thread-streams)."
 msgid "Subscriptions"
 msgstr "Subscriptions"
 
-#: src/components/notifications/subscription-manager.tsx:244
+#: src/components/notifications/subscription-manager.tsx:247
 msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
@@ -8518,7 +8519,7 @@ msgstr "Subscriptions updated"
 msgid "Subtitle"
 msgstr "Subtitle"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:163
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:164
 msgid "Subtitle Matching"
 msgstr "Subtitle Matching"
 
@@ -8555,7 +8556,7 @@ msgid "Supported Platforms"
 msgstr "Supported Platforms"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:231
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
@@ -8573,7 +8574,7 @@ msgstr "Switch language"
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:200
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
 msgid "Sync"
 msgstr "Sync"
 
@@ -8624,15 +8625,15 @@ msgstr "T"
 msgid "Tags"
 msgstr "Tags"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:535
+#: src/components/config/engines/forms/mesio-hls-form.tsx:541
 msgid "Target bitrate"
 msgstr "Target bitrate"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:495
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
 msgid "Target Bitrate"
 msgstr "Target Bitrate"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:225
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:216
 msgid "Target Configuration"
 msgstr "Target Configuration"
 
@@ -8728,6 +8729,10 @@ msgstr "The language this channel's messages are written in, whoever reads them.
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
 msgstr "The page you are looking for does not exist."
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:69
+msgid "The placeholders below are substituted before the command runs."
+msgstr "The placeholders below are substituted before the command runs."
 
 #: src/components/streamers/card/use-streamer-status.tsx:186
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
@@ -8848,7 +8853,7 @@ msgstr "This will permanently delete the preset \"{0}\". Pipelines using this pr
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:398
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:390
 msgid "Throughput"
 msgstr "Throughput"
 
@@ -8872,11 +8877,11 @@ msgstr "Thursday"
 msgid "Time Based"
 msgstr "Time Based"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:67
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:68
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:170
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:179
 msgid "Time Placeholders (Local Time)"
 msgstr "Time Placeholders (Local Time)"
 
@@ -8889,7 +8894,7 @@ msgstr "Time Range"
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:439
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:431
 msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
@@ -8906,11 +8911,11 @@ msgstr "Timeline granularity. Very long streams are automatically coarsened past
 msgid "Timeout"
 msgstr "Timeout"
 
-#: src/components/notifications/forms/gotify-form.tsx:79
+#: src/components/notifications/forms/gotify-form.tsx:80
 msgid "Timeout (s)"
 msgstr "Timeout (s)"
 
-#: src/components/notifications/forms/webhook-form.tsx:141
+#: src/components/notifications/forms/webhook-form.tsx:144
 msgid "Timeout (seconds)"
 msgstr "Timeout (seconds)"
 
@@ -8926,7 +8931,7 @@ msgstr "Timeout before cancelling CPU-bound processors."
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "Timeout before cancelling IO-bound processors."
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:54
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:55
 msgid "Timestamp"
 msgstr "Timestamp"
 
@@ -8938,13 +8943,13 @@ msgstr "Timezone"
 msgid "Timing & Delays"
 msgstr "Timing & Delays"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:443
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:435
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 
 #: src/components/notifications/events/payload-preview.tsx:63
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:169
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:174
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:212
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:217
 msgid "Title"
 msgstr "Title"
 
@@ -8959,7 +8964,7 @@ msgctxt "Comparison table column"
 msgid "To"
 msgstr "To"
 
-#: src/components/notifications/forms/email-form.tsx:151
+#: src/components/notifications/forms/email-form.tsx:150
 msgid "To Addresses"
 msgstr "To Addresses"
 
@@ -8971,11 +8976,11 @@ msgstr "Today"
 msgid "Toggle"
 msgstr "Toggle"
 
-#: src/components/notifications/forms/webhook-form.tsx:245
+#: src/components/notifications/forms/webhook-form.tsx:247
 msgid "Token"
 msgstr "Token"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:577
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:574
 msgid "Tool Location"
 msgstr "Tool Location"
 
@@ -9032,23 +9037,23 @@ msgstr "Total Steps"
 msgid "Total system load"
 msgstr "Total system load"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:667
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:653
 msgid "TPS Burst"
 msgstr "TPS Burst"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:669
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:655
 msgid "TPS Burst help"
 msgstr "TPS Burst help"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:620
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:608
 msgid "TPS Limit"
 msgstr "TPS Limit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:622
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:610
 msgid "TPS Limit help"
 msgstr "TPS Limit help"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:139
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:182
 msgid "Track Information"
 msgstr "Track Information"
 
@@ -9056,11 +9061,11 @@ msgstr "Track Information"
 msgid "Transcode H.264"
 msgstr "Transcode H.264"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:526
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:518
 msgid "Transfers"
 msgstr "Transfers"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:528
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:520
 msgid "Transfers help"
 msgstr "Transfers help"
 
@@ -9077,7 +9082,7 @@ msgstr "Transient monitoring errors are being preserved until sustained download
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:109
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:128
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
@@ -9149,7 +9154,7 @@ msgstr "Triggered when the application starts up."
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:638
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:707
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
@@ -9182,7 +9187,7 @@ msgstr "Try adjusting your search or filters."
 msgid "Try adjusting your search."
 msgstr "Try adjusting your search."
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:180
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:203
 msgid "Try again"
 msgstr "Try again"
 
@@ -9257,11 +9262,11 @@ msgstr "Unique Chatters"
 msgid "Unit"
 msgstr "Unit"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:420
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:412
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:218
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:227
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
@@ -9333,7 +9338,7 @@ msgstr "upload"
 msgid "Upload"
 msgstr "Upload"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:435
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:427
 msgid "upload : download (asymmetric)"
 msgstr "upload : download (asymmetric)"
 
@@ -9349,11 +9354,11 @@ msgstr "Upload (Rclone)"
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:560
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:557
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:436
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:437
 msgid "Upload Behavior"
 msgstr "Upload Behavior"
 
@@ -9411,7 +9416,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "URL is required"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:839
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:908
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
@@ -9423,8 +9428,8 @@ msgstr "Use danmu_inputs from job manifest"
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:301
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:421
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:292
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 
@@ -9436,12 +9441,12 @@ msgstr "Use stream start time to keep a midnight-crossing stream in one dated fo
 msgid "Use System Proxy"
 msgstr "Use System Proxy"
 
-#: src/components/notifications/forms/email-form.tsx:180
+#: src/components/notifications/forms/email-form.tsx:179
 msgid "Use TLS"
 msgstr "Use TLS"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:115
-#: src/components/config/engines/forms/mesio-hls-form.tsx:749
+#: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "User Agent"
 msgstr "User Agent"
 
@@ -9452,10 +9457,10 @@ msgstr "User Disabled"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:39
 #: src/components/config/shared/proxy-settings-card.tsx:185
-#: src/components/notifications/forms/email-form.tsx:87
-#: src/components/notifications/forms/email-form.tsx:92
-#: src/components/notifications/forms/webhook-form.tsx:278
-#: src/components/notifications/forms/webhook-form.tsx:284
+#: src/components/notifications/forms/email-form.tsx:86
+#: src/components/notifications/forms/email-form.tsx:91
+#: src/components/notifications/forms/webhook-form.tsx:280
+#: src/components/notifications/forms/webhook-form.tsx:286
 #: src/routes/_public/login.lazy.tsx:170
 msgid "Username"
 msgstr "Username"
@@ -9485,10 +9490,10 @@ msgstr "Validation Failed"
 msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:597
-#: src/components/notifications/forms/webhook-form.tsx:431
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1036
+#: src/components/config/engines/forms/mesio-hls-form.tsx:603
+#: src/components/notifications/forms/webhook-form.tsx:436
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:119
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:157
 msgid "Value"
 msgstr "Value"
 
@@ -9496,7 +9501,7 @@ msgstr "Value"
 msgid "Variant"
 msgstr "Variant"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1017
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1023
 msgid "Variant Selection Policy"
 msgstr "Variant Selection Policy"
 
@@ -9517,21 +9522,21 @@ msgstr "Verify Output"
 msgid "Version"
 msgstr "Version"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:136
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:137
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:221
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:295
 #: src/lib/media-file-type.ts:36
 msgid "Video"
 msgstr "Video"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:506
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:580
 msgid "Video Bitrate"
 msgstr "Video Bitrate"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:65
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:265
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:66
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:339
 msgid "Video Codec"
 msgstr "Video Codec"
 
@@ -9539,7 +9544,7 @@ msgstr "Video Codec"
 msgid "Video codec change"
 msgstr "Video codec change"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:518
+#: src/components/config/engines/forms/mesio-hls-form.tsx:524
 msgid "Video only"
 msgstr "Video only"
 
@@ -9547,7 +9552,7 @@ msgstr "Video only"
 msgid "Video Player"
 msgstr "Video Player"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:329
 msgid "Video Settings"
 msgstr "Video Settings"
 
@@ -9577,11 +9582,11 @@ msgstr "View Detailed Logs & Outputs"
 msgid "View Details"
 msgstr "View Details"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1558
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1564
 msgid "VOD Gap Strategy"
 msgstr "VOD Gap Strategy"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1564
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1570
 msgid "VOD Segment Timeout (ms)"
 msgstr "VOD Segment Timeout (ms)"
 
@@ -9595,7 +9600,7 @@ msgstr "W"
 msgid "Wait"
 msgstr "Wait"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:325
+#: src/components/config/engines/forms/mesio-hls-form.tsx:331
 msgid "Wait indefinitely"
 msgstr "Wait indefinitely"
 
@@ -9623,7 +9628,7 @@ msgstr "Watch"
 msgid "WEB"
 msgstr "WEB"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:836
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:905
 msgid "Web Optimize"
 msgstr "Web Optimize"
 
@@ -9658,7 +9663,7 @@ msgstr "Web Push priority updated"
 
 #: src/components/notifications/channel-card.tsx:86
 #: src/components/notifications/forms/discord-form.tsx:32
-#: src/components/notifications/forms/webhook-form.tsx:80
+#: src/components/notifications/forms/webhook-form.tsx:83
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
@@ -9686,7 +9691,7 @@ msgstr "Welcome back"
 msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 msgstr "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1566
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1572
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "When enabled, each VOD segment must complete within this timeout."
 
@@ -9694,12 +9699,12 @@ msgstr "When enabled, each VOD segment must complete within this timeout."
 msgid "Which tool downloads the stream once its URL is known."
 msgstr "Which tool downloads the stream once its URL is known."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:557
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
+#: src/components/config/engines/forms/mesio-hls-form.tsx:563
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:81
 msgid "Width"
 msgstr "Width"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:94
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:93
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
 
@@ -9739,7 +9744,7 @@ msgstr "workflows"
 msgid "Workflows"
 msgstr "Workflows"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:717
+#: src/components/config/engines/forms/mesio-hls-form.tsx:723
 msgid "Write Timeout (ms)"
 msgstr "Write Timeout (ms)"
 
@@ -9747,11 +9752,11 @@ msgstr "Write Timeout (ms)"
 msgid "WUP"
 msgstr "WUP"
 
-#: src/components/notifications/forms/webhook-form.tsx:338
+#: src/components/notifications/forms/webhook-form.tsx:340
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:176
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:185
 msgid "Year (4 digits)"
 msgstr "Year (4 digits)"
 
@@ -9768,7 +9773,7 @@ msgstr "You have unsaved changes. Leave without saving?"
 msgid "Your digital library is currently empty. Start recording to populate your sessions here."
 msgstr "Your digital library is currently empty. Start recording to populate your sessions here."
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:211
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:254
 msgid "YYYY-MM-DD"
 msgstr "YYYY-MM-DD"
 

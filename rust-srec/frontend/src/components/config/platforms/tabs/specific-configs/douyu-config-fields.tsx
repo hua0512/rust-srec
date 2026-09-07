@@ -157,7 +157,11 @@ export function DouyuConfigFields({
                   <NumberInput
                     field={field}
                     min={0}
+                    step={1}
                     placeholder={unsetPlaceholder(3)}
+                    // Null rather than an absent key: the config resolver only
+                    // lets a stated null override a legacy flat template value.
+                    onChange={(value) => field.onChange(value ?? null)}
                     className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all max-w-[120px]"
                   />
                 </FormControl>

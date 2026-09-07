@@ -36,4 +36,18 @@ describe('ExecuteConfigForm', () => {
 
     expect(container.querySelector('p div')).toBeNull();
   });
+
+  // The command box points at the description slot for its accessible
+  // description, so something has to occupy it.
+  it('describes the command box', () => {
+    const { container } = renderForm();
+    const described = container
+      .querySelector('textarea')!
+      .getAttribute('aria-describedby')!
+      .split(' ');
+
+    expect(described.some((id) => container.querySelector(`p#${id}`))).toBe(
+      true,
+    );
+  });
 });

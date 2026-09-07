@@ -368,6 +368,7 @@ export function RcloneConfigForm({
                     <NumberInput
                       field={field}
                       min={0}
+                      step={1}
                       placeholder="3"
                       className="bg-background/50"
                     />

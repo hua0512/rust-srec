@@ -96,6 +96,7 @@ export function CompressionConfigForm({
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                       min={0}
                       max={9}
+                      step={1}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">

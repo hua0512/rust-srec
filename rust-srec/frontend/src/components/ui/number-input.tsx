@@ -15,6 +15,12 @@ interface NumberInputProps extends Omit<
   field: ControllerRenderProps<any, any>;
   /** Renders the field with a leading icon, matching `IconInput`. */
   icon?: LucideIcon;
+  /**
+   * Replaces `field.onChange`, for a field that spells "unset" some other way
+   * than an absent key — a nullable one that has to store `null` so the value
+   * overrides an inherited layer instead of falling through to it.
+   */
+  onChange?: (value: number | undefined) => void;
 }
 
 /**
@@ -27,9 +33,14 @@ interface NumberInputProps extends Omit<
  *
  * Clearing stores `undefined`, which leaves an optional field unset and lets a
  * field with a default fall back to it, instead of the `NaN` an empty numeric
- * input reports.
+ * input reports. Pass `onChange` to store something else for an empty box.
  */
-export function NumberInput({ field, icon, ...props }: NumberInputProps) {
+export function NumberInput({
+  field,
+  icon,
+  onChange,
+  ...props
+}: NumberInputProps) {
   const { control } = useFormContext();
   const value = useWatch({ control, name: field.name }) as
     | number
@@ -43,7 +54,7 @@ export function NumberInput({ field, icon, ...props }: NumberInputProps) {
     name: field.name,
     ref: field.ref,
     value: value ?? '',
-    onChange: onNumberInputChange(field.onChange),
+    onChange: onNumberInputChange(onChange ?? field.onChange),
     onBlur: field.onBlur,
   };
 

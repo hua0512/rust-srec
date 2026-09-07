@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:928
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:948
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:997
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1017
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -53,7 +53,7 @@ msgstr "“{0}”将立即失效。此操作无法撤销。"
 msgid "(+{pausedCount} paused)"
 msgstr "（+{pausedCount} 条已暂停）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:192
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:183
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
@@ -61,11 +61,11 @@ msgstr "（删除源文件）"
 msgid "(empty)"
 msgstr "（空）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:203
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:194
 msgid "(Mirror source)"
 msgstr "（镜像源端）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:181
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:172
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
@@ -75,7 +75,7 @@ msgid "{0, plural, one {# active upload} other {# active uploads}}"
 msgstr "{0, plural, other {# 个进行中的上传}}"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
-#: src/components/notifications/subscription-manager.tsx:454
+#: src/components/notifications/subscription-manager.tsx:460
 msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, other {# 项可选}}"
 
@@ -131,7 +131,7 @@ msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File}
 msgstr "{0, plural, other {# 个分段}}（{1, plural, other {# 个文件}}）"
 
 #. placeholder {0}: selectedEvents.length
-#: src/components/notifications/subscription-manager.tsx:449
+#: src/components/notifications/subscription-manager.tsx:455
 msgid "{0, plural, one {# selected} other {# selected}}"
 msgstr "{0, plural, other {已选 # 项}}"
 
@@ -166,13 +166,13 @@ msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:118
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:237
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
 #. placeholder {0}: formatBytes(status.quota_used_bytes)
 #. placeholder {1}: formatBytes(status.quota_total_bytes)
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:247
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:248
 msgid "{0} of {1} used"
 msgstr "已使用 {0} / {1}"
 
@@ -246,7 +246,7 @@ msgstr "已用 {used} / {total}（{percent}%）"
 msgid "* * * * * *"
 msgstr "* * * * * *"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:323
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:314
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
@@ -254,7 +254,7 @@ msgstr "/path/to/rclone.conf"
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg 或 ffmpeg"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:267
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:268
 msgid "/usr/share/fonts"
 msgstr "/usr/share/fonts"
 
@@ -266,15 +266,15 @@ msgstr "^Started.*"
 msgid "<0>{selectedCount}</0><1>selected</1>"
 msgstr "<1>已选</1><0>{selectedCount}</0>"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:631
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:619
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> 表示不限速（rclone 默认值）。例如：当服务方将你限制为每秒 10 次请求时，可设为 <1>10</1>。"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:105
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:103
 msgid "0 (None) - 9 (Best)"
 msgstr "0（无）- 9（最佳）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:644
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:632
 msgid "0 = unlimited"
 msgstr "0 = 不限"
 
@@ -282,15 +282,15 @@ msgstr "0 = 不限"
 msgid "0 = Unlimited"
 msgstr "0 = 不限"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1545
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1551
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:981
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1050
 msgid "0:v:0"
 msgstr "0:v:0"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:121
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
@@ -326,7 +326,7 @@ msgstr "44100"
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
-#: src/components/notifications/forms/email-form.tsx:68
+#: src/components/notifications/forms/email-form.tsx:69
 msgid "587"
 msgstr "587"
 
@@ -358,7 +358,7 @@ msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:879
+#: src/components/config/engines/forms/mesio-hls-form.tsx:885
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
@@ -405,11 +405,11 @@ msgstr "正在录制"
 msgid "Activity resolution (seconds)"
 msgstr "活跃度精度（秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1027
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1033
 msgid "Adaptive Refresh (Default: On)"
 msgstr "自适应刷新（默认：开）"
 
-#: src/components/notifications/forms/webhook-form.tsx:394
+#: src/components/notifications/forms/webhook-form.tsx:396
 msgid "Add"
 msgstr "添加"
 
@@ -449,7 +449,7 @@ msgstr "添加参数模板"
 msgid "Add at least one step"
 msgstr "至少添加一个步骤"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:660
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:657
 msgid "Add BaiduPCS-Go argument"
 msgstr "添加 BaiduPCS-Go 参数"
 
@@ -457,11 +457,11 @@ msgstr "添加 BaiduPCS-Go 参数"
 msgid "Add Channel"
 msgstr "添加渠道"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:108
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:151
 msgid "Add Custom Tag"
 msgstr "添加自定义标签"
 
-#: src/components/notifications/forms/email-form.tsx:158
+#: src/components/notifications/forms/email-form.tsx:157
 msgid "Add email and press Enter"
 msgstr "添加邮箱地址并按 Enter"
 
@@ -498,7 +498,7 @@ msgstr "添加模块..."
 msgid "Add Override"
 msgstr "添加覆盖项"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:152
+#: src/components/config/engines/forms/mesio-hls-form.tsx:158
 msgid "Add parameter"
 msgstr "添加参数"
 
@@ -510,7 +510,7 @@ msgstr "添加处理管道步骤"
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "为重试延迟添加随机性，避免“惊群”。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:827
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:809
 msgid "Add rclone argument"
 msgstr "添加 rclone 参数"
 
@@ -527,7 +527,7 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1012
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1081
 msgid "Add Tag"
 msgstr "添加自定义标签"
 
@@ -535,7 +535,7 @@ msgstr "添加自定义标签"
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1030
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1036
 msgid "Adjust rate based on target duration"
 msgstr "根据目标时长调整速率"
 
@@ -548,9 +548,9 @@ msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:334
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:239
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:335
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:128
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:313
 #: src/components/streamers/streamer-editor.tsx:169
 msgid "Advanced"
 msgstr "高级"
@@ -568,7 +568,7 @@ msgstr "高级选项"
 msgid "Advanced scheduling"
 msgstr "高级排程"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:231
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:232
 msgid "Advanced Settings"
 msgstr "高级设置"
 
@@ -577,7 +577,7 @@ msgstr "高级设置"
 msgid "AFTER: {0}"
 msgstr "在: {0} 之后"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:188
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:231
 msgid "Album"
 msgstr "专辑"
 
@@ -641,7 +641,7 @@ msgstr "同时从磁盘删除文件"
 msgid "Always use Streamlink"
 msgstr "始终使用 Streamlink"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:177
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:200
 msgid "An error occurred"
 msgstr "发生错误"
 
@@ -679,7 +679,7 @@ msgstr "API 密钥"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
@@ -687,7 +687,7 @@ msgstr "API 请求重试次数"
 msgid "API Settings"
 msgstr "API 设置"
 
-#: src/components/notifications/forms/gotify-form.tsx:55
+#: src/components/notifications/forms/gotify-form.tsx:56
 msgid "App Token"
 msgstr "应用令牌"
 
@@ -695,11 +695,11 @@ msgstr "应用令牌"
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:952
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1021
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:736
+#: src/components/config/engines/forms/mesio-hls-form.tsx:742
 msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。"
 
@@ -762,8 +762,8 @@ msgstr "插入到 -i input_url 之前的参数"
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:150
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:155
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:193
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:198
 msgid "Artist"
 msgstr "艺术家"
 
@@ -795,17 +795,17 @@ msgid "Attempts to get origin quality by replacing the audio stream. May result 
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:230
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:304
 #: src/lib/media-file-type.ts:41
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:529
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:603
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:85
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:364
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -822,14 +822,14 @@ msgstr "提取音频"
 msgid "Audio Extraction"
 msgstr "音频提取"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:515
+#: src/components/config/engines/forms/mesio-hls-form.tsx:521
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:111
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:130
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:131
 msgid "Audio only"
 msgstr "仅音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:743
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:812
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -837,26 +837,26 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:355
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:429
 msgid "Audio Settings"
 msgstr "音频设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:177
+#: src/components/notifications/forms/webhook-form.tsx:179
 msgid "Auth Type"
 msgstr "认证类型"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:29
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:30
 #: src/components/config/shared/network-settings-card.tsx:162
-#: src/components/notifications/forms/webhook-form.tsx:166
+#: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "认证"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:775
+#: src/components/config/engines/forms/mesio-hls-form.tsx:781
 msgid "Auto"
 msgstr "自动"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:780
+#: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
@@ -864,7 +864,7 @@ msgstr "自动（默认）"
 msgid "Auto Layout"
 msgstr "自动布局"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:238
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:239
 msgid "Auto re-login"
 msgstr "自动重新登录"
 
@@ -980,11 +980,11 @@ msgstr "备份与恢复"
 msgid "Baidu Netdisk"
 msgstr "百度网盘"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:160
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:161
 msgid "Baidu Netdisk Account"
 msgstr "百度网盘账号"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:381
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:382
 msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 msgstr "文件将上传到的网盘文件夹。留空时上传到网盘根目录。"
 
@@ -997,8 +997,8 @@ msgstr "登录百度网盘"
 msgid "Baidu Netdisk login failed"
 msgstr "百度网盘登录失败"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:132
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:140
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:133
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:141
 msgid "Baidu Netdisk logout failed"
 msgstr "百度网盘退出登录失败"
 
@@ -1014,44 +1014,44 @@ msgstr "百度网盘上传"
 msgid "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:593
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:590
 msgid "BaiduPCS-Go"
 msgstr "BaiduPCS-Go"
 
 #. placeholder {0}: status?.resolved_binary_path
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:194
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:195
 msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，或在「高级」标签页中设置其路径。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:589
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:586
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:407
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:399
 msgid "Bandwidth"
 msgstr "带宽"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:416
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:408
 msgid "Bandwidth Limit"
 msgstr "带宽限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:418
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:410
 msgid "Bandwidth Limit help"
 msgstr "带宽限制帮助"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1654
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1660
 msgid "Base"
 msgstr "基础"
 
-#: src/components/pipeline/presets/processors/delete-config-form.tsx:91
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:90
 msgid "Base delay between retries"
 msgstr "重试之间的基础延迟"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:262
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:253
 msgid "Base path for remote storage. Supports metadata and time placeholders."
 msgstr "远端存储的基础路径。支持元数据和时间占位符。"
 
-#: src/components/notifications/forms/webhook-form.tsx:218
+#: src/components/notifications/forms/webhook-form.tsx:220
 msgid "Basic Auth"
 msgstr "Basic Auth"
 
@@ -1084,7 +1084,7 @@ msgstr "批量 URL"
 msgid "BDUSS + STOKEN"
 msgstr "BDUSS + STOKEN"
 
-#: src/components/notifications/forms/webhook-form.tsx:215
+#: src/components/notifications/forms/webhook-form.tsx:217
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
@@ -1096,7 +1096,7 @@ msgstr "最佳"
 msgid "BETA"
 msgstr "测试版"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:192
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:215
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
@@ -1143,7 +1143,7 @@ msgstr "机器人名称"
 msgid "Bot Token"
 msgstr "机器人令牌"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:431
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:423
 msgid "both directions at 10 MiB/s"
 msgstr "双向均为 10 MiB/s"
 
@@ -1177,7 +1177,7 @@ msgstr "浏览器通知"
 msgid "Browser Status"
 msgstr "浏览器状态"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1594
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1600
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
@@ -1185,7 +1185,7 @@ msgstr "缓冲区限制"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:696
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:680
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
 msgstr "TPS 限制的突发容量（--tpslimit-burst）。"
 
@@ -1201,7 +1201,7 @@ msgstr "字节"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 msgid "Cache"
 msgstr "缓存"
 
@@ -1212,7 +1212,7 @@ msgstr "缓存"
 #: src/components/layout/themes/import-modal.tsx:117
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:455
-#: src/components/notifications/subscription-manager.tsx:464
+#: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:230
@@ -1267,7 +1267,7 @@ msgstr "已取消"
 msgid "Cancelled {0} steps in pipeline"
 msgstr "已取消处理管道中的 {0} 个步骤"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:458
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:450
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "限制整体传输带宽（rclone --bwlimit）。"
 
@@ -1283,7 +1283,7 @@ msgstr "如果可用，采集实时评论和聊天消息。"
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:43
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:44
 msgid "Capture Settings"
 msgstr "采集设置"
 
@@ -1326,7 +1326,7 @@ msgstr "正在修改密码..."
 msgid "Channel"
 msgstr "渠道"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1135
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1141
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "已处理分段的通道缓冲倍数。"
 
@@ -1372,7 +1372,7 @@ msgstr "聊天 ID"
 msgid "Chatters tracked"
 msgstr "跟踪发言人数"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:578
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:568
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "此操作开销较低，默认值 8 通常已足够。如果远端较慢且有大量小文件，可适当调高。"
 
@@ -1401,11 +1401,11 @@ msgstr "检查该主播，并在开播时自动录制。"
 msgid "Check triggered"
 msgstr "已触发检查"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:568
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:558
 msgid "Checkers"
 msgstr "校验数"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:570
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:560
 msgid "Checkers help"
 msgstr "校验数帮助"
 
@@ -1425,7 +1425,7 @@ msgstr "正在检查流状态..."
 msgid "Chinese Simplified"
 msgstr "简体中文"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:210
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:201
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
@@ -1442,7 +1442,7 @@ msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:50
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:326
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
 msgid "Cleanup"
 msgstr "清理"
@@ -1497,7 +1497,7 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:512
+#: src/components/config/engines/forms/mesio-hls-form.tsx:518
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
@@ -1535,7 +1535,7 @@ msgstr "命令参数"
 msgid "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders."
 msgstr "命令模板参数。可使用 {INPUT_TOKEN} 和 {OUTPUT_TOKEN} 占位符。"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:226
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:269
 msgid "Comment"
 msgstr "评论"
 
@@ -1569,7 +1569,7 @@ msgstr "组件"
 msgid "Component Status"
 msgstr "组件状态"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:485
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:477
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "与带宽限制叠加生效——可避免单个大文件占满整条链路，同时仍允许多个小文件并行传输。"
 
@@ -1595,7 +1595,7 @@ msgid "Compression Level"
 msgstr "压缩级别"
 
 #: src/components/config/global/concurrency-card.tsx:78
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:516
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:508
 msgid "Concurrency"
 msgstr "并发"
 
@@ -1607,11 +1607,11 @@ msgstr "已达到并发限制"
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "并发限制、流水线超时与引擎默认值。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:598
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:586
 msgid "Concurrent checkers (--checkers)."
 msgstr "并发校验数（--checkers）。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:555
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:545
 msgid "Concurrent file transfers (--transfers)."
 msgstr "并发文件传输数（--transfers）。"
 
@@ -1620,15 +1620,15 @@ msgstr "并发文件传输数（--transfers）。"
 msgid "Config"
 msgstr "配置"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:612
 msgid "Config Directory (Optional)"
 msgstr "配置目录（可选）"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:616
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:613
 msgid "Config Directory help"
 msgstr "配置目录说明"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:319
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:310
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
@@ -1725,7 +1725,7 @@ msgstr "等待恢复超时后确认。"
 msgid "Connect an AI assistant (MCP)"
 msgstr "连接 AI 助手（MCP）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:679
+#: src/components/config/engines/forms/mesio-hls-form.tsx:685
 msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
@@ -1763,7 +1763,7 @@ msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:400
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:474
 msgid "Container"
 msgstr "容器"
 
@@ -1809,17 +1809,17 @@ msgstr "已复制"
 msgid "Copied!"
 msgstr "已复制！"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:90
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:91
 msgid "copy"
 msgstr "复制"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:178
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:283
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:379
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:357
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:453
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
@@ -1895,8 +1895,8 @@ msgstr "无法加载预设：{0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:345
-#: src/components/config/engines/forms/mesio-hls-form.tsx:390
+#: src/components/config/engines/forms/mesio-hls-form.tsx:351
+#: src/components/config/engines/forms/mesio-hls-form.tsx:396
 #: src/components/sessions/danmu-stats-panel.tsx:387
 msgid "Count"
 msgstr "次数"
@@ -1921,7 +1921,7 @@ msgstr "CPU 任务超时"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:450
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:524
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
@@ -2078,11 +2078,11 @@ msgstr "已保存凭据，可自动重新登录"
 msgid "Credentials saved successfully"
 msgstr "凭据保存成功"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:105
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:106
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:452
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:526
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -2137,8 +2137,8 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:228
-#: src/components/config/engines/forms/mesio-hls-form.tsx:524
+#: src/components/config/engines/forms/mesio-hls-form.tsx:234
+#: src/components/config/engines/forms/mesio-hls-form.tsx:530
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:333
 msgid "Custom"
@@ -2156,15 +2156,15 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:913
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:982
 msgid "Custom Flags"
 msgstr "自定义标志"
 
-#: src/components/notifications/forms/webhook-form.tsx:221
+#: src/components/notifications/forms/webhook-form.tsx:223
 msgid "Custom Header"
 msgstr "自定义 Header"
 
-#: src/components/notifications/forms/webhook-form.tsx:378
+#: src/components/notifications/forms/webhook-form.tsx:380
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
@@ -2180,7 +2180,7 @@ msgstr "Twitch 播放列表的自定义代理 URL"
 msgid "Custom rate"
 msgstr "自定义画质值"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:246
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:289
 msgid "Custom Tags"
 msgstr "自定义标签"
 
@@ -2196,7 +2196,7 @@ msgstr "为此模板自定义特定的引擎设置。"
 msgid "Customize the application theme and sidebar layout."
 msgstr "自定义应用主题和侧边栏布局。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:766
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:748
 msgid "Cutoff"
 msgstr "阈值"
 
@@ -2281,13 +2281,13 @@ msgstr "数据库"
 msgid "Database queries"
 msgstr "数据库查询"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:206
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:249
 msgid "Date"
 msgstr "日期"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:397
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:398
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:278
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:269
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
 
@@ -2295,7 +2295,7 @@ msgstr "日期占位符锚点"
 msgid "Date range:"
 msgstr "日期范围："
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:190
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:199
 msgid "Day (01-31)"
 msgstr "天 (01-31)"
 
@@ -2303,11 +2303,11 @@ msgstr "天 (01-31)"
 msgid "Days"
 msgstr "天"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1682
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
 msgid "Decryption"
 msgstr "解密"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1434
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1440
 msgid "Decryption Key TTL (ms)"
 msgstr "解密密钥 TTL（毫秒）"
 
@@ -2316,9 +2316,9 @@ msgstr "解密密钥 TTL（毫秒）"
 msgid "default"
 msgstr "默认"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:222
-#: src/components/config/engines/forms/mesio-hls-form.tsx:322
-#: src/components/config/engines/forms/mesio-hls-form.tsx:503
+#: src/components/config/engines/forms/mesio-hls-form.tsx:228
+#: src/components/config/engines/forms/mesio-hls-form.tsx:328
+#: src/components/config/engines/forms/mesio-hls-form.tsx:509
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
@@ -2336,7 +2336,7 @@ msgstr "斗鱼默认画质"
 msgid "Default Engine"
 msgstr "默认引擎"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:677
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:663
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
@@ -2352,7 +2352,7 @@ msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1519
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1525
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "默认使用 Mesio 内置的直播停顿超时；禁用表示无限等待。"
 
@@ -2442,11 +2442,11 @@ msgstr "删除过滤器"
 msgid "Delete Job"
 msgstr "删除处理任务"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:517
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:518
 msgid "Delete local files after upload"
 msgstr "上传后删除本地文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:891
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:960
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -2483,15 +2483,15 @@ msgstr "删除所选主播？"
 msgid "Delete Source"
 msgstr "删除源文件"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:357
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:358
 msgid "Delete Source ASS"
 msgstr "删除源 ASS 文件"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:294
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:337
 msgid "Delete source file after successful processing"
 msgstr "处理成功后删除源文件"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:337
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:338
 msgid "Delete Source Videos"
 msgstr "删除源视频文件"
 
@@ -2550,7 +2550,7 @@ msgstr "导入前删除所有现有配置。此操作无法撤销。"
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/notifications/forms/webhook-form.tsx:128
+#: src/components/notifications/forms/webhook-form.tsx:131
 msgid "Delivery Policy"
 msgstr "投递策略"
 
@@ -2571,7 +2571,7 @@ msgstr "描述"
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
-#: src/components/notifications/subscription-manager.tsx:367
+#: src/components/notifications/subscription-manager.tsx:370
 msgid "Deselect All"
 msgstr "取消全选"
 
@@ -2588,7 +2588,7 @@ msgstr "桌面通知"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:342
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:343
 msgid "Destination"
 msgstr "上传目标"
 
@@ -2600,19 +2600,19 @@ msgstr "已复制目标路径"
 msgid "Destination Directory"
 msgstr "目标文件夹"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:354
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:355
 msgid "Destination Folder"
 msgstr "目标文件夹"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:355
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:356
 msgid "Destination Folder help"
 msgstr "目标文件夹说明"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:228
 msgid "Destination Root"
 msgstr "目标根目录"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:238
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:229
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
@@ -2636,11 +2636,11 @@ msgstr "识别中…"
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "根据链接自动识别，并自动应用该平台的设置。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:559
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:633
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:618
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "存放 BaiduPCS-Go 登录会话的目录（BAIDUPCS_GO_CONFIG_DIR）。通过上方账号卡片登录时，会话也会保存到这里配置的目录。"
 
@@ -2648,7 +2648,7 @@ msgstr "存放 BaiduPCS-Go 登录会话的目录（BAIDUPCS_GO_CONFIG_DIR）。�
 msgid "Directory path copied"
 msgstr "目录路径已复制"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:271
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:280
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
@@ -2657,7 +2657,7 @@ msgstr "命令执行后扫描新文件的目录"
 msgid "Disable"
 msgstr "禁用"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:491
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:492
 msgid "Disable rapid upload"
 msgstr "禁用秒传"
 
@@ -2666,7 +2666,7 @@ msgstr "禁用秒传"
 msgid "Disable selected"
 msgstr "禁用所选"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:225
+#: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:102
 #: src/components/streamers/card/use-streamer-status.tsx:50
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
@@ -2703,8 +2703,8 @@ msgstr "杜比视界 (30000)"
 msgid "Done"
 msgstr "已完成"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:664
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:831
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:661
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:813
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
@@ -2746,7 +2746,7 @@ msgstr "下载全部"
 msgid "Download Backup"
 msgstr "下载备份"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1101
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1107
 msgid "Download Concurrency"
 msgstr "下载并发数"
 
@@ -2804,15 +2804,15 @@ msgstr "双格式输出"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:80
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:751
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:568
 msgid "Duration"
 msgstr "时长"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:367
-#: src/components/config/engines/forms/mesio-hls-form.tsx:409
+#: src/components/config/engines/forms/mesio-hls-form.tsx:373
+#: src/components/config/engines/forms/mesio-hls-form.tsx:415
 msgid "Duration (ms)"
 msgstr "时长（毫秒）"
 
@@ -2824,19 +2824,19 @@ msgstr "时长限制"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:629
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:626
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "例如 /app/config/BaiduPCS-Go"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:264
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:273
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:374
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "例如 /rust-srec/{streamer}/%Y-%m"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:985
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1054
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "列如: 0:v:0, 0:a:0"
 
@@ -2844,7 +2844,7 @@ msgstr "列如: 0:v:0, 0:a:0"
 msgid "e.g. 1080p, source, 原画"
 msgstr "例如 1080p, source, 原画"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:451
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:443
 msgid "e.g. 10M"
 msgstr "例如 10M"
 
@@ -2852,11 +2852,11 @@ msgstr "例如 10M"
 msgid "e.g. 128k, 320k"
 msgstr "例如 128k、320k"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:495
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:487
 msgid "e.g. 1M"
 msgstr "例如 1M"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:788
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:770
 msgid "e.g. 250M"
 msgstr "例如 250M"
 
@@ -2880,7 +2880,7 @@ msgstr "例如 echo {input} > {output}"
 msgid "e.g. flv, hls"
 msgstr "例如 flv, hls"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:255
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
@@ -2888,7 +2888,7 @@ msgstr "例如 gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:290
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:299
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
@@ -2971,7 +2971,7 @@ msgstr "启用高级 HLS 分段重建"
 msgid "Enable monitoring"
 msgstr "启用监控"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1579
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1585
 msgid "Enable Output Metrics (Default: On)"
 msgstr "启用输出指标（默认：开）"
 
@@ -2997,15 +2997,15 @@ msgstr "启用所选"
 msgid "Enabled"
 msgstr "启用"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:128
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:129
 msgid "Encoder Preset"
 msgstr "编码器预设"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:317
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
 msgid "Encoding Preset"
 msgstr "编码预设"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:54
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:55
 msgid "Encoding Settings"
 msgstr "编码设置"
 
@@ -3021,7 +3021,7 @@ msgstr "历史结束"
 msgid "End Stream On Danmu Close"
 msgstr "弹幕关闭时结束录制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:712
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
 msgid "End Time"
 msgstr "结束时间"
 
@@ -3037,7 +3037,7 @@ msgstr "已结束"
 msgid "Endpoint"
 msgstr "端点"
 
-#: src/components/notifications/forms/webhook-form.tsx:71
+#: src/components/notifications/forms/webhook-form.tsx:74
 msgid "Endpoint Configuration"
 msgstr "端点配置"
 
@@ -3192,7 +3192,7 @@ msgstr "事件类型"
 msgid "Events"
 msgstr "事件"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:426
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:418
 msgid "Examples:"
 msgstr "示例："
 
@@ -3206,7 +3206,7 @@ msgstr "异常状态"
 msgid "Exclude"
 msgstr "排除"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:305
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:306
 msgid "Exclude ASS from Passthrough"
 msgstr "从透传中排除 ASS"
 
@@ -3272,7 +3272,7 @@ msgstr "退出选择模式"
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:260
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -3306,9 +3306,9 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:162
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:645
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:642
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:812
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:794
 msgid "Extra Arguments"
 msgstr "额外参数"
 
@@ -3342,12 +3342,12 @@ msgstr "API 模式"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:42
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:30
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:46
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:28
 msgid "Extraction Settings"
 msgstr "提取设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:252
+#: src/components/notifications/forms/webhook-form.tsx:254
 msgid "ey..."
 msgstr "ey..."
 
@@ -3604,7 +3604,7 @@ msgstr "处理所选流水线失败"
 msgid "Failed to process selected streamers"
 msgstr "处理所选主播失败"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:188
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:189
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "查询 BaiduPCS-Go 状态失败。"
 
@@ -3673,7 +3673,7 @@ msgstr "更新设置失败"
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
 
-#: src/components/notifications/subscription-manager.tsx:251
+#: src/components/notifications/subscription-manager.tsx:254
 msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
@@ -3687,7 +3687,7 @@ msgstr "更新模板失败：{0}"
 msgid "Failed to update workflow: {0}"
 msgstr "更新工作流失败：{0}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:600
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:597
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 
@@ -3738,23 +3738,23 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1670
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1676
 msgid "Fetcher"
 msgstr "获取器"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:247
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:248
 msgid "ffmpeg"
 msgstr "ffmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:752
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:821
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:242
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:615
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:684
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
@@ -3762,12 +3762,12 @@ msgstr "FFmpeg 视频滤镜"
 msgid "File Configuration"
 msgstr "文件配置"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:286
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:295
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:300
 msgid "File Operations"
 msgstr "文件操作"
 
@@ -3775,11 +3775,11 @@ msgstr "文件操作"
 msgid "File path copied to clipboard"
 msgstr "文件路径已复制到剪贴板"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:795
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:777
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "文件大小阈值（--multi-thread-cutoff）。"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:155
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:153
 msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "文件名模式（例如 thumb.jpg）"
 
@@ -3792,7 +3792,7 @@ msgstr "文件名模板"
 msgid "files"
 msgstr "文件"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:772
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:754
 msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 msgstr "小于此值的文件仍以单线程传输。示例：<0>250M</0>、<1>1G</1>。"
 
@@ -3816,7 +3816,7 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:106
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:125
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
@@ -3859,11 +3859,11 @@ msgstr "过滤器"
 msgid "Fine tune brand and surface colors."
 msgstr "微调品牌和表面颜色。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:79
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:88
 msgid "First input file path"
 msgstr "第一个输入文件路径"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:86
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:95
 msgid "First output file path"
 msgstr "第一个输出文件路径"
 
@@ -3899,19 +3899,19 @@ msgstr "FLV 流修复管道"
 msgid "FLV Tuning"
 msgstr "FLV 调优"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:862
+#: src/components/config/engines/forms/mesio-hls-form.tsx:868
 msgid "Follow Redirects (Default: On)"
 msgstr "跟随重定向（默认：开）"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:262
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "字体目录"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:896
+#: src/components/config/engines/forms/mesio-hls-form.tsx:902
 msgid "Force IPv4 (Default: Off)"
 msgstr "强制 IPv4（默认：关闭）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:913
+#: src/components/config/engines/forms/mesio-hls-form.tsx:919
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
@@ -3925,7 +3925,7 @@ msgstr "强制使用移动端 API"
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:869
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:938
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -3937,18 +3937,18 @@ msgstr "强制请求可用的最高原画质量（直连流）。"
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:268
 msgid "Form"
 msgstr "表单"
 
 #: src/components/config/global/file-config-card.tsx:99
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:286
 msgid "Format"
 msgstr "格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:590
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:664
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
@@ -3970,7 +3970,7 @@ msgctxt "Comparison table column"
 msgid "From"
 msgstr "变更前"
 
-#: src/components/notifications/forms/email-form.tsx:130
+#: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "发件人地址"
 
@@ -3998,7 +3998,7 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1502
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1508
 msgid "Gap Eval Interval (ms)"
 msgstr "缺口评估间隔（毫秒）"
 
@@ -4011,9 +4011,9 @@ msgstr "GB"
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
 #: src/components/config/templates/template-editor.tsx:277
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:203
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:329
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:122
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
 #: src/components/streamers/streamer-editor.tsx:149
 msgid "General"
 msgstr "常规"
@@ -4050,11 +4050,11 @@ msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:168
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:191
 msgid "Generate new QR code"
 msgstr "生成新二维码"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:123
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:146
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
@@ -4089,7 +4089,7 @@ msgstr "全局配置"
 msgid "Global Default"
 msgstr "全局默认"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:660
+#: src/components/config/engines/forms/mesio-hls-form.tsx:666
 msgid "Global Timeout (ms)"
 msgstr "全局超时 (ms)"
 
@@ -4117,7 +4117,7 @@ msgstr "跳转到第 {p} 页"
 msgid "Go to previous page"
 msgstr "上一页"
 
-#: src/components/notifications/forms/gotify-form.tsx:61
+#: src/components/notifications/forms/gotify-form.tsx:62
 msgid "Gotify application token"
 msgstr "Gotify 应用令牌"
 
@@ -4169,11 +4169,11 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:802
+#: src/components/config/engines/forms/mesio-hls-form.tsx:808
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 保活（毫秒）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:790
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:859
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -4189,7 +4189,7 @@ msgstr "高清 (150)"
 msgid "HD Thumbnail"
 msgstr "高清缩略图"
 
-#: src/components/notifications/forms/webhook-form.tsx:332
+#: src/components/notifications/forms/webhook-form.tsx:334
 msgid "Header Key"
 msgstr "Header 键"
 
@@ -4197,7 +4197,7 @@ msgstr "Header 键"
 msgid "Header received"
 msgstr "收到头部"
 
-#: src/components/notifications/forms/webhook-form.tsx:352
+#: src/components/notifications/forms/webhook-form.tsx:354
 msgid "Header Value"
 msgstr "Header 值"
 
@@ -4211,7 +4211,7 @@ msgstr "健康"
 msgid "Healthy"
 msgstr "正常"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:575
+#: src/components/config/engines/forms/mesio-hls-form.tsx:581
 msgid "Height"
 msgstr "高度"
 
@@ -4272,11 +4272,11 @@ msgstr "高优先级槽位等待中（已达到并发限制）"
 msgid "High+"
 msgstr "高+"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:535
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:527
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "数值越高，在高速网络下越快，但对远端和本机 CPU 的压力也更大。仅在网络与服务方能承受时才建议调高。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:506
+#: src/components/config/engines/forms/mesio-hls-form.tsx:512
 msgid "Highest bitrate"
 msgstr "最高码率"
 
@@ -4302,7 +4302,7 @@ msgstr "HLS 调优"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:197
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:206
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
@@ -4314,7 +4314,7 @@ msgstr "小时"
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:474
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:475
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 msgstr "目标位置已有同名文件时的处理方式（--policy）。选择跳过还能让任务重试的开销更小。"
 
@@ -4322,7 +4322,7 @@ msgstr "目标位置已有同名文件时的处理方式（--policy）。选择�
 msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 msgstr "流水线步骤在被取消前允许运行的时长。这些值在工作线程池创建时读取，因此修改后需要重启才能生效。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1332
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1338
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "解密/处理后的分段在缓存中保留的时间。"
 
@@ -4342,7 +4342,7 @@ msgstr "可同时运行的 CPU 密集型流水线步骤（如转码）数量。�
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）数量。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:530
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:522
 msgid "How many files rclone uploads in parallel."
 msgstr "rclone 并行上传的文件数量。"
 
@@ -4350,7 +4350,7 @@ msgstr "rclone 并行上传的文件数量。"
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "可同时运行的流水线上传步骤数量。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:671
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:657
 msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
 msgstr "在节流生效之前，可短时超出 TPS 限制的请求数量。"
 
@@ -4370,7 +4370,7 @@ msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "获取直播地址的方式。当某个站点失效时可切换为 Streamlink，该方式需要已安装 Streamlink 工具。"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:198
 msgid "How to pair video files with .ass subtitles"
 msgstr "如何将视频文件与 .ass 字幕配对"
 
@@ -4386,15 +4386,15 @@ msgstr "HTTP 中间件"
 msgid "HTTP requests"
 msgstr "HTTP 请求"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:767
+#: src/components/config/engines/forms/mesio-hls-form.tsx:773
 msgid "HTTP Version Preference"
 msgstr "HTTP 版本偏好"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:786
+#: src/components/config/engines/forms/mesio-hls-form.tsx:792
 msgid "HTTP/1.1 Only"
 msgstr "仅 HTTP/1.1"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:783
+#: src/components/config/engines/forms/mesio-hls-form.tsx:789
 msgid "HTTP/2 Only"
 msgstr "仅 HTTP/2"
 
@@ -4402,7 +4402,7 @@ msgstr "仅 HTTP/2"
 msgid "https://..."
 msgstr "https://..."
 
-#: src/components/notifications/forms/webhook-form.tsx:86
+#: src/components/notifications/forms/webhook-form.tsx:89
 msgid "https://api.example.com/webhook"
 msgstr "https://api.example.com/webhook"
 
@@ -4410,7 +4410,7 @@ msgstr "https://api.example.com/webhook"
 msgid "https://discord.com/api/webhooks/..."
 msgstr "https://discord.com/api/webhooks/..."
 
-#: src/components/notifications/forms/gotify-form.tsx:40
+#: src/components/notifications/forms/gotify-form.tsx:41
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
@@ -4525,6 +4525,7 @@ msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:51
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:39
 #: src/components/config/shared/offline-check-card.tsx:78
 #: src/components/config/shared/offline-check-card.tsx:110
 msgid "Inherited"
@@ -4543,7 +4544,7 @@ msgstr "初始"
 msgid "Initial Delay (ms)"
 msgstr "初始延迟（ms）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:941
+#: src/components/config/engines/forms/mesio-hls-form.tsx:947
 msgid "Initial Fetch Timeout (ms)"
 msgstr "初始获取超时（ms）"
 
@@ -4563,7 +4564,7 @@ msgstr "输入"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:922
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:991
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -4613,7 +4614,7 @@ msgstr "离线检查之间的间隔。"
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:254
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:163
 msgid "Invalid JSON: {error}"
 msgstr "JSON 格式有误：{error}"
 
@@ -4653,8 +4654,8 @@ msgstr "任务配置"
 msgid "Job creation time"
 msgstr "任务创建时间"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:412
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:293
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:413
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:284
 msgid "Job creation time (default)"
 msgstr "任务创建时间（默认）"
 
@@ -4693,15 +4694,15 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:284
 msgid "JSON"
 msgstr "JSON"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:93
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:102
 msgid "JSON array of all inputs"
 msgstr "所有输入的 JSON 数组"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:100
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:109
 msgid "JSON array of all outputs"
 msgstr "所有输出的 JSON 数组"
 
@@ -4709,11 +4710,11 @@ msgstr "所有输出的 JSON 数组"
 msgid "KB"
 msgstr "KB"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
 msgid "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
 msgstr "多个会话共用同一目标文件夹时，请在文件名模板中保留日期和时间标记。"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:133
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:131
 msgid "Keep directory structure"
 msgstr "保留目录结构"
 
@@ -4721,22 +4722,22 @@ msgstr "保留目录结构"
 msgid "Keep Running"
 msgstr "保持运行"
 
-#: src/components/notifications/forms/webhook-form.tsx:415
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
+#: src/components/notifications/forms/webhook-form.tsx:420
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:113
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:144
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:175
 msgid "Key"
 msgstr "键"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1355
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1361
 msgid "Key Cache TTL (ms)"
 msgstr "密钥缓存 TTL（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1273
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1279
 msgid "Key Retry Delay (ms)"
 msgstr "密钥重试延迟（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1235
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1241
 msgid "Key Timeout (ms)"
 msgstr "密钥超时（毫秒）"
 
@@ -4801,7 +4802,7 @@ msgstr "允许播放器代理位于私有或本地网络上的源。"
 msgid "Level"
 msgstr "级别"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:71
 msgid "libx264"
 msgstr "libx264"
 
@@ -4817,7 +4818,7 @@ msgstr "限制"
 msgid "Limits & Validation"
 msgstr "限制与校验"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:479
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:471
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "限制单个文件的传输速率，而非整体总量。"
 
@@ -4846,7 +4847,7 @@ msgstr "直播"
 msgid "LIVE"
 msgstr "直播中"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1554
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1560
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
@@ -4863,7 +4864,7 @@ msgstr "实时轮询通知已启用"
 msgid "Live Preview"
 msgstr "实时预览"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:960
+#: src/components/config/engines/forms/mesio-hls-form.tsx:966
 msgid "Live Refresh Interval (ms)"
 msgstr "直播刷新间隔 (ms)"
 
@@ -4926,7 +4927,7 @@ msgstr "本地归档"
 msgid "Log Files"
 msgstr "日志文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:285
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:244
 msgid "Log in"
 msgstr "登录"
@@ -4935,11 +4936,11 @@ msgstr "登录"
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:275
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:276
 msgid "Log out"
 msgstr "退出登录"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:219
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:220
 msgid "Logged in"
 msgstr "已登录"
 
@@ -4956,7 +4957,7 @@ msgstr "已登录百度网盘"
 msgid "Logged in to Baidu Netdisk as {0}"
 msgstr "已以 {0} 登录百度网盘"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:130
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:131
 msgid "Logged out of Baidu Netdisk"
 msgstr "已退出百度网盘"
 
@@ -4976,7 +4977,7 @@ msgstr "日志已暂停"
 msgid "Login failed"
 msgstr "登录失败"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:156
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:179
 msgid "Login successful!"
 msgstr "登录成功！"
 
@@ -5016,7 +5017,7 @@ msgstr "流畅 (80)"
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:480
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:554
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -5024,7 +5025,7 @@ msgstr "数值越低 = 质量越高"
 msgid "Lowest (0)"
 msgstr "最低画质 (0)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:509
+#: src/components/config/engines/forms/mesio-hls-form.tsx:515
 msgid "Lowest bitrate"
 msgstr "最低码率"
 
@@ -5046,7 +5047,7 @@ msgstr "维护"
 msgid "Manage credentials and session cookies."
 msgstr "管理凭据和会话 Cookie。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:127
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:246
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
@@ -5054,7 +5055,7 @@ msgstr "管理专门的提取和识别选项。"
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
-#: src/components/notifications/subscription-manager.tsx:321
+#: src/components/notifications/subscription-manager.tsx:324
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
@@ -5070,7 +5071,7 @@ msgstr "管理应用配置。"
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:189
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:190
 msgid "Manifest (Pair by Order)"
 msgstr "清单（按顺序配对）"
 
@@ -5086,15 +5087,15 @@ msgstr "标记已读"
 msgid "Marked all as read"
 msgstr "已全部标记为已读"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:174
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:175
 msgid "Match Strategy"
 msgstr "匹配策略"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:521
+#: src/components/config/engines/forms/mesio-hls-form.tsx:527
 msgid "Matching resolution"
 msgstr "匹配分辨率"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:543
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:544
 msgid "Max Attempts"
 msgstr "最大尝试次数"
 
@@ -5102,7 +5103,7 @@ msgstr "最大尝试次数"
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1621
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1627
 msgid "Max Bytes"
 msgstr "最大字节数"
 
@@ -5129,11 +5130,11 @@ msgstr "最大时长"
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:821
+#: src/components/config/engines/forms/mesio-hls-form.tsx:827
 msgid "Max Idle per Host"
 msgstr "每主机最大空闲连接数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1069
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1075
 msgid "Max Interval (ms)"
 msgstr "最大间隔（毫秒）"
 
@@ -5142,15 +5143,15 @@ msgstr "最大间隔（毫秒）"
 msgid "Max IO Jobs"
 msgstr "最大 IO 任务数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1254
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1260
 msgid "Max Key Retries"
 msgstr "最大密钥重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1292
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1298
 msgid "Max Key Retry Delay (ms)"
 msgstr "最大密钥重试延迟（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:149
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:169
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "元数据获取的最大重试次数。"
 
@@ -5159,7 +5160,7 @@ msgstr "元数据获取的最大重试次数。"
 msgid "Max Part Size"
 msgstr "最大分片大小"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1534
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1540
 msgid "Max Pending Init Segments"
 msgstr "待处理初始化分段上限"
 
@@ -5167,33 +5168,33 @@ msgstr "待处理初始化分段上限"
 msgid "Max Quality Thumbnail"
 msgstr "最高质量缩略图"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:979
+#: src/components/config/engines/forms/mesio-hls-form.tsx:985
 msgid "Max Refresh Retries"
 msgstr "最大刷新重试次数"
 
 #: src/components/config/shared/retry-policy-form.tsx:52
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:374
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:365
 msgid "Max Retries"
 msgstr "最大重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1216
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1222
 msgid "Max Retry Delay (ms)"
 msgstr "最大重试延迟（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1178
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1184
 msgid "Max Segment Retries"
 msgstr "最大分段重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1602
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1608
 msgid "Max Segments"
 msgstr "最大分段数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1517
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1523
 msgid "Max Stall Duration (ms)"
 msgstr "最大停顿时间（毫秒）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:651
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:637
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 
@@ -5210,7 +5211,7 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1112
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1118
 msgid "Maximum number of concurrent segment downloads."
 msgstr "分段下载的最大并发数。"
 
@@ -5275,15 +5276,15 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:999
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1068
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:127
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:136
 msgid "Metadata Variables"
 msgstr "元数据变量"
 
-#: src/components/notifications/forms/webhook-form.tsx:102
+#: src/components/notifications/forms/webhook-form.tsx:105
 msgid "Method"
 msgstr "请求方法"
 
@@ -5291,7 +5292,7 @@ msgstr "请求方法"
 msgid "Min Bitrate (bps)"
 msgstr "最小比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1050
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1056
 msgid "Min Interval (ms)"
 msgstr "最小间隔（毫秒）"
 
@@ -5321,11 +5322,11 @@ msgstr "分钟"
 msgid "Mint Integrity Token"
 msgstr "签发完整性 token"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:204
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:213
 msgid "Minute (00-59)"
 msgstr "分 (00-59)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:363
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:364
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "上传时 BaiduPCS-Go 会自动创建不存在的文件夹。"
 
@@ -5363,7 +5364,7 @@ msgstr "已停止监控"
 msgid "Month"
 msgstr "本月"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:183
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:192
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
 
@@ -5380,7 +5381,7 @@ msgstr "更多页面"
 msgid "Morning"
 msgstr "上午"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:180
 msgid "Move"
 msgstr "移动"
 
@@ -5408,19 +5409,19 @@ msgstr "MP"
 msgid "ms"
 msgstr "毫秒"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:710
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:694
 msgid "Multi-Thread Copy"
 msgstr "多线程复制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:769
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:751
 msgid "Multi-Thread Cutoff help"
 msgstr "多线程阈值帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:723
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:707
 msgid "Multi-Thread Streams help"
 msgstr "多线程流数帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:778
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:760
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销会超过其收益。"
 
@@ -5481,7 +5482,7 @@ msgstr "原生"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:357
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:358
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间标记。"
 
@@ -5489,7 +5490,7 @@ msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
 msgid "Network & Content"
 msgstr "网络与内容"
 
@@ -5581,11 +5582,11 @@ msgstr "无配置。"
 msgid "No credentials found."
 msgstr "未找到凭据。"
 
-#: src/components/notifications/forms/webhook-form.tsx:401
+#: src/components/notifications/forms/webhook-form.tsx:403
 msgid "No custom headers configured"
 msgstr "未配置自定义请求头"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:97
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:140
 msgid "No custom tags added"
 msgstr "未添加自定义标签"
 
@@ -5656,7 +5657,7 @@ msgstr "该执行记录暂无日志。"
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
-#: src/components/notifications/subscription-manager.tsx:386
+#: src/components/notifications/subscription-manager.tsx:389
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
@@ -5668,7 +5669,7 @@ msgstr "尚未生成媒体输出。"
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1063
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:128
 msgid "No metadata tags added"
 msgstr "未添加元数据标签"
 
@@ -5692,7 +5693,7 @@ msgstr "未找到媒体文件"
 msgid "No overrides configured"
 msgstr "未配置覆盖项"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:117
+#: src/components/config/engines/forms/mesio-hls-form.tsx:120
 msgid "No parameters configured."
 msgstr "未配置任何参数。"
 
@@ -5766,7 +5767,7 @@ msgstr "没有找到结果"
 msgid "No running pipelines selected"
 msgstr "未选择运行中的流水线"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:178
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -5820,8 +5821,8 @@ msgstr "未找到工作流"
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
-#: src/components/notifications/forms/webhook-form.tsx:212
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:801
+#: src/components/notifications/forms/webhook-form.tsx:214
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:870
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:462
 msgid "None"
@@ -5831,7 +5832,7 @@ msgstr "无"
 msgid "None (Default)"
 msgstr "无（默认）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:386
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:460
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
@@ -5869,7 +5870,7 @@ msgstr "未找到主播"
 msgid "Not installed"
 msgstr "未安装"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:230
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:231
 msgid "Not logged in"
 msgstr "未登录"
 
@@ -5909,7 +5910,7 @@ msgstr "通知服务"
 msgid "Notifications"
 msgstr "通知"
 
-#: src/components/notifications/forms/email-form.tsx:135
+#: src/components/notifications/forms/email-form.tsx:134
 msgid "notifier@example.com"
 msgstr "notifier@example.com"
 
@@ -5917,15 +5918,15 @@ msgstr "notifier@example.com"
 msgid "Now"
 msgstr "现在"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:108
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:117
 msgid "Nth input: {input0}, {input1}..."
 msgstr "第 N 个输入：{input0}, {input1}..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:117
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:126
 msgid "Nth output: {output0}, {output1}..."
 msgstr "第 N 个输出：{output0}, {output1}..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:385
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:377
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
@@ -6016,7 +6017,7 @@ msgstr "离线检测"
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1376
 msgid "Offload Decryption (Default: On)"
 msgstr "解密下放到线程池（默认：开）"
 
@@ -6036,15 +6037,15 @@ msgstr "每行一个词"
 msgid "Ongoing"
 msgstr "进行中"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:297
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:306
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:732
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:716
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "仅对超过阈值大小的文件生效。默认值为 4，设为 0 可禁用。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:844
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:913
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
@@ -6063,11 +6064,11 @@ msgid "Open quality options"
 msgstr "打开画质选项"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:149
 msgid "Operation"
 msgstr "操作"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:146
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
 msgid "Operation Mode"
 msgstr "操作模式"
 
@@ -6081,7 +6082,7 @@ msgstr "优化流头部"
 
 #: src/components/config/shared/proxy-settings-card.tsx:190
 #: src/components/config/shared/proxy-settings-card.tsx:210
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:242
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:251
 msgid "Optional"
 msgstr "可选"
 
@@ -6089,7 +6090,7 @@ msgstr "可选"
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:118
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:116
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:175
 msgid "Options"
 msgstr "选项"
@@ -6123,11 +6124,11 @@ msgstr "空间不足"
 msgid "Out of Space"
 msgstr "空间不足"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1694
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1700
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:153
 #: src/components/config/templates/template-card.tsx:163
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
 msgstr "输出"
 
@@ -6147,7 +6148,7 @@ msgstr "输出配置"
 msgid "Output deleted"
 msgstr "已删除产物"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:239
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:248
 msgid "Output Detection"
 msgstr "输出检测"
 
@@ -6161,11 +6162,11 @@ msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
 #: src/components/config/shared/output-settings-card.tsx:126
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:409
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:483
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:942
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1011
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -6177,7 +6178,7 @@ msgstr "输出路径"
 msgid "Output paths, templates, and formats."
 msgstr "输出路径、模板与格式。"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:145
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:143
 msgid "Output Pattern (Optional)"
 msgstr "输出文件名模式（可选）"
 
@@ -6233,8 +6234,8 @@ msgstr "覆盖输出文件夹。"
 msgid "Overview"
 msgstr "概览"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:153
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:268
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:151
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:311
 msgid "Overwrite"
 msgstr "覆盖"
 
@@ -6246,17 +6247,17 @@ msgstr "覆盖已存在文件"
 msgid "Overwrite existing .ass files"
 msgstr "覆盖现有的 .ass 文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:466
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:271
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:467
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:314
 msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:226
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:866
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:935
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:469
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:470
 msgid "Overwrite only when size changed"
 msgstr "仅在文件大小变化时覆盖"
 
@@ -6289,7 +6290,7 @@ msgstr "配对分段"
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:572
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:562
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "并行完整性校验（例如比较源/目标哈希值）。"
 
@@ -6323,17 +6324,17 @@ msgstr "正在解析流..."
 msgid "Parsing..."
 msgstr "解析中..."
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:285
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:286
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:222
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:68
 #: src/components/config/shared/proxy-settings-card.tsx:204
-#: src/components/notifications/forms/email-form.tsx:107
-#: src/components/notifications/forms/email-form.tsx:113
-#: src/components/notifications/forms/webhook-form.tsx:298
-#: src/components/notifications/forms/webhook-form.tsx:305
+#: src/components/notifications/forms/email-form.tsx:106
+#: src/components/notifications/forms/email-form.tsx:112
+#: src/components/notifications/forms/webhook-form.tsx:300
+#: src/components/notifications/forms/webhook-form.tsx:307
 #: src/routes/_public/login.lazy.tsx:190
 msgid "Password"
 msgstr "密码"
@@ -6374,7 +6375,7 @@ msgstr "路径"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:73
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:82
 msgid "Path Variables"
 msgstr "路径变量"
 
@@ -6411,15 +6412,15 @@ msgstr "待处理任务"
 msgid "Per page:"
 msgstr "每页："
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:473
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:465
 msgid "Per-File Bandwidth Limit"
 msgstr "单文件带宽限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:476
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:468
 msgid "Per-File Bandwidth Limit help"
 msgstr "单文件带宽限制帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:502
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:494
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
@@ -6436,7 +6437,7 @@ msgstr "逐段处理管道"
 msgid "Per-Streamer"
 msgstr "按主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:850
 #: src/components/sessions/overview-tab.tsx:205
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:561
 msgid "Performance"
@@ -6576,7 +6577,7 @@ msgstr "平台配置更新成功"
 msgid "Platform configurations will appear here when available."
 msgstr "平台配置可用时将显示在此处。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:161
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:170
 msgid "Platform name"
 msgstr "平台名称"
 
@@ -6596,7 +6597,7 @@ msgstr "平台覆盖设置"
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:123
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:242
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -6630,7 +6631,7 @@ msgstr "播放错误"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1658
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1664
 msgid "Playlist"
 msgstr "播放列表"
 
@@ -6639,7 +6640,7 @@ msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "播放列表已失效"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1396
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1402
 msgid "Playlist TTL (ms)"
 msgstr "播放列表 TTL（毫秒）"
 
@@ -6675,11 +6676,11 @@ msgstr "正在解析流 URL，请稍候。"
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:840
+#: src/components/config/engines/forms/mesio-hls-form.tsx:846
 msgid "Pool Idle Timeout (ms)"
 msgstr "连接池空闲超时（毫秒）"
 
-#: src/components/notifications/forms/email-form.tsx:62
+#: src/components/notifications/forms/email-form.tsx:63
 msgid "Port"
 msgstr "端口"
 
@@ -6703,7 +6704,7 @@ msgstr "优先使用清单"
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:59
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
@@ -6727,7 +6728,7 @@ msgstr "首选画质 (QN)"
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:130
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:128
 msgid "Preserve Paths"
 msgstr "保留路径"
 
@@ -6776,7 +6777,7 @@ msgstr "预设"
 msgid "Presets"
 msgstr "预设"
 
-#: src/components/notifications/forms/email-form.tsx:163
+#: src/components/notifications/forms/email-form.tsx:162
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
@@ -6871,11 +6872,11 @@ msgstr "已处理 {0} 个流水线；{1} 个失败"
 msgid "Processed {0} streamers; {1} failed"
 msgstr "已处理 {0} 个主播；{1} 个失败"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1124
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1130
 msgid "Processed Buffer Multiplier"
 msgstr "已处理缓冲倍数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1321
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1327
 msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
@@ -6894,7 +6895,7 @@ msgstr "处理行为"
 msgid "Processing nodes"
 msgstr "处理节点"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1676
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1682
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:152
 msgid "Processor"
 msgstr "处理器"
@@ -6946,7 +6947,7 @@ msgstr "代理策略"
 msgid "Proxy URL"
 msgstr "代理 URL"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:165
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:188
 msgid "QR code expired"
 msgstr "二维码已过期"
 
@@ -6959,15 +6960,15 @@ msgstr "扫码登录"
 msgid "Quality"
 msgstr "质量"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:107
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:106
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:512
 msgid "Quality Control"
 msgstr "质量控制"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:88
 msgid "Quality Rate"
 msgstr "画质等级"
 
@@ -6975,7 +6976,7 @@ msgstr "画质等级"
 msgid "Quality Settings"
 msgstr "画质设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:734
+#: src/components/config/engines/forms/mesio-hls-form.tsx:740
 msgid "Query Parameters"
 msgstr "查询参数"
 
@@ -7008,11 +7009,11 @@ msgstr "内存使用率"
 msgid "Random"
 msgstr "随机"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:610
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:598
 msgid "Rate Limiting"
 msgstr "速率限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:624
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:612
 msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 429 \"请求过多\" 时较为有用。"
 
@@ -7021,7 +7022,7 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:240
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -7030,20 +7031,20 @@ msgstr "原始 JSON 编辑器"
 msgid "Rclone"
 msgstr "Rclone"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:689
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:675
 msgid "rclone default: 1"
 msgstr "rclone 默认值：1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:548
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:744
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:540
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:728
 msgid "rclone default: 4"
 msgstr "rclone 默认值：4"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:591
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:581
 msgid "rclone default: 8"
 msgstr "rclone 默认值：8"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:339
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:330
 msgid "Rclone Executable"
 msgstr "Rclone 可执行文件"
 
@@ -7052,7 +7053,7 @@ msgstr "Rclone 可执行文件"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:698
+#: src/components/config/engines/forms/mesio-hls-form.tsx:704
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
@@ -7186,7 +7187,7 @@ msgstr "刷新"
 msgid "Refresh failed: Manual login required"
 msgstr "刷新失败：需要手动登录"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:170
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:171
 msgid "Refresh status"
 msgstr "刷新状态"
 
@@ -7215,7 +7216,7 @@ msgstr "重新加载播放器"
 msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:141
+#: src/components/config/engines/forms/mesio-hls-form.tsx:147
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:165
 msgid "Remove"
 msgstr "移除"
@@ -7224,15 +7225,15 @@ msgstr "移除"
 msgid "Remove {tag}"
 msgstr "移除 {tag}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:888
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:957
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:291
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:334
 msgid "Remove source on success"
 msgstr "成功后移除源文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:520
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:521
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本，删除后本地将不再保留。除非网盘就是最终存储位置，否则请保持关闭。"
 
@@ -7275,11 +7276,11 @@ msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改�
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1464
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1470
 msgid "Reorder Duration (ms)"
 msgstr "重排持续时间（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1483
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1489
 msgid "Reorder Max Segments"
 msgstr "重排最大分段数"
 
@@ -7291,7 +7292,7 @@ msgstr "全部替换"
 msgid "Replace destination files if they exist"
 msgstr "如果目标文件已存在则替换"
 
-#: src/components/pipeline/presets/processors/compression-config-form.tsx:156
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:154
 msgid "Replace output files"
 msgstr "替换输出文件"
 
@@ -7312,11 +7313,11 @@ msgstr "替换步骤"
 msgid "Request AAC audio without a video track."
 msgstr "请求不含视频轨的 AAC 音频。"
 
-#: src/components/notifications/forms/webhook-form.tsx:153
+#: src/components/notifications/forms/webhook-form.tsx:155
 msgid "Request timeout duration"
 msgstr "请求超时时长"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:211
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:212
 msgid "Require Subtitles"
 msgstr "需要字幕"
 
@@ -7338,7 +7339,7 @@ msgstr "重置"
 msgid "Resolution"
 msgstr "分辨率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:643
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -7408,12 +7409,12 @@ msgstr "重试"
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:998
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1004
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "重试延迟（ms）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1197
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1203
 msgid "Retry Delay Base (ms)"
 msgstr "重试延迟基数（毫秒）"
 
@@ -7426,7 +7427,7 @@ msgid "Retry Pipeline"
 msgstr "重试处理管道"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:362
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:353
 msgid "Retry Policy"
 msgstr "重试策略"
 
@@ -7486,7 +7487,7 @@ msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1372
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1378
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
@@ -7540,7 +7541,7 @@ msgstr "日"
 msgid "Same as server"
 msgstr "与服务端一致"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:448
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:449
 msgid "Same-name policy"
 msgstr "同名文件策略"
 
@@ -7553,11 +7554,11 @@ msgstr "采样率"
 msgid "Sample Rate (Hz)"
 msgstr "采样率（Hz）"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:154
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:163
 msgid "Sanitized session title"
 msgstr "清理后的会话标题"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:147
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:156
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
@@ -7575,7 +7576,7 @@ msgstr "保存更改"
 
 #: src/components/config/platforms/platform-editor.tsx:170
 #: src/components/config/templates/template-editor.tsx:247
-#: src/components/notifications/subscription-manager.tsx:474
+#: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:693
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
@@ -7606,23 +7607,23 @@ msgstr "保存中"
 msgid "Saving..."
 msgstr "保存中..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:247
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:256
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传递到下一个管道步骤。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:260
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:269
 msgid "Scan Directory"
 msgstr "扫描目录"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:195
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:218
 msgid "Scan the QR code with Bilibili app to login and save credentials"
 msgstr "使用哔哩哔哩 App 扫码登录并保存凭据"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:135
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:158
 msgid "Scan with Bilibili mobile app"
 msgstr "使用哔哩哔哩移动端 App 扫码"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:147
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:170
 msgid "Scanned! Please confirm on your phone"
 msgstr "已扫描！请在手机上确认"
 
@@ -7635,7 +7636,7 @@ msgstr "安排录制时间"
 msgid "Scheduled"
 msgstr "已计划"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1664
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1670
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:359
 msgid "Scheduler"
 msgstr "调度器"
@@ -7665,7 +7666,7 @@ msgstr "搜索弹幕…"
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
-#: src/components/notifications/subscription-manager.tsx:352
+#: src/components/notifications/subscription-manager.tsx:355
 msgid "Search events..."
 msgstr "搜索事件..."
 
@@ -7713,7 +7714,7 @@ msgstr "搜索模板..."
 msgid "Search workflows..."
 msgstr "搜索工作流..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:211
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:220
 msgid "Second (00-59)"
 msgstr "秒 (00-59)"
 
@@ -7722,7 +7723,7 @@ msgstr "秒 (00-59)"
 msgid "Secondary"
 msgstr "次要"
 
-#: src/components/notifications/forms/webhook-form.tsx:359
+#: src/components/notifications/forms/webhook-form.tsx:361
 msgid "secret"
 msgstr "secret"
 
@@ -7746,11 +7747,11 @@ msgstr "分段完成"
 msgid "Segment started"
 msgstr "分段开始"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1159
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1165
 msgid "Segment Timeout (ms)"
 msgstr "分段超时（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1415
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1421
 msgid "Segment TTL (ms)"
 msgstr "分段 TTL（毫秒）"
 
@@ -7772,7 +7773,7 @@ msgstr "选择默认引擎"
 msgid "Select a format"
 msgstr "选择格式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "选择预设或输入斗鱼画质值。仅音频会请求不含视频的 AAC。"
 
@@ -7793,7 +7794,7 @@ msgid "Select a streamer"
 msgstr "选择主播"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:182
-#: src/components/notifications/subscription-manager.tsx:370
+#: src/components/notifications/subscription-manager.tsx:373
 msgid "Select All"
 msgstr "全选"
 
@@ -7817,8 +7818,8 @@ msgstr "选择类别"
 msgid "Select Client Type"
 msgstr "选择客户端类型"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:373
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:351
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:447
 msgid "Select codec"
 msgstr "选择编解码器"
 
@@ -7827,9 +7828,9 @@ msgstr "选择编解码器"
 msgid "Select current page"
 msgstr "选择当前页"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:406
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:407
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:141
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:278
 msgid "Select date anchor"
 msgstr "选择日期锚点"
 
@@ -7846,7 +7847,7 @@ msgid "Select format"
 msgstr "选择格式"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:168
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:159
 msgid "Select operation"
 msgstr "选择操作"
 
@@ -7866,11 +7867,11 @@ msgstr "选择解析模式"
 msgid "Select pipelines"
 msgstr "选择流水线"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:457
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:458
 msgid "Select policy"
 msgstr "选择策略"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:330
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:404
 msgid "Select preset"
 msgstr "选择预设"
 
@@ -7878,7 +7879,7 @@ msgstr "选择预设"
 msgid "Select priority"
 msgstr "选择优先级"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:183
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:184
 msgid "Select strategy"
 msgstr "选择策略"
 
@@ -7895,7 +7896,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:324
+#: src/components/notifications/subscription-manager.tsx:327
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
@@ -7939,7 +7940,7 @@ msgid "Server not configured"
 msgstr "服务器未配置"
 
 #: src/components/notifications/channel-card.tsx:133
-#: src/components/notifications/forms/gotify-form.tsx:35
+#: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
 msgstr "服务器地址"
 
@@ -7989,7 +7990,7 @@ msgstr "会话已结束。其他详细信息不可用。"
 msgid "Session entered pending confirmation. Additional details are unavailable."
 msgstr "会话已进入待确认状态。其他详细信息不可用。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:140
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:149
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:401
 msgid "Session ID"
 msgstr "录制会话 ID"
@@ -8140,19 +8141,19 @@ msgstr "录制的大小与时长限制。"
 msgid "Size limit"
 msgstr "大小限制"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:334
+#: src/components/config/engines/forms/mesio-hls-form.tsx:340
 msgid "Skip after both"
 msgstr "满足任一条件后跳过"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:328
+#: src/components/config/engines/forms/mesio-hls-form.tsx:334
 msgid "Skip after count"
 msgstr "达到次数后跳过"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:331
+#: src/components/config/engines/forms/mesio-hls-form.tsx:337
 msgid "Skip after duration"
 msgstr "达到时长后跳过"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:463
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:464
 msgid "Skip existing files (default)"
 msgstr "跳过已存在的文件（默认）"
 
@@ -8168,15 +8169,15 @@ msgstr "已跳过"
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "跳过了 {skippedCount} 个重复的流"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:494
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:495
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "上传前跳过秒传哈希检测（--norapid）。"
 
-#: src/components/notifications/forms/email-form.tsx:41
+#: src/components/notifications/forms/email-form.tsx:42
 msgid "SMTP Host"
 msgstr "SMTP 主机"
 
-#: src/components/notifications/forms/email-form.tsx:46
+#: src/components/notifications/forms/email-form.tsx:47
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
@@ -8214,7 +8215,7 @@ msgstr "特定"
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:74
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
@@ -8243,7 +8244,7 @@ msgstr "仅在编解码器配置变更时分割。减少误分割。"
 msgid "Split Reason: {formattedReason}"
 msgstr "分割原因：{formattedReason}"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:726
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:710
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
 
@@ -8263,7 +8264,7 @@ msgstr "开始"
 msgid "Start Over"
 msgstr "重新开始"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:652
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:721
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -8291,7 +8292,7 @@ msgstr "状态"
 msgid "Status"
 msgstr "状态"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:192
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:193
 msgid "Stem (Filename Match)"
 msgstr "主文件名（文件名匹配）"
 
@@ -8351,7 +8352,7 @@ msgstr "流详情"
 msgid "Stream lookup"
 msgstr "地址获取方式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:975
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1044
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
@@ -8391,9 +8392,9 @@ msgstr "流播放器"
 msgid "Stream Splitting Strategy"
 msgstr "流分割策略"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:415
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:416
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:153
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:296
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
 msgid "Stream start time"
 msgstr "直播开始时间"
 
@@ -8432,7 +8433,7 @@ msgstr "主播创建成功"
 msgid "Streamer deleted"
 msgstr "主播已删除"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:133
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:142
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:407
 msgid "Streamer ID"
 msgstr "主播 ID"
@@ -8489,11 +8490,11 @@ msgstr "流媒体服务"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:720
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:704
 msgid "Streams"
 msgstr "流数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:965
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1034
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
@@ -8502,7 +8503,7 @@ msgstr "流与元数据"
 msgid "Streams extracted"
 msgstr "已提取流"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:751
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:733
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "每个文件的流数（--multi-thread-streams）。"
 
@@ -8510,7 +8511,7 @@ msgstr "每个文件的流数（--multi-thread-streams）。"
 msgid "Subscriptions"
 msgstr "订阅"
 
-#: src/components/notifications/subscription-manager.tsx:244
+#: src/components/notifications/subscription-manager.tsx:247
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
@@ -8518,7 +8519,7 @@ msgstr "订阅已更新"
 msgid "Subtitle"
 msgstr "字幕"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:163
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:164
 msgid "Subtitle Matching"
 msgstr "字幕匹配"
 
@@ -8555,7 +8556,7 @@ msgid "Supported Platforms"
 msgstr "支持的平台"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:231
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间占位符。"
 
@@ -8573,7 +8574,7 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:200
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
 msgid "Sync"
 msgstr "同步"
 
@@ -8624,15 +8625,15 @@ msgstr "二"
 msgid "Tags"
 msgstr "标签"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:535
+#: src/components/config/engines/forms/mesio-hls-form.tsx:541
 msgid "Target bitrate"
 msgstr "目标码率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:495
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:225
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:216
 msgid "Target Configuration"
 msgstr "目标配置"
 
@@ -8728,6 +8729,10 @@ msgstr "该渠道所发送消息使用的语言，与谁查看无关。"
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
 msgstr "你要访问的页面不存在。"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:69
+msgid "The placeholders below are substituted before the command runs."
+msgstr "下列占位符会在命令执行前被替换。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:186
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
@@ -8848,7 +8853,7 @@ msgstr "这将永久删除预设“{0}”。若不更新，使用该预设的处
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要更新。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:398
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:390
 msgid "Throughput"
 msgstr "吞吐量"
 
@@ -8872,11 +8877,11 @@ msgstr "星期四"
 msgid "Time Based"
 msgstr "基于时间"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:67
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:68
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:170
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:179
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
@@ -8889,7 +8894,7 @@ msgstr "时间范围"
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:439
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:431
 msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
@@ -8906,11 +8911,11 @@ msgstr "时间线的粒度。超长直播会自动降低精度。"
 msgid "Timeout"
 msgstr "超时"
 
-#: src/components/notifications/forms/gotify-form.tsx:79
+#: src/components/notifications/forms/gotify-form.tsx:80
 msgid "Timeout (s)"
 msgstr "超时（秒）"
 
-#: src/components/notifications/forms/webhook-form.tsx:141
+#: src/components/notifications/forms/webhook-form.tsx:144
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
@@ -8926,7 +8931,7 @@ msgstr "取消 CPU 密集型处理器前的超时时间。"
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "取消 IO 密集型处理器前的超时时间。"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:54
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:55
 msgid "Timestamp"
 msgstr "时间戳"
 
@@ -8938,13 +8943,13 @@ msgstr "时区"
 msgid "Timing & Delays"
 msgstr "时间与延迟"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:443
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:435
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "提示：1 Mbit/s ≈ 0.125M（将比特数除以 8）。"
 
 #: src/components/notifications/events/payload-preview.tsx:63
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:169
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:174
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:212
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:217
 msgid "Title"
 msgstr "标题"
 
@@ -8959,7 +8964,7 @@ msgctxt "Comparison table column"
 msgid "To"
 msgstr "变更后"
 
-#: src/components/notifications/forms/email-form.tsx:151
+#: src/components/notifications/forms/email-form.tsx:150
 msgid "To Addresses"
 msgstr "收件人地址"
 
@@ -8971,11 +8976,11 @@ msgstr "今天"
 msgid "Toggle"
 msgstr "切换"
 
-#: src/components/notifications/forms/webhook-form.tsx:245
+#: src/components/notifications/forms/webhook-form.tsx:247
 msgid "Token"
 msgstr "令牌"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:577
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:574
 msgid "Tool Location"
 msgstr "工具位置"
 
@@ -9032,23 +9037,23 @@ msgstr "总步骤数"
 msgid "Total system load"
 msgstr "系统总负载"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:667
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:653
 msgid "TPS Burst"
 msgstr "TPS 突发"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:669
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:655
 msgid "TPS Burst help"
 msgstr "TPS 突发帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:620
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:608
 msgid "TPS Limit"
 msgstr "TPS 限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:622
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:610
 msgid "TPS Limit help"
 msgstr "TPS 限制帮助"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:139
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:182
 msgid "Track Information"
 msgstr "轨道信息"
 
@@ -9056,11 +9061,11 @@ msgstr "轨道信息"
 msgid "Transcode H.264"
 msgstr "转码 H.264"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:526
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:518
 msgid "Transfers"
 msgstr "传输数"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:528
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:520
 msgid "Transfers help"
 msgstr "传输数帮助"
 
@@ -9077,7 +9082,7 @@ msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:109
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:128
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
@@ -9149,7 +9154,7 @@ msgstr "应用启动时触发。"
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:638
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:707
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
@@ -9182,7 +9187,7 @@ msgstr "尝试调整搜索或过滤器。"
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:180
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:203
 msgid "Try again"
 msgstr "重试"
 
@@ -9257,11 +9262,11 @@ msgstr "互动人数"
 msgid "Unit"
 msgstr "单位"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:420
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:412
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T、P 等后缀表示更大的容量。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:218
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:227
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
 
@@ -9333,7 +9338,7 @@ msgstr "上传"
 msgid "Upload"
 msgstr "上传"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:435
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:427
 msgid "upload : download (asymmetric)"
 msgstr "上传 : 下载（不对称）"
 
@@ -9349,11 +9354,11 @@ msgstr "上传 (Rclone)"
 msgid "Upload and Delete"
 msgstr "上传并删除"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:560
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:557
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重新上传尚未确认结果的文件。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:436
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:437
 msgid "Upload Behavior"
 msgstr "上传行为"
 
@@ -9411,7 +9416,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:839
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:908
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -9423,8 +9428,8 @@ msgstr "使用任务清单中的 danmu_inputs"
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:301
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:421
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:292
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文件夹中，并将同一会话的所有分段归组到一起。"
 
@@ -9436,12 +9441,12 @@ msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文
 msgid "Use System Proxy"
 msgstr "使用系统代理"
 
-#: src/components/notifications/forms/email-form.tsx:180
+#: src/components/notifications/forms/email-form.tsx:179
 msgid "Use TLS"
 msgstr "启用 TLS"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:115
-#: src/components/config/engines/forms/mesio-hls-form.tsx:749
+#: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "User Agent"
 msgstr "User-Agent"
 
@@ -9452,10 +9457,10 @@ msgstr "已被用户停用"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:39
 #: src/components/config/shared/proxy-settings-card.tsx:185
-#: src/components/notifications/forms/email-form.tsx:87
-#: src/components/notifications/forms/email-form.tsx:92
-#: src/components/notifications/forms/webhook-form.tsx:278
-#: src/components/notifications/forms/webhook-form.tsx:284
+#: src/components/notifications/forms/email-form.tsx:86
+#: src/components/notifications/forms/email-form.tsx:91
+#: src/components/notifications/forms/webhook-form.tsx:280
+#: src/components/notifications/forms/webhook-form.tsx:286
 #: src/routes/_public/login.lazy.tsx:170
 msgid "Username"
 msgstr "用户名"
@@ -9485,10 +9490,10 @@ msgstr "校验失败"
 msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:597
-#: src/components/notifications/forms/webhook-form.tsx:431
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1036
+#: src/components/config/engines/forms/mesio-hls-form.tsx:603
+#: src/components/notifications/forms/webhook-form.tsx:436
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:119
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:157
 msgid "Value"
 msgstr "值"
 
@@ -9496,7 +9501,7 @@ msgstr "值"
 msgid "Variant"
 msgstr "样式"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1017
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1023
 msgid "Variant Selection Policy"
 msgstr "变体选择策略"
 
@@ -9517,21 +9522,21 @@ msgstr "验证输出"
 msgid "Version"
 msgstr "版本"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:136
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:137
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:221
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:295
 #: src/lib/media-file-type.ts:36
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:506
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:580
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:65
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:265
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:66
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:339
 msgid "Video Codec"
 msgstr "视频编码"
 
@@ -9539,7 +9544,7 @@ msgstr "视频编码"
 msgid "Video codec change"
 msgstr "视频编码变化"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:518
+#: src/components/config/engines/forms/mesio-hls-form.tsx:524
 msgid "Video only"
 msgstr "仅视频"
 
@@ -9547,7 +9552,7 @@ msgstr "仅视频"
 msgid "Video Player"
 msgstr "视频播放器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:329
 msgid "Video Settings"
 msgstr "视频设置"
 
@@ -9577,11 +9582,11 @@ msgstr "查看详细日志与输出"
 msgid "View Details"
 msgstr "查看详情"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1558
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1564
 msgid "VOD Gap Strategy"
 msgstr "点播缺口策略"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1564
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1570
 msgid "VOD Segment Timeout (ms)"
 msgstr "点播分段超时（毫秒）"
 
@@ -9595,7 +9600,7 @@ msgstr "三"
 msgid "Wait"
 msgstr "等待"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:325
+#: src/components/config/engines/forms/mesio-hls-form.tsx:331
 msgid "Wait indefinitely"
 msgstr "无限等待"
 
@@ -9623,7 +9628,7 @@ msgstr "观看"
 msgid "WEB"
 msgstr "WEB"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:836
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:905
 msgid "Web Optimize"
 msgstr "网页优化"
 
@@ -9658,7 +9663,7 @@ msgstr "Web 推送优先级已更新"
 
 #: src/components/notifications/channel-card.tsx:86
 #: src/components/notifications/forms/discord-form.tsx:32
-#: src/components/notifications/forms/webhook-form.tsx:80
+#: src/components/notifications/forms/webhook-form.tsx:83
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
@@ -9686,7 +9691,7 @@ msgstr "欢迎回来"
 msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以获取新的流地址和请求头。低于此阈值时，会复用首次直播事件中捕获的 URL。默认 60 秒。设为 0 表示每次排队等待都刷新。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1566
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1572
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "启用后，每个点播分段都必须在该超时内完成。"
 
@@ -9694,12 +9699,12 @@ msgstr "启用后，每个点播分段都必须在该超时内完成。"
 msgid "Which tool downloads the stream once its URL is known."
 msgstr "获取到地址后，用哪个工具下载直播流。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:557
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
+#: src/components/config/engines/forms/mesio-hls-form.tsx:563
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:81
 msgid "Width"
 msgstr "宽度"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:94
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:93
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 
@@ -9739,7 +9744,7 @@ msgstr "工作流"
 msgid "Workflows"
 msgstr "工作流"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:717
+#: src/components/config/engines/forms/mesio-hls-form.tsx:723
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
 
@@ -9747,11 +9752,11 @@ msgstr "写入超时（毫秒）"
 msgid "WUP"
 msgstr "WUP"
 
-#: src/components/notifications/forms/webhook-form.tsx:338
+#: src/components/notifications/forms/webhook-form.tsx:340
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:176
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:185
 msgid "Year (4 digits)"
 msgstr "年 (4 位数字)"
 
@@ -9768,7 +9773,7 @@ msgstr "有未保存的更改，确定要离开吗？"
 msgid "Your digital library is currently empty. Start recording to populate your sessions here."
 msgstr "你的数字库目前为空。开始录制以在此显示会话。"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:211
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:254
 msgid "YYYY-MM-DD"
 msgstr "YYYY-MM-DD"
 

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   BaiduPcsConfigSchema,
   CopyMoveConfigSchema,
+  DeleteConfigSchema,
   RcloneConfigSchema,
+  ThumbnailConfigSchema,
 } from '../processor-schemas';
 
 describe('processor time anchor schemas', () => {
@@ -30,6 +32,26 @@ describe('processor time anchor schemas', () => {
         time_anchor: 'session_start',
       }).time_anchor,
     ).toBe('session_start');
+  });
+});
+
+// Counts and pixel sizes are whole numbers on the backend, so a typed decimal
+// has to be reported by the form rather than sent on and rejected there.
+describe('whole-number processor settings', () => {
+  it('rejects a fractional retry count and delay', () => {
+    expect(() => DeleteConfigSchema.parse({ max_retries: 2.5 })).toThrow();
+    expect(() => DeleteConfigSchema.parse({ retry_delay_ms: 100.5 })).toThrow();
+    expect(DeleteConfigSchema.parse({ max_retries: 2 }).max_retries).toBe(2);
+  });
+
+  it('rejects a fractional thumbnail width and quality', () => {
+    expect(() => ThumbnailConfigSchema.parse({ width: 320.5 })).toThrow();
+    expect(() => ThumbnailConfigSchema.parse({ quality: 2.5 })).toThrow();
+  });
+
+  it('rejects a fractional rclone retry count while keeping fractional limits', () => {
+    expect(() => RcloneConfigSchema.parse({ max_retries: 2.5 })).toThrow();
+    expect(RcloneConfigSchema.parse({ tpslimit: 0.5 }).tpslimit).toBe(0.5);
   });
 });
 

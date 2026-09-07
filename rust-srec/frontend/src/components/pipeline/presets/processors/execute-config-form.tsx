@@ -65,7 +65,13 @@ export function ExecuteConfigForm({
                       {...field}
                     />
                   </FormControl>
-                  {/* A sibling of the description slot rather than its child:
+                  <FormDescription className="mt-2 text-sm">
+                    <Trans>
+                      The placeholders below are substituted before the command
+                      runs.
+                    </Trans>
+                  </FormDescription>
+                  {/* A sibling of the description rather than its child:
                       `FormDescription` renders a paragraph, which cannot legally
                       contain this grid and would fail hydration. */}
                   <div className="mt-2 text-sm max-w-full text-muted-foreground">

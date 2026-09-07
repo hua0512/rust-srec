@@ -57,6 +57,7 @@ export function DeleteConfigForm({
                       field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                       min={0}
+                      step={1}
                       placeholder="3"
                     />
                   </FormControl>
