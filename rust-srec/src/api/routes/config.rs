@@ -489,13 +489,10 @@ pub async fn get_platform_config(
 ) -> ApiResult<Json<PlatformConfigResponse>> {
     let config_service = &state.config_service;
 
-    let config = config_service.get_platform_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Platform config with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get platform config: {}", e))
-        }
-    })?;
+    let config = config_service
+        .get_platform_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     Ok(Json(map_platform_config_to_response(config)))
 }
@@ -687,6 +684,41 @@ mod tests {
 
     fn global_request(value: Value) -> UpdateGlobalConfigRequest {
         serde_json::from_value(value).unwrap()
+    }
+
+    #[tokio::test]
+    async fn platform_get_distinguishes_typed_not_found_from_database_error_text() {
+        let pool = database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE platform_config (id TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = ConfigRouteState {
+            config_service: Arc::new(ConfigService::new(
+                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+                Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
+            )),
+        };
+        let error = super::get_platform_config(State(state.clone()), Path("missing".to_string()))
+            .await
+            .unwrap_err();
+        assert_eq!(error.status, StatusCode::NOT_FOUND);
+        sqlx::query("DROP TABLE platform_config")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE VIEW platform_config AS SELECT * FROM \"not found\"")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let error = super::get_platform_config(State(state), Path("missing".to_string()))
+            .await
+            .unwrap_err();
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.message, "Database error occurred");
+        pool.close().await;
     }
 
     #[test]

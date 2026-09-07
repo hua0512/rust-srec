@@ -207,11 +207,19 @@
 
 ## Authentication
 
+- **Failed login responses conceal account existence and disabled state**
+
+  Missing users receive bounded dummy Argon2 verification and the same credential error as an incorrect password. Disabled-account status is disclosed only after a correct password. Login throttling still runs before password work.
+
 - **Refresh-token rotation is atomic and rejects replay**
 
   A refresh token issues at most one replacement, and failed database writes preserve the original token. Reusing an already revoked token now revokes the user's other refresh tokens by default. The optional grace window suppresses that revocation but no longer issues tokens for a replay. Clients must serialize refreshes; see [refresh-token rotation](../operations/security.md#refresh-token-rotation) for configuration and concurrency behavior.
 
 ## API and integrations
+
+- **Configuration reads are cached coherently and missing entities use typed errors**
+
+  Stream proxy and parsing requests reuse a five-second global snapshot, immediately invalidated by application writes and imports. Administrative reads remain authoritative and expired cache entries never hide refresh failures. Platform, template and engine handlers distinguish missing entities from database errors without matching message text.
 
 - **API keys for programmatic access**
 

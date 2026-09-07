@@ -11,6 +11,11 @@ Rust-Srec handles access tokens, platform cookies, notification credentials, rec
 - Repeated failed logins are throttled per account (5 failures per 15 minutes by default) and, much more loosely, per source address; a throttled attempt is answered with `429` and a `Retry-After` delay instead of another password hash. The source address is the TCP peer and `X-Forwarded-For` is not trusted, so behind the bundled frontend or any reverse proxy every login is attributed to the proxy — do not rely on the per-address budget to isolate clients. See [Configuration](../getting-started/configuration.md#login-throttling).
 - Tokens carry role names and exports include user accounts, but the route layer does not enforce a per-role authorization policy, and there is no identity-provider integration. See [Scope and Limits](./support.md#scope-and-limits).
 
+Login attempts for unknown users perform the same bounded Argon2 verification
+work as current-format passwords. Unknown users and incorrect passwords return
+the same credential error; disabled-account status is returned only after the
+correct password is supplied. Throttled requests still avoid password work.
+
 ## Refresh Token Rotation
 
 Clients must serialize refresh requests and save the replacement token before
@@ -35,6 +40,11 @@ serialize refreshes, including across tabs or server instances.
 Terminate TLS before the frontend, set `COOKIE_SECURE=true` only if the proxy does not send `X-Forwarded-Proto: https`, and restrict both host ports with a firewall. Keep the backend private unless direct API consumers need it. Do not expose Swagger, media proxy routes, or logs to anonymous Internet clients.
 
 The stream proxy blocks private-network targets by default. Enabling `stream_proxy_allow_private_targets` allows authenticated users to make the service fetch internal addresses; enable it only for an explicit LAN-camera or restream use case.
+
+Stream proxy and URL parsing share a global configuration snapshot for up to five
+seconds. Application writes and committed imports invalidate it immediately.
+Out-of-band database edits can take five seconds to become visible; expired
+snapshots are not reused if refresh fails. Administrative reads remain fresh.
 
 ## Secrets and Files
 
