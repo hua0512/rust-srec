@@ -32,6 +32,11 @@ termination, and descendants are also terminated when their direct parent exits.
 Containment assumes descendants do not deliberately escape the process group or
 Windows Job Object.
 
+On macOS, if a group-termination request races the leader's exit, cleanup uses
+the remaining forced-cleanup budget to confirm that exit before retrying group
+termination. This does not add a new grace period; failure to confirm cleanup
+within the deadline remains an error.
+
 This preserves forwarding of emitted stdout data within the available budget;
 it cannot guarantee every fetched byte still held inside Streamlink's internal
 ring buffer. Upstream's signal handler interrupts the output loop rather than

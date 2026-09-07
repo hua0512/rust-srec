@@ -216,26 +216,6 @@ impl ContainedChild {
             };
         }
         let tree_result = self.request_tree_termination();
-        #[cfg(target_os = "macos")]
-        let tree_result = match tree_result {
-            Err(error) if matches!(&error, ContainmentError::Io { source, .. } if source.raw_os_error() == Some(libc::EPERM)) =>
-            {
-                // A cooperative signal can exit the leader just before force
-                // cleanup. Darwin excludes zombies from killpg's recipients and
-                // returns EPERM for that now-unsignalable group. Observe exit
-                // after the failed signal without reaping, then retry through
-                // the existing confirmed-exit path; a live child keeps its error.
-                match self
-                    .platform
-                    .direct_exit_observed_without_reap(&mut self.child)
-                {
-                    Ok(true) => self.request_tree_termination_after_direct_exit(),
-                    Ok(false) => Err(error),
-                    Err(observation_error) => Err(observation_error),
-                }
-            }
-            result => result,
-        };
         if let Err(source) = self.child.start_kill() {
             tracing::warn!(
                 error = %source,
@@ -243,6 +223,31 @@ impl ContainedChild {
                 "Direct-child termination request failed after whole-tree termination"
             );
         }
+        #[cfg(target_os = "macos")]
+        let tree_result = match tree_result {
+            Err(error) if matches!(&error, ContainmentError::Io { source, .. } if source.raw_os_error() == Some(libc::EPERM)) =>
+            {
+                // A cooperative signal can exit the leader just before force
+                // cleanup. Darwin excludes zombies from killpg's recipients and
+                // returns EPERM for that now-unsignalable group. Exit may not
+                // be waitable yet, so use the remaining cleanup deadline after
+                // requesting direct-child kill. Never reap or accept EPERM before
+                // confirming exit and retrying the guarded group termination.
+                let observed = self
+                    .platform
+                    .direct_exit_observed_without_reap(&mut self.child)?;
+                confirm_direct_exit_until(
+                    observed,
+                    self.platform
+                        .wait_for_direct_exit_without_reap(&mut self.child),
+                    deadline,
+                    self.original_pid,
+                )
+                .await?;
+                self.request_tree_termination_after_direct_exit()
+            }
+            result => result,
+        };
         tree_result?;
         if Instant::now() >= deadline {
             return Err(ContainmentError::DeadlineExceeded {
@@ -299,6 +304,25 @@ impl ContainedChild {
         self.platform.terminate_tree(true)?;
         self.tree_termination_requested = true;
         Ok(())
+    }
+}
+
+/// A false immediate observation must not discard the remaining cleanup budget.
+/// The supplied waiter observes exit without reaping, preserving the tree identity
+/// until the caller retries group termination.
+#[cfg(any(target_os = "macos", test))]
+async fn confirm_direct_exit_until(
+    already_observed: bool,
+    wait_for_exit: impl std::future::Future<Output = Result<(), ContainmentError>>,
+    deadline: Instant,
+    pid: u32,
+) -> Result<(), ContainmentError> {
+    if already_observed {
+        return Ok(());
+    }
+    match timeout_at(deadline, wait_for_exit).await {
+        Ok(result) => result,
+        Err(_) => Err(ContainmentError::DeadlineExceeded { pid }),
     }
 }
 
@@ -772,7 +796,7 @@ mod tests {
     use std::io::{BufRead, Write};
     use std::path::PathBuf;
     use std::process::Stdio;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::Duration;
 
     use tokio::io::AsyncWriteExt;
@@ -785,6 +809,135 @@ mod tests {
     const HEARTBEAT_PATH: &str = "PROCESS_UTILS_CONTAINED_CHILD_HEARTBEAT";
     const HELPER_LIFETIME: Duration = Duration::from_secs(15);
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
+
+    #[tokio::test]
+    async fn false_exit_observation_waits_for_confirmation_before_retry() {
+        let (exit, exited) = tokio::sync::oneshot::channel();
+        let retried = AtomicBool::new(false);
+        let mut recovery = Box::pin(async {
+            super::confirm_direct_exit_until(
+                false,
+                async {
+                    exited.await.map_err(|error| {
+                        super::ContainmentError::io(
+                            "observe fixture exit",
+                            std::io::Error::other(error),
+                        )
+                    })
+                },
+                Instant::now() + Duration::from_secs(2),
+                1,
+            )
+            .await?;
+            retried.store(true, Ordering::SeqCst);
+            Ok::<(), super::ContainmentError>(())
+        });
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(recovery.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        assert!(!retried.load(Ordering::SeqCst));
+        exit.send(()).expect("release nonreaping exit observation");
+        timeout(Duration::from_secs(2), recovery)
+            .await
+            .expect("recovery remains bounded")
+            .expect("exit becomes confirmed");
+        assert!(retried.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn failed_or_expired_exit_confirmation_never_authorizes_retry() {
+        for expires in [false, true] {
+            let retried = AtomicBool::new(false);
+            let recovery = async {
+                super::confirm_direct_exit_until(
+                    false,
+                    async {
+                        if expires {
+                            std::future::pending::<()>().await;
+                        }
+                        Err(super::ContainmentError::io(
+                            "fixture exit observation",
+                            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                        ))
+                    },
+                    if expires {
+                        Instant::now()
+                    } else {
+                        Instant::now() + Duration::from_secs(2)
+                    },
+                    123,
+                )
+                .await?;
+                retried.store(true, Ordering::SeqCst);
+                Ok::<(), super::ContainmentError>(())
+            };
+            let result = timeout(Duration::from_secs(2), recovery)
+                .await
+                .expect("failed recovery remains bounded");
+            if expires {
+                assert!(matches!(
+                    result,
+                    Err(super::ContainmentError::DeadlineExceeded { pid: 123 })
+                ));
+            } else {
+                assert!(
+                    matches!(result, Err(super::ContainmentError::Io { source, .. }) if source.kind() == std::io::ErrorKind::PermissionDenied)
+                );
+            }
+            assert!(!retried.load(Ordering::SeqCst));
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn delayed_native_exit_is_confirmed_before_group_retry_and_reap() {
+        let mut command = helper_command("stdin");
+        command.stdin(Stdio::piped());
+        let mut child = ContainedChild::spawn(&mut command).expect("spawn native exit fixture");
+        let mut stdin = child.take_stdin().expect("fixture stdin");
+        let observed = child
+            .platform
+            .direct_exit_observed_without_reap(&mut child.child)
+            .expect("initial exit observation");
+        assert!(!observed, "stdin-gated child has not exited");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut confirmation = Box::pin(super::confirm_direct_exit_until(
+            observed,
+            child
+                .platform
+                .wait_for_direct_exit_without_reap(&mut child.child),
+            deadline,
+            child.original_pid,
+        ));
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(confirmation.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        stdin
+            .write_all(b"hello\n")
+            .await
+            .expect("allow native child to exit");
+        drop(stdin);
+        confirmation
+            .await
+            .expect("native leader exit becomes observable");
+        assert!(
+            child.id().is_some(),
+            "exit observation must not reap the leader"
+        );
+        child
+            .request_tree_termination_after_direct_exit()
+            .expect("retry guarded group termination");
+        let status = child
+            .terminate_tree_until(deadline)
+            .await
+            .expect("reap using remaining original deadline");
+        assert!(status.success());
+        assert!(child.id().is_none());
+    }
 
     #[test]
     #[cfg(any(unix, windows))]
