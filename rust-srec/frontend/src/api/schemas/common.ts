@@ -33,6 +33,10 @@ export function jsonTextField<Schema extends z.ZodType>(
           return null;
         }
       }
+      // The backend writes the JSON text `null` for a column that is not
+      // configured, so a decoded null is the expected value rather than a row
+      // worth warning about.
+      if (decoded === null) return null;
       const result = schema.safeParse(decoded);
       if (!result.success) {
         console.warn(

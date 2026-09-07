@@ -2763,7 +2763,7 @@ msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:220
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:225
 msgid "Download failed: {0}"
 msgstr "Download failed: {0}"
 
@@ -2777,7 +2777,7 @@ msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:203
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:219
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:224
 msgid "Download started"
 msgstr "Download started"
 
@@ -3153,7 +3153,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:253
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:258
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -4099,7 +4099,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:234
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:266
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -4685,7 +4685,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:339
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:344
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -5241,7 +5241,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:410
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:415
 msgid "Media Player"
 msgstr "Media Player"
 
@@ -6229,7 +6229,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:308
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:313
 msgid "Overview"
 msgstr "Overview"
 
@@ -6723,7 +6723,7 @@ msgstr "Preferred Qualities"
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:218
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
@@ -7162,7 +7162,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -8002,7 +8002,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:256
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -8894,7 +8894,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:477
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:314
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:319
 msgid "Timeline"
 msgstr "Timeline"
 

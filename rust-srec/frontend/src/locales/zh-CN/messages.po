@@ -2763,7 +2763,7 @@ msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:220
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:225
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
@@ -2777,7 +2777,7 @@ msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:203
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:219
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:224
 msgid "Download started"
 msgstr "下载已开始"
 
@@ -3153,7 +3153,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:253
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:258
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -4099,7 +4099,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:234
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:266
 msgid "Go Back"
 msgstr "返回"
 
@@ -4685,7 +4685,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:339
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:344
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -5241,7 +5241,7 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:410
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:415
 msgid "Media Player"
 msgstr "媒体播放器"
 
@@ -6229,7 +6229,7 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:308
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:313
 msgid "Overview"
 msgstr "概览"
 
@@ -6723,7 +6723,7 @@ msgstr "首选画质"
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:218
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
@@ -7162,7 +7162,7 @@ msgstr "录制已开始"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -8002,7 +8002,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:256
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -8894,7 +8894,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:477
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:314
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:319
 msgid "Timeline"
 msgstr "时间线"
 

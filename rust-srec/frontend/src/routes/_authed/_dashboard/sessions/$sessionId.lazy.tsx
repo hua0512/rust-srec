@@ -212,7 +212,12 @@ function SessionDetailPage() {
         }
         const objectUrl = URL.createObjectURL(await response.blob());
         saveAs(objectUrl, filename);
-        URL.revokeObjectURL(objectUrl);
+        // The object URL has to outlive the moment the browser starts the
+        // download: WebKit — the desktop webview, which is precisely what
+        // takes this branch — aborts a download whose blob URL was revoked
+        // before its navigation began. Released on a timer instead, long
+        // enough that the transfer has certainly started.
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
       },
       {
         loading: i18n._(msg`Preparing download...`),

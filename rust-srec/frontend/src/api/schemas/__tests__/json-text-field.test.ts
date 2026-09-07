@@ -66,6 +66,13 @@ describe('jsonTextField', () => {
     schema.parse({ value: '{"enabled":true}' });
     expect(warn).not.toHaveBeenCalled();
   });
+
+  // The backend stores the JSON text `null` for an unconfigured column, so
+  // that is the expected value and not something to report.
+  it('treats stored JSON null as unconfigured without warning', () => {
+    expect(schema.parse({ value: 'null' })).toEqual({ value: null });
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 // One unreadable row used to reject the entire list response, leaving the
