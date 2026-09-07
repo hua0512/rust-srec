@@ -216,6 +216,26 @@ impl ContainedChild {
             };
         }
         let tree_result = self.request_tree_termination();
+        #[cfg(target_os = "macos")]
+        let tree_result = match tree_result {
+            Err(error) if matches!(&error, ContainmentError::Io { source, .. } if source.raw_os_error() == Some(libc::EPERM)) =>
+            {
+                // A cooperative signal can exit the leader just before force
+                // cleanup. Darwin excludes zombies from killpg's recipients and
+                // returns EPERM for that now-unsignalable group. Observe exit
+                // after the failed signal without reaping, then retry through
+                // the existing confirmed-exit path; a live child keeps its error.
+                match self
+                    .platform
+                    .direct_exit_observed_without_reap(&mut self.child)
+                {
+                    Ok(true) => self.request_tree_termination_after_direct_exit(),
+                    Ok(false) => Err(error),
+                    Err(observation_error) => Err(observation_error),
+                }
+            }
+            result => result,
+        };
         if let Err(source) = self.child.start_kill() {
             tracing::warn!(
                 error = %source,
@@ -883,6 +903,37 @@ mod tests {
             .terminate_tree_until(Instant::now() + Duration::from_secs(5))
             .await
             .expect("cleanup platform-signal fixture");
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn forced_cleanup_reaps_a_cooperatively_exited_unreaped_leader() {
+        let mut command = helper_command("hold");
+        let mut child = ContainedChild::spawn(&mut command).expect("spawn contained child");
+        assert!(
+            child
+                .request_shutdown()
+                .expect("request cooperative shutdown")
+        );
+        // Pin the race's post-SIGTERM state: the leader has exited, but its PID
+        // and process-group identity remain owned until forced cleanup reaps it.
+        timeout(Duration::from_secs(5), async {
+            while !child
+                .platform
+                .direct_exit_observed_without_reap(&mut child.child)
+                .expect("observe cooperative exit without reaping")
+            {
+                sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("cooperative exit remains bounded");
+        assert!(child.id().is_some(), "leader must remain unreaped");
+        child
+            .terminate_tree_until(Instant::now() + Duration::from_secs(2))
+            .await
+            .expect("confirmed exit permits contained cleanup after Darwin EPERM");
+        assert!(child.id().is_none(), "forced cleanup reaps the leader");
     }
 
     #[tokio::test]
