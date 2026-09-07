@@ -22,7 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { NotificationChannel } from '@/api/schemas';
 import { Trans } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
+import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { priorityLabel } from '@/lib/priority';
 import { eventTypeLabel } from '@/lib/notification-event-types';
@@ -446,10 +446,14 @@ export function SubscriptionManager({
 
             <div className="shrink-0 flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>
-                {selectedEvents.length} <Trans>selected</Trans>
+                {t(
+                  i18n,
+                )`${plural(selectedEvents.length, { one: '# selected', other: '# selected' })}`}
               </span>
               <span>
-                {filteredEventTypes?.length || 0} <Trans>available</Trans>
+                {t(
+                  i18n,
+                )`${plural(filteredEventTypes?.length || 0, { one: '# available', other: '# available' })}`}
               </span>
             </div>
           </div>

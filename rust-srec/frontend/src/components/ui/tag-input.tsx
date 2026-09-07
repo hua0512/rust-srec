@@ -3,6 +3,8 @@ import { X } from 'lucide-react';
 import { Badge } from './badge';
 import { Input } from './input';
 import { cn } from '../../lib/utils';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 interface TagInputProps extends Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
@@ -20,6 +22,7 @@ export function TagInput({
   className,
   ...props
 }: TagInputProps) {
+  const { i18n } = useLingui();
   const [inputValue, setInputValue] = React.useState('');
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -61,7 +64,7 @@ export function TagInput({
             className="rounded-full hover:bg-muted p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
             <X className="h-3 w-3" />
-            <span className="sr-only">Remove {tag}</span>
+            <span className="sr-only">{i18n._(msg`Remove ${tag}`)}</span>
           </button>
         </Badge>
       ))}

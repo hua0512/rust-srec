@@ -268,6 +268,14 @@
 
 ## Web interface
 
+- **The last untranslated corners of the interface now follow your language**
+
+  Some parts of the interface stayed in English whatever language you chose: the theme import dialog, the danmu viewer's filter button and footer, the video player's title and error message, the cookie fields on the player form, the badges on a recording card, the version line at the bottom of the sidebar, the comparison table shown when a recording was split, and a few button labels for screen readers. Counts such as "12 messages", "3 Segments (7 Files)" and "5 selected" were also assembled from separate words, so they could never be phrased naturally in Chinese. All of these now read in your language, and so do the error messages on the form for a new processing job.
+
+- **Dates, times and durations follow your language**
+
+  "5 minutes ago" on notifications, streamer cards and the system health page, and the date ranges on the recordings and log pages, were always written in English and in an English date format. They now match the language you have selected, and a session's duration is shown with units in your language. A session that has not finished yet is now labelled "In progress" instead of the mistyped "In active".
+
 - **A bad link no longer replaces a list page with an error**
 
   Recordings, streamers, processing jobs, workflows, presets, media files and the player all remember your search, filters and page number in the address bar. If any one of those values was not something the page could read — a hand-edited address, a truncated link, or one saved before an update changed what a filter accepts — the whole page was replaced by "Something went wrong!" and a block of technical detail. Values that cannot be read are now simply ignored, and the rest of the address still applies: a link carrying both a search term and an unusable page number now runs the search and starts from the first page.

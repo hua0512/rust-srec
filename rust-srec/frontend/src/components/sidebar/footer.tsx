@@ -18,6 +18,8 @@ export function Footer() {
     refetchOnWindowFocus: false,
   });
 
+  const backendLabel = backendVersion ?? '-';
+
   return (
     <div className="z-20 w-full bg-background/95 shadow backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-4 md:mx-8 flex h-14 items-center">
@@ -34,8 +36,9 @@ export function Footer() {
             </a>
             .
           </Trans>{' '}
-          Backend: {backendVersion ?? '-'}{' '}
-          <span className="mx-1 opacity-60 text-[10px]">|</span> UI: {UI_BUILD}
+          <Trans>Backend: {backendLabel}</Trans>{' '}
+          <span className="mx-1 opacity-60 text-[10px]">|</span>{' '}
+          <Trans>UI: {UI_BUILD}</Trans>
         </p>
       </div>
     </div>

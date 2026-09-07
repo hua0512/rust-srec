@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
+import { plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -81,10 +82,9 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                               <p className="font-medium text-sm group-hover:text-primary transition-colors">
                                 {dag.name}
                                 <span className="text-xs text-muted-foreground font-normal ml-2">
-                                  <Trans>
-                                    {dag.completed_steps}/{dag.total_steps}{' '}
-                                    steps
-                                  </Trans>
+                                  {t(
+                                    i18n,
+                                  )`${dag.completed_steps}/${plural(dag.total_steps, { one: '# step', other: '# steps' })}`}
                                 </span>
                               </p>
                               <p className="text-xs text-muted-foreground font-mono mt-0.5">

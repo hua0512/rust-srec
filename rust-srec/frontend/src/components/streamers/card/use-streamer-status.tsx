@@ -1,6 +1,5 @@
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { formatDistanceToNow } from 'date-fns';
 import {
   Clock,
   Calendar,
@@ -20,6 +19,7 @@ import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 import type { Download, QueuedEntry } from '@/store/downloads';
 import { isStreamerRecovering } from './recovery-state';
 import { formatDate } from '@/lib/datetime';
+import { formatRelativeTime } from '@/lib/date-utils';
 
 export function useStreamerStatus(
   streamer: z.infer<typeof StreamerSchema>,
@@ -137,9 +137,7 @@ export function useStreamerStatus(
                 variant="secondary"
                 className="font-mono font-bold text-[10px] bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-400"
               >
-                {formatDistanceToNow(disabledUntil, {
-                  addSuffix: true,
-                })}
+                {formatRelativeTime(disabledUntil, i18n.locale)}
               </Badge>
             </div>
 
@@ -301,7 +299,7 @@ export function useStreamerStatus(
                       : 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-400'
                   }`}
                 >
-                  {formatDistanceToNow(queuedDate, { addSuffix: true })}
+                  {formatRelativeTime(queuedDate, i18n.locale)}
                 </Badge>
               </div>
             )}

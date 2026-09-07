@@ -22,7 +22,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { DanmuComment } from './danmu-parser';
 import type { ParseResponse } from './danmu-parser.worker';
-import { msg } from '@lingui/core/macro';
+import type { I18n, MessageDescriptor } from '@lingui/core';
+import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 
@@ -34,6 +35,23 @@ interface DanmuViewerProps {
 
 type FilterMode = 'all' | 'scrolling' | 'top' | 'bottom';
 
+// Held as a descriptor and resolved at render time, so switching locale
+// relabels the failure without re-running the parse.
+const PARSE_FAILURE = msg`Failed to parse danmu file`;
+
+function filterModeLabel(i18n: I18n, mode: FilterMode): string {
+  switch (mode) {
+    case 'scrolling':
+      return i18n._(msg`Scrolling`);
+    case 'top':
+      return i18n._(msg`Top Fixed`);
+    case 'bottom':
+      return i18n._(msg`Bottom Fixed`);
+    default:
+      return i18n._(msg`Filter`);
+  }
+}
+
 export function formatDanmuOffset(seconds: number): string {
   return formatDuration(seconds, { nullValue: '0s' });
 }
@@ -42,7 +60,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const { i18n } = useLingui();
   const [comments, setComments] = useState<DanmuComment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | MessageDescriptor | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
@@ -65,7 +83,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       worker.terminate();
     });
     worker.addEventListener('error', () => {
-      setError('Failed to parse danmu file');
+      setError(PARSE_FAILURE);
       setLoading(false);
       worker.terminate();
     });
@@ -151,7 +169,9 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
           <div className="flex items-center gap-2 mt-0.5 max-w-full">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">
-              {comments.length.toLocaleString()} messages
+              {t(
+                i18n,
+              )`${plural(comments.length, { one: '# message', other: '# messages' })}`}
             </span>
           </div>
         </div>
@@ -177,11 +197,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
               className="h-8 gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               <ListFilter className="h-3.5 w-3.5" />
-              <span>
-                {filterMode === 'all'
-                  ? 'Filter'
-                  : filterMode.charAt(0).toUpperCase() + filterMode.slice(1)}
-              </span>
+              <span>{filterModeLabel(i18n, filterMode)}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
@@ -235,7 +251,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                 <Trans>Failed to load content</Trans>
               </p>
               <p className="text-xs text-muted-foreground max-w-[300px] leading-relaxed">
-                {error}
+                {typeof error === 'string' ? error : i18n._(error)}
               </p>
             </div>
           </div>
@@ -330,10 +346,10 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       {/* Footer */}
       <footer className="px-4 py-2 border-t bg-muted/20 flex items-center justify-between h-8 shrink-0">
         <span className="text-[10px] text-muted-foreground/60 font-mono tracking-widest uppercase">
-          Anonymized Metadata • UTF-8 Format
+          <Trans>Anonymized Metadata • UTF-8 Format</Trans>
         </span>
         <span className="text-[10px] font-bold text-muted-foreground/40 font-mono">
-          RUST-SREC PRO VIEWER
+          <Trans>RUST-SREC PRO VIEWER</Trans>
         </span>
       </footer>
     </Card>

@@ -19,7 +19,6 @@ import {
 import { HealthStatusBadge } from '@/components/health/health-status-badge';
 import { StorageUsageCard } from '@/components/health/storage-usage-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, formatDistanceToNow } from 'date-fns';
 import { useState, useEffect, type ReactNode } from 'react';
 import {
   Activity,
@@ -39,6 +38,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { formatDate } from '@/lib/datetime';
+import { formatRelativeTime } from '@/lib/date-utils';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/system/health')({
   component: SystemHealthPage,
@@ -281,16 +281,18 @@ function SystemHealthPage() {
                             </TableCell>
                             <TableCell className="text-right text-xs text-muted-foreground">
                               {component.last_check && mounted
-                                ? formatDistanceToNow(
+                                ? formatRelativeTime(
                                     new Date(component.last_check),
-                                    {
-                                      addSuffix: true,
-                                    },
+                                    i18n.locale,
                                   )
                                 : component.last_check
-                                  ? format(
+                                  ? formatDate(
+                                      i18n.locale,
                                       new Date(component.last_check),
-                                      'PP p',
+                                      {
+                                        dateStyle: 'medium',
+                                        timeStyle: 'short',
+                                      },
                                     )
                                   : '-'}
                             </TableCell>

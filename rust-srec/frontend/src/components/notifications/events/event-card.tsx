@@ -1,5 +1,4 @@
 import { memo, useMemo } from 'react';
-import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Globe, Activity, Link2 } from 'lucide-react';
@@ -10,6 +9,7 @@ import { EventIcon } from './event-icon';
 import { PayloadPreview } from './payload-preview';
 import { priorityLabel } from '@/lib/priority';
 import { eventTypeLabel } from '@/lib/notification-event-types';
+import { formatRelativeTime } from '@/lib/date-utils';
 
 export const getPriorityStyles = (priority: number) => {
   if (priority >= 10) {
@@ -142,9 +142,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
 
         <div className="flex flex-col items-end gap-1">
           <span className="text-[10px] font-bold text-muted-foreground/60 tabular-nums tracking-tighter uppercase">
-            {formatDistanceToNow(new Date(event.created_at), {
-              addSuffix: true,
-            })}
+            {formatRelativeTime(new Date(event.created_at), i18n.locale)}
           </span>
           {event.streamer_id ? (
             <div className="flex items-center gap-1 text-[9px] font-medium text-muted-foreground/40 bg-muted/20 px-1.5 py-0.5 rounded-full border border-border/10">

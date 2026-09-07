@@ -1,7 +1,7 @@
 import { RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
+import { msg, plural, t } from '@lingui/core/macro';
 
 import type { BatchDagAction } from '@/api/schemas';
 import { Button } from '@/components/ui/button';
@@ -96,7 +96,9 @@ export function PipelineBatchActionBar({
           {retryableCount === 0 ? (
             <Trans>No failed or cancelled pipelines selected</Trans>
           ) : (
-            <Trans>Retry {retryableCount} failed or cancelled pipelines</Trans>
+            t(
+              i18n,
+            )`${plural(retryableCount, { one: 'Retry # failed or cancelled pipeline', other: 'Retry # failed or cancelled pipelines' })}`
           )}
         </TooltipContent>
       </Tooltip>
@@ -126,7 +128,9 @@ export function PipelineBatchActionBar({
           {cancellableCount === 0 ? (
             <Trans>No running pipelines selected</Trans>
           ) : (
-            <Trans>Cancel {cancellableCount} running pipelines</Trans>
+            t(
+              i18n,
+            )`${plural(cancellableCount, { one: 'Cancel # running pipeline', other: 'Cancel # running pipelines' })}`
           )}
         </TooltipContent>
       </Tooltip>
@@ -156,10 +160,9 @@ export function PipelineBatchActionBar({
               <Trans>Delete selected pipelines?</Trans>
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <Trans>
-                This will permanently delete {selectedCount} pipelines with
-                their jobs and logs. This action cannot be undone.
-              </Trans>{' '}
+              {t(
+                i18n,
+              )`${plural(selectedCount, { one: 'This will permanently delete # pipeline with its jobs and logs. This action cannot be undone.', other: 'This will permanently delete # pipelines with their jobs and logs. This action cannot be undone.' })}`}{' '}
               {runningCount > 0 && (
                 <Trans>
                   {runningCount} of them are still running and will be cancelled

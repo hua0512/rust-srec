@@ -1,7 +1,13 @@
 import { memo } from 'react';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
+import { formatBytes, formatDuration } from '@/lib/format';
 
 export const PayloadPreview = memo(({ payload }: { payload: string }) => {
+  const { i18n } = useLingui();
+
   try {
     const parsed = JSON.parse(payload);
     const inner =
@@ -30,7 +36,7 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
 
     const variant = Object.keys(parsed)[0];
     const fields: {
-      label: string;
+      label: MessageDescriptor;
       value: string | number;
       color?: string;
       fullWidth?: boolean;
@@ -38,28 +44,31 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
 
     // Extract detailed fields
     if (inner.streamer_name)
-      fields.push({ label: 'Streamer', value: inner.streamer_name });
-    if (inner.job_type) fields.push({ label: 'Job', value: inner.job_type });
+      fields.push({ label: msg`Streamer`, value: inner.streamer_name });
+    if (inner.job_type) fields.push({ label: msg`Job`, value: inner.job_type });
     if (inner.error_type || inner.error) {
       fields.push({
-        label: 'Error',
+        label: msg`Error`,
         value:
-          inner.error_type || inner.error || inner.reason || 'Unknown error',
+          inner.error_type ||
+          inner.error ||
+          inner.reason ||
+          i18n._(msg`Unknown error`),
         color: 'text-destructive font-medium',
         fullWidth: true,
       });
     }
 
     if (inner.title)
-      fields.push({ label: 'Title', value: inner.title, fullWidth: true });
+      fields.push({ label: msg`Title`, value: inner.title, fullWidth: true });
     if (inner.category)
-      fields.push({ label: 'Category', value: inner.category });
+      fields.push({ label: msg`Category`, value: inner.category });
     if (inner.platform)
-      fields.push({ label: 'Platform', value: inner.platform });
+      fields.push({ label: msg`Platform`, value: inner.platform });
 
     if (inner.output_path || inner.path) {
       fields.push({
-        label: 'Path',
+        label: msg`Path`,
         value: inner.output_path || inner.path,
         color: 'text-emerald-600 dark:text-emerald-400 font-mono text-[10px]',
         fullWidth: true,
@@ -67,20 +76,24 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
     }
 
     if (inner.duration_secs !== undefined) {
-      const mins = Math.floor(inner.duration_secs / 60);
-      const secs = inner.duration_secs % 60;
       fields.push({
-        label: 'Duration',
-        value: mins > 0 ? `${mins}m ${secs}s` : `${secs}s`,
+        label: msg`Duration`,
+        value: formatDuration(inner.duration_secs, {
+          decimals: 0,
+          nullValue: '0s',
+        }),
       });
     }
 
     if (inner.file_size_bytes !== undefined) {
-      const mb = (inner.file_size_bytes / (1024 * 1024)).toFixed(1);
-      fields.push({ label: 'Size', value: `${mb} MB` });
+      fields.push({
+        label: msg`Size`,
+        value: formatBytes(inner.file_size_bytes, { decimals: 1 }),
+      });
     }
 
-    if (inner.version) fields.push({ label: 'Version', value: inner.version });
+    if (inner.version)
+      fields.push({ label: msg`Version`, value: inner.version });
 
     // If no fields extracted, show variant name
     if (fields.length === 0 && variant) {
@@ -104,7 +117,7 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
             )}
           >
             <span className="text-muted-foreground/50 font-medium shrink-0 tabular-nums uppercase text-[9px] tracking-tight">
-              {field.label}:
+              {i18n._(field.label)}:
             </span>
             <span
               className={cn(

@@ -199,7 +199,9 @@ export function UrlInputForm({
                       name="cookies"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">Cookies</FormLabel>
+                          <FormLabel className="text-xs">
+                            <Trans>Cookies</Trans>
+                          </FormLabel>
                           <FormControl>
                             <Input
                               placeholder="key=value; key2=value2"
@@ -291,7 +293,9 @@ export function UrlInputForm({
                       name="cookies"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">Cookies</FormLabel>
+                          <FormLabel className="text-xs">
+                            <Trans>Cookies</Trans>
+                          </FormLabel>
                           <FormControl>
                             <Input
                               placeholder="key=value; key2=value2"
@@ -300,7 +304,9 @@ export function UrlInputForm({
                               disabled={isLoading}
                             />
                           </FormControl>
-                          <FormDescription>Applied to all URLs</FormDescription>
+                          <FormDescription>
+                            <Trans>Applied to all URLs</Trans>
+                          </FormDescription>
                         </FormItem>
                       )}
                     />

@@ -106,7 +106,9 @@ export function PlatformOverrideCard({
                   ) : (
                     <ChevronRight className="h-4 w-4" />
                   )}
-                  <span className="sr-only">Toggle</span>
+                  <span className="sr-only">
+                    <Trans>Toggle</Trans>
+                  </span>
                 </Button>
               </CollapsibleTrigger>
 

@@ -8,6 +8,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { AlertCircle, Loader2, RefreshCcw, Settings2, X } from 'lucide-react';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { usePlayerPlayback } from './use-player-playback';
 
@@ -50,6 +53,7 @@ export function PlayerCard({
   mediaDurationSecs,
   mediaFileSizeBytes,
 }: PlayerCardProps) {
+  const { i18n } = useLingui();
   const { containerRef, error, loading, reload } = usePlayerPlayback({
     url,
     headers,
@@ -85,7 +89,7 @@ export function PlayerCard({
           </div>
           <div className="flex flex-col min-w-0">
             <CardTitle className="text-sm font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-              {title || 'Video Player'}
+              {title || i18n._(msg`Video Player`)}
             </CardTitle>
           </div>
         </div>
@@ -97,7 +101,7 @@ export function PlayerCard({
               className="gap-1 bg-background/50 backdrop-blur"
             >
               <Loader2 className="h-3 w-3 animate-spin" />
-              Loading
+              <Trans>Loading</Trans>
             </Badge>
           )}
           <Button
@@ -105,7 +109,7 @@ export function PlayerCard({
             size="icon"
             className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors rounded-full"
             onClick={reload}
-            title="Reload Player"
+            title={i18n._(msg`Reload Player`)}
           >
             <RefreshCcw className="h-4 w-4" />
           </Button>
@@ -159,7 +163,7 @@ export function PlayerCard({
               <AlertCircle className="h-8 w-8" />
             </div>
             <p className="text-sm font-medium text-destructive">
-              Playback Error
+              <Trans>Playback Error</Trans>
             </p>
             <p className="text-xs text-muted-foreground max-w-[250px]">
               {error}

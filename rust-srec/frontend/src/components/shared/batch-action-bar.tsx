@@ -52,10 +52,12 @@ export function BatchActionBar({
       className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 mx-auto flex w-fit max-w-[calc(100vw-1.5rem)] items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-background/95 p-1.5 shadow-2xl backdrop-blur-xl no-scrollbar sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2"
     >
       <div className="flex h-8 shrink-0 items-center gap-2 rounded-full bg-primary/10 px-3 text-primary ring-1 ring-primary/20">
-        <span className="text-sm font-bold tabular-nums">{selectedCount}</span>
-        <span className="hidden text-xs font-medium sm:inline">
-          <Trans>selected</Trans>
-        </span>
+        <Trans>
+          <span className="text-sm font-bold tabular-nums">
+            {selectedCount}
+          </span>
+          <span className="hidden text-xs font-medium sm:inline">selected</span>
+        </Trans>
       </div>
 
       <Tooltip>

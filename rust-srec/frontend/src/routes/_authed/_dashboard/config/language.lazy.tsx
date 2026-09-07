@@ -4,6 +4,7 @@ import { useLingui } from '@lingui/react';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
 import { Card } from '@/components/ui/card';
 import {
   dynamicActivate,
@@ -35,14 +36,14 @@ function LanguageSettings() {
       name: 'English',
       nativeName: localeNativeNames.en,
       flag: '🇺🇸',
-      description: 'English (International)',
+      description: i18n._(msg`English (International)`),
     },
     {
       code: 'zh-CN',
       name: 'Chinese',
       nativeName: localeNativeNames['zh-CN'],
       flag: '🇨🇳',
-      description: 'Chinese Simplified',
+      description: i18n._(msg`Chinese Simplified`),
     },
   ];
 

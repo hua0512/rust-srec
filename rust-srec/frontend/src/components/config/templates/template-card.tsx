@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -59,11 +60,11 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
     mutationFn: () => deleteTemplate({ data: template.id }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] });
-      toast.success(`Deleted template "${template.name}"`);
+      toast.success(i18n._(msg`Deleted template "${template.name}"`));
       setShowDeleteAlert(false);
     },
     onError: (error) => {
-      toast.error(`Failed to delete template: ${error.message}`);
+      toast.error(i18n._(msg`Failed to delete template: ${error.message}`));
     },
   });
 

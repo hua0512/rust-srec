@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { msg } from '@lingui/core/macro';
+import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import {
@@ -404,10 +404,9 @@ export function LogViewer() {
                 </Badge>
               </CardTitle>
               <CardDescription className="mt-1.5">
-                <Trans>
-                  View application logs in real-time. Logs are limited to the
-                  last {MAX_LOG_ENTRIES} entries.
-                </Trans>
+                {t(
+                  i18n,
+                )`View application logs in real-time. Logs are limited to the last ${plural(MAX_LOG_ENTRIES, { one: '# entry', other: '# entries' })}.`}
               </CardDescription>
             </div>
 
@@ -538,10 +537,12 @@ export function LogViewer() {
         {/* Status bar */}
         <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
           <span>
-            {filteredLogs.length} / {logs.length} <Trans>entries</Trans>
+            {t(
+              i18n,
+            )`${filteredLogs.length} / ${plural(logs.length, { one: '# entry', other: '# entries' })}`}
             {isPaused && pausedCount > 0 && (
               <span className="ml-2 text-amber-400">
-                (+{pausedCount} <Trans>paused</Trans>)
+                {t(i18n)`(+${pausedCount} paused)`}
               </span>
             )}
           </span>

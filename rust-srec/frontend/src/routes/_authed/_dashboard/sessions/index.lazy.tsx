@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-query';
 import { listSessions, deleteSessions } from '@/server/functions/sessions';
 import { SessionList } from '@/components/sessions/session-list';
-import { startOfDay, subDays, format } from 'date-fns';
+import { startOfDay, subDays } from 'date-fns';
 import { useMemo, useState, useCallback } from 'react';
 import {
   Film,
@@ -47,6 +47,12 @@ import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatDate } from '@/lib/datetime';
+
+const SHORT_DATE: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: '2-digit',
+};
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/sessions/')({
   component: SessionsPage,
@@ -329,8 +335,8 @@ function SessionsPage() {
                     <span>
                       {dateRange?.from
                         ? dateRange.to
-                          ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')} `
-                          : format(dateRange.from, 'MMM dd')
+                          ? `${formatDate(i18n.locale, dateRange.from, SHORT_DATE)} - ${formatDate(i18n.locale, dateRange.to, SHORT_DATE)} `
+                          : formatDate(i18n.locale, dateRange.from, SHORT_DATE)
                         : i18n._(msg`Custom`)}
                     </span>
                   </button>
