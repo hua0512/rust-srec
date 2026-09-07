@@ -247,6 +247,14 @@ pub async fn init_database_pools(database_url: &str) -> Result<(DbPool, WritePoo
 pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     tracing::info!("Running database migrations...");
 
+    prepare_fresh_database(pool).await?;
+    sqlx::migrate!("./migrations").run(pool).await?;
+    tracing::info!("Database migrations completed");
+    Ok(())
+}
+
+/// Prepare SQLite before migrations or bootstrap state create the first table.
+pub(crate) async fn prepare_fresh_database(pool: &DbPool) -> Result<(), sqlx::Error> {
     // auto_vacuum must be selected before the first table is created. Existing
     // databases are converted by the guarded maintenance-window VACUUM path.
     {
@@ -265,8 +273,6 @@ pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
         }
     }
 
-    sqlx::migrate!("./migrations").run(pool).await?;
-    tracing::info!("Database migrations completed");
     Ok(())
 }
 

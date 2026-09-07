@@ -10,6 +10,10 @@
 
 ## Configuration
 
+- **Fresh standalone installations use the configured recording directory**
+
+  A new standalone database initializes its output folder from `OUTPUT_DIR`, falling back to `./output` resolved against the startup working directory. The bundled systemd unit and Docker Compose configuration now supply the initial recording location. Existing databases retain their saved folder, including an explicitly saved `/app/output`.
+
 - **Bilibili quality overrides preserve inheritance**
 
   Opening an inherited platform-options form no longer writes a quality override. Template and streamer forms show an inherited choice; selecting it clears the override. Platform defaults and quality codes now match the Bilibili extractor. Template options saved by the UI are applied by the resolver, while existing flat configurations remain supported.

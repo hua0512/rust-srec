@@ -21,6 +21,8 @@ Download a package from [GitHub Releases](https://github.com/hua0512/rust-srec/r
 
 The `rust-srec` executable runs the backend. A complete browser-based installation also needs the frontend or the Docker deployment. Generate a unique `JWT_SECRET` of at least 32 characters before exposing the backend to another machine.
 
+When the standalone backend creates a fresh database, it initializes the recording folder from `OUTPUT_DIR`, or `./output` if unset or blank. Relative paths are saved as absolute paths resolved from the startup working directory. Later starts preserve the saved setting, even if `OUTPUT_DIR` changes. Change an existing installation's recording folder in **Settings → Global → Output Folder**.
+
 ## systemd Service (Linux)
 
 The repository ships `rust-srec/rust-srec.service`, a hardened unit that runs the pre-built backend binary as a system service. It supervises the backend only; deploy the frontend separately or use Docker for a complete browser installation.
@@ -72,9 +74,7 @@ curl http://localhost:12555/api/health/live
 
 ### Set the Recording Directory
 
-::: warning Recordings fail until the output folder is set
-The database ships with `output_folder` set to `/app/output`, a path that belongs to the Docker image and that `ProtectSystem=strict` neither provides nor makes writable. No environment variable overrides it. Until **Settings → Global → Output Folder** names `/var/lib/rust-srec/output` or a volume listed under `ReadWritePaths=`, the service starts normally and every recording fails.
-:::
+Fresh databases use the unit's `OUTPUT_DIR=/var/lib/rust-srec/output` as their recording folder. Existing databases keep their saved `output_folder`, including an older `/app/output` default. For those installations, set **Settings → Global → Output Folder** to `/var/lib/rust-srec/output` or a volume listed under `ReadWritePaths=`; `ProtectSystem=strict` does not make `/app/output` writable.
 
 Keep `RUST_SREC_OUTPUT_ROOTS` in step with that value, or the output-root write gate reports the service degraded. The unit ships both pointing at `/var/lib/rust-srec/output`.
 
@@ -145,7 +145,7 @@ Important backend settings:
 | `DATABASE_URL` | SQLite database location | `sqlite:./srec.db` |
 | `API_BIND_ADDRESS` | Network interface to listen on | `0.0.0.0` |
 | `API_PORT` | API port | `8080` |
-| `OUTPUT_DIR` | Output root the write gate and disk-space probe watch; it does not set where recordings are written | `./output` |
+| `OUTPUT_DIR` | Initial recording folder for a fresh standalone database; also an output root watched by health probes. Does not override saved settings | `./output` |
 | `RUST_LOG` | Log level | `info` |
 
 Generate a secret with `openssl rand -hex 32`. In PowerShell:
@@ -185,4 +185,3 @@ The built-in Mesio download engine does not require Streamlink. Install external
 ## Next Step
 
 Open the web interface for your deployment method and follow [Make Your First Recording](./first-recording.md). For Internet-facing or long-running hosts, complete the [Production Deployment](../operations/production.md) checklist first.
-
