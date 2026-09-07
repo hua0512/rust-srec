@@ -22,12 +22,6 @@ interface PipelineWorkflowEditorProps {
 
 export const PipelineWorkflowEditor = memo(
   ({ steps, onChange }: PipelineWorkflowEditorProps) => {
-    // Debug log to trace steps in editor
-    // console.log('PipelineWorkflowEditor render:', {
-    //   stepsCount: steps.length,
-    //   steps,
-    // });
-
     const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [libraryOpen, setLibraryOpen] = useState(false);

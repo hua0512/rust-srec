@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { listPlatformConfigs, listEngines } from '@/server/functions';
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,10 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
     queryFn: () => listEngines(),
   });
 
-  const currentOverrides = form.watch('platform_overrides') || {};
+  // Subscribed through `useWatch` so only this tab re-renders when an override is added or
+  // removed, instead of the whole template form on every keystroke.
+  const currentOverrides =
+    useWatch({ control: form.control, name: 'platform_overrides' }) || {};
 
   const handleAddOverride = (platformName: string) => {
     // platformName matches the name in the map

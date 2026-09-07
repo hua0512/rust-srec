@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -97,6 +97,13 @@ export function PlatformEditor({
   const Icon = getPlatformIcon(platform.name);
   const colorClass = getPlatformColor(platform.name);
 
+  // Memoized because the shared editor forwards it to a memoized card, which would otherwise
+  // re-render for a new object of the same contents.
+  const credentialScope = useMemo(
+    () => ({ type: 'platform', id: platform.id }) as const,
+    [platform.id],
+  );
+
   return (
     <Form {...form}>
       <form
@@ -182,7 +189,7 @@ export function PlatformEditor({
               pairedSegmentPipeline: 'paired_segment_pipeline',
               offlineCheck: '',
             }}
-            credentialScope={{ type: 'platform', id: platform.id }}
+            credentialScope={credentialScope}
             credentialPlatformNameHint={platform.name}
             engines={engines}
             extraTabs={[

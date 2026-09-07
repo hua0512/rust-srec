@@ -39,7 +39,6 @@ function CreateWorkflowPage() {
     description?: string;
     steps: DagStepDefinition[];
   }) => {
-    console.log(data);
     createMutation.mutate({
       data: {
         name: data.name,

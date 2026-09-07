@@ -18,6 +18,13 @@ export function CountUp({
   const prevValueString = useRef(value.toString());
   // Track the current animated value to support smooth interruptions
   const currentAnimatedValue = useRef(Number(value));
+  // Callers commonly pass an inline formatter, so its identity changes on every render of the
+  // parent. Reading it from a ref keeps the running tween out of the effect's dependencies while
+  // still formatting with the latest function.
+  const formatterRef = useRef(formatter);
+  useEffect(() => {
+    formatterRef.current = formatter;
+  }, [formatter]);
 
   useEffect(() => {
     const node = nodeRef.current;
@@ -41,15 +48,16 @@ export function CountUp({
         currentAnimatedValue.current = latest;
 
         if (nodeRef.current) {
-          nodeRef.current.textContent = formatter
-            ? formatter(latest)
+          const format = formatterRef.current;
+          nodeRef.current.textContent = format
+            ? format(latest)
             : Math.round(latest).toString();
         }
       },
     });
 
     return () => controls.stop();
-  }, [value, duration, formatter]);
+  }, [value, duration]);
 
   // Initial render text
   const initialText = formatter ? formatter(value) : value.toString();

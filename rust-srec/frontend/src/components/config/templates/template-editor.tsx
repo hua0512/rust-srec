@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useMemo } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
@@ -21,10 +21,48 @@ import { GeneralTab } from './tabs/general-tab';
 import { EngineOverridesTab } from './tabs/engine-overrides-tab';
 import { PlatformOverridesTab } from './tabs/platform-overrides-tab';
 import { cn } from '@/lib/utils';
-import { SharedConfigEditor } from '../shared-config-editor';
+import {
+  SharedConfigEditor,
+  type SharedConfigEditorProps,
+} from '../shared-config-editor';
 import { listEngines } from '@/server/functions';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
+
+/**
+ * The shared editor plus the credential hint taken from the template's platform overrides.
+ *
+ * The subscription lives here instead of in `TemplateEditor` so editing any field no longer
+ * re-renders the entire form; the hint only changes when an override is added or removed.
+ */
+function TemplateConfigEditor(
+  props: Omit<
+    SharedConfigEditorProps<TemplateFormValues>,
+    'credentialPlatformNameHint'
+  >,
+) {
+  const platformOverrides = useWatch({
+    control: props.form.control,
+    name: 'platform_overrides',
+  });
+  const platformOverrideKeys =
+    platformOverrides && typeof platformOverrides === 'object'
+      ? Object.keys(platformOverrides as Record<string, unknown>)
+      : [];
+  const credentialPlatformNameHint =
+    platformOverrideKeys.length === 1
+      ? platformOverrideKeys[0]
+      : platformOverrideKeys.includes('bilibili')
+        ? 'bilibili'
+        : undefined;
+
+  return (
+    <SharedConfigEditor
+      {...props}
+      credentialPlatformNameHint={credentialPlatformNameHint}
+    />
+  );
+}
 
 interface TemplateEditorProps {
   template?: z.infer<typeof TemplateSchema>;
@@ -125,17 +163,13 @@ export function TemplateEditor({
     }
   }, [template, reset]);
 
-  const platformOverrides = form.watch('platform_overrides');
-  const platformOverrideKeys =
-    platformOverrides && typeof platformOverrides === 'object'
-      ? Object.keys(platformOverrides as Record<string, unknown>)
-      : [];
-  const credentialPlatformNameHint =
-    platformOverrideKeys.length === 1
-      ? platformOverrideKeys[0]
-      : platformOverrideKeys.includes('bilibili')
-        ? 'bilibili'
-        : undefined;
+  // Memoized because the shared editor forwards it to a memoized card, which would otherwise
+  // re-render for a new object of the same contents.
+  const credentialScope = useMemo(
+    () =>
+      template ? ({ type: 'template', id: template.id } as const) : undefined,
+    [template],
+  );
 
   return (
     <Form {...form}>
@@ -216,7 +250,7 @@ export function TemplateEditor({
               </div>
             </div>
           </div>
-          <SharedConfigEditor
+          <TemplateConfigEditor
             form={form}
             paths={{
               streamSelection: 'stream_selection_config',
@@ -231,10 +265,7 @@ export function TemplateEditor({
               pairedSegmentPipeline: 'paired_segment_pipeline',
               offlineCheck: '',
             }}
-            credentialScope={
-              template ? { type: 'template', id: template.id } : undefined
-            }
-            credentialPlatformNameHint={credentialPlatformNameHint}
+            credentialScope={credentialScope}
             engines={engines}
             proxyMode="object"
             configMode="object"

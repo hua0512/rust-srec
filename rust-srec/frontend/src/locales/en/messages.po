@@ -49,7 +49,7 @@ msgstr "\"{0}\" will be removed. Streamers using it fall back to the default eng
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "\"{0}\" will stop working immediately. This cannot be undone."
 
-#: src/components/logging/log-viewer.tsx:545
+#: src/components/logging/log-viewer.tsx:532
 msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
@@ -155,7 +155,7 @@ msgstr "{0, plural, one {file} other {files}}"
 
 #. placeholder {0}: filteredLogs.length
 #. placeholder {1}: logs.length
-#: src/components/logging/log-viewer.tsx:540
+#: src/components/logging/log-viewer.tsx:527
 msgid "{0} / {1, plural, one {# entry} other {# entries}}"
 msgstr "{0} / {1, plural, one {# entry} other {# entries}}"
 
@@ -189,7 +189,7 @@ msgstr "{0}/{1, plural, one {# step} other {# steps}}"
 
 #. placeholder {0}: duration.hours
 #. placeholder {1}: duration.minutes
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:379
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:381
 msgid "{0}h {1}m"
 msgstr "{0}h {1}m"
 
@@ -429,11 +429,11 @@ msgstr "Add a streamer"
 msgid "Add an engine"
 msgstr "Add an engine"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:135
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "Add an override to customize behavior for specific platforms."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:133
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:136
 msgid "Add an override to customize engine behavior for this template."
 msgstr "Add an override to customize engine behavior for this template."
 
@@ -493,8 +493,8 @@ msgstr "Add metadata tags (title, artist, date) to the video file."
 msgid "Add module..."
 msgstr "Add module..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:92
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:97
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:95
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:100
 msgid "Add Override"
 msgstr "Add Override"
 
@@ -514,7 +514,7 @@ msgstr "Add randomness to retry delays to prevent thundering herd."
 msgid "Add rclone argument"
 msgstr "Add rclone argument"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:147
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:141
 msgid "Add Step"
 msgstr "Add Step"
 
@@ -604,7 +604,7 @@ msgctxt "day-of-week preset"
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:459
+#: src/components/logging/log-viewer.tsx:446
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -827,9 +827,9 @@ msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:515
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:109
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:128
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:129
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:111
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:130
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:131
 msgid "Audio only"
 msgstr "Audio only"
 
@@ -880,11 +880,11 @@ msgstr "Auto Thumbnail"
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:475
+#: src/components/logging/log-viewer.tsx:462
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:474
+#: src/components/logging/log-viewer.tsx:461
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -925,9 +925,9 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:145
-#: src/components/config/templates/template-editor.tsx:189
-#: src/components/config/templates/template-editor.tsx:192
+#: src/components/config/platforms/platform-editor.tsx:152
+#: src/components/config/templates/template-editor.tsx:223
+#: src/components/config/templates/template-editor.tsx:226
 msgid "Back"
 msgstr "Back"
 
@@ -973,7 +973,7 @@ msgstr "Backoff Multiplier"
 msgid "Backup"
 msgstr "Backup"
 
-#: src/components/config/global/backup-restore-card.tsx:212
+#: src/components/config/global/backup-restore-card.tsx:222
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:85
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:88
 msgid "Backup & Restore"
@@ -1210,7 +1210,7 @@ msgid "Cache"
 msgstr "Cache"
 
 #: src/components/config/engines/engine-card.tsx:189
-#: src/components/config/global/backup-restore-card.tsx:580
+#: src/components/config/global/backup-restore-card.tsx:590
 #: src/components/config/templates/template-card.tsx:198
 #: src/components/filters/FilterDialog.tsx:264
 #: src/components/layout/themes/import-modal.tsx:117
@@ -1358,9 +1358,9 @@ msgstr "channel1,channel2"
 msgid "channels"
 msgstr "channels"
 
-#: src/components/config/global/backup-restore-card.tsx:397
-#: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
+#: src/components/config/global/backup-restore-card.tsx:412
+#: src/components/config/global/backup-restore-card.tsx:417
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
 #: src/lib/split-reason.ts:229
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:407
@@ -1457,7 +1457,7 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:434
+#: src/components/logging/log-viewer.tsx:421
 #: src/components/notifications/desktop-channel-dialog.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:622
@@ -1501,7 +1501,7 @@ msgstr "Clone Template"
 msgid "Cloning..."
 msgstr "Cloning..."
 
-#: src/components/config/global/backup-restore-card.tsx:571
+#: src/components/config/global/backup-restore-card.tsx:581
 #: src/components/notifications/browser-channel-dialog.tsx:203
 #: src/components/notifications/desktop-channel-dialog.tsx:236
 msgid "Close"
@@ -1656,11 +1656,11 @@ msgstr "Configuration"
 msgid "Configuration copied to clipboard"
 msgstr "Configuration copied to clipboard"
 
-#: src/components/config/global/backup-restore-card.tsx:91
+#: src/components/config/global/backup-restore-card.tsx:152
 msgid "Configuration exported successfully"
 msgstr "Configuration exported successfully"
 
-#: src/components/config/global/backup-restore-card.tsx:117
+#: src/components/config/global/backup-restore-card.tsx:178
 msgid "Configuration imported successfully"
 msgstr "Configuration imported successfully"
 
@@ -1689,7 +1689,7 @@ msgstr "Configure granular options for the selected engine."
 msgid "Configure how you receive alerts in this browser and via system push notifications."
 msgstr "Configure how you receive alerts in this browser and via system push notifications."
 
-#: src/components/config/global/backup-restore-card.tsx:320
+#: src/components/config/global/backup-restore-card.tsx:330
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "Configure how you want to import data from the selected backup file."
 
@@ -1717,7 +1717,7 @@ msgstr "Configure where and how you receive notifications."
 msgid "Configured Events"
 msgstr "Configured Events"
 
-#: src/components/config/global/backup-restore-card.tsx:595
+#: src/components/config/global/backup-restore-card.tsx:605
 msgid "Confirm Import"
 msgstr "Confirm Import"
 
@@ -1742,7 +1742,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:396
+#: src/components/logging/log-viewer.tsx:383
 msgid "Connected"
 msgstr "Connected"
 
@@ -1937,7 +1937,7 @@ msgstr "CPU Usage"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
-#: src/components/config/templates/template-editor.tsx:211
+#: src/components/config/templates/template-editor.tsx:245
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:459
@@ -2000,7 +2000,7 @@ msgstr "Create New Pipeline Job"
 msgid "Create New Preset"
 msgstr "Create New Preset"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:57
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:56
 msgid "Create New Workflow"
 msgstr "Create New Workflow"
 
@@ -2016,7 +2016,7 @@ msgstr "Create Preset"
 msgid "Create streamer"
 msgstr "Create streamer"
 
-#: src/components/config/templates/template-editor.tsx:163
+#: src/components/config/templates/template-editor.tsx:197
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:209
 msgid "Create Template"
 msgstr "Create Template"
@@ -2033,7 +2033,7 @@ msgstr "Create your first job preset to define reusable processor configurations
 msgid "Create your first workflow to define a sequence of processing steps for your recordings."
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
-#: src/components/config/global/backup-restore-card.tsx:178
+#: src/components/config/global/backup-restore-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:611
 msgid "Created"
 msgstr "Created"
@@ -2190,7 +2190,7 @@ msgstr "Custom imported theme is active."
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:112
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:114
 msgid "Custom rate"
 msgstr "Custom rate"
 
@@ -2202,7 +2202,7 @@ msgstr "Custom Tags"
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:81
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:84
 msgid "Customize specific engine settings for this template."
 msgstr "Customize specific engine settings for this template."
 
@@ -2243,7 +2243,7 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:195
+#: src/components/config/shared-config-editor.tsx:186
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -2364,7 +2364,7 @@ msgstr "Default password for password-protected rooms (can be overridden per-str
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 
-#: src/components/config/global/pipeline-config-card.tsx:145
+#: src/components/config/global/pipeline-config-card.tsx:16
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
 
@@ -2543,7 +2543,7 @@ msgstr "Delete XML files after successful conversion"
 msgid "Delete-after-transform checks are incomplete."
 msgstr "Delete-after-transform checks are incomplete."
 
-#: src/components/config/global/backup-restore-card.tsx:180
+#: src/components/config/global/backup-restore-card.tsx:92
 msgid "Deleted"
 msgstr "Deleted"
 
@@ -2558,7 +2558,7 @@ msgstr "Deleted {0} outputs; {1} failed"
 msgid "Deleted template \"{0}\""
 msgstr "Deleted template \"{0}\""
 
-#: src/components/config/global/backup-restore-card.tsx:552
+#: src/components/config/global/backup-restore-card.tsx:562
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "Deletes all existing configurations before importing. This action cannot be undone."
 
@@ -2693,7 +2693,7 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:401
+#: src/components/logging/log-viewer.tsx:388
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -2758,7 +2758,7 @@ msgstr "Download activity looks healthy"
 msgid "Download All"
 msgstr "Download All"
 
-#: src/components/config/global/backup-restore-card.tsx:247
+#: src/components/config/global/backup-restore-card.tsx:257
 msgid "Download Backup"
 msgstr "Download Backup"
 
@@ -2944,7 +2944,7 @@ msgid "Edit Preset: {0}"
 msgstr "Edit Preset: {0}"
 
 #. placeholder {0}: workflow.name
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:104
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:103
 msgid "Edit Workflow: {0}"
 msgstr "Edit Workflow: {0}"
 
@@ -3015,7 +3015,7 @@ msgstr "Encoding Preset"
 msgid "Encoding Settings"
 msgstr "Encoding Settings"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:393
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:395
 msgid "End"
 msgstr "End"
 
@@ -3068,7 +3068,7 @@ msgstr "Engine deleted"
 msgid "Engine Name"
 msgstr "Engine Name"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:78
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:81
 msgid "Engine Overrides"
 msgstr "Engine Overrides"
 
@@ -3084,10 +3084,10 @@ msgstr "Engine updated successfully"
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "Engine used for downloads when not specified by platform/streamer."
 
-#: src/components/config/global/backup-restore-card.tsx:373
-#: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:256
+#: src/components/config/global/backup-restore-card.tsx:388
+#: src/components/config/global/backup-restore-card.tsx:393
+#: src/components/config/templates/template-editor.tsx:287
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
@@ -3180,7 +3180,7 @@ msgstr "Error loading streamers: {0}"
 msgid "Error loading template"
 msgstr "Error loading template"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:92
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:91
 msgid "Error loading workflow"
 msgstr "Error loading workflow"
 
@@ -3312,11 +3312,11 @@ msgstr "Explore"
 msgid "Explore matching automation steps to enhance your pipeline workflow."
 msgstr "Explore matching automation steps to enhance your pipeline workflow."
 
-#: src/components/config/global/backup-restore-card.tsx:228
+#: src/components/config/global/backup-restore-card.tsx:238
 msgid "Export Configuration"
 msgstr "Export Configuration"
 
-#: src/components/config/global/backup-restore-card.tsx:289
+#: src/components/config/global/backup-restore-card.tsx:299
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
@@ -3535,7 +3535,7 @@ msgstr "Failed to download logs"
 msgid "Failed to enable Web Push"
 msgstr "Failed to enable Web Push"
 
-#: src/components/config/global/backup-restore-card.tsx:94
+#: src/components/config/global/backup-restore-card.tsx:155
 msgid "Failed to export configuration"
 msgstr "Failed to export configuration"
 
@@ -3543,7 +3543,7 @@ msgstr "Failed to export configuration"
 msgid "Failed to extract name from URL"
 msgstr "Failed to extract name from URL"
 
-#: src/components/config/global/backup-restore-card.tsx:120
+#: src/components/config/global/backup-restore-card.tsx:181
 msgid "Failed to import configuration"
 msgstr "Failed to import configuration"
 
@@ -3870,7 +3870,7 @@ msgstr "Filtered"
 msgid "Filtered:"
 msgstr "Filtered:"
 
-#: src/components/config/shared-config-editor.tsx:151
+#: src/components/config/shared-config-editor.tsx:142
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
 msgid "Filters"
 msgstr "Filters"
@@ -4027,9 +4027,9 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:193
+#: src/components/config/platforms/platform-editor.tsx:200
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
-#: src/components/config/templates/template-editor.tsx:246
+#: src/components/config/templates/template-editor.tsx:277
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:328
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:131
@@ -4175,8 +4175,8 @@ msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail gene
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:116
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:119
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:110
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:113
 #: src/components/pipeline/workflows/workflow-editor.tsx:397
 msgid "Graph"
 msgstr "Graph"
@@ -4502,8 +4502,8 @@ msgstr "Immersive Mode"
 msgid "Import"
 msgstr "Import"
 
-#: src/components/config/global/backup-restore-card.tsx:259
-#: src/components/config/global/backup-restore-card.tsx:310
+#: src/components/config/global/backup-restore-card.tsx:269
+#: src/components/config/global/backup-restore-card.tsx:320
 msgid "Import Configuration"
 msgstr "Import Configuration"
 
@@ -4511,11 +4511,11 @@ msgstr "Import Configuration"
 msgid "Import Custom CSS"
 msgstr "Import Custom CSS"
 
-#: src/components/config/global/backup-restore-card.tsx:477
+#: src/components/config/global/backup-restore-card.tsx:487
 msgid "Import Strategy"
 msgstr "Import Strategy"
 
-#: src/components/config/global/backup-restore-card.tsx:307
+#: src/components/config/global/backup-restore-card.tsx:317
 msgid "Import Successful"
 msgstr "Import Successful"
 
@@ -4523,7 +4523,7 @@ msgstr "Import Successful"
 msgid "Import Theme"
 msgstr "Import Theme"
 
-#: src/components/config/global/backup-restore-card.tsx:591
+#: src/components/config/global/backup-restore-card.tsx:601
 msgid "Importing..."
 msgstr "Importing..."
 
@@ -4841,8 +4841,8 @@ msgstr "Limits & Validation"
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "Limits each individual file's transfer rate rather than the overall total."
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:107
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:110
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:101
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:104
 #: src/components/pipeline/workflows/workflow-editor.tsx:391
 msgid "List"
 msgstr "List"
@@ -4900,7 +4900,7 @@ msgstr "Loading"
 msgid "Loading Danmu"
 msgstr "Loading Danmu"
 
-#: src/components/config/global/pipeline-config-card.tsx:115
+#: src/components/config/shared/pipeline-tabs-section.tsx:44
 msgid "Loading editor components..."
 msgstr "Loading editor components..."
 
@@ -4916,10 +4916,6 @@ msgstr "Loading more..."
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:770
 msgid "Loading older logs..."
 msgstr "Loading older logs..."
-
-#: src/components/config/global/pipeline-config-card.tsx:126
-msgid "Loading pipeline editor..."
-msgstr "Loading pipeline editor..."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:415
 msgid "Loading preset details..."
@@ -4992,7 +4988,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:551
+#: src/components/logging/log-viewer.tsx:538
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -5086,7 +5082,7 @@ msgstr "Manage Subscriptions"
 msgid "Manage where system notifications are sent"
 msgstr "Manage where system notifications are sent"
 
-#: src/components/config/global/backup-restore-card.tsx:213
+#: src/components/config/global/backup-restore-card.tsx:223
 msgid "Manage your application configuration."
 msgstr "Manage your application configuration."
 
@@ -5273,7 +5269,7 @@ msgstr "Media Timeline"
 msgid "Memory Usage"
 msgstr "Memory Usage"
 
-#: src/components/config/global/backup-restore-card.tsx:506
+#: src/components/config/global/backup-restore-card.tsx:516
 msgid "Merge Changes"
 msgstr "Merge Changes"
 
@@ -5507,7 +5503,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
-#: src/components/config/shared-config-editor.tsx:173
+#: src/components/config/shared-config-editor.tsx:164
 msgid "Network"
 msgstr "Network"
 
@@ -5583,7 +5579,7 @@ msgstr "No API keys yet. Create one to let scripts or AI assistants access this 
 msgid "No Archives Found"
 msgstr "No Archives Found"
 
-#: src/components/config/global/backup-restore-card.tsx:418
+#: src/components/config/global/backup-restore-card.tsx:428
 msgid "No changes detected"
 msgstr "No changes detected"
 
@@ -5619,7 +5615,7 @@ msgstr "No description."
 msgid "No detailed error message available"
 msgstr "No detailed error message available"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:100
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:103
 msgid "No engines found."
 msgstr "No engines found."
 
@@ -5674,7 +5670,7 @@ msgstr "No log files found"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:493
+#: src/components/logging/log-viewer.tsx:480
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -5710,7 +5706,7 @@ msgstr "No output generated"
 msgid "No outputs found"
 msgstr "No outputs found"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:130
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:133
 msgid "No overrides configured"
 msgstr "No overrides configured"
 
@@ -5726,11 +5722,11 @@ msgstr "No pipeline DAGs found."
 msgid "No pipeline jobs yet"
 msgstr "No pipeline jobs yet"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:108
 msgid "No platform found."
 msgstr "No platform found."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
 msgid "No platform overrides configured"
 msgstr "No platform overrides configured"
 
@@ -6080,7 +6076,7 @@ msgstr "Only supported for MP4/MOV/M4V"
 msgid "Open menu"
 msgstr "Open menu"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:176
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:178
 msgid "Open quality options"
 msgstr "Open quality options"
 
@@ -6147,7 +6143,7 @@ msgstr "Out of Space"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1694
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:162
+#: src/components/config/shared-config-editor.tsx:153
 #: src/components/config/templates/template-card.tsx:163
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -6227,7 +6223,7 @@ msgstr "Overall Health"
 msgid "Overall system status"
 msgstr "Overall system status"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:88
 msgid "Override configuration (paths, delays, etc.) for specific platforms."
 msgstr "Override configuration (paths, delays, etc.) for specific platforms."
 
@@ -6294,24 +6290,20 @@ msgstr "Page"
 msgid "pagination"
 msgstr "pagination"
 
-#: src/components/config/global/pipeline-config-card.tsx:206
-#: src/components/config/shared-config-editor.tsx:421
+#: src/components/config/shared/pipeline-tabs-section.tsx:102
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared-config-editor.tsx:562
+#: src/components/config/shared/pipeline-tabs-section.tsx:214
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
-#: src/components/config/global/pipeline-config-card.tsx:203
-#: src/components/config/shared-config-editor.tsx:418
+#: src/components/config/shared/pipeline-tabs-section.tsx:99
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
-#: src/components/config/global/pipeline-config-card.tsx:214
-#: src/components/config/global/pipeline-config-card.tsx:295
-#: src/components/config/shared-config-editor.tsx:429
-#: src/components/config/shared-config-editor.tsx:532
+#: src/components/config/shared/pipeline-tabs-section.tsx:110
+#: src/components/config/shared/pipeline-tabs-section.tsx:192
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -6404,7 +6396,7 @@ msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PA
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:428
+#: src/components/logging/log-viewer.tsx:415
 msgid "Pause"
 msgstr "Pause"
 
@@ -6449,15 +6441,12 @@ msgstr "Per-File Bandwidth Limit help"
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 
-#: src/components/config/global/pipeline-config-card.tsx:166
-#: src/components/config/shared-config-editor.tsx:379
+#: src/components/config/shared/pipeline-tabs-section.tsx:68
 msgid "Per-segment"
 msgstr "Per-segment"
 
-#: src/components/config/global/pipeline-config-card.tsx:177
-#: src/components/config/global/pipeline-config-card.tsx:279
-#: src/components/config/shared-config-editor.tsx:390
-#: src/components/config/shared-config-editor.tsx:501
+#: src/components/config/shared/pipeline-tabs-section.tsx:79
+#: src/components/config/shared/pipeline-tabs-section.tsx:169
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
@@ -6479,7 +6468,7 @@ msgstr "Permission required"
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
-#: src/components/config/shared-config-editor.tsx:206
+#: src/components/config/shared-config-editor.tsx:197
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -6491,7 +6480,7 @@ msgstr "Pipeline"
 msgid "Pipeline cancelled"
 msgstr "Pipeline cancelled"
 
-#: src/components/config/global/pipeline-config-card.tsx:143
+#: src/components/config/global/pipeline-config-card.tsx:14
 msgid "Pipeline Configuration"
 msgstr "Pipeline Configuration"
 
@@ -6574,7 +6563,7 @@ msgstr "Pipeline started"
 msgid "Pipeline Statistics"
 msgstr "Pipeline Statistics"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:94
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:88
 #: src/components/pipeline/workflows/workflow-editor.tsx:378
 msgid "Pipeline Structure"
 msgstr "Pipeline Structure"
@@ -6617,7 +6606,7 @@ msgstr "Platform options"
 msgid "Platform Override Settings"
 msgstr "Platform Override Settings"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
@@ -6633,8 +6622,8 @@ msgstr "Platform URL extractors"
 msgid "platforms"
 msgstr "platforms"
 
-#: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:266
+#: src/components/config/global/backup-restore-card.tsx:400
+#: src/components/config/templates/template-editor.tsx:297
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
@@ -6684,11 +6673,11 @@ msgstr "Please enter your new password details"
 msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
-#: src/components/config/global/backup-restore-card.tsx:435
+#: src/components/config/global/backup-restore-card.tsx:445
 msgid "Please restart the system to ensure all configuration changes are fully applied."
 msgstr "Please restart the system to ensure all configuration changes are fully applied."
 
-#: src/components/config/global/backup-restore-card.tsx:129
+#: src/components/config/global/backup-restore-card.tsx:190
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
@@ -6716,7 +6705,7 @@ msgstr "Position"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "Powered by <0>Rust-srec</0>."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:418
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:420
 msgid "Precision Schedule"
 msgstr "Precision Schedule"
 
@@ -6950,7 +6939,7 @@ msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
 #: src/components/config/global/network-system-card.tsx:236
-#: src/components/config/shared-config-editor.tsx:184
+#: src/components/config/shared-config-editor.tsx:175
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -7102,7 +7091,7 @@ msgstr "Ready to Watch"
 msgid "Real-time"
 msgstr "Real-time"
 
-#: src/components/logging/log-viewer.tsx:383
+#: src/components/logging/log-viewer.tsx:370
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -7135,7 +7124,7 @@ msgstr "Recent Sessions"
 msgid "Recently updated"
 msgstr "Recently updated"
 
-#: src/components/config/global/backup-restore-card.tsx:511
+#: src/components/config/global/backup-restore-card.tsx:521
 msgid "Recommended"
 msgstr "Recommended"
 
@@ -7237,7 +7226,7 @@ msgid "Remember for automatic re-login"
 msgstr "Remember for automatic re-login"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:141
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:165
 msgid "Remove"
 msgstr "Remove"
 
@@ -7306,7 +7295,7 @@ msgstr "Reorder Duration (ms)"
 msgid "Reorder Max Segments"
 msgstr "Reorder Max Segments"
 
-#: src/components/config/global/backup-restore-card.tsx:548
+#: src/components/config/global/backup-restore-card.tsx:558
 msgid "Replace All"
 msgstr "Replace All"
 
@@ -7331,7 +7320,7 @@ msgstr "Replace Pipeline Step"
 msgid "Replace Step"
 msgstr "Replace Step"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:129
 msgid "Request AAC audio without a video track."
 msgstr "Request AAC audio without a video track."
 
@@ -7347,9 +7336,8 @@ msgstr "Require Subtitles"
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
-#: src/components/config/global/pipeline-config-card.tsx:229
-#: src/components/config/shared-config-editor.tsx:444
-#: src/components/config/shared-config-editor.tsx:542
+#: src/components/config/shared/pipeline-tabs-section.tsx:123
+#: src/components/config/shared/pipeline-tabs-section.tsx:201
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -7378,7 +7366,7 @@ msgstr "Resource Limits"
 msgid "Resources"
 msgstr "Resources"
 
-#: src/components/config/global/backup-restore-card.tsx:432
+#: src/components/config/global/backup-restore-card.tsx:442
 msgid "Restart Required"
 msgstr "Restart Required"
 
@@ -7386,7 +7374,7 @@ msgstr "Restart Required"
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "Restart rust-srec after saving for the new timeouts to take effect."
 
-#: src/components/config/global/backup-restore-card.tsx:262
+#: src/components/config/global/backup-restore-card.tsx:272
 msgid "Restore from a backup file"
 msgstr "Restore from a backup file"
 
@@ -7394,7 +7382,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:423
+#: src/components/logging/log-viewer.tsx:410
 msgid "Resume"
 msgstr "Resume"
 
@@ -7514,33 +7502,25 @@ msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
-#: src/components/config/global/pipeline-config-card.tsx:281
-#: src/components/config/shared-config-editor.tsx:504
+#: src/components/config/shared/pipeline-tabs-section.tsx:172
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
-#: src/components/config/global/pipeline-config-card.tsx:313
-#: src/components/config/shared-config-editor.tsx:581
+#: src/components/config/shared/pipeline-tabs-section.tsx:228
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
-#: src/components/config/global/pipeline-config-card.tsx:261
-#: src/components/config/shared-config-editor.tsx:480
+#: src/components/config/shared/pipeline-tabs-section.tsx:152
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
-#: src/components/config/global/pipeline-config-card.tsx:223
-#: src/components/config/shared-config-editor.tsx:438
+#: src/components/config/shared/pipeline-tabs-section.tsx:117
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared-config-editor.tsx:536
+#: src/components/config/shared/pipeline-tabs-section.tsx:196
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
-
-#: src/components/config/global/pipeline-config-card.tsx:297
-msgid "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
-msgstr "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
 
 #: src/components/filters/forms/RegexFilterForm.tsx:42
 msgid "Rust regex syntax supported."
@@ -7605,8 +7585,8 @@ msgstr "Saturday"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:163
-#: src/components/config/templates/template-editor.tsx:213
+#: src/components/config/platforms/platform-editor.tsx:170
+#: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:474
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:693
@@ -7614,7 +7594,7 @@ msgstr "Save changes"
 msgid "Save Changes"
 msgstr "Save Changes"
 
-#: src/components/config/global/backup-restore-card.tsx:231
+#: src/components/config/global/backup-restore-card.tsx:241
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
 
@@ -7631,8 +7611,8 @@ msgstr "Save Workflow"
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:161
-#: src/components/config/templates/template-editor.tsx:209
+#: src/components/config/platforms/platform-editor.tsx:168
+#: src/components/config/templates/template-editor.tsx:243
 #: src/components/pipeline/workflows/workflow-editor.tsx:281
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7693,7 +7673,7 @@ msgstr "Search by name or description..."
 msgid "Search comments..."
 msgstr "Search comments..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:100
 msgid "Search engines..."
 msgstr "Search engines..."
 
@@ -7705,7 +7685,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:444
+#: src/components/logging/log-viewer.tsx:431
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -7713,7 +7693,7 @@ msgstr "Search logs..."
 msgid "Search outputs..."
 msgstr "Search outputs..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
 msgid "Search platform..."
 msgstr "Search platform..."
 
@@ -7766,8 +7746,7 @@ msgstr "Secs"
 msgid "Security & Identity"
 msgstr "Security & Identity"
 
-#: src/components/config/global/pipeline-config-card.tsx:169
-#: src/components/config/shared-config-editor.tsx:382
+#: src/components/config/shared/pipeline-tabs-section.tsx:71
 msgid "Segment"
 msgstr "Segment"
 
@@ -7870,7 +7849,7 @@ msgstr "Select date anchor"
 msgid "Select date range"
 msgstr "Select date range"
 
-#: src/components/config/global/backup-restore-card.tsx:281
+#: src/components/config/global/backup-restore-card.tsx:291
 msgid "Select File"
 msgstr "Select File"
 
@@ -7883,7 +7862,7 @@ msgstr "Select format"
 msgid "Select operation"
 msgstr "Select operation"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:182
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:184
 msgid "Select or type a rate"
 msgstr "Select or type a rate"
 
@@ -7976,8 +7955,7 @@ msgstr "Server not configured"
 msgid "Server URL"
 msgstr "Server URL"
 
-#: src/components/config/global/pipeline-config-card.tsx:247
-#: src/components/config/shared-config-editor.tsx:464
+#: src/components/config/shared/pipeline-tabs-section.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "Session"
@@ -7986,19 +7964,16 @@ msgstr "Session"
 msgid "Session {sessionLabel}"
 msgstr "Session {sessionLabel}"
 
-#: src/components/config/global/pipeline-config-card.tsx:244
-#: src/components/config/shared-config-editor.tsx:461
+#: src/components/config/shared/pipeline-tabs-section.tsx:135
 msgid "Session Complete"
 msgstr "Session Complete"
 
-#: src/components/config/global/pipeline-config-card.tsx:255
-#: src/components/config/global/pipeline-config-card.tsx:311
-#: src/components/config/shared-config-editor.tsx:472
-#: src/components/config/shared-config-editor.tsx:578
+#: src/components/config/shared/pipeline-tabs-section.tsx:146
+#: src/components/config/shared/pipeline-tabs-section.tsx:225
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared-config-editor.tsx:601
+#: src/components/config/shared/pipeline-tabs-section.tsx:243
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -8242,7 +8217,7 @@ msgstr "Source"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:203
+#: src/components/config/platforms/platform-editor.tsx:210
 #: src/components/config/templates/tabs/platform-override-card.tsx:69
 msgid "Specific"
 msgstr "Specific"
@@ -8292,7 +8267,7 @@ msgstr "Standard"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "Standard cron expression (sec min hour day mon dow)."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:357
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:359
 msgid "Start"
 msgstr "Start"
 
@@ -8504,9 +8479,9 @@ msgstr "Streamer updated"
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 
-#: src/components/config/global/backup-restore-card.tsx:356
-#: src/components/config/global/backup-restore-card.tsx:361
 #: src/components/config/global/backup-restore-card.tsx:366
+#: src/components/config/global/backup-restore-card.tsx:371
+#: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/layout/site-header.tsx:31
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:58
@@ -8713,9 +8688,9 @@ msgstr "Template updated successfully"
 msgid "templates"
 msgstr "templates"
 
-#: src/components/config/global/backup-restore-card.tsx:339
-#: src/components/config/global/backup-restore-card.tsx:344
 #: src/components/config/global/backup-restore-card.tsx:349
+#: src/components/config/global/backup-restore-card.tsx:354
+#: src/components/config/global/backup-restore-card.tsx:359
 #: src/components/layout/site-header.tsx:44
 #: src/components/sidebar/navbar.tsx:38
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:55
@@ -8744,11 +8719,11 @@ msgstr "Test Notification"
 msgid "Test notification sent"
 msgstr "Test notification sent"
 
-#: src/components/config/global/backup-restore-card.tsx:315
+#: src/components/config/global/backup-restore-card.tsx:325
 msgid "The configuration has been successfully processed. Here is a summary of the changes:"
 msgstr "The configuration has been successfully processed. Here is a summary of the changes:"
 
-#: src/components/config/global/backup-restore-card.tsx:421
+#: src/components/config/global/backup-restore-card.tsx:431
 msgid "The configuration matches existing data"
 msgstr "The configuration matches existing data"
 
@@ -8808,7 +8783,7 @@ msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete t
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:421
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:423
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 
@@ -8820,8 +8795,7 @@ msgstr "This filter's settings could not be read."
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
-#: src/components/config/global/pipeline-config-card.tsx:183
-#: src/components/config/shared-config-editor.tsx:398
+#: src/components/config/shared/pipeline-tabs-section.tsx:83
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -9123,13 +9097,11 @@ msgstr "Treat interactive game streams (互动玩法) as offline."
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
-#: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:392
+#: src/components/config/shared/pipeline-tabs-section.tsx:80
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
-#: src/components/config/global/pipeline-config-card.tsx:257
-#: src/components/config/shared-config-editor.tsx:474
+#: src/components/config/shared/pipeline-tabs-section.tsx:148
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -9189,8 +9161,7 @@ msgstr "Triggered when the application shuts down."
 msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
-#: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:431
+#: src/components/config/shared/pipeline-tabs-section.tsx:112
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
@@ -9314,7 +9285,7 @@ msgstr "Unix timestamp"
 msgid "Unknown"
 msgstr "Unknown"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:155
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:158
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
@@ -9361,12 +9332,12 @@ msgstr "Untitled Stream"
 msgid "UPDATE"
 msgstr "UPDATE"
 
-#: src/components/config/global/backup-restore-card.tsx:179
+#: src/components/config/global/backup-restore-card.tsx:91
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:556
 msgid "Updated"
 msgstr "Updated"
 
-#: src/components/config/global/backup-restore-card.tsx:515
+#: src/components/config/global/backup-restore-card.tsx:525
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "Updates existing items and creates new ones. Nothing is deleted."
 
@@ -9606,7 +9577,7 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:407
+#: src/components/logging/log-viewer.tsx:394
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 
@@ -9650,7 +9621,7 @@ msgstr "Wait indefinitely"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:497
+#: src/components/logging/log-viewer.tsx:484
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 
@@ -9762,7 +9733,7 @@ msgstr "Workflow created successfully"
 msgid "Workflow deleted successfully"
 msgstr "Workflow deleted successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:95
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:94
 msgid "Workflow not found"
 msgstr "Workflow not found"
 

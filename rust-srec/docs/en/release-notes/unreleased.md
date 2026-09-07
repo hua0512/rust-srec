@@ -307,6 +307,14 @@
 
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.
 
+- **Configuration editors respond faster while typing**
+
+  Editing global settings, a template, a platform or a streamer redrew the whole form on every keystroke, which felt sluggish on the longer forms and worst of all with the pipeline editor open. A change now refreshes only the part of the page that shows it. The import summary under **Backup & Restore** and the 24-hour bar in the time filter no longer rebuild themselves for unrelated changes either, and the live figures on a running recording count up smoothly instead of stopping partway.
+
+- **The browser console no longer prints workflow settings or the log stream address**
+
+  Saving a pipeline workflow wrote its complete step configuration to the browser's developer console, including any upload credentials it carried, and opening the log viewer printed the address it connects to, which contains your access token. Neither is printed any more.
+
 ## Security
 
 - **Successful logins preserve other failed-login attempts**

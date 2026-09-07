@@ -56,7 +56,6 @@ function EditWorkflowPage() {
     description?: string;
     steps: DagStepDefinition[];
   }) => {
-    console.log(data);
     updateMutation.mutate({
       data: {
         id: workflowId,
