@@ -270,7 +270,7 @@
 
 - **The last untranslated corners of the interface now follow your language**
 
-  Some parts of the interface stayed in English whatever language you chose: the theme import dialog, the chat viewer's filter button and footer, the video player's title and error message, the cookie fields on the player form, the badges on a recording card, the version line at the bottom of the sidebar, the comparison table shown when a recording was split, and a few button labels for screen readers. Counts such as "12 messages", "3 Segments (7 Files)" and "5 selected" were also assembled from separate words, so they could never be phrased naturally in Chinese. All of these now read in your language, and so do the error messages on the form for a new processing job.
+  Some parts of the interface stayed in English whatever language you chose: the theme import dialog, the danmu viewer's filter button and footer, the video player's title and error message, the cookie fields on the player form, the badges on a recording card, the version line at the bottom of the sidebar, the comparison table shown when a recording was split, and a few button labels for screen readers. Counts such as "12 messages", "3 Segments (7 Files)" and "5 selected" were also assembled from separate words, so they could never be phrased naturally in Chinese. All of these now read in your language, and so do the error messages on the form for a new processing job.
 
 - **Dates, times and durations follow your language**
 

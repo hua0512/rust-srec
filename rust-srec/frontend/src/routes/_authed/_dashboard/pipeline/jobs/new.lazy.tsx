@@ -47,8 +47,7 @@ import { PipelineWorkflowEditor } from '@/components/pipeline/workflows/pipeline
 import { DagStepDefinition } from '@/api/schemas';
 
 // Zod stores validation messages as plain strings, so they are resolved
-// against the active locale when the schema is built rather than declared as
-// descriptors.
+// against the active catalog when the schema is built.
 export const buildCreatePipelineSchema = (i18n: I18n) =>
   z.object({
     name: z.string().min(1, i18n._(msg`Pipeline name is required`)),

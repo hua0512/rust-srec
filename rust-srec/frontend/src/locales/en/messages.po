@@ -445,7 +445,7 @@ msgstr "Add anyway"
 msgid "Add argument template"
 msgstr "Add argument template"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:60
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:59
 msgid "Add at least one step"
 msgstr "Add at least one step"
 
@@ -784,7 +784,7 @@ msgstr "ASS Subtitle Burn-in"
 msgid "Assign template"
 msgstr "Assign template"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:59
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:58
 msgid "At least one input path is required"
 msgstr "At least one input path is required"
 
@@ -932,7 +932,7 @@ msgid "Back"
 msgstr "Back"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:267
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:154
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:153
 msgid "Back to Jobs"
 msgstr "Back to Jobs"
 
@@ -1201,7 +1201,7 @@ msgstr "bytes"
 msgid "Bytes"
 msgstr "Bytes"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:310
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:309
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
@@ -1233,7 +1233,7 @@ msgstr "Cache"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:175
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
 msgid "Cancel"
 msgstr "Cancel"
@@ -1669,7 +1669,7 @@ msgstr "Configuration imported successfully"
 msgid "Configure"
 msgstr "Configure"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:165
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 msgid "Configure and launch a manual processing pipeline."
 msgstr "Configure and launch a manual processing pipeline."
 
@@ -1992,7 +1992,7 @@ msgstr "Create filter"
 msgid "Create missing folders"
 msgstr "Create missing folders"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:161
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:160
 msgid "Create New Pipeline Job"
 msgstr "Create New Pipeline Job"
 
@@ -2038,7 +2038,7 @@ msgstr "Create your first workflow to define a sequence of processing steps for 
 msgid "Created"
 msgstr "Created"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:185
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:184
 msgid "Creating..."
 msgstr "Creating..."
 
@@ -3440,7 +3440,7 @@ msgstr "Failed to create channel"
 msgid "Failed to create filter"
 msgstr "Failed to create filter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:123
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:122
 msgid "Failed to create pipeline job"
 msgstr "Failed to create pipeline job"
 
@@ -4595,7 +4595,7 @@ msgstr "Input Options (-i flags)"
 msgid "Input Path"
 msgstr "Input Path"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:306
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:305
 msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
 
@@ -4661,7 +4661,7 @@ msgstr "Job"
 msgid "Job cancelled"
 msgstr "Job cancelled"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:208
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:207
 msgid "Job Configuration"
 msgstr "Job Configuration"
 
@@ -4797,7 +4797,7 @@ msgstr "Last used"
 msgid "Latency"
 msgstr "Latency"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:190
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:189
 msgid "Launch Pipeline"
 msgstr "Launch Pipeline"
 
@@ -5454,7 +5454,7 @@ msgstr "Multimedia Archive"
 msgid "Multiplier for exponential backoff."
 msgstr "Multiplier for exponential backoff."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:223
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:222
 msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
@@ -6532,7 +6532,7 @@ msgstr "Pipeline is empty."
 msgid "Pipeline is valid"
 msgstr "Pipeline is valid"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:116
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:115
 msgid "Pipeline job created successfully"
 msgstr "Pipeline job created successfully"
 
@@ -6549,12 +6549,12 @@ msgstr "Pipeline Manager"
 msgid "Pipeline must have at least one step"
 msgstr "Pipeline must have at least one step"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:219
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:218
 msgid "Pipeline Name"
 msgstr "Pipeline Name"
 
 #: src/routes/__tests__/create-pipeline-schema.test.ts:9
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:53
 msgid "Pipeline name is required"
 msgstr "Pipeline name is required"
 
@@ -7817,11 +7817,11 @@ msgstr "Select a processing job or workflow to add to your pipeline."
 msgid "Select a processing job or workflow to use in this node."
 msgstr "Select a processing job or workflow to use in this node."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:282
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:281
 msgid "Select a session"
 msgstr "Select a session"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:249
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:248
 msgid "Select a streamer"
 msgstr "Select a streamer"
 
@@ -7963,7 +7963,7 @@ msgstr "Selected stream"
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:324
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:323
 msgid "Separate multiple paths with commas."
 msgstr "Separate multiple paths with commas."
 
@@ -7978,7 +7978,7 @@ msgstr "Server URL"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
 #: src/components/config/shared-config-editor.tsx:464
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:273
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "Session"
 
@@ -8031,7 +8031,7 @@ msgstr "Session entered pending confirmation. Additional details are unavailable
 msgid "Session ID"
 msgstr "Session ID"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:55
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
 msgid "Session ID is required"
 msgstr "Session ID is required"
 
@@ -8443,7 +8443,7 @@ msgid "Stream URL"
 msgstr "Stream URL"
 
 #: src/components/notifications/events/payload-preview.tsx:47
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:240
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:239
 msgid "Streamer"
 msgstr "Streamer"
 
@@ -8474,7 +8474,7 @@ msgstr "Streamer deleted"
 msgid "Streamer ID"
 msgstr "Streamer ID"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:56
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:55
 msgid "Streamer ID is required"
 msgstr "Streamer ID is required"
 

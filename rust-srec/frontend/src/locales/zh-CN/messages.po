@@ -232,7 +232,7 @@ msgstr "{seconds} 秒"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:163
 msgid "{selectedCount, plural, one {This will permanently delete # pipeline with its jobs and logs. This action cannot be undone.} other {This will permanently delete # pipelines with their jobs and logs. This action cannot be undone.}}"
-msgstr "{selectedCount, plural, other {这将永久删除 # 个流水线及其作业和日志。此操作无法撤销。}}"
+msgstr "{selectedCount, plural, other {这将永久删除 # 个流水线及其任务和日志。此操作无法撤销。}}"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:362
 msgid "{totalOutputs, plural, one {# file} other {# files}}"
@@ -445,7 +445,7 @@ msgstr "仍然添加"
 msgid "Add argument template"
 msgstr "添加参数模板"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:60
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:59
 msgid "Add at least one step"
 msgstr "至少添加一个步骤"
 
@@ -784,7 +784,7 @@ msgstr "ASS 字幕内嵌"
 msgid "Assign template"
 msgstr "分配模板"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:59
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:58
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
@@ -932,7 +932,7 @@ msgid "Back"
 msgstr "返回"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:267
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:154
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:153
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
 
@@ -1201,7 +1201,7 @@ msgstr "字节"
 msgid "Bytes"
 msgstr "字节"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:310
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:309
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
@@ -1233,7 +1233,7 @@ msgstr "缓存"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:175
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:497
 msgid "Cancel"
 msgstr "取消"
@@ -1669,7 +1669,7 @@ msgstr "配置已成功导入"
 msgid "Configure"
 msgstr "配置"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:165
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:164
 msgid "Configure and launch a manual processing pipeline."
 msgstr "配置并启动手动处理管道。"
 
@@ -1992,7 +1992,7 @@ msgstr "创建过滤器"
 msgid "Create missing folders"
 msgstr "创建缺失的文件夹"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:161
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:160
 msgid "Create New Pipeline Job"
 msgstr "创建新处理任务"
 
@@ -2038,7 +2038,7 @@ msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤
 msgid "Created"
 msgstr "已创建"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:185
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:184
 msgid "Creating..."
 msgstr "创建中..."
 
@@ -3440,7 +3440,7 @@ msgstr "创建渠道失败"
 msgid "Failed to create filter"
 msgstr "创建过滤器失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:123
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:122
 msgid "Failed to create pipeline job"
 msgstr "创建处理任务失败"
 
@@ -4595,7 +4595,7 @@ msgstr "输入选项（-i 参数）"
 msgid "Input Path"
 msgstr "输入路径"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:306
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:305
 msgid "Input Paths (comma separated)"
 msgstr "输入路径（逗号分隔）"
 
@@ -4655,13 +4655,13 @@ msgstr "抖动"
 
 #: src/components/notifications/events/payload-preview.tsx:48
 msgid "Job"
-msgstr "作业"
+msgstr "任务"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:180
 msgid "Job cancelled"
 msgstr "处理任务已取消"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:208
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:207
 msgid "Job Configuration"
 msgstr "处理任务配置"
 
@@ -4797,7 +4797,7 @@ msgstr "最近使用"
 msgid "Latency"
 msgstr "延迟"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:190
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:189
 msgid "Launch Pipeline"
 msgstr "启动处理流程"
 
@@ -5454,7 +5454,7 @@ msgstr "多媒体归档"
 msgid "Multiplier for exponential backoff."
 msgstr "指数退避的倍率。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:223
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:222
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
@@ -6532,7 +6532,7 @@ msgstr "处理管道为空。"
 msgid "Pipeline is valid"
 msgstr "处理管道有效"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:116
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:115
 msgid "Pipeline job created successfully"
 msgstr "处理任务创建成功"
 
@@ -6549,12 +6549,12 @@ msgstr "处理管道管理器"
 msgid "Pipeline must have at least one step"
 msgstr "处理管道必须至少包含一个步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:219
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:218
 msgid "Pipeline Name"
 msgstr "处理管道名称"
 
 #: src/routes/__tests__/create-pipeline-schema.test.ts:9
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:53
 msgid "Pipeline name is required"
 msgstr "处理管道名称是必填项"
 
@@ -7817,11 +7817,11 @@ msgstr "选择要添加到处理管道的处理任务或工作流。"
 msgid "Select a processing job or workflow to use in this node."
 msgstr "选择要在此节点中使用的处理任务或工作流。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:282
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:281
 msgid "Select a session"
 msgstr "选择会话"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:249
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:248
 msgid "Select a streamer"
 msgstr "选择主播"
 
@@ -7963,7 +7963,7 @@ msgstr "已选择的流"
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启；仅在你所在网络签发失败时关闭。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:324
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:323
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
@@ -7978,7 +7978,7 @@ msgstr "服务器地址"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
 #: src/components/config/shared-config-editor.tsx:464
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:273
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "会话"
 
@@ -8031,7 +8031,7 @@ msgstr "会话已进入待确认状态。其他详细信息不可用。"
 msgid "Session ID"
 msgstr "录制会话 ID"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:55
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
 msgid "Session ID is required"
 msgstr "会话 ID 是必需的"
 
@@ -8443,7 +8443,7 @@ msgid "Stream URL"
 msgstr "直播链接"
 
 #: src/components/notifications/events/payload-preview.tsx:47
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:240
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:239
 msgid "Streamer"
 msgstr "主播"
 
@@ -8474,7 +8474,7 @@ msgstr "主播已删除"
 msgid "Streamer ID"
 msgstr "主播 ID"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:56
+#: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:55
 msgid "Streamer ID is required"
 msgstr "主播 ID 是必需的"
 
