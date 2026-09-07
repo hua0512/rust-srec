@@ -28,6 +28,10 @@
 
 ## Post-processing
 
+- **Rclone moves reject missing inputs on the first attempt**
+
+  A move validates every input before starting a transfer, so a missing file cannot be reported as a completed upload on its first attempt. Retried jobs retain the existing recovery behavior for sources consumed by earlier moves, including partial transfers within one execution.
+
 - **Restart recovery pairs danmu with stored video segments**
 
   Recovery uses stored video paths to associate XML files with their original segment indices, avoiding duplicate processing caused by title digits or media-output IDs. XML files without a unique matching segment are skipped with a warning; their historical associations are not guessed.
