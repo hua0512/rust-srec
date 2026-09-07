@@ -832,6 +832,21 @@ mod tests {
     use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
 
+    #[test]
+    fn test_pipeline_preset_response_timestamp_serialization() {
+        let mut preset = crate::database::models::PipelinePreset::new(
+            "test",
+            DagPipelineDefinition::new("test", vec![]),
+        );
+        let at = chrono::DateTime::from_timestamp_millis(1_767_323_045_123).unwrap();
+        preset.created_at = at;
+        preset.updated_at = at;
+        let response = PipelinePresetResponse::from(preset);
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["created_at"], "2026-01-02T03:04:05.123Z");
+        assert_eq!(json["updated_at"], "2026-01-02T03:04:05.123Z");
+    }
+
     // `pub(super)` so `dag::tests` can build a route state without a second copy of
     // this constructor. `PipelineManager::new()` leaves `dag_scheduler` unset, which is
     // what lets those tests exercise the service-unavailable path with no DB fixture.

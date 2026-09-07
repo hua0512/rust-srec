@@ -560,10 +560,16 @@ mod tests {
 
     #[test]
     fn test_db_model_to_response() {
-        let model = TemplateConfigDbModel::new("test");
+        let mut model = TemplateConfigDbModel::new("test");
+        let at = chrono::DateTime::from_timestamp_millis(1_767_323_045_123).unwrap();
+        model.created_at = at;
+        model.updated_at = at;
         let response = db_model_to_response(&model, 3);
 
         assert_eq!(response.name, "test");
         assert_eq!(response.usage_count, 3);
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["created_at"], "2026-01-02T03:04:05.123Z");
+        assert_eq!(json["updated_at"], "2026-01-02T03:04:05.123Z");
     }
 }

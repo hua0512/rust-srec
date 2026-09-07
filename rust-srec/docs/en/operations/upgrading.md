@@ -67,6 +67,20 @@ Caveats:
 - Database migrations still run at startup and are not reversible. Automatic updates skip the manual pre-upgrade snapshot, so keep scheduled backups (see [Backup and Restore](./backup-restore.md)) and read release notes regularly. If an upgrade must be reviewed before rollout, stay on manual upgrades with a pinned tag.
 - The idle check runs immediately before the container stops; a recording that starts in the few seconds in between is still interrupted.
 
+## Preset and Template Timestamps
+
+Migration `20260907120000` normalizes `created_at` and `updated_at` in `job_presets`,
+`pipeline_presets`, and `template_config` to integer Unix milliseconds. Existing integers are
+preserved. Historical date strings are converted with their timezone, truncating submillisecond
+precision. API dates remain strings.
+
+If startup reports `Cannot normalize preset/template timestamps`, one of these columns contains
+an invalid or unsupported historical value, such as an expanded-year date produced by an older
+timestamp decoding error. The migration rolls back and preserves the original values. Stop the
+backend, retain a database backup, inspect those six columns, and repair only values whose intended
+time can be established from the backup or other records. Restart to retry the migration. Do not
+replace unknown dates with the current time or edit a shipped migration.
+
 ## Rollback
 
 Do not start an older binary against a database already migrated by a newer release unless the release notes explicitly say it is compatible.

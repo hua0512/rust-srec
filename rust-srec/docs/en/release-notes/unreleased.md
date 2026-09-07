@@ -10,6 +10,10 @@
 
 ## Configuration
 
+- **Preset and template dates use consistent millisecond storage**
+
+  Built-in presets and templates updated during credential refresh now display correct dates. Preset, template, and configuration-import writes consistently store integer milliseconds while the API keeps its existing date-string format. A new migration converts historical date strings without rounding fractional milliseconds or altering existing integers. Invalid historical values stop the migration without changing the data; see [timestamp repair guidance](../operations/upgrading.md#preset-and-template-timestamps).
+
 - **Fresh standalone installations use the configured recording directory**
 
   A new standalone database initializes its output folder from `OUTPUT_DIR`, falling back to `./output` resolved against the startup working directory. The bundled systemd unit and Docker Compose configuration now supply the initial recording location. Existing databases retain their saved folder, including an explicitly saved `/app/output`.

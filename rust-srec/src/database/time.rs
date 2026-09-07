@@ -4,6 +4,25 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 
+/// SQLx adapter for date-time fields backed by INTEGER epoch milliseconds.
+///
+/// SQLx's native SQLite DateTime decoder interprets integers as seconds.
+#[derive(sqlx::Type)]
+#[sqlx(transparent)]
+pub struct EpochMillis(i64);
+
+#[derive(Debug, thiserror::Error)]
+#[error("epoch millisecond timestamp {0} is outside chrono's supported range")]
+pub struct InvalidEpochMillis(i64);
+
+impl TryFrom<EpochMillis> for DateTime<Utc> {
+    type Error = InvalidEpochMillis;
+
+    fn try_from(value: EpochMillis) -> Result<Self, Self::Error> {
+        DateTime::from_timestamp_millis(value.0).ok_or(InvalidEpochMillis(value.0))
+    }
+}
+
 /// Current time as Unix epoch milliseconds (UTC).
 #[inline]
 pub fn now_ms() -> i64 {

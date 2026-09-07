@@ -1675,8 +1675,8 @@ async fn persist_template(
     .bind(&model.paired_segment_pipeline)
     .bind(model.offline_check_count)
     .bind(model.offline_check_delay_ms)
-    .bind(model.created_at)
-    .bind(model.updated_at)
+    .bind(model.created_at.timestamp_millis())
+    .bind(model.updated_at.timestamp_millis())
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1835,8 +1835,8 @@ async fn persist_job_preset(
     .bind(&model.category)
     .bind(&model.processor)
     .bind(&model.config)
-    .bind(model.created_at)
-    .bind(model.updated_at)
+    .bind(model.created_at.timestamp_millis())
+    .bind(model.updated_at.timestamp_millis())
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1864,8 +1864,8 @@ async fn persist_pipeline_preset(
     .bind(&model.description)
     .bind(&model.dag_definition)
     .bind(&model.pipeline_type)
-    .bind(model.created_at)
-    .bind(model.updated_at)
+    .bind(model.created_at.timestamp_millis())
+    .bind(model.updated_at.timestamp_millis())
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1912,6 +1912,69 @@ mod tests {
     use super::*;
     use crate::config::backup::{GlobalConfigExport, JobPresetExport, UserExport};
     use crate::database::{init_pool_with_size, run_migrations};
+
+    #[tokio::test]
+    async fn timestamp_import_persistence_and_snapshot_use_integer_milliseconds() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let at = chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05.123456Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut template = TemplateConfigDbModel::new("timestamp-import-template");
+        template.created_at = at;
+        template.updated_at = at;
+        let mut job = JobPreset::new("timestamp-import-job", "remux", serde_json::json!({}));
+        job.created_at = at;
+        job.updated_at = at;
+        let mut pipeline = PipelinePreset::new(
+            "timestamp-import-pipeline",
+            crate::database::models::DagPipelineDefinition::new("test", vec![]),
+        );
+        pipeline.created_at = at;
+        pipeline.updated_at = at;
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        for updated in [at, at + chrono::Duration::milliseconds(7)] {
+            template.updated_at = updated;
+            job.updated_at = updated;
+            pipeline.updated_at = updated;
+            persist_template(&mut tx, &template).await.unwrap();
+            persist_job_preset(&mut tx, &job).await.unwrap();
+            persist_pipeline_preset(&mut tx, &pipeline).await.unwrap();
+            let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+            for (table, id, created_at, updated_at) in [
+                (
+                    "template_config",
+                    &template.id,
+                    snapshot.templates[&template.name].created_at,
+                    snapshot.templates[&template.name].updated_at,
+                ),
+                (
+                    "job_presets",
+                    &job.id,
+                    snapshot.job_presets[&job.name].created_at,
+                    snapshot.job_presets[&job.name].updated_at,
+                ),
+                (
+                    "pipeline_presets",
+                    &pipeline.id,
+                    snapshot.pipeline_presets[&pipeline.name].created_at,
+                    snapshot.pipeline_presets[&pipeline.name].updated_at,
+                ),
+            ] {
+                assert_eq!(created_at.timestamp_millis(), at.timestamp_millis());
+                assert_eq!(updated_at.timestamp_millis(), updated.timestamp_millis());
+                let storage: (String, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                    "SELECT typeof(created_at), typeof(updated_at) FROM {table} WHERE id = ?"
+                )))
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+                assert_eq!(storage, ("integer".to_owned(), "integer".to_owned()));
+            }
+        }
+        tx.commit().await.unwrap();
+    }
 
     const VALID_PASSWORD_HASH: &str = concat!(
         "$argon2id$v=19$m=19456,t=2,p=1$",

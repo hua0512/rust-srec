@@ -277,8 +277,8 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         .bind(&preset.category)
         .bind(&preset.processor)
         .bind(&preset.config)
-        .bind(preset.created_at)
-        .bind(preset.updated_at)
+        .bind(preset.created_at.timestamp_millis())
+        .bind(preset.updated_at.timestamp_millis())
         .execute(&*self.write_pool)
         .await?;
 
@@ -298,7 +298,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         .bind(&preset.category)
         .bind(&preset.processor)
         .bind(&preset.config)
-        .bind(chrono::Utc::now())
+        .bind(crate::database::time::now_ms())
         .bind(&preset.id)
         .execute(&*self.write_pool)
         .await?;
@@ -479,8 +479,8 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         .bind(&preset.description)
         .bind(&preset.dag_definition)
         .bind(&preset.pipeline_type)
-        .bind(preset.created_at)
-        .bind(preset.updated_at)
+        .bind(preset.created_at.timestamp_millis())
+        .bind(preset.updated_at.timestamp_millis())
         .execute(&*self.write_pool)
         .await?;
 
@@ -499,7 +499,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         .bind(&preset.description)
         .bind(&preset.dag_definition)
         .bind(&preset.pipeline_type)
-        .bind(chrono::Utc::now())
+        .bind(crate::database::time::now_ms())
         .bind(&preset.id)
         .execute(&*self.write_pool)
         .await?;
