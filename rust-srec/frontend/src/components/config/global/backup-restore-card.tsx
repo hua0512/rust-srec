@@ -151,7 +151,7 @@ export function BackupRestoreCard() {
 
       toast.success(i18n._(msg`Configuration exported successfully`));
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || i18n._(msg`Failed to export configuration`));
     },
   });
@@ -166,7 +166,7 @@ export function BackupRestoreCard() {
         },
       });
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: ImportResult) => {
       setImportResult(result);
       // Invalidate all relevant queries to refresh UI
       void queryClient.invalidateQueries({ queryKey: ['config'] });
@@ -177,7 +177,7 @@ export function BackupRestoreCard() {
 
       toast.success(i18n._(msg`Configuration imported successfully`));
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || i18n._(msg`Failed to import configuration`));
       // Don't close dialog on error so user can try again
     },

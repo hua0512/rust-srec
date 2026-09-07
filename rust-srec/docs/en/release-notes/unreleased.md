@@ -268,6 +268,10 @@
 
 ## Web interface
 
+- **Notification, preset and workflow cards show their colours again**
+
+  The round icon at the top of every notification channel and processing preset card sat on a plain grey background, and the step chips listed on a workflow card were colourless boxes. Each icon now carries its own tint again — indigo for Discord, blue for e-mail, green for uploads and so on — and every workflow step is tinted to match what it does.
+
 - **Configuration editors respond faster while typing**
 
   Editing a template, a platform or a streamer redrew the whole form on every keystroke, which felt sluggish on the longer forms and worst of all with the pipeline editor open. A change now refreshes only the part of the page that shows it. The import summary under **Backup & Restore** and the 24-hour bar in the time filter no longer rebuild themselves for unrelated changes either, and the live figures on a running recording count up smoothly instead of stopping partway.

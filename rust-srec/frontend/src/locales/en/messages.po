@@ -139,7 +139,7 @@ msgstr "{0, plural, one {# selected} other {# selected}}"
 #. placeholder {0}: steps.length
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:323
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:370
-#: src/components/pipeline/workflows/workflow-card.tsx:149
+#: src/components/pipeline/workflows/workflow-card.tsx:73
 msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, one {# step} other {# steps}}"
 
@@ -712,7 +712,6 @@ msgid "Apply template settings."
 msgstr "Apply template settings."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:48
-#: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:72
 msgid "Archive"
 msgstr "Archive"
@@ -797,7 +796,6 @@ msgid "Attempts to get origin quality by replacing the audio stream. May result 
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
-#: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:230
 #: src/lib/media-file-type.ts:41
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
@@ -1212,7 +1210,7 @@ msgstr "Cache"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:590
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:264
+#: src/components/filters/FilterDialog.tsx:258
 #: src/components/layout/themes/import-modal.tsx:117
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:455
@@ -1223,11 +1221,11 @@ msgstr "Cache"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:290
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:97
-#: src/components/pipeline/presets/preset-card.tsx:206
+#: src/components/pipeline/presets/preset-card.tsx:152
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
 #: src/components/pipeline/workflows/step-config-dialog.tsx:672
 #: src/components/pipeline/workflows/step-config-dialog.tsx:730
-#: src/components/pipeline/workflows/workflow-card.tsx:195
+#: src/components/pipeline/workflows/workflow-card.tsx:119
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:235
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
@@ -1294,10 +1292,6 @@ msgstr "Capture Settings"
 #: src/components/filters/forms/RegexFilterForm.tsx:77
 msgid "Case Insensitive"
 msgstr "Case Insensitive"
-
-#: src/components/filters/forms/CategoryFilterForm.tsx:32
-msgid "Categories"
-msgstr "Categories"
 
 #: src/components/notifications/events/payload-preview.tsx:65
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:248
@@ -1441,7 +1435,7 @@ msgstr "Choose how files are transferred to the remote."
 msgid "Choose how this streamer handles proxy connections."
 msgstr "Choose how this streamer handles proxy connections."
 
-#: src/components/filters/FilterDialog.tsx:219
+#: src/components/filters/FilterDialog.tsx:213
 msgid "Choose when this streamer should be recorded."
 msgstr "Choose when this streamer should be recorded."
 
@@ -1450,7 +1444,6 @@ msgid "Choose your display language"
 msgstr "Choose your display language"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:50
-#: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
@@ -1482,7 +1475,7 @@ msgid "Client Type (ctype)"
 msgstr "Client Type (ctype)"
 
 #: src/components/config/templates/template-card.tsx:122
-#: src/components/pipeline/presets/preset-card.tsx:180
+#: src/components/pipeline/presets/preset-card.tsx:126
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:254
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:506
 msgid "Clone"
@@ -1589,7 +1582,6 @@ msgstr "Compress video for storage, upload to cloud, then delete local file to s
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
 msgid "Compression"
 msgstr "Compression"
@@ -1984,7 +1976,7 @@ msgstr "Create engine"
 msgid "Create Engine"
 msgstr "Create Engine"
 
-#: src/components/filters/FilterDialog.tsx:280
+#: src/components/filters/FilterDialog.tsx:274
 msgid "Create filter"
 msgstr "Create filter"
 
@@ -2152,7 +2144,6 @@ msgstr "Current Password"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:524
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
-#: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:340
 msgid "Custom"
@@ -2223,7 +2214,6 @@ msgid "DAG Graph"
 msgstr "DAG Graph"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:54
-#: src/components/pipeline/presets/preset-card.tsx:96
 #: src/lib/media-file-type.ts:51
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:78
 msgid "Danmaku"
@@ -2426,11 +2416,11 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/pipeline/outputs/output-batch-action-bar.tsx:62
 #: src/components/pipeline/outputs/output-card.tsx:252
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
-#: src/components/pipeline/presets/preset-card.tsx:189
-#: src/components/pipeline/presets/preset-card.tsx:212
+#: src/components/pipeline/presets/preset-card.tsx:135
+#: src/components/pipeline/presets/preset-card.tsx:158
 #: src/components/pipeline/presets/preset-templates.ts:74
-#: src/components/pipeline/workflows/workflow-card.tsx:178
-#: src/components/pipeline/workflows/workflow-card.tsx:201
+#: src/components/pipeline/workflows/workflow-card.tsx:102
+#: src/components/pipeline/workflows/workflow-card.tsx:125
 #: src/components/sessions/session-card.tsx:287
 #: src/components/streamers/card/stream-actions-menu.tsx:98
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
@@ -2450,7 +2440,7 @@ msgstr "Delete engine"
 msgid "Delete File"
 msgstr "Delete File"
 
-#: src/components/filters/FilterCard.tsx:237
+#: src/components/filters/FilterCard.tsx:242
 msgid "Delete filter"
 msgstr "Delete filter"
 
@@ -2474,7 +2464,7 @@ msgstr "Delete outputs?"
 msgid "Delete Pipeline?"
 msgstr "Delete Pipeline?"
 
-#: src/components/pipeline/presets/preset-card.tsx:195
+#: src/components/pipeline/presets/preset-card.tsx:141
 msgid "Delete Preset?"
 msgstr "Delete Preset?"
 
@@ -2531,7 +2521,7 @@ msgstr "Delete this engine?"
 msgid "Delete with files"
 msgstr "Delete with files"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:184
+#: src/components/pipeline/workflows/workflow-card.tsx:108
 msgid "Delete Workflow?"
 msgstr "Delete Workflow?"
 
@@ -2918,8 +2908,8 @@ msgstr "e.g., Standard Processing"
 #: src/components/config/templates/template-card.tsx:118
 #: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:194
-#: src/components/pipeline/presets/preset-card.tsx:176
-#: src/components/pipeline/workflows/workflow-card.tsx:170
+#: src/components/pipeline/presets/preset-card.tsx:122
+#: src/components/pipeline/workflows/workflow-card.tsx:94
 #: src/components/sidebar/navbar.tsx:48
 #: src/components/streamers/card/stream-actions-menu.tsx:88
 msgid "Edit"
@@ -2933,8 +2923,8 @@ msgstr "Edit channel"
 msgid "Edit Engine"
 msgstr "Edit Engine"
 
-#: src/components/filters/FilterCard.tsx:225
-#: src/components/filters/FilterDialog.tsx:213
+#: src/components/filters/FilterCard.tsx:230
+#: src/components/filters/FilterDialog.tsx:207
 msgid "Edit filter"
 msgstr "Edit filter"
 
@@ -2956,7 +2946,7 @@ msgstr "Editing Mode"
 msgid "Effective Scope"
 msgstr "Effective Scope"
 
-#: src/components/filters/FilterCard.tsx:178
+#: src/components/filters/FilterCard.tsx:183
 msgid "Empty pattern"
 msgstr "Empty pattern"
 
@@ -3111,14 +3101,6 @@ msgstr "Enter a URL above"
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
-#: src/components/filters/forms/CategoryFilterForm.tsx:43
-msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
-msgstr "Enter categories to match against (e.g. Just Chatting, Gaming)."
-
-#: src/components/filters/forms/CategoryFilterForm.tsx:37
-msgid "Enter categories..."
-msgstr "Enter categories..."
-
 #: src/components/filters/forms/KeywordFilterForm.tsx:62
 msgid "Enter keywords to exclude..."
 msgstr "Enter keywords to exclude..."
@@ -3214,9 +3196,8 @@ msgstr "Examples:"
 msgid "Exceptional states"
 msgstr "Exceptional states"
 
-#: src/components/filters/FilterCard.tsx:124
-#: src/components/filters/FilterCard.tsx:161
-#: src/components/filters/forms/CategoryFilterForm.tsx:59
+#: src/components/filters/FilterCard.tsx:129
+#: src/components/filters/FilterCard.tsx:166
 #: src/components/filters/forms/RegexFilterForm.tsx:56
 msgid "Exclude"
 msgstr "Exclude"
@@ -3366,7 +3347,7 @@ msgstr "Extraction Settings"
 msgid "ey..."
 msgstr "ey..."
 
-#: src/components/filters/FilterCard.tsx:43
+#: src/components/filters/FilterCard.tsx:48
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:70
 msgctxt "Friday initial"
 msgid "F"
@@ -3436,7 +3417,7 @@ msgstr "Failed to create API key"
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
-#: src/components/filters/FilterDialog.tsx:154
+#: src/components/filters/FilterDialog.tsx:152
 msgid "Failed to create filter"
 msgstr "Failed to create filter"
 
@@ -3656,7 +3637,7 @@ msgstr "Failed to trigger check"
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
-#: src/components/filters/FilterDialog.tsx:169
+#: src/components/filters/FilterDialog.tsx:167
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
@@ -3786,7 +3767,6 @@ msgstr "File Extension Filter"
 msgid "File Operations"
 msgstr "File Operations"
 
-#: src/components/pipeline/presets/preset-card.tsx:93
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:75
 msgid "File Ops"
 msgstr "File Ops"
@@ -3824,7 +3804,7 @@ msgstr "Filter"
 msgid "Filter by title keywords"
 msgstr "Filter by title keywords"
 
-#: src/components/filters/FilterDialog.tsx:147
+#: src/components/filters/FilterDialog.tsx:145
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
@@ -3844,7 +3824,7 @@ msgstr "Filter Interactive Games"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
 
-#: src/components/filters/FilterDialog.tsx:240
+#: src/components/filters/FilterDialog.tsx:234
 msgid "Filter Type"
 msgstr "Filter Type"
 
@@ -3853,7 +3833,7 @@ msgstr "Filter Type"
 msgid "Filter Type"
 msgstr "Filter Type"
 
-#: src/components/filters/FilterDialog.tsx:162
+#: src/components/filters/FilterDialog.tsx:160
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
@@ -4466,10 +4446,6 @@ msgstr "Identity and type of the engine."
 msgid "If any of these keywords appear in the title, the stream will be ignored."
 msgstr "If any of these keywords appear in the title, the stream will be ignored."
 
-#: src/components/filters/forms/CategoryFilterForm.tsx:62
-msgid "If enabled, streams in these categories will be ignored."
-msgstr "If enabled, streams in these categories will be ignored."
-
 #: src/components/filters/forms/RegexFilterForm.tsx:59
 msgid "If enabled, streams matching this pattern will be ignored."
 msgstr "If enabled, streams matching this pattern will be ignored."
@@ -4478,7 +4454,7 @@ msgstr "If enabled, streams matching this pattern will be ignored."
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "If set, stream titles must contain at least one of these keywords."
 
-#: src/components/filters/FilterCard.tsx:171
+#: src/components/filters/FilterCard.tsx:176
 msgid "Ignore case"
 msgstr "Ignore case"
 
@@ -4535,8 +4511,8 @@ msgstr "In progress"
 msgid "Inactive"
 msgstr "Inactive"
 
-#: src/components/filters/FilterCard.tsx:117
-#: src/components/filters/FilterCard.tsx:163
+#: src/components/filters/FilterCard.tsx:122
+#: src/components/filters/FilterCard.tsx:168
 msgid "Include"
 msgstr "Include"
 
@@ -5048,7 +5024,7 @@ msgstr "Lowest (0)"
 msgid "Lowest bitrate"
 msgstr "Lowest bitrate"
 
-#: src/components/filters/FilterCard.tsx:36
+#: src/components/filters/FilterCard.tsx:41
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:50
 msgctxt "Monday initial"
 msgid "M"
@@ -5283,7 +5259,6 @@ msgstr "Messages"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
-#: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:81
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:77
 msgid "Metadata"
@@ -5546,7 +5521,7 @@ msgstr "New password (min 8 chars)"
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
-#: src/components/filters/FilterDialog.tsx:215
+#: src/components/filters/FilterDialog.tsx:209
 msgid "New recording filter"
 msgstr "New recording filter"
 
@@ -5591,7 +5566,7 @@ msgstr "No configuration available for this processor."
 msgid "No configuration form available for this processor."
 msgstr "No configuration form available for this processor."
 
-#: src/components/pipeline/presets/preset-card.tsx:248
+#: src/components/pipeline/presets/preset-card.tsx:194
 msgid "No configuration."
 msgstr "No configuration."
 
@@ -5607,7 +5582,7 @@ msgstr "No custom headers configured"
 msgid "No custom tags added"
 msgstr "No custom tags added"
 
-#: src/components/pipeline/presets/preset-card.tsx:225
+#: src/components/pipeline/presets/preset-card.tsx:171
 msgid "No description."
 msgstr "No description."
 
@@ -5653,7 +5628,7 @@ msgstr "No issues detected"
 msgid "No jobs found"
 msgstr "No jobs found"
 
-#: src/components/filters/FilterCard.tsx:108
+#: src/components/filters/FilterCard.tsx:113
 msgid "No keywords set"
 msgstr "No keywords set"
 
@@ -5792,7 +5767,7 @@ msgstr "No specialized options available for this platform."
 msgid "No Steps Added"
 msgstr "No Steps Added"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:254
+#: src/components/pipeline/workflows/workflow-card.tsx:176
 msgid "No steps defined"
 msgstr "No steps defined"
 
@@ -6071,8 +6046,8 @@ msgstr "Only supported for MP4/MOV/M4V"
 #: src/components/notifications/channel-card.tsx:188
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:206
 #: src/components/pipeline/outputs/output-card.tsx:219
-#: src/components/pipeline/presets/preset-card.tsx:170
-#: src/components/pipeline/workflows/workflow-card.tsx:164
+#: src/components/pipeline/presets/preset-card.tsx:116
+#: src/components/pipeline/workflows/workflow-card.tsx:88
 msgid "Open menu"
 msgstr "Open menu"
 
@@ -7248,7 +7223,6 @@ msgstr "Removes each local file once its upload (or skip) is confirmed. The loca
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
-#: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:68
 msgid "Remux"
 msgstr "Remux"
@@ -7536,13 +7510,13 @@ msgstr "Rust-Srec"
 msgid "RUST-SREC PRO VIEWER"
 msgstr "RUST-SREC PRO VIEWER"
 
-#: src/components/filters/FilterCard.tsx:44
+#: src/components/filters/FilterCard.tsx:49
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:75
 msgctxt "Saturday initial"
 msgid "S"
 msgstr "S"
 
-#: src/components/filters/FilterCard.tsx:45
+#: src/components/filters/FilterCard.tsx:50
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:80
 msgctxt "Sunday initial"
 msgid "S"
@@ -7578,7 +7552,7 @@ msgid "Saturday"
 msgstr "Saturday"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:278
+#: src/components/filters/FilterDialog.tsx:272
 #: src/components/notifications/channel-form.tsx:460
 #: src/components/shared/save-fab.tsx:99
 #: src/components/streamers/streamer-editor.tsx:312
@@ -7606,7 +7580,7 @@ msgstr "Save with incomplete delete checks?"
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
-#: src/components/filters/FilterDialog.tsx:275
+#: src/components/filters/FilterDialog.tsx:269
 #: src/components/shared/save-fab.tsx:97
 msgid "Saving"
 msgstr "Saving"
@@ -8059,7 +8033,7 @@ msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:247
+#: src/components/filters/FilterDialog.tsx:241
 #: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
@@ -8527,7 +8501,6 @@ msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:55
-#: src/components/pipeline/presets/preset-card.tsx:97
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:79
 msgid "Subtitle"
 msgstr "Subtitle"
@@ -8622,13 +8595,13 @@ msgstr "System Status"
 msgid "System-wide preferences"
 msgstr "System-wide preferences"
 
-#: src/components/filters/FilterCard.tsx:42
+#: src/components/filters/FilterCard.tsx:47
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:65
 msgctxt "Thursday initial"
 msgid "T"
 msgstr "T"
 
-#: src/components/filters/FilterCard.tsx:37
+#: src/components/filters/FilterCard.tsx:42
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:55
 msgctxt "Tuesday initial"
 msgid "T"
@@ -8787,7 +8760,7 @@ msgstr "This Delete step will delete the files produced by <0>{transformDepLabel
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 
-#: src/components/filters/FilterCard.tsx:253
+#: src/components/filters/FilterCard.tsx:258
 msgid "This filter's settings could not be read."
 msgstr "This filter's settings could not be read."
 
@@ -8853,12 +8826,12 @@ msgid "This will permanently delete the pipeline and all its associated jobs and
 msgstr "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
 
 #. placeholder {0}: preset.name
-#: src/components/pipeline/presets/preset-card.tsx:198
+#: src/components/pipeline/presets/preset-card.tsx:144
 msgid "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
 msgstr "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
 
 #. placeholder {0}: workflow.name
-#: src/components/pipeline/workflows/workflow-card.tsx:187
+#: src/components/pipeline/workflows/workflow-card.tsx:111
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 
@@ -8869,7 +8842,6 @@ msgstr "Throughput"
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
-#: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/lib/media-file-type.ts:46
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:70
@@ -9304,7 +9276,7 @@ msgstr "Unknown error"
 msgid "Unknown File"
 msgstr "Unknown File"
 
-#: src/components/filters/FilterCard.tsx:189
+#: src/components/filters/FilterCard.tsx:194
 msgid "Unknown filter type"
 msgstr "Unknown filter type"
 
@@ -9346,7 +9318,6 @@ msgid "upload"
 msgstr "upload"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:49
-#: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:73
 msgid "Upload"
 msgstr "Upload"
@@ -9603,7 +9574,7 @@ msgstr "VOD Gap Strategy"
 msgid "VOD Segment Timeout (ms)"
 msgstr "VOD Segment Timeout (ms)"
 
-#: src/components/filters/FilterCard.tsx:40
+#: src/components/filters/FilterCard.tsx:45
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:60
 msgctxt "Wednesday initial"
 msgid "W"

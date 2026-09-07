@@ -1,4 +1,9 @@
-export interface ThemePreset {
+/**
+ * Theme shape the customizer works with: every CSS variable is present as a
+ * plain string. Distinct from `ThemePreset` in `types/theme.ts`, which models
+ * the sparse, partially-specified presets stored with a theme.
+ */
+export interface ThemeCustomizerPreset {
   label?: string;
   styles: {
     light: Record<string, string>;
@@ -9,7 +14,7 @@ export interface ThemePreset {
 export interface ColorTheme {
   name: string;
   value: string;
-  preset: ThemePreset;
+  preset: ThemeCustomizerPreset;
 }
 
 export interface SidebarVariant {

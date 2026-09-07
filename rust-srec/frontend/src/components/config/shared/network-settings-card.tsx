@@ -140,7 +140,7 @@ export const NetworkSettingsCard = memo(
           toast.info(i18n._(msg`No refresh needed or not supported`));
         }
       },
-      onError: (error: any) => {
+      onError: (error: Error) => {
         toast.error(
           error.message || i18n._(msg`Failed to refresh credentials`),
         );
