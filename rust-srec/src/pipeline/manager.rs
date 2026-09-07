@@ -15,7 +15,8 @@ use super::coordination::{
     SessionOutputs, SourceType,
 };
 use super::dag_scheduler::{
-    DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagRunContext, DagScheduler,
+    BeforeRootJobsHook, DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagRunContext,
+    DagScheduler, PublicationRollback,
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
@@ -55,8 +56,6 @@ mod recovery;
 mod runtime;
 
 pub use drain::{SessionDrain, SessionPipelineOutstanding, StreamerDrain};
-
-type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
 
 #[derive(Debug, Clone)]
 struct SegmentDagContext {

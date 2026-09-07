@@ -28,6 +28,10 @@
 
 ## Post-processing
 
+- **Failed workflow publication releases its pending context**
+
+  Failed database publication removes temporary segment and paired-workflow tracking. Successfully published workflows keep their tracking so workers can complete them. Malformed stored preset JSON is rejected before jobs are created, and validation errors omit configuration values.
+
 - **Rclone moves reject missing inputs on the first attempt**
 
   A move validates every input before starting a transfer, so a missing file cannot be reported as a completed upload on its first attempt. Retried jobs retain the existing recovery behavior for sources consumed by earlier moves, including partial transfers within one execution.

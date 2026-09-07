@@ -630,6 +630,10 @@ where
                 "Tracking paired-segment DAG context"
             );
             contexts.insert(dag_id.to_string(), ctx);
+            let dag_id = dag_id.to_string();
+            Box::new(move || {
+                let _ = contexts.remove(&dag_id);
+            }) as PublicationRollback
         }) as BeforeRootJobsHook);
 
         if let Err(e) = self
@@ -904,6 +908,10 @@ where
                 "Tracking per-segment DAG context"
             );
             contexts.insert(dag_id.to_string(), ctx);
+            let dag_id = dag_id.to_string();
+            Box::new(move || {
+                let _ = contexts.remove(&dag_id);
+            }) as PublicationRollback
         }) as BeforeRootJobsHook);
 
         if let Err(e) = self
@@ -1169,7 +1177,10 @@ where
                         Ok(Some(preset)) => {
                             let config = if !preset.config.is_empty() {
                                 serde_json::from_str(&preset.config)
-                                    .unwrap_or(serde_json::Value::Null)
+                                    .map_err(|error| crate::Error::Validation(format!(
+                                        "Invalid JSON in job preset '{name}': {:?} at line {}, column {}",
+                                        error.classify(), error.line(), error.column(),
+                                    )))?
                             } else {
                                 serde_json::Value::Null
                             };

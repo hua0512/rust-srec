@@ -15,6 +15,8 @@ use std::time::Duration;
 
 mod danmu_recovery;
 
+mod publication;
+
 struct TestSessionRepository {
     end_time: Mutex<Option<i64>>,
     sessions: Mutex<HashMap<String, LiveSessionDbModel>>,
@@ -347,6 +349,8 @@ impl SessionRepository for TestSessionRepository {
     }
 }
 
+type BeforePublishObserver = Box<dyn Fn(&DagExecutionDbModel) -> Result<()> + Send + Sync>;
+
 struct TestDagRepository {
     dags: Mutex<HashMap<String, DagExecutionDbModel>>,
     steps: Mutex<HashMap<String, Vec<DagStepExecutionDbModel>>>,
@@ -354,6 +358,7 @@ struct TestDagRepository {
     /// `get_dag` calls left before every row reads back as missing, so a test can model a
     /// `DagScheduler::delete_dag` landing between two reads. `usize::MAX` never runs out.
     reads_before_dags_vanish: AtomicUsize,
+    before_publish: Option<BeforePublishObserver>,
 }
 
 impl TestDagRepository {
@@ -363,6 +368,7 @@ impl TestDagRepository {
             steps: Mutex::new(HashMap::new()),
             create_calls: AtomicUsize::new(0),
             reads_before_dags_vanish: AtomicUsize::new(usize::MAX),
+            before_publish: None,
         }
     }
 
@@ -936,6 +942,9 @@ impl DagRepository for TestDagRepository {
         steps: &[DagStepExecutionDbModel],
         _root_jobs: &[JobDbModel],
     ) -> Result<()> {
+        if let Some(before_publish) = &self.before_publish {
+            before_publish(dag)?;
+        }
         self.create_dag(dag).await?;
         self.create_steps(steps).await
     }
