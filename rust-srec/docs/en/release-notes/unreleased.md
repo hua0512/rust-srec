@@ -34,6 +34,10 @@
 
 ## Configuration
 
+- **Filters reuse parsed rules and handle timezone boundaries consistently**
+
+  Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Existing omitted timezone defaults remain server-local for time-based rules and UTC for cron; frontend timezone controls are not added.
+
 - **Startup output probes use recording-compatible gate keys**
 
   Probe discovery uses actual streamer/platform values and concrete directories, so a startup failure can block and later recover through the same key used by recording attempts. Writable child directories no longer require write access to ancestor keys. Explicit root boundaries retain precedence; ambiguous templates are skipped and probe work is bounded. Discovery follows saved settings, while historical gate entries and startup disk-probe topology remain unchanged; see [output-root probes](../operations/storage.md#output-root-probes).
