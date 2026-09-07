@@ -32,6 +32,10 @@
 
   Failed database publication removes temporary segment and paired-workflow tracking. Successfully published workflows keep their tracking so workers can complete them. Malformed stored preset JSON is rejected before jobs are created, and validation errors omit configuration values.
 
+- **Rclone moves reject missing inputs on the first attempt**
+
+  A move validates every input before starting a transfer, so a missing file cannot be reported as a completed upload on its first attempt. Retried jobs retain the existing recovery behavior for sources consumed by earlier moves, including partial transfers within one execution.
+
 - **Worker logs retain repeated messages and withdrawn jobs stay stopped**
 
   Successive log batches retain every entry even when timestamps and messages match. Completion snapshots avoid repeating entries already streamed to storage, while the existing log limit and API format stay intact. Workers check queue ownership before starting execution, so a removed job cannot run with a replacement cancellation token.
