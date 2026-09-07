@@ -18,6 +18,21 @@ FFmpeg 和 Streamlink 的版本检查限时三秒，必要时随后执行有时�
 
 不存在的命名引擎配置保留默认引擎回退行为。数据库访问失败、已保存配置损坏及无效覆盖会导致解析失败，不再静默改变实际使用的配置。
 
+### 停止 Streamlink 录制
+
+停止 Streamlink 录制时，标准输出转发和标准错误读取会继续运行，直到源进程
+停止。Unix 向 Streamlink 发送 SIGTERM；隐藏运行的 Windows 进程没有受支持的
+控制台信号通道，因此先限时等待源进程自然退出，再强制终止。源进程最多等待
+三秒，且不超过配置的剩余停止时间。随后 FFmpeg 使用同一截止时间的剩余预算，
+读取管道 EOF 并完成文件收尾。
+
+两个进程都受进程树约束。超过截止时间会强制终止进程树，直接父进程退出时也会
+终止其后代。该约束假定后代进程不会主动逃离进程组或 Windows Job Object。
+
+这会在可用时间内继续转发已经写入标准输出的数据，但不能保证保留 Streamlink
+内部环形缓冲区中所有已抓取字节。上游信号处理会中断输出循环，并没有提供排空
+全部缓冲数据的操作，参见[上游清理循环](https://github.com/streamlink/streamlink/blob/16fff079ca6044cbe0fd0e855720cf8fed602de6/src/streamlink_cli/streamrunner.py#L100)。强制终止仍可能截断录像尾部。
+
 ## 1. 引擎功能列表
 
 |         功能          |                Mesio                 |                 FFMPEG                  |               STREAMLINK                |

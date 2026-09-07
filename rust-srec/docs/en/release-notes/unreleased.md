@@ -96,6 +96,10 @@
 
 ## Recording
 
+- **Streamlink stop keeps output flowing while containing subprocesses**
+
+  Stdout forwarding and stderr readers stay alive while Streamlink stops, allowing emitted tail data to reach FFmpeg before EOF. Unix requests SIGTERM; Windows uses a bounded natural-exit window before forced tree termination. Both subprocess trees are contained, including descendants left after a parent exits. Internal Streamlink ring-buffer data and forced-stop tails remain subject to loss; see [stopping Streamlink recordings](../concepts/engines.md#stopping-streamlink-recordings).
+
 - **Engine resolution uses bounded version probes and reports invalid settings**
 
   Custom engine resolution and engine tests probe executables asynchronously with a three-second limit and bounded process cleanup. Probe output is drained with bounded memory use. Repository failures, malformed base settings, and invalid overrides are reported instead of silently selecting defaults; missing named configurations retain the existing fallback behavior. Synchronous startup constructors use the same bounded probe.

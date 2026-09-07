@@ -81,6 +81,39 @@ impl ContainedChild {
         self.child.id()
     }
 
+    /// Request cooperative termination of the direct child on Unix via SIGTERM.
+    /// Descendants remain running until the leader exits or tree termination is
+    /// requested. Returns false for an already-reaped child or on Windows, where
+    /// a hidden contained process has no console control-signal contract.
+    pub fn request_shutdown(&mut self) -> Result<bool, ContainmentError> {
+        #[cfg(unix)]
+        {
+            let Some(pid) = self.child.id() else {
+                return Ok(false);
+            };
+            let pid = libc::pid_t::try_from(pid).map_err(|error| {
+                ContainmentError::io(
+                    "convert child PID",
+                    io::Error::new(io::ErrorKind::InvalidInput, error),
+                )
+            })?;
+            // SAFETY: Tokio still owns this unreaped child, so its PID cannot
+            // have been reused. Signal only its leader for cooperative cleanup.
+            if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
+                return Ok(true);
+            }
+            let source = io::Error::last_os_error();
+            if source.raw_os_error() == Some(libc::ESRCH) {
+                return Ok(false);
+            }
+            Err(ContainmentError::io("request child shutdown", source))
+        }
+        #[cfg(windows)]
+        {
+            Ok(false)
+        }
+    }
+
     /// Clone a synchronous whole-tree terminator for deadline watchdogs.
     ///
     /// The returned handle is independent of Tokio. It may be moved to a
@@ -183,6 +216,26 @@ impl ContainedChild {
             };
         }
         let tree_result = self.request_tree_termination();
+        #[cfg(target_os = "macos")]
+        let tree_result = match tree_result {
+            Err(error) if matches!(&error, ContainmentError::Io { source, .. } if source.raw_os_error() == Some(libc::EPERM)) =>
+            {
+                // A cooperative signal can exit the leader just before force
+                // cleanup. Darwin excludes zombies from killpg's recipients and
+                // returns EPERM for that now-unsignalable group. Observe exit
+                // after the failed signal without reaping, then retry through
+                // the existing confirmed-exit path; a live child keeps its error.
+                match self
+                    .platform
+                    .direct_exit_observed_without_reap(&mut self.child)
+                {
+                    Ok(true) => self.request_tree_termination_after_direct_exit(),
+                    Ok(false) => Err(error),
+                    Err(observation_error) => Err(observation_error),
+                }
+            }
+            result => result,
+        };
         if let Err(source) = self.child.start_kill() {
             tracing::warn!(
                 error = %source,
@@ -807,6 +860,11 @@ mod tests {
             .expect("child wait stays bounded")
             .expect("wait for child");
         assert_eq!(status.code(), Some(7));
+        assert!(
+            !child
+                .request_shutdown()
+                .expect("reaped child is not signalled")
+        );
         assert!(child.id().is_none());
     }
 
@@ -828,6 +886,54 @@ mod tests {
             .expect("child wait stays bounded")
             .expect("wait for child");
         assert!(status.success());
+    }
+
+    #[tokio::test]
+    #[cfg(any(unix, windows))]
+    async fn cooperative_shutdown_respects_the_platform_signal_contract() {
+        let mut command = helper_command("hold");
+        let mut child = ContainedChild::spawn(&mut command).expect("spawn contained child");
+        assert_eq!(
+            child
+                .request_shutdown()
+                .expect("request cooperative shutdown"),
+            cfg!(unix)
+        );
+        child
+            .terminate_tree_until(Instant::now() + Duration::from_secs(5))
+            .await
+            .expect("cleanup platform-signal fixture");
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn forced_cleanup_reaps_a_cooperatively_exited_unreaped_leader() {
+        let mut command = helper_command("hold");
+        let mut child = ContainedChild::spawn(&mut command).expect("spawn contained child");
+        assert!(
+            child
+                .request_shutdown()
+                .expect("request cooperative shutdown")
+        );
+        // Pin the race's post-SIGTERM state: the leader has exited, but its PID
+        // and process-group identity remain owned until forced cleanup reaps it.
+        timeout(Duration::from_secs(5), async {
+            while !child
+                .platform
+                .direct_exit_observed_without_reap(&mut child.child)
+                .expect("observe cooperative exit without reaping")
+            {
+                sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("cooperative exit remains bounded");
+        assert!(child.id().is_some(), "leader must remain unreaped");
+        child
+            .terminate_tree_until(Instant::now() + Duration::from_secs(2))
+            .await
+            .expect("confirmed exit permits contained cleanup after Darwin EPERM");
+        assert!(child.id().is_none(), "forced cleanup reaps the leader");
     }
 
     #[tokio::test]

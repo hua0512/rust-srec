@@ -18,6 +18,26 @@ FFmpeg and Streamlink version checks have a three-second deadline, followed by b
 
 Missing named engine configurations retain the default-engine fallback. Database access failures, malformed saved settings, and invalid overrides fail resolution instead of silently changing the effective configuration.
 
+### Stopping Streamlink Recordings
+
+Stopping a Streamlink recording keeps its stdout forwarding and stderr readers
+alive while the source stops. Unix sends SIGTERM to Streamlink. Hidden Windows
+processes have no supported console-signal path, so the source gets a bounded
+chance to exit naturally before forced termination. Source shutdown waits at most
+three seconds within the remaining configured stop budget. FFmpeg then uses the
+remaining budget to consume pipe EOF and finalize its output.
+
+Both processes run under process-tree containment. A deadline forces tree
+termination, and descendants are also terminated when their direct parent exits.
+Containment assumes descendants do not deliberately escape the process group or
+Windows Job Object.
+
+This preserves forwarding of emitted stdout data within the available budget;
+it cannot guarantee every fetched byte still held inside Streamlink's internal
+ring buffer. Upstream's signal handler interrupts the output loop rather than
+providing a drain-all operation; see the [upstream cleanup loop](https://github.com/streamlink/streamlink/blob/16fff079ca6044cbe0fd0e855720cf8fed602de6/src/streamlink_cli/streamrunner.py#L100).
+Forced termination can still truncate the final recording tail.
+
 ## 1. Engines Feature List
 
 |         Feature          |                Mesio                 |                 FFMPEG                  |               STREAMLINK                |
