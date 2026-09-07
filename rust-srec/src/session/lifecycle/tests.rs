@@ -10,6 +10,276 @@ use sqlx::SqlitePool;
 
 const STREAMER_ID: &str = "test-streamer";
 
+#[tokio::test]
+async fn lifecycle_entrypoints_wait_for_streamer_serialization() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle(pool.clone());
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let sid = started.session_id();
+    let guard = lifecycle.lock_streamer(STREAMER_ID).await;
+    let event = make_terminal_completed_hls_endlist(sid);
+    let mut operations: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> = vec![
+        Box::pin(async {
+            lifecycle
+                .on_live_detected(live_args(Utc::now()))
+                .await
+                .unwrap();
+        }),
+        Box::pin(async {
+            lifecycle
+                .on_offline_detected(OfflineDetectedArgs {
+                    streamer_id: STREAMER_ID,
+                    streamer_name: "Test",
+                    session_id: Some(sid),
+                    state_was_live: true,
+                    clear_errors: false,
+                    signal: None,
+                    now: Utc::now(),
+                })
+                .await
+                .unwrap();
+        }),
+        Box::pin(async {
+            lifecycle.on_download_terminal(&event).await.unwrap();
+        }),
+        Box::pin(async {
+            lifecycle
+                .end_for_disable(STREAMER_ID, "Test")
+                .await
+                .unwrap();
+        }),
+        Box::pin(async {
+            lifecycle
+                .end_for_out_of_schedule(STREAMER_ID, "Test", StreamerState::Live)
+                .await
+                .unwrap();
+        }),
+    ];
+    // Poll every entrypoint while its stripe is held. None may even acquire
+    // the database connection until the preceding operation publishes.
+    for operation in &mut operations {
+        std::future::poll_fn(|cx| {
+            assert!(operation.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+    }
+    let connection = tokio::time::timeout(Duration::from_secs(1), pool.acquire())
+        .await
+        .expect("blocked operations must not enter the DB")
+        .unwrap();
+    drop(connection);
+    assert!(db_session_end_time(&pool, sid).await.is_none());
+    drop(operations);
+    drop(guard);
+    lifecycle
+        .end_for_disable(STREAMER_ID, "Test")
+        .await
+        .unwrap();
+    assert!(db_session_end_time(&pool, sid).await.is_some());
+}
+
+#[tokio::test]
+async fn expired_timer_cannot_claim_replacement_after_resume() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(1));
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let sid = started.session_id();
+    let guard = lifecycle.lock_streamer(STREAMER_ID).await;
+    tokio::time::pause();
+    lifecycle
+        .enter_hysteresis_state(
+            sid,
+            STREAMER_ID,
+            "Test",
+            TerminalCause::Completed,
+            Utc::now(),
+        )
+        .await;
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::task::yield_now().await;
+    assert!(lifecycle.hysteresis.contains_key(sid));
+    assert!(
+        lifecycle
+            .resume_from_hysteresis(sid, &live_args(Utc::now()))
+            .await
+            .is_some()
+    );
+
+    // A new ambiguous terminal owns a distinct cancellation token. Seed
+    // its handle without another task so joining below isolates the old timer.
+    let replacement = HysteresisHandle::new(Duration::from_secs(60));
+    lifecycle.sessions.insert(
+        sid.to_string(),
+        SessionState::hysteresis(
+            STREAMER_ID,
+            sid,
+            Utc::now(),
+            Utc::now(),
+            TerminalCause::Completed,
+            replacement.deadline,
+        ),
+    );
+    lifecycle.hysteresis.insert(sid.to_string(), replacement);
+    drop(guard);
+    let mut tasks = DrainedTasks::take_from(&lifecycle.hysteresis_tasks);
+    tokio::time::timeout(Duration::from_secs(1), tasks.join_next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(lifecycle.hysteresis.contains_key(sid));
+    assert!(lifecycle.session_snapshot(sid).unwrap().is_hysteresis());
+    assert!(db_session_end_time(&pool, sid).await.is_none());
+    lifecycle
+        .end_for_disable(STREAMER_ID, "Test")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn duplicate_terminal_after_eviction_preserves_end_and_audit() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle(pool.clone());
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let sid = started.session_id();
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_hls_endlist(sid))
+        .await
+        .unwrap();
+    let end_time = db_session_end_time(&pool, sid).await;
+    lifecycle.sessions.remove(sid);
+    let mut rx = lifecycle.subscribe();
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_hls_endlist(sid))
+        .await
+        .unwrap();
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_clean_disconnect(sid))
+        .await
+        .unwrap();
+    assert_eq!(db_session_end_time(&pool, sid).await, end_time);
+    assert!(lifecycle.session_snapshot(sid).is_none());
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        read_events(&pool, sid)
+            .await
+            .into_iter()
+            .filter(|(kind, _)| kind == "session_ended")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn delayed_offline_for_old_session_preserves_live_successor() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle(pool.clone());
+    let first = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_hls_endlist(first.session_id()))
+        .await
+        .unwrap();
+    let first_end = db_session_end_time(&pool, first.session_id()).await;
+    let second = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    assert_ne!(first.session_id(), second.session_id());
+    let events_before = outbox_event_types(&pool).await;
+    let mut rx = lifecycle.subscribe();
+    // The persisted guard must survive expiry of the old in-memory snapshot.
+    lifecycle.sessions.remove(first.session_id());
+    let outcome = lifecycle
+        .on_offline_detected(OfflineDetectedArgs {
+            streamer_id: STREAMER_ID,
+            streamer_name: "Test",
+            session_id: Some(first.session_id()),
+            state_was_live: true,
+            clear_errors: true,
+            signal: None,
+            now: Utc::now(),
+        })
+        .await
+        .unwrap();
+    assert!(outcome.resolved_session_id.is_none());
+    assert!(!outcome.offline_event_emitted);
+    assert_eq!(
+        db_session_end_time(&pool, first.session_id()).await,
+        first_end
+    );
+    assert!(
+        db_session_end_time(&pool, second.session_id())
+            .await
+            .is_none()
+    );
+    assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
+    assert!(
+        lifecycle
+            .session_snapshot(second.session_id())
+            .unwrap()
+            .is_recording()
+    );
+    assert_eq!(outbox_event_types(&pool).await, events_before);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn disable_preserves_authoritative_offline_cause() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle(pool.clone());
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let sid = started.session_id();
+    lifecycle
+        .on_offline_detected(OfflineDetectedArgs {
+            streamer_id: STREAMER_ID,
+            streamer_name: "Test",
+            session_id: Some(sid),
+            state_was_live: true,
+            clear_errors: false,
+            signal: None,
+            now: Utc::now(),
+        })
+        .await
+        .unwrap();
+    let mut rx = lifecycle.subscribe();
+    assert!(
+        lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let payload = latest_session_ended_payload(&pool, sid).await.unwrap();
+    assert_eq!(
+        session_ended_cause(&payload),
+        &TerminalCauseDto::StreamerOffline
+    );
+    assert!(matches!(
+        lifecycle.session_snapshot(sid),
+        Some(SessionState::Ended {
+            cause: TerminalCause::StreamerOffline,
+            ..
+        })
+    ));
+    assert!(rx.try_recv().is_err());
+}
+
 async fn setup_pool() -> SqlitePool {
     let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
     run_migrations(&pool).await.unwrap();
@@ -2624,14 +2894,12 @@ async fn end_for_disable_idempotent_on_second_call() {
     assert_eq!(first.as_deref(), Some(sid.as_str()));
     let _ = rx.recv().await.unwrap(); // Ended
 
-    // Second call: idempotent. The session is already Ended in memory;
-    // the retro-update path runs and finds the same cause already set,
-    // returning the session id unchanged. No second `Ended` broadcast.
+    // A committed user stop has no further attribution or end to apply.
     let second = lifecycle
         .end_for_disable(STREAMER_ID, "Test")
         .await
         .unwrap();
-    assert_eq!(second.as_deref(), Some(sid.as_str()));
+    assert!(second.is_none());
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(
         rx.try_recv().is_err(),
@@ -2726,12 +2994,7 @@ async fn o4b_end_for_disable_targets_current_session_when_old_ended_is_retained(
     );
 }
 
-/// `end_for_disable` loses CAS to a concurrent
-/// `resume_from_hysteresis`. The CAS-loss path takes effect: we
-/// observe in-memory Recording (resumed) and the audit row is
-/// retro-updated to `user_disabled` only if a session_ended row
-/// existed (in this scenario it does NOT — resume cancelled hysteresis
-/// without writing Ended). Method returns `Ok(None)` cleanly.
+/// Missing timer ownership does not prove the DB session has ended.
 #[tokio::test]
 async fn end_for_disable_loses_cas_to_resume() {
     let pool = setup_pool().await;
@@ -2759,20 +3022,15 @@ async fn end_for_disable_loses_cas_to_resume() {
     let claimed = lifecycle.hysteresis.remove(&sid);
     assert!(claimed.is_some(), "test seed: handle must exist");
 
-    // end_for_disable now sees was_in_hysteresis=true, claim=None → retro path.
-    // No prior session_ended row → the rewrite finds nothing → Ok(None).
+    // Disable must still close the active row.
     let resolved = lifecycle
         .end_for_disable(STREAMER_ID, "Test")
         .await
         .unwrap();
-    assert!(
-        resolved.is_none(),
-        "lost-CAS with no session_ended row must return Ok(None)"
-    );
-
-    // No spurious Ended broadcast.
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    assert!(rx.try_recv().is_err(), "no broadcast on lost CAS");
+    assert_eq!(resolved.as_deref(), Some(sid.as_str()));
+    assert!(db_session_end_time(&pool, &sid).await.is_some());
+    assert!(matches!(rx.try_recv(), Ok(SessionTransition::Ended { .. })));
+    claimed.unwrap().1.cancel();
 }
 
 /// O5b — `end_for_disable` loses CAS to the hysteresis timer fire.

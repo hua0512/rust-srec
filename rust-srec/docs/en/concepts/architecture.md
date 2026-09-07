@@ -121,6 +121,10 @@ with **write-through persistence** to SQLite.
 
 Important correctness detail: on startup it performs **restart recovery** by resetting any streamers
 left in `Live` back to `NotLive`, so the normal `NotLive → Live` edge can trigger downloads again.
+The actor also applies its first confirmed offline observation even when both states are
+`NotLive`, closing an unfinished database session and publishing its final completion. Failed or
+suppressed application remains pending for another check. A live observation reuses the unfinished
+session, preserving recording continuity across a restart.
 
 ### `Scheduler` (actor model orchestration)
 
@@ -154,6 +158,11 @@ broadcasting `Started` or `Ended`. Hysteresis `Ending` and `Resumed` are in-memo
 audit rows are best-effort, and the session `end_time` remains unset until the lifecycle reaches
 `Ended`. Download terminal events feed back into this service. `Ended` drives session-complete
 pipelines, danmu cleanup, and download bookkeeping; a resumed `Started` restarts the same session.
+Operations for one streamer share an async lock through database commit, memory changes, and
+transition publication; timer expiry follows the same order and rechecks cancellation before
+claiming a handle. Database end writes only affect active rows, so late events do not rewrite end
+times or duplicate completion events. An explicit offline signal for an older session cannot
+change the state of a newer active session.
 
 ### `DownloadManager` (downloads + engine abstraction)
 

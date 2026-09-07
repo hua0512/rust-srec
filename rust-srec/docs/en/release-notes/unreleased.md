@@ -40,6 +40,14 @@
 
 ## Recording
 
+- **Sessions reconcile correctly after restart**
+
+  The first confirmed offline check closes an unfinished session left by the previous process and makes its final post-processing recoverable. Failed or suppressed checks remain retryable. A broadcast that is still live continues its existing session, and normal offline grace periods remain in effect.
+
+- **Concurrent session events preserve one completion and its cause**
+
+  Live checks, offline checks, download completion, timers, and user stops now serialize their session changes for each streamer. Late or duplicate events cannot overwrite a completed session's end time or repeat its completion, and an old session's offline signal cannot stop its live successor. Disabling a streamer preserves authoritative offline causes and still closes an active session when its timer handle is missing.
+
 - **Output write failures pause recording retries reliably**
 
   A failed buffered write during shutdown is now preserved even when the stream also disconnected. Disk-full, read-only, permission, missing-path, and output timeout failures reach the output-root gate before the recording failure is published. FFmpeg and Streamlink retain recognized output failures even after a zero exit code. Input network errors do not mark storage unavailable, and retries remain throttled if no output-root gate is attached.

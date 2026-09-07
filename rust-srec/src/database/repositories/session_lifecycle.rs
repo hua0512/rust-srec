@@ -95,8 +95,8 @@ pub struct EndSessionInputs {
     /// Explicit session id to end; if `None`, falls back to the active
     /// session for `streamer_id` (if any).
     pub session_id: Option<String>,
-    /// `true` when the streamer's pre-end state was `Live`. Together with
-    /// `resolved_session_id` this drives whether to enqueue an offline event.
+    /// Caller observation, retained for diagnosing stale monitor state.
+    /// The persisted state inside the transaction decides offline delivery.
     pub state_was_live: bool,
     /// `true` to clear accumulated transient errors on a clean offline obs.
     pub clear_errors: bool,
@@ -376,6 +376,16 @@ impl SessionLifecycleRepository {
         Ok(None)
     }
 
+    /// Resolve terminal events after the in-memory retention window expires.
+    pub async fn is_session_active(&self, session_id: &str) -> Result<bool> {
+        Ok(sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM live_sessions WHERE id = ? AND end_time IS NULL)",
+        )
+        .bind(session_id)
+        .fetch_one(&self.write_pool)
+        .await?)
+    }
+
     /// Light "session ended" bundle: close the session row only, without
     /// touching streamer state or the outbox. Writes a `session_ended`
     /// audit row in the same transaction so the `live_sessions.end_time`
@@ -397,8 +407,7 @@ impl SessionLifecycleRepository {
         let mut tx = begin_immediate(&self.write_pool).await?;
 
         let resolved = if let Some(id) = session_id {
-            SessionTxOps::end_session(&mut tx, id, now).await?;
-            Some(id.to_string())
+            (SessionTxOps::end_session(&mut tx, id, now).await? > 0).then(|| id.to_string())
         } else {
             SessionTxOps::end_active_session(&mut tx, streamer_id, now).await?
         };
@@ -553,16 +562,10 @@ impl SessionLifecycleRepository {
         Ok(resolved)
     }
 
-    /// Retro-actively rewrite the most recent `session_ended` audit row's
-    /// cause for `session_id`. Used when the lifecycle's `end_for_disable`
-    /// loses a CAS race to the hysteresis timer (or any other authoritative
-    /// path) — the row was written with the wrong cause; we correct the
-    /// audit log to reflect the user's actual intent.
+    /// Reattribute an ambiguous hysteresis-timer end to a later user stop.
+    /// Authoritative offline and direct engine ends preserve their causes.
     ///
-    /// Returns `true` if a row was updated, `false` if no `session_ended`
-    /// row existed for the session (defensive — should not happen in
-    /// practice because the caller only invokes this after observing the
-    /// session is already Ended).
+    /// Returns false when no eligible timer-end row exists.
     pub async fn rewrite_session_ended_cause(
         &self,
         session_id: &str,
@@ -604,7 +607,16 @@ impl SessionLifecycleRepository {
         };
 
         match &mut payload {
-            SessionEventPayload::SessionEnded { cause, .. } => *cause = new_cause,
+            SessionEventPayload::SessionEnded {
+                cause,
+                via_hysteresis: true,
+            } if matches!(
+                cause,
+                TerminalCauseDto::Completed | TerminalCauseDto::Failed { .. }
+            ) =>
+            {
+                *cause = new_cause;
+            }
             _ => {
                 tx.commit().await?;
                 return Ok(false);
@@ -628,19 +640,53 @@ impl SessionLifecycleRepository {
     /// [`MonitorEvent::StreamerOffline`].
     pub async fn end(&self, inputs: EndSessionInputs) -> Result<EndSessionOutcome> {
         let mut tx = begin_immediate(&self.write_pool).await?;
+        if let Some(ref id) = inputs.session_id {
+            let belongs_to_streamer: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM live_sessions WHERE id = ? AND streamer_id = ?)",
+            )
+            .bind(id)
+            .bind(&inputs.streamer_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            let current = SessionTxOps::get_active_session_id(&mut tx, &inputs.streamer_id).await?;
+            // Session-scoped signals (for example a delayed danmu close) may
+            // outlive their recording. They cannot take a successor offline.
+            if !belongs_to_streamer || current.as_ref().is_some_and(|current| current != id) {
+                tx.commit().await?;
+                return Ok(EndSessionOutcome {
+                    resolved_session_id: None,
+                    offline_event_emitted: false,
+                });
+            }
+        }
+        let state = StreamerTxOps::get_state(&mut tx, &inputs.streamer_id).await?;
+        if inputs.state_was_live != (state == Some(StreamerState::Live)) {
+            debug!(
+                streamer_id = %inputs.streamer_id,
+                observed_live = inputs.state_was_live,
+                persisted_state = ?state,
+                "Offline observation state changed before persistence"
+            );
+        }
 
         let resolved_session_id = if let Some(ref id) = inputs.session_id {
-            SessionTxOps::end_session(&mut tx, id, inputs.now).await?;
-            Some(id.clone())
+            (SessionTxOps::end_session(&mut tx, id, inputs.now).await? > 0).then(|| id.clone())
         } else {
             SessionTxOps::end_active_session(&mut tx, &inputs.streamer_id, inputs.now).await?
         };
 
-        let should_emit = inputs.state_was_live || resolved_session_id.is_some();
+        // Actor hints may lag another offline observation or a user disable.
+        // Decide inside the transaction, preserving authoritative inactive
+        // states even when a persisted active session still needs closing.
+        let is_active = state.as_ref().is_some_and(StreamerState::is_active);
+        let should_emit =
+            is_active && (state == Some(StreamerState::Live) || resolved_session_id.is_some());
 
-        StreamerTxOps::set_offline(&mut tx, &inputs.streamer_id).await?;
+        if is_active {
+            StreamerTxOps::set_offline(&mut tx, &inputs.streamer_id).await?;
+        }
 
-        if inputs.clear_errors {
+        if inputs.clear_errors && is_active {
             StreamerTxOps::clear_error_state(&mut tx, &inputs.streamer_id).await?;
         }
 
@@ -693,7 +739,8 @@ mod tests {
     }
 
     async fn create_streamer(pool: &SqlitePool, id: &str, name: &str) {
-        let mut streamer = StreamerDbModel::new(name, "https://example.com", "platform-twitch");
+        let mut streamer =
+            StreamerDbModel::new(name, format!("https://example.com/{id}"), "platform-twitch");
         streamer.id = id.to_string();
         SqlxStreamerRepository::new(pool.clone(), pool.clone())
             .create_streamer(&streamer)
@@ -705,7 +752,7 @@ mod tests {
         StartSessionInputs {
             streamer_id: STREAMER_ID.to_string(),
             streamer_name: "Test".to_string(),
-            streamer_url: "https://example.com".to_string(),
+            streamer_url: format!("https://example.com/{STREAMER_ID}"),
             current_avatar: None,
             new_avatar: None,
             title: "Live!".to_string(),
@@ -760,6 +807,153 @@ mod tests {
             .into_iter()
             .map(|r| r.get::<String, _>(0))
             .collect()
+    }
+
+    #[tokio::test]
+    async fn repeated_end_preserves_timestamp_audit_and_offline_observation() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let sid = started.session_id();
+        assert_eq!(
+            repo.end_session_only(
+                STREAMER_ID,
+                Some(sid),
+                TerminalCauseDto::Completed,
+                false,
+                now
+            )
+            .await
+            .unwrap()
+            .as_deref(),
+            Some(sid)
+        );
+        let later = now + chrono::Duration::seconds(10);
+        assert!(
+            repo.end_session_only(
+                STREAMER_ID,
+                Some(sid),
+                TerminalCauseDto::Completed,
+                false,
+                later
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        let offline = repo
+            .end(end_inputs(Some(sid.to_string()), true, later))
+            .await
+            .unwrap();
+        assert!(offline.resolved_session_id.is_none());
+        assert!(offline.offline_event_emitted);
+        assert_eq!(streamer_state(&pool).await, "NOT_LIVE");
+        let duplicate = repo
+            .end(end_inputs(Some(sid.to_string()), true, later))
+            .await
+            .unwrap();
+        assert!(duplicate.resolved_session_id.is_none());
+        assert!(!duplicate.offline_event_emitted);
+        let end_time: i64 = sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = ?")
+            .bind(sid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(end_time, now.timestamp_millis());
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind = 'session_ended'",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn offline_rejects_session_owned_by_another_streamer() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        create_streamer(&pool, "other-streamer", "Other").await;
+        let now = Utc::now();
+        let mut inputs = start_inputs(now);
+        inputs.streamer_id = "other-streamer".to_string();
+        let started = repo.start_or_resume(inputs).await.unwrap();
+        set_streamer_state(&pool, "LIVE").await;
+        let events_before = outbox_event_types(&pool).await;
+        let outcome = repo
+            .end(end_inputs(
+                Some(started.session_id().to_string()),
+                true,
+                now,
+            ))
+            .await
+            .unwrap();
+        assert!(outcome.resolved_session_id.is_none());
+        assert!(!outcome.offline_event_emitted);
+        assert!(repo.is_session_active(started.session_id()).await.unwrap());
+        assert_eq!(streamer_state(&pool).await, "LIVE");
+        assert_eq!(outbox_event_types(&pool).await, events_before);
+    }
+
+    #[tokio::test]
+    async fn offline_preserves_inactive_streamer_state() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        set_streamer_state(&pool, "DISABLED").await;
+        let outcome = repo
+            .end(end_inputs(
+                Some(started.session_id().to_string()),
+                true,
+                now,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome.resolved_session_id.as_deref(),
+            Some(started.session_id())
+        );
+        assert!(!outcome.offline_event_emitted);
+        assert_eq!(streamer_state(&pool).await, "DISABLED");
+    }
+
+    #[tokio::test]
+    async fn cause_rewrite_preserves_authoritative_and_direct_ends() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        for (cause, via_hysteresis) in [
+            (TerminalCauseDto::StreamerOffline, true),
+            (TerminalCauseDto::Completed, false),
+        ] {
+            let now = Utc::now();
+            let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+            repo.end_session_only(
+                STREAMER_ID,
+                Some(started.session_id()),
+                cause.clone(),
+                via_hysteresis,
+                now,
+            )
+            .await
+            .unwrap();
+            assert!(
+                !repo
+                    .rewrite_session_ended_cause(
+                        started.session_id(),
+                        TerminalCauseDto::UserDisabled
+                    )
+                    .await
+                    .unwrap()
+            );
+            let payload: String = sqlx::query_scalar("SELECT payload FROM session_events WHERE session_id = ? AND kind = 'session_ended'").bind(started.session_id()).fetch_one(&pool).await.unwrap();
+            let parsed: SessionEventPayload = serde_json::from_str(&payload).unwrap();
+            assert!(
+                matches!(parsed, SessionEventPayload::SessionEnded { cause: actual, .. } if actual == cause)
+            );
+        }
     }
 
     #[tokio::test]
