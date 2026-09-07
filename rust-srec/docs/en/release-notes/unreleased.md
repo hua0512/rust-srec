@@ -24,6 +24,10 @@
 
 ## Post-processing
 
+- **Worker logs retain repeated messages and withdrawn jobs stay stopped**
+
+  Successive log batches retain every entry even when timestamps and messages match. Completion snapshots avoid repeating entries already streamed to storage, while the existing log limit and API format stay intact. Workers check queue ownership before starting execution, so a removed job cannot run with a replacement cancellation token.
+
 - **Execute jobs can run programs without a shell**
 
   The execute processor accepts `program` and an optional `args` array. Each argument expands placeholders once and retains spaces, quotes, empty values, and shell metacharacters as literal data. Existing `command` configurations remain supported. Both modes use the same timeout, process cleanup, and output scanning; ambiguous configurations and Windows batch files in program mode are rejected.

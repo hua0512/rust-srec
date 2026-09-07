@@ -3,9 +3,9 @@
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -63,21 +63,26 @@ fn non_empty(value: &str) -> Option<String> {
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
 const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
-/// Ring-buffer bound on `job_execution_logs` rows per job run: once a run
+const LOG_PERSISTENCE_LOCK_SHARDS: usize = 64;
+/// Ring-buffer bound on `job_execution_logs` rows per job: once a job
 /// has this many rows, `persist_logs_to_db` trims the oldest via
 /// `JobRepository::trim_execution_logs` after each insert. Counted in
-/// `PersistedLogCursor::persisted_rows`, whose entry is removed on every
-/// terminal/retry path — so the cap bounds one run, and time-based
-/// retention (`database::maintenance`) remains the cross-run bound.
+/// `PersistedLogCursor::persisted_rows`, initialized from durable rows after
+/// a terminal/retry path clears it. Time-based retention remains independent.
 const MAX_PERSISTED_LOG_ROWS_PER_JOB: usize = 5000;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default)]
 struct PersistedLogCursor {
-    last_sig: u64,
-    last_ts_ms: i64,
-    /// Rows this run has inserted into `job_execution_logs`, saturated at
-    /// `MAX_PERSISTED_LOG_ROWS_PER_JOB` once trimming keeps the table there.
-    persisted_rows: usize,
+    /// Initialized from durable rows on first use, including previous attempts.
+    persisted_rows: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
+enum LogPersistence {
+    /// The caller owns a disjoint batch and removes it only after a successful write.
+    Append,
+    /// Entries may include clones already written by a streaming collector.
+    Snapshot,
 }
 
 /// Oldest rows to delete so `already + incoming` stays within `cap`.
@@ -92,14 +97,6 @@ fn log_level_to_db(level: LogLevel) -> &'static str {
         LogLevel::Warn => "WARN",
         LogLevel::Error => "ERROR",
     }
-}
-
-fn log_signature(entry: &JobLogEntry) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    entry.timestamp.timestamp_millis().hash(&mut hasher);
-    log_level_to_db(entry.level).hash(&mut hasher);
-    entry.message.hash(&mut hasher);
-    hasher.finish()
 }
 
 fn extend_logs_capped(exec_info: &mut JobExecutionInfo, new_logs: &[JobLogEntry]) {
@@ -202,6 +199,11 @@ pub struct JobLogEntry {
     pub level: LogLevel,
     /// Log message.
     pub message: String,
+    // Shared by clones in streamed and returned logs; equality of timestamps or text does
+    // not identify an occurrence. Owned by the entries so retained snapshots stay bounded
+    // without a queue-wide history, even after their database rows have been trimmed.
+    #[serde(skip)]
+    persisted_for: Arc<parking_lot::Mutex<HashSet<Arc<str>>>>,
 }
 
 impl JobLogEntry {
@@ -211,7 +213,12 @@ impl JobLogEntry {
             timestamp: Utc::now(),
             level,
             message: message.into(),
+            persisted_for: Arc::default(),
         }
+    }
+
+    fn mark_persisted(&self, job_id: Arc<str>) {
+        self.persisted_for.lock().insert(job_id);
     }
 
     /// Create an info log entry.
@@ -611,8 +618,10 @@ pub struct JobQueue {
     progress_shutdown: CancellationToken,
     /// Owned so pipeline shutdown can prove no progress write remains in flight.
     progress_aggregator: parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Cursor used to dedupe/append logs into `job_execution_logs`.
+    /// Durable row counts used to cap logs in `job_execution_logs`.
     persisted_log_cursor: DashMap<String, PersistedLogCursor>,
+    /// Stable locks outlive cursor eviction during cancellation and terminal cleanup.
+    log_persistence_locks: [tokio::sync::Mutex<()>; LOG_PERSISTENCE_LOCK_SHARDS],
 }
 
 impl JobQueue {
@@ -668,6 +677,7 @@ impl JobQueue {
             progress_shutdown,
             progress_aggregator: parking_lot::Mutex::new(progress_aggregator),
             persisted_log_cursor: DashMap::new(),
+            log_persistence_locks: std::array::from_fn(|_| tokio::sync::Mutex::new(())),
         }
     }
 
@@ -912,15 +922,25 @@ impl JobQueue {
         }
     }
 
+    /// Persist a disjoint batch, including repeated entries. Callers must not resubmit a
+    /// successful batch; after an error the same batch can be retried.
     pub async fn append_log_entry(&self, job_id: &str, logs: &[JobLogEntry]) -> Result<()> {
-        self.persist_logs_to_db(job_id, logs).await?;
+        self.persist_logs_to_db(job_id, logs, LogPersistence::Append)
+            .await?;
         Ok(())
+    }
+
+    fn log_persistence_lock(&self, job_id: &str) -> &tokio::sync::Mutex<()> {
+        let mut hasher = DefaultHasher::new();
+        job_id.hash(&mut hasher);
+        &self.log_persistence_locks[hasher.finish() as usize % LOG_PERSISTENCE_LOCK_SHARDS]
     }
 
     async fn persist_logs_to_db(
         &self,
         job_id: &str,
         logs: &[JobLogEntry],
+        mode: LogPersistence,
     ) -> Result<Vec<JobLogEntry>> {
         let Some(repo) = &self.job_repository else {
             return Ok(vec![]);
@@ -929,28 +949,38 @@ impl JobQueue {
             return Ok(vec![]);
         }
 
-        let cursor = self.persisted_log_cursor.get(job_id).map(|c| *c);
-
-        let mut start_index = 0usize;
-        if let Some(cursor) = cursor {
-            if let Some(pos) = logs
-                .iter()
-                .rposition(|e| log_signature(e) == cursor.last_sig)
-            {
-                start_index = pos.saturating_add(1);
-            } else if let Some(pos) = logs
-                .iter()
-                .position(|e| e.timestamp.timestamp_millis() > cursor.last_ts_ms)
-            {
-                start_index = pos;
-            } else {
-                start_index = logs.len();
+        // Serialize snapshot deduplication and the row cap across database IO. Concurrent
+        // snapshots can otherwise both observe an unpersisted occurrence before insertion.
+        // The lock must survive removal of the cursor by cancellation or terminal cleanup.
+        let _guard = self.log_persistence_lock(job_id).lock().await;
+        let previous_rows = self
+            .persisted_log_cursor
+            .entry(job_id.to_owned())
+            .or_default()
+            .persisted_rows;
+        let already_persisted = match previous_rows {
+            Some(rows) => rows,
+            None => {
+                let (_, rows) = repo
+                    .list_execution_logs(job_id, &Pagination::new(0, 0))
+                    .await?;
+                let rows = usize::try_from(rows).unwrap_or(usize::MAX);
+                if let Some(mut cursor) = self.persisted_log_cursor.get_mut(job_id) {
+                    cursor.persisted_rows = Some(rows);
+                }
+                rows
             }
-        }
+        };
 
-        let already_persisted = cursor.map(|c| c.persisted_rows).unwrap_or(0);
-
-        let new_logs: Vec<JobLogEntry> = logs[start_index..].to_vec();
+        let new_logs: Vec<JobLogEntry> = logs
+            .iter()
+            .filter(|entry| {
+                matches!(mode, LogPersistence::Append)
+                    || !entry.persisted_for.lock().contains(job_id)
+            })
+            .cloned()
+            .collect();
+        let mut persisted_rows = already_persisted;
         if !new_logs.is_empty() {
             let db_logs: Vec<JobExecutionLogDbModel> = new_logs
                 .iter()
@@ -972,6 +1002,11 @@ impl JobQueue {
                 })
                 .collect();
             repo.add_execution_logs(&db_logs).await?;
+            persisted_rows = persisted_rows.saturating_add(new_logs.len());
+            let owner: Arc<str> = Arc::from(job_id);
+            for entry in &new_logs {
+                entry.mark_persisted(owner.clone());
+            }
 
             // Insert first, trim after: the newest lines (a failing run's
             // tail) always land, and the oldest rows leave once the run
@@ -982,24 +1017,23 @@ impl JobQueue {
                 new_logs.len(),
                 MAX_PERSISTED_LOG_ROWS_PER_JOB,
             );
-            if excess > 0
-                && let Err(error) = repo.trim_execution_logs(job_id, excess).await
-            {
-                warn!(job_id, %error, "Failed to trim oldest execution log rows");
+            if excess > 0 {
+                match repo.trim_execution_logs(job_id, excess).await {
+                    Ok(()) => persisted_rows = persisted_rows.saturating_sub(excess),
+                    Err(error) => {
+                        warn!(job_id, %error, "Failed to trim oldest execution log rows");
+                    }
+                }
             }
         }
 
-        if let Some(last) = logs.last() {
-            self.persisted_log_cursor.insert(
-                job_id.to_string(),
-                PersistedLogCursor {
-                    last_sig: log_signature(last),
-                    last_ts_ms: last.timestamp.timestamp_millis(),
-                    persisted_rows: already_persisted
-                        .saturating_add(new_logs.len())
-                        .min(MAX_PERSISTED_LOG_ROWS_PER_JOB),
-                },
-            );
+        // Keep excess rows in the count after failed trimming, so the next write retries
+        // all outstanding excess. Do not resurrect a cursor removed during the IO above.
+        if let Some(mut cursor) = self.persisted_log_cursor.get_mut(job_id) {
+            cursor.persisted_rows = Some(persisted_rows);
+        }
+        if !self.jobs_cache.contains_key(job_id) && !self.cancellation_tokens.contains_key(job_id) {
+            self.persisted_log_cursor.remove(job_id);
         }
 
         Ok(new_logs)
@@ -1334,7 +1368,10 @@ impl JobQueue {
             // The COMPLETED row above is the recovery boundary for DAG jobs. Execution logs and
             // their summary are auxiliary observability writes and cannot make a processor rerun.
             if !result.logs.is_empty() {
-                match self.persist_logs_to_db(job_id, &result.logs).await {
+                match self
+                    .persist_logs_to_db(job_id, &result.logs, LogPersistence::Snapshot)
+                    .await
+                {
                     Ok(new_logs) => {
                         let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
                             db_job.execution_info.as_deref(),
@@ -1530,7 +1567,25 @@ impl JobQueue {
         // Try database first if repository is available
         if let Some(repo) = &self.job_repository {
             match repo.get_job(id).await {
-                Ok(db_job) => return Ok(Some(db_model_to_job(&db_job))),
+                Ok(db_job) => {
+                    let job = db_model_to_job(&db_job);
+                    if let Some(info) = &job.execution_info
+                        && !info.logs.is_empty()
+                    {
+                        let (_, rows) =
+                            repo.list_execution_logs(id, &Pagination::new(0, 0)).await?;
+                        if rows > 0 {
+                            let owner: Arc<str> = Arc::from(id);
+                            for entry in &info.logs {
+                                entry.mark_persisted(owner.clone());
+                            }
+                        }
+                        // An empty log table may be a legacy snapshot-only job. Its
+                        // entries must be copied on the next snapshot update, before
+                        // new rows make list_job_logs stop using its legacy fallback.
+                    }
+                    return Ok(Some(job));
+                }
                 Err(Error::NotFound { .. }) => return Ok(None),
                 Err(e) => return Err(e),
             }
@@ -1571,6 +1626,7 @@ impl JobQueue {
                             timestamp,
                             level,
                             message: row.message.unwrap_or(row.entry),
+                            persisted_for: Arc::default(),
                         };
                     }
 
@@ -1590,6 +1646,7 @@ impl JobQueue {
                             timestamp,
                             level,
                             message: entry.message,
+                            persisted_for: Arc::default(),
                         };
                     }
 
@@ -1597,8 +1654,10 @@ impl JobQueue {
                         timestamp,
                         level: LogLevel::Info,
                         message: row.entry,
+                        persisted_for: Arc::default(),
                     }
                 })
+                .inspect(|entry| entry.mark_persisted(Arc::from(job_id)))
                 .collect();
 
             if total > 0 {
@@ -2299,7 +2358,11 @@ impl JobQueue {
             if !exec_info.logs.is_empty() {
                 // make_contiguous() allows VecDeque to be used as a slice
                 let new_logs = self
-                    .persist_logs_to_db(job_id, exec_info.logs.make_contiguous())
+                    .persist_logs_to_db(
+                        job_id,
+                        exec_info.logs.make_contiguous(),
+                        LogPersistence::Snapshot,
+                    )
                     .await?;
                 update_log_summary(&mut exec_info, &new_logs);
                 cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
@@ -2431,8 +2494,12 @@ impl JobQueue {
             extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
             update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
 
-            self.persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
-                .await?;
+            self.persist_logs_to_db(
+                job_id,
+                std::slice::from_ref(&log_entry),
+                LogPersistence::Append,
+            )
+            .await?;
 
             let exec_info_json = serde_json::to_string(&exec_info)?;
             repo.update_job_execution_info(job_id, &exec_info_json)
@@ -2968,6 +3035,63 @@ mod tests {
         assert_eq!(excess_log_rows(100, 0, 100), 0);
         // A single oversized batch trims down to the cap.
         assert_eq!(excess_log_rows(0, 150, 100), 50);
+    }
+
+    #[tokio::test]
+    async fn terminal_cursor_cleanup_does_not_split_log_write_lock() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repo = Arc::new(crate::database::repositories::SqlxJobRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), repo.clone());
+        let job_id = queue
+            .enqueue(Job::new("remux", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        let old: Vec<_> = (0..MAX_PERSISTED_LOG_ROWS_PER_JOB - 1)
+            .map(|i| JobLogEntry::info(format!("old-{i}")))
+            .collect();
+        queue.append_log_entry(&job_id, &old).await.unwrap();
+
+        // Hold the same permit as an in-flight insert. Polling each writer once proves
+        // both remain blocked, even though terminal cleanup evicts the count between them.
+        let guard = queue.log_persistence_lock(&job_id).lock().await;
+        let first_batch = [JobLogEntry::info("first late batch")];
+        let second_batch = [JobLogEntry::info("second late batch")];
+        let first = queue.append_log_entry(&job_id, &first_batch);
+        tokio::pin!(first);
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        queue.finalize_cancelled_job(&job_id);
+        assert!(!queue.persisted_log_cursor.contains_key(&job_id));
+        let second = queue.append_log_entry(&job_id, &second_batch);
+        tokio::pin!(second);
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        drop(guard);
+        let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(first, second)
+        })
+        .await
+        .unwrap();
+        first.unwrap();
+        second.unwrap();
+        let (logs, count) = repo
+            .list_execution_logs(&job_id, &Pagination::new(5000, 0))
+            .await
+            .unwrap();
+        assert_eq!(count, MAX_PERSISTED_LOG_ROWS_PER_JOB as u64);
+        assert!(
+            logs.iter()
+                .any(|entry| entry.message.as_deref() == Some("first late batch"))
+        );
+        assert!(
+            logs.iter()
+                .any(|entry| entry.message.as_deref() == Some("second late batch"))
+        );
+        assert!(!queue.persisted_log_cursor.contains_key(&job_id));
     }
 
     #[test]
