@@ -1,9 +1,10 @@
-//! Execute command processor for running arbitrary shell commands.
+//! Execute processor for shell commands and programs with literal arguments.
+
+use std::collections::HashSet;
+use std::path::Path;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::path::Path;
 use tokio::process::Command;
 use tracing::debug;
 
@@ -33,7 +34,17 @@ pub struct ExecuteConfig {
     /// Substituted values are quoted for the shell by `substitute_variables`,
     /// so a path or title containing spaces, quotes or `$` stays one literal
     /// word; the command may still use pipes, `&&` and redirects itself.
-    pub command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+
+    /// Executable name or path, used instead of `command`. Not templated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+
+    /// Literal arguments for `program`. Each entry supports the same placeholders
+    /// as `command`, without shell quoting or splitting into additional arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
 
     /// Directory to scan for new files after command execution.
     /// If specified, the processor will detect files created during execution
@@ -46,6 +57,39 @@ pub struct ExecuteConfig {
     /// If not specified, all new files are included.
     #[serde(default)]
     pub scan_extension: Option<String>,
+}
+
+impl ExecuteConfig {
+    fn shell(command: String) -> Self {
+        Self {
+            command: Some(command),
+            program: None,
+            args: None,
+            scan_output_dir: None,
+            scan_extension: None,
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        match (&self.command, &self.program, &self.args) {
+            (Some(_), None, None) => Ok(()),
+            (None, Some(program), _) if !program.trim().is_empty() => {
+                // Rust launches Windows batch files through cmd implicitly.
+                #[cfg(windows)]
+                if Path::new(program).extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("bat") || extension.eq_ignore_ascii_case("cmd")
+                }) {
+                    return Err(crate::Error::config(
+                        "Execute program mode requires an executable; use command for .bat or .cmd files",
+                    ));
+                }
+                Ok(())
+            }
+            _ => Err(crate::Error::config(
+                "Execute requires either command or a nonempty program with optional args; args cannot be used with command",
+            )),
+        }
+    }
 }
 
 /// Shell that will interpret the command built by
@@ -554,7 +598,28 @@ fn substitute_placeholders<'a>(
     Ok(out)
 }
 
-/// Processor for executing arbitrary shell commands.
+fn substitute_argument<'a>(template: &str, resolve: impl Fn(&str) -> Option<&'a str>) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut copied = 0;
+    // Scan only the template so values containing placeholders stay literal.
+    for (start, _) in template.match_indices('{') {
+        if start < copied {
+            continue;
+        }
+        if let Some(end) = template[start..].find('}') {
+            let end = start + end;
+            if let Some(value) = resolve(&template[start + 1..end]) {
+                out.push_str(&template[copied..start]);
+                out.push_str(value);
+                copied = end + 1;
+            }
+        }
+    }
+    out.push_str(&template[copied..]);
+    out
+}
+
+/// Processor for executing shell commands or programs with literal arguments.
 pub struct ExecuteCommandProcessor {
     /// Command timeout in seconds.
     timeout_secs: u64,
@@ -592,6 +657,14 @@ impl ExecuteCommandProcessor {
         command: &str,
         input: &ProcessorInput,
     ) -> Result<String> {
+        Self::expand_variables(Some(shell), command, input)
+    }
+
+    fn expand_variables(
+        shell: Option<ShellKind>,
+        command: &str,
+        input: &ProcessorInput,
+    ) -> Result<String> {
         let template = pipeline_common::expand_path_template(command);
 
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -614,7 +687,7 @@ impl ExecuteCommandProcessor {
             .map(sanitize_filename)
             .unwrap_or_default();
 
-        substitute_placeholders(&template, shell, |name| match name {
+        let resolve = |name: &str| match name {
             "input" => Some(input_path),
             "output" => Some(output_path),
             "inputs_json" => Some(inputs_json.as_str()),
@@ -635,7 +708,11 @@ impl ExecuteCommandProcessor {
                         .and_then(|index| input.outputs.get(index))
                 })
                 .map(String::as_str),
-        })
+        };
+        match shell {
+            Some(shell) => substitute_placeholders(&template, shell, resolve),
+            None => Ok(substitute_argument(&template, resolve)),
+        }
     }
 
     fn parse_config(input: &ProcessorInput) -> Result<ExecuteConfig> {
@@ -652,11 +729,7 @@ impl ExecuteCommandProcessor {
         );
 
         if !looks_like_json {
-            return Ok(ExecuteConfig {
-                command: config_str.clone(),
-                scan_output_dir: None,
-                scan_extension: None,
-            });
+            return Ok(ExecuteConfig::shell(config_str.clone()));
         }
 
         let value: serde_json::Value = serde_json::from_str(config_str).map_err(|e| {
@@ -667,21 +740,61 @@ impl ExecuteCommandProcessor {
             ))
         })?;
 
-        match value {
+        let config: ExecuteConfig = match value {
             serde_json::Value::Object(_) => serde_json::from_value(value).map_err(|e| {
                 crate::Error::Other(format!(
-                    "Invalid execute processor config object (expected {{\"command\": \"...\"}}): {e}"
+                    "Invalid execute processor config object (expected command or program with args): {e}"
                 ))
             }),
-            serde_json::Value::String(command) => Ok(ExecuteConfig {
-                command,
-                scan_output_dir: None,
-                scan_extension: None,
-            }),
+            serde_json::Value::String(command) => Ok(ExecuteConfig::shell(command)),
             _ => Err(crate::Error::Other(
                 "Execute processor config must be a JSON object or JSON string".to_string(),
             )),
+        }?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn build_command(
+        config: &ExecuteConfig,
+        input: &ProcessorInput,
+    ) -> Result<(Command, serde_json::Value)> {
+        if let Some(program) = &config.program {
+            let args = config
+                .args
+                .iter()
+                .flatten()
+                .map(|arg| Self::expand_variables(None, arg, input))
+                .collect::<Result<Vec<_>>>()?;
+            let mut cmd = Command::new(program);
+            cmd.args(&args);
+            return Ok((cmd, serde_json::json!({ "program": program, "args": args })));
         }
+
+        let command = config
+            .command
+            .as_deref()
+            .ok_or_else(|| crate::Error::config("Execute requires command or program"))?;
+        let command = Self::substitute_variables(command, input)?;
+
+        #[cfg(windows)]
+        let cmd = {
+            use std::os::windows::process::CommandExt;
+
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/S", "/C"]);
+            // Preserve cmd's doubled quotes and strip only the outer pair.
+            cmd.as_std_mut().raw_arg(format!("\"{command}\""));
+            cmd
+        };
+
+        #[cfg(not(windows))]
+        let cmd = {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", &command]);
+            cmd
+        };
+        Ok((cmd, serde_json::json!({ "command": command })))
     }
 
     /// Scan a directory and return all file paths.
@@ -769,9 +882,15 @@ impl Processor for ExecuteCommandProcessor {
         // Raw string: echo hello
         let config = Self::parse_config(input)?;
 
-        let command = Self::substitute_variables(&config.command, input)?;
-
-        ctx.info(format!("Executing command: {}", command));
+        let (mut cmd, mut metadata) = Self::build_command(&config, input)?;
+        if let Some(command) = metadata.get("command").and_then(serde_json::Value::as_str) {
+            ctx.info(format!("Executing command: {command}"));
+        } else {
+            ctx.info(format!(
+                "Executing program: {}",
+                cmd.as_std().get_program().to_string_lossy()
+            ));
+        }
 
         // Take snapshot of output directory before execution (if scanning enabled)
         let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = config.scan_output_dir
@@ -800,30 +919,6 @@ impl Processor for ExecuteCommandProcessor {
             )
         } else {
             None
-        };
-
-        // Build command
-        #[cfg(windows)]
-        let mut cmd = {
-            use std::os::windows::process::CommandExt;
-
-            let mut c = Command::new("cmd");
-            c.args(["/S", "/C"]);
-            // `/S` makes cmd strip exactly the outer quote pair instead of
-            // applying its multi-quote rule, which would otherwise eat the
-            // first and last quote of a command that quotes its own program
-            // path. `raw_arg` keeps std's argument quoting from rewriting the
-            // `""` pairs escape_cmd emits into `\"`, which cmd does not
-            // unescape.
-            c.as_std_mut().raw_arg(format!("\"{command}\""));
-            c
-        };
-
-        #[cfg(not(windows))]
-        let mut cmd = {
-            let mut c = Command::new("sh");
-            c.args(["-c", &command]);
-            c
         };
 
         // Execute command and capture logs (with timeout)
@@ -929,17 +1024,12 @@ impl Processor for ExecuteCommandProcessor {
             input.inputs.clone()
         };
 
+        metadata["scan_output_dir"] = serde_json::json!(config.scan_output_dir);
+        metadata["scan_extension"] = serde_json::json!(config.scan_extension);
         Ok(ProcessorOutput {
             outputs,
             duration_secs: duration,
-            metadata: Some(
-                serde_json::json!({
-                    "command": command,
-                    "scan_output_dir": config.scan_output_dir,
-                    "scan_extension": config.scan_extension,
-                })
-                .to_string(),
-            ),
+            metadata: Some(metadata.to_string()),
             items_produced,
             input_size_bytes,
             output_size_bytes,
@@ -1066,7 +1156,10 @@ mod tests {
         }"#;
 
         let config: ExecuteConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.command, "ffmpeg -i {input} {output}");
+        assert_eq!(
+            config.command.as_deref(),
+            Some("ffmpeg -i {input} {output}")
+        );
         assert_eq!(config.scan_output_dir, Some("/output/dir".to_string()));
         assert_eq!(config.scan_extension, Some("mp4".to_string()));
     }
@@ -1076,9 +1169,172 @@ mod tests {
         let json = r#"{"command": "echo hello"}"#;
 
         let config: ExecuteConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.command, "echo hello");
+        assert_eq!(config.command.as_deref(), Some("echo hello"));
         assert!(config.scan_output_dir.is_none());
         assert!(config.scan_extension.is_none());
+    }
+
+    #[test]
+    fn program_config_rejects_ambiguous_or_malformed_modes() {
+        for config in [
+            serde_json::json!({}),
+            serde_json::json!({ "program": "" }),
+            serde_json::json!({ "program": "  " }),
+            serde_json::json!({ "command": "echo ok", "program": "echo" }),
+            serde_json::json!({ "command": "echo ok", "args": [] }),
+            serde_json::json!({ "args": ["orphan"] }),
+            serde_json::json!({ "program": "echo", "args": "one two" }),
+            serde_json::json!({ "program": "echo", "args": [1] }),
+        ] {
+            let input = ProcessorInput {
+                config: Some(config.to_string()),
+                ..Default::default()
+            };
+            assert!(
+                ExecuteCommandProcessor::parse_config(&input).is_err(),
+                "{config}"
+            );
+        }
+    }
+
+    #[test]
+    fn program_is_not_templated_and_arguments_default_to_empty() {
+        let input = ProcessorInput {
+            config: Some(serde_json::json!({ "program": "tool-{input}-%Y" }).to_string()),
+            ..Default::default()
+        };
+        let config = ExecuteCommandProcessor::parse_config(&input).unwrap();
+        let (cmd, _) = ExecuteCommandProcessor::build_command(&config, &input).unwrap();
+        assert_eq!(cmd.as_std().get_program(), "tool-{input}-%Y");
+        assert_eq!(cmd.as_std().get_args().count(), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn program_mode_rejects_implicit_batch_shell() {
+        for program in ["script.bat", r"C:\scripts\script.CMD"] {
+            let input = ProcessorInput {
+                config: Some(serde_json::json!({ "program": program }).to_string()),
+                ..Default::default()
+            };
+            assert!(ExecuteCommandProcessor::parse_config(&input).is_err());
+        }
+    }
+
+    #[test]
+    fn literal_placeholders_preserve_unknown_nested_and_inserted_text() {
+        let input = ProcessorInput {
+            inputs: vec!["{output} %Y %PATH% !PATH! $HOME".to_string()],
+            outputs: vec!["do not substitute".to_string()],
+            ..Default::default()
+        };
+        let actual = ExecuteCommandProcessor::expand_variables(
+            None,
+            r#"{"path":"{input}","other":"{unknown}:{input99}"} {title} %%Y"#,
+            &input,
+        )
+        .unwrap();
+        assert_eq!(
+            actual,
+            r#"{"path":"{output} %Y %PATH% !PATH! $HOME","other":"{unknown}:{input99}"}  %Y"#
+        );
+    }
+
+    const ARGUMENT_HELPER: &str = "pipeline::processors::execute::tests::execute_argument_helper";
+
+    #[test]
+    fn execute_argument_helper() {
+        let mut args = std::env::args().skip_while(|arg| arg != "--").skip(1);
+        let Some(path) = args.next() else {
+            return;
+        };
+        let args: Vec<String> = args.collect();
+        std::fs::write(path, serde_json::to_vec(&args).unwrap()).unwrap();
+        match args.first().map(String::as_str) {
+            Some("__wait__") => std::thread::sleep(std::time::Duration::from_secs(5)),
+            Some("__fail__") => std::process::exit(7),
+            _ => {}
+        }
+    }
+
+    fn argument_helper_input(captured: &Path, arguments: &[&str]) -> ProcessorInput {
+        let mut args = vec![
+            "--exact".to_string(),
+            ARGUMENT_HELPER.to_string(),
+            "--nocapture".to_string(),
+            "--".to_string(),
+            captured.to_str().unwrap().to_string(),
+        ];
+        args.extend(arguments.iter().map(|arg| arg.to_string()));
+        ProcessorInput {
+            config: Some(
+                serde_json::json!({
+                    "program": std::env::current_exe().unwrap(),
+                    "args": args,
+                    "scan_output_dir": captured.parent().unwrap(),
+                    "scan_extension": "json",
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn program_passes_literal_arguments_and_discovers_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let captured = dir.path().join("arguments.json");
+        let arguments = [
+            "",
+            "a b",
+            "quotes\" ' \\",
+            "line\nbreak",
+            "--option=value",
+            "{input}",
+            "{input1}",
+            "{inputs_json}",
+            "prefix={input}",
+            "{title}",
+        ];
+        let mut input = argument_helper_input(&captured, &arguments);
+        input.inputs = vec![
+            r#"a b$(id);`id`'q"&.mp4"#.to_string(),
+            "{title} %Y %PATH% !PATH! $HOME".to_string(),
+        ];
+        let result = ExecuteCommandProcessor::new()
+            .with_timeout(10)
+            .process(&input, &ProcessorContext::noop("literal-arguments"))
+            .await
+            .unwrap();
+        let actual: Vec<String> =
+            serde_json::from_slice(&tokio::fs::read(&captured).await.unwrap()).unwrap();
+        let mut expected: Vec<String> = arguments[..5].iter().map(|arg| arg.to_string()).collect();
+        expected.extend([
+            input.inputs[0].clone(),
+            input.inputs[1].clone(),
+            serde_json::to_string(&input.inputs).unwrap(),
+            format!("prefix={}", input.inputs[0]),
+            String::new(),
+        ]);
+        assert_eq!(actual, expected);
+        assert_eq!(result.outputs, vec![captured.to_str().unwrap()]);
+    }
+
+    #[tokio::test]
+    async fn program_failure_and_timeout_fail_the_job() {
+        for (mode, timeout, expected_error) in [
+            ("__fail__", 10, "exit code: 7"),
+            ("__wait__", 1, "timed out"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let input = argument_helper_input(&dir.path().join("arguments.json"), &[mode]);
+            let error = ExecuteCommandProcessor::new()
+                .with_timeout(timeout)
+                .process(&input, &ProcessorContext::noop("program-failure"))
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains(expected_error), "{error}");
+        }
     }
 
     /// Test scan_directory helper function.
