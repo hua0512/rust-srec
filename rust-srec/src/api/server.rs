@@ -133,6 +133,8 @@ pub struct ApiServices {
     pub logging_config: Arc<crate::logging::LoggingConfig>,
     /// Single-use download tokens for log archives.
     pub logging_download_tokens: Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>,
+    /// Shared capacity and streaming archive generation for log downloads.
+    pub(crate) logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
     /// Credential refresh service for API-triggered refresh and cookie resolution.
     pub credential_service: Arc<CredentialRefreshService<SqlxConfigRepository>>,
     /// Validated, transactional configuration import application service.
