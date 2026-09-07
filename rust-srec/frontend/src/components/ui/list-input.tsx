@@ -54,6 +54,7 @@ export function ListInput({
           onClick={handleAdd}
           size="icon"
           variant="secondary"
+          aria-label={i18n._(msg`Add item`)}
         >
           <Plus className="h-4 w-4" />
         </Button>
@@ -72,6 +73,7 @@ export function ListInput({
                 size="icon"
                 className="h-6 w-6 opacity-50 group-hover:opacity-100 transition-opacity"
                 onClick={() => handleRemove(index)}
+                aria-label={i18n._(msg`Remove ${item}`)}
               >
                 <X className="h-3 w-3" />
               </Button>

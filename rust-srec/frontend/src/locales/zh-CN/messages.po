@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:997
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1017
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:998
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1018
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -189,7 +189,7 @@ msgstr "{0}/{1, plural, other {# 个步骤}}"
 
 #. placeholder {0}: duration.hours
 #. placeholder {1}: duration.minutes
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:381
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:389
 msgid "{0}h {1}m"
 msgstr "{0}小时{1}分"
 
@@ -286,7 +286,7 @@ msgstr "0 = 不限"
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1050
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1051
 msgid "0:v:0"
 msgstr "0:v:0"
 
@@ -309,6 +309,10 @@ msgstr "128k"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:200
 msgid "2"
 msgstr "2"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:294
+msgid "24-hour timeline"
+msgstr "24 小时时间线"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:490
 msgid "30 days"
@@ -379,7 +383,7 @@ msgstr "账号不存在"
 msgid "Action"
 msgstr "操作"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:42
+#: src/components/streamers/card/stream-actions-menu.tsx:45
 msgid "Actions"
 msgstr "操作"
 
@@ -457,7 +461,7 @@ msgstr "添加 BaiduPCS-Go 参数"
 msgid "Add Channel"
 msgstr "添加渠道"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:151
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:152
 msgid "Add Custom Tag"
 msgstr "添加自定义标签"
 
@@ -476,6 +480,10 @@ msgstr "添加额外参数"
 #: src/components/streamers/edit/streamer-filters-tab.tsx:47
 msgid "Add Filter"
 msgstr "添加过滤器"
+
+#: src/components/ui/list-input.tsx:57
+msgid "Add item"
+msgstr "添加项目"
 
 #: src/components/ui/list-input.tsx:49
 msgid "Add item..."
@@ -527,7 +535,7 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1081
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1082
 msgid "Add Tag"
 msgstr "添加自定义标签"
 
@@ -550,7 +558,7 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:335
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:128
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:313
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:314
 #: src/components/streamers/streamer-editor.tsx:169
 msgid "Advanced"
 msgstr "高级"
@@ -577,7 +585,7 @@ msgstr "高级设置"
 msgid "AFTER: {0}"
 msgstr "在: {0} 之后"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:231
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:232
 msgid "Album"
 msgstr "专辑"
 
@@ -695,7 +703,7 @@ msgstr "应用令牌"
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1021
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1022
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
@@ -762,8 +770,8 @@ msgstr "插入到 -i input_url 之前的参数"
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:193
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:198
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:194
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:199
 msgid "Artist"
 msgstr "艺术家"
 
@@ -795,17 +803,17 @@ msgid "Attempts to get origin quality by replacing the audio stream. May result 
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:304
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:305
 #: src/lib/media-file-type.ts:41
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:603
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:604
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:439
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -829,7 +837,7 @@ msgstr "音频提取"
 msgid "Audio only"
 msgstr "仅音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:812
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:813
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -837,7 +845,7 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:429
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:430
 msgid "Audio Settings"
 msgstr "音频设置"
 
@@ -927,6 +935,10 @@ msgstr "等待首次检查"
 msgid "Back"
 msgstr "返回"
 
+#: src/components/config/engines/engine-editor.tsx:322
+msgid "Back to engines"
+msgstr "返回引擎列表"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:267
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:153
 msgid "Back to Jobs"
@@ -940,9 +952,21 @@ msgstr "返回链接"
 msgid "Back to Pipeline Jobs"
 msgstr "返回处理任务列表"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:130
+msgid "Back to presets"
+msgstr "返回预设列表"
+
 #: src/components/sessions/session-header.tsx:70
 msgid "Back to Sessions"
 msgstr "返回录制会话"
+
+#: src/components/streamers/edit/streamer-header.tsx:45
+msgid "Back to streamers"
+msgstr "返回主播列表"
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:242
+msgid "Back to workflows"
+msgstr "返回工作流列表"
 
 #: src/components/sidebar/footer.tsx:39
 msgid "Backend: {backendLabel}"
@@ -969,7 +993,7 @@ msgstr "退避倍率"
 msgid "Backup"
 msgstr "备份"
 
-#: src/components/config/global/backup-restore-card.tsx:222
+#: src/components/config/global/backup-restore-card.tsx:223
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:85
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:88
 msgid "Backup & Restore"
@@ -1206,7 +1230,7 @@ msgid "Cache"
 msgstr "缓存"
 
 #: src/components/config/engines/engine-card.tsx:189
-#: src/components/config/global/backup-restore-card.tsx:590
+#: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
 #: src/components/filters/FilterDialog.tsx:258
 #: src/components/layout/themes/import-modal.tsx:117
@@ -1292,7 +1316,7 @@ msgid "Case Insensitive"
 msgstr "不区分大小写"
 
 #: src/components/notifications/events/payload-preview.tsx:65
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:248
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:251
 msgid "Category"
 msgstr "分类"
 
@@ -1350,9 +1374,9 @@ msgstr "频道1,频道2"
 msgid "channels"
 msgstr "个渠道"
 
-#: src/components/config/global/backup-restore-card.tsx:407
-#: src/components/config/global/backup-restore-card.tsx:412
-#: src/components/config/global/backup-restore-card.tsx:417
+#: src/components/config/global/backup-restore-card.tsx:408
+#: src/components/config/global/backup-restore-card.tsx:413
+#: src/components/config/global/backup-restore-card.tsx:418
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
 #: src/lib/split-reason.ts:229
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:407
@@ -1454,6 +1478,10 @@ msgstr "清理"
 msgid "Clear"
 msgstr "清空"
 
+#: src/components/logging/log-file-browser.tsx:232
+msgid "Clear date range"
+msgstr "清除日期范围"
+
 #: src/components/shared/batch-action-bar.tsx:89
 #: src/components/shared/batch-action-bar.tsx:95
 msgid "Clear selection"
@@ -1491,7 +1519,7 @@ msgstr "克隆模板"
 msgid "Cloning..."
 msgstr "正在克隆..."
 
-#: src/components/config/global/backup-restore-card.tsx:581
+#: src/components/config/global/backup-restore-card.tsx:500
 #: src/components/notifications/browser-channel-dialog.tsx:203
 #: src/components/notifications/desktop-channel-dialog.tsx:236
 msgid "Close"
@@ -1506,6 +1534,10 @@ msgstr "最接近目标码率"
 #: src/lib/split-reason.ts:205
 msgid "Codec"
 msgstr "编解码器"
+
+#: src/components/sidebar/sidebar-toggle.tsx:42
+msgid "Collapse sidebar"
+msgstr "收起侧边栏"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:325
 msgid "Collapsible"
@@ -1535,7 +1567,7 @@ msgstr "命令参数"
 msgid "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders."
 msgstr "命令模板参数。可使用 {INPUT_TOKEN} 和 {OUTPUT_TOKEN} 占位符。"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:269
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:270
 msgid "Comment"
 msgstr "评论"
 
@@ -1635,7 +1667,7 @@ msgstr "配置路径（可选）"
 #: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
-#: src/components/pipeline/workflows/workflow-editor.tsx:308
+#: src/components/pipeline/workflows/workflow-editor.tsx:309
 #: src/lib/menu-list.ts:119
 msgid "Configuration"
 msgstr "配置"
@@ -1644,11 +1676,11 @@ msgstr "配置"
 msgid "Configuration copied to clipboard"
 msgstr "配置已复制到剪贴板"
 
-#: src/components/config/global/backup-restore-card.tsx:152
+#: src/components/config/global/backup-restore-card.tsx:153
 msgid "Configuration exported successfully"
 msgstr "配置已成功导出"
 
-#: src/components/config/global/backup-restore-card.tsx:178
+#: src/components/config/global/backup-restore-card.tsx:179
 msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
@@ -1665,7 +1697,7 @@ msgstr "配置并启动手动处理管道。"
 msgid "Configure another download tool."
 msgstr "配置另一个下载工具。"
 
-#: src/components/config/engines/engine-editor.tsx:328
+#: src/components/config/engines/engine-editor.tsx:332
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
@@ -1677,7 +1709,7 @@ msgstr "配置所选引擎的详细选项。"
 msgid "Configure how you receive alerts in this browser and via system push notifications."
 msgstr "配置如何在此浏览器中以及通过系统推送通知接收警报。"
 
-#: src/components/config/global/backup-restore-card.tsx:330
+#: src/components/config/global/backup-restore-card.tsx:331
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
 
@@ -1693,6 +1725,8 @@ msgstr "配置代理策略和连接详情。"
 msgid "Configure Settings"
 msgstr "配置设置"
 
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:110
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:111
 #: src/components/pipeline/workflows/steps-list.tsx:213
 msgid "Configure Step"
 msgstr "配置步骤"
@@ -1705,7 +1739,7 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Configured Events"
 msgstr "已配置的事件"
 
-#: src/components/config/global/backup-restore-card.tsx:605
+#: src/components/config/global/backup-restore-card.tsx:524
 msgid "Confirm Import"
 msgstr "确认导入"
 
@@ -1746,6 +1780,10 @@ msgstr "连接错误"
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
+#: src/components/connection-status-indicator.tsx:62
+msgid "Connection status: {statusLabel}"
+msgstr "连接状态：{statusLabel}"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:77
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
@@ -1763,7 +1801,7 @@ msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:474
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:475
 msgid "Container"
 msgstr "容器"
 
@@ -1818,8 +1856,8 @@ msgstr "复制"
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:357
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:453
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:358
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:454
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
@@ -1837,6 +1875,10 @@ msgstr "复制/移动"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:409
 msgid "Copy API key"
 msgstr "复制 API 密钥"
+
+#: src/components/pipeline/jobs/job-uploads-card.tsx:148
+msgid "Copy destination path"
+msgstr "复制目标路径"
 
 #: src/components/pipeline/outputs/output-card.tsx:239
 msgid "Copy Directory"
@@ -1921,7 +1963,7 @@ msgstr "CPU 任务超时"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:524
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:525
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
@@ -1968,7 +2010,7 @@ msgstr "创建目录"
 msgid "Create engine"
 msgstr "创建引擎"
 
-#: src/components/config/engines/engine-editor.tsx:324
+#: src/components/config/engines/engine-editor.tsx:328
 msgid "Create Engine"
 msgstr "创建引擎"
 
@@ -2021,7 +2063,7 @@ msgstr "创建你的第一个预设，用于为处理管道定义可复用的处
 msgid "Create your first workflow to define a sequence of processing steps for your recordings."
 msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤序列。"
 
-#: src/components/config/global/backup-restore-card.tsx:90
+#: src/components/config/global/backup-restore-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:611
 msgid "Created"
 msgstr "已创建"
@@ -2034,7 +2076,7 @@ msgstr "创建中..."
 msgid "Creating…"
 msgstr "创建中…"
 
-#: src/components/config/engines/engine-editor.tsx:345
+#: src/components/config/engines/engine-editor.tsx:349
 msgid "Creation Mode"
 msgstr "创建模式"
 
@@ -2082,7 +2124,7 @@ msgstr "凭据保存成功"
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:526
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:527
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -2156,7 +2198,7 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:982
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:983
 msgid "Custom Flags"
 msgstr "自定义标志"
 
@@ -2180,7 +2222,7 @@ msgstr "Twitch 播放列表的自定义代理 URL"
 msgid "Custom rate"
 msgstr "自定义画质值"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:289
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:290
 msgid "Custom Tags"
 msgstr "自定义标签"
 
@@ -2281,7 +2323,7 @@ msgstr "数据库"
 msgid "Database queries"
 msgstr "数据库查询"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:249
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:250
 msgid "Date"
 msgstr "日期"
 
@@ -2291,7 +2333,7 @@ msgstr "日期"
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
 
-#: src/components/logging/log-file-browser.tsx:270
+#: src/components/logging/log-file-browser.tsx:271
 msgid "Date range:"
 msgstr "日期范围："
 
@@ -2415,8 +2457,8 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/pipeline/presets/preset-templates.ts:74
 #: src/components/pipeline/workflows/workflow-card.tsx:102
 #: src/components/pipeline/workflows/workflow-card.tsx:125
-#: src/components/sessions/session-card.tsx:287
-#: src/components/streamers/card/stream-actions-menu.tsx:98
+#: src/components/sessions/session-card.tsx:288
+#: src/components/streamers/card/stream-actions-menu.tsx:101
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:477
 msgid "Delete"
@@ -2446,7 +2488,7 @@ msgstr "删除处理任务"
 msgid "Delete local files after upload"
 msgstr "上传后删除本地文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:960
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:961
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -2487,7 +2529,7 @@ msgstr "删除源文件"
 msgid "Delete Source ASS"
 msgstr "删除源 ASS 文件"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:337
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:338
 msgid "Delete source file after successful processing"
 msgstr "处理成功后删除源文件"
 
@@ -2527,7 +2569,7 @@ msgstr "转换成功后删除 XML 文件"
 msgid "Delete-after-transform checks are incomplete."
 msgstr "转换后删除检查尚未完成。"
 
-#: src/components/config/global/backup-restore-card.tsx:92
+#: src/components/config/global/backup-restore-card.tsx:93
 msgid "Deleted"
 msgstr "已删除"
 
@@ -2542,7 +2584,7 @@ msgstr "已删除 {0} 个产物；{1} 个失败"
 msgid "Deleted template \"{0}\""
 msgstr "已删除模板“{0}”"
 
-#: src/components/config/global/backup-restore-card.tsx:562
+#: src/components/config/global/import-mode-radio-group.tsx:145
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "导入前删除所有现有配置。此操作无法撤销。"
 
@@ -2558,16 +2600,16 @@ msgstr "投递策略"
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:343
+#: src/components/pipeline/workflows/workflow-editor.tsx:344
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:288
-#: src/components/pipeline/workflows/workflow-editor.tsx:338
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
+#: src/components/pipeline/workflows/workflow-editor.tsx:339
 msgid "Description"
 msgstr "描述"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:297
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:300
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
@@ -2575,7 +2617,7 @@ msgstr "描述由系统管理"
 msgid "Deselect All"
 msgstr "取消全选"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:254
+#: src/components/pipeline/workflows/workflow-editor.tsx:255
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
@@ -2636,7 +2678,7 @@ msgstr "识别中…"
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "根据链接自动识别，并自动应用该平台的设置。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:633
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:634
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
@@ -2652,7 +2694,7 @@ msgstr "目录路径已复制"
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:62
+#: src/components/streamers/card/stream-actions-menu.tsx:65
 #: src/components/streamers/streamer-batch-action-bar.tsx:103
 msgid "Disable"
 msgstr "禁用"
@@ -2730,7 +2772,7 @@ msgid "Download"
 msgstr "下载"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:345
+#: src/components/logging/log-file-browser.tsx:346
 msgid "Download {0}"
 msgstr "下载 {0}"
 
@@ -2738,11 +2780,11 @@ msgstr "下载 {0}"
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
-#: src/components/logging/log-file-browser.tsx:248
+#: src/components/logging/log-file-browser.tsx:249
 msgid "Download All"
 msgstr "下载全部"
 
-#: src/components/config/global/backup-restore-card.tsx:257
+#: src/components/config/global/backup-restore-card.tsx:258
 msgid "Download Backup"
 msgstr "下载备份"
 
@@ -2804,7 +2846,7 @@ msgstr "双格式输出"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:80
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:751
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:568
@@ -2836,7 +2878,7 @@ msgstr "例如 /output/processed/"
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "例如 /rust-srec/{streamer}/%Y-%m"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1054
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1055
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "列如: 0:v:0, 0:a:0"
 
@@ -2896,7 +2938,7 @@ msgstr "例如 mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:229
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:232
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
@@ -2904,7 +2946,7 @@ msgstr "例如：重封装为 H.264"
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:322
+#: src/components/pipeline/workflows/workflow-editor.tsx:323
 msgid "e.g., Standard Processing"
 msgstr "例如：标准处理"
 
@@ -2915,7 +2957,7 @@ msgstr "例如：标准处理"
 #: src/components/pipeline/presets/preset-card.tsx:122
 #: src/components/pipeline/workflows/workflow-card.tsx:94
 #: src/components/sidebar/navbar.tsx:48
-#: src/components/streamers/card/stream-actions-menu.tsx:88
+#: src/components/streamers/card/stream-actions-menu.tsx:91
 msgid "Edit"
 msgstr "编辑"
 
@@ -2923,7 +2965,7 @@ msgstr "编辑"
 msgid "Edit channel"
 msgstr "编辑渠道"
 
-#: src/components/config/engines/engine-editor.tsx:324
+#: src/components/config/engines/engine-editor.tsx:328
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
@@ -2942,7 +2984,7 @@ msgstr "编辑预设：{0}"
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
-#: src/components/config/engines/engine-editor.tsx:343
+#: src/components/config/engines/engine-editor.tsx:347
 msgid "Editing Mode"
 msgstr "编辑模式"
 
@@ -2954,7 +2996,7 @@ msgstr "生效范围"
 msgid "Empty pattern"
 msgstr "表达式为空"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:69
+#: src/components/streamers/card/stream-actions-menu.tsx:72
 #: src/components/streamers/streamer-batch-action-bar.tsx:82
 msgid "Enable"
 msgstr "启用"
@@ -3001,7 +3043,7 @@ msgstr "启用"
 msgid "Encoder Preset"
 msgstr "编码器预设"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:392
 msgid "Encoding Preset"
 msgstr "编码预设"
 
@@ -3009,7 +3051,7 @@ msgstr "编码预设"
 msgid "Encoding Settings"
 msgstr "编码设置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:395
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:403
 msgid "End"
 msgstr "结束"
 
@@ -3021,7 +3063,7 @@ msgstr "历史结束"
 msgid "End Stream On Danmu Close"
 msgstr "弹幕关闭时结束录制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:782
 msgid "End Time"
 msgstr "结束时间"
 
@@ -3078,9 +3120,9 @@ msgstr "引擎更新成功"
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "未在平台/主播中指定时使用的录制引擎。"
 
-#: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/global/backup-restore-card.tsx:388
-#: src/components/config/global/backup-restore-card.tsx:393
+#: src/components/config/global/backup-restore-card.tsx:384
+#: src/components/config/global/backup-restore-card.tsx:389
+#: src/components/config/global/backup-restore-card.tsx:394
 #: src/components/config/templates/template-editor.tsx:287
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
@@ -3267,6 +3309,10 @@ msgstr "退出沉浸模式"
 msgid "Exit selection mode"
 msgstr "退出选择模式"
 
+#: src/components/sidebar/sidebar-toggle.tsx:40
+msgid "Expand sidebar"
+msgstr "展开侧边栏"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:60
 #: src/components/ui/flag-form-field.tsx:54
 msgid "Experimental"
@@ -3297,11 +3343,11 @@ msgstr "浏览"
 msgid "Explore matching automation steps to enhance your pipeline workflow."
 msgstr "探索匹配的自动化步骤以增强你的处理管道工作流。"
 
-#: src/components/config/global/backup-restore-card.tsx:238
+#: src/components/config/global/backup-restore-card.tsx:239
 msgid "Export Configuration"
 msgstr "导出配置"
 
-#: src/components/config/global/backup-restore-card.tsx:299
+#: src/components/config/global/backup-restore-card.tsx:300
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
@@ -3520,7 +3566,7 @@ msgstr "下载日志失败"
 msgid "Failed to enable Web Push"
 msgstr "启用 Web 推送失败"
 
-#: src/components/config/global/backup-restore-card.tsx:155
+#: src/components/config/global/backup-restore-card.tsx:156
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
 
@@ -3528,7 +3574,7 @@ msgstr "导出配置失败"
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
 
-#: src/components/config/global/backup-restore-card.tsx:181
+#: src/components/config/global/backup-restore-card.tsx:182
 msgid "Failed to import configuration"
 msgstr "导入配置失败"
 
@@ -3746,7 +3792,7 @@ msgstr "获取器"
 msgid "ffmpeg"
 msgstr "ffmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:821
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:822
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
@@ -3754,7 +3800,7 @@ msgstr "FFmpeg 音频滤镜（-af）"
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:684
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:685
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
@@ -3767,7 +3813,7 @@ msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:300
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:301
 msgid "File Operations"
 msgstr "文件操作"
 
@@ -3925,7 +3971,7 @@ msgstr "强制使用移动端 API"
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:938
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:939
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -3944,11 +3990,11 @@ msgstr "表单"
 #: src/components/config/global/file-config-card.tsx:99
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:286
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:287
 msgid "Format"
 msgstr "格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:664
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:665
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
@@ -4013,7 +4059,7 @@ msgstr "GB"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:329
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:122
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:278
 #: src/components/streamers/streamer-editor.tsx:149
 msgid "General"
 msgstr "常规"
@@ -4157,7 +4203,7 @@ msgstr "优雅停止超时"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:110
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:113
-#: src/components/pipeline/workflows/workflow-editor.tsx:397
+#: src/components/pipeline/workflows/workflow-editor.tsx:398
 msgid "Graph"
 msgstr "图表"
 
@@ -4173,7 +4219,7 @@ msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 保活（毫秒）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:859
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:860
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -4297,7 +4343,7 @@ msgid "HLS Tuning"
 msgstr "HLS 调优"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/layout/site-header.tsx:80
+#: src/components/layout/site-header.tsx:83
 #: src/components/sidebar/navbar.tsx:61
 msgid "Home"
 msgstr "主页"
@@ -4305,6 +4351,10 @@ msgstr "主页"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:206
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:309
+msgid "Hour {hour}"
+msgstr "{hour} 点"
 
 #: src/components/ui/input-with-unit.tsx:38
 msgid "Hours"
@@ -4430,7 +4480,7 @@ msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 msgid "Icon"
 msgstr "图标"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:198
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:201
 msgid "ID"
 msgstr "ID"
 
@@ -4478,8 +4528,8 @@ msgstr "沉浸模式"
 msgid "Import"
 msgstr "导入"
 
-#: src/components/config/global/backup-restore-card.tsx:269
-#: src/components/config/global/backup-restore-card.tsx:320
+#: src/components/config/global/backup-restore-card.tsx:270
+#: src/components/config/global/backup-restore-card.tsx:321
 msgid "Import Configuration"
 msgstr "导入配置"
 
@@ -4487,11 +4537,11 @@ msgstr "导入配置"
 msgid "Import Custom CSS"
 msgstr "导入自定义 CSS"
 
-#: src/components/config/global/backup-restore-card.tsx:487
+#: src/components/config/global/import-mode-radio-group.tsx:53
 msgid "Import Strategy"
 msgstr "导入策略"
 
-#: src/components/config/global/backup-restore-card.tsx:317
+#: src/components/config/global/backup-restore-card.tsx:318
 msgid "Import Successful"
 msgstr "导入成功"
 
@@ -4499,7 +4549,7 @@ msgstr "导入成功"
 msgid "Import Theme"
 msgstr "导入主题"
 
-#: src/components/config/global/backup-restore-card.tsx:601
+#: src/components/config/global/backup-restore-card.tsx:520
 msgid "Importing..."
 msgstr "正在导入..."
 
@@ -4548,7 +4598,7 @@ msgstr "初始延迟（ms）"
 msgid "Initial Fetch Timeout (ms)"
 msgstr "初始获取超时（ms）"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:154
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:159
 msgid "inline"
 msgstr "内联"
 
@@ -4564,7 +4614,7 @@ msgstr "输入"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:991
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:992
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -4590,7 +4640,7 @@ msgstr "检查中"
 msgid "Interact"
 msgstr "查看详情"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:251
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:255
 msgid "Interactive 24-hour timeline selection."
 msgstr "24小时交互式时间线选择。"
 
@@ -4824,7 +4874,7 @@ msgstr "限制单个文件的传输速率，而非整体总量。"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:101
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:104
-#: src/components/pipeline/workflows/workflow-editor.tsx:391
+#: src/components/pipeline/workflows/workflow-editor.tsx:392
 msgid "List"
 msgstr "列表"
 
@@ -4834,7 +4884,7 @@ msgstr "列表"
 #: src/components/streamers/edit/status-check-history.tsx:366
 #: src/components/streamers/edit/status-check-history.tsx:387
 #: src/components/streamers/edit/status-check-history.tsx:444
-#: src/components/streamers/edit/streamer-header.tsx:63
+#: src/components/streamers/edit/streamer-header.tsx:66
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:175
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
 msgid "Live"
@@ -5017,7 +5067,7 @@ msgstr "流畅 (80)"
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:554
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:555
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -5063,7 +5113,7 @@ msgstr "管理订阅"
 msgid "Manage where system notifications are sent"
 msgstr "管理系统通知发送到哪里"
 
-#: src/components/config/global/backup-restore-card.tsx:223
+#: src/components/config/global/backup-restore-card.tsx:224
 msgid "Manage your application configuration."
 msgstr "管理应用配置。"
 
@@ -5254,7 +5304,7 @@ msgstr "媒体时间线"
 msgid "Memory Usage"
 msgstr "内存使用率"
 
-#: src/components/config/global/backup-restore-card.tsx:516
+#: src/components/config/global/import-mode-radio-group.tsx:90
 msgid "Merge Changes"
 msgstr "合并更改"
 
@@ -5276,7 +5326,7 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1068
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1069
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
@@ -5446,8 +5496,8 @@ msgid "My Template"
 msgstr "我的模板"
 
 #: src/components/notifications/channel-form.tsx:382
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:224
-#: src/components/pipeline/workflows/workflow-editor.tsx:318
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:227
+#: src/components/pipeline/workflows/workflow-editor.tsx:319
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
@@ -5562,7 +5612,7 @@ msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服
 msgid "No Archives Found"
 msgstr "未找到归档"
 
-#: src/components/config/global/backup-restore-card.tsx:428
+#: src/components/config/global/backup-restore-card.tsx:429
 msgid "No changes detected"
 msgstr "未检测到更改"
 
@@ -5586,7 +5636,7 @@ msgstr "未找到凭据。"
 msgid "No custom headers configured"
 msgstr "未配置自定义请求头"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:140
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:141
 msgid "No custom tags added"
 msgstr "未添加自定义标签"
 
@@ -5645,7 +5695,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/components/logging/log-file-browser.tsx:305
+#: src/components/logging/log-file-browser.tsx:306
 msgid "No log files found"
 msgstr "未找到日志文件"
 
@@ -5771,7 +5821,7 @@ msgstr "未选择运行中的流水线"
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
-#: src/components/pipeline/workflows/steps-list.tsx:247
+#: src/components/pipeline/workflows/steps-list.tsx:249
 msgid "No Steps Added"
 msgstr "未添加步骤"
 
@@ -5822,7 +5872,7 @@ msgid "No workflows yet"
 msgstr "暂无工作流"
 
 #: src/components/notifications/forms/webhook-form.tsx:214
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:870
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:871
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:462
 msgid "None"
@@ -5832,7 +5882,7 @@ msgstr "无"
 msgid "None (Default)"
 msgstr "无（默认）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:460
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:461
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
@@ -5989,7 +6039,7 @@ msgstr "侧滑"
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/status-check-history.tsx:368
 #: src/components/streamers/edit/status-check-history.tsx:389
-#: src/components/streamers/edit/streamer-header.tsx:65
+#: src/components/streamers/edit/streamer-header.tsx:68
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "Offline"
 msgstr "离线"
@@ -6045,7 +6095,7 @@ msgstr "仅包含具有该扩展名的文件（不含点号）"
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "仅对超过阈值大小的文件生效。默认值为 4，设为 0 可禁用。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:913
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:914
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
@@ -6056,8 +6106,14 @@ msgstr "仅支持 MP4/MOV/M4V"
 #: src/components/pipeline/outputs/output-card.tsx:219
 #: src/components/pipeline/presets/preset-card.tsx:116
 #: src/components/pipeline/workflows/workflow-card.tsx:88
+#: src/components/sessions/session-card.tsx:246
+#: src/components/streamers/card/stream-actions-menu.tsx:39
 msgid "Open menu"
 msgstr "打开菜单"
+
+#: src/components/sidebar/sheet-menu.tsx:22
+msgid "Open navigation menu"
+msgstr "打开导航菜单"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:178
 msgid "Open quality options"
@@ -6086,7 +6142,7 @@ msgstr "优化流头部"
 msgid "Optional"
 msgstr "可选"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:301
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
@@ -6162,11 +6218,11 @@ msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
 #: src/components/config/shared/output-settings-card.tsx:126
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:483
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:484
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1011
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1012
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -6235,7 +6291,7 @@ msgid "Overview"
 msgstr "概览"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:151
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:311
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:312
 msgid "Overwrite"
 msgstr "覆盖"
 
@@ -6248,12 +6304,12 @@ msgid "Overwrite existing .ass files"
 msgstr "覆盖现有的 .ass 文件"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:467
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:314
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:315
 msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:226
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:935
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:936
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
@@ -6437,7 +6493,7 @@ msgstr "逐段处理管道"
 msgid "Per-Streamer"
 msgstr "按主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:850
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:851
 #: src/components/sessions/overview-tab.tsx:205
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:561
 msgid "Performance"
@@ -6496,7 +6552,7 @@ msgstr "流水线历史保留期"
 msgid "Pipeline is already completed or cancelled"
 msgstr "该处理管道已结束或已取消"
 
-#: src/components/pipeline/workflows/steps-list.tsx:250
+#: src/components/pipeline/workflows/steps-list.tsx:252
 msgid "Pipeline is empty."
 msgstr "处理管道为空。"
 
@@ -6551,7 +6607,7 @@ msgid "Pipeline Statistics"
 msgstr "处理管道统计"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:88
-#: src/components/pipeline/workflows/workflow-editor.tsx:378
+#: src/components/pipeline/workflows/workflow-editor.tsx:379
 msgid "Pipeline Structure"
 msgstr "处理管道结构"
 
@@ -6609,7 +6665,7 @@ msgstr "平台 URL 提取器"
 msgid "platforms"
 msgstr "平台"
 
-#: src/components/config/global/backup-restore-card.tsx:400
+#: src/components/config/global/backup-restore-card.tsx:401
 #: src/components/config/templates/template-editor.tsx:297
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
@@ -6621,7 +6677,7 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
-#: src/components/player/player-card.tsx:166
+#: src/components/player/player-card.tsx:168
 msgid "Playback Error"
 msgstr "播放错误"
 
@@ -6630,6 +6686,10 @@ msgstr "播放错误"
 #: src/lib/menu-list.ts:97
 msgid "Player"
 msgstr "播放器"
+
+#: src/components/player/player-card.tsx:123
+msgid "Player settings"
+msgstr "播放器设置"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1664
 msgid "Playlist"
@@ -6660,11 +6720,11 @@ msgstr "请输入你的新密码信息"
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
-#: src/components/config/global/backup-restore-card.tsx:445
+#: src/components/config/global/backup-restore-card.tsx:446
 msgid "Please restart the system to ensure all configuration changes are fully applied."
 msgstr "请重启系统以确保所有配置更改已完全生效。"
 
-#: src/components/config/global/backup-restore-card.tsx:190
+#: src/components/config/global/backup-restore-card.tsx:191
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
@@ -6692,7 +6752,7 @@ msgstr "位置"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:420
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:428
 msgid "Precision Schedule"
 msgstr "精确时间表"
 
@@ -6732,7 +6792,7 @@ msgstr "正在准备下载……"
 msgid "Preserve Paths"
 msgstr "保留路径"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:161
 msgid "preset"
 msgstr "预设"
 
@@ -6748,7 +6808,7 @@ msgstr "预设创建成功"
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:133
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:136
 msgid "Preset Details"
 msgstr "预设详情"
 
@@ -6769,7 +6829,7 @@ msgid "presets"
 msgstr "预设"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:188
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:263
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:267
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -6896,7 +6956,7 @@ msgid "Processing nodes"
 msgstr "处理节点"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1682
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:152
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:155
 msgid "Processor"
 msgstr "处理器"
 
@@ -6964,7 +7024,7 @@ msgstr "质量"
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:512
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:513
 msgid "Quality Control"
 msgstr "质量控制"
 
@@ -7115,7 +7175,7 @@ msgstr "最近录制会话"
 msgid "Recently updated"
 msgstr "最近更新"
 
-#: src/components/config/global/backup-restore-card.tsx:521
+#: src/components/config/global/import-mode-radio-group.tsx:95
 msgid "Recommended"
 msgstr "推荐"
 
@@ -7129,7 +7189,7 @@ msgid "Record Danmu"
 msgstr "录制弹幕"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:49
-#: src/components/streamers/edit/streamer-header.tsx:61
+#: src/components/streamers/edit/streamer-header.tsx:64
 msgid "Recording"
 msgstr "录制"
 
@@ -7221,17 +7281,49 @@ msgstr "记住凭据以便自动重新登录"
 msgid "Remove"
 msgstr "移除"
 
+#: src/components/ui/list-input.tsx:76
+msgid "Remove {item}"
+msgstr "移除 {item}"
+
 #: src/components/ui/tag-input.tsx:67
 msgid "Remove {tag}"
 msgstr "移除 {tag}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:957
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:132
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:177
+msgid "Remove custom tag"
+msgstr "移除自定义标签"
+
+#: src/components/config/templates/tabs/engine-override-card.tsx:64
+msgid "Remove engine override"
+msgstr "移除引擎覆盖项"
+
+#: src/components/notifications/forms/webhook-form.tsx:456
+msgid "Remove header"
+msgstr "移除请求头"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:958
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:334
+#: src/components/config/templates/tabs/platform-override-card.tsx:139
+msgid "Remove platform override"
+msgstr "移除平台覆盖项"
+
+#: src/components/player/player-card.tsx:142
+msgid "Remove player"
+msgstr "移除播放器"
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:335
 msgid "Remove source on success"
 msgstr "成功后移除源文件"
+
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:124
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:125
+#: src/components/pipeline/workflows/steps-list.tsx:228
+#: src/components/pipeline/workflows/steps-list.tsx:229
+msgid "Remove Step"
+msgstr "移除步骤"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:521
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
@@ -7284,7 +7376,7 @@ msgstr "重排持续时间（毫秒）"
 msgid "Reorder Max Segments"
 msgstr "重排最大分段数"
 
-#: src/components/config/global/backup-restore-card.tsx:558
+#: src/components/config/global/import-mode-radio-group.tsx:141
 msgid "Replace All"
 msgstr "全部替换"
 
@@ -7305,6 +7397,7 @@ msgid "Replace Pipeline Step"
 msgstr "替换管道步骤"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:95
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:96
 #: src/components/pipeline/workflows/steps-list.tsx:198
 msgid "Replace Step"
 msgstr "替换步骤"
@@ -7335,11 +7428,15 @@ msgstr "需要启用“录制弹幕”。"
 msgid "Reset"
 msgstr "重置"
 
+#: src/components/pipeline/dag-graph-view.tsx:135
+msgid "Reset view"
+msgstr "重置视图"
+
 #: src/lib/split-reason.ts:187
 msgid "Resolution"
 msgstr "分辨率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:643
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:644
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -7355,7 +7452,7 @@ msgstr "资源限制"
 msgid "Resources"
 msgstr "资源"
 
-#: src/components/config/global/backup-restore-card.tsx:442
+#: src/components/config/global/backup-restore-card.tsx:443
 msgid "Restart Required"
 msgstr "需要重启"
 
@@ -7363,7 +7460,7 @@ msgstr "需要重启"
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "保存后需重启 rust-srec，新的超时设置才会生效。"
 
-#: src/components/config/global/backup-restore-card.tsx:272
+#: src/components/config/global/backup-restore-card.tsx:273
 msgid "Restore from a backup file"
 msgstr "从备份文件恢复"
 
@@ -7516,7 +7613,7 @@ msgid "Rust regex syntax supported."
 msgstr "支持 Rust 正则语法。"
 
 #: src/components/layout/app-sidebar.tsx:54
-#: src/components/sidebar/sheet-menu.tsx:33
+#: src/components/sidebar/sheet-menu.tsx:36
 #: src/components/sidebar/sidebar.tsx:75
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
@@ -7583,7 +7680,7 @@ msgstr "保存更改"
 msgid "Save Changes"
 msgstr "保存更改"
 
-#: src/components/config/global/backup-restore-card.tsx:241
+#: src/components/config/global/backup-restore-card.tsx:242
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
 
@@ -7591,7 +7688,7 @@ msgstr "将设置保存为 JSON 文件"
 msgid "Save with incomplete delete checks?"
 msgstr "删除检查尚未完成，仍要保存吗？"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:283
+#: src/components/pipeline/workflows/workflow-editor.tsx:284
 msgid "Save Workflow"
 msgstr "保存工作流"
 
@@ -7602,7 +7699,7 @@ msgstr "保存中"
 
 #: src/components/config/platforms/platform-editor.tsx:168
 #: src/components/config/templates/template-editor.tsx:243
-#: src/components/pipeline/workflows/workflow-editor.tsx:281
+#: src/components/pipeline/workflows/workflow-editor.tsx:282
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
 msgstr "保存中..."
@@ -7810,7 +7907,7 @@ msgstr "选择 API 模式"
 msgid "Select behavior"
 msgstr "选择行为"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:263
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:266
 msgid "Select category"
 msgstr "选择类别"
 
@@ -7818,8 +7915,8 @@ msgstr "选择类别"
 msgid "Select Client Type"
 msgstr "选择客户端类型"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:351
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:447
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:352
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:448
 msgid "Select codec"
 msgstr "选择编解码器"
 
@@ -7838,7 +7935,7 @@ msgstr "选择日期锚点"
 msgid "Select date range"
 msgstr "选择日期范围"
 
-#: src/components/config/global/backup-restore-card.tsx:291
+#: src/components/config/global/backup-restore-card.tsx:292
 msgid "Select File"
 msgstr "选择文件"
 
@@ -7871,7 +7968,7 @@ msgstr "选择流水线"
 msgid "Select policy"
 msgstr "选择策略"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:404
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:405
 msgid "Select preset"
 msgstr "选择预设"
 
@@ -7910,7 +8007,7 @@ msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:236
 #: src/components/notifications/channel-form.tsx:413
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:170
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:173
 msgid "Select type"
 msgstr "选择类型"
 
@@ -7999,7 +8096,7 @@ msgstr "录制会话 ID"
 msgid "Session ID is required"
 msgstr "会话 ID 是必需的"
 
-#: src/components/sessions/session-card.tsx:255
+#: src/components/sessions/session-card.tsx:256
 msgid "Session Menu"
 msgstr "会话菜单"
 
@@ -8043,7 +8140,7 @@ msgstr "设置录制限制。"
 msgid "Set priority"
 msgstr "设置优先级"
 
-#: src/components/config/engines/engine-editor.tsx:330
+#: src/components/config/engines/engine-editor.tsx:334
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
@@ -8256,7 +8353,7 @@ msgstr "标准"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:359
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:367
 msgid "Start"
 msgstr "开始"
 
@@ -8264,7 +8361,7 @@ msgstr "开始"
 msgid "Start Over"
 msgstr "重新开始"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:721
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:722
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -8352,7 +8449,7 @@ msgstr "流详情"
 msgid "Stream lookup"
 msgstr "地址获取方式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1044
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1045
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
@@ -8468,9 +8565,9 @@ msgstr "主播已更新"
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
-#: src/components/config/global/backup-restore-card.tsx:366
-#: src/components/config/global/backup-restore-card.tsx:371
-#: src/components/config/global/backup-restore-card.tsx:376
+#: src/components/config/global/backup-restore-card.tsx:367
+#: src/components/config/global/backup-restore-card.tsx:372
+#: src/components/config/global/backup-restore-card.tsx:377
 #: src/components/layout/site-header.tsx:31
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:58
@@ -8494,7 +8591,7 @@ msgstr "streamlink"
 msgid "Streams"
 msgstr "流数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1034
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1035
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
@@ -8629,7 +8726,7 @@ msgstr "标签"
 msgid "Target bitrate"
 msgstr "目标码率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:570
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
@@ -8675,9 +8772,9 @@ msgstr "模板更新成功"
 msgid "templates"
 msgstr "模板"
 
-#: src/components/config/global/backup-restore-card.tsx:349
-#: src/components/config/global/backup-restore-card.tsx:354
-#: src/components/config/global/backup-restore-card.tsx:359
+#: src/components/config/global/backup-restore-card.tsx:350
+#: src/components/config/global/backup-restore-card.tsx:355
+#: src/components/config/global/backup-restore-card.tsx:360
 #: src/components/layout/site-header.tsx:44
 #: src/components/sidebar/navbar.tsx:38
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:55
@@ -8706,11 +8803,11 @@ msgstr "测试通知"
 msgid "Test notification sent"
 msgstr "测试通知已发送"
 
-#: src/components/config/global/backup-restore-card.tsx:325
+#: src/components/config/global/backup-restore-card.tsx:326
 msgid "The configuration has been successfully processed. Here is a summary of the changes:"
 msgstr "配置已成功处理。以下是更改摘要："
 
-#: src/components/config/global/backup-restore-card.tsx:431
+#: src/components/config/global/backup-restore-card.tsx:432
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
@@ -8774,7 +8871,7 @@ msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:423
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:431
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果开始时间在结束时间之后，窗口将自动跨越午夜。"
 
@@ -8782,7 +8879,7 @@ msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果
 msgid "This filter's settings could not be read."
 msgstr "无法读取该过滤器的设置。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:307
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:310
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
@@ -8885,7 +8982,7 @@ msgstr "截图时间偏移"
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:248
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:252
 msgid "Time Range"
 msgstr "时间范围"
 
@@ -8948,8 +9045,8 @@ msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "提示：1 Mbit/s ≈ 0.125M（将比特数除以 8）。"
 
 #: src/components/notifications/events/payload-preview.tsx:63
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:212
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:217
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:213
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:218
 msgid "Title"
 msgstr "标题"
 
@@ -8975,6 +9072,10 @@ msgstr "今天"
 #: src/components/config/templates/tabs/platform-override-card.tsx:110
 msgid "Toggle"
 msgstr "切换"
+
+#: src/components/layout/site-header.tsx:71
+msgid "Toggle navigation menu"
+msgstr "切换导航菜单"
 
 #: src/components/notifications/forms/webhook-form.tsx:247
 msgid "Token"
@@ -9025,7 +9126,7 @@ msgstr "总弹幕数"
 msgid "Total Size"
 msgstr "总大小"
 
-#: src/components/logging/log-file-browser.tsx:262
+#: src/components/logging/log-file-browser.tsx:263
 msgid "Total size:"
 msgstr "总大小："
 
@@ -9053,7 +9154,7 @@ msgstr "TPS 限制"
 msgid "TPS Limit help"
 msgstr "TPS 限制帮助"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:182
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:183
 msgid "Track Information"
 msgstr "轨道信息"
 
@@ -9154,11 +9255,11 @@ msgstr "应用启动时触发。"
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:707
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:708
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
-#: src/components/logging/log-file-browser.tsx:309
+#: src/components/logging/log-file-browser.tsx:310
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
@@ -9321,12 +9422,12 @@ msgstr "无标题直播"
 msgid "UPDATE"
 msgstr "更新"
 
-#: src/components/config/global/backup-restore-card.tsx:91
+#: src/components/config/global/backup-restore-card.tsx:92
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:556
 msgid "Updated"
 msgstr "已更新"
 
-#: src/components/config/global/backup-restore-card.tsx:525
+#: src/components/config/global/import-mode-radio-group.tsx:99
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
@@ -9416,7 +9517,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:908
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:909
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -9478,7 +9579,7 @@ msgstr "用户"
 msgid "UTC"
 msgstr "UTC"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:272
+#: src/components/pipeline/workflows/workflow-editor.tsx:273
 msgid "Validate"
 msgstr "校验"
 
@@ -9526,17 +9627,17 @@ msgstr "版本"
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:295
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:296
 #: src/lib/media-file-type.ts:36
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:580
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:581
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:66
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:339
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:340
 msgid "Video Codec"
 msgstr "视频编码"
 
@@ -9552,11 +9653,11 @@ msgstr "仅视频"
 msgid "Video Player"
 msgstr "视频播放器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:329
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:330
 msgid "Video Settings"
 msgstr "视频设置"
 
-#: src/components/pipeline/dag-graph-view.tsx:279
+#: src/components/pipeline/dag-graph-view.tsx:283
 msgid "View"
 msgstr "查看"
 
@@ -9577,7 +9678,7 @@ msgid "View Detailed Logs & Outputs"
 msgstr "查看详细日志与输出"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:218
-#: src/components/sessions/session-card.tsx:270
+#: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:215
 msgid "View Details"
 msgstr "查看详情"
@@ -9620,7 +9721,7 @@ msgstr "等待时长"
 msgid "Warning when the processing queue gets too long."
 msgstr "处理队列过长时发出警告。"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:79
+#: src/components/streamers/card/stream-actions-menu.tsx:82
 msgid "Watch"
 msgstr "观看"
 
@@ -9628,7 +9729,7 @@ msgstr "观看"
 msgid "WEB"
 msgstr "WEB"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:905
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:906
 msgid "Web Optimize"
 msgstr "网页优化"
 
@@ -9708,7 +9809,7 @@ msgstr "宽度"
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:163
 msgid "workflow"
 msgstr "工作流"
 
@@ -9773,10 +9874,18 @@ msgstr "有未保存的更改，确定要离开吗？"
 msgid "Your digital library is currently empty. Start recording to populate your sessions here."
 msgstr "你的数字库目前为空。开始录制以在此显示会话。"
 
-#: src/components/pipeline/presets/processors/metadata-config-form.tsx:254
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:255
 msgid "YYYY-MM-DD"
 msgstr "YYYY-MM-DD"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:15
 msgid "ZIP Archive"
 msgstr "ZIP 归档"
+
+#: src/components/pipeline/dag-graph-view.tsx:117
+msgid "Zoom in"
+msgstr "放大"
+
+#: src/components/pipeline/dag-graph-view.tsx:126
+msgid "Zoom out"
+msgstr "缩小"

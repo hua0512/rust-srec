@@ -126,6 +126,9 @@ export function PresetMetaForm({
             >
               <Link to="/pipeline/presets">
                 <ArrowLeft className="h-5 w-5" />
+                <span className="sr-only">
+                  <Trans>Back to presets</Trans>
+                </span>
               </Link>
             </Button>
             <div className="flex flex-col gap-0.5">

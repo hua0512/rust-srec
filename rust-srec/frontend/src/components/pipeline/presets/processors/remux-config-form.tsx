@@ -174,6 +174,7 @@ function MetadataTagRows({
               rowKeys.removeAt(index);
               onChange(value.filter((_, i) => i !== index));
             }}
+            aria-label={i18n._(msg`Remove custom tag`)}
           >
             <Trash2 className="h-4 w-4" />
           </Button>

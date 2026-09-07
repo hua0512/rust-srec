@@ -67,6 +67,9 @@ export function SiteHeader() {
                 onClick={toggleSidebar}
               >
                 <MenuIcon size={20} />
+                <span className="sr-only">
+                  <Trans>Toggle navigation menu</Trans>
+                </span>
               </Button>
             ) : config.collapsible === 'offcanvas' ? (
               <SidebarTrigger variant="outline" className="-ml-1 size-8" />

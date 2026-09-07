@@ -239,6 +239,7 @@ export function WorkflowEditor({
               size="icon"
               onClick={() => navigate({ to: '/pipeline/workflows' })}
               className="shrink-0 rounded-full hover:bg-muted/60"
+              aria-label={i18n._(msg`Back to workflows`)}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>

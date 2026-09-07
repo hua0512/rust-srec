@@ -120,6 +120,7 @@ export function PlayerCard({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors rounded-full"
+                  aria-label={i18n._(msg`Player settings`)}
                 >
                   <Settings2 className="h-4 w-4" />
                 </Button>
@@ -138,6 +139,7 @@ export function PlayerCard({
               size="icon"
               className="h-8 w-8 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors rounded-full"
               onClick={onRemove}
+              aria-label={i18n._(msg`Remove player`)}
             >
               <X className="h-4 w-4" />
             </Button>

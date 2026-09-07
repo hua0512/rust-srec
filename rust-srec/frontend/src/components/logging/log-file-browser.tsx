@@ -229,6 +229,7 @@ export function LogFileBrowser() {
                   size="icon"
                   onClick={clearDateRange}
                   className="h-9 w-9"
+                  aria-label={i18n._(msg`Clear date range`)}
                 >
                   <X className="h-4 w-4" />
                 </Button>

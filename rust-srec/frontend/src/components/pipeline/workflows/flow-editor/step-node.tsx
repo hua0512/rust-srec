@@ -93,6 +93,7 @@ export function StepNode({ data }: NodeProps<StepNode>) {
                 onReplace(id);
               }}
               title={i18n._(msg`Replace Step`)}
+              aria-label={i18n._(msg`Replace Step`)}
             >
               <Replace className="h-3.5 w-3.5" />
             </Button>
@@ -106,6 +107,8 @@ export function StepNode({ data }: NodeProps<StepNode>) {
               e.stopPropagation();
               onEdit?.(id);
             }}
+            title={i18n._(msg`Configure Step`)}
+            aria-label={i18n._(msg`Configure Step`)}
           >
             <Settings2 className="h-3.5 w-3.5" />
           </Button>
@@ -118,6 +121,8 @@ export function StepNode({ data }: NodeProps<StepNode>) {
               e.stopPropagation();
               onRemove?.(id);
             }}
+            title={i18n._(msg`Remove Step`)}
+            aria-label={i18n._(msg`Remove Step`)}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>

@@ -145,6 +145,7 @@ export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
                     onClick={() =>
                       void handleCopyDestination(record.remote_path!)
                     }
+                    aria-label={i18n._(msg`Copy destination path`)}
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>

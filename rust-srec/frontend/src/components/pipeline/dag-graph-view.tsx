@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraphViewport, GlassNode } from './graph-shared';
 import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { getJobPresetName } from './presets/default-presets-i18n';
 import { getProcessorDefinition } from './presets/processors/registry';
@@ -113,6 +114,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
             size="icon"
             className="h-8 w-8 hover:bg-muted/50 text-foreground/70"
             onClick={zoomIn}
+            aria-label={i18n._(msg`Zoom in`)}
           >
             <Maximize2 className="h-4 w-4" />
           </Button>
@@ -121,6 +123,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
             size="icon"
             className="h-8 w-8 hover:bg-muted/50 text-foreground/70"
             onClick={zoomOut}
+            aria-label={i18n._(msg`Zoom out`)}
           >
             <Minimize2 className="h-4 w-4" />
           </Button>
@@ -129,6 +132,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
             size="icon"
             className="h-8 w-8 hover:bg-muted/50 text-foreground/70"
             onClick={handleReset}
+            aria-label={i18n._(msg`Reset view`)}
           >
             <Move className="h-4 w-4" />
           </Button>
