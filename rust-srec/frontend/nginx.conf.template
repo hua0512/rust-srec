@@ -18,6 +18,19 @@ server {
     listen 80;
     server_name localhost;
 
+    # Browser hardening for every response this server produces. `always` also
+    # covers proxied error and redirect responses, which nginx otherwise leaves
+    # bare. A location that adds a header of its own would replace this whole
+    # set rather than extend it, so the proxy locations below add none.
+    #
+    # Framing is restricted through X-Frame-Options rather than a CSP
+    # `frame-ancestors` directive: the application inlines its hydration
+    # scripts and so cannot carry a complete CSP, and a Content-Security-Policy
+    # header holding a single directive would suggest otherwise.
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
     # Gzip compression
     gzip on;
     gzip_vary on;
@@ -41,6 +54,12 @@ server {
     location /api/ {
         proxy_pass ${BACKEND_URL};
         proxy_http_version 1.1;
+        # The download-progress and log-streaming WebSockets live under /api/
+        # and send nothing while the backend is quiet. nginx's 60s default
+        # would drop those idle connections, so the budget is raised to an
+        # hour; the browser reconnects on a genuinely dead connection.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
