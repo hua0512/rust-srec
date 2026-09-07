@@ -12,6 +12,7 @@ import { createI18nInstance } from './integrations/lingui/i18n';
 import { routerWithLingui } from './integrations/lingui/router-plugin';
 import { registerPasswordChangeRedirect } from './lib/password-change-redirect';
 import type { Mode } from '@/lib/theme-config';
+import { DEFAULT_SIDEBAR_OPEN } from '@/lib/sidebar-cookie';
 
 export function getRouter(i18n?: I18n) {
   const rqContext = TanstackQuery.getContext();
@@ -26,6 +27,9 @@ export function getRouter(i18n?: I18n) {
         ...rqContext,
         i18n: resolvedI18n,
         theme: { mode: 'system' as Mode },
+        // No SSR pass to seed this; the layout reads the cookie itself on the
+        // client, which happens before the first paint anyway.
+        sidebar: { open: DEFAULT_SIDEBAR_OPEN },
       },
       defaultPreload: 'intent',
       defaultErrorComponent: DefaultCatchBoundary,

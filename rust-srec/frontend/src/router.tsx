@@ -9,6 +9,7 @@ import { routerWithLingui } from './integrations/lingui/router-plugin';
 import { registerPasswordChangeRedirect } from './lib/password-change-redirect';
 import { getGlobalStartContext } from '@tanstack/react-start';
 import type { Mode } from '@/lib/theme-config';
+import { DEFAULT_SIDEBAR_OPEN } from '@/lib/sidebar-cookie';
 
 export function getRouter() {
   const rqContext = TanstackQuery.getContext();
@@ -23,6 +24,10 @@ export function getRouter() {
         i18n,
         theme: {
           mode: ((startContext as any)?.theme?.mode ?? 'system') as Mode,
+        },
+        sidebar: {
+          open: ((startContext as any)?.sidebar?.open ??
+            DEFAULT_SIDEBAR_OPEN) as boolean,
         },
       },
       defaultPreload: 'intent',

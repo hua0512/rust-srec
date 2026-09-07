@@ -60,11 +60,23 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ...sessionQueryOptions,
     enabled: typeof window !== 'undefined',
     initialData: routeUser ?? null,
+    // The backend authenticates the socket at the handshake and never
+    // re-checks, so an open socket outlives its access token and a hidden tab
+    // needs no renewal to keep receiving events. A token is only wanted again
+    // when a dropped socket has to be reopened, and that retry loop runs until
+    // it succeeds — by which time the tab is back in the foreground and this
+    // check has run. So renewal stays a foreground concern.
     refetchInterval: 60_000,
-    refetchIntervalInBackground: true,
   });
   const accessToken = sessionData?.token?.access_token;
   const isAuthenticated = !!accessToken;
+
+  // Read by connect() instead of captured, so renewing the access token does
+  // not change the connect callback and therefore does not restart the socket.
+  const accessTokenRef = useRef<string | undefined>(accessToken);
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+  }, [accessToken]);
 
   // Download store actions
   const setSnapshot = useDownloadStore((state) => state.setSnapshot);
@@ -335,8 +347,28 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // Reconnects go through a ref so this callback stays independent of connect,
+  // which in turn lets connect stay stable across renders.
+  const connectRef = useRef<() => void>(() => {});
+
+  const scheduleReconnect = useCallback(() => {
+    const delay = Math.min(
+      WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
+      WS_RECONNECT_MAX_DELAY,
+    );
+    reconnectAttemptRef.current++;
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      connectRef.current();
+    }, delay);
+  }, []);
+
+  // Deliberately free of the access token: the socket is authenticated once at
+  // the handshake, so a renewed token is only needed by the next connect
+  // attempt and is read from the ref at that point.
   const connect = useCallback(() => {
-    if (!accessToken || !isAuthenticated) return;
+    const token = accessTokenRef.current;
+    if (!token) return;
     if (typeof window === 'undefined') return;
     if (isConnectingRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -350,7 +382,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     isConnectingRef.current = true;
     setConnectionStatus('connecting');
 
-    const wsUrl = buildWebSocketUrl(accessToken);
+    const wsUrl = buildWebSocketUrl(token);
     if (import.meta.env.DEV) {
       console.debug('[WS] Connecting to', wsUrl);
     }
@@ -394,7 +426,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       setConnectionStatus('disconnected');
       wsRef.current = null;
 
-      if (!intentionalCloseRef.current && sessionData?.token?.access_token) {
+      if (!intentionalCloseRef.current && accessTokenRef.current) {
         scheduleReconnect();
       }
     };
@@ -412,26 +444,19 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     };
 
     wsRef.current = ws;
-  }, [
-    accessToken,
-    isAuthenticated,
-    handleMessage,
-    setConnectionStatus,
-    sessionData?.token?.access_token,
-  ]);
+  }, [handleMessage, scheduleReconnect, setConnectionStatus]);
 
-  const scheduleReconnect = useCallback(() => {
-    const delay = Math.min(
-      WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
-      WS_RECONNECT_MAX_DELAY,
-    );
-    reconnectAttemptRef.current++;
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      connect();
-    }, delay);
+  useEffect(() => {
+    connectRef.current = connect;
   }, [connect]);
 
+  /**
+   * Ends the session's live view: signed out, or the provider unmounting. This
+   * is the only path that empties the stores. A reconnect must not come through
+   * here — the server replays a full snapshot on every connect, so emptying
+   * them first would blank the cards for the length of the handshake for no
+   * reason.
+   */
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
 
@@ -447,13 +472,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     isConnectingRef.current = false;
     clearAll();
-    // Uploads live in their own store; the reconnect snapshot repopulates it.
+    // Uploads live in their own store and have to be emptied separately.
     clearAllUploads();
   }, [clearAll, clearAllUploads]);
 
-  // Connection lifecycle
+  // Connection lifecycle. Keyed on whether there is a session at all, not on
+  // the token itself: renewing the access token leaves the open socket alone.
   useEffect(() => {
-    if (isAuthenticated && accessToken) {
+    if (isAuthenticated) {
       connect();
     } else {
       disconnect();
@@ -462,7 +488,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     return () => {
       disconnect();
     };
-  }, [isAuthenticated, accessToken, connect, disconnect]);
+  }, [isAuthenticated, connect, disconnect]);
 
   const subscribe = useCallback((streamerId: string) => {
     const ws = wsRef.current;

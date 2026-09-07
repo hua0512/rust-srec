@@ -532,6 +532,18 @@
 
 ## Web interface
 
+- **Download and upload progress stops disappearing and coming back**
+
+  Every so often the progress cards vanished and reappeared a moment later, even though nothing had gone wrong with the transfers themselves. That interruption came from a routine sign-in renewal in the background; the live connection now carries on through it, so progress stays on screen without a gap.
+
+- **Pages open faster and go quiet in the background**
+
+  Moving between pages repeated the same sign-in check and reloaded lists that had just been fetched. Recently loaded information is now reused for a short while, so returning to a page shows it straight away, and a few overview pages that refreshed every five seconds now do so every ten. Pages also stop asking for updates while their tab is in the background and pick up again when you come back to it.
+
+- **A running job's log stays live without getting heavier as you scroll**
+
+  Watching a job's log while it ran re-read every part of the log you had scrolled through, several times a minute, so a long job became slower and slower to watch. Only the newest part is read now; older lines you have already scrolled to stay put, and the log still fills in to the end when the job finishes.
+
 - **Screen readers and keyboards can use every control**
 
   Buttons that show only an icon — the menu and sidebar buttons, back arrows, remove and copy buttons, the player's settings and remove buttons, and the pipeline graph's zoom controls — were announced as an unnamed button, so a screen reader could not say what they do. They now all have a spoken name. The day and hour pickers in a time filter and the merge-or-replace choice when restoring a backup could only be operated with a mouse; they can now be reached with Tab and operated with the keyboard — the space bar for the day and hour buttons, the arrow keys for the merge-or-replace choice — and they announce which options are selected.
