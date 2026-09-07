@@ -693,7 +693,7 @@ impl Processor for BaiduPcsProcessor {
             }
             if attempt > 0 {
                 info!("Retry attempt {} for BaiduPCS-Go upload", attempt + 1);
-                tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
+                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
             }
             attempts_used = attempt + 1;
 

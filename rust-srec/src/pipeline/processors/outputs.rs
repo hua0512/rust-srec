@@ -9,6 +9,8 @@ use crate::{Error, Result};
 pub(super) struct TempOutputGuard {
     path: PathBuf,
     cleanup: bool,
+    /// Set only once ownership has moved into a blocking commit/promotion closure.
+    cleanup_on_current_thread: bool,
 }
 
 impl TempOutputGuard {
@@ -25,6 +27,7 @@ impl TempOutputGuard {
         Self {
             path: output_path.with_file_name(name),
             cleanup: true,
+            cleanup_on_current_thread: false,
         }
     }
 
@@ -38,30 +41,34 @@ impl Drop for TempOutputGuard {
         if !self.cleanup {
             return;
         }
-        match std::fs::remove_file(&self.path) {
-            Ok(()) => (),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-            Err(error) => {
-                // Windows may retain an exclusive file handle briefly after tree
-                // termination. Retry off the async worker while the process exits.
-                if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                    let path = self.path.clone();
-                    runtime.spawn_blocking(move || {
-                        let mut last_error = error;
-                        for _ in 0..20 {
-                            std::thread::sleep(std::time::Duration::from_millis(50));
-                            match std::fs::remove_file(&path) {
-                                Ok(()) => return,
-                                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-                                Err(error) => last_error = error,
-                            }
-                        }
-                        warn!(%last_error, path = %path.display(), "Failed to remove temporary processor output");
-                    });
-                } else {
-                    warn!(%error, path = %self.path.display(), "Failed to remove temporary processor output");
-                }
+        let path = self.path.clone();
+        dispatch_cleanup(self.cleanup_on_current_thread, move || {
+            remove_temp_output(&path)
+        });
+    }
+}
+
+fn dispatch_cleanup(in_blocking_commit: bool, cleanup: impl FnOnce() + Send + 'static) {
+    if !in_blocking_commit && let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn_blocking(cleanup);
+    } else {
+        cleanup();
+    }
+}
+
+fn remove_temp_output(path: &Path) {
+    for attempt in 0..=20 {
+        if attempt > 0 {
+            // Windows may briefly retain a file handle after process-tree termination.
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        match std::fs::remove_file(path) {
+            Ok(()) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) if attempt == 20 => {
+                warn!(%error, path = %path.display(), "Failed to remove temporary processor output");
             }
+            Err(_) => {}
         }
     }
 }
@@ -90,8 +97,13 @@ fn promote(temp: &Path, output: &Path, overwrite: bool) -> Result<()> {
         std::fs::rename(temp, output)
             .map_err(|error| Error::io_path("promote processor output", output, error))
     } else {
-        // The filesystem makes this decision atomically, including concurrent jobs.
-        std::fs::hard_link(temp, output).map_err(|error| {
+        // tempfile uses native no-replace rename where available (including Windows,
+        // Linux and macOS), with a hard-link fallback on older platforms. Unlike an
+        // existence check followed by rename, it never overwrites a competing output.
+        let path = tempfile::TempPath::try_from_path(temp)
+            .map_err(|error| Error::io_path("prepare output promotion", temp, error))?;
+        path.persist_noclobber(output).map_err(|failure| {
+            let error = failure.error;
             if error.kind() == std::io::ErrorKind::AlreadyExists {
                 Error::PipelineError(format!(
                     "Output file already exists and overwrite is disabled: {}",
@@ -111,6 +123,8 @@ pub(super) async fn promote_output(
 ) -> Result<()> {
     let output = output.to_owned();
     tokio::task::spawn_blocking(move || {
+        let mut temp = temp;
+        temp.cleanup_on_current_thread = true;
         verified_size(temp.path())?;
         promote(temp.path(), &output, overwrite)
     })
@@ -245,6 +259,9 @@ impl OutputBatch {
     }
 
     fn commit_blocking(mut self) -> Result<()> {
+        for entry in &mut self.pending {
+            entry.temp.cleanup_on_current_thread = true;
+        }
         let mut outputs = Vec::new();
         for entry in &self.pending {
             verified_size(entry.temp.path())?;
@@ -264,7 +281,8 @@ impl OutputBatch {
                                 entry.output.display()
                             )));
                         }
-                        let backup = TempOutputGuard::new(&entry.output);
+                        let mut backup = TempOutputGuard::new(&entry.output);
+                        backup.cleanup_on_current_thread = true;
                         if std::fs::hard_link(&entry.output, backup.path()).is_err() {
                             // Filesystems without hard links still support replacement.
                             std::fs::copy(&entry.output, backup.path()).map_err(|error| {
@@ -296,6 +314,8 @@ impl Drop for OutputBatch {
         if self.committed {
             return;
         }
+        // Published entries exist only inside commit_blocking, so rollback IO stays
+        // on that worker. Dropping an uncommitted async batch only drops staged guards.
         for entry in self.pending.iter_mut().rev() {
             let Some(identity) = &entry.published_identity else {
                 continue;
@@ -327,6 +347,32 @@ impl Drop for OutputBatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn temporary_output_cleanup_does_not_block_async_runtime() {
+        let runtime_thread = std::thread::current().id();
+        let (started, observed) = tokio::sync::oneshot::channel();
+        let (release, blocked) = std::sync::mpsc::sync_channel(1);
+        let (finished, completion) = tokio::sync::oneshot::channel();
+        dispatch_cleanup(false, move || {
+            started.send(std::thread::current().id()).unwrap();
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            finished.send(()).unwrap();
+        });
+        let cleanup_thread = tokio::time::timeout(std::time::Duration::from_secs(1), observed)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(cleanup_thread, runtime_thread);
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        release.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), completion)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     async fn staged(
         batch: &mut OutputBatch,
@@ -374,8 +420,15 @@ mod tests {
         std::fs::write(&input, b"source").unwrap();
         std::fs::write(&output, b"existing").unwrap();
         let mut batch = OutputBatch::new(&[input.to_string_lossy().into_owned()]);
-        staged(&mut batch, &output, true, b"partial").await;
+        let temp = staged(&mut batch, &output, true, b"partial").await;
         drop(batch);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while tokio::fs::try_exists(&temp).await.unwrap() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         assert_eq!(std::fs::read(input).unwrap(), b"source");
         assert_eq!(std::fs::read(output).unwrap(), b"existing");
         assert_no_temps(dir.path());

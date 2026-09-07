@@ -56,6 +56,10 @@
 
 ## Post-processing
 
+- **Processor publication, paths and retries preserve their contracts**
+
+  Subtitle filters accept apostrophes and filter delimiters in paths. No-overwrite publication uses native no-replace operations on supported platforms, retry waits cap at 30 seconds without overflow, and FFmpeg progress reports milliseconds consistently. File checks and abandoned temporary-output cleanup no longer block async workers.
+
 - **Pipeline coordination drains accepted events during shutdown**
 
   Pending coordination events and queries finish in order before later requests use the same state directly. Closing or aborting the coordinator no longer discards its accepted queue, and a lost reply never causes an accepted event to run twice. Callers still own executing returned work; cancelling a caller does not guarantee those external actions complete.

@@ -285,14 +285,14 @@ impl Processor for DanmakuFactoryProcessor {
             let xml = PathBuf::from(xml_path);
             let ass = PathBuf::from(ass_path);
 
-            if !xml.exists() {
+            if !super::utils::try_exists(&xml).await? {
                 return Err(crate::Error::PipelineError(format!(
                     "DanmakuFactory input XML does not exist: {}",
                     xml.display()
                 )));
             }
 
-            if ass.exists() && !config.overwrite {
+            if !config.overwrite && super::utils::try_exists(&ass).await? {
                 return Err(crate::Error::PipelineError(format!(
                     "DanmakuFactory output already exists and overwrite is disabled: {}",
                     ass.display()
@@ -323,7 +323,7 @@ impl Processor for DanmakuFactoryProcessor {
                 )));
             }
 
-            if config.verify_output_exists && !ass.exists() {
+            if config.verify_output_exists && !super::utils::try_exists(&ass).await? {
                 return Err(crate::Error::PipelineError(format!(
                     "DanmakuFactory reported success but output file was not created: {}",
                     ass.display()
