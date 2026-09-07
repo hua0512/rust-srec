@@ -8,8 +8,8 @@
 //!
 //! The cadence machinery is the lever that keeps cost low: cheap
 //! probes (atomics) refresh every 5 s; expensive ones (disk inventory)
-//! every 30 s. Runtime scheduling state and the `sysinfo` inventory live
-//! inside the refresh task, so probes receive owned metric snapshots
+//! every 30 s. Runtime scheduling stays in the refresh task; the `sysinfo`
+//! inventory lives on a dedicated thread, so probes receive owned metric snapshots
 //! instead of sharing locks.
 
 use std::borrow::Cow;
@@ -22,13 +22,19 @@ use std::time::{Duration, Instant};
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, warn};
 
 use crate::notification::NotificationEvent;
+
+use self::sampler::SystemSampler;
+
+mod sampler;
+#[cfg(test)]
+mod sampling_tests;
 
 /// Refresh-task tick rate. Per-probe cadence is honored on top of this:
 /// a probe with a 30 s cadence runs at most once every 30 s even though
@@ -36,6 +42,7 @@ use crate::notification::NotificationEvent;
 /// probe cadence — finer ticks just rebuild the snapshot more often
 /// without observable benefit (the dashboard polls every 10 s).
 const REFRESH_TICK: Duration = Duration::from_secs(5);
+const SYSTEM_SAMPLE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Health status of a component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -300,76 +307,6 @@ pub trait HealthProbe: Send + Sync {
     async fn probe(&self, metrics: SystemMetricsSnapshot) -> ComponentHealth;
 }
 
-/// Long-lived `sysinfo` inventory owned by the refresh task.
-struct SysinfoCache {
-    /// CPU + memory inventory. Refresh with `refresh_cpu_mem`.
-    system: System,
-    /// Mounted filesystems. Refresh with `refresh_disks`.
-    disks: sysinfo::Disks,
-}
-
-impl SysinfoCache {
-    fn new() -> Self {
-        Self {
-            system: System::new_with_specifics(
-                RefreshKind::nothing()
-                    .with_cpu(CpuRefreshKind::everything())
-                    .with_memory(MemoryRefreshKind::everything()),
-            ),
-            disks: sysinfo::Disks::new_with_refreshed_list(),
-        }
-    }
-
-    /// In-place refresh of CPU and memory metrics.
-    fn refresh_cpu_mem(&mut self) {
-        self.system.refresh_cpu_all();
-        self.system.refresh_memory();
-    }
-
-    /// In-place refresh of the mounted-filesystem inventory.
-    fn refresh_disks(&mut self) {
-        self.disks.refresh(true);
-    }
-
-    /// Global CPU usage percent (0–100).
-    fn cpu_usage(&self) -> f32 {
-        self.system.global_cpu_usage()
-    }
-
-    /// Memory usage percent (0–100). Returns 0 when total is unknown.
-    fn memory_usage_pct(&self) -> f32 {
-        let total = self.system.total_memory();
-        if total == 0 {
-            0.0
-        } else {
-            (self.system.used_memory() as f64 / total as f64 * 100.0) as f32
-        }
-    }
-
-    /// Copy the current `sysinfo` view into an owned probe snapshot.
-    fn snapshot(&self, include_disks: bool) -> SystemMetricsSnapshot {
-        let disks = if include_disks {
-            self.disks
-                .iter()
-                .map(|d| DiskSnapshot {
-                    mount_point: d.mount_point().to_path_buf(),
-                    available_space: d.available_space(),
-                    total_space: d.total_space(),
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice()
-        } else {
-            Vec::<DiskSnapshot>::new().into_boxed_slice()
-        };
-
-        SystemMetricsSnapshot {
-            cpu_usage: self.cpu_usage(),
-            memory_usage: self.memory_usage_pct(),
-            disks: Arc::from(disks),
-        }
-    }
-}
-
 /// Health checker for the system.
 pub struct HealthChecker {
     /// Latest snapshot. `/api/health` reads do one lock-free
@@ -483,6 +420,26 @@ impl HealthChecker {
     /// Returns the [`JoinHandle`]; cancellation is driven by the token
     /// so callers normally don't need to await it.
     pub fn start(self: &Arc<Self>, cancel: CancellationToken) -> JoinHandle<()> {
+        self.start_with_sampler(cancel, SystemSampler::new)
+    }
+
+    /// Exercise the refresh lifecycle in crate tests without querying the host OS.
+    #[cfg(test)]
+    pub(crate) fn start_with_test_metrics(
+        self: &Arc<Self>,
+        cancel: CancellationToken,
+        metrics: SystemMetricsSnapshot,
+    ) -> JoinHandle<()> {
+        self.start_with_sampler(cancel, move || {
+            SystemSampler::with_sampling_fn(move |_| metrics.clone())
+        })
+    }
+
+    fn start_with_sampler(
+        self: &Arc<Self>,
+        cancel: CancellationToken,
+        sampler: impl FnOnce() -> SystemSampler + Send + 'static,
+    ) -> JoinHandle<()> {
         if self.started.swap(true, Ordering::AcqRel) {
             return tokio::spawn(async {
                 warn!(
@@ -494,14 +451,16 @@ impl HealthChecker {
         let checker = Arc::clone(self);
         let probes = self.probes.load_full().as_ref().clone();
         tokio::spawn(async move {
-            let mut sysinfo = SysinfoCache::new();
+            let mut sampler = sampler();
             let mut last_run = HashMap::<String, Instant>::new();
 
             // First fill: every probe is "due" because last_run is None,
             // so refresh_due() runs them all and populates the snapshot.
-            checker
-                .refresh_due(&probes, &mut last_run, &mut sysinfo)
-                .await;
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return,
+                _ = checker.refresh_due(&probes, &mut last_run, &mut sampler) => {}
+            }
 
             let mut ticker = tokio::time::interval(REFRESH_TICK);
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -518,9 +477,11 @@ impl HealthChecker {
                         return;
                     }
                     _ = ticker.tick() => {
-                        checker
-                            .refresh_due(&probes, &mut last_run, &mut sysinfo)
-                            .await;
+                        tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => return,
+                            _ = checker.refresh_due(&probes, &mut last_run, &mut sampler) => {}
+                        }
                     }
                 }
             }
@@ -534,7 +495,7 @@ impl HealthChecker {
         &self,
         probes: &[Arc<dyn HealthProbe>],
         last_run: &mut HashMap<String, Instant>,
-        sysinfo: &mut SysinfoCache,
+        sampler: &mut SystemSampler,
     ) {
         let now = Instant::now();
         let due: Vec<Arc<dyn HealthProbe>> = probes
@@ -551,17 +512,14 @@ impl HealthChecker {
         // Always refresh CPU/mem on every tick — they're cheap and the
         // top-level fields drive the dashboard headline numbers; users
         // expect them to update faster than per-component cadences.
-        sysinfo.refresh_cpu_mem();
         let include_disks = due.iter().any(|probe| probe.needs_disk_snapshot());
-        if include_disks {
-            sysinfo.refresh_disks();
-        }
-
-        let metrics = sysinfo.snapshot(include_disks);
+        let sampled = sampler.sample(include_disks, SYSTEM_SAMPLE_TIMEOUT).await;
+        let sampling_failure = sampled.as_ref().err().cloned();
+        let metrics = sampled.unwrap_or_else(|_| sampler.latest());
         let cpu_usage = metrics.cpu_usage;
         let memory_usage = metrics.memory_usage;
 
-        let new_components: HashMap<String, ComponentHealth> = if due.is_empty() {
+        let mut new_components: HashMap<String, ComponentHealth> = if due.is_empty() {
             // No probe is due; just bump CPU/mem and the timestamp.
             self.current().components.clone()
         } else {
@@ -574,12 +532,31 @@ impl HealthChecker {
                 .map(|probe| {
                     let probe = Arc::clone(probe);
                     let metrics = metrics.clone();
-                    tokio::spawn(async move {
+                    let failure = sampling_failure.clone();
+                    let previous = self
+                        .current()
+                        .components
+                        .get(probe.name().as_ref())
+                        .cloned();
+                    AbortOnDropHandle::new(tokio::spawn(async move {
+                        if probe.needs_disk_snapshot()
+                            && let Some(failure) = failure
+                        {
+                            let mut health =
+                                ComponentHealth::degraded(probe.name().into_owned(), failure);
+                            if let Some(previous) = previous {
+                                if previous.status == HealthStatus::Unhealthy {
+                                    health.status = HealthStatus::Unhealthy;
+                                }
+                                health.disk = previous.disk;
+                            }
+                            return health;
+                        }
                         let started = Instant::now();
                         let mut health = probe.probe(metrics).await;
                         health.check_duration_ms = Some(started.elapsed().as_millis() as u64);
                         health
-                    })
+                    }))
                 })
                 .collect();
             let join_results = futures::future::join_all(handles).await;
@@ -618,6 +595,16 @@ impl HealthChecker {
             }
             components
         };
+
+        // Reserved infrastructure entry; registered probes use their component names.
+        if let Some(failure) = sampling_failure {
+            new_components.insert(
+                "system-metrics".to_owned(),
+                ComponentHealth::degraded("system-metrics", failure),
+            );
+        } else {
+            new_components.remove("system-metrics");
+        }
 
         let new_snapshot = Arc::new(SystemHealth {
             status: compute_overall_status(&new_components),
@@ -875,7 +862,9 @@ mod tests {
         }));
 
         let cancel = CancellationToken::new();
-        let handle = checker.start(cancel.child_token());
+        let handle = checker.start_with_sampler(cancel.child_token(), || {
+            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+        });
         // First-fill is synchronous-ish: yield once and the immediate
         // pre-tick refresh has populated the snapshot.
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -898,7 +887,9 @@ mod tests {
         }));
 
         let cancel = CancellationToken::new();
-        let handle = checker.start(cancel.child_token());
+        let handle = checker.start_with_sampler(cancel.child_token(), || {
+            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let health = checker.current();
@@ -978,7 +969,9 @@ mod tests {
         }));
 
         let cancel = CancellationToken::new();
-        let handle = checker.start(cancel.child_token());
+        let handle = checker.start_with_sampler(cancel.child_token(), || {
+            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+        });
         tokio::time::sleep(Duration::from_millis(200)).await;
         cancel.cancel();
         let _ = handle.await;
@@ -1008,7 +1001,9 @@ mod tests {
         }
 
         let cancel = CancellationToken::new();
-        let handle = checker.start(cancel.child_token());
+        let handle = checker.start_with_sampler(cancel.child_token(), || {
+            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+        });
         tokio::time::sleep(Duration::from_millis(300)).await;
         cancel.cancel();
         let _ = handle.await;
@@ -1024,7 +1019,9 @@ mod tests {
     async fn cancellation_stops_refresh_loop_promptly() {
         let checker = Arc::new(HealthChecker::new());
         let cancel = CancellationToken::new();
-        let handle = checker.start(cancel.child_token());
+        let handle = checker.start_with_sampler(cancel.child_token(), || {
+            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+        });
 
         // Let one tick land.
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1075,7 +1072,9 @@ mod tests {
         }));
 
         let cancel = CancellationToken::new();
-        let handle = checker.start(cancel.child_token());
+        let handle = checker.start_with_sampler(cancel.child_token(), || {
+            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+        });
         // The first-fill triggers both probes; the panic happens inside
         // its spawned task, the good probe completes normally.
         tokio::time::sleep(Duration::from_millis(150)).await;

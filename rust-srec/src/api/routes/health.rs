@@ -261,10 +261,22 @@ mod tests {
         let health_checker = std::sync::Arc::new(crate::metrics::HealthChecker::new());
         health_checker.register_probe(std::sync::Arc::new(StaticDiskProbe));
         let cancel = tokio_util::sync::CancellationToken::new();
-        let handle = health_checker.start(cancel.child_token());
-        // `start` runs a first-fill refresh before its ticker, so one yield
-        // is enough for the snapshot to hold the probe's value.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let handle =
+            tokio_util::task::AbortOnDropHandle::new(health_checker.start_with_test_metrics(
+                cancel.child_token(),
+                crate::metrics::SystemMetricsSnapshot::empty(),
+            ));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !health_checker
+                .current()
+                .components
+                .contains_key("disk:/rec")
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the injected disk probe should populate the cached snapshot");
 
         let state = HealthRouteState {
             health_checker,
@@ -297,7 +309,10 @@ mod tests {
         );
 
         cancel.cancel();
-        let _ = handle.await;
+        tokio::time::timeout(std::time::Duration::from_secs(1), handle)
+            .await
+            .expect("health refresh should stop after cancellation")
+            .expect("health refresh should finish normally");
     }
 
     #[tokio::test]

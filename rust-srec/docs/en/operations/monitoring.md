@@ -20,6 +20,20 @@ curl http://localhost:12555/api/health/ready \
 
 There is no `/metrics` endpoint. Scrape the JSON health endpoints above, or collect from outside the application.
 
+### Slow Filesystem Sampling
+
+System and disk metrics are sampled on one dedicated thread. Health refreshes
+wait up to one second for a sample, then retain the last available CPU, memory,
+and disk values and report degraded system sampling. Other due probes continue.
+Retained values can be stale; use the component status and message when deciding
+whether disk figures are current.
+
+A stalled sample stays the only operation in flight. The service does not launch
+replacement threads on each timeout. Health reads and health-checker cancellation
+remain responsive, but sampling can resume only after the operating-system call
+returns. A permanently blocked sampler thread may remain until process exit;
+inspect unavailable network or FUSE mounts on the host.
+
 ## Logs
 
 In Docker:
