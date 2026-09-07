@@ -23,8 +23,9 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::Duration;
 use utoipa::ToSchema;
-use zip::ZipWriter;
-use zip::write::SimpleFileOptions;
+
+mod archive;
+pub(crate) use archive::LogArchiveService;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::proto::log_event::{self, EventType, LogLevel};
@@ -52,6 +53,23 @@ impl FromRef<AppState> for LoggingRouteState {
             config_service: state.config_service.clone(),
             logging_config: state.logging_config.clone(),
             logging_download_tokens: state.logging_download_tokens.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ArchiveRouteState {
+    log_dir: PathBuf,
+    tokens: std::sync::Arc<dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>>,
+    archives: std::sync::Arc<LogArchiveService>,
+}
+
+impl FromRef<AppState> for ArchiveRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            log_dir: state.logging_config.log_dir().to_path_buf(),
+            tokens: state.logging_download_tokens.clone(),
+            archives: state.logging_archives.clone(),
         }
     }
 }
@@ -235,6 +253,14 @@ struct LogFileInternal {
 }
 
 fn scan_log_files(log_dir: &std::path::Path) -> Result<Vec<LogFileInternal>, ApiError> {
+    scan_log_files_matching(log_dir, |_| true, usize::MAX)
+}
+
+fn scan_log_files_matching(
+    log_dir: &std::path::Path,
+    include: impl Fn(&LogFileInternal) -> bool,
+    max_files: usize,
+) -> Result<Vec<LogFileInternal>, ApiError> {
     let entries = std::fs::read_dir(log_dir)
         .map_err(|e| ApiError::internal(format!("Failed to read log dir: {e}")))?;
 
@@ -273,12 +299,20 @@ fn scan_log_files(log_dir: &std::path::Path) -> Result<Vec<LogFileInternal>, Api
         })
         .unwrap_or_else(|| chrono::Utc::now().date_naive());
 
-        out.push(LogFileInternal {
+        let file = LogFileInternal {
             date,
             filename,
             path,
             size_bytes,
-        });
+        };
+        if include(&file) {
+            if out.len() == max_files {
+                return Err(ApiError::bad_request(
+                    "Too many log files for one archive; choose a narrower date range",
+                ));
+            }
+            out.push(file);
+        }
     }
 
     out.sort_by(|a, b| {
@@ -401,27 +435,6 @@ fn list_log_lines(
     })
 }
 
-fn build_archive_zip(files: &[LogFileInternal]) -> Result<Vec<u8>, ApiError> {
-    let mut cursor = std::io::Cursor::new(Vec::new());
-    let mut zip = ZipWriter::new(&mut cursor);
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-    for f in files {
-        zip.start_file(&f.filename, options)
-            .map_err(|e| ApiError::internal(format!("Failed to add zip entry: {e}")))?;
-
-        let mut file = std::fs::File::open(&f.path)
-            .map_err(|e| ApiError::internal(format!("Failed to open log file: {e}")))?;
-        std::io::copy(&mut file, &mut zip)
-            .map_err(|e| ApiError::internal(format!("Failed to write zip entry: {e}")))?;
-    }
-
-    zip.finish()
-        .map_err(|e| ApiError::internal(format!("Failed to finish zip: {e}")))?;
-
-    Ok(cursor.into_inner())
-}
-
 fn format_archive_filename(
     from: Option<chrono::NaiveDate>,
     to: Option<chrono::NaiveDate>,
@@ -449,24 +462,24 @@ fn generate_download_token() -> String {
     hex::encode(bytes)
 }
 
-fn cleanup_expired_download_tokens(state: &LoggingRouteState) {
-    if state.logging_download_tokens.len() < 1000 {
+fn cleanup_expired_download_tokens(
+    tokens: &dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>,
+) {
+    if tokens.len() < 1000 {
         return;
     }
     let now = chrono::Utc::now();
-    state
-        .logging_download_tokens
-        .retain(|_, expires_at| *expires_at > now);
+    tokens.retain(|_, expires_at| *expires_at > now);
 }
 
-fn issue_download_token(state: &LoggingRouteState) -> Result<ArchiveTokenResponse, ApiError> {
-    cleanup_expired_download_tokens(state);
+fn issue_download_token(
+    tokens: &dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>,
+) -> Result<ArchiveTokenResponse, ApiError> {
+    cleanup_expired_download_tokens(tokens);
 
     let token = generate_download_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(5);
-    state
-        .logging_download_tokens
-        .insert(token.clone(), expires_at);
+    tokens.insert(token.clone(), expires_at);
 
     Ok(ArchiveTokenResponse {
         token,
@@ -474,9 +487,12 @@ fn issue_download_token(state: &LoggingRouteState) -> Result<ArchiveTokenRespons
     })
 }
 
-fn consume_download_token(state: &LoggingRouteState, token: &str) -> Result<(), ApiError> {
+fn consume_download_token(
+    tokens: &dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>,
+    token: &str,
+) -> Result<(), ApiError> {
     let now = chrono::Utc::now();
-    match state.logging_download_tokens.remove(token) {
+    match tokens.remove(token) {
         Some((_, expires_at)) if expires_at > now => Ok(()),
         _ => Err(ApiError::unauthorized("Invalid or expired download token")),
     }
@@ -551,7 +567,7 @@ pub async fn get_archive_token(
     headers: HeaderMap,
 ) -> ApiResult<Json<ArchiveTokenResponse>> {
     authorize_headers(&state, &headers).await?;
-    Ok(Json(issue_download_token(&state)?))
+    Ok(Json(issue_download_token(&state.logging_download_tokens)?))
 }
 
 #[utoipa::path(
@@ -617,27 +633,19 @@ pub async fn list_log_entries(
     responses(
         (status = 200, description = "Zipped log files", content_type = "application/zip"),
         (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse),
+        (status = 429, description = "Archive download capacity exhausted", body = crate::api::error::ApiErrorResponse),
         (status = 400, description = "Invalid query", body = crate::api::error::ApiErrorResponse)
     )
 )]
 pub async fn download_logs_archive(
-    State(state): State<LoggingRouteState>,
+    State(state): State<ArchiveRouteState>,
     Query(query): Query<ArchiveQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    consume_download_token(&state, &query.token)?;
-
-    let logging_config = &state.logging_config;
-    let log_dir = logging_config.log_dir().to_path_buf();
+    consume_download_token(&state.tokens, &query.token)?;
 
     let (from, to) = parse_range(query.from.as_deref(), query.to.as_deref())?;
 
-    let zip_bytes = tokio::task::spawn_blocking(move || {
-        let files = scan_log_files(&log_dir)?;
-        let files = filter_by_range(files, from, to);
-        build_archive_zip(&files)
-    })
-    .await
-    .map_err(|e| ApiError::internal(format!("Failed to join archive task: {e}")))??;
+    let body = state.archives.download(state.log_dir, from, to).await?;
 
     let filename = format_archive_filename(from, to);
 
@@ -652,7 +660,7 @@ pub async fn download_logs_archive(
             .map_err(|e| ApiError::internal(format!("Invalid header value: {e}")))?,
     );
 
-    Ok((response_headers, zip_bytes))
+    Ok((response_headers, body))
 }
 
 #[utoipa::path(
@@ -827,6 +835,9 @@ fn parse_log_level(level: &str) -> LogLevel {
         _ => LogLevel::Unspecified,
     }
 }
+
+#[cfg(test)]
+mod archive_tests;
 
 #[cfg(test)]
 mod tests {

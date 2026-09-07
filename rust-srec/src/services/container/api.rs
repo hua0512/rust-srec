@@ -127,6 +127,7 @@ impl ServiceContainer {
             notification_service: self.notification_service.clone(),
             logging_config,
             logging_download_tokens: Arc::new(DashMap::new()),
+            logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
             credential_service: self.credential_service.clone(),
             configuration_import_service: Arc::new(
                 crate::services::config_import::ConfigurationImportService::new(

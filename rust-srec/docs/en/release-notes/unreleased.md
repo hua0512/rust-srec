@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Logging
+
+- **Log archives stream within resource limits**
+
+  Downloads stream ZIP64 archives with bounded buffers instead of keeping the complete ZIP in memory. Two downloads can run at once; additional requests receive HTTP 429 with a retry delay. Each archive can contain up to 10,000 matching log files. Active logs are read up to their scanned size, interrupted downloads release capacity, and read or compression failures abort the download instead of completing a partial archive. No temporary archive file is created.
+
 ## Configuration
 
 - **Bilibili quality overrides preserve inheritance**
