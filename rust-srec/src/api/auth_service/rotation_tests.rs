@@ -185,10 +185,9 @@ async fn concurrent_refresh_has_one_successor_and_applies_configured_reuse_polic
         })
         .await
         .expect("concurrent refreshes must settle");
-        let (winner, loser) = if first.is_ok() {
-            (first.unwrap(), second)
-        } else {
-            (second.unwrap(), first)
+        let (winner, loser) = match first {
+            Ok(winner) => (winner, second),
+            Err(error) => (second.unwrap(), Err(error)),
         };
         assert!(matches!(loser, Err(AuthError::TokenRevoked)));
         assert_eq!(
