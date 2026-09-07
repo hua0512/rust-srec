@@ -442,7 +442,17 @@ mod tests {
         let cleanup = config.run_retention_cleanup(cancel.clone());
         let verify = async {
             tokio::time::timeout(Duration::from_secs(2), async {
-                while tokio::fs::try_exists(&old).await.unwrap() {
+                loop {
+                    // Windows can reject metadata queries while deletion is pending.
+                    // Observe namespace removal without reopening the deleting file.
+                    let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+                    let mut found = false;
+                    while let Some(entry) = entries.next_entry().await.unwrap() {
+                        found |= entry.file_name() == old.file_name().unwrap();
+                    }
+                    if !found {
+                        break;
+                    }
                     tokio::task::yield_now().await;
                 }
             })
