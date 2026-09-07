@@ -10,6 +10,10 @@
 
 ## Configuration
 
+- **Invalid configuration patches are rejected before saving**
+
+  Global settings reject incorrect JSON types, invalid negative values, and overflowing counts before changing any saved field. Existing zero values for automatic concurrency, disabled recording limits, and retention remain supported, as do the existing timeout clamps. Platform settings retain their canonical name so edits cannot break URL-based platform lookup; numeric overrides are checked before storage.
+
 - **Preset and template dates use consistent millisecond storage**
 
   Built-in presets and templates updated during credential refresh now display correct dates. Preset, template, and configuration-import writes consistently store integer milliseconds while the API keeps its existing date-string format. A new migration converts historical date strings without rounding fractional milliseconds or altering existing integers. Invalid historical values stop the migration without changing the data; see [timestamp repair guidance](../operations/upgrading.md#preset-and-template-timestamps).

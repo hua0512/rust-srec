@@ -102,6 +102,96 @@ fn validate_optional_retention_days(
     validate_retention_days(field, days)
 }
 
+fn validate_global_config_request(request: &UpdateGlobalConfigRequest) -> ApiResult<()> {
+    // Zero disables recording limits/retention or selects automatic CPU/IO concurrency.
+    // Timeouts and probe/freshness intervals retain their existing clamps below.
+    macro_rules! integers {
+        ($($field:ident: ($min:expr, $max:expr)),+ $(,)?) => {
+            $(if let Some(value) = &request.$field {
+                let number = value.as_i64().ok_or_else(|| ApiError::bad_request(
+                    concat!(stringify!($field), " must be a signed 64-bit integer"),
+                ))?;
+                if !($min..=$max).contains(&number) {
+                    return Err(ApiError::bad_request(format!(
+                        "{} must be between {} and {}", stringify!($field), $min, $max,
+                    )));
+                }
+            })+
+        };
+    }
+    integers! {
+        min_segment_size_bytes: (0, i64::MAX),
+        max_download_duration_secs: (0, i64::MAX),
+        max_part_size_bytes: (0, i64::MAX),
+        max_concurrent_downloads: (1, i64::from(i32::MAX)),
+        max_concurrent_uploads: (1, i64::from(i32::MAX)),
+        max_concurrent_cpu_jobs: (0, i64::from(i32::MAX)),
+        max_concurrent_io_jobs: (0, i64::from(i32::MAX)),
+        streamer_check_delay_ms: (1, i64::MAX),
+        offline_check_delay_ms: (1, i64::MAX),
+        offline_check_count: (1, i64::from(i32::MAX)),
+        pipeline_cpu_job_timeout_secs: (i64::MIN, i64::MAX),
+        pipeline_io_job_timeout_secs: (i64::MIN, i64::MAX),
+        pipeline_execute_timeout_secs: (i64::MIN, i64::MAX),
+        queue_freshness_threshold_ms: (i64::MIN, i64::MAX),
+        gpu_health_probe_interval_secs: (i64::MIN, i64::MAX),
+    }
+    validate_optional_retention_days(
+        "job_history_retention_days",
+        request.job_history_retention_days.as_ref(),
+    )?;
+    validate_optional_retention_days(
+        "notification_event_log_retention_days",
+        request.notification_event_log_retention_days.as_ref(),
+    )?;
+    // The GPU monitor constructs an Instant directly, unlike pipeline timeouts,
+    // whose timer API handles durations beyond the host's representable range.
+    if let Some(seconds) = request
+        .gpu_health_probe_interval_secs
+        .as_ref()
+        .and_then(serde_json::Value::as_i64)
+        && std::time::Instant::now()
+            .checked_add(std::time::Duration::from_secs(
+                seconds.max(1).unsigned_abs(),
+            ))
+            .is_none()
+    {
+        return Err(ApiError::bad_request(
+            "gpu_health_probe_interval_secs exceeds the supported timer range",
+        ));
+    }
+
+    macro_rules! typed_fields {
+        ($predicate:ident, $description:literal; $($field:ident),+ $(,)?) => {
+            $(if let Some(value) = &request.$field
+                && !value.$predicate()
+            {
+                return Err(ApiError::bad_request(concat!(
+                    stringify!($field), " must be ", $description,
+                )));
+            })+
+        };
+    }
+    typed_fields!(is_string, "a string";
+        output_folder, output_filename_template, output_file_format,
+        default_download_engine, default_extractor, proxy_config, pipeline,
+        session_complete_pipeline, paired_segment_pipeline,
+    );
+    typed_fields!(is_boolean, "a boolean";
+        record_danmu, auto_thumbnail, stream_proxy_allow_private_targets,
+    );
+    Ok(())
+}
+
+fn platform_i64(field: &'static str, value: Option<u64>) -> ApiResult<Option<i64>> {
+    value
+        .map(|value| {
+            i64::try_from(value)
+                .map_err(|_| ApiError::bad_request(format!("{field} must be at most {}", i64::MAX)))
+        })
+        .transpose()
+}
+
 /// Create the config router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -254,14 +344,7 @@ pub async fn update_global_config(
     State(state): State<ConfigRouteState>,
     Json(request): Json<UpdateGlobalConfigRequest>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
-    validate_optional_retention_days(
-        "job_history_retention_days",
-        request.job_history_retention_days.as_ref(),
-    )?;
-    validate_optional_retention_days(
-        "notification_event_log_retention_days",
-        request.notification_event_log_retention_days.as_ref(),
-    )?;
+    validate_global_config_request(&request)?;
 
     let config_service = &state.config_service;
 
@@ -289,17 +372,17 @@ pub async fn update_global_config(
         min_segment_size_bytes: |v: serde_json::Value| v.as_i64(),
         max_download_duration_secs: |v: serde_json::Value| v.as_i64(),
         max_part_size_bytes: |v: serde_json::Value| v.as_i64(),
-        max_concurrent_downloads: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
-        max_concurrent_uploads: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
-        max_concurrent_cpu_jobs: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
-        max_concurrent_io_jobs: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        max_concurrent_downloads: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        max_concurrent_uploads: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        max_concurrent_cpu_jobs: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        max_concurrent_io_jobs: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
         streamer_check_delay_ms: |v: serde_json::Value| v.as_i64(),
         offline_check_delay_ms: |v: serde_json::Value| v.as_i64(),
-        offline_check_count: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
-        job_history_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
-        notification_event_log_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        offline_check_count: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        job_history_retention_days: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        notification_event_log_retention_days: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
         default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
-        // `Option<String>` target: JSON `null` clears the override back to auto.
+        // The request's Option<Value> treats JSON null like omission.
         default_extractor: |v: serde_json::Value| v.as_str().map(String::from),
         record_danmu: |v: serde_json::Value| v.as_bool(),
         // JSON-TEXT column: the object is stored verbatim and parsed at resolve
@@ -485,19 +568,33 @@ pub async fn replace_platform_config(
         return Err(ApiError::bad_request("Path ID does not match body ID"));
     }
 
-    validate_offline_check_overrides(
-        request.offline_check_count.map(|v| v as i64),
-        request.offline_check_delay_ms.map(|v| v as i64),
-    )?;
-
     let config_service = &state.config_service;
+    let stored = config_service
+        .get_platform_config(&id)
+        .await
+        .map_err(ApiError::from)?;
+    if request.name != stored.platform_name {
+        return Err(ApiError::bad_request("Platform name cannot be changed"));
+    }
+
+    let offline_check_count = request
+        .offline_check_count
+        .map(|value| {
+            i32::try_from(value).map_err(|_| {
+                ApiError::bad_request(format!("offline_check_count must be at most {}", i32::MAX))
+            })
+        })
+        .transpose()?;
+    let offline_check_delay_ms =
+        platform_i64("offline_check_delay_ms", request.offline_check_delay_ms)?;
+    validate_offline_check_overrides(offline_check_count.map(i64::from), offline_check_delay_ms)?;
 
     // Build the full config model from request
     let config = PlatformConfigDbModel {
         id: request.id,
-        platform_name: request.name,
-        fetch_delay_ms: request.fetch_delay_ms.map(|v| v as i64),
-        download_delay_ms: request.download_delay_ms.map(|v| v as i64),
+        platform_name: stored.platform_name,
+        fetch_delay_ms: platform_i64("fetch_delay_ms", request.fetch_delay_ms)?,
+        download_delay_ms: platform_i64("download_delay_ms", request.download_delay_ms)?,
         record_danmu: request.record_danmu,
         danmu_statistics: request.danmu_statistics,
         cookies: request.cookies,
@@ -509,15 +606,21 @@ pub async fn replace_platform_config(
         extractor: request.extractor,
         stream_selection_config: request.stream_selection_config,
         output_file_format: request.output_file_format,
-        min_segment_size_bytes: request.min_segment_size_bytes.map(|v| v as i64),
-        max_download_duration_secs: request.max_download_duration_secs.map(|v| v as i64),
-        max_part_size_bytes: request.max_part_size_bytes.map(|v| v as i64),
+        min_segment_size_bytes: platform_i64(
+            "min_segment_size_bytes",
+            request.min_segment_size_bytes,
+        )?,
+        max_download_duration_secs: platform_i64(
+            "max_download_duration_secs",
+            request.max_download_duration_secs,
+        )?,
+        max_part_size_bytes: platform_i64("max_part_size_bytes", request.max_part_size_bytes)?,
         download_retry_policy: request.download_retry_policy,
         pipeline: request.pipeline,
         session_complete_pipeline: request.session_complete_pipeline,
         paired_segment_pipeline: request.paired_segment_pipeline,
-        offline_check_count: request.offline_check_count.map(|v| v as i32),
-        offline_check_delay_ms: request.offline_check_delay_ms.map(|v| v as i64),
+        offline_check_count,
+        offline_check_delay_ms,
     };
 
     // Replace config
@@ -543,11 +646,429 @@ pub async fn replace_platform_config(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
 
+    use axum::Json;
+    use axum::extract::{Path, State};
     use axum::http::StatusCode;
+    use serde_json::{Value, json};
 
-    use super::{validate_optional_retention_days, validate_retention_days};
-    use crate::api::models::GlobalConfigResponse;
+    use super::{
+        ConfigRouteState, map_platform_config_to_response, replace_platform_config,
+        update_global_config, validate_global_config_request, validate_optional_retention_days,
+        validate_retention_days,
+    };
+    use crate::api::models::{GlobalConfigResponse, UpdateGlobalConfigRequest};
+    use crate::config::ConfigService;
+    use crate::database;
+    use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
+    use crate::domain::value_objects::StreamerUrl;
+
+    async fn config_state() -> (tempfile::TempDir, ConfigRouteState) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.db");
+        let url = format!(
+            "sqlite:{}?mode=rwc",
+            path.to_string_lossy().replace('\\', "/")
+        );
+        let pool = database::init_pool(&url).await.unwrap();
+        database::run_migrations(&pool).await.unwrap();
+        let service = ConfigService::new(
+            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+            Arc::new(SqlxStreamerRepository::new(pool.clone(), pool)),
+        );
+        (
+            dir,
+            ConfigRouteState {
+                config_service: Arc::new(service),
+            },
+        )
+    }
+
+    fn global_request(value: Value) -> UpdateGlobalConfigRequest {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn global_numeric_patch_validates_types_and_boundaries() {
+        let fields = [
+            ("min_segment_size_bytes", 0, i64::MAX),
+            ("max_download_duration_secs", 0, i64::MAX),
+            ("max_part_size_bytes", 0, i64::MAX),
+            ("max_concurrent_downloads", 1, i64::from(i32::MAX)),
+            ("max_concurrent_uploads", 1, i64::from(i32::MAX)),
+            ("max_concurrent_cpu_jobs", 0, i64::from(i32::MAX)),
+            ("max_concurrent_io_jobs", 0, i64::from(i32::MAX)),
+            ("streamer_check_delay_ms", 1, i64::MAX),
+            ("offline_check_delay_ms", 1, i64::MAX),
+            ("offline_check_count", 1, i64::from(i32::MAX)),
+            ("job_history_retention_days", 0, i64::from(i32::MAX)),
+            (
+                "notification_event_log_retention_days",
+                0,
+                i64::from(i32::MAX),
+            ),
+            ("pipeline_cpu_job_timeout_secs", i64::MIN, i64::MAX),
+            ("pipeline_io_job_timeout_secs", i64::MIN, i64::MAX),
+            ("pipeline_execute_timeout_secs", i64::MIN, i64::MAX),
+            ("queue_freshness_threshold_ms", i64::MIN, i64::MAX),
+            ("gpu_health_probe_interval_secs", i64::MIN, i64::MAX),
+        ];
+        for (field, min, max) in fields {
+            let mut invalid = vec![
+                json!(1.5),
+                json!("1"),
+                json!(true),
+                json!([]),
+                json!({}),
+                json!(u64::MAX),
+                json!(i128::from(max) + 1),
+            ];
+            if let Some(below_min) = min.checked_sub(1) {
+                invalid.push(json!(below_min));
+            }
+            for value in invalid {
+                let request = global_request(json!({field: value}));
+                let error = validate_global_config_request(&request).expect_err(field);
+                assert_eq!(error.status, StatusCode::BAD_REQUEST, "{field}");
+                assert!(error.message.contains(field), "{}", error.message);
+            }
+            for value in [json!(min), json!(max), Value::Null] {
+                let representable = field != "gpu_health_probe_interval_secs"
+                    || value.as_i64().is_none_or(|seconds| {
+                        std::time::Instant::now()
+                            .checked_add(std::time::Duration::from_secs(
+                                seconds.max(1).unsigned_abs(),
+                            ))
+                            .is_some()
+                    });
+                let result = validate_global_config_request(&global_request(json!({field: value})));
+                assert_eq!(result.is_ok(), representable, "{field}: {result:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn global_patch_checks_gpu_timer_range_before_mutation() {
+        let (_dir, state) = config_state().await;
+        let before = state.config_service.get_global_config().await.unwrap();
+        let representable = std::time::Instant::now()
+            .checked_add(std::time::Duration::from_secs(i64::MAX.unsigned_abs()))
+            .is_some();
+        let result = update_global_config(
+            State(state.clone()),
+            Json(global_request(json!({
+                "output_folder": "/changed",
+                "gpu_health_probe_interval_secs": i64::MAX,
+            }))),
+        )
+        .await;
+        let after = state.config_service.get_global_config().await.unwrap();
+        if representable {
+            let Json(response) = result.unwrap();
+            assert_eq!(response.output_folder, "/changed");
+            assert_eq!(after.output_folder, "/changed");
+            assert_eq!(after.gpu_health_probe_interval_secs, i64::MAX);
+        } else {
+            let error = result.expect_err("unrepresentable GPU interval must be rejected");
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+            assert!(error.message.contains("gpu_health_probe_interval_secs"));
+            assert_eq!(
+                serde_json::to_value(&after).unwrap(),
+                serde_json::to_value(&before).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn global_patch_validates_string_and_boolean_fields() {
+        for field in [
+            "output_folder",
+            "output_filename_template",
+            "output_file_format",
+            "default_download_engine",
+            "default_extractor",
+            "proxy_config",
+            "pipeline",
+            "session_complete_pipeline",
+            "paired_segment_pipeline",
+        ] {
+            let error = validate_global_config_request(&global_request(json!({field: {}})))
+                .expect_err(field);
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+            assert!(error.message.contains(field));
+            validate_global_config_request(&global_request(json!({field: "value"}))).unwrap();
+            validate_global_config_request(&global_request(json!({field: null}))).unwrap();
+        }
+        for field in [
+            "record_danmu",
+            "auto_thumbnail",
+            "stream_proxy_allow_private_targets",
+        ] {
+            let error = validate_global_config_request(&global_request(json!({field: "true"})))
+                .expect_err(field);
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+            assert!(error.message.contains(field));
+            for value in [json!(true), json!(false), Value::Null] {
+                validate_global_config_request(&global_request(json!({field: value}))).unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_global_patch_leaves_all_stored_fields_unchanged() {
+        let (_dir, state) = config_state().await;
+        let before = state.config_service.get_global_config().await.unwrap();
+        let mut events = state.config_service.subscribe();
+        for invalid in [
+            json!({"max_concurrent_downloads": -1}),
+            json!({"max_concurrent_uploads": i64::from(i32::MAX) + 1}),
+            json!({"offline_check_delay_ms": u64::MAX}),
+            json!({"offline_check_count": 1.5}),
+            json!({"max_part_size_bytes": "12"}),
+            json!({"record_danmu": "true"}),
+            json!({"pipeline": {"steps": []}}),
+        ] {
+            let mut patch = invalid;
+            patch["output_folder"] = json!("/changed");
+            let error = update_global_config(State(state.clone()), Json(global_request(patch)))
+                .await
+                .expect_err("mixed invalid patch must fail");
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+            let after = state.config_service.get_global_config().await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&after).unwrap(),
+                serde_json::to_value(&before).unwrap()
+            );
+            assert!(matches!(
+                events.try_recv(),
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn global_patch_preserves_null_omission_sentinels_and_clamps() {
+        let (_dir, state) = config_state().await;
+        let Json(response) = update_global_config(
+            State(state.clone()),
+            Json(global_request(json!({
+                "default_extractor": "streamlink"
+            }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.default_extractor.as_deref(), Some("streamlink"));
+        let before = state.config_service.get_global_config().await.unwrap();
+        let request = global_request(json!({
+            "output_folder": null,
+            "default_extractor": null,
+            "min_segment_size_bytes": 0,
+            "max_download_duration_secs": 0,
+            "max_part_size_bytes": 0,
+            "max_concurrent_downloads": i32::MAX,
+            "max_concurrent_uploads": 1,
+            "max_concurrent_cpu_jobs": 0,
+            "max_concurrent_io_jobs": 0,
+            "job_history_retention_days": 0,
+            "notification_event_log_retention_days": i32::MAX,
+            "offline_check_count": 1,
+            "streamer_check_delay_ms": 1,
+            "offline_check_delay_ms": 1,
+            "pipeline_cpu_job_timeout_secs": i64::MIN,
+            "pipeline_io_job_timeout_secs": -1,
+            "pipeline_execute_timeout_secs": 0,
+            "gpu_health_probe_interval_secs": -1,
+            "queue_freshness_threshold_ms": -1
+        }));
+        let Json(response) = update_global_config(State(state.clone()), Json(request))
+            .await
+            .unwrap();
+        assert_eq!(response.max_concurrent_cpu_jobs, 0);
+        let after = state.config_service.get_global_config().await.unwrap();
+        assert_eq!(after.output_folder, before.output_folder);
+        assert_eq!(
+            after.output_filename_template,
+            before.output_filename_template
+        );
+        assert_eq!(after.default_extractor, before.default_extractor);
+        assert_eq!(
+            (
+                after.min_segment_size_bytes,
+                after.max_download_duration_secs,
+                after.max_part_size_bytes
+            ),
+            (0, 0, 0)
+        );
+        assert_eq!(
+            (after.max_concurrent_downloads, after.max_concurrent_uploads),
+            (i32::MAX, 1)
+        );
+        assert_eq!(
+            (after.max_concurrent_cpu_jobs, after.max_concurrent_io_jobs),
+            (0, 0)
+        );
+        assert_eq!(
+            (
+                after.job_history_retention_days,
+                after.notification_event_log_retention_days
+            ),
+            (0, i32::MAX)
+        );
+        assert_eq!(
+            (
+                after.offline_check_count,
+                after.streamer_check_delay_ms,
+                after.offline_check_delay_ms
+            ),
+            (1, 1, 1)
+        );
+        assert_eq!(
+            (
+                after.pipeline_cpu_job_timeout_secs,
+                after.pipeline_io_job_timeout_secs,
+                after.pipeline_execute_timeout_secs
+            ),
+            (1, 1, 1)
+        );
+        assert_eq!(after.gpu_health_probe_interval_secs, 1);
+        assert_eq!(after.queue_freshness_threshold_ms, 0);
+
+        let Json(response) = update_global_config(
+            State(state.clone()),
+            Json(global_request(json!({
+                "pipeline_cpu_job_timeout_secs": 12,
+                "pipeline_io_job_timeout_secs": 13,
+                "pipeline_execute_timeout_secs": 14,
+                "gpu_health_probe_interval_secs": 15,
+                "queue_freshness_threshold_ms": 16,
+                "danmu_statistics": {"enabled": true}
+            }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.pipeline_cpu_job_timeout_secs, 12);
+        let after = state.config_service.get_global_config().await.unwrap();
+        assert_eq!(
+            (
+                after.pipeline_cpu_job_timeout_secs,
+                after.pipeline_io_job_timeout_secs,
+                after.pipeline_execute_timeout_secs
+            ),
+            (12, 13, 14)
+        );
+        assert_eq!(after.gpu_health_probe_interval_secs, 15);
+        assert_eq!(after.queue_freshness_threshold_ms, 16);
+        assert_eq!(
+            serde_json::from_str::<Value>(after.danmu_statistics.as_deref().unwrap()).unwrap(),
+            json!({"enabled": true})
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_replacement_preserves_exact_identity_and_resolvability() {
+        let (_dir, state) = config_state().await;
+        let before = state
+            .config_service
+            .get_platform_config_by_name("bilibili")
+            .await
+            .unwrap();
+        let original = map_platform_config_to_response(before.clone());
+        for name in ["renamed", "Bilibili"] {
+            let mut request = original.clone();
+            request.name = name.to_string();
+            request.fetch_delay_ms = Some(1234);
+            let error = replace_platform_config(
+                State(state.clone()),
+                Path(before.id.clone()),
+                Json(request),
+            )
+            .await
+            .expect_err("platform identity must not change");
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+            let stored = state
+                .config_service
+                .get_platform_config(&before.id)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(&stored).unwrap(),
+                serde_json::to_value(&before).unwrap()
+            );
+        }
+        let mut request = original;
+        request.fetch_delay_ms = Some(1234);
+        let Json(response) =
+            replace_platform_config(State(state.clone()), Path(before.id.clone()), Json(request))
+                .await
+                .unwrap();
+        assert_eq!(response.name, before.platform_name);
+        let url = StreamerUrl::new("https://live.bilibili.com/12345").unwrap();
+        let stored = state
+            .config_service
+            .get_platform_config_by_name(&url.platform().unwrap().to_lowercase())
+            .await
+            .unwrap();
+        assert_eq!(stored.id, before.id);
+        assert_eq!(stored.fetch_delay_ms, Some(1234));
+    }
+
+    #[tokio::test]
+    async fn platform_replacement_rejects_missing_rows_and_numeric_overflow() {
+        let (_dir, state) = config_state().await;
+        let before = state
+            .config_service
+            .get_platform_config_by_name("bilibili")
+            .await
+            .unwrap();
+        let original = map_platform_config_to_response(before.clone());
+        let mut missing = original.clone();
+        missing.id = "missing".to_string();
+        let error = replace_platform_config(
+            State(state.clone()),
+            Path(missing.id.clone()),
+            Json(missing),
+        )
+        .await
+        .expect_err("missing platform must fail");
+        assert_eq!(error.status, StatusCode::NOT_FOUND);
+
+        for field in [
+            "fetch_delay_ms",
+            "download_delay_ms",
+            "min_segment_size_bytes",
+            "max_download_duration_secs",
+            "max_part_size_bytes",
+            "offline_check_delay_ms",
+            "offline_check_count",
+        ] {
+            let mut value = serde_json::to_value(&original).unwrap();
+            value[field] = if field == "offline_check_count" {
+                json!(u32::MAX)
+            } else {
+                json!(u64::MAX)
+            };
+            value["output_folder"] = json!("/changed");
+            let error = replace_platform_config(
+                State(state.clone()),
+                Path(before.id.clone()),
+                Json(serde_json::from_value(value).unwrap()),
+            )
+            .await
+            .expect_err("overflow must not be stored");
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+            assert!(error.message.contains(field));
+            let stored = state
+                .config_service
+                .get_platform_config(&before.id)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(&stored).unwrap(),
+                serde_json::to_value(&before).unwrap()
+            );
+        }
+    }
 
     #[test]
     fn retention_validation_accepts_zero_and_positive_integers() {
