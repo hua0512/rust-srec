@@ -106,6 +106,10 @@
 
 ## Recording
 
+- **Concurrent danmu stops share collector completion**
+
+  Stop callers and replacement sessions wait for the same collector outcome without consuming another caller's completion signal. Waiting for startup serialization and the previous collector shares a ten-second handoff budget. A cancelled caller or timeout does not discard completion or allow an overlapping replacement; connection setup retains its separate behavior.
+
 - **Streamlink stop keeps output flowing while containing subprocesses**
 
   Stdout forwarding and stderr readers stay alive while Streamlink stops, allowing emitted tail data to reach FFmpeg before EOF. Unix requests SIGTERM; Windows uses a bounded natural-exit window before forced tree termination. Both subprocess trees are contained, including descendants left after a parent exits. Internal Streamlink ring-buffer data and forced-stop tails remain subject to loss; see [stopping Streamlink recordings](../concepts/engines.md#stopping-streamlink-recordings).
