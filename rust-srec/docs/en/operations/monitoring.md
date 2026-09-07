@@ -10,7 +10,12 @@ Monitor the process, its dependencies, the host, and recording outcomes. A runni
 | `GET /api/health/ready` | Bearer token when auth is enabled | Returns `200 ready` or `503 not ready` based on component health |
 | `GET /api/health` | Bearer token when auth is enabled | Version, uptime, component status, CPU usage, and memory usage |
 
-Use liveness to restart a dead process. Use authenticated readiness to stop routing work to a degraded instance and alert an operator. Protect the token used by the monitor and give the monitoring network only the access it needs.
+Use liveness to restart a dead process. Authenticated readiness rejects unknown startup state and unhealthy instances; degraded instances remain ready. Alert separately on degraded component health. Protect the token used by the monitor and give the monitoring network only the access it needs.
+
+After a refresh, any component whose status is unknown makes the overall health
+degraded, unless another component is unhealthy. For example, a disk that cannot
+be resolved cannot produce a healthy overall report. The initial snapshot remains
+unknown until the first refresh.
 
 ```bash
 curl http://localhost:12555/api/health/live
@@ -53,6 +58,12 @@ journalctl -u rust-srec -f
 The example Compose file rotates container JSON logs. The unit sets `StandardOutput=journal` and `StandardError=journal` with `SyslogIdentifier=rust-srec`, so process output goes to the journal and is subject to the host's journald retention.
 
 In both deployments the application also writes its own daily-rotated log files to `LOG_DIR`, which the unit points at `/var/log/rust-srec`. Centralize logs when incident history must survive host loss, and filter access because paths and platform metadata may be sensitive even though credentials are redacted by the application.
+
+Application retention runs when the cleanup service starts and then daily,
+removing recognized dated log files older than seven days. It does not currently
+bound bytes per file. File initialization failures return a startup error.
+Console colors are enabled only when stdout is a terminal, and live-log event
+formatting is skipped when no client is subscribed.
 
 ## Minimum Alert Set
 

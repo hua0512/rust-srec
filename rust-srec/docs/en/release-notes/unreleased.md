@@ -10,6 +10,10 @@
 
 ## Health Monitoring
 
+- **Unknown components make overall health degraded**
+
+  A completed refresh no longer reports healthy when a disk or another component has unknown status. Unhealthy components still take precedence; degraded instances remain ready.
+
 - **Slow disk sampling keeps health checks responsive**
 
   System and disk sampling runs on one dedicated thread with bounded waits. A stalled filesystem leaves earlier values marked stale or degraded while other probes continue, without accumulating replacement tasks. Health-checker shutdown can finish even if the operating-system call remains blocked; see [slow filesystem sampling](../operations/monitoring.md#slow-filesystem-sampling).
@@ -22,6 +26,10 @@
 
 ## Logging
 
+- **Logging startup and idle behavior are predictable**
+
+  Log-file initialization returns errors instead of panicking, retention runs immediately at cleanup-service startup, redirected console output omits ANSI colors, and live-log formatting is skipped without subscribers. Daily files still have no byte-size cap.
+
 - **Log archives stream within resource limits**
 
   Downloads stream ZIP64 archives with bounded buffers instead of keeping the complete ZIP in memory. Two downloads can run at once; additional requests receive HTTP 429 with a retry delay. Each archive can contain up to 10,000 matching log files. Active logs are read up to their scanned size, interrupted downloads release capacity, and read or compression failures abort the download instead of completing a partial archive. No temporary archive file is created.
@@ -33,6 +41,10 @@
   Scheduled vacuum checks the download manager's active recordings instead of counting nonexistent download jobs. It defers when recording activity exceeds the configured limit or admission is busy, and holds new starts until admitted vacuum work finishes. Filesystem preflight runs before that gate, so a slow disk-space check does not hold up recording starts. Lightweight retention remains independent.
 
 ## Configuration
+
+- **Proxy credentials preserve literal URL characters**
+
+  Separate proxy usernames and passwords are percent-encoded before insertion, including literal percent signs, spaces, Unicode and authority delimiters. They replace embedded credentials while preserving the proxy host and port. Download-start diagnostics omit proxy URLs.
 
 - **Startup output probes use recording-compatible gate keys**
 

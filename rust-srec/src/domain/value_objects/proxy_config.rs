@@ -74,17 +74,26 @@ impl ProxyConfig {
         }
 
         self.url.as_ref().map(|url| {
-            if let (Some(user), Some(pass)) = (&self.username, &self.password) {
-                // Insert auth into URL
-                if let Some(pos) = url.find("://") {
-                    let (scheme, rest) = url.split_at(pos + 3);
-                    format!("{}{}:{}@{}", scheme, user, pass, rest)
-                } else {
-                    url.clone()
+            if let (Some(user), Some(pass)) = (&self.username, &self.password)
+                && let Ok(mut parsed) = url::Url::parse(url)
+            {
+                // Encode literal percent signs as well as URL delimiters. The
+                // URL setters accept existing escapes, so encode exactly once
+                // before replacing any credentials already in the authority.
+                let encode = |value: &str| {
+                    url::form_urlencoded::byte_serialize(value.as_bytes())
+                        .collect::<String>()
+                        .replace('+', "%20")
+                };
+                if parsed.set_username(&encode(user)).is_ok()
+                    && parsed.set_password(Some(&encode(pass))).is_ok()
+                {
+                    return parsed.into();
                 }
-            } else {
-                url.clone()
             }
+            // Preserve malformed/unsupported addresses for the consuming proxy
+            // implementation to reject, rather than silently disabling proxying.
+            url.clone()
         })
     }
 }
@@ -123,7 +132,45 @@ mod tests {
         assert!(config.has_auth());
         assert_eq!(
             config.effective_url(),
-            Some("http://user:pass@proxy.example.com:8080".to_string())
+            Some("http://user:pass@proxy.example.com:8080/".to_string())
+        );
+    }
+
+    #[test]
+    fn credentials_preserve_authority_and_literal_escapes() {
+        let config = ProxyConfig::with_url("http://old:secret@[::1]:8080/path?key=value")
+            .with_auth("a@b:/?#% +汉", "p@:/?#%20 +密");
+        let effective = config.effective_url().unwrap();
+        let parsed = url::Url::parse(&effective).unwrap();
+        assert_eq!(parsed.host_str(), Some("[::1]"));
+        assert_eq!(parsed.port(), Some(8080));
+        assert_eq!(parsed.path(), "/path");
+        assert_eq!(parsed.query(), Some("key=value"));
+        assert_eq!(parsed.fragment(), None);
+        assert_eq!(parsed.username(), "a%40b%3A%2F%3F%23%25%20%2B%E6%B1%89");
+        assert_eq!(
+            parsed.password(),
+            Some("p%40%3A%2F%3F%23%2520%20%2B%E5%AF%86")
+        );
+        assert!(!effective.contains("old:secret"));
+    }
+
+    #[test]
+    fn proxy_address_compatibility() {
+        for address in [
+            "socks5://localhost:1080",
+            "not a URL",
+            "mailto:user@example.com",
+        ] {
+            assert_eq!(
+                ProxyConfig::with_url(address).effective_url().as_deref(),
+                Some(address)
+            );
+        }
+        let config = ProxyConfig::with_url("socks5://localhost:1080").with_auth("", "p@ss");
+        assert_eq!(
+            config.effective_url().as_deref(),
+            Some("socks5://:p%40ss@localhost:1080")
         );
     }
 
