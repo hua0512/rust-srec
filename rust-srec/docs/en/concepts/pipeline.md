@@ -103,6 +103,16 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 - **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
 
+## Restart recovery of danmu segments
+
+Recovery associates a stored XML output with the stored video segment whose path
+has the same name with its extension replaced by `.xml`. The stored paths must
+match; recovery does not infer an index from title digits or media-output IDs.
+If no segment matches, or different segment indices produce the same XML path,
+the XML output is skipped with a warning. Keep original video/XML path records
+consistent when restoring a database; unmatched historical files are not
+automatically assigned to a segment or replayed through paired processing.
+
 ## Presets System
 
 To improve efficiency, the system provides two types of presets:
