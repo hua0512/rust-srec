@@ -987,8 +987,8 @@ impl<
     /// | Live                 | No          | End session, set state to NOT_LIVE             |
     /// | Live                 | Yes         | End session, set NOT_LIVE, clear errors        |
     /// | TemporalDisabled     | Yes         | End active session if any, set NOT_LIVE, clear errors |
-    /// | NotLive              | Yes         | Clear errors only                              |
-    /// | NotLive              | No          | No action (already clean)                      |
+    /// | NotLive              | Yes         | End persisted active session if any, clear errors |
+    /// | NotLive              | No          | End persisted active session if any            |
     /// | OutOfSchedule        | Yes         | Clear errors only                              |
     /// | OutOfSchedule        | No          | No action                                      |
     ///
@@ -1009,9 +1009,13 @@ impl<
         // Check if we have accumulated errors that should be cleared on successful check
         let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
 
-        if streamer.state == StreamerState::Live
-            || streamer.state == StreamerState::TemporalDisabled
-        {
+        // The actor applies an initial offline observation after restart even
+        // when hydration has reset metadata to NotLive. The database may still
+        // hold a session that must end and dispatch its final pipeline.
+        if matches!(
+            streamer.state,
+            StreamerState::Live | StreamerState::TemporalDisabled | StreamerState::NotLive
+        ) {
             let now = chrono::Utc::now();
 
             let outcome = self
@@ -1886,6 +1890,156 @@ mod tests {
             status_summary(&LiveStatus::UnsupportedPlatform),
             "UnsupportedPlatform"
         );
+    }
+
+    #[tokio::test]
+    async fn offline_after_restart_closes_persisted_session_and_publishes_completion_once() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "restart-offline", StreamerState::Live, 0, None).await;
+        insert_active_session(&pool, "interrupted-session", "restart-offline").await;
+        let monitor = build_test_monitor(&pool).await;
+        let mut transitions = monitor.session_lifecycle.subscribe();
+        let streamer = monitor
+            .streamer_manager
+            .get_streamer("restart-offline")
+            .unwrap();
+        assert_eq!(streamer.state, StreamerState::NotLive);
+
+        assert_eq!(
+            monitor
+                .process_status(&streamer, LiveStatus::Offline)
+                .await
+                .unwrap(),
+            ProcessStatusResult::Applied
+        );
+        let ended = get_session(&pool, "interrupted-session").await;
+        assert!(ended.end_time.is_some());
+        assert!(
+            matches!(transitions.try_recv().unwrap(), crate::session::SessionTransition::Ended { session_id, .. } if session_id == "interrupted-session")
+        );
+        let events = outbox_events(&pool).await;
+        assert!(
+            matches!(&events[..], [MonitorEvent::StreamerOffline { session_id: Some(id), .. }] if id == "interrupted-session")
+        );
+        let payload = latest_session_ended_payload(&pool, "interrupted-session")
+            .await
+            .unwrap();
+        assert_eq!(
+            session_ended_cause(&payload),
+            &TerminalCauseDto::StreamerOffline
+        );
+
+        let recoverable = monitor
+            .session_repo
+            .list_ended_sessions_pending_pipeline_recovery(
+                &crate::database::models::Pagination::new(10, 0),
+            )
+            .await
+            .unwrap();
+        assert!(
+            recoverable
+                .iter()
+                .any(|session| session.id == "interrupted-session")
+        );
+
+        monitor
+            .process_status(&streamer, LiveStatus::Offline)
+            .await
+            .unwrap();
+        assert_eq!(
+            get_session(&pool, "interrupted-session").await.end_time,
+            ended.end_time
+        );
+        assert!(transitions.try_recv().is_err());
+        assert_eq!(outbox_events(&pool).await.len(), 1);
+        let ended_events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind = 'session_ended'",
+        )
+        .bind("interrupted-session")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ended_events, 1);
+        monitor
+            .handle_live(
+                &streamer,
+                LiveStatusDetails {
+                    title: "Next broadcast".to_string(),
+                    category: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            get_active_session_for_streamer(&pool, "restart-offline")
+                .await
+                .unwrap()
+                .id,
+            "interrupted-session"
+        );
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn live_after_restart_reuses_the_unfinished_session() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "restart-live", StreamerState::Live, 0, None).await;
+        insert_active_session(&pool, "continuing-session", "restart-live").await;
+        let monitor = build_test_monitor(&pool).await;
+        let streamer = monitor
+            .streamer_manager
+            .get_streamer("restart-live")
+            .unwrap();
+        monitor
+            .handle_live(
+                &streamer,
+                LiveStatusDetails {
+                    title: "Continuing broadcast".to_string(),
+                    category: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            get_active_session_for_streamer(&pool, "restart-live")
+                .await
+                .unwrap()
+                .id,
+            "continuing-session"
+        );
+        assert!(
+            latest_session_ended_payload(&pool, "continuing-session")
+                .await
+                .is_none()
+        );
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn initial_offline_without_a_session_does_not_publish_completion() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "initial-offline", StreamerState::NotLive, 0, None).await;
+        let monitor = build_test_monitor(&pool).await;
+        let mut transitions = monitor.session_lifecycle.subscribe();
+        let streamer = monitor
+            .streamer_manager
+            .get_streamer("initial-offline")
+            .unwrap();
+        monitor
+            .process_status(&streamer, LiveStatus::Offline)
+            .await
+            .unwrap();
+        assert!(transitions.try_recv().is_err());
+        assert!(outbox_events(&pool).await.is_empty());
+        monitor.stop();
     }
 
     #[tokio::test]
