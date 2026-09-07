@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
+use futures::FutureExt;
+use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinSet;
@@ -31,6 +33,17 @@ use super::events::{CollectionCommand, DanmuCoordinationSender, DanmuEvent, Danm
 use super::lifecycle::{CollectionOutcome, CollectionSpec, CollectionStopReason};
 use super::runner::{CollectionRunner, RunnerParams};
 use super::statistics_session::StatisticsSession;
+
+const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+
+type SharedCollectionCompletion = Shared<BoxFuture<'static, Option<Arc<CollectionOutcome>>>>;
+
+fn shared_completion(receiver: oneshot::Receiver<CollectionOutcome>) -> SharedCollectionCompletion {
+    receiver
+        .map(|result| result.ok().map(Arc::new))
+        .boxed()
+        .shared()
+}
 
 /// Handle for controlling a danmu collection session.
 #[derive(Clone)]
@@ -92,7 +105,9 @@ struct CollectionState {
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
     /// Signals when the task has completed all normal finalization.
-    done_rx: Option<oneshot::Receiver<CollectionOutcome>>,
+    done: SharedCollectionCompletion,
+    /// Only one caller enqueues Stop; all callers retain the same completion future.
+    stop_requested: bool,
 }
 
 /// Danmu collection service.
@@ -173,7 +188,7 @@ enum CollectionStopOutcome {
     /// The stop is unproven and the task may still own its websocket and its
     /// `collections` entry: `STOP_TIMEOUT` elapsed on the command send or on
     /// the outcome wait — the collection's cancellation token is cancelled in
-    /// both cases — or another caller already took `done_rx` and owns the wait.
+    /// both cases. Timeout or caller cancellation does not consume shared completion.
     Unconfirmed(Error),
 }
 
@@ -251,7 +266,12 @@ impl DanmuService {
             .entry(streamer_id.clone())
             .or_default()
             .clone();
-        let setup_guard = streamer_setup_lock.lock().await;
+        let handoff_deadline = tokio::time::Instant::now() + STOP_TIMEOUT;
+        let setup_guard = tokio::time::timeout_at(handoff_deadline, streamer_setup_lock.lock())
+            .await
+            .map_err(|_| Error::Other(format!(
+                "danmu collection startup handoff timed out after {STOP_TIMEOUT:?} (streamer_id={streamer_id})"
+            )))?;
         if !self.accepting.load(Ordering::Acquire) {
             return Err(Error::Other("danmu service is shutting down".to_string()));
         }
@@ -287,7 +307,11 @@ impl DanmuService {
         {
             let started = std::time::Instant::now();
             match self
-                .stop_collection_with_reason(&old_sid, CollectionStopReason::SessionEnded)
+                .stop_collection_until(
+                    &old_sid,
+                    CollectionStopReason::SessionEnded,
+                    handoff_deadline,
+                )
                 .await
             {
                 CollectionStopOutcome::Terminated { errors, .. } => {
@@ -426,7 +450,8 @@ impl DanmuService {
             streamer_id: streamer_id.clone(),
             cancel_token: cancel_token.clone(),
             command_tx: command_tx.clone(),
-            done_rx: Some(done_rx),
+            done: shared_completion(done_rx),
+            stop_requested: false,
         };
 
         self.collections.insert(session_id.clone(), state);
@@ -527,66 +552,79 @@ impl DanmuService {
         session_id: &str,
         reason: CollectionStopReason,
     ) -> CollectionStopOutcome {
-        let (command_tx, cancel_token, done_rx) = {
+        self.stop_collection_until(
+            session_id,
+            reason,
+            tokio::time::Instant::now() + STOP_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn stop_collection_until(
+        &self,
+        session_id: &str,
+        reason: CollectionStopReason,
+        deadline: tokio::time::Instant,
+    ) -> CollectionStopOutcome {
+        let (command_tx, cancel_token, done, send_stop) = {
             let Some(mut state) = self.collections.get_mut(session_id) else {
                 return CollectionStopOutcome::NotRegistered;
             };
-            let Some(done_rx) = state.done_rx.take() else {
-                // Another stop owns the outcome wait, so this call cannot
-                // observe the task finishing.
-                return CollectionStopOutcome::Unconfirmed(Error::from(
-                    platforms_parser::danmaku::DanmakuError::connection(format!(
-                        "Collection is already stopping for session {}",
-                        session_id
-                    )),
-                ));
-            };
+            let send_stop = !state.stop_requested;
+            state.stop_requested = true;
             (
                 state.command_tx.clone(),
                 state.cancel_token.clone(),
-                done_rx,
+                state.done.clone(),
+                send_stop,
             )
         };
 
-        const STOP_TIMEOUT: Duration = Duration::from_secs(10);
-        let deadline = tokio::time::Instant::now() + STOP_TIMEOUT;
-        match tokio::time::timeout_at(deadline, command_tx.send(CollectionCommand::Stop(reason)))
+        if send_stop {
+            // If the elected sender is cancelled while waiting for channel capacity, its
+            // followers still need a stop signal. Once queued, the task owns graceful stop.
+            let send_guard = cancel_token.clone().drop_guard();
+            match tokio::time::timeout_at(
+                deadline,
+                command_tx.send(CollectionCommand::Stop(reason)),
+            )
             .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(_)) => {
-                // The receiver is gone, so the task is past its command loop.
-                // The `done_rx` wait below decides whether it finished.
-                debug!(session_id, "Danmu collection task already stopped");
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {
+                    // The receiver is gone, so the task is past its command loop.
+                    // The shared completion below decides whether it finished.
+                    debug!(session_id, "Danmu collection task already stopped");
+                }
+                Err(_) => {
+                    return CollectionStopOutcome::Unconfirmed(Error::Other(format!(
+                        "danmu collection {session_id} stop command timed out after {STOP_TIMEOUT:?}"
+                    )));
+                }
             }
-            Err(_) => {
-                cancel_token.cancel();
-                return CollectionStopOutcome::Unconfirmed(Error::Other(format!(
-                    "danmu collection {session_id} stop command timed out after {STOP_TIMEOUT:?}"
-                )));
-            }
+            drop(send_guard.disarm());
         }
 
-        match tokio::time::timeout_at(deadline, done_rx).await {
-            Ok(Ok(outcome)) => {
+        match tokio::time::timeout_at(deadline, done).await {
+            Ok(Some(outcome)) => {
                 debug!(session_id, reason = ?outcome.reason, "Danmu collection stopped");
                 let mut errors = outcome
                     .error
-                    .into_iter()
-                    .chain(outcome.cleanup_errors)
+                    .iter()
+                    .chain(outcome.cleanup_errors.iter())
                     .map(|error| error.to_string())
                     .collect::<Vec<_>>();
                 // Sorted so a multi-error stop formats the same way every run.
                 errors.sort();
                 CollectionStopOutcome::Terminated {
-                    statistics: outcome.statistics,
+                    statistics: outcome.statistics.clone(),
                     errors,
                 }
             }
             // `done_tx` was dropped rather than sent, which only happens once
             // the task's locals — `CollectionCleanupGuard` among them — have
             // dropped, so the registry entry is already released.
-            Ok(Err(_)) => CollectionStopOutcome::Terminated {
+            Ok(None) => CollectionStopOutcome::Terminated {
                 statistics: DanmuStatistics::default(),
                 errors: vec![format!(
                     "danmu collection {session_id} ended without reporting an outcome"
@@ -1088,6 +1126,8 @@ fn remove_collection(
 mod tests {
     use super::*;
 
+    mod handoff;
+
     struct PendingConnectProvider {
         entered: tokio::sync::Notify,
     }
@@ -1151,7 +1191,8 @@ mod tests {
             streamer_id: streamer_id.to_string(),
             cancel_token: cancel_token.clone(),
             command_tx,
-            done_rx: Some(done_rx),
+            done: shared_completion(done_rx),
+            stop_requested: false,
         };
         service.collections.insert(session_id.to_string(), state);
         service
