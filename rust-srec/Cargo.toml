@@ -89,6 +89,7 @@ tar = { workspace = true }
 
 # Filesystem (used at runtime by the output-root write gate's startup probe)
 tempfile = { workspace = true }
+same-file = "1.0.6"
 
 # Backend i18n for every NotificationEvent variant (including credential events);
 # API errors and health messages stay English by design.

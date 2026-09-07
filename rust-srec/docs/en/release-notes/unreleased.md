@@ -4,6 +4,10 @@
 
 ## Post-processing
 
+- **Incomplete outputs no longer replace completed files**
+
+  Thumbnails, extracted audio, metadata copies, and subtitle burn-ins now use temporary files and verify that output exists and is nonempty before publishing it. A failed or cancelled batch cleans up its staged files and preserves source files and existing destinations. Publication failures roll back earlier outputs in the batch. Output paths that alias inputs are rejected, and disabling overwrite remains safe when jobs publish to the same destination concurrently.
+
 - **Cancelled and timed-out commands stop their subprocesses**
 
   Post-processing commands now stop their entire process tree when a job is cancelled or times out. They receive closed standard input and drain their output within bounded log limits, including when a parent exits while a descendant still holds a pipe. Audio probes use the same cleanup behavior.

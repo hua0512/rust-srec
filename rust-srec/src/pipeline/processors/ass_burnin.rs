@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, info};
 
+use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, get_extension, is_video, parse_config_or_default};
 use crate::Result;
@@ -435,6 +436,10 @@ impl Processor for AssBurnInProcessor {
             )));
         };
 
+        let mut batch = OutputBatch::new(&input.inputs);
+        for video in &video_inputs {
+            batch.protect(Path::new(video));
+        }
         let mut produced = Vec::new();
         let mut succeeded_inputs = Vec::new();
         let mut skipped_inputs = Vec::new();
@@ -490,6 +495,10 @@ impl Processor for AssBurnInProcessor {
                 )));
             }
 
+            batch.protect(Path::new(&ass_path));
+            let temp_path = batch
+                .stage(Path::new(output_path), config.overwrite)
+                .await?;
             let filter = Self::make_subtitles_filter(&ass_path, config.fonts_dir.as_deref());
 
             let mut args: Vec<String> = Vec::new();
@@ -518,7 +527,7 @@ impl Processor for AssBurnInProcessor {
             }
             args.extend(["-c:a".to_string(), acodec.to_string()]);
 
-            args.push(output_path.clone());
+            args.push(temp_path.to_string_lossy().into_owned());
 
             info!("Burning ASS into {} -> {}", video_path, output_path);
             debug!("FFmpeg args: {:?}", args);
@@ -544,10 +553,13 @@ impl Processor for AssBurnInProcessor {
                 )));
             }
 
+            output_size(&temp_path).await?;
             produced.push(output_path.clone());
             succeeded_inputs.push(video_path.clone());
             matched_ass_for_succeeded.push(ass_path);
         }
+
+        batch.commit().await?;
 
         // Delete sources only after all burn-ins have succeeded (best-effort).
         let mut deleted_paths = HashSet::<String>::new();

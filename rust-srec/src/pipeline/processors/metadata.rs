@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::{debug, warn};
+use tracing::debug;
 
+use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
 
@@ -97,9 +98,12 @@ impl MetadataProcessor {
     }
 
     /// Create with a custom ffmpeg path.
-    #[expect(
-        dead_code,
-        reason = "retained for optional runtime paths and diagnostics"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for optional runtime paths and diagnostics"
+        )
     )]
     pub fn with_ffmpeg_path(path: impl Into<String>) -> Self {
         Self {
@@ -213,7 +217,7 @@ impl MetadataProcessor {
         output_override: Option<&str>,
         config: &MetadataConfig,
         ctx: &ProcessorContext,
-        remove_input_on_success: bool,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
@@ -272,8 +276,11 @@ impl MetadataProcessor {
             input_path, output_path, config.artist, config.title, config.date
         ));
 
+        let temp_path = batch
+            .stage(Path::new(&output_path), config.overwrite)
+            .await?;
         // Build ffmpeg arguments
-        let args = self.build_args(input_path, &output_path, config);
+        let args = self.build_args(input_path, &temp_path.to_string_lossy(), config);
         debug!("FFmpeg args: {:?}", args);
 
         // Get input file size for metrics
@@ -327,41 +334,14 @@ impl MetadataProcessor {
         }
 
         // Get output file size for metrics
-        let output_size_bytes = tokio::fs::metadata(&output_path)
-            .await
-            .ok()
-            .map(|m| m.len());
+        let output_size_bytes = Some(output_size(&temp_path).await?);
 
         ctx.info(format!(
             "Metadata embedding completed in {:.2}s: {}",
             command_output.duration, output_path
         ));
 
-        let mut logs = command_output.logs;
-        if remove_input_on_success {
-            match tokio::fs::remove_file(input_path).await {
-                Ok(()) => {
-                    ctx.info(format!(
-                        "Removed input file after successful metadata embedding: {}",
-                        input_path
-                    ));
-                    logs.push(crate::pipeline::job_queue::JobLogEntry::info(format!(
-                        "Removed input file: {}",
-                        input_path
-                    )));
-                }
-                Err(e) => {
-                    ctx.warn(format!(
-                        "Failed to remove input file after metadata embedding {}: {}",
-                        input_path, e
-                    ));
-                    logs.push(crate::pipeline::job_queue::JobLogEntry::warn(format!(
-                        "Failed to remove input file {}: {}",
-                        input_path, e
-                    )));
-                }
-            }
-        }
+        let logs = command_output.logs;
 
         // Build metadata summary for output
         let metadata_summary = serde_json::json!({
@@ -373,7 +353,7 @@ impl MetadataProcessor {
             "custom_fields": config.custom.keys().collect::<Vec<_>>(),
             "input": input_path,
             "output": output_path,
-            "input_removed": remove_input_on_success,
+            "input_removed": config.remove_input_on_success,
         });
 
         Ok(ProcessorOutput {
@@ -423,21 +403,27 @@ impl Processor for MetadataProcessor {
     ) -> Result<ProcessorOutput> {
         let config: MetadataConfig =
             super::utils::parse_config_or_default(input.config.as_deref(), ctx, "metadata", None);
-
         if input.inputs.is_empty() {
             return Err(crate::Error::PipelineError(
-                "No input file specified for metadata embedding".to_string(),
+                "No input file specified for metadata embedding".to_owned(),
             ));
         }
-
-        if input.inputs.len() > 1 {
-            // Batch mode: config.output_path is ambiguous when multiple inputs exist.
+        let mut batch = OutputBatch::new(&input.inputs);
+        let mut output = if input.inputs.len() == 1 {
+            self.process_one(
+                &input.inputs[0],
+                input.outputs.first().map(String::as_str),
+                &config,
+                ctx,
+                &mut batch,
+            )
+            .await?
+        } else {
             if config.output_path.is_some() {
                 return Err(crate::Error::PipelineError(
-                    "metadata: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_string(),
+                    "metadata: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_owned()
                 ));
             }
-
             if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
                 return Err(crate::Error::PipelineError(format!(
                     "metadata batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
@@ -445,104 +431,52 @@ impl Processor for MetadataProcessor {
                     input.outputs.len()
                 )));
             }
-
-            let mut outputs = Vec::with_capacity(input.inputs.len());
-            let mut items_produced = Vec::new();
-            let mut skipped_inputs = Vec::new();
-            let mut succeeded_inputs = Vec::new();
-            let mut logs = Vec::new();
-            let mut duration_secs = 0.0;
-
+            let mut output = ProcessorOutput::default();
             for (idx, input_path) in input.inputs.iter().enumerate() {
-                let output_override = input.outputs.get(idx).map(|s| s.as_str());
-                match self
-                    .process_one(input_path, output_override, &config, ctx, false)
-                    .await
-                {
-                    Ok(one) => {
-                        duration_secs += one.duration_secs;
-                        outputs.extend(one.outputs);
-                        items_produced.extend(one.items_produced);
-                        skipped_inputs.extend(one.skipped_inputs);
-                        succeeded_inputs.extend(one.succeeded_inputs);
-                        logs.extend(one.logs);
-                    }
-                    Err(e) => {
-                        for produced in &items_produced {
-                            if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
-                                warn!(
-                                    path = %produced,
-                                    error = %cleanup_error,
-                                    "Failed to remove metadata output after batch failure"
-                                );
-                            }
-                        }
-                        return Err(e);
+                let one = self
+                    .process_one(
+                        input_path,
+                        input.outputs.get(idx).map(String::as_str),
+                        &config,
+                        ctx,
+                        &mut batch,
+                    )
+                    .await?;
+                output.duration_secs += one.duration_secs;
+                output.outputs.extend(one.outputs);
+                output.items_produced.extend(one.items_produced);
+                output.skipped_inputs.extend(one.skipped_inputs);
+                output.succeeded_inputs.extend(one.succeeded_inputs);
+                output.logs.extend(one.logs);
+            }
+            output.metadata = Some(serde_json::json!({
+                "batch": true, "inputs": input.inputs.len(), "input_removed": config.remove_input_on_success,
+            }).to_string());
+            output
+        };
+        batch.commit().await?;
+
+        // Source deletion is only allowed after every output has been published.
+        if config.remove_input_on_success {
+            for input_path in &output.succeeded_inputs {
+                match tokio::fs::remove_file(input_path).await {
+                    Ok(()) => output
+                        .logs
+                        .push(crate::pipeline::job_queue::JobLogEntry::info(format!(
+                            "Removed input file: {input_path}"
+                        ))),
+                    Err(error) => {
+                        ctx.warn(format!("Failed to remove input file after metadata embedding {input_path}: {error}"));
+                        output
+                            .logs
+                            .push(crate::pipeline::job_queue::JobLogEntry::warn(format!(
+                                "Failed to remove input file {input_path}: {error}"
+                            )));
                     }
                 }
             }
-
-            if config.remove_input_on_success {
-                for input_path in &succeeded_inputs {
-                    match tokio::fs::remove_file(input_path).await {
-                        Ok(()) => {
-                            logs.push(crate::pipeline::job_queue::JobLogEntry::info(format!(
-                                "Removed input file: {}",
-                                input_path
-                            )));
-                        }
-                        Err(e) => {
-                            ctx.warn(format!(
-                                "Failed to remove input file after metadata embedding {}: {}",
-                                input_path, e
-                            ));
-                            logs.push(crate::pipeline::job_queue::JobLogEntry::warn(format!(
-                                "Failed to remove input file {}: {}",
-                                input_path, e
-                            )));
-                        }
-                    }
-                }
-            }
-
-            return Ok(ProcessorOutput {
-                outputs,
-                duration_secs,
-                metadata: Some(
-                    serde_json::json!({
-                        "batch": true,
-                        "inputs": input.inputs.len(),
-                        "input_removed": config.remove_input_on_success,
-                    })
-                    .to_string(),
-                ),
-                items_produced,
-                input_size_bytes: None,
-                output_size_bytes: None,
-                failed_inputs: vec![],
-                succeeded_inputs,
-                skipped_inputs,
-                uploads: vec![],
-                logs,
-            });
         }
-
-        // Get input path
-        let input_path = input.inputs.first().ok_or_else(|| {
-            crate::Error::PipelineError(
-                "No input file specified for metadata embedding".to_string(),
-            )
-        })?;
-
-        let output_override = input.outputs.first().map(|s| s.as_str());
-        self.process_one(
-            input_path,
-            output_override,
-            &config,
-            ctx,
-            config.remove_input_on_success,
-        )
-        .await
+        Ok(output)
     }
 }
 
