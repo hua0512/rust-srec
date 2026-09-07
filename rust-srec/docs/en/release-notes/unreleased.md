@@ -153,6 +153,12 @@
 
   Importing a backup used to briefly flip every live streamer to offline, which produced a duplicate "went live" notification and made the streamer bounce between states on the dashboard. Streamers that were live stay live, and their recordings keep running untouched. New streamers in the imported file also start being monitored right away instead of waiting for the next restart, and an import that is rejected no longer stops anything at all.
 
+## Authentication
+
+- **Refresh-token rotation is atomic and rejects replay**
+
+  A refresh token issues at most one replacement, and failed database writes preserve the original token. Reusing an already revoked token now revokes the user's other refresh tokens by default. The optional grace window suppresses that revocation but no longer issues tokens for a replay. Clients must serialize refreshes; see [refresh-token rotation](../operations/security.md#refresh-token-rotation) for configuration and concurrency behavior.
+
 ## API and integrations
 
 - **API keys for programmatic access**

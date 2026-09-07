@@ -25,6 +25,7 @@ use tracing::{debug, info, warn};
 
 use crate::api::rate_limit::{LoginRateKey, LoginRateLimiter};
 use crate::database::models::{ApiKeyAccessLevel, ApiKeyDbModel, RefreshTokenDbModel};
+use crate::database::repositories::refresh_token::RefreshTokenRotation;
 use crate::database::repositories::{ApiKeyRepository, RefreshTokenRepository, UserRepository};
 
 use super::jwt::{Claims, JwtError, JwtService};
@@ -65,14 +66,15 @@ pub struct AuthConfig {
     pub access_token_expiration_secs: u64,
     /// Refresh token expiration in seconds (default: 604800 = 7 days)
     pub refresh_token_expiration_secs: u64,
-    /// Grace window to tolerate replay of a recently-rotated refresh token (default: 0 = disabled).
+    /// Grace window that suppresses session revocation on recent token replay (default: 0).
     ///
-    /// This helps with clients that accidentally send the old refresh token again due to
-    /// concurrent refresh attempts or retries.
+    /// A replay is still rejected and never issues a second successor. Clients must serialize
+    /// refreshes; this window only avoids revoking other sessions on a recent retry.
     pub refresh_token_reuse_grace_secs: u64,
     /// Whether to revoke all refresh tokens for a user when a revoked token is presented.
     ///
-    /// Default is `false` to avoid logging out other sessions due to common client-side races.
+    /// Defaults to `true`, including replay that loses a concurrent rotation. Explicit opt-out
+    /// or the grace window suppresses revocation, but never permits another successor.
     pub revoke_all_on_refresh_token_reuse: bool,
     /// Minimum password length
     pub min_password_length: usize,
@@ -84,7 +86,7 @@ impl Default for AuthConfig {
             access_token_expiration_secs: 3600,    // 1 hour
             refresh_token_expiration_secs: 604800, // 7 days
             refresh_token_reuse_grace_secs: 0,
-            revoke_all_on_refresh_token_reuse: false,
+            revoke_all_on_refresh_token_reuse: true,
             min_password_length: 8,
         }
     }
@@ -97,7 +99,7 @@ impl AuthConfig {
     /// - `ACCESS_TOKEN_EXPIRATION_SECS`: Access token expiration in seconds (default: 3600 = 1 hour)
     /// - `REFRESH_TOKEN_EXPIRATION_SECS`: Refresh token expiration in seconds (default: 604800 = 7 days)
     /// - `REFRESH_TOKEN_REUSE_GRACE_SECS`: Grace window for recently rotated tokens (default: 0)
-    /// - `REVOKE_ALL_ON_REFRESH_TOKEN_REUSE`: Whether to revoke all tokens on revoked-token reuse (default: false)
+    /// - `REVOKE_ALL_ON_REFRESH_TOKEN_REUSE`: Whether to revoke all tokens on revoked-token reuse (default: true)
     /// - `MIN_PASSWORD_LENGTH`: Minimum password length (default: 8)
     pub fn from_env() -> Self {
         let access_token_expiration_secs = std::env::var("ACCESS_TOKEN_EXPIRATION_SECS")
@@ -115,19 +117,11 @@ impl AuthConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        let revoke_all_on_refresh_token_reuse = std::env::var("REVOKE_ALL_ON_REFRESH_TOKEN_REUSE")
-            .ok()
-            .is_some_and(|v| match v.trim().to_ascii_lowercase().as_str() {
-                "1" | "true" | "yes" | "on" => true,
-                "0" | "false" | "no" | "off" | "" => false,
-                _ => {
-                    warn!(
-                        value = %v.trim(),
-                        "Unrecognized REVOKE_ALL_ON_REFRESH_TOKEN_REUSE value; treating as false"
-                    );
-                    false
-                }
-            });
+        let revoke_all_on_refresh_token_reuse = Self::parse_reuse_revocation(
+            std::env::var("REVOKE_ALL_ON_REFRESH_TOKEN_REUSE")
+                .ok()
+                .as_deref(),
+        );
 
         let min_password_length = std::env::var("MIN_PASSWORD_LENGTH")
             .ok()
@@ -141,6 +135,22 @@ impl AuthConfig {
             revoke_all_on_refresh_token_reuse,
             min_password_length,
         }
+    }
+
+    fn parse_reuse_revocation(value: Option<&str>) -> bool {
+        value
+            .map(|v| match v.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => true,
+                "0" | "false" | "no" | "off" => false,
+                _ => {
+                    warn!(
+                        value = %v.trim(),
+                        "Unrecognized REVOKE_ALL_ON_REFRESH_TOKEN_REUSE value; treating as true"
+                    );
+                    true
+                }
+            })
+            .unwrap_or(true)
     }
 }
 
@@ -738,56 +748,10 @@ impl AuthService {
             })?;
 
         // Check if token is revoked (potential reuse attack).
-        // Note: tokens are revoked on every successful refresh (rotation), so clients that
-        // retry/concurrently refresh can legitimately present a recently revoked token.
-        let is_revoked = stored_token.is_revoked();
-        let revoked_recently = if is_revoked && self.config.refresh_token_reuse_grace_secs > 0 {
-            stored_token.get_revoked_at().is_some_and(|revoked_at| {
-                let grace = Duration::seconds(self.config.refresh_token_reuse_grace_secs as i64);
-                (Utc::now() - revoked_at) <= grace
-            })
-        } else {
-            false
-        };
-
-        if is_revoked && revoked_recently {
-            debug!(
-                user_id = %stored_token.user_id,
-                refresh_token_id = %stored_token.id,
-                refresh_expires_at = %stored_token.expires_at,
-                refresh_revoked_at = ?stored_token.revoked_at,
-                device_info = ?stored_token.device_info.as_deref(),
-                token_hash_prefix = %token_hash_prefix,
-                grace_secs = %self.config.refresh_token_reuse_grace_secs,
-                "Recently revoked refresh token presented; proceeding due to grace window"
-            );
-        } else if is_revoked {
-            warn!(
-                user_id = %stored_token.user_id,
-                refresh_token_id = %stored_token.id,
-                refresh_expires_at = %stored_token.expires_at,
-                refresh_revoked_at = ?stored_token.revoked_at,
-                device_info = ?stored_token.device_info.as_deref(),
-                token_hash_prefix = %token_hash_prefix,
-                "Revoked refresh token presented (possible token reuse)"
-            );
-
-            if self.config.revoke_all_on_refresh_token_reuse {
-                // Security breach detection: revoke all tokens for this user
-                self.token_repo
-                    .revoke_all_for_user(&stored_token.user_id)
-                    .await
-                    .map_err(|e| AuthError::Database(e.to_string()))?;
-                warn!(
-                    user_id = %stored_token.user_id,
-                    "Revoked all refresh tokens for user due to revoked token reuse attempt"
-                );
-            } else {
-                warn!(
-                    user_id = %stored_token.user_id,
-                    "Revoked token reuse detected; not revoking other sessions (REVOKE_ALL_ON_REFRESH_TOKEN_REUSE=false)"
-                );
-            }
+        // Grace changes reuse-detection consequences, never eligibility for another rotation.
+        if let Some(revoked_at) = stored_token.revoked_at {
+            self.revoke_sessions_on_refresh_reuse(&stored_token.user_id, revoked_at)
+                .await?;
             return Err(AuthError::TokenRevoked);
         }
 
@@ -803,18 +767,6 @@ impl AuthService {
             );
             return Err(AuthError::TokenExpired);
         }
-
-        // Revoke the old token (token rotation)
-        self.token_repo
-            .revoke(&stored_token.id)
-            .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-        debug!(
-            user_id = %stored_token.user_id,
-            refresh_token_id = %stored_token.id,
-            token_hash_prefix = %token_hash_prefix,
-            "Refresh token rotated (old token revoked)"
-        );
 
         // Get user for roles
         let user = self
@@ -845,17 +797,29 @@ impl AuthService {
         let refresh_expires_at =
             now + Duration::seconds(self.config.refresh_token_expiration_secs as i64);
 
-        // Store new refresh token
+        // All fallible user lookup and token generation happens before consumption. The
+        // repository rechecks predecessor validity and inserts the successor atomically.
         let token_model = RefreshTokenDbModel::new(
             &user.id,
             new_refresh_token_hash,
             refresh_expires_at,
             stored_token.device_info,
         );
-        self.token_repo
-            .create(&token_model)
+        match self
+            .token_repo
+            .rotate(&stored_token.id, &token_model)
             .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
+            .map_err(|e| AuthError::Database(e.to_string()))?
+        {
+            RefreshTokenRotation::Rotated => {}
+            RefreshTokenRotation::Revoked { revoked_at } => {
+                self.revoke_sessions_on_refresh_reuse(&stored_token.user_id, revoked_at)
+                    .await?;
+                return Err(AuthError::TokenRevoked);
+            }
+            RefreshTokenRotation::Expired => return Err(AuthError::TokenExpired),
+            RefreshTokenRotation::NotFound => return Err(AuthError::InvalidToken),
+        }
 
         info!(
             user_id = %user.id,
@@ -876,6 +840,38 @@ impl AuthService {
             roles,
             must_change_password: user.must_change_password,
         })
+    }
+
+    async fn revoke_sessions_on_refresh_reuse(
+        &self,
+        user_id: &str,
+        revoked_at: i64,
+    ) -> Result<(), AuthError> {
+        let elapsed = crate::database::time::now_ms().saturating_sub(revoked_at);
+        let within_grace = self.config.refresh_token_reuse_grace_secs > 0
+            && u64::try_from(elapsed).is_ok_and(|elapsed| {
+                elapsed
+                    <= self
+                        .config
+                        .refresh_token_reuse_grace_secs
+                        .saturating_mul(1000)
+            });
+        if self.config.revoke_all_on_refresh_token_reuse && !within_grace {
+            self.token_repo
+                .revoke_all_for_user(user_id)
+                .await
+                .map_err(|e| AuthError::Database(e.to_string()))?;
+            warn!(
+                user_id,
+                "Revoked all refresh tokens after refresh token reuse"
+            );
+        } else {
+            debug!(
+                user_id,
+                within_grace, "Refresh token reuse rejected without revoking other sessions"
+            );
+        }
+        Ok(())
     }
 
     /// Change a user's password.
@@ -1239,6 +1235,9 @@ impl AuthService {
 }
 
 #[cfg(test)]
+mod rotation_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::database::models::UserDbModel;
@@ -1251,8 +1250,18 @@ mod tests {
         assert_eq!(config.access_token_expiration_secs, 3600);
         assert_eq!(config.refresh_token_expiration_secs, 604800);
         assert_eq!(config.refresh_token_reuse_grace_secs, 0);
-        assert!(!config.revoke_all_on_refresh_token_reuse);
+        assert!(config.revoke_all_on_refresh_token_reuse);
         assert_eq!(config.min_password_length, 8);
+    }
+
+    #[test]
+    fn reuse_revocation_configuration_defaults_securely() {
+        for value in [None, Some(""), Some("invalid"), Some("TRUE"), Some(" on ")] {
+            assert!(AuthConfig::parse_reuse_revocation(value), "{value:?}");
+        }
+        for value in ["false", "0", "no", " off "] {
+            assert!(!AuthConfig::parse_reuse_revocation(Some(value)), "{value}");
+        }
     }
 
     #[test]
@@ -1414,6 +1423,14 @@ mod tests {
 
     #[async_trait::async_trait]
     impl RefreshTokenRepository for MockRefreshTokenRepository {
+        async fn rotate(
+            &self,
+            _id: &str,
+            _replacement: &RefreshTokenDbModel,
+        ) -> crate::Result<RefreshTokenRotation> {
+            Ok(RefreshTokenRotation::NotFound)
+        }
+
         async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
             Ok(())
         }
@@ -1460,6 +1477,27 @@ mod tests {
 
     #[async_trait::async_trait]
     impl RefreshTokenRepository for SpyRefreshTokenRepository {
+        async fn rotate(
+            &self,
+            id: &str,
+            _replacement: &RefreshTokenDbModel,
+        ) -> crate::Result<RefreshTokenRotation> {
+            let mut token = self.token.lock().await;
+            if token.id != id {
+                return Ok(RefreshTokenRotation::NotFound);
+            }
+            if let Some(revoked_at) = token.revoked_at {
+                return Ok(RefreshTokenRotation::Revoked { revoked_at });
+            }
+            if token.is_expired() {
+                return Ok(RefreshTokenRotation::Expired);
+            }
+            token.revoked_at = Some(crate::database::time::now_ms());
+            self.revoke_called.store(true, Ordering::SeqCst);
+            self.create_called.store(true, Ordering::SeqCst);
+            Ok(RefreshTokenRotation::Rotated)
+        }
+
         async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
             self.create_called.store(true, Ordering::SeqCst);
             Ok(())
@@ -2066,7 +2104,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_refresh_revoked_token_does_not_revoke_all_by_default() {
+    async fn test_refresh_revoked_token_respects_explicit_revocation_opt_out() {
         let refresh_token = "abc123";
         let token_hash = AuthService::hash_token(refresh_token);
 
@@ -2088,7 +2126,10 @@ mod tests {
             token_repo.clone(),
             Arc::new(crate::database::repositories::InMemoryApiKeyRepository::default()),
             jwt_service,
-            AuthConfig::default(),
+            AuthConfig {
+                revoke_all_on_refresh_token_reuse: false,
+                ..AuthConfig::default()
+            },
         );
 
         let result = service.refresh_tokens(refresh_token).await;
@@ -2240,7 +2281,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_refresh_recently_revoked_token_succeeds_with_grace_window() {
+    async fn test_refresh_recently_revoked_token_is_rejected_without_revocation_in_grace_window() {
         let refresh_token = "abc123";
         let token_hash = AuthService::hash_token(refresh_token);
 
@@ -2280,9 +2321,9 @@ mod tests {
         );
 
         let result = service.refresh_tokens(refresh_token).await;
-        assert!(result.is_ok());
-        assert!(token_repo.revoke_called.load(Ordering::SeqCst));
-        assert!(token_repo.create_called.load(Ordering::SeqCst));
+        assert!(matches!(result, Err(AuthError::TokenRevoked)));
+        assert!(!token_repo.revoke_called.load(Ordering::SeqCst));
+        assert!(!token_repo.create_called.load(Ordering::SeqCst));
         assert!(!token_repo.revoke_all_called.load(Ordering::SeqCst));
     }
 }

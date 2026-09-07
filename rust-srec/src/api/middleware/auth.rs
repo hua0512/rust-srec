@@ -331,6 +331,15 @@ mod tests {
 
     #[async_trait::async_trait]
     impl RefreshTokenRepository for TestRefreshTokenRepository {
+        async fn rotate(
+            &self,
+            _id: &str,
+            _replacement: &RefreshTokenDbModel,
+        ) -> crate::Result<crate::database::repositories::refresh_token::RefreshTokenRotation>
+        {
+            Ok(crate::database::repositories::refresh_token::RefreshTokenRotation::NotFound)
+        }
+
         async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
             Ok(())
         }

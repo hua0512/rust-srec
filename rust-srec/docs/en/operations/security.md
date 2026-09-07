@@ -11,6 +11,25 @@ Rust-Srec handles access tokens, platform cookies, notification credentials, rec
 - Repeated failed logins are throttled per account (5 failures per 15 minutes by default) and, much more loosely, per source address; a throttled attempt is answered with `429` and a `Retry-After` delay instead of another password hash. The source address is the TCP peer and `X-Forwarded-For` is not trusted, so behind the bundled frontend or any reverse proxy every login is attributed to the proxy — do not rely on the per-address budget to isolate clients. See [Configuration](../getting-started/configuration.md#login-throttling).
 - Tokens carry role names and exports include user accounts, but the route layer does not enforce a per-role authorization policy, and there is no identity-provider integration. See [Scope and Limits](./support.md#scope-and-limits).
 
+## Refresh Token Rotation
+
+Clients must serialize refresh requests and save the replacement token before
+refreshing again. Each refresh token can issue only one replacement. Consumption
+and replacement storage commit together; a database failure rolls both back.
+
+`REVOKE_ALL_ON_REFRESH_TOKEN_REUSE` defaults to `true`. Presenting an already
+revoked token normally revokes the user's remaining refresh tokens, requiring
+those sessions to sign in again. Set it to `false` to reject the replay without
+revoking other sessions. This policy does not revoke already issued access tokens.
+
+`REFRESH_TOKEN_REUSE_GRACE_SECS` defaults to `0`. A positive value suppresses
+revocation of other sessions for replays within that many seconds of the original
+revocation, but the replay still fails and never issues another token pair.
+Unlike earlier versions, grace does not permit refreshing with a revoked token.
+A request that loses the atomic rotation race follows the same reuse policy, so
+with default settings it also revokes the winner's refresh token. Clients must
+serialize refreshes, including across tabs or server instances.
+
 ## Network and Session Security
 
 Terminate TLS before the frontend, set `COOKIE_SECURE=true` only if the proxy does not send `X-Forwarded-Proto: https`, and restrict both host ports with a firewall. Keep the backend private unless direct API consumers need it. Do not expose Swagger, media proxy routes, or logs to anonymous Internet clients.
