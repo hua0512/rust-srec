@@ -390,6 +390,14 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                         tpl_po_paired_segment = obj
                             .remove("paired_segment_pipeline")
                             .and_then(|v| serde_json::from_value(v).ok());
+                        // The template form stores extractor options in this wrapper. Keep
+                        // supporting flat configurations; explicit nested nulls must replace
+                        // old flat overrides so the subsequent layer merge can inherit.
+                        if let Some(serde_json::Value::Object(specific)) =
+                            obj.remove("platform_specific_config")
+                        {
+                            obj.extend(specific);
+                        }
                     }
                     extractor_platform_extras(entry)
                 });
@@ -540,6 +548,89 @@ impl<R: ConfigRepository> ConfigResolver<R> {
 
 #[cfg(test)]
 mod tests {
-    // Tests would require mocking the ConfigRepository
-    // which is covered in integration tests
+    use super::*;
+    use crate::database::repositories::SqlxConfigRepository;
+    use crate::database::{init_pool, run_migrations};
+    use crate::domain::StreamerUrl;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn bilibili_quality_inherits_through_saved_template_and_streamer_options() {
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        sqlx::query("UPDATE platform_config SET platform_specific_config = ? WHERE id = 'platform-bilibili'")
+            .bind(json!({"quality": 20000, "end_stream_on_danmu_stream_closed": false}).to_string())
+            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO template_config (id, name) VALUES ('quality-template', 'Quality test')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let resolver = ConfigResolver::new(Arc::new(SqlxConfigRepository::new(
+            pool.clone(),
+            pool.clone(),
+        )));
+        let mut streamer = Streamer::new(
+            "Quality test",
+            StreamerUrl::new("https://live.bilibili.com/1").unwrap(),
+            "platform-bilibili",
+        )
+        .with_template("quality-template");
+
+        for (template, streamer_options, expected) in [
+            (json!({}), json!({}), 20000),
+            (
+                json!({"platform_specific_config": {"quality": null}}),
+                json!({"quality": null}),
+                20000,
+            ),
+            (
+                json!({"platform_specific_config": {"quality": 400}}),
+                json!({}),
+                400,
+            ),
+            (json!({"quality": 400}), json!({}), 400),
+            (
+                json!({"quality": 400, "platform_specific_config": {"quality": null}}),
+                json!({}),
+                20000,
+            ),
+            (
+                json!({"platform_specific_config": {"quality": 400}}),
+                json!({"quality": 80}),
+                80,
+            ),
+            (
+                json!({"platform_specific_config": {"quality": 400}}),
+                json!({"quality": null}),
+                400,
+            ),
+            (
+                json!({"platform_specific_config": {"quality": 0}}),
+                json!({}),
+                0,
+            ),
+        ] {
+            sqlx::query(
+                "UPDATE template_config SET platform_overrides = ? WHERE id = 'quality-template'",
+            )
+            .bind(json!({"bilibili": template}).to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+            streamer.streamer_specific_config = Some(json!({"platform_extras": streamer_options}));
+            let config = resolver
+                .resolve_config_for_streamer(&streamer)
+                .await
+                .unwrap();
+            let extras = config.platform_extras.unwrap();
+            assert_eq!(
+                extras["quality"], expected,
+                "template: {template}; streamer: {streamer_options}"
+            );
+            assert_eq!(extras["end_stream_on_danmu_stream_closed"], false);
+            assert!(extras.get("platform_specific_config").is_none());
+        }
+    }
 }

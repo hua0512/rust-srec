@@ -51,6 +51,7 @@ export function StreamerConfiguration({
           icon: Boxes,
           content: (
             <PlatformSpecificTab
+              inherited
               form={form}
               basePath={basePath}
               platformName={platform ?? undefined}
