@@ -765,7 +765,8 @@ mod tests {
         .await;
         let after = state.config_service.get_global_config().await.unwrap();
         if representable {
-            result.unwrap();
+            let Json(response) = result.unwrap();
+            assert_eq!(response.output_folder, "/changed");
             assert_eq!(after.output_folder, "/changed");
             assert_eq!(after.gpu_health_probe_interval_secs, i64::MAX);
         } else {
@@ -849,7 +850,7 @@ mod tests {
     #[tokio::test]
     async fn global_patch_preserves_null_omission_sentinels_and_clamps() {
         let (_dir, state) = config_state().await;
-        update_global_config(
+        let Json(response) = update_global_config(
             State(state.clone()),
             Json(global_request(json!({
                 "default_extractor": "streamlink"
@@ -857,6 +858,7 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(response.default_extractor.as_deref(), Some("streamlink"));
         let before = state.config_service.get_global_config().await.unwrap();
         let request = global_request(json!({
             "output_folder": null,
@@ -879,9 +881,10 @@ mod tests {
             "gpu_health_probe_interval_secs": -1,
             "queue_freshness_threshold_ms": -1
         }));
-        update_global_config(State(state.clone()), Json(request))
+        let Json(response) = update_global_config(State(state.clone()), Json(request))
             .await
             .unwrap();
+        assert_eq!(response.max_concurrent_cpu_jobs, 0);
         let after = state.config_service.get_global_config().await.unwrap();
         assert_eq!(after.output_folder, before.output_folder);
         assert_eq!(
@@ -931,7 +934,7 @@ mod tests {
         assert_eq!(after.gpu_health_probe_interval_secs, 1);
         assert_eq!(after.queue_freshness_threshold_ms, 0);
 
-        update_global_config(
+        let Json(response) = update_global_config(
             State(state.clone()),
             Json(global_request(json!({
                 "pipeline_cpu_job_timeout_secs": 12,
@@ -944,6 +947,7 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(response.pipeline_cpu_job_timeout_secs, 12);
         let after = state.config_service.get_global_config().await.unwrap();
         assert_eq!(
             (
@@ -994,9 +998,11 @@ mod tests {
         }
         let mut request = original;
         request.fetch_delay_ms = Some(1234);
-        replace_platform_config(State(state.clone()), Path(before.id.clone()), Json(request))
-            .await
-            .unwrap();
+        let Json(response) =
+            replace_platform_config(State(state.clone()), Path(before.id.clone()), Json(request))
+                .await
+                .unwrap();
+        assert_eq!(response.name, before.platform_name);
         let url = StreamerUrl::new("https://live.bilibili.com/12345").unwrap();
         let stored = state
             .config_service
