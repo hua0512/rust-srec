@@ -16,6 +16,7 @@ use std::time::Duration;
 mod danmu_recovery;
 
 mod publication;
+mod recovery_status;
 
 struct TestSessionRepository {
     end_time: Mutex<Option<i64>>,

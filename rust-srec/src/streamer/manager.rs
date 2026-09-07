@@ -100,14 +100,26 @@ where
     /// for a streamer whose retirement the reaper still has to finish; the query
     /// helpers below skip them.
     pub async fn hydrate(&self) -> Result<usize> {
+        self.hydrate_with_recovery_status()
+            .await
+            .map(|(count, _)| count)
+    }
+
+    /// Hydrate best-effort scheduling state while reporting whether every
+    /// persisted restart-state repair was confirmed.
+    pub(crate) async fn hydrate_with_recovery_status(&self) -> Result<(usize, bool)> {
         info!("Hydrating streamer metadata from database");
 
         let streamers = self.repo.list_all_streamers().await?;
         let count = streamers.len();
 
         let mut live_reset_count = 0;
+        let mut complete = true;
 
         for streamer in streamers {
+            if streamer.state.parse::<StreamerState>().is_err() {
+                complete = false;
+            }
             let mut metadata = StreamerMetadata::from_db_model(&streamer);
 
             // Restart recovery: reset Live to NotLive
@@ -128,6 +140,7 @@ where
                     .update_streamer_state(&metadata.id, &StreamerState::NotLive.to_string())
                     .await
                 {
+                    complete = false;
                     warn!(
                         "Failed to persist NotLive state for streamer {} during restart recovery: {}",
                         metadata.id, e
@@ -152,7 +165,7 @@ where
         }
 
         info!("Hydrated {} streamers into memory", count);
-        Ok(count)
+        Ok((count, complete))
     }
 
     // ========== CRUD Operations (Write-Through) ==========
@@ -931,21 +944,44 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::Mutex;
 
+    #[tokio::test]
+    async fn hydration_recovery_report_retains_failed_persistent_repairs() {
+        for fails in [false, true] {
+            let mut streamer =
+                StreamerDbModel::new("name", "https://www.huya.com/test", "platform");
+            streamer.state = StreamerState::Live.to_string();
+            let id = streamer.id.clone();
+            let mut repository = MockStreamerRepository::with_streamers(vec![streamer]);
+            repository.fail_state_updates = fails;
+            let manager = StreamerManager::new(Arc::new(repository), ConfigEventBroadcaster::new());
+            let (count, complete) = manager.hydrate_with_recovery_status().await.unwrap();
+            assert_eq!(count, 1);
+            assert_eq!(complete, !fails);
+            assert_eq!(
+                manager.get_streamer(&id).unwrap().state,
+                StreamerState::NotLive
+            );
+        }
+    }
+
     /// Mock streamer repository for testing.
     struct MockStreamerRepository {
         streamers: Mutex<Vec<StreamerDbModel>>,
+        fail_state_updates: bool,
     }
 
     impl MockStreamerRepository {
         fn new() -> Self {
             Self {
                 streamers: Mutex::new(Vec::new()),
+                fail_state_updates: false,
             }
         }
 
         fn with_streamers(streamers: Vec<StreamerDbModel>) -> Self {
             Self {
                 streamers: Mutex::new(streamers),
+                fail_state_updates: false,
             }
         }
     }
@@ -1050,6 +1086,11 @@ mod tests {
         }
 
         async fn update_streamer_state(&self, _id: &str, _state: &str) -> Result<()> {
+            if self.fail_state_updates {
+                return Err(crate::Error::Database(
+                    "injected restart-state persistence failure".to_string(),
+                ));
+            }
             Ok(())
         }
 

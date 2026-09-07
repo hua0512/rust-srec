@@ -1,5 +1,19 @@
 # Storage and Capacity
 
+## Runtime Recovery Records
+
+The standalone runtime records active ownership and earlier incomplete generations
+beside its database. Startup clears earlier recovery debt only when streamer
+hydration and pipeline/DAG/coordinator reconciliation explicitly report success.
+Ambiguous historical artifacts and failed recovery operations retain the debt;
+startup remains best effort. Recovery pages through all session segments.
+
+Acknowledgement preserves the active generation, so a later crash creates new
+debt. Marker admission, acknowledgement and clean-exit updates share a short
+cross-process lock; a stale worker cannot overwrite a replacement generation.
+The persistent `.update.lock` file is separate from the supervisor's lifetime
+ownership lock. Do not remove these lock files while a runtime is active.
+
 Recordings are usually the dominant cost of a Rust-Srec deployment. Capacity planning must include raw recordings, chat files, pipeline intermediates, final artifacts, and the space needed during backup or migration.
 
 ## Estimate Recording Volume

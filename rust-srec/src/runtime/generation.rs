@@ -271,6 +271,33 @@ pub struct RuntimeLease {
     _file: File,
 }
 
+/// Cross-process serialization for marker read/check/write transactions. This is
+/// separate from the supervisor's lifetime lease so its worker can acknowledge debt.
+/// The lock file remains in place; unlinking it would split concurrent lock owners.
+struct MarkerUpdateLock {
+    _file: File,
+}
+
+impl MarkerUpdateLock {
+    fn acquire(marker: &Path) -> Result<Self> {
+        let mut name = marker.as_os_str().to_owned();
+        name.push(".update.lock");
+        let path = PathBuf::from(name);
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| {
+                Error::io_path("open runtime marker transaction lock", &path, error)
+            })?;
+        file.lock()
+            .map_err(|error| Error::io_path("lock runtime marker transaction", &path, error))?;
+        Ok(Self { _file: file })
+    }
+}
+
 impl RuntimeLease {
     /// Acquire the runtime lease associated with `marker_path` without waiting.
     pub fn acquire(marker_path: impl AsRef<Path>) -> Result<Self> {
@@ -339,6 +366,7 @@ impl DirtyGenerationMarker {
     /// Atomically install and sync active ownership for `generation`.
     pub fn begin(path: impl AsRef<Path>, generation: RuntimeGeneration) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
+        let _update = MarkerUpdateLock::acquire(&path)?;
         let mut state = Self::load(&path)?.unwrap_or_default();
         if let Some(previous) = state.active_generation.replace(generation)
             && previous != generation
@@ -403,11 +431,56 @@ impl DirtyGenerationMarker {
         self.unresolved_generations
     }
 
+    /// Acknowledge restored durable recovery obligations for the admitted worker.
+    /// The current generation stays dirty until its own clean exit; a subsequent
+    /// crash therefore records new debt without resurrecting recovered history.
+    pub(crate) fn acknowledge_recovery(path: &Path, generation: RuntimeGeneration) -> Result<()> {
+        Self::acknowledge_recovery_with(path, generation, persist_state)
+    }
+
+    fn acknowledge_recovery_with(
+        path: &Path,
+        generation: RuntimeGeneration,
+        persist: impl FnOnce(&Path, &DirtyGenerationState) -> Result<()>,
+    ) -> Result<()> {
+        let _update = MarkerUpdateLock::acquire(path)?;
+        let Some(mut state) = Self::load(path)? else {
+            return Err(Error::Other(
+                "recovery acknowledgement has no active generation marker".to_string(),
+            ));
+        };
+        if state.active_generation != Some(generation) {
+            return Err(Error::Other(format!(
+                "refusing recovery acknowledgement for stale generation {generation}"
+            )));
+        }
+        if state.recovery_pending.is_none() {
+            return Ok(());
+        }
+        state.recovery_pending = None;
+        persist(path, &state)
+    }
+
+    /// Read the ledger after the child settles; its worker may have acknowledged
+    /// earlier debt since this ownership handle was first installed.
+    pub(crate) fn current_unresolved_generations(&self) -> Result<DirtyGenerationCount> {
+        let state = Self::load(&self.path)?.ok_or_else(|| {
+            Error::Other("active runtime generation marker disappeared".to_string())
+        })?;
+        if state.active_generation != Some(self.generation) {
+            return Err(Error::Other(
+                "active runtime generation marker changed ownership".to_string(),
+            ));
+        }
+        Ok(state.dirty_generation_count())
+    }
+
     /// Clear this active generation after clean exit.
     ///
     /// Returns the recovery debt still on disk, or `None` when the marker was
     /// removed because no earlier generation owes recovery.
     pub fn clear(self) -> Result<Option<DirtyGenerationCount>> {
+        let _update = MarkerUpdateLock::acquire(&self.path)?;
         // Runtime ownership serializes begin/clear. This re-read additionally
         // prevents a retained stale handle from clearing a later generation.
         let Some(mut state) = Self::load(&self.path)? else {
@@ -517,6 +590,121 @@ mod tests {
 
     fn generation(value: &str) -> RuntimeGeneration {
         value.parse().expect("test generation should be valid")
+    }
+
+    #[test]
+    fn recovery_acknowledgement_clears_only_prior_debt_and_rejects_stale_generations() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("runtime.dirty");
+        let previous = RuntimeGeneration::generate();
+        let current = RuntimeGeneration::generate();
+        drop(DirtyGenerationMarker::begin(&path, previous).unwrap());
+        let marker = DirtyGenerationMarker::begin(&path, current).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(DirtyGenerationMarker::acknowledge_recovery(&path, previous).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        DirtyGenerationMarker::acknowledge_recovery(&path, current).unwrap();
+        DirtyGenerationMarker::acknowledge_recovery(&path, current).unwrap();
+        let state = DirtyGenerationMarker::load(&path).unwrap().unwrap();
+        assert_eq!(state.active_generation, Some(current));
+        assert!(state.recovery_pending.is_none());
+        assert_eq!(
+            marker.current_unresolved_generations().unwrap(),
+            DirtyGenerationCount::exactly(1)
+        );
+        assert!(marker.clear().unwrap().is_none());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn crash_after_recovery_acknowledgement_preserves_new_generation_debt() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("runtime.dirty");
+        let previous = RuntimeGeneration::generate();
+        let current = RuntimeGeneration::generate();
+        drop(DirtyGenerationMarker::begin(&path, previous).unwrap());
+        let marker = DirtyGenerationMarker::begin(&path, current).unwrap();
+        DirtyGenerationMarker::acknowledge_recovery(&path, current).unwrap();
+        drop(marker);
+        let successor = DirtyGenerationMarker::begin(&path, RuntimeGeneration::generate()).unwrap();
+        let state = DirtyGenerationMarker::load(&path).unwrap().unwrap();
+        assert_eq!(state.recovery_pending, Some(RecoveryDebt::new(current)));
+        assert_eq!(
+            successor.unresolved_generations(),
+            DirtyGenerationCount::exactly(2)
+        );
+    }
+
+    #[test]
+    fn recovery_acknowledgement_publish_failure_leaves_original_ledger() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("runtime.dirty");
+        drop(DirtyGenerationMarker::begin(&path, RuntimeGeneration::generate()).unwrap());
+        let current = RuntimeGeneration::generate();
+        let marker = DirtyGenerationMarker::begin(&path, current).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let result = DirtyGenerationMarker::acknowledge_recovery_with(&path, current, |path, _| {
+            Err(Error::io_path(
+                "publish recovery acknowledgement",
+                path,
+                std::io::Error::from(std::io::ErrorKind::StorageFull),
+            ))
+        });
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(
+            marker.clear().unwrap(),
+            Some(DirtyGenerationCount::exactly(1))
+        );
+    }
+
+    #[test]
+    fn acknowledgement_cannot_overwrite_a_replacement_generation_during_publish() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("runtime.dirty");
+        drop(DirtyGenerationMarker::begin(&path, RuntimeGeneration::generate()).unwrap());
+        let old = RuntimeGeneration::generate();
+        drop(DirtyGenerationMarker::begin(&path, old).unwrap());
+        let next = RuntimeGeneration::generate();
+        let (loaded, observed) = mpsc::sync_channel(1);
+        let (release, released) = mpsc::sync_channel(1);
+        let ack_path = path.clone();
+        let ack = std::thread::spawn(move || {
+            DirtyGenerationMarker::acknowledge_recovery_with(&ack_path, old, |path, state| {
+                loaded.send(()).unwrap();
+                released.recv_timeout(Duration::from_secs(5)).unwrap();
+                persist_state(path, state)
+            })
+        });
+        observed.recv_timeout(Duration::from_secs(1)).unwrap();
+        let (starting, started) = mpsc::sync_channel(1);
+        let (finished, completion) = mpsc::sync_channel(1);
+        let next_path = path.clone();
+        let replacement = std::thread::spawn(move || {
+            starting.send(()).unwrap();
+            let marker = DirtyGenerationMarker::begin(&next_path, next);
+            finished.send(()).unwrap();
+            marker
+        });
+        started.recv_timeout(Duration::from_secs(1)).unwrap();
+        let early_completion = completion.recv_timeout(Duration::from_millis(100));
+        release.send(()).unwrap();
+        ack.join().unwrap().unwrap();
+        let marker = replacement.join().unwrap().unwrap();
+        assert!(matches!(
+            early_completion,
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        let state = DirtyGenerationMarker::load(&path).unwrap().unwrap();
+        assert_eq!(state.active_generation, Some(next));
+        assert_eq!(state.recovery_pending, Some(RecoveryDebt::new(old)));
+        assert!(DirtyGenerationMarker::acknowledge_recovery(&path, old).is_err());
+        assert_eq!(
+            marker.clear().unwrap(),
+            Some(DirtyGenerationCount::exactly(1))
+        );
     }
 
     #[test]
