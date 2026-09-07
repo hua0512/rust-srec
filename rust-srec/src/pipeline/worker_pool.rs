@@ -510,7 +510,7 @@ impl WorkerPool {
     /// [`Self::stop`] joins workers, so a job that runs up to
     /// `WorkerPoolConfig::job_timeout_secs` holds it. Aborting drops the job
     /// future, which kills any process the processor spawned through
-    /// `processors::utils::run_command_with_logs` (`kill_on_drop`); the join
+    /// `processors::utils::run_command_with_logs` (process-tree containment); the join
     /// that follows proves those drops ran. Returns 0 when a concurrent
     /// [`Self::stop`] already owns the join set, in which case dropping that
     /// call's join set is what aborts the workers.

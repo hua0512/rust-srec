@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Post-processing
+
+- **Cancelled and timed-out commands stop their subprocesses**
+
+  Post-processing commands now stop their entire process tree when a job is cancelled or times out. They receive closed standard input and drain their output within bounded log limits, including when a parent exits while a descendant still holds a pipe. Audio probes use the same cleanup behavior.
+
 ## Notifications
 
 - **Failed notification deliveries finish within a time limit and protect credentials**

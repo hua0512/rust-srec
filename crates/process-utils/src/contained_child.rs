@@ -3,7 +3,7 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 
 use thiserror::Error;
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::time::{Instant, timeout_at};
 
 /// A Tokio child whose descendants share one operating-system containment.
@@ -64,6 +64,16 @@ impl ContainedChild {
     /// Take the child's configured stdin pipe, if one exists.
     pub fn take_stdin(&mut self) -> Option<ChildStdin> {
         self.child.stdin.take()
+    }
+
+    /// Take the child's configured stdout pipe, if one exists.
+    pub fn take_stdout(&mut self) -> Option<ChildStdout> {
+        self.child.stdout.take()
+    }
+
+    /// Take the child's configured stderr pipe, if one exists.
+    pub fn take_stderr(&mut self) -> Option<ChildStderr> {
+        self.child.stderr.take()
     }
 
     /// Return the direct child's process identifier while Tokio still owns it.
