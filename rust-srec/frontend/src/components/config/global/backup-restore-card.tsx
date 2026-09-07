@@ -57,6 +57,67 @@ interface ImportResult {
   stats: ImportStats;
 }
 
+type StatChange = 'create' | 'update' | 'delete';
+
+const STAT_CHANGE_COLORS: Record<StatChange, string> = {
+  create:
+    'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+  update: 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20',
+  delete: 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/20',
+};
+
+/**
+ * One row of the import summary.
+ *
+ * Lives at module scope so the rows keep their identity while the card's dialog state changes;
+ * a component declared inside the card would be a new type on every render and remount all of
+ * them.
+ */
+function StatItem({
+  label,
+  count,
+  type,
+}: {
+  label: string;
+  count: number;
+  type: StatChange;
+}) {
+  const { i18n } = useLingui();
+
+  if (count <= 0) return null;
+
+  const labels: Record<StatChange, string> = {
+    create: i18n._(msg`Created`),
+    update: i18n._(msg`Updated`),
+    delete: i18n._(msg`Deleted`),
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-between py-1.5 px-3 rounded-md text-sm border',
+        STAT_CHANGE_COLORS[type],
+      )}
+    >
+      <span className="font-medium">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] uppercase font-bold tracking-wider opacity-80">
+          {labels[type]}
+        </span>
+        <Badge
+          variant="outline"
+          className={cn(
+            'border-0 bg-background/50 font-mono text-xs',
+            STAT_CHANGE_COLORS[type],
+          )}
+        >
+          {count}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
 export function BackupRestoreCard() {
   const { i18n } = useLingui();
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -153,57 +214,6 @@ export function BackupRestoreCard() {
       setImportResult(null);
       importMutation.reset();
     }, 300); // Wait for dialog animation
-  };
-
-  const StatItem = ({
-    label,
-    count,
-    type,
-  }: {
-    label: string;
-    count: number;
-    type: 'create' | 'update' | 'delete';
-  }) => {
-    if (count <= 0) return null;
-
-    const colors = {
-      create:
-        'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-      update:
-        'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20',
-      delete: 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/20',
-    };
-
-    const labels = {
-      create: i18n._(msg`Created`),
-      update: i18n._(msg`Updated`),
-      delete: i18n._(msg`Deleted`),
-    };
-
-    return (
-      <div
-        className={cn(
-          'flex items-center justify-between py-1.5 px-3 rounded-md text-sm border',
-          colors[type],
-        )}
-      >
-        <span className="font-medium">{label}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase font-bold tracking-wider opacity-80">
-            {labels[type]}
-          </span>
-          <Badge
-            variant="outline"
-            className={cn(
-              'border-0 bg-background/50 font-mono text-xs',
-              colors[type],
-            )}
-          >
-            {count}
-          </Badge>
-        </div>
-      </div>
-    );
   };
 
   return (

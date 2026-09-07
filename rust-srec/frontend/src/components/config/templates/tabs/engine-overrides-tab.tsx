@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
@@ -44,7 +44,10 @@ export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
     queryFn: () => listEngines(),
   });
 
-  const currentOverrides = form.watch('engines_override') || {};
+  // A field-level subscription: adding or removing an override re-renders this tab, not the
+  // component that owns `useForm`.
+  const currentOverrides =
+    useWatch({ control: form.control, name: 'engines_override' }) || {};
   const overriddenIds = Object.keys(currentOverrides);
 
   // Filter out engines that are already overridden

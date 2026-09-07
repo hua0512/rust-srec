@@ -222,9 +222,6 @@ export function LogViewer() {
     disposedRef.current = false;
 
     const wsUrl = buildWebSocketUrl(accessToken, '/logging/stream');
-    if (import.meta.env.DEV) {
-      console.debug('[LOG WS] Connecting to', wsUrl);
-    }
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
 
@@ -232,9 +229,6 @@ export function LogViewer() {
       if (wsRef.current !== ws) {
         ws.close();
         return;
-      }
-      if (import.meta.env.DEV) {
-        console.debug('[LOG WS] Connected');
       }
       setIsConnected(true);
       reconnectAttemptRef.current = 0;
@@ -244,16 +238,9 @@ export function LogViewer() {
       if (wsRef.current === ws) handleMessageRef.current(event);
     };
 
-    ws.onclose = (event) => {
+    ws.onclose = () => {
       if (wsRef.current !== ws) return;
 
-      if (import.meta.env.DEV) {
-        console.debug('[LOG WS] Close', {
-          code: event.code,
-          reason: event.reason,
-          wasClean: event.wasClean,
-        });
-      }
       setIsConnected(false);
       wsRef.current = null;
 

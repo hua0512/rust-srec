@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { listPlatformConfigs, listEngines } from '@/server/functions';
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,10 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
     queryFn: () => listEngines(),
   });
 
-  const currentOverrides = form.watch('platform_overrides') || {};
+  // A field-level subscription: adding or removing an override re-renders this tab, not the
+  // component that owns `useForm`.
+  const currentOverrides =
+    useWatch({ control: form.control, name: 'platform_overrides' }) || {};
 
   const handleAddOverride = (platformName: string) => {
     // platformName matches the name in the map

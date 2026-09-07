@@ -1,5 +1,5 @@
 import { type ComponentPropsWithoutRef } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
@@ -98,7 +98,9 @@ export function DouyuQualityCombobox({
 }: DouyuQualityComboboxProps) {
   const { i18n } = useLingui();
   const onlyAudioPath = `${fieldName}.only_audio`;
-  const onlyAudio = !!form.watch(onlyAudioPath);
+  // A field-level subscription: toggling audio-only re-renders this combobox, not the component
+  // that owns `useForm`.
+  const onlyAudio = !!useWatch({ control: form.control, name: onlyAudioPath });
   const rate = getDouyuRate(value);
   const selectedValue = onlyAudio ? AUDIO_ONLY_QUALITY : String(rate);
 

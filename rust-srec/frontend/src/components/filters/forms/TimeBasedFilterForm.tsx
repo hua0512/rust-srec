@@ -284,17 +284,19 @@ export function TimeBasedFilterForm() {
 
         {/* Visual Timeline */}
         <div className="relative pt-6 pb-2 px-1">
-          <div className="flex h-12 w-full gap-[2px] rounded-lg bg-muted/30 p-1 border border-border/50 overflow-hidden shadow-inner">
-            {Array.from({ length: 24 }).map((_, i) => {
-              const active = isInRange(i);
-              const isStart = startTime?.startsWith(
-                i.toString().padStart(2, '0'),
-              );
-              const isEnd = endTime?.startsWith(i.toString().padStart(2, '0'));
+          <TooltipProvider delayDuration={0}>
+            <div className="flex h-12 w-full gap-[2px] rounded-lg bg-muted/30 p-1 border border-border/50 overflow-hidden shadow-inner">
+              {Array.from({ length: 24 }).map((_, i) => {
+                const active = isInRange(i);
+                const isStart = startTime?.startsWith(
+                  i.toString().padStart(2, '0'),
+                );
+                const isEnd = endTime?.startsWith(
+                  i.toString().padStart(2, '0'),
+                );
 
-              return (
-                <TooltipProvider key={i} delayDuration={0}>
-                  <Tooltip>
+                return (
+                  <Tooltip key={i}>
                     <TooltipTrigger asChild>
                       <div
                         className={cn(
@@ -325,10 +327,10 @@ export function TimeBasedFilterForm() {
                       <div className="text-[10px] font-bold">{i}:00</div>
                     </TooltipContent>
                   </Tooltip>
-                </TooltipProvider>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </TooltipProvider>
 
           {/* Timeline Icons & Labels */}
           <div className="flex justify-between mt-2 px-1 text-[10px] font-medium text-muted-foreground uppercase tracking-widest opacity-70">

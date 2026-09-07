@@ -268,6 +268,14 @@
 
 ## Web interface
 
+- **Configuration editors respond faster while typing**
+
+  Editing a template, a platform or a streamer redrew the whole form on every keystroke, which felt sluggish on the longer forms and worst of all with the pipeline editor open. A change now refreshes only the part of the page that shows it. The import summary under **Backup & Restore** and the 24-hour bar in the time filter no longer rebuild themselves for unrelated changes either, and the live figures on a running recording count up smoothly instead of stopping partway.
+
+- **The browser console no longer prints workflow settings or the log stream address**
+
+  Saving a pipeline workflow wrote its complete step configuration to the browser's developer console, including any upload credentials it carried, and opening the log viewer printed the address it connects to, which contains your access token. Neither is printed any more.
+
 - **The last untranslated corners of the interface now follow your language**
 
   Some parts of the interface stayed in English whatever language you chose: the theme import dialog, the danmu viewer's filter button and footer, the video player's title and error message, the cookie fields on the player form, the badges on a recording card, the version line at the bottom of the sidebar, the comparison table shown when a recording was split, and a few button labels for screen readers. Counts such as "12 messages", "3 Segments (7 Files)" and "5 selected" were also assembled from separate words, so they could never be phrased naturally in Chinese. All of these now read in your language, and so do the error messages on the form for a new processing job.
