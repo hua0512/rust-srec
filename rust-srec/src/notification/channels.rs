@@ -13,6 +13,9 @@ mod http;
 mod telegram;
 mod webhook;
 
+#[cfg(test)]
+mod redaction_tests;
+
 pub use discord::{DiscordChannel, DiscordConfig};
 pub use email::{EmailChannel, EmailConfig};
 pub use gotify::{GotifyChannel, GotifyConfig};

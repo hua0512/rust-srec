@@ -456,6 +456,10 @@
 
 ## Security
 
+- **Notification diagnostics redact credentials consistently**
+
+  Channel configuration Debug output hides tokens, passwords, credential-bearing URLs, authentication headers, and private destinations, including nested service configuration. Web-push diagnostics also hide private VAPID keys, cached tokens, and subscription credentials. Serialization and delivery continue to use the configured values.
+
 - **Successful logins preserve other failed-login attempts**
 
   Simultaneous login requests could cause one successful request to erase another request's failure from the login limit. Releasing a successful attempt now preserves other attempts from the same address.

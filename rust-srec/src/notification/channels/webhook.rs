@@ -12,7 +12,7 @@ use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
 
 /// Webhook channel configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WebhookConfig {
     /// Stable channel instance identifier (recommended).
     ///
@@ -47,6 +47,28 @@ pub struct WebhookConfig {
     pub timeout_secs: u64,
 }
 
+impl std::fmt::Debug for WebhookConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headers: Vec<_> = self
+            .headers
+            .iter()
+            .map(|(name, _)| (name, "[REDACTED]"))
+            .collect();
+        f.debug_struct("WebhookConfig")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("enabled", &self.enabled)
+            .field("url", &"[REDACTED]")
+            .field("method", &self.method)
+            .field("headers", &headers)
+            .field("auth", &self.auth)
+            .field("min_priority", &self.min_priority)
+            .field("locale", &self.locale)
+            .field("timeout_secs", &self.timeout_secs)
+            .finish()
+    }
+}
+
 fn default_method() -> String {
     "POST".to_string()
 }
@@ -56,7 +78,7 @@ fn default_timeout() -> u64 {
 }
 
 /// Webhook authentication configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WebhookAuth {
     /// Bearer token authentication.
@@ -65,6 +87,27 @@ pub enum WebhookAuth {
     Basic { username: String, password: String },
     /// Custom header authentication.
     Header { name: String, value: String },
+}
+
+impl std::fmt::Debug for WebhookAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bearer { .. } => f
+                .debug_struct("Bearer")
+                .field("token", &"[REDACTED]")
+                .finish(),
+            Self::Basic { .. } => f
+                .debug_struct("Basic")
+                .field("username", &"[REDACTED]")
+                .field("password", &"[REDACTED]")
+                .finish(),
+            Self::Header { name, .. } => f
+                .debug_struct("Header")
+                .field("name", name)
+                .field("value", &"[REDACTED]")
+                .finish(),
+        }
+    }
 }
 
 impl Default for WebhookConfig {

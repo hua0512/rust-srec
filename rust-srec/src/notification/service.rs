@@ -183,7 +183,7 @@ struct RuntimeChannel {
 }
 
 /// A notification pending delivery.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct PendingNotification {
     _id: u64,
     event: NotificationEvent,

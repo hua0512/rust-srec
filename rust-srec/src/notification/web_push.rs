@@ -34,21 +34,43 @@ const VAPID_JWT_SKEW_SECS: i64 = 60;
 type SubscriptionCacheValue = Option<(Instant, Vec<WebPushSubscriptionDbModel>)>;
 type SubscriptionCache = std::sync::Arc<tokio::sync::RwLock<SubscriptionCacheValue>>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct CachedVapidJwt {
     jwt: String,
     exp_unix: i64,
+}
+
+impl std::fmt::Debug for CachedVapidJwt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CachedVapidJwt")
+            .field("jwt", &"[REDACTED]")
+            .field("exp_unix", &self.exp_unix)
+            .finish()
+    }
 }
 
 const IKM_INFO_PREFIX: &str = "WebPush: info\0";
 const KEY_INFO: &str = "Content-Encoding: aes128gcm\0";
 const NONCE_INFO: &str = "Content-Encoding: nonce\0";
 
-#[derive(Debug, Clone)]
+#[cfg(test)]
+mod redaction_tests;
+
+#[derive(Clone)]
 pub struct WebPushConfig {
     vapid_public_key_b64: String,
     vapid_private_key_raw: [u8; 32],
     vapid_subject: String,
+}
+
+impl std::fmt::Debug for WebPushConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebPushConfig")
+            .field("vapid_public_key_b64", &self.vapid_public_key_b64)
+            .field("vapid_private_key_raw", &"[REDACTED]")
+            .field("vapid_subject", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl WebPushConfig {
@@ -104,7 +126,7 @@ impl WebPushConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebPushService {
     pool: DbPool,
     write_pool: WritePool,
@@ -115,6 +137,18 @@ pub struct WebPushService {
     metrics: std::sync::Arc<
         parking_lot::RwLock<Option<std::sync::Arc<crate::metrics::MetricsCollector>>>,
     >,
+}
+
+impl std::fmt::Debug for WebPushService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Cache keys/endpoints and subscription auth values are bearer credentials too.
+        // Do not inspect locked cache contents while formatting diagnostics.
+        f.debug_struct("WebPushService")
+            .field("config", &self.config)
+            .field("subscription_cache", &"[REDACTED]")
+            .field("vapid_jwt_cache", &"[REDACTED]")
+            .finish_non_exhaustive()
+    }
 }
 
 impl WebPushService {

@@ -46,9 +46,10 @@ impl std::fmt::Debug for GotifyConfig {
             .field("id", &self.id)
             .field("name", &self.name)
             .field("enabled", &self.enabled)
-            .field("server_url", &self.server_url)
+            .field("server_url", &"[REDACTED]")
             .field("app_token", &"[REDACTED]")
             .field("min_priority", &self.min_priority)
+            .field("locale", &self.locale)
             .field("timeout_secs", &self.timeout_secs)
             .finish()
     }

@@ -19,7 +19,7 @@ use crate::notification::events::{NotificationEvent, NotificationPriority};
 const TELEGRAM_MESSAGE_LIMIT: usize = 4096;
 
 /// Telegram channel configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TelegramConfig {
     /// Stable channel instance identifier (recommended).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,6 +43,21 @@ pub struct TelegramConfig {
     /// See `notification::service::parse_channel_locale`.
     #[serde(default)]
     pub locale: Option<String>,
+}
+
+impl std::fmt::Debug for TelegramConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TelegramConfig")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("enabled", &self.enabled)
+            .field("bot_token", &"[REDACTED]")
+            .field("chat_id", &"[REDACTED]")
+            .field("parse_mode", &self.parse_mode)
+            .field("min_priority", &self.min_priority)
+            .field("locale", &self.locale)
+            .finish()
+    }
 }
 
 fn default_parse_mode() -> String {
