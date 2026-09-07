@@ -55,6 +55,7 @@ import { PLACEHOLDER_TOKENS } from '../../constants';
 import { formatBytes } from '@/lib/format';
 import { getBaiduPcsStatus, baiduPcsLogout } from '@/server/functions/baidupcs';
 import { BaiduPcsLoginDialog } from './baidupcs-login-dialog';
+import { NumberInput } from '@/components/ui/number-input';
 
 type BaiduPcsConfig = z.infer<typeof BaiduPcsConfigSchema>;
 
@@ -543,16 +544,12 @@ export function BaiduPcsConfigForm({
                       <Trans>Max Attempts</Trans>
                     </FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
+                        field={field}
                         min={1}
                         max={10}
                         step={1}
-                        {...field}
-                        value={field.value ?? 3}
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value))
-                        }
+                        placeholder="3"
                         className="bg-background/50"
                       />
                     </FormControl>

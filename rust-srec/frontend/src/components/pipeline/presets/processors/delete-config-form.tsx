@@ -7,12 +7,12 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { ProcessorConfigFormProps } from './common-props';
 import { DeleteConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { motion } from 'motion/react';
 import { RefreshCw } from 'lucide-react';
+import { NumberInput } from '@/components/ui/number-input';
 
 type DeleteConfig = z.infer<typeof DeleteConfigSchema>;
 
@@ -53,12 +53,12 @@ export function DeleteConfigForm({
                     <Trans>Max Retries</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
+                    <NumberInput
+                      field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      type="number"
                       min={0}
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
+                      step={1}
+                      placeholder="3"
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
@@ -78,13 +78,12 @@ export function DeleteConfigForm({
                     <Trans>Retry Delay (ms)</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
+                    <NumberInput
+                      field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      type="number"
                       min={0}
                       step={100}
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
+                      placeholder="100"
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">

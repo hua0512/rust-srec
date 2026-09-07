@@ -14,6 +14,7 @@ import { ThumbnailConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { motion } from 'motion/react';
 import { Camera, FileImage } from 'lucide-react';
+import { NumberInput } from '@/components/ui/number-input';
 
 type ThumbnailConfig = z.infer<typeof ThumbnailConfigSchema>;
 
@@ -80,14 +81,12 @@ export function ThumbnailConfigForm({
                     <Trans>Width</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
+                    <NumberInput
+                      field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      type="number"
                       min={1}
                       step={1}
                       placeholder="320"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
@@ -107,14 +106,13 @@ export function ThumbnailConfigForm({
                     <Trans>Quality (qscale)</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
+                    <NumberInput
+                      field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      type="number"
                       min={1}
                       max={31}
+                      step={1}
                       placeholder="2"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">

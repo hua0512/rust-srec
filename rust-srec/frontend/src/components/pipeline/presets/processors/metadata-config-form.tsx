@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { ProcessorConfigFormProps } from './common-props';
 import { MetadataConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
+import { useEffect, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { PlusCircle, Trash2, Tags, Mic2, Settings2 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -21,63 +22,103 @@ import { msg } from '@lingui/core/macro';
 
 type MetadataConfig = z.infer<typeof MetadataConfigSchema>;
 
-// Helper component for key-value pairs
+interface CustomRow {
+  id: number;
+  key: string;
+  value: string;
+}
+
+function toRows(
+  custom: Record<string, string> | undefined,
+  allocateId: () => number,
+): CustomRow[] {
+  return Object.entries(custom ?? {}).map(([key, value]) => ({
+    id: allocateId(),
+    key,
+    value,
+  }));
+}
+
+/**
+ * Identity of the stored map for change detection.
+ *
+ * The form hands back a fresh copy on every update, so references say nothing
+ * about whether the tags actually changed.
+ */
+function identityOf(custom: Record<string, string> | undefined): string {
+  return JSON.stringify(custom ?? {});
+}
+
+/**
+ * Editor for the `custom` tag map.
+ *
+ * The rows are held locally because the stored value is a record: two rows
+ * awaiting their names would share the empty key and collapse into one, and a
+ * rename mid-typing would re-key the record on every keystroke. Only rows that
+ * have a name reach the form, so a half-filled row is simply not saved.
+ */
 function CustomMetadataFields({ basePath }: { basePath: string }) {
   const { watch, setValue } = useFormContext();
   const { i18n } = useLingui();
+  const path = (basePath ? `${basePath}.custom` : 'custom') as any;
 
-  const custom = (watch((basePath ? `${basePath}.custom` : 'custom') as any) ||
-    {}) as Record<string, string>;
-  const entries = Object.entries(custom);
+  const stored = watch(path) as Record<string, string> | undefined;
+  const nextId = useRef(0);
+  const allocateId = () => nextId.current++;
 
+  const [rows, setRows] = useState<CustomRow[]>(() =>
+    toRows(stored, allocateId),
+  );
+  // Tracks the record this editor wrote, so a config load or a form reset
+  // rebuilds the rows while our own writes leave them untouched.
+  const lastWritten = useRef(identityOf(stored));
+
+  useEffect(() => {
+    const identity = identityOf(stored);
+    if (identity === lastWritten.current) return;
+    lastWritten.current = identity;
+    setRows(toRows(stored, () => nextId.current++));
+    // `allocateId` is recreated every render; the equivalent inline callback
+    // keeps this effect keyed on the stored value alone.
+  }, [stored]);
+
+  const writeRows = (next: CustomRow[]) => {
+    setRows(next);
+    const custom: Record<string, string> = {};
+    for (const row of next) {
+      if (row.key) custom[row.key] = row.value;
+    }
+    lastWritten.current = identityOf(custom);
+    setValue(path, custom, { shouldDirty: true });
+  };
+
+  // Local only: a nameless row has nothing to store yet.
   const addEntry = () => {
-    const newCustom = { ...custom, '': '' };
-    setValue((basePath ? `${basePath}.custom` : 'custom') as any, newCustom, {
-      shouldDirty: true,
-    });
+    setRows((current) => [
+      ...current,
+      { id: allocateId(), key: '', value: '' },
+    ]);
   };
 
-  const removeEntry = (keyToRemove: string) => {
-    const newCustom = { ...custom };
-    delete newCustom[keyToRemove];
-    setValue((basePath ? `${basePath}.custom` : 'custom') as any, newCustom, {
-      shouldDirty: true,
-    });
-  };
-
-  const updateEntryKey = (oldKey: string, newKey: string, value: string) => {
-    if (oldKey === newKey) return;
-    const newCustom = { ...custom };
-    delete newCustom[oldKey];
-    newCustom[newKey] = value;
-    setValue((basePath ? `${basePath}.custom` : 'custom') as any, newCustom, {
-      shouldDirty: true,
-    });
-  };
-
-  const updateEntryValue = (key: string, newValue: string) => {
-    const newCustom = { ...custom };
-    newCustom[key] = newValue;
-    setValue((basePath ? `${basePath}.custom` : 'custom') as any, newCustom, {
-      shouldDirty: true,
-    });
+  const updateRow = (id: number, patch: Partial<CustomRow>) => {
+    writeRows(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   };
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-2">
-        {entries.map(([key, value], index) => (
-          <div key={index} className="flex gap-2 items-center group">
+        {rows.map((row) => (
+          <div key={row.id} className="flex gap-2 items-center group">
             <Input
               placeholder={i18n._(msg`Key`)}
-              defaultValue={key}
-              onBlur={(e) => updateEntryKey(key, e.target.value, value)}
+              value={row.key}
+              onChange={(e) => updateRow(row.id, { key: e.target.value })}
               className="w-1/3 bg-background/50 border-border/50 focus:bg-background h-9 text-sm"
             />
             <Input
               placeholder={i18n._(msg`Value`)}
-              value={value}
-              onChange={(e) => updateEntryValue(key, e.target.value)}
+              value={row.value}
+              onChange={(e) => updateRow(row.id, { value: e.target.value })}
               className="flex-1 bg-background/50 border-border/50 focus:bg-background h-9 text-sm"
             />
             <Button
@@ -85,14 +126,16 @@ function CustomMetadataFields({ basePath }: { basePath: string }) {
               variant="ghost"
               size="icon"
               className="h-9 w-9 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10"
-              onClick={() => removeEntry(key)}
+              onClick={() =>
+                writeRows(rows.filter((entry) => entry.id !== row.id))
+              }
             >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         ))}
       </div>
-      {entries.length === 0 && (
+      {rows.length === 0 && (
         <div className="text-xs text-muted-foreground text-center py-4 border border-dashed border-border/50 rounded-lg">
           <Trans>No custom tags added</Trans>
         </div>

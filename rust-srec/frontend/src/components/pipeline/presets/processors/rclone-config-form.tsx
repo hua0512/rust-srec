@@ -45,6 +45,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { PLACEHOLDER_TOKENS } from '../../constants';
+import { NumberInput } from '@/components/ui/number-input';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
 
@@ -110,16 +111,6 @@ export function RcloneConfigForm({
 }: ProcessorConfigFormProps<RcloneConfig>) {
   const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  // Coerce a numeric `<Input type="number">` change event to `number | undefined`.
-  // `valueAsNumber` returns `NaN` for empty input; we map that back to `undefined`
-  // so the form value matches the optional schema (Option<u32> on the backend).
-  const onNumberChange =
-    (cb: (v: number | undefined) => void) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const v = e.target.valueAsNumber;
-      cb(Number.isNaN(v) ? undefined : v);
-    };
 
   return (
     <Tabs defaultValue="general" className="w-full">
@@ -374,10 +365,11 @@ export function RcloneConfigForm({
                     <Trans>Max Retries</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
+                    <NumberInput
+                      field={field}
+                      min={0}
+                      step={1}
+                      placeholder="3"
                       className="bg-background/50"
                     />
                   </FormControl>
@@ -541,13 +533,11 @@ export function RcloneConfigForm({
                         </FieldHint>
                       </div>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
+                          field={field}
                           min={1}
                           step={1}
                           placeholder={i18n._(msg`rclone default: 4`)}
-                          value={field.value ?? ''}
-                          onChange={onNumberChange(field.onChange)}
                           className="bg-background/50"
                         />
                       </FormControl>
@@ -584,13 +574,11 @@ export function RcloneConfigForm({
                         </FieldHint>
                       </div>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
+                          field={field}
                           min={1}
                           step={1}
                           placeholder={i18n._(msg`rclone default: 8`)}
-                          value={field.value ?? ''}
-                          onChange={onNumberChange(field.onChange)}
                           className="bg-background/50"
                         />
                       </FormControl>
@@ -637,13 +625,11 @@ export function RcloneConfigForm({
                         </FieldHint>
                       </div>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
+                          field={field}
                           min={0}
                           step={0.1}
                           placeholder={i18n._(msg`0 = unlimited`)}
-                          value={field.value ?? ''}
-                          onChange={onNumberChange(field.onChange)}
                           className="bg-background/50"
                         />
                       </FormControl>
@@ -682,13 +668,11 @@ export function RcloneConfigForm({
                         </FieldHint>
                       </div>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
+                          field={field}
                           min={0}
                           step={1}
                           placeholder={i18n._(msg`rclone default: 1`)}
-                          value={field.value ?? ''}
-                          onChange={onNumberChange(field.onChange)}
                           className="bg-background/50"
                         />
                       </FormControl>
@@ -737,13 +721,11 @@ export function RcloneConfigForm({
                         </FieldHint>
                       </div>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
+                          field={field}
                           min={0}
                           step={1}
                           placeholder={i18n._(msg`rclone default: 4`)}
-                          value={field.value ?? ''}
-                          onChange={onNumberChange(field.onChange)}
                           className="bg-background/50"
                         />
                       </FormControl>
