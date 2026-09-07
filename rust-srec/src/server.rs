@@ -200,43 +200,88 @@ async fn initialize_database(
     output_dir: Option<&str>,
 ) -> crate::Result<(crate::database::DbPool, crate::database::WritePool)> {
     let (pool, write_pool) = init_database_pools(database_url).await?;
-    // Check before migrations seed the Docker default. An existing installation
-    // may have deliberately saved that same path, so its value is not evidence
-    // that it should be replaced.
+    prepare_initial_output(&pool, &write_pool, output_dir).await?;
+    run_migrations(&pool).await?;
+    finish_initial_output(&write_pool).await?;
+    Ok((pool, write_pool))
+}
+
+async fn prepare_initial_output(
+    pool: &crate::database::DbPool,
+    write_pool: &crate::database::WritePool,
+    output_dir: Option<&str>,
+) -> crate::Result<()> {
+    // This must precede the bootstrap table: auto_vacuum is selected while the
+    // database is still empty, including when migration startup is interrupted.
+    crate::database::prepare_fresh_database(pool).await?;
+    let mut transaction = crate::database::begin_immediate(write_pool).await?;
     let has_tables: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema \
          WHERE type = 'table' AND name NOT LIKE 'sqlite_%')",
     )
-    .fetch_one(&pool)
+    .fetch_one(&mut *transaction)
     .await?;
 
-    let initial_output = if has_tables {
-        None
-    } else {
+    // Only a genuinely empty database gains pending state. Existing settings,
+    // including a deliberately saved /app/output, never imply initialization.
+    if !has_tables {
         let path = Path::new(
             output_dir
                 .filter(|dir| !dir.trim().is_empty())
                 .unwrap_or("./output"),
         );
-        Some(std::path::absolute(path).map_err(|error| {
+        let path = std::path::absolute(path).map_err(|error| {
             crate::Error::io_path("resolving initial output directory", path, error)
-        })?)
-    };
-
-    run_migrations(&pool).await?;
-    if let Some(path) = initial_output {
+        })?;
         let output_folder = path
             .to_str()
             .ok_or_else(|| crate::Error::config("Initial output directory must be valid UTF-8"))?;
         sqlx::query(
+            "CREATE TABLE standalone_initialization_pending (\
+             id INTEGER PRIMARY KEY CHECK (id = 1), output_folder TEXT NOT NULL)",
+        )
+        .execute(&mut *transaction)
+        .await?;
+        // Persist the absolute first-attempt intent so retries are independent
+        // of changes to OUTPUT_DIR or the startup working directory.
+        sqlx::query("INSERT INTO standalone_initialization_pending VALUES (1, ?)")
+            .bind(output_folder)
+            .execute(&mut *transaction)
+            .await?;
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
+async fn finish_initial_output(write_pool: &crate::database::WritePool) -> crate::Result<()> {
+    let mut transaction = crate::database::begin_immediate(write_pool).await?;
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema \
+         WHERE type = 'table' AND name = 'standalone_initialization_pending')",
+    )
+    .fetch_one(&mut *transaction)
+    .await?;
+    if pending {
+        let output_folder: String = sqlx::query_scalar(
+            "SELECT output_folder FROM standalone_initialization_pending WHERE id = 1",
+        )
+        .fetch_one(&mut *transaction)
+        .await?;
+        sqlx::query(
             "UPDATE global_config SET output_folder = ? WHERE output_folder = '/app/output'",
         )
-        .bind(output_folder)
-        .execute(&write_pool)
+        .bind(&output_folder)
+        .execute(&mut *transaction)
         .await?;
+        sqlx::query("DROP TABLE standalone_initialization_pending")
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
         info!(output_folder, "Initialized recording output directory");
+    } else {
+        transaction.commit().await?;
     }
-    Ok((pool, write_pool))
+    Ok(())
 }
 
 fn fail_stop_worker(reason: &str) -> ! {
@@ -314,7 +359,19 @@ fn supervisor_shutdown_signal()
 
 #[cfg(test)]
 mod tests {
+    use sqlx::migrate::Migrator;
+
     use super::*;
+
+    async fn has_pending_output(pool: &crate::database::DbPool) -> bool {
+        sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema \
+             WHERE type = 'table' AND name = 'standalone_initialization_pending')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
 
     async fn stored_output(pool: &crate::database::DbPool) -> String {
         sqlx::query_scalar("SELECT output_folder FROM global_config")
@@ -338,6 +395,12 @@ mod tests {
             )
             .unwrap();
             assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
+            assert!(!has_pending_output(&pool).await);
+            let auto_vacuum: i64 = sqlx::query_scalar("PRAGMA auto_vacuum")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(auto_vacuum, 2);
             write_pool.close().await;
             pool.close().await;
         }
@@ -375,8 +438,83 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(stored_output(&pool).await, saved);
+            assert!(!has_pending_output(&pool).await);
             write_pool.close().await;
             pool.close().await;
         }
+    }
+
+    #[tokio::test]
+    async fn initial_output_resumes_after_partial_migration_with_original_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let (pool, write_pool) = init_database_pools(&database_url).await.unwrap();
+        prepare_initial_output(&pool, &write_pool, Some("./original recordings"))
+            .await
+            .unwrap();
+        assert!(has_pending_output(&pool).await);
+        let migrator = sqlx::migrate!("./migrations");
+        Migrator::with_migrations(migrator.iter().take(1).cloned().collect::<Vec<_>>())
+            .run(&pool)
+            .await
+            .unwrap();
+        write_pool.close().await;
+        pool.close().await;
+
+        let (pool, write_pool) = initialize_database(&database_url, Some("./changed recordings"))
+            .await
+            .unwrap();
+        let expected = std::path::absolute("./original recordings").unwrap();
+        assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
+        assert!(!has_pending_output(&pool).await);
+        let auto_vacuum: i64 = sqlx::query_scalar("PRAGMA auto_vacuum")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(auto_vacuum, 2);
+        write_pool.close().await;
+        pool.close().await;
+
+        let (pool, write_pool) = initialize_database(&database_url, None).await.unwrap();
+        assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
+        assert!(!has_pending_output(&pool).await);
+        write_pool.close().await;
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn initial_output_retries_failed_write_without_losing_pending_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let (pool, write_pool) = init_database_pools(&database_url).await.unwrap();
+        prepare_initial_output(&pool, &write_pool, Some("./original recordings"))
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        sqlx::query(
+            "CREATE TRIGGER reject_initial_output BEFORE UPDATE OF output_folder ON global_config \
+             BEGIN SELECT RAISE(ABORT, 'injected output write failure'); END",
+        )
+        .execute(&write_pool)
+        .await
+        .unwrap();
+        assert!(finish_initial_output(&write_pool).await.is_err());
+        assert_eq!(stored_output(&pool).await, "/app/output");
+        assert!(has_pending_output(&pool).await);
+        sqlx::query("DROP TRIGGER reject_initial_output")
+            .execute(&write_pool)
+            .await
+            .unwrap();
+        write_pool.close().await;
+        pool.close().await;
+
+        let (pool, write_pool) = initialize_database(&database_url, Some("./changed recordings"))
+            .await
+            .unwrap();
+        let expected = std::path::absolute("./original recordings").unwrap();
+        assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
+        assert!(!has_pending_output(&pool).await);
+        write_pool.close().await;
+        pool.close().await;
     }
 }

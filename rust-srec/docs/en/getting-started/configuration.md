@@ -119,6 +119,8 @@ The following environment variables can be configured in your <a :href="withBase
 ::: tip Initial and saved recording directories
 The standalone backend initializes a fresh database's `output_folder` from `OUTPUT_DIR`, using `./output` when unset or blank. It resolves relative paths against the startup working directory and saves an absolute path. Docker Compose and the systemd unit provide `/app/output` and `/var/lib/rust-srec/output`, respectively.
 
+If initial migrations or saving the output folder fail, the next start resumes initialization with the absolute path selected on the first attempt, even if `OUTPUT_DIR` or the working directory changes.
+
 Later starts preserve the saved setting. Change it under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. The resolved path shown by the application is authoritative. An existing binary or system-service installation that still has `/app/output` needs this setting changed to a writable directory.
 
 Keep `OUTPUT_DIR` and `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder so the write gate and health probes watch the recording volume.
