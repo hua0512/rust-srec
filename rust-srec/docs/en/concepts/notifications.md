@@ -54,6 +54,10 @@ A channel filters events below its minimum. The API also accepts the legacy labe
 
 Each external channel can follow the server language or override it with `en` or `zh-CN`. `RUST_SREC_LOCALE` sets the default for backend-rendered messages. This is independent of the language selected by a user in the web interface.
 
+## Telegram Formatting
+
+Telegram channel settings accept `HTML`, `Markdown`, and `MarkdownV2` (case-insensitive), or an empty `parse_mode` for plain text. Formatted messages use Telegram's explicit entities: dynamic content stays literal, the title is bold, and the footer is italic. Long messages are truncated on character boundaries within a conservative 4,096 UTF-16-unit limit. Other mode values return a configuration error. See the [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage).
+
 ## Web Push
 
 Generate a VAPID key pair and set all three variables before starting the backend:

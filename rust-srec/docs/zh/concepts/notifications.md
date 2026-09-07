@@ -54,6 +54,10 @@ API 与界面设置采用 0-10 数值优先级：
 
 每个外部渠道可跟随服务器语言，也可覆盖为 `en` 或 `zh-CN`。`RUST_SREC_LOCALE` 设置后端生成消息的默认语言，与用户在 Web 界面选择的语言无关。
 
+## Telegram 格式
+
+Telegram 渠道支持 `HTML`、`Markdown`、`MarkdownV2`（不区分大小写），或使用空 `parse_mode` 发送纯文本。格式化消息使用 Telegram 显式实体：动态内容始终按原文显示，标题加粗，页脚使用斜体。长消息会在完整字符边界处截断，并采用保守的 4,096 UTF-16 单位上限。其他模式值会返回配置错误。参见 [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage)。
+
 ## Web Push
 
 生成 VAPID 密钥对，并在后端启动前设置三个变量：

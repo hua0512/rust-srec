@@ -15,8 +15,9 @@ use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
 
-/// Telegram `sendMessage` text limit (UTF-8 characters).
+/// Conservative text budget in UTF-16 units (Telegram entity offsets use this unit).
 const TELEGRAM_MESSAGE_LIMIT: usize = 4096;
+const TRUNCATION_SUFFIX: &str = "\n\n[truncated]";
 
 /// Telegram channel configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +34,8 @@ pub struct TelegramConfig {
     pub bot_token: String,
     /// Target chat ID (user, group, or channel).
     pub chat_id: String,
-    /// Parse mode for message formatting (HTML, Markdown, MarkdownV2).
+    /// Formatting style (HTML, Markdown, MarkdownV2, or empty for plain text).
+    /// Formatted styles use explicit Telegram entities so content always remains literal.
     #[serde(default = "default_parse_mode")]
     pub parse_mode: String,
     /// Minimum priority level to send (default: Normal).
@@ -79,8 +81,21 @@ impl TelegramChannel {
         }
     }
 
-    /// Build the message text for an event.
-    fn build_message(&self, event: &NotificationEvent) -> String {
+    /// Build literal text plus entities, which Telegram accepts instead of parse_mode.
+    /// https://core.telegram.org/bots/api#sendmessage
+    fn build_payload(&self, event: &NotificationEvent) -> Result<serde_json::Value> {
+        let formatted = if self.config.parse_mode.is_empty() {
+            false
+        } else if ["HTML", "Markdown", "MarkdownV2"]
+            .iter()
+            .any(|mode| self.config.parse_mode.eq_ignore_ascii_case(mode))
+        {
+            true
+        } else {
+            return Err(crate::Error::config(
+                "Unsupported Telegram parse mode; expected HTML, Markdown, MarkdownV2, or empty",
+            ));
+        };
         let emoji = match event.priority() {
             NotificationPriority::Low => "\u{2139}\u{fe0f}", // ℹ️
             NotificationPriority::Normal => "\u{1f514}",     // 🔔
@@ -93,21 +108,28 @@ impl TelegramChannel {
         let priority = event.priority().to_string();
         let event_type = event.event_type().to_string();
 
-        let text = if self.config.parse_mode.eq_ignore_ascii_case("HTML") {
-            let escaped_title = escape_telegram_html(&title);
-            let escaped_description = escape_telegram_html(&description);
-            let escaped_priority = escape_telegram_html(&priority);
-            let escaped_event_type = escape_telegram_html(&event_type);
-            format!(
-                "{emoji} <b>{escaped_title}</b>\n\n{escaped_description}\n\n<i>Priority: {escaped_priority} | Type: {escaped_event_type}</i>"
-            )
-        } else {
-            format!(
-                "{emoji} *{title}*\n\n{description}\n\n_Priority: {priority} | Type: {event_type}_"
-            )
-        };
-
-        truncate_message(&text, TELEGRAM_MESSAGE_LIMIT)
+        let footer = format!("Priority: {priority} | Type: {event_type}");
+        let title_offset = emoji.encode_utf16().count() + 1;
+        let title_length = title.encode_utf16().count();
+        let footer_offset = title_offset + title_length + 4 + description.encode_utf16().count();
+        let footer_length = footer.encode_utf16().count();
+        let full_text = format!("{emoji} {title}\n\n{description}\n\n{footer}");
+        let (text, retained_units) = truncate_message(&full_text, TELEGRAM_MESSAGE_LIMIT);
+        let mut payload = json!({ "chat_id": self.config.chat_id, "text": text });
+        if formatted {
+            let mut entities = Vec::new();
+            for (kind, offset, length) in [
+                ("bold", title_offset, title_length),
+                ("italic", footer_offset, footer_length),
+            ] {
+                let end = (offset + length).min(retained_units);
+                if end > offset {
+                    entities.push(json!({"type": kind, "offset": offset, "length": end - offset}));
+                }
+            }
+            payload["entities"] = json!(entities);
+        }
+        Ok(payload)
     }
 
     async fn send_with_retry(&self, payload: &serde_json::Value) -> Result<()> {
@@ -151,12 +173,7 @@ impl NotificationChannel for TelegramChannel {
             return Ok(());
         }
 
-        let text = self.build_message(event);
-        let payload = json!({
-            "chat_id": self.config.chat_id,
-            "text": text,
-            "parse_mode": self.config.parse_mode,
-        });
+        let payload = self.build_payload(event)?;
 
         self.send_with_retry(&payload).await?;
 
@@ -173,22 +190,29 @@ impl NotificationChannel for TelegramChannel {
     }
 }
 
-fn escape_telegram_html(input: &str) -> String {
-    input
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+fn prefix_utf16(text: &str, budget: usize) -> (&str, usize) {
+    let mut used = 0;
+    let mut end = 0;
+    for (offset, ch) in text.char_indices() {
+        if used + ch.len_utf16() > budget {
+            break;
+        }
+        used += ch.len_utf16();
+        end = offset + ch.len_utf8();
+    }
+    (&text[..end], used)
 }
 
-/// Truncate a message to fit within the Telegram character limit.
-fn truncate_message(text: &str, limit: usize) -> String {
-    if text.chars().count() <= limit {
-        return text.to_string();
+/// Return bounded plain text and the retained original-text length. Entities never include
+/// the truncation suffix, and every offset/length stays on a complete Unicode scalar.
+fn truncate_message(text: &str, limit: usize) -> (String, usize) {
+    let (prefix, units) = prefix_utf16(text, limit);
+    if prefix.len() == text.len() {
+        return (text.to_string(), units);
     }
-    let suffix = "\n\n[truncated]";
-    let budget = limit - suffix.len();
-    let truncated: String = text.chars().take(budget).collect();
-    format!("{truncated}{suffix}")
+    let (suffix, suffix_units) = prefix_utf16(TRUNCATION_SUFFIX, limit);
+    let (prefix, retained_units) = prefix_utf16(text, limit - suffix_units);
+    (format!("{prefix}{suffix}"), retained_units)
 }
 
 #[cfg(test)]
@@ -214,60 +238,119 @@ mod tests {
         assert!(channel.is_enabled());
     }
 
-    #[test]
-    fn test_build_message_html() {
-        let config = TelegramConfig {
-            enabled: true,
-            bot_token: "tok".to_string(),
-            chat_id: "123".to_string(),
-            parse_mode: "HTML".to_string(),
+    fn channel(mode: &str, locale: &str) -> TelegramChannel {
+        TelegramChannel::new(TelegramConfig {
+            parse_mode: mode.to_string(),
+            locale: Some(locale.to_string()),
             ..Default::default()
-        };
-        let channel = TelegramChannel::new(config);
+        })
+    }
 
-        let event = NotificationEvent::SystemStartup {
-            version: "1.0.0".to_string(),
+    fn event(name: &str, title: &str) -> NotificationEvent {
+        NotificationEvent::StreamOnline {
+            streamer_id: "streamer".to_string(),
+            streamer_name: name.to_string(),
+            title: title.to_string(),
+            category: None,
             timestamp: chrono::Utc::now(),
-        };
+        }
+    }
 
-        let msg = channel.build_message(&event);
-        assert!(msg.contains("<b>"));
-        assert!(msg.contains("1.0.0"));
+    fn entity_text(payload: &serde_json::Value, index: usize) -> String {
+        let units: Vec<_> = payload["text"].as_str().unwrap().encode_utf16().collect();
+        let entity = &payload["entities"][index];
+        let offset = entity["offset"].as_u64().unwrap() as usize;
+        let length = entity["length"].as_u64().unwrap() as usize;
+        assert!(length > 0);
+        String::from_utf16(&units[offset..offset + length])
+            .expect("entity spans complete characters")
     }
 
     #[test]
-    fn test_build_message_html_escapes_dynamic_content() {
-        let config = TelegramConfig {
-            enabled: true,
-            bot_token: "tok".to_string(),
-            chat_id: "123".to_string(),
-            parse_mode: "html".to_string(),
-            ..Default::default()
-        };
-        let channel = TelegramChannel::new(config);
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "sid".to_string(),
-            streamer_name: "Alice <admin>".to_string(),
-            title: "live <script>alert(1)</script> & chill".to_string(),
-            category: Some("a<b".to_string()),
-            timestamp: chrono::Utc::now(),
-        };
-
-        let msg = channel.build_message(&event);
-
-        assert!(msg.contains("&lt;admin&gt;"));
-        assert!(msg.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
-        assert!(msg.contains("&amp; chill"));
+    fn supported_modes_preserve_literal_content_and_utf16_entities() {
+        let special = "编😀 _*[]()~`>#+-=|{}.!\\ <b>&quot;";
+        let event = event(special, special);
+        for locale in ["en", "zh-CN"] {
+            let expected_title = event.title_for(Some(locale));
+            let baseline = channel("HTML", locale).build_payload(&event).unwrap();
+            for mode in [
+                "HTML",
+                "html",
+                "Markdown",
+                "markdown",
+                "MarkdownV2",
+                "markdownv2",
+            ] {
+                let payload = channel(mode, locale).build_payload(&event).unwrap();
+                assert_eq!(payload, baseline);
+                assert!(
+                    payload.get("parse_mode").is_none(),
+                    "text must never be parsed as markup"
+                );
+                assert!(payload["text"].as_str().unwrap().contains(special));
+                assert_eq!(payload["entities"].as_array().unwrap().len(), 2);
+                assert_eq!(payload["entities"][0]["type"], "bold");
+                assert_eq!(entity_text(&payload, 0), expected_title);
+                assert_eq!(payload["entities"][1]["type"], "italic");
+                assert_eq!(
+                    entity_text(&payload, 1),
+                    "Priority: normal | Type: stream_online"
+                );
+            }
+        }
     }
 
     #[test]
-    fn test_truncate_message() {
-        let short = "hello";
-        assert_eq!(truncate_message(short, 100), "hello");
+    fn long_titles_and_bodies_clip_entities_before_truncation_marker() {
+        let long = "😀中文<&_*[]\\".repeat(1000);
+        for event in [event(&long, "short body"), event("short name", &long)] {
+            for mode in ["HTML", "Markdown", "MarkdownV2"] {
+                let payload = channel(mode, "en").build_payload(&event).unwrap();
+                let text = payload["text"].as_str().unwrap();
+                assert!(text.encode_utf16().count() <= TELEGRAM_MESSAGE_LIMIT);
+                assert!(text.ends_with(TRUNCATION_SUFFIX));
+                let retained_units = text
+                    .strip_suffix(TRUNCATION_SUFFIX)
+                    .unwrap()
+                    .encode_utf16()
+                    .count();
+                for (index, entity) in payload["entities"].as_array().unwrap().iter().enumerate() {
+                    let end =
+                        entity["offset"].as_u64().unwrap() + entity["length"].as_u64().unwrap();
+                    assert!(end as usize <= retained_units);
+                    assert!(!entity_text(&payload, index).is_empty());
+                }
+            }
+        }
+    }
 
-        let long: String = "a".repeat(5000);
-        let truncated = truncate_message(&long, TELEGRAM_MESSAGE_LIMIT);
-        assert!(truncated.chars().count() <= TELEGRAM_MESSAGE_LIMIT);
-        assert!(truncated.ends_with("[truncated]"));
+    #[test]
+    fn empty_mode_is_plain_and_unknown_modes_fail_locally() {
+        let event = event("Alice", "live");
+        let plain = channel("", "en").build_payload(&event).unwrap();
+        let formatted = channel("HTML", "en").build_payload(&event).unwrap();
+        assert_eq!(plain["text"], formatted["text"]);
+        assert!(plain.get("entities").is_none());
+        assert!(plain.get("parse_mode").is_none());
+        let error = channel("private-mode-value", "en")
+            .build_payload(&event)
+            .unwrap_err();
+        assert!(matches!(error, crate::Error::Configuration(_)));
+        assert!(!error.to_string().contains("private-mode-value"));
+    }
+
+    #[test]
+    fn truncation_preserves_utf8_scalars_and_handles_small_budgets() {
+        assert_eq!(truncate_message("hello", 5), ("hello".to_string(), 5));
+        assert_eq!(truncate_message("😀中", 3), ("😀中".to_string(), 3));
+        for budget in 0..40 {
+            let (text, retained) = truncate_message(&"😀e\u{301}中文<&_*\\".repeat(20), budget);
+            assert!(text.encode_utf16().count() <= budget);
+            assert!(retained <= text.encode_utf16().count());
+            assert!(String::from_utf16(&text.encode_utf16().collect::<Vec<_>>()).is_ok());
+        }
+        let (text, retained) = truncate_message(&"😀".repeat(3000), TELEGRAM_MESSAGE_LIMIT);
+        assert!(text.ends_with(TRUNCATION_SUFFIX));
+        assert_eq!(retained % 2, 0, "no surrogate pair is split");
     }
 }
