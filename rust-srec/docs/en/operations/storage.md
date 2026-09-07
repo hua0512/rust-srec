@@ -41,7 +41,27 @@ systemd creates all three on every start, owned by the service account, so a fre
 
 Give a recordings tree that will grow past a few hundred gigabytes its own volume, and list that volume under `ReadWritePaths=` instead of nesting it below `/var/lib/rust-srec`. `StateDirectory=` recursively chowns everything under the state directory whenever it finds it owned by another user, and that walk runs during unit start — on a large tree it can outlast the start timeout. A path listed under `ReadWritePaths=` must already exist and be owned by the service account; systemd neither creates nor chowns it.
 
-The recording directory comes from `output_folder` in the database. The standalone backend initializes it from `OUTPUT_DIR` only for a fresh database; later starts preserve the saved value. Keep `OUTPUT_DIR` and `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder so health probes and the write gate watch the recording volume. See [Environment Variables](../getting-started/configuration.md#environment-variables).
+The recording directory comes from `output_folder` in the database. The standalone backend initializes it from `OUTPUT_DIR` only for a fresh database; later starts preserve the saved value. Discovery uses saved settings and overrides, rather than treating an obsolete `OUTPUT_DIR` as another recording location. Keep explicitly configured `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder. See [Environment Variables](../getting-started/configuration.md#environment-variables).
+
+## Output-Root Probes
+
+Startup discovery uses actual streamer and platform names to select concrete
+directories that map to the same gate keys as recording attempts. A probe tests
+a concrete configured directory, which can be writable even when its ancestor
+gate key is read-only. Explicit `RUST_SREC_OUTPUT_ROOTS` boundaries take priority.
+Templates whose early title, session, or date placeholders make the key uncertain
+are skipped; explicit boundaries can provide probe coverage for those layouts.
+
+Probe targets are grouped by gate key, using a deterministic concrete representative.
+Startup attempts cover at most 16 keys, with at most four attempts awaiting results
+at once; skipped targets are logged. An operating-system call can outlive its
+five-second wait, but total startup probe launches remain bounded. Sampling one
+representative cannot certify permissions in every child directory. Each actual
+recording still checks its own output path.
+
+Disk probes are registered at startup. Changing output settings does not rebuild
+that probe set, and historical gate entries for roots no longer used are retained.
+These limits do not change the key used by a new recording attempt.
 
 ## Capacity Controls
 
@@ -64,4 +84,4 @@ When output fails:
 1. Stop adding new work and confirm which root is affected.
 2. Check free space, inode/file-count limits, mount state, and ownership.
 3. Restore write access and verify a small test write on the same filesystem.
-4. Confirm the System Health page returns to healthy before re-enabling affected streamers.
+4. After the gate's cooldown, allow an affected recording to retry its real directory check, then confirm the System Health page recovers. A retained entry for a root no longer used cannot be healed by an attempt writing elsewhere.

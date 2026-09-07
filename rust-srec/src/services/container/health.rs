@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use futures::StreamExt;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -17,15 +18,15 @@ use crate::metrics::{
 };
 use crate::pipeline::PipelineManager;
 
-use super::{
-    ServiceContainer, parse_output_roots_env, sqlite_file_path_from_url, static_root_prefix,
-};
+use super::{ServiceContainer, sqlite_file_path_from_url, static_root_prefix};
 
 /// Upper bound on `DiskSpaceProbe` registrations, so a deployment with many
 /// per-streamer `output_folder` overrides can't fill the health snapshot
 /// with hundreds of `disk:` components. Real deployments span a handful of
 /// filesystems; roots beyond the limit are dropped with a warning.
-const MAX_DISK_PROBES: usize = 16;
+const MAX_OUTPUT_ROOT_PROBES: usize = 16;
+const MAX_CONCURRENT_OUTPUT_PROBES: usize = 4;
+const MAX_CONCURRENT_OUTPUT_CONFIG_MERGES: usize = 16;
 
 struct DatabaseProbe {
     pool: SqlitePool,
@@ -432,155 +433,128 @@ fn probe_root_writable(root: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Discover concrete probe paths from current configuration. Failed reads only skip their
+/// source; discovery never changes or retires existing gate state.
+pub(super) async fn discover_output_probe_paths(
+    config_service: &ConfigService<SqlxConfigRepository, SqlxStreamerRepository>,
+    streamer_manager: &crate::streamer::StreamerManager<SqlxStreamerRepository>,
+    gate: &OutputRootGate,
+) -> std::collections::HashSet<std::path::PathBuf> {
+    let mut templates = Vec::new();
+    // OUTPUT_DIR is applied to persisted global config during database initialization.
+    // Read that effective value, rather than retaining an obsolete environment path.
+    match config_service.get_global_config().await {
+        Ok(global) => templates.push(global.output_folder),
+        Err(error) => {
+            warn!(%error, "Output-root discovery could not read global config");
+        }
+    }
+    match config_service.list_platform_configs().await {
+        Ok(platforms) => templates.extend(platforms.into_iter().filter_map(|p| p.output_folder)),
+        Err(error) => {
+            warn!(%error, "Output-root discovery could not read platform configs");
+        }
+    }
+    match config_service.list_template_configs().await {
+        Ok(configs) => templates.extend(configs.into_iter().filter_map(|t| t.output_folder)),
+        Err(error) => {
+            warn!(%error, "Output-root discovery could not read template configs");
+        }
+    }
+    let merged = futures::stream::iter(streamer_manager.get_all())
+        .map(|streamer| async move {
+            let result = config_service.get_config_for_streamer(&streamer.id).await;
+            (streamer, result)
+        })
+        .buffer_unordered(MAX_CONCURRENT_OUTPUT_CONFIG_MERGES)
+        .collect::<Vec<_>>()
+        .await;
+    for (streamer, result) in merged {
+        match result {
+            Ok(merged) => {
+                // Match runtime directory expansion order. Title/session/date values are not
+                // known here; retaining their placeholders prevents inventing a probe root.
+                templates.push(
+                    merged
+                        .output_folder
+                        .replace(
+                            "{streamer}",
+                            &crate::utils::filename::sanitize_filename(&streamer.name),
+                        )
+                        .replace("{platform}", streamer.platform()),
+                );
+            }
+            Err(error) => {
+                warn!(streamer_id = %streamer.id, %error, "Output-root discovery could not merge streamer config")
+            }
+        }
+    }
+    select_output_probe_paths(gate, &templates)
+}
+
+fn select_output_probe_paths(
+    gate: &OutputRootGate,
+    templates: &[String],
+) -> std::collections::HashSet<std::path::PathBuf> {
+    let mut targets = std::collections::BTreeMap::<std::path::PathBuf, std::path::PathBuf>::new();
+    for template in templates {
+        if let Some(path) = gate.probe_path_for_template(template) {
+            let key = gate.resolve_path(&path);
+            let selected = targets.entry(key).or_insert_with(|| path.clone());
+            // Sample one concrete directory per key. Prefer the deepest known destination,
+            // then lexical order for deterministic results independent of config load order.
+            // A sample cannot certify sibling permissions; runtime writes remain authoritative.
+            if path.components().count() > selected.components().count()
+                || (path.components().count() == selected.components().count() && path < *selected)
+            {
+                *selected = path;
+            }
+        }
+    }
+    for root in gate.configured_paths() {
+        targets.insert(gate.resolve_path(root), root.clone());
+    }
+    targets.into_values().collect()
+}
+
+fn bounded_output_probe_paths(
+    gate: &OutputRootGate,
+    paths: std::collections::HashSet<std::path::PathBuf>,
+) -> Vec<std::path::PathBuf> {
+    let mut paths: Vec<_> = paths.into_iter().collect();
+    paths.sort_by(|left, right| {
+        (!gate.configured_paths().contains(left))
+            .cmp(&(!gate.configured_paths().contains(right)))
+            .then_with(|| left.cmp(right))
+    });
+    if paths.len() > MAX_OUTPUT_ROOT_PROBES {
+        let skipped_keys: Vec<_> = paths[MAX_OUTPUT_ROOT_PROBES..]
+            .iter()
+            .take(4)
+            .map(|path| gate.resolve_path(path))
+            .collect();
+        warn!(
+            skipped = paths.len() - MAX_OUTPUT_ROOT_PROBES,
+            ?skipped_keys,
+            "Output-root probe limit reached; remaining roots are checked on real writes"
+        );
+        paths.truncate(MAX_OUTPUT_ROOT_PROBES);
+    }
+    paths
+}
+
 impl ServiceContainer {
-    /// Build the union of filesystem roots the downloader may write to.
-    ///
-    /// Sources, in the order they are merged: `RUST_SREC_OUTPUT_ROOTS`,
-    /// `OUTPUT_DIR`, then the static prefix (via [`static_root_prefix`]) of
-    /// the `output_folder` template at global, platform, template and
-    /// per-streamer scope. A source that fails to load is logged and
-    /// skipped so one unreadable config never hides the other roots.
-    ///
-    /// Callers are [`Self::run_output_root_startup_probe`], which write-tests
-    /// each root once, and [`Self::register_health_checks`], which registers
-    /// a `DiskSpaceProbe` per root. Both need the same set: a root the
-    /// downloader writes to is a root whose free space the user cares about.
-    ///
-    /// Every path feeds through [`crate::downloader::OutputRootGate::resolve_path`]
-    /// so the entries match the keys the download hot path uses, and the
-    /// `HashSet` collapses overlapping templates (e.g. three platforms all
-    /// writing under `/rec/`) into one entry.
+    /// Concrete directories safe to probe, each resolving to the runtime gate key.
+    /// Disk probes use these paths too, without testing write access to ancestor keys.
     pub(super) async fn collect_output_roots(
         &self,
     ) -> std::collections::HashSet<std::path::PathBuf> {
-        use std::collections::HashSet;
-
-        let mut roots: HashSet<std::path::PathBuf> = HashSet::new();
-
-        // 1. Explicit env var always wins — if the user configured it,
-        //    they know exactly what mounts they want watched.
-        for root in parse_output_roots_env() {
-            roots.insert(root);
-        }
-
-        // 2. `OUTPUT_DIR` env var, only when the operator set it. When
-        //    unset, step 3 (global config `output_folder`) covers the
-        //    canonical default — returning `./output` here would name
-        //    a root the downloader never uses on a typical install, and
-        //    the write test in `run_output_root_startup_probe` would
-        //    silently create that directory.
-        if let Ok(raw) = std::env::var("OUTPUT_DIR")
-            && !raw.trim().is_empty()
-        {
-            roots.insert(
-                self.output_root_gate
-                    .resolve_path(std::path::Path::new(raw.trim())),
-            );
-        }
-
-        // 3. Global config's `output_folder` template. This is the
-        //    source the download path actually consults; it may be
-        //    `/rec/{platform}/{streamer}/...`-style.
-        match self.config_service.get_global_config().await {
-            Ok(global) => {
-                if let Some(prefix) = static_root_prefix(&global.output_folder) {
-                    roots.insert(
-                        self.output_root_gate
-                            .resolve_path(std::path::Path::new(&prefix)),
-                    );
-                }
-            }
-            Err(e) => warn!(
-                error = %e,
-                "Output-root discovery: failed to read global config (continuing with env roots)"
-            ),
-        }
-
-        // 4. Platform-level overrides. Platforms are a small fixed set
-        //    (one entry per streaming site). One list call.
-        match self.config_service.list_platform_configs().await {
-            Ok(platforms) => {
-                for p in platforms {
-                    if let Some(folder) = p.output_folder.as_ref()
-                        && let Some(prefix) = static_root_prefix(folder)
-                    {
-                        roots.insert(
-                            self.output_root_gate
-                                .resolve_path(std::path::Path::new(&prefix)),
-                        );
-                    }
-                }
-            }
-            Err(e) => warn!(
-                error = %e,
-                "Output-root discovery: failed to list platform configs (continuing)"
-            ),
-        }
-
-        // 5. Template-level overrides. Templates are user-defined
-        //    presets shared across streamers; there are typically a
-        //    handful. One list call, cached.
-        match self.config_service.list_template_configs().await {
-            Ok(templates) => {
-                for t in templates {
-                    if let Some(folder) = t.output_folder.as_ref()
-                        && let Some(prefix) = static_root_prefix(folder)
-                    {
-                        roots.insert(
-                            self.output_root_gate
-                                .resolve_path(std::path::Path::new(&prefix)),
-                        );
-                    }
-                }
-            }
-            Err(e) => warn!(
-                error = %e,
-                "Output-root discovery: failed to list template configs (continuing)"
-            ),
-        }
-
-        // 6. Per-streamer overrides. `get_config_for_streamer` is cached
-        //    with in-flight dedup, so the N merges we do here are the same
-        //    N merges the first download of each streamer would have done
-        //    lazily — we're just paying the cost concentrated at boot,
-        //    which in turn pre-warms the cache for faster first-download
-        //    latency. Runs in parallel via `join_all` so total wall-clock
-        //    is bounded by the slowest single merge (typically < 50ms).
-        let streamer_ids: Vec<String> = self
-            .streamer_manager
-            .get_all()
-            .into_iter()
-            .map(|s| s.id)
-            .collect();
-        if !streamer_ids.is_empty() {
-            let merge_futures = streamer_ids.into_iter().map(|id| {
-                let cs = self.config_service.clone();
-                async move {
-                    let result = cs.get_config_for_streamer(&id).await;
-                    (id, result)
-                }
-            });
-            let results = futures::future::join_all(merge_futures).await;
-            for (id, result) in results {
-                match result {
-                    Ok(merged) => {
-                        if let Some(prefix) = static_root_prefix(&merged.output_folder) {
-                            roots.insert(
-                                self.output_root_gate
-                                    .resolve_path(std::path::Path::new(&prefix)),
-                            );
-                        }
-                    }
-                    Err(e) => debug!(
-                        streamer_id = %id,
-                        error = %e,
-                        "Output-root discovery: skipping streamer whose config failed to merge"
-                    ),
-                }
-            }
-        }
-
-        roots
+        discover_output_probe_paths(
+            &self.config_service,
+            &self.streamer_manager,
+            &self.output_root_gate,
+        )
+        .await
     }
 
     /// Run the output-root write gate's one-shot startup probe.
@@ -591,13 +565,16 @@ impl ServiceContainer {
     /// error feeds the synthetic `io::Error` into `gate.record_failure`, so
     /// broken mounts are visible in `/health` from second zero rather than
     /// waiting for the first monitor tick to attempt a download.
+    /// At most 16 keys are attempted, four at a time. A timed-out blocking OS call
+    /// can outlive its attempt; the total cap also bounds those outstanding calls.
     ///
     /// This is the ONLY synthetic probe in the design — all other gate
     /// transitions are event-driven via real `ensure_output_dir` calls
     /// and engine stderr readers. See
     /// `crate::downloader::output_root_gate` for the rationale.
     pub(super) async fn run_output_root_startup_probe(&self) {
-        let roots = self.collect_output_roots().await;
+        let roots =
+            bounded_output_probe_paths(&self.output_root_gate, self.collect_output_roots().await);
 
         if roots.is_empty() {
             debug!("Output-root startup probe: no roots to probe");
@@ -606,58 +583,57 @@ impl ServiceContainer {
 
         info!(count = roots.len(), "Running output-root startup probe");
 
-        let mut handles = Vec::with_capacity(roots.len());
-        for root in roots {
-            let gate = self.output_root_gate.clone();
-            handles.push(tokio::spawn(async move {
-                let probe_result = tokio::time::timeout(
-                    Duration::from_secs(5),
-                    tokio::task::spawn_blocking({
-                        let root = root.clone();
-                        move || probe_root_writable(&root)
-                    }),
-                )
-                .await;
+        futures::stream::iter(roots)
+            .map(|root| {
+                let gate = self.output_root_gate.clone();
+                async move {
+                    let probe_result = tokio::time::timeout(
+                        Duration::from_secs(5),
+                        tokio::task::spawn_blocking({
+                            let root = root.clone();
+                            move || probe_root_writable(&root)
+                        }),
+                    )
+                    .await;
 
-                match probe_result {
-                    Ok(Ok(Ok(()))) => {
-                        debug!(root = %root.display(), "Startup probe: healthy");
-                    }
-                    Ok(Ok(Err(io_err))) => {
-                        warn!(
-                            root = %root.display(),
-                            error = %io_err,
-                            "Startup probe: output root unwritable"
-                        );
-                        gate.record_failure(&root, &io_err);
-                    }
-                    Ok(Err(join_err)) => {
-                        warn!(
-                            root = %root.display(),
-                            error = %join_err,
-                            "Startup probe: spawn_blocking failed (likely panic)"
-                        );
-                        let synthetic = std::io::Error::other("probe task panicked");
-                        gate.record_failure(&root, &synthetic);
-                    }
-                    Err(_timeout) => {
-                        warn!(
-                            root = %root.display(),
-                            "Startup probe: timed out after 5s (hung mount?)"
-                        );
-                        let synthetic =
-                            std::io::Error::new(std::io::ErrorKind::TimedOut, "probe timed out");
-                        gate.record_failure(&root, &synthetic);
+                    match probe_result {
+                        Ok(Ok(Ok(()))) => {
+                            debug!(root = %root.display(), "Startup probe: healthy");
+                        }
+                        Ok(Ok(Err(io_err))) => {
+                            warn!(
+                                root = %root.display(),
+                                error = %io_err,
+                                "Startup probe: output root unwritable"
+                            );
+                            gate.record_failure(&root, &io_err);
+                        }
+                        Ok(Err(join_err)) => {
+                            warn!(
+                                root = %root.display(),
+                                error = %join_err,
+                                "Startup probe: spawn_blocking failed (likely panic)"
+                            );
+                            let synthetic = std::io::Error::other("probe task panicked");
+                            gate.record_failure(&root, &synthetic);
+                        }
+                        Err(_timeout) => {
+                            warn!(
+                                root = %root.display(),
+                                "Startup probe: timed out after 5s (hung mount?)"
+                            );
+                            let synthetic = std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "probe timed out",
+                            );
+                            gate.record_failure(&root, &synthetic);
+                        }
                     }
                 }
-            }));
-        }
-
-        for handle in handles {
-            if let Err(error) = handle.await {
-                warn!(%error, "Output-root startup probe task failed");
-            }
-        }
+            })
+            .buffer_unordered(MAX_CONCURRENT_OUTPUT_PROBES)
+            .for_each(|()| async {})
+            .await;
 
         info!("Output-root startup probe complete");
     }
@@ -733,29 +709,17 @@ impl ServiceContainer {
         // capped because these run for the process lifetime (30 s cadence)
         // unlike the one-shot write test in
         // `run_output_root_startup_probe`, which shares the same root set.
-        let mut output_roots: Vec<PathBuf> =
-            self.collect_output_roots().await.into_iter().collect();
-        output_roots.sort();
-        if output_roots.len() > MAX_DISK_PROBES {
-            warn!(
-                total = output_roots.len(),
-                limit = MAX_DISK_PROBES,
-                "More output roots than disk probes allowed; free space for the rest is not reported"
-            );
-            output_roots.truncate(MAX_DISK_PROBES);
-        }
+        let output_roots =
+            bounded_output_probe_paths(&self.output_root_gate, self.collect_output_roots().await);
 
         if output_roots.is_empty() {
-            // No absolute root is discoverable — every `output_folder` is a
-            // relative template, for which `static_root_prefix` returns
-            // None. Fall back to the path the download tree is rooted at
-            // relative to the working directory so the page still reports
-            // the filesystem recordings land on.
+            // No concrete target has a provable runtime key. Inventory the available
+            // static prefix (or working-directory filesystem) without a write probe.
             let output_dir = match self.config_service.get_global_config().await {
                 Ok(cfg) => {
-                    static_root_prefix(&cfg.output_folder).unwrap_or_else(|| "./output".to_string())
+                    static_root_prefix(&cfg.output_folder).unwrap_or_else(|| ".".to_string())
                 }
-                Err(_) => "./output".to_string(),
+                Err(_) => ".".to_string(),
             };
             let output_dir_path = match std::env::current_dir() {
                 Ok(cwd) => cwd.join(&output_dir),
@@ -770,11 +734,8 @@ impl ServiceContainer {
                 )));
         } else {
             for root in output_roots {
-                // `collect_output_roots` passes `OUTPUT_DIR` through
-                // `resolve_path` verbatim, which keeps a relative value
-                // relative. `SystemMetricsSnapshot::best_disk_for_path`
-                // matches against mount points, so anchor it to the working
-                // directory first or no filesystem ever matches.
+                // Probe directories may be relative, just like the runtime output folder.
+                // Disk inventory uses absolute mount points, so anchor only this lookup.
                 let lookup_path = match std::env::current_dir() {
                     Ok(cwd) => cwd.join(&root),
                     Err(_) => root.clone(),
@@ -878,6 +839,9 @@ impl ServiceContainer {
         info!("Health checks registered");
     }
 }
+
+#[cfg(test)]
+mod output_root_tests;
 
 #[cfg(test)]
 mod tests {
