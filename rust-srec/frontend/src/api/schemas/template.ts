@@ -5,25 +5,14 @@ import {
   DanmuStatisticsObjectSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
+  jsonTextField,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { EngineConfigOverrideSchema } from './engine';
 
-const parseJsonIfString = (val: unknown) => {
-  if (typeof val === 'string' && val.trim() !== '') {
-    try {
-      return JSON.parse(val);
-    } catch (e) {
-      console.error('Failed to parse JSON:', e);
-      return val;
-    }
-  }
-  return val;
-};
-
 // Read schema: be permissive (don't break loading older/hand-edited templates).
-const EnginesOverrideReadSchema = z.preprocess(
-  parseJsonIfString,
+const EnginesOverrideReadSchema = jsonTextField(
+  'engines_override',
   z.record(z.string(), z.record(z.string(), z.any())),
 );
 
@@ -42,86 +31,34 @@ export const TemplateSchema = z.object({
   download_engine: z.string().nullable().optional(),
   extractor: ExtractorSelectionSchema.nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  platform_overrides: z
-    .preprocess((val) => {
-      if (typeof val === 'string' && val.trim() !== '') {
-        try {
-          return JSON.parse(val);
-        } catch (e) {
-          console.error('Failed to parse JSON:', e);
-          return val;
-        }
-      }
-      return val;
-    }, z.any())
-    .nullable()
-    .optional(),
-  engines_override: EnginesOverrideReadSchema.nullable().optional(),
+  platform_overrides: jsonTextField('platform_overrides', z.any()),
+  engines_override: EnginesOverrideReadSchema,
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
   max_part_size_bytes: z.number().nullable().optional(),
   cookies: z.string().nullable().optional(),
-  stream_selection_config: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(StreamSelectionConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  danmu_statistics: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DanmuStatisticsObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-
-  download_retry_policy: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DownloadRetryPolicyObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  proxy_config: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(ProxyConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  pipeline: z
-    .string()
-    .transform((str) => {
-      try {
-        return JSON.parse(str);
-      } catch {
-        return null;
-      }
-    })
-    .pipe(DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  session_complete_pipeline: z
-    .string()
-    .transform((str) => {
-      try {
-        return JSON.parse(str);
-      } catch {
-        return null;
-      }
-    })
-    .pipe(DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  paired_segment_pipeline: z
-    .string()
-    .transform((str) => {
-      try {
-        return JSON.parse(str);
-      } catch {
-        return null;
-      }
-    })
-    .pipe(DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
-    .optional(),
+  stream_selection_config: jsonTextField(
+    'stream_selection_config',
+    StreamSelectionConfigObjectSchema,
+  ),
+  danmu_statistics: jsonTextField(
+    'danmu_statistics',
+    DanmuStatisticsObjectSchema,
+  ),
+  download_retry_policy: jsonTextField(
+    'download_retry_policy',
+    DownloadRetryPolicyObjectSchema,
+  ),
+  proxy_config: jsonTextField('proxy_config', ProxyConfigObjectSchema),
+  pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
+  session_complete_pipeline: jsonTextField(
+    'session_complete_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
+  paired_segment_pipeline: jsonTextField(
+    'paired_segment_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
   // Per-template overrides for the offline-confirmation cadence.
   offline_check_count: z.number().int().min(1).nullable().optional(),
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),

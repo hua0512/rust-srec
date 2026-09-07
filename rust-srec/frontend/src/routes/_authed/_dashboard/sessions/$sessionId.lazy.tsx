@@ -33,10 +33,10 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { getMediaUrl } from '@/lib/url';
+import { getMediaUrl, isSameOriginUrl } from '@/lib/url';
 import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
-import { BackendApiError } from '@/lib/api-error';
+import { isNotFoundError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
 import { SessionHeader } from '@/components/sessions/session-header';
@@ -60,6 +60,17 @@ const PlayerCard = React.lazy(() =>
 );
 
 const SESSION_TIMELINE_PAGE_SIZE = 100;
+
+/** Ask the browser to save `href` under `filename` without leaving the page. */
+function saveAs(href: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
 
 async function listAllSessionOutputs(
   sessionId: string,
@@ -141,9 +152,7 @@ function SessionDetailPage() {
     refetchInterval: isSessionLive ? 60_000 : false,
   });
 
-  const isDanmuStatsUnavailable =
-    danmuStatsQuery.error instanceof BackendApiError &&
-    danmuStatsQuery.error.status === 404;
+  const isDanmuStatsUnavailable = isNotFoundError(danmuStatsQuery.error);
 
   const { data: outputsData, isLoading: isOutputsLoading } = useQuery({
     queryKey: ['pipeline', 'outputs', sessionId],
@@ -165,50 +174,58 @@ function SessionDetailPage() {
   const dags = dagsData?.dags || [];
   const segments = segmentsData || [];
 
-  const handleDownload = async (outputId: string, filename: string) => {
-    try {
-      const url = getMediaUrl(
-        `/api/media/${outputId}/content`,
-        user?.token?.access_token,
-      );
-      if (!url) throw new Error('Invalid download URL');
-
-      toast.promise(
-        async () => {
-          const response = await fetch(url, {
-            headers: {
-              Authorization: `Bearer ${user?.token?.access_token}`,
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error(
-              `Download failed: ${response.status} ${response.statusText}`,
-            );
-          }
-
-          const blob = await response.blob();
-          const downloadUrl = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = downloadUrl;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(downloadUrl);
-          document.body.removeChild(a);
-        },
-        {
-          loading: 'Downloading...',
-          success: 'Download started',
-          error: (err) => `Download failed: ${err.message}`,
-        },
-      );
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
   const { i18n } = useLingui();
+
+  // `getMediaUrl` appends the media token to the query string, and the backend
+  // accepts it there, so neither branch below adds an Authorization header:
+  // the token travels one way only.
+  //
+  // Same-origin, an anchor with `download` hands the transfer to the browser,
+  // which streams it to disk — the only workable option for a recording that
+  // can run to several gigabytes. Cross-origin the attribute is ignored and
+  // the media route sends no `Content-Disposition`, so the click would simply
+  // navigate away from the application and display the file; there the
+  // response has to be fetched and offered as an object URL, which does hold
+  // it in memory. That is the desktop build, where the backend lives on its
+  // own origin, and any deployment configured with an absolute API base.
+  const handleDownload = (outputId: string, filename: string) => {
+    const url = getMediaUrl(
+      `/api/media/${outputId}/content`,
+      user?.token?.access_token,
+    );
+    if (!url) {
+      toast.error(i18n._(msg`Invalid download URL`));
+      return;
+    }
+
+    if (isSameOriginUrl(url)) {
+      saveAs(url, filename);
+      toast.success(i18n._(msg`Download started`));
+      return;
+    }
+
+    toast.promise(
+      async () => {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        const objectUrl = URL.createObjectURL(await response.blob());
+        saveAs(objectUrl, filename);
+        // The object URL has to outlive the moment the browser starts the
+        // download: WebKit — the desktop webview, which is precisely what
+        // takes this branch — aborts a download whose blob URL was revoked
+        // before its navigation began. Released on a timer instead, long
+        // enough that the transfer has certainly started.
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      },
+      {
+        loading: i18n._(msg`Preparing download...`),
+        success: i18n._(msg`Download started`),
+        error: (error: Error) => i18n._(msg`Download failed: ${error.message}`),
+      },
+    );
+  };
 
   if (isSessionLoading) {
     return (
@@ -394,7 +411,9 @@ function SessionDetailPage() {
           }
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>Media Player</DialogTitle>
+            <DialogTitle>
+              <Trans>Media Player</Trans>
+            </DialogTitle>
           </DialogHeader>
           <div
             className={

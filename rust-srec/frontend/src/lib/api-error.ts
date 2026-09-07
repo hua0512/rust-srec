@@ -43,6 +43,23 @@ export function isPasswordChangeRequiredError(error: unknown): boolean {
   return status === 403 && hasPasswordChangeRequiredCode(body);
 }
 
+/**
+ * True when the backend answered with the given HTTP status.
+ *
+ * Shape-matched for the same reason as `isPasswordChangeRequiredError`: an
+ * `instanceof BackendApiError` check is always false for an error raised inside
+ * a server function, because only the own properties survive serialization.
+ */
+export function isBackendStatus(error: unknown, status: number): boolean {
+  if (!(error instanceof Error)) return false;
+  return (error as Partial<BackendApiError>).status === status;
+}
+
+/** True when the backend reported the requested resource does not exist. */
+export function isNotFoundError(error: unknown): boolean {
+  return isBackendStatus(error, 404);
+}
+
 // Body code the backend attaches to the 403 it returns once the account behind
 // a credential has been deactivated. It is the only 403 `/auth/refresh` itself
 // produces, which is how server/tokenRefresh.ts tells it apart from a 403

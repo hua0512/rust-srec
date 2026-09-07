@@ -4,6 +4,7 @@ import {
   DanmuStatisticsObjectSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
+  jsonTextField,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import {
@@ -19,20 +20,10 @@ export const PlatformConfigSchema = z.object({
   download_delay_ms: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
-  platform_specific_config: z
-    .preprocess((val) => {
-      if (typeof val === 'string' && val.trim() !== '') {
-        try {
-          return JSON.parse(val);
-        } catch (e) {
-          console.error(e);
-          return val;
-        }
-      }
-      return val;
-    }, AllPlatformConfigsSchema.nullable().optional())
-    .nullable()
-    .optional(),
+  platform_specific_config: jsonTextField(
+    'platform_specific_config',
+    AllPlatformConfigsSchema,
+  ),
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
@@ -43,51 +34,28 @@ export const PlatformConfigSchema = z.object({
   max_part_size_bytes: z.number().nullable().optional(),
 
   // Complex fields: Backend sends JSON string, we parse to object
-  stream_selection_config: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(StreamSelectionConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-
-  danmu_statistics: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DanmuStatisticsObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  download_retry_policy: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DownloadRetryPolicyObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-
-  proxy_config: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(ProxyConfigObjectSchema.nullable().optional())
-    .nullable()
-    .optional(),
-
-  pipeline: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  session_complete_pipeline: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
-    .optional(),
-  paired_segment_pipeline: z
-    .string()
-    .transform((str) => JSON.parse(str))
-    .pipe(DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
-    .optional(),
+  stream_selection_config: jsonTextField(
+    'stream_selection_config',
+    StreamSelectionConfigObjectSchema,
+  ),
+  danmu_statistics: jsonTextField(
+    'danmu_statistics',
+    DanmuStatisticsObjectSchema,
+  ),
+  download_retry_policy: jsonTextField(
+    'download_retry_policy',
+    DownloadRetryPolicyObjectSchema,
+  ),
+  proxy_config: jsonTextField('proxy_config', ProxyConfigObjectSchema),
+  pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
+  session_complete_pipeline: jsonTextField(
+    'session_complete_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
+  paired_segment_pipeline: jsonTextField(
+    'paired_segment_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
 
   // Per-platform overrides for the global offline-confirmation cadence.
   // NULL = inherit from global. Floors mirror server-side

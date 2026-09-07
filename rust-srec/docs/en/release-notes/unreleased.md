@@ -268,6 +268,34 @@
 
 ## Web interface
 
+- **Selected items no longer follow you to another page**
+
+  On the recordings and streamers lists, rows you had ticked stayed selected after you searched, changed a filter or moved to another page, even though they were no longer on screen — and a delete or batch action then applied to them too. Changing what the list shows now clears the selection, so an action only ever affects rows you can see.
+
+- **Downloading a recording starts right away**
+
+  Saving a recording from a session pulled the entire file into the browser first and only then offered to save it: nothing appeared to happen for a long time, and a large recording could take the tab down with it. When the web interface is served from the same address as the recorder, which is the usual setup, the download now goes straight to disk and starts as soon as you click. Where the two are on separate addresses, and in the desktop app, the file is still prepared in the browser first, with a progress toast while it is. The player window's title is translated as well.
+
+- **One unreadable setting no longer blanks the platforms and templates pages**
+
+  A platform or template whose stored settings could not be read — written by an older version, or edited by hand — stopped the whole list from loading. Only the setting that cannot be read is now skipped, and every other setting and entry loads normally.
+
+- **A recording without chat statistics says so**
+
+  Opening a recording that has no danmaku statistics, because chat capture was off or the recording had only just begun, reported "Failed to load danmu statistics." with a retry button. It now simply says the statistics are not available for that recording.
+
+- **A pipeline that cannot be opened reports the reason**
+
+  Opening a processing pipeline that no longer exists, or opening one while the server was unreachable, left the page showing loading placeholders indefinitely. The page now explains what went wrong and offers a way back.
+
+- **Signing out and back in behaves like a fresh start**
+
+  After signing out, the next person to sign in on the same tab could still see the previous account's streamers, recordings and transfers for a moment. Following a link into the app while signed out also dropped you at the dashboard afterwards, losing the page you actually wanted. Signing out now clears everything from the previous session, and signing in takes you to the page you originally opened, with its search and filters intact.
+
+- **The dashboard's processing tile keeps up with cancellations**
+
+  Cancelling a pipeline updated the counts on the processing jobs page but left the dashboard's own processing tile showing the old numbers until its next automatic refresh. Both now update together.
+
 - **Notification and preset cards show their colors again**
 
   The rounded tile behind the icon at the top of every notification-channel and processing-preset card had lost its colored tint and sat on a plain background. Each tile is tinted again to match the kind of channel or processing step it stands for — indigo for Discord, blue for e-mail, green for uploads, and so on.
@@ -290,7 +318,7 @@
 
 - **A bad link no longer replaces a list page with an error**
 
-  Recordings, streamers, processing jobs, workflows, presets, media files and the player all remember your search, filters and page number in the address bar. If any one of those values was not something the page could read — a hand-edited address, a truncated link, or one saved before an update changed what a filter accepts — the whole page was replaced by "Something went wrong!" and a block of technical detail. Values that cannot be read are now simply ignored, and the rest of the address still applies: a link carrying both a search term and an unusable page number now runs the search and starts from the first page.
+  Recordings, streamers, platforms, templates, processing jobs, workflows, presets, media files, the notification events feed and the player all remember your search, filters and page number in the address bar. If any one of those values was not something the page could read — a hand-edited address, a truncated link, or one saved before an update changed what a filter accepts — the whole page was replaced by "Something went wrong!" and a block of technical detail. Values that cannot be read are now simply ignored, and the rest of the address still applies: a link carrying both a search term and an unusable page number now runs the search and starts from the first page.
 
 - **Media files page is readable again**
 
@@ -315,6 +343,7 @@
 - **A workflow step no longer shows the wrong preset**
 
   Opening a step that uses a preset could show a different preset's settings, and **Detach & Edit** then replaced the step with the preset that was shown — an upload or conversion step could quietly turn into a delete step. A step now always shows the preset it names, and a step whose preset has been renamed or deleted says so instead of falling back to an unrelated one.
+
 - **A brief server hiccup no longer signs you out**
 
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.

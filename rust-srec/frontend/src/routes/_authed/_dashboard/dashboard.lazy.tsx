@@ -102,7 +102,7 @@ function Dashboard() {
   });
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['pipeline-stats'],
+    queryKey: ['pipeline', 'stats'],
     queryFn: () => getPipelineStats(),
     refetchInterval: 5000,
   });

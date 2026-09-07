@@ -45,6 +45,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
+import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate } from '@/lib/datetime';
@@ -66,9 +67,6 @@ function SessionsPage() {
   const { i18n } = useLingui();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
-  // Selection mode state
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Calculate dates based on timeRange or use custom dates
@@ -200,36 +198,32 @@ function SessionsPage() {
     to: search.to ? new Date(search.to) : undefined,
   };
 
-  // Selection handlers
-  const handleSelectionChange = useCallback((id: string, selected: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (selected) {
-        next.add(id);
-      } else {
-        next.delete(id);
-      }
-      return next;
-    });
-  }, []);
+  const pageIds = useMemo(
+    () => (query.data?.items || []).map((session) => session.id),
+    [query.data?.items],
+  );
 
-  const handleSelectAll = useCallback(() => {
-    const allIds = query.data?.items?.map((s) => s.id) || [];
-    setSelectedIds(new Set(allIds));
-  }, [query.data?.items]);
-
-  const handleDeselectAll = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
-
-  const toggleSelectionMode = useCallback(() => {
-    setSelectionMode((prev) => {
-      if (prev) {
-        setSelectedIds(new Set()); // Clear selection when exiting
-      }
-      return !prev;
-    });
-  }, []);
+  const {
+    selectionMode,
+    selectedIds,
+    handleSelectionChange,
+    selectPage,
+    clearSelection,
+    toggleSelectionMode,
+    exitSelectionMode,
+  } = useBatchSelection({
+    pageIds,
+    scope: [
+      currentPage,
+      limit,
+      search.streamer_id ?? '',
+      search.search ?? '',
+      currentStatus,
+      currentTimeRange,
+      search.from ?? '',
+      search.to ?? '',
+    ].join('|'),
+  });
 
   const handleBatchDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -250,8 +244,7 @@ function SessionsPage() {
       toast.success(
         i18n._(msg`Successfully deleted ${result.deleted} sessions`),
       );
-      setSelectedIds(new Set());
-      setSelectionMode(false);
+      exitSelectionMode();
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
     } catch (error) {
       console.error('Failed to delete sessions:', error);
@@ -259,7 +252,7 @@ function SessionsPage() {
     } finally {
       setIsDeleting(false);
     }
-  }, [selectedIds, i18n, queryClient]);
+  }, [selectedIds, exitSelectionMode, i18n, queryClient]);
 
   return (
     <div className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
@@ -454,7 +447,7 @@ function SessionsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleSelectAll}
+                onClick={selectPage}
                 className="h-8 px-3 text-xs font-medium rounded-full hover:bg-muted/80 text-muted-foreground"
               >
                 <Trans>All</Trans>
@@ -462,7 +455,7 @@ function SessionsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleDeselectAll}
+                onClick={clearSelection}
                 disabled={selectedIds.size === 0}
                 className="h-8 px-3 text-xs font-medium rounded-full hover:bg-muted/80 text-muted-foreground"
               >

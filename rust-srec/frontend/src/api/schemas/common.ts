@@ -1,5 +1,55 @@
 import { z } from 'zod';
 
+/**
+ * Read a field the backend stores as JSON text, reporting an unusable value as
+ * `null` instead of failing the surrounding parse.
+ *
+ * A row written by an earlier version, or edited by hand in the database, can
+ * hold text that is not JSON or no longer matches `schema`. These fields are
+ * parsed as part of list responses, so rejecting one row would blank the whole
+ * page; degrading that single field to "not configured" keeps the rest of the
+ * response usable. A value that arrives already decoded is accepted as is,
+ * which is what the write paths and the config forms hand back.
+ *
+ * `field` names the column in the warning logged whenever a value degrades:
+ * saving the row afterwards overwrites whatever was there, so the discarded
+ * value has to be visible somewhere.
+ */
+export function jsonTextField<Schema extends z.ZodType>(
+  field: string,
+  schema: Schema,
+) {
+  return z
+    .unknown()
+    .transform((value): z.output<Schema> | null => {
+      if (value === null) return null;
+      let decoded: unknown = value;
+      if (typeof value === 'string') {
+        if (value.trim() === '') return null;
+        try {
+          decoded = JSON.parse(value);
+        } catch (error) {
+          console.warn(`Discarding unreadable JSON in "${field}":`, error);
+          return null;
+        }
+      }
+      // The backend writes the JSON text `null` for a column that is not
+      // configured, so a decoded null is the expected value rather than a row
+      // worth warning about.
+      if (decoded === null) return null;
+      const result = schema.safeParse(decoded);
+      if (!result.success) {
+        console.warn(
+          `Discarding "${field}", which does not match its schema:`,
+          result.error.issues,
+        );
+        return null;
+      }
+      return result.data;
+    })
+    .optional();
+}
+
 // --- Priority Enum ---
 export const PrioritySchema = z
   .enum(['HIGH', 'NORMAL', 'LOW'])

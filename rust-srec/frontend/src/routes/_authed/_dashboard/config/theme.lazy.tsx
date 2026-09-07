@@ -27,7 +27,7 @@ import { Separator } from '@/components/ui/separator';
 import { useSidebar } from '@/components/ui/sidebar';
 import { baseColors, radiusOptions } from '@/config/theme-customizer-constants';
 import { colorThemes } from '@/config/theme-data';
-import { useSidebarConfig } from '@/hooks/use-sidebar-config';
+import { useSidebarConfig } from '@/contexts/sidebar-context';
 import { useCircularTransition } from '@/hooks/use-circular-transition';
 import { cn } from '@/lib/utils';
 import { useThemeSettings } from '@/store/theme-settings';

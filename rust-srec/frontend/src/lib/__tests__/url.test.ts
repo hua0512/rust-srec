@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest';
+
+import { isSameOriginUrl, safeRedirectPath } from '../url';
+
+// jsdom serves the tests from http://localhost:3000 by default.
+describe('isSameOriginUrl', () => {
+  it('accepts a relative media path', () => {
+    expect(isSameOriginUrl('/api/media/abc/content?token=t')).toBe(true);
+  });
+
+  it('accepts an absolute URL on the page origin', () => {
+    expect(
+      isSameOriginUrl(`${window.location.origin}/api/media/abc/content`),
+    ).toBe(true);
+  });
+
+  // The desktop build reaches the backend on its own origin, where an anchor's
+  // `download` attribute is ignored and clicking would navigate away from the
+  // application instead of saving the file.
+  it.each([
+    ['a different port', 'http://127.0.0.1:12555/api/media/abc/content'],
+    ['a different host', 'https://media.example/api/media/abc/content'],
+    ['a different scheme', 'https://localhost:3000/api/media/abc/content'],
+  ])('rejects %s', (_label, url) => {
+    expect(isSameOriginUrl(url)).toBe(false);
+  });
+
+  it('rejects a URL it cannot resolve', () => {
+    expect(isSameOriginUrl('http://')).toBe(false);
+  });
+});
+
+describe('safeRedirectPath', () => {
+  it('keeps a path on this application, search string included', () => {
+    expect(safeRedirectPath('/sessions')).toBe('/sessions');
+    expect(safeRedirectPath('/sessions?page=2&status=active')).toBe(
+      '/sessions?page=2&status=active',
+    );
+    expect(safeRedirectPath('/pipeline/jobs/abc#logs')).toBe(
+      '/pipeline/jobs/abc#logs',
+    );
+  });
+
+  it.each([
+    ['an absolute URL', 'https://evil.example/steal'],
+    ['a protocol-relative URL', '//evil.example/steal'],
+    ['a backslash-escaped origin', '/\\evil.example/steal'],
+    ['a javascript URL', 'javascript:alert(1)'],
+    ['a relative path', 'dashboard'],
+    ['an empty string', ''],
+    ['a non-string', 42],
+    ['nothing at all', undefined],
+  ])('rejects %s', (_label, value) => {
+    expect(safeRedirectPath(value)).toBeNull();
+  });
+
+  it('rejects a path carrying characters browsers strip from URLs', () => {
+    // `/\t/evil.example` reads as `//evil.example` once the tab is removed.
+    expect(safeRedirectPath('/\t/evil.example')).toBeNull();
+    expect(safeRedirectPath('/\n/evil.example')).toBeNull();
+    expect(safeRedirectPath('/\r/evil.example')).toBeNull();
+  });
+});

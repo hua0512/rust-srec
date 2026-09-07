@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { type DagStep } from '@/api/schemas';
+import { isNotFoundError } from '@/lib/api-error';
 import {
   getStatusConfig,
   getStatusLabel,
@@ -59,6 +60,10 @@ function PipelineExecutionPage() {
   } = useQuery({
     queryKey: ['pipeline', 'executions', pipelineId, 'status'],
     queryFn: () => getDagExecution({ data: pipelineId }),
+    // A pipeline that does not exist will not appear on a retry, and the
+    // default backoff would hold the page on skeletons for several seconds
+    // before the error is shown.
+    retry: (failureCount, error) => !isNotFoundError(error) && failureCount < 3,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return ['PENDING', 'PROCESSING'].includes(status || '') ? 1000 : false;
@@ -101,7 +106,7 @@ function PipelineExecutionPage() {
     onError: () => toast.error(i18n._(msg`Failed to cancel pipeline`)),
   });
 
-  if (isLoading || !dag) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background p-6 space-y-8">
         <div className="max-w-7xl mx-auto space-y-8">
@@ -117,7 +122,9 @@ function PipelineExecutionPage() {
     );
   }
 
-  if (error) {
+  // A failed query leaves `dag` undefined, so the error branch has to be
+  // reached before any check that only tests for missing data.
+  if (error || !dag) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <Alert
@@ -128,7 +135,9 @@ function PipelineExecutionPage() {
           <AlertTitle>
             <Trans>Error Loading Pipeline</Trans>
           </AlertTitle>
-          <AlertDescription>{error.message}</AlertDescription>
+          <AlertDescription>
+            {error?.message || i18n._(msg`Pipeline not found`)}
+          </AlertDescription>
           <Button
             variant="outline"
             className="mt-4 w-full"

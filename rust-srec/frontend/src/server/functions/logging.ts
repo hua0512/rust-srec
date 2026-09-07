@@ -56,14 +56,6 @@ export const listLogFiles = createServerFn({ method: 'GET' })
     return LogFilesResponseSchema.parse(json);
   });
 
-/** Get archive token for downloading logs */
-export const getArchiveToken = createServerFn({ method: 'GET' }).handler(
-  async () => {
-    const json = await fetchBackend('/logging/archive-token');
-    return ArchiveTokenResponseSchema.parse(json);
-  },
-);
-
 /** Build an authenticated download token for system logs with optional date range. */
 export const getLogsDownloadUrl = createServerFn({ method: 'GET' }).handler(
   async () => {

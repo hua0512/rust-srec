@@ -6,7 +6,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import {
   listStreamers,
   deleteStreamer,
@@ -40,6 +40,7 @@ import { msg } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
+import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
@@ -113,8 +114,6 @@ function StreamersPage() {
   const priorityFilter: PriorityFilter = search.priority ?? 'all';
   const exceptionalStates = search.exceptional ?? [];
   const sortOption: SortOption = search.sort ?? 'default';
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const exceptionalStateOptions = [
     { value: 'OUT_OF_SPACE', label: i18n._(msg`Out of space`) },
@@ -192,7 +191,7 @@ function StreamersPage() {
 
   // Fetch Platforms
   const { data: platforms = [] } = useQuery({
-    queryKey: ['platforms'],
+    queryKey: ['config', 'platforms'],
     queryFn: () => listPlatformConfigs(),
     staleTime: 60000,
   });
@@ -264,25 +263,36 @@ function StreamersPage() {
   const streamers = streamersData?.items || [];
   const totalCount = streamersData?.total || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
-  const allPageSelected =
-    streamers.length > 0 &&
-    streamers.every((streamer) => selectedIds.has(streamer.id));
 
-  const selectionScope = [
-    page,
-    pageSize,
-    debouncedSearch,
-    platformFilter,
-    templateFilter,
-    stateFilter,
-    priorityFilter,
-    exceptionalStates.join(','),
-    sortOption,
-  ].join('|');
+  const pageIds = useMemo(
+    () => streamers.map((streamer) => streamer.id),
+    [streamers],
+  );
 
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [selectionScope]);
+  const {
+    selectionMode,
+    selectedIds,
+    setSelectedIds,
+    allPageSelected,
+    handleSelectionChange,
+    selectPage,
+    clearSelection,
+    toggleSelectionMode,
+    exitSelectionMode,
+  } = useBatchSelection({
+    pageIds,
+    scope: [
+      page,
+      pageSize,
+      debouncedSearch,
+      platformFilter,
+      templateFilter,
+      stateFilter,
+      priorityFilter,
+      exceptionalStates.join(','),
+      sortOption,
+    ].join('|'),
+  });
 
   // Page overflow protection: reset to last valid page when filters reduce results
   useEffect(() => {
@@ -360,8 +370,7 @@ function StreamersPage() {
         toast.success(
           i18n._(msg`Successfully processed ${result.succeeded} streamers`),
         );
-        setSelectedIds(new Set());
-        setSelectionMode(false);
+        exitSelectionMode();
         return;
       }
 
@@ -388,25 +397,6 @@ function StreamersPage() {
       );
     },
   });
-
-  const handleSelectionChange = useCallback((id: string, selected: boolean) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (selected) {
-        next.add(id);
-      } else {
-        next.delete(id);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleSelectionMode = useCallback(() => {
-    setSelectionMode((current) => {
-      if (current) setSelectedIds(new Set());
-      return !current;
-    });
-  }, []);
 
   const handleBatchAction = useCallback(
     (action: BatchStreamerAction) => {
@@ -966,10 +956,8 @@ function StreamersPage() {
             allPageSelected={allPageSelected}
             templates={templates}
             isPending={batchMutation.isPending}
-            onSelectPage={() =>
-              setSelectedIds(new Set(streamers.map((streamer) => streamer.id)))
-            }
-            onClearSelection={() => setSelectedIds(new Set())}
+            onSelectPage={selectPage}
+            onClearSelection={clearSelection}
             onAction={handleBatchAction}
             onExit={toggleSelectionMode}
           />
