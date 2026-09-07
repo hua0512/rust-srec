@@ -2,6 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn web_push_debug_redacts_private_keys_cached_tokens_and_subscriptions() {
+    crate::utils::http_client::install_rustls_provider();
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .connect_lazy("sqlite::memory:")
         .unwrap();
