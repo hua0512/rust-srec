@@ -1,14 +1,15 @@
 //! Streamlink download engine implementation.
 
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use pipeline_common::expand_filename_template;
-use std::path::PathBuf;
-use std::process::Stdio;
-use std::sync::Arc;
+use process_utils::ContainedChild;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Child;
 use tokio::time::{Duration, Instant};
 use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{debug, error, info, warn};
@@ -20,15 +21,17 @@ use super::traits::{
 use super::utils::{
     OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_segment_start,
     observe_segment_event_send, output_io_error_kind, parse_opened_path, parse_progress,
-    redact_process_args, terminate_and_reap,
+    redact_process_args,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
 
-/// Grace given to streamlink to exit on its own once FFmpeg has already exited
-/// with a zero status. Longer than `PROCESS_CLEANUP_TIMEOUT`, which only reaps
-/// an already-killed child, because this waits out an ordinary streamlink
-/// shutdown; it only delays settlement when streamlink outlives FFmpeg.
+/// Cap for Streamlink's cooperative or natural exit before forcing containment.
+/// Used after FFmpeg exits and during cancellation, where the remaining shared
+/// stop budget can shorten this grace further.
 const STREAMLINK_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[cfg(test)]
+mod shutdown_tests;
 
 fn build_http_cookie_args(cookie_string: &str) -> Vec<String> {
     // Streamlink expects repeated `--http-cookie name=value` arguments.
@@ -55,6 +58,8 @@ pub struct StreamlinkEngine {
     version: Option<String>,
     #[cfg(test)]
     fixture: Option<super::utils::test_support::RecordingFixture>,
+    #[cfg(test)]
+    shutdown_fixture: Option<shutdown_tests::Fixture>,
 }
 
 impl StreamlinkEngine {
@@ -87,6 +92,8 @@ impl StreamlinkEngine {
             version,
             #[cfg(test)]
             fixture: None,
+            #[cfg(test)]
+            shutdown_fixture: None,
         }
     }
 
@@ -348,8 +355,20 @@ fn append_cleanup_result(message: &mut String, result: std::result::Result<Optio
     }
 }
 
+async fn terminate_and_reap(
+    child: &mut ContainedChild,
+    process_name: &str,
+    timeout: Duration,
+) -> std::result::Result<Option<i32>, String> {
+    child
+        .terminate_tree_until(Instant::now() + timeout)
+        .await
+        .map(|status| status.code())
+        .map_err(|error| format!("failed to contain and reap {process_name}: {error}"))
+}
+
 async fn wait_then_terminate(
-    child: &mut Child,
+    child: &mut ContainedChild,
     process_name: &str,
     timeout: Duration,
 ) -> (std::result::Result<Option<i32>, String>, bool) {
@@ -391,7 +410,7 @@ async fn wait_then_terminate(
 /// `forced_settlement` accurate; its `Err` carries a cleanup error for
 /// `StreamlinkPipelineExit::with_cleanup_error`.
 async fn settle_streamlink_after_ffmpeg_exit(
-    streamlink: &mut Child,
+    streamlink: &mut ContainedChild,
     timeout: Duration,
 ) -> (StreamlinkSettlement, std::result::Result<(), String>) {
     match tokio::time::timeout(timeout, streamlink.wait()).await {
@@ -457,18 +476,22 @@ impl DownloadEngine for StreamlinkEngine {
         if let Some(fixture) = &self.fixture {
             streamlink_command = fixture.command(true);
         }
+        #[cfg(test)]
+        if let Some(fixture) = &self.shutdown_fixture {
+            streamlink_command = fixture.command(true);
+        }
         streamlink_command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let mut streamlink = streamlink_command.spawn().map_err(|e| {
+        let mut streamlink = ContainedChild::spawn(&mut streamlink_command).map_err(|e| {
             EngineStartError::new(
                 DownloadFailureKind::Configuration,
                 format!("Failed to spawn streamlink: {}", e),
             )
         })?;
 
-        let mut streamlink_stdout = match streamlink.stdout.take() {
+        let mut streamlink_stdout = match streamlink.take_stdout() {
             Some(stdout) => stdout,
             None => {
                 let mut message = "Failed to capture streamlink stdout".to_string();
@@ -480,7 +503,7 @@ impl DownloadEngine for StreamlinkEngine {
                 return Err(EngineStartError::new(DownloadFailureKind::Other, message));
             }
         };
-        let streamlink_stderr = match streamlink.stderr.take() {
+        let streamlink_stderr = match streamlink.take_stderr() {
             Some(stderr) => stderr,
             None => {
                 let mut message = "Failed to capture streamlink stderr".to_string();
@@ -500,13 +523,17 @@ impl DownloadEngine for StreamlinkEngine {
         if let Some(fixture) = &self.fixture {
             ffmpeg_command = fixture.command(false);
         }
+        #[cfg(test)]
+        if let Some(fixture) = &self.shutdown_fixture {
+            ffmpeg_command = fixture.command(false);
+        }
         crate::utils::configure_ffmpeg_locale(&mut ffmpeg_command);
         ffmpeg_command
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let mut ffmpeg = match ffmpeg_command.spawn() {
+        let mut ffmpeg = match ContainedChild::spawn(&mut ffmpeg_command) {
             Ok(ffmpeg) => ffmpeg,
             Err(error) => {
                 let mut message = format!("Failed to spawn ffmpeg: {error}");
@@ -522,7 +549,7 @@ impl DownloadEngine for StreamlinkEngine {
             }
         };
 
-        let mut ffmpeg_stdin = match ffmpeg.stdin.take() {
+        let mut ffmpeg_stdin = match ffmpeg.take_stdin() {
             Some(stdin) => stdin,
             None => {
                 let mut message = "Failed to capture ffmpeg stdin".to_string();
@@ -535,7 +562,7 @@ impl DownloadEngine for StreamlinkEngine {
                 return Err(EngineStartError::new(DownloadFailureKind::Other, message));
             }
         };
-        let ffmpeg_stderr = match ffmpeg.stderr.take() {
+        let ffmpeg_stderr = match ffmpeg.take_stderr() {
             Some(stderr) => stderr,
             None => {
                 let mut message = "Failed to capture ffmpeg stderr".to_string();
@@ -556,8 +583,8 @@ impl DownloadEngine for StreamlinkEngine {
 
         // 2. Spawn a waiter task for both processes.
         //
-        // When cancellation is requested, the stdout pipe task stops and drops ffmpeg's stdin,
-        // allowing ffmpeg to finalize and exit. We still report DownloadCompleted if ffmpeg exits 0.
+        // Cancellation stops the producer first. The pipe keeps forwarding emitted
+        // bytes until EOF, then closes FFmpeg's stdin so its output can finalize.
         let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<StreamlinkPipelineExit>();
         let cancellation_token_wait = cancellation_token.clone();
         let forced_settlement = CancellationToken::new();
@@ -578,14 +605,19 @@ impl DownloadEngine for StreamlinkEngine {
 
             let (pipeline_exit, cleanup_confirmed) = tokio::select! {
                 _ = cancellation_token_wait.cancelled() => {
-                    debug!("Stop requested, killing streamlink process");
-                    let streamlink_cleanup = terminate_and_reap(
+                    let stop_deadline = Instant::now() + ffmpeg_stop_timeout();
+                    match streamlink.request_shutdown() {
+                        Ok(true) => debug!("Requested cooperative Streamlink shutdown"),
+                        Ok(false) => debug!("Waiting for Streamlink exit before contained termination"),
+                        Err(error) => warn!(%error, "Could not request cooperative Streamlink shutdown; using bounded exit wait"),
+                    }
+                    let (streamlink_cleanup, streamlink_confirmed) = wait_then_terminate(
                         &mut streamlink,
                         "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
+                        stop_deadline.saturating_duration_since(Instant::now()).min(STREAMLINK_SETTLE_TIMEOUT),
                     ).await;
                     let (ffmpeg_result, ffmpeg_confirmed) =
-                        wait_then_terminate(&mut ffmpeg, "ffmpeg", ffmpeg_stop_timeout()).await;
+                        wait_then_terminate(&mut ffmpeg, "ffmpeg", stop_deadline.saturating_duration_since(Instant::now())).await;
                     let mut outcome = match ffmpeg_result {
                         Ok(code) => StreamlinkPipelineExit::Ffmpeg(code),
                         Err(message) => StreamlinkPipelineExit::Failed {
@@ -593,15 +625,11 @@ impl DownloadEngine for StreamlinkEngine {
                             message,
                         },
                     };
-                    let streamlink_confirmed = match streamlink_cleanup {
-                        Ok(_) => true,
-                        Err(cleanup_error) => {
+                    if let Err(cleanup_error) = streamlink_cleanup {
                             warn!(%cleanup_error, "Failed to stop streamlink cleanly");
                             outcome = outcome.with_cleanup_error(cleanup_error);
-                            false
-                        }
-                    };
-                    (outcome, streamlink_confirmed && ffmpeg_confirmed)
+                    }
+                    (apply_pipe_failure(outcome, process_pipe_failure.lock().clone()), streamlink_confirmed && ffmpeg_confirmed)
                 }
                 streamlink_result = streamlink.wait() => {
                     let (streamlink_failure, streamlink_confirmed) = match streamlink_result {
@@ -753,7 +781,6 @@ impl DownloadEngine for StreamlinkEngine {
         let streamer_id = config.streamer_id.clone();
 
         // Spawn task to pipe streamlink stdout to ffmpeg stdin
-        let cancellation_token_pipe = cancellation_token.clone();
         let pipe_forced_settlement = forced_settlement.clone();
         let writer_pipe_failure = pipe_failure;
         let pipe_task = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -762,9 +789,6 @@ impl DownloadEngine for StreamlinkEngine {
 
             loop {
                 tokio::select! {
-                    _ = cancellation_token_pipe.cancelled() => {
-                        break;
-                    }
                     _ = pipe_forced_settlement.cancelled() => {
                         warn!("Stopping Streamlink stdout pipe after unconfirmed process cleanup");
                         break;
@@ -773,7 +797,11 @@ impl DownloadEngine for StreamlinkEngine {
                         match result {
                             Ok(0) => break, // EOF
                             Ok(n) => {
-                                if let Err(error) = ffmpeg_stdin.write_all(&buffer[..n]).await {
+                                let written = tokio::select! {
+                                    _ = pipe_forced_settlement.cancelled() => break,
+                                    written = ffmpeg_stdin.write_all(&buffer[..n]) => written,
+                                };
+                                if let Err(error) = written {
                                     *writer_pipe_failure.lock() = Some(format!(
                                         "Failed to pipe Streamlink output into FFmpeg: {error}"
                                     ));
@@ -794,7 +822,6 @@ impl DownloadEngine for StreamlinkEngine {
 
         // Spawn task to monitor streamlink stderr
         let streamer_id_clone = streamer_id.clone();
-        let cancellation_token_clone = cancellation_token.clone();
         let stderr_forced_settlement = forced_settlement.clone();
         let streamlink_stderr_task = AbortOnDropHandle::new(tokio::spawn(async move {
             let reader = BufReader::new(streamlink_stderr);
@@ -802,10 +829,6 @@ impl DownloadEngine for StreamlinkEngine {
 
             loop {
                 tokio::select! {
-                    _ = cancellation_token_clone.cancelled() => {
-                        debug!("Streamlink stderr monitor cancelled for {}", streamer_id_clone);
-                        break;
-                    }
                     _ = stderr_forced_settlement.cancelled() => {
                         warn!(
                             streamer_id = %streamer_id_clone,
@@ -1329,6 +1352,7 @@ mod tests {
             ffmpeg_path,
             version: None,
             fixture: None,
+            shutdown_fixture: None,
         };
         assert_output_failure(&engine, dir.path()).await;
     }
@@ -1351,6 +1375,7 @@ mod tests {
                 ffmpeg_path: String::new(),
                 version: None,
                 fixture: Some(fixture.clone()),
+                shutdown_fixture: None,
             };
             assert_recording_stop(engine, fixture, case).await;
         }
