@@ -49,8 +49,8 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
     queryFn: () => listEngines(),
   });
 
-  // Subscribed through `useWatch` so only this tab re-renders when an override is added or
-  // removed, instead of the whole template form on every keystroke.
+  // A field-level subscription: adding or removing an override re-renders this tab, not the
+  // component that owns `useForm`.
   const currentOverrides =
     useWatch({ control: form.control, name: 'platform_overrides' }) || {};
 

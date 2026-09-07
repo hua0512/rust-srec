@@ -70,6 +70,31 @@ function renderAdapter(initial: unknown, mode: 'json' | 'object' = 'object') {
   };
 }
 
+function renderGlobalAdapter(initial: unknown) {
+  let form!: UseFormReturn<Values>;
+
+  function Harness() {
+    form = useForm<Values>({ defaultValues: { pipeline: initial } });
+    return (
+      <PipelineConfigAdapter
+        form={form}
+        name="pipeline"
+        dagName="global_pipeline"
+        emptyValue="dag"
+      />
+    );
+  }
+
+  render(<Harness />);
+
+  return {
+    steps: () => screen.getByTestId('steps').textContent,
+    value: () => form.getValues('pipeline'),
+    add: () => fireEvent.click(screen.getByText('add')),
+    clear: () => fireEvent.click(screen.getByText('clear')),
+  };
+}
+
 beforeEach(() => {
   editorRendered.mockClear();
   stepsEmitted.mockClear();
@@ -133,6 +158,7 @@ describe('PipelineConfigAdapter', () => {
     });
   });
 
+  // An override field left empty means "inherit from the parent config".
   it('clears the field when the last step is removed', () => {
     const adapter = renderAdapter({ name: 'pipeline', steps: [step('s1')] });
 
@@ -143,25 +169,27 @@ describe('PipelineConfigAdapter', () => {
   });
 
   it('stores the DAG under the name the caller asked for', () => {
-    let form!: UseFormReturn<Values>;
+    const adapter = renderGlobalAdapter(null);
 
-    function Harness() {
-      form = useForm<Values>({ defaultValues: { pipeline: null } });
-      return (
-        <PipelineConfigAdapter
-          form={form}
-          name="pipeline"
-          dagName="global_pipeline"
-        />
-      );
-    }
+    adapter.add();
 
-    render(<Harness />);
-    fireEvent.click(screen.getByText('add'));
-
-    expect(form.getValues('pipeline')).toEqual({
+    expect(adapter.value()).toEqual({
       name: 'global_pipeline',
       steps: [step('s1')],
     });
+  });
+
+  // The global settings request cannot tell a `null` field from an omitted one, so clearing has
+  // to be expressed as a DAG with no steps or the stored pipeline survives the save.
+  it('writes an empty DAG when asked to keep one', () => {
+    const adapter = renderGlobalAdapter({
+      name: 'global_pipeline',
+      steps: [step('s1')],
+    });
+
+    adapter.clear();
+
+    expect(adapter.value()).toEqual({ name: 'global_pipeline', steps: [] });
+    expect(adapter.steps()).toBe('');
   });
 });

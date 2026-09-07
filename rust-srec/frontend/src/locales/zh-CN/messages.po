@@ -4900,7 +4900,7 @@ msgstr "加载中"
 msgid "Loading Danmu"
 msgstr "正在加载弹幕"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:44
+#: src/components/config/shared/pipeline-tabs-section.tsx:47
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
@@ -6290,20 +6290,20 @@ msgstr "页码"
 msgid "pagination"
 msgstr "分页"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:102
+#: src/components/config/shared/pipeline-tabs-section.tsx:110
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:214
+#: src/components/config/shared/pipeline-tabs-section.tsx:224
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:99
+#: src/components/config/shared/pipeline-tabs-section.tsx:107
 msgid "Paired Segment"
 msgstr "配对分段"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:110
-#: src/components/config/shared/pipeline-tabs-section.tsx:192
+#: src/components/config/shared/pipeline-tabs-section.tsx:118
+#: src/components/config/shared/pipeline-tabs-section.tsx:201
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -6441,12 +6441,12 @@ msgstr "单文件带宽限制帮助"
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:68
+#: src/components/config/shared/pipeline-tabs-section.tsx:76
 msgid "Per-segment"
 msgstr "逐段"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:79
-#: src/components/config/shared/pipeline-tabs-section.tsx:169
+#: src/components/config/shared/pipeline-tabs-section.tsx:87
+#: src/components/config/shared/pipeline-tabs-section.tsx:177
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
@@ -7336,8 +7336,8 @@ msgstr "需要字幕"
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:123
-#: src/components/config/shared/pipeline-tabs-section.tsx:201
+#: src/components/config/shared/pipeline-tabs-section.tsx:131
+#: src/components/config/shared/pipeline-tabs-section.tsx:210
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -7502,23 +7502,23 @@ msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:172
+#: src/components/config/shared/pipeline-tabs-section.tsx:180
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:228
+#: src/components/config/shared/pipeline-tabs-section.tsx:238
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:152
+#: src/components/config/shared/pipeline-tabs-section.tsx:160
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:117
+#: src/components/config/shared/pipeline-tabs-section.tsx:125
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:196
+#: src/components/config/shared/pipeline-tabs-section.tsx:205
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -7746,7 +7746,7 @@ msgstr "秒"
 msgid "Security & Identity"
 msgstr "安全与身份"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:71
+#: src/components/config/shared/pipeline-tabs-section.tsx:79
 msgid "Segment"
 msgstr "分段"
 
@@ -7955,7 +7955,7 @@ msgstr "服务器未配置"
 msgid "Server URL"
 msgstr "服务器地址"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:138
+#: src/components/config/shared/pipeline-tabs-section.tsx:146
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "会话"
@@ -7964,16 +7964,16 @@ msgstr "会话"
 msgid "Session {sessionLabel}"
 msgstr "会话 {sessionLabel}"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:135
+#: src/components/config/shared/pipeline-tabs-section.tsx:143
 msgid "Session Complete"
 msgstr "会话完成"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:146
-#: src/components/config/shared/pipeline-tabs-section.tsx:225
+#: src/components/config/shared/pipeline-tabs-section.tsx:154
+#: src/components/config/shared/pipeline-tabs-section.tsx:235
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:243
+#: src/components/config/shared/pipeline-tabs-section.tsx:254
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -8795,7 +8795,7 @@ msgstr "无法读取该过滤器的设置。"
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:83
+#: src/components/config/shared/pipeline-tabs-section.tsx:91
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -9097,11 +9097,11 @@ msgstr "将互动玩法直播视为离线。"
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:80
+#: src/components/config/shared/pipeline-tabs-section.tsx:88
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:148
+#: src/components/config/shared/pipeline-tabs-section.tsx:156
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -9161,7 +9161,7 @@ msgstr "应用关闭时触发。"
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:112
+#: src/components/config/shared/pipeline-tabs-section.tsx:120
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 

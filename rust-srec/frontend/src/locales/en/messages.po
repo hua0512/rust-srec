@@ -4900,7 +4900,7 @@ msgstr "Loading"
 msgid "Loading Danmu"
 msgstr "Loading Danmu"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:44
+#: src/components/config/shared/pipeline-tabs-section.tsx:47
 msgid "Loading editor components..."
 msgstr "Loading editor components..."
 
@@ -6290,20 +6290,20 @@ msgstr "Page"
 msgid "pagination"
 msgstr "pagination"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:102
+#: src/components/config/shared/pipeline-tabs-section.tsx:110
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:214
+#: src/components/config/shared/pipeline-tabs-section.tsx:224
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:99
+#: src/components/config/shared/pipeline-tabs-section.tsx:107
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:110
-#: src/components/config/shared/pipeline-tabs-section.tsx:192
+#: src/components/config/shared/pipeline-tabs-section.tsx:118
+#: src/components/config/shared/pipeline-tabs-section.tsx:201
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -6441,12 +6441,12 @@ msgstr "Per-File Bandwidth Limit help"
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:68
+#: src/components/config/shared/pipeline-tabs-section.tsx:76
 msgid "Per-segment"
 msgstr "Per-segment"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:79
-#: src/components/config/shared/pipeline-tabs-section.tsx:169
+#: src/components/config/shared/pipeline-tabs-section.tsx:87
+#: src/components/config/shared/pipeline-tabs-section.tsx:177
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
@@ -7336,8 +7336,8 @@ msgstr "Require Subtitles"
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:123
-#: src/components/config/shared/pipeline-tabs-section.tsx:201
+#: src/components/config/shared/pipeline-tabs-section.tsx:131
+#: src/components/config/shared/pipeline-tabs-section.tsx:210
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -7502,23 +7502,23 @@ msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:172
+#: src/components/config/shared/pipeline-tabs-section.tsx:180
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:228
+#: src/components/config/shared/pipeline-tabs-section.tsx:238
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:152
+#: src/components/config/shared/pipeline-tabs-section.tsx:160
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:117
+#: src/components/config/shared/pipeline-tabs-section.tsx:125
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:196
+#: src/components/config/shared/pipeline-tabs-section.tsx:205
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
@@ -7746,7 +7746,7 @@ msgstr "Secs"
 msgid "Security & Identity"
 msgstr "Security & Identity"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:71
+#: src/components/config/shared/pipeline-tabs-section.tsx:79
 msgid "Segment"
 msgstr "Segment"
 
@@ -7955,7 +7955,7 @@ msgstr "Server not configured"
 msgid "Server URL"
 msgstr "Server URL"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:138
+#: src/components/config/shared/pipeline-tabs-section.tsx:146
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "Session"
@@ -7964,16 +7964,16 @@ msgstr "Session"
 msgid "Session {sessionLabel}"
 msgstr "Session {sessionLabel}"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:135
+#: src/components/config/shared/pipeline-tabs-section.tsx:143
 msgid "Session Complete"
 msgstr "Session Complete"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:146
-#: src/components/config/shared/pipeline-tabs-section.tsx:225
+#: src/components/config/shared/pipeline-tabs-section.tsx:154
+#: src/components/config/shared/pipeline-tabs-section.tsx:235
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:243
+#: src/components/config/shared/pipeline-tabs-section.tsx:254
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -8795,7 +8795,7 @@ msgstr "This filter's settings could not be read."
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:83
+#: src/components/config/shared/pipeline-tabs-section.tsx:91
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -9097,11 +9097,11 @@ msgstr "Treat interactive game streams (互动玩法) as offline."
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:80
+#: src/components/config/shared/pipeline-tabs-section.tsx:88
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:148
+#: src/components/config/shared/pipeline-tabs-section.tsx:156
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -9161,7 +9161,7 @@ msgstr "Triggered when the application shuts down."
 msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:112
+#: src/components/config/shared/pipeline-tabs-section.tsx:120
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 

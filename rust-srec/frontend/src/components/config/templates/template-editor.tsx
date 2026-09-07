@@ -32,8 +32,8 @@ export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 /**
  * The shared editor plus the credential hint taken from the template's platform overrides.
  *
- * The subscription lives here instead of in `TemplateEditor` so editing any field no longer
- * re-renders the entire form; the hint only changes when an override is added or removed.
+ * The subscription lives here, not in `TemplateEditor`, so a change to the overrides re-renders
+ * this wrapper rather than the component that owns `useForm` and with it the whole form.
  */
 function TemplateConfigEditor(
   props: Omit<

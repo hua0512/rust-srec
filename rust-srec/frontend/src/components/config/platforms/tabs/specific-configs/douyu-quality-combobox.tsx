@@ -98,8 +98,8 @@ export function DouyuQualityCombobox({
 }: DouyuQualityComboboxProps) {
   const { i18n } = useLingui();
   const onlyAudioPath = `${fieldName}.only_audio`;
-  // Subscribed here rather than through `form.watch` so toggling audio-only re-renders this
-  // combobox instead of the whole platform form.
+  // A field-level subscription: toggling audio-only re-renders this combobox, not the component
+  // that owns `useForm`.
   const onlyAudio = !!useWatch({ control: form.control, name: onlyAudioPath });
   const rate = getDouyuRate(value);
   const selectedValue = onlyAudio ? AUDIO_ONLY_QUALITY : String(rate);

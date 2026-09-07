@@ -27,7 +27,10 @@ interface PipelineTabsSectionProps {
    * field; its tab then explains that the pipeline is unavailable.
    */
   names: { perSegment: string; paired?: string; session?: string };
-  /** Names stored inside each DAG definition. */
+  /**
+   * Names stored inside each DAG definition. Supplied by the global settings page, whose
+   * partial update also needs an empty DAG rather than `null` to clear a pipeline.
+   */
   dagNames?: { perSegment?: string; paired?: string; session?: string };
   mode?: 'json' | 'object';
 }
@@ -56,6 +59,11 @@ export function PipelineTabsSection({
   dagNames,
   mode = 'object',
 }: PipelineTabsSectionProps) {
+  // Only the global settings page names its DAGs, and its update request treats a `null` field
+  // as "leave unchanged", so emptying a pipeline there has to send an empty DAG. Override fields
+  // clear to `null`, which is how they express "inherit".
+  const emptyValue = dagNames ? 'dag' : 'null';
+
   return (
     <TooltipProvider>
       <Tabs defaultValue="per-segment" className="w-full">
@@ -180,6 +188,7 @@ export function PipelineTabsSection({
               name={names.perSegment}
               dagName={dagNames?.perSegment}
               mode={mode}
+              emptyValue={emptyValue}
             />
           </div>
         </TabsContent>
@@ -208,6 +217,7 @@ export function PipelineTabsSection({
                 name={names.paired}
                 dagName={dagNames?.paired}
                 mode={mode}
+                emptyValue={emptyValue}
               />
             ) : (
               <UnsupportedPipeline>
@@ -237,6 +247,7 @@ export function PipelineTabsSection({
                 name={names.session}
                 dagName={dagNames?.session}
                 mode={mode}
+                emptyValue={emptyValue}
               />
             ) : (
               <UnsupportedPipeline>
@@ -257,11 +268,13 @@ function PipelineEditor({
   name,
   dagName,
   mode,
+  emptyValue,
 }: {
   form: UseFormReturn<any>;
   name: string;
   dagName?: string;
   mode: 'json' | 'object';
+  emptyValue: 'null' | 'dag';
 }) {
   return (
     <Suspense fallback={<EditorFallback />}>
@@ -270,6 +283,7 @@ function PipelineEditor({
         name={name}
         mode={mode}
         dagName={dagName}
+        emptyValue={emptyValue}
       />
     </Suspense>
   );

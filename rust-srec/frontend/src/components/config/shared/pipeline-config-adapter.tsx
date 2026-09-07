@@ -11,6 +11,11 @@ interface PipelineConfigAdapterProps {
   mode?: 'json' | 'object';
   /** Name stored inside the DAG definition when steps are written back. */
   dagName?: string;
+  /**
+   * What to write once the last step is removed: `null` to clear the field, or `dag` for an
+   * empty DAG definition. See the note on the component.
+   */
+  emptyValue?: 'null' | 'dag';
 }
 
 /** Shared empty result so a field without steps keeps a stable identity across renders. */
@@ -39,8 +44,13 @@ function readSteps(value: unknown): DagStepDefinition[] {
  *
  * The steps are derived from the field instead of mirrored into local state, so a form reset or a
  * freshly loaded config shows up immediately and the editor can never drift from the value that
- * gets submitted. Clearing the last step writes `null`, which the config schemas read as "not
- * configured" rather than "configured with no steps".
+ * gets submitted.
+ *
+ * Removing the last step has two valid representations and the caller picks one through
+ * `emptyValue`. Override fields (template, platform, streamer) clear to `null`, which their
+ * schemas read as "inherit" rather than "configured with no steps". The global settings update is
+ * a partial one whose fields cannot tell `null` apart from "field omitted", so a `null` there
+ * would leave the stored pipeline untouched; those fields send an empty DAG definition instead.
  */
 export const PipelineConfigAdapter = memo(
   ({
@@ -48,6 +58,7 @@ export const PipelineConfigAdapter = memo(
     name,
     mode = 'object',
     dagName = 'pipeline',
+    emptyValue = 'null',
   }: PipelineConfigAdapterProps) => {
     const fieldValue = useWatch({ control: form.control, name });
     const lastEmitted = useRef<{
@@ -77,15 +88,20 @@ export const PipelineConfigAdapter = memo(
           name: dagName,
           steps: nextSteps,
         };
-        const value = mode === 'json' ? JSON.stringify(dagConfig) : dagConfig;
+        const value =
+          nextSteps.length === 0 && emptyValue === 'null'
+            ? null
+            : mode === 'json'
+              ? JSON.stringify(dagConfig)
+              : dagConfig;
 
-        form.setValue(name, nextSteps.length > 0 ? value : null, {
+        form.setValue(name, value, {
           shouldDirty: true,
           shouldTouch: true,
           shouldValidate: true,
         });
       },
-      [dagName, form, mode, name],
+      [dagName, emptyValue, form, mode, name],
     );
 
     return <PipelineWorkflowEditor steps={steps} onChange={handleChange} />;
