@@ -774,8 +774,8 @@ fn compute_overall_status(components: &HashMap<String, ComponentHealth>) -> Heal
     for c in components.values() {
         match c.status {
             HealthStatus::Unhealthy => return HealthStatus::Unhealthy,
-            HealthStatus::Degraded => overall = HealthStatus::Degraded,
-            _ => {}
+            HealthStatus::Degraded | HealthStatus::Unknown => overall = HealthStatus::Degraded,
+            HealthStatus::Healthy => {}
         }
     }
     overall
@@ -801,6 +801,22 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_probe_degrades_rollup_without_masking_failure() {
+        let mut components = HashMap::new();
+        components.insert("ready".into(), ComponentHealth::healthy("ready"));
+        assert_eq!(compute_overall_status(&components), HealthStatus::Healthy);
+        let mut unknown = ComponentHealth::healthy("disk");
+        unknown.status = HealthStatus::Unknown;
+        components.insert("disk".into(), unknown);
+        assert_eq!(compute_overall_status(&components), HealthStatus::Degraded);
+        components.insert(
+            "database".into(),
+            ComponentHealth::unhealthy("database", "unavailable"),
+        );
+        assert_eq!(compute_overall_status(&components), HealthStatus::Unhealthy);
+    }
 
     struct StaticTestProbe {
         name: &'static str,
