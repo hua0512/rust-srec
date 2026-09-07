@@ -86,6 +86,10 @@
 
 ## Notifications
 
+- **Telegram formatting preserves literal content**
+
+  HTML, Markdown, and MarkdownV2 settings now use explicit formatting entities so special characters in streamer names, titles, and errors cannot break message parsing. Unicode-safe truncation keeps formatting spans valid. Empty mode sends plain text; unknown modes return a local configuration error.
+
 - **Configuration channels retain failed deliveries**
 
   Notifications that exhaust their retries now appear in the in-memory dead-letter list even when their channel comes from configuration. Database persistence remains available for database channels; persistence failures preserve the in-memory record. Retention cleanup still applies, and successful channels are not sent the same notification again during retries.
