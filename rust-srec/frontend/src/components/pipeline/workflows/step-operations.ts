@@ -25,6 +25,43 @@ export function replaceStep(
   );
 }
 
+export function getStepIdError(
+  steps: DagStepDefinition[],
+  index: number,
+  id: string,
+): 'empty' | 'duplicate' | null {
+  if (!id.trim()) return 'empty';
+  return steps.some(
+    (step, candidateIndex) => candidateIndex !== index && step.id === id,
+  )
+    ? 'duplicate'
+    : null;
+}
+
+export function updateStep(
+  steps: DagStepDefinition[],
+  index: number,
+  replacement: DagStepDefinition,
+): DagStepDefinition[] {
+  const original = steps[index];
+  if (!original || getStepIdError(steps, index, replacement.id)) return steps;
+
+  return steps.map((candidate, candidateIndex) => {
+    const step = candidateIndex === index ? replacement : candidate;
+    if (
+      original.id === replacement.id ||
+      !step.depends_on?.includes(original.id)
+    )
+      return step;
+    return {
+      ...step,
+      depends_on: step.depends_on.map((id) =>
+        id === original.id ? replacement.id : id,
+      ),
+    };
+  });
+}
+
 export function removeStep(
   steps: DagStepDefinition[],
   id: string,

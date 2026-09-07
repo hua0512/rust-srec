@@ -12,6 +12,7 @@ import {
   createStepId,
   removeStep,
   replaceStep,
+  updateStep,
 } from '@/components/pipeline/workflows/step-operations';
 
 interface PipelineWorkflowEditorProps {
@@ -63,9 +64,7 @@ export const PipelineWorkflowEditor = memo(
     };
 
     const handleUpdateStep = (index: number, newStep: DagStepDefinition) => {
-      const updatedSteps = [...steps];
-      updatedSteps[index] = newStep;
-      onChange(updatedSteps);
+      onChange(updateStep(steps, index, newStep));
     };
 
     const handleEditStepById = (id: string) => {

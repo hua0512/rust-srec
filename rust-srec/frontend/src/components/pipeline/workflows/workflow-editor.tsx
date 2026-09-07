@@ -44,7 +44,12 @@ import {
 } from '@/api/schemas';
 import { WorkflowFlowEditor } from './flow-editor/workflow-flow-editor';
 import { StepConfigDialog } from './step-config-dialog';
-import { createStepId, removeStep, replaceStep } from './step-operations';
+import {
+  createStepId,
+  removeStep,
+  replaceStep,
+  updateStep,
+} from './step-operations';
 
 const workflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -155,9 +160,9 @@ export function WorkflowEditor({
 
   const handleUpdateStep = (index: number, newStep: DagStepDefinition) => {
     const currentSteps = form.getValues('steps');
-    const updatedSteps = [...currentSteps];
-    updatedSteps[index] = newStep;
-    form.setValue('steps', updatedSteps, { shouldDirty: true });
+    form.setValue('steps', updateStep(currentSteps, index, newStep), {
+      shouldDirty: true,
+    });
   };
 
   const handleEditStepById = (id: string) => {

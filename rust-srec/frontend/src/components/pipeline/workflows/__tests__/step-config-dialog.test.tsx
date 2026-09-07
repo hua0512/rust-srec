@@ -10,11 +10,22 @@ import {
 } from '@testing-library/react';
 import { DagStepDefinition } from '@/api/schemas';
 import { StepConfigDialog } from '../step-config-dialog';
+import { StepsList } from '../steps-list';
 
 // Stands in for `/api/job/presets`: `search` is a substring of name AND description ordered by
 // name, `name` is an exact match. `delete_source` mentions "thumbnail" in its description and
 // sorts first, so a search-based lookup that keeps the first row resolves to the delete preset.
 const PRESETS = [
+  ...Array.from({ length: 120 }, (_, index) => ({
+    id: `custom-${index}`,
+    name: `a-custom-${index}`,
+    description: 'Unrelated thumbnail configuration',
+    category: 'thumbnail',
+    processor: 'thumbnail',
+    config: {},
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  })),
   {
     id: 'preset-default-delete',
     name: 'delete_source',
@@ -58,7 +69,7 @@ const listJobPresets = vi.fn(
     }
     rows = [...rows]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(0, data.limit ?? 20);
+      .slice(0, Math.min(data.limit ?? 20, 100));
     return {
       presets: rows,
       categories: [],
@@ -75,7 +86,11 @@ vi.mock('@/server/functions/job', () => ({
 
 const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
-function renderDialog(step: DagStepDefinition, onSave = vi.fn()) {
+function renderDialog(
+  step: DagStepDefinition,
+  onSave = vi.fn(),
+  allSteps = [step],
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -87,8 +102,8 @@ function renderDialog(step: DagStepDefinition, onSave = vi.fn()) {
           onOpenChange={() => {}}
           dagStep={step}
           onSave={onSave}
-          allSteps={[step]}
-          currentStepIndex={0}
+          allSteps={allSteps}
+          currentStepIndex={allSteps.indexOf(step)}
         />
       </QueryClientProvider>
     </I18nProvider>,
@@ -108,6 +123,117 @@ beforeAll(() => {
 beforeEach(() => {
   listJobPresets.mockClear();
   available = PRESETS;
+});
+
+const transform: DagStepDefinition = {
+  id: 'thumb',
+  depends_on: [],
+  step: { type: 'preset', name: 'thumbnail' },
+};
+const deletion: DagStepDefinition = {
+  id: 'cleanup',
+  depends_on: ['thumb'],
+  step: { type: 'preset', name: 'delete_source' },
+};
+
+describe('workflow preset warnings', () => {
+  it('resolves labels and delete warnings beyond the first 100 presets without borrowing inline labels', async () => {
+    const inline: DagStepDefinition = {
+      id: 'custom',
+      depends_on: [],
+      step: { type: 'inline', processor: 'thumbnail', config: {} },
+    };
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <I18nProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <StepsList
+            steps={[transform, deletion, inline]}
+            onReorder={() => {}}
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+    await screen.findByTitle(/This Delete step deletes the converted result/i);
+    expect(screen.getByText('Inline: thumbnail')).toBeInTheDocument();
+    expect(screen.queryByText('a-custom-0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(listJobPresets).toHaveBeenCalledTimes(2);
+    expect(listJobPresets).toHaveBeenCalledWith({
+      data: { name: 'thumbnail', limit: 1 },
+    });
+  });
+
+  it('requires confirmation for a delete preset found beyond the first page', async () => {
+    const { onSave } = renderDialog(deletion, vi.fn(), [transform, deletion]);
+    await waitFor(() =>
+      expect(screen.queryByRole('status')).not.toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    await screen.findByRole('heading', {
+      name: 'Delete the converted result?',
+    });
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Add anyway/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(deletion));
+  });
+
+  it.each(['missing', 'failed', 'loading'])(
+    'does not silently approve a delete with a %s dependency preset',
+    async (state) => {
+      const inlineDelete: DagStepDefinition = {
+        ...deletion,
+        step: { type: 'inline', processor: 'delete', config: {} },
+      };
+      if (state === 'missing')
+        available = PRESETS.filter((p) => p.name !== 'thumbnail');
+      if (state === 'failed')
+        listJobPresets.mockRejectedValueOnce(new Error('Unavailable'));
+      if (state === 'loading')
+        listJobPresets.mockImplementationOnce(() => new Promise(() => {}));
+      const { onSave } = renderDialog(inlineDelete, vi.fn(), [
+        transform,
+        inlineDelete,
+      ]);
+      const statusText =
+        state === 'missing'
+          ? /Missing presets:/
+          : state === 'failed'
+            ? /Could not load presets:/
+            : /Loading presets:/;
+      await screen.findByText(statusText);
+      fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+      await screen.findByRole('heading', {
+        name: 'Save with incomplete delete checks?',
+      });
+      expect(onSave).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['', '   ', 'thumb'])(
+    'prevents saving invalid step ID %j',
+    async (id) => {
+      const { onSave } = renderDialog(deletion, vi.fn(), [transform, deletion]);
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /Flow/i }), {
+        button: 0,
+        ctrlKey: false,
+      });
+      fireEvent.change(await screen.findByLabelText(/Step Identifier/i), {
+        target: { value: id },
+      });
+      expect(
+        screen.getByRole('button', { name: /Save Changes/i }),
+      ).toBeDisabled();
+      expect(
+        await screen.findByText(
+          id.trim() ? 'Step ID must be unique.' : 'Step ID is required.',
+        ),
+      ).toBeInTheDocument();
+      expect(onSave).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('StepConfigDialog preset steps', () => {

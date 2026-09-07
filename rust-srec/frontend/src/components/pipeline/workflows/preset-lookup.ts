@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQueries, useQuery } from '@tanstack/react-query';
+import type { DagStepDefinition } from '@/api/schemas';
 import { listJobPresets } from '@/server/functions/job';
 
 // Pick the preset whose name equals `name`. Preset names are unique, and the backend resolves a
@@ -14,16 +15,49 @@ export function findPresetByName<T extends { name: string }>(
   return presets.find((p) => p.name === name) ?? null;
 }
 
-// Resolve the job preset a `preset` step references. `preset` is null while loading, when the
-// request failed, and when no preset carries that name, so callers must check `isLoading` and
-// `isError` before reporting the preset as missing.
-export function usePresetByName(name: string | null, enabled: boolean) {
-  const { data, isLoading, isError } = useQuery({
+function presetByNameOptions(name: string | null, enabled: boolean) {
+  return queryOptions({
     queryKey: ['job', 'presets', 'detail', name],
     queryFn: () =>
       listJobPresets({ data: { name: name || undefined, limit: 1 } }),
     enabled: enabled && !!name,
   });
+}
+
+// Check isLoading/isError before treating a null preset as missing.
+export function usePresetByName(name: string | null, enabled: boolean) {
+  const { data, isLoading, isError } = useQuery(
+    presetByNameOptions(name, enabled),
+  );
 
   return { preset: findPresetByName(data?.presets, name), isLoading, isError };
+}
+
+// Resolve only referenced names. All editor surfaces share the dialog's exact-name cache,
+// independent of the list endpoint's page limit.
+export function useReferencedPresets(
+  steps: DagStepDefinition[],
+  enabled = true,
+) {
+  const names = [
+    ...new Set(
+      steps.flatMap(({ step }) => (step.type === 'preset' ? [step.name] : [])),
+    ),
+  ];
+  return useQueries({
+    queries: names.map((name) => presetByNameOptions(name, enabled)),
+    combine: (results) => ({
+      presets: results.flatMap((result, index) => {
+        const preset = findPresetByName(result.data?.presets, names[index]);
+        return !result.isError && preset ? [preset] : [];
+      }),
+      loading: names.filter((_, index) => results[index].isPending),
+      failed: names.filter((_, index) => results[index].isError),
+      missing: names.filter(
+        (name, index) =>
+          results[index].isSuccess &&
+          !findPresetByName(results[index].data?.presets, name),
+      ),
+    }),
+  });
 }
