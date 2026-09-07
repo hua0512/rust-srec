@@ -162,7 +162,7 @@ export function ChannelCard({
 
       <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
         <div
-          className={`p-3 rounded-2xl ${colorClass.replace('bg-', 'bg-opacity-10 ')} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
+          className={`p-3 rounded-2xl ${colorClass} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
         >
           <Icon className="h-5 w-5" />
         </div>

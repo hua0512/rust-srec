@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Ghost } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
-export function NotFound({ children }: { children?: any }) {
+export function NotFound({ children }: { children?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4 p-4 text-center">
       <Ghost className="h-24 w-24 text-muted-foreground opacity-20" />

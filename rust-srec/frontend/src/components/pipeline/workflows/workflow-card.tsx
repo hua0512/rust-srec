@@ -23,25 +23,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  Edit,
-  MoreHorizontal,
-  Trash,
-  Workflow,
-  FileVideo,
-  Upload,
-  Image as ImageIcon,
-  Scissors,
-  Archive,
-  Cloud,
-  Terminal,
-  Tag,
-  Copy,
-} from 'lucide-react';
+import { Edit, MoreHorizontal, Trash, Workflow } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { PipelinePreset } from '@/server/functions/pipeline';
+import {
+  getStepBadgeColor,
+  getStepIcon,
+} from '@/components/pipeline/constants';
 import {
   getJobPresetName,
   getPipelinePresetDescription,
@@ -52,72 +42,6 @@ interface WorkflowCardProps {
   workflow: PipelinePreset;
   onEdit: (workflow: PipelinePreset) => void;
   onDelete: (id: string) => void;
-}
-
-const STEP_ICONS: Record<string, React.ElementType> = {
-  remux: FileVideo,
-  remux_faststart: FileVideo,
-  remux_mkv: FileVideo,
-  thumbnail: ImageIcon,
-  thumbnail_hd: ImageIcon,
-  thumbnail_preview: ImageIcon,
-  upload: Upload,
-  upload_and_delete: Upload,
-  rclone: Cloud,
-  execute: Terminal,
-  copy: Copy,
-  move: Copy,
-  copy_move: Copy,
-  audio_extract: Scissors,
-  audio_mp3: Scissors,
-  audio_mp3_hq: Scissors,
-  audio_aac: Scissors,
-  compression: Archive,
-  compress_fast: Archive,
-  compress_hq: Archive,
-  compress_archive: Archive,
-  compress_hevc_max: Archive,
-  compress_ultrafast: Archive,
-  delete: Trash,
-  delete_source: Trash,
-  metadata: Tag,
-  add_metadata: Tag,
-  archive_zip: Archive,
-};
-
-const STEP_COLORS: Record<string, string> = {
-  remux: 'bg-blue-500',
-  thumbnail: 'bg-purple-500',
-  upload: 'bg-green-500',
-  rclone: 'bg-emerald-500',
-  execute: 'bg-gray-500',
-  audio: 'bg-pink-500',
-  compression: 'bg-orange-500',
-  delete: 'bg-red-500',
-  metadata: 'bg-cyan-500',
-  copy: 'bg-amber-500',
-  move: 'bg-amber-500',
-  archive: 'bg-yellow-500',
-};
-
-function getStepColor(step: string): string {
-  // Check exact match first
-  if (STEP_COLORS[step]) return STEP_COLORS[step];
-  // Check prefix match
-  for (const [key, color] of Object.entries(STEP_COLORS)) {
-    if (step.startsWith(key)) return color;
-  }
-  return 'bg-primary';
-}
-
-function getStepIcon(step: string): React.ElementType {
-  // Check exact match first
-  if (STEP_ICONS[step]) return STEP_ICONS[step];
-  // Check prefix match
-  for (const [key, Icon] of Object.entries(STEP_ICONS)) {
-    if (step.startsWith(key)) return Icon;
-  }
-  return Workflow;
 }
 
 export function WorkflowCard({
@@ -220,24 +144,22 @@ export function WorkflowCard({
             const stepName =
               step.type === 'inline' ? step.processor : step.name;
             const StepIcon = getStepIcon(stepName);
-            const color = getStepColor(stepName);
+            const badgeColor = getStepBadgeColor(stepName);
             const isInline = step.type === 'inline';
 
             return (
               <div
                 key={index}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${color}/10 border border-${color.replace('bg-', '')}/20 transition-all hover:scale-105 group/step`}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${badgeColor} transition-all hover:scale-105 group/step`}
                 title={
                   id
                     ? `${id}: ${stepName}`
                     : stepName + (isInline ? ' (Inline)' : '')
                 }
               >
-                <StepIcon
-                  className={`h-3 w-3 ${color.replace('bg-', 'text-')}`}
-                />
+                <StepIcon className="h-3 w-3" />
                 {id && (
-                  <span className="text-[9px] font-mono opacity-50 mr-0.5 border-r border-current border-opacity-20 pr-1 leading-none h-2.5 flex items-center">
+                  <span className="text-[9px] font-mono opacity-50 mr-0.5 border-r border-current/20 pr-1 leading-none h-2.5 flex items-center">
                     {id}
                   </span>
                 )}

@@ -24,26 +24,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  Edit,
-  MoreHorizontal,
-  Trash,
-  FileVideo,
-  Upload,
-  Terminal,
-  Copy,
-  Scissors,
-  Archive,
-  Tag,
-  Image as ImageIcon,
-  CopyPlus,
-  Cloud,
-} from 'lucide-react';
+import { Edit, MoreHorizontal, Trash, CopyPlus } from 'lucide-react';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import {
+  getStepBadgeColor,
+  getStepIcon,
+} from '@/components/pipeline/constants';
 import {
   DEFAULT_JOB_PRESET_DESCRIPTIONS,
   DEFAULT_JOB_PRESET_NAMES,
+  getCategoryName,
 } from './default-presets-i18n';
 
 interface PresetCardProps {
@@ -53,50 +45,6 @@ interface PresetCardProps {
   onClone?: (preset: z.infer<typeof JobPresetSchema>) => void;
 }
 
-const PROCESSOR_ICONS: Record<string, React.ElementType> = {
-  remux: FileVideo,
-  thumbnail: ImageIcon,
-  upload: Upload,
-  rclone: Cloud,
-  execute: Terminal,
-  copy_move: Copy,
-  audio_extract: Scissors,
-  compression: Archive,
-  delete: Trash,
-  metadata: Tag,
-};
-
-const PROCESSOR_COLORS: Record<string, string> = {
-  remux: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  thumbnail: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
-  upload: 'bg-green-500/10 text-green-500 border-green-500/20',
-  rclone: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-  execute: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
-  audio_extract: 'bg-pink-500/10 text-pink-500 border-pink-500/20',
-  compression: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-  delete: 'bg-red-500/10 text-red-500 border-red-500/20',
-  metadata: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
-  copy_move: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-};
-
-import { msg } from '@lingui/core/macro';
-import { useLingui } from '@lingui/react';
-
-const CATEGORY_LABELS: Record<string, any> = {
-  remux: msg`Remux`,
-  compression: msg`Compression`,
-  thumbnail: msg`Thumbnail`,
-  audio: msg`Audio`,
-  archive: msg`Archive`,
-  upload: msg`Upload`,
-  cleanup: msg`Cleanup`,
-  file_ops: msg`File Ops`,
-  custom: msg`Custom`,
-  metadata: msg`Metadata`,
-  danmu: msg`Danmaku`,
-  subtitle: msg`Subtitle`,
-};
-
 export function PresetCard({
   preset,
   onEdit,
@@ -104,16 +52,14 @@ export function PresetCard({
   onClone,
 }: PresetCardProps) {
   const { i18n } = useLingui();
-  const Icon = PROCESSOR_ICONS[preset.processor] || FileVideo;
-  const colorClass =
-    PROCESSOR_COLORS[preset.processor] ||
-    'bg-primary/10 text-primary border-primary/20';
-  const categoryLabelKey = preset.category
-    ? CATEGORY_LABELS[preset.category]
+  const Icon = getStepIcon(preset.processor);
+  const colorClass = getStepBadgeColor(
+    preset.processor,
+    preset.category ?? undefined,
+  );
+  const categoryLabel = preset.category
+    ? getCategoryName(preset.category, i18n)
     : null;
-  const categoryLabel = categoryLabelKey
-    ? i18n._(categoryLabelKey)
-    : (preset.category ?? null);
 
   let configObj: any = {};
   try {
@@ -140,7 +86,7 @@ export function PresetCard({
 
       <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
         <div
-          className={`p-3 rounded-2xl ${colorClass.replace('bg-', 'bg-opacity-10 ')} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
+          className={`p-3 rounded-2xl ${colorClass} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
         >
           <Icon className="h-5 w-5" />
         </div>

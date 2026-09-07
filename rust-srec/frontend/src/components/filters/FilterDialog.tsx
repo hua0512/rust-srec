@@ -25,7 +25,6 @@ import { toast } from 'sonner';
 import { FilterTypeSelector } from './forms/FilterTypeSelector';
 import { TimeBasedFilterForm } from './forms/TimeBasedFilterForm';
 import { KeywordFilterForm } from './forms/KeywordFilterForm';
-// import { CategoryFilterForm } from './forms/CategoryFilterForm';
 import { CronFilterForm } from './forms/CronFilterForm';
 import { RegexFilterForm } from './forms/RegexFilterForm';
 import { useEffect } from 'react';
@@ -37,6 +36,8 @@ import { useLingui } from '@lingui/react';
 const FormSchema = CreateFilterRequestSchema;
 type FormInput = z.input<typeof FormSchema>;
 type FormOutput = z.infer<typeof FormSchema>;
+/** Union of the per-type config shapes the form can hold. */
+type FilterConfigInput = FormInput['config'];
 
 type Filter = z.infer<typeof FilterSchema>;
 
@@ -78,10 +79,12 @@ export function FilterDialog({
           filterType,
           filterToEdit.config,
         );
+        // The response schema keeps `config` permissive; normalization above is
+        // what pairs it with the selected type.
         form.reset({
           filter_type: filterType,
-          config: normalizedConfig as any,
-        });
+          config: normalizedConfig,
+        } as FormInput);
       } else {
         form.reset({
           filter_type: 'KEYWORD',
@@ -102,7 +105,7 @@ export function FilterDialog({
     const subscription = form.watch((value, { name }) => {
       if (name === 'filter_type') {
         const type = value.filter_type;
-        let defaultConfig: any = {};
+        let defaultConfig: FilterConfigInput = { include: [], exclude: [] };
         switch (type) {
           case 'TIME_BASED':
             defaultConfig = {
@@ -117,11 +120,6 @@ export function FilterDialog({
               exclude: [],
             };
             break;
-          /*
-          case 'CATEGORY':
-            defaultConfig = { categories: [], exclude: false };
-            break;
-          */
           case 'CRON':
             defaultConfig = { expression: '* * * * * *', timezone: 'UTC' };
             break;
@@ -133,7 +131,7 @@ export function FilterDialog({
             };
             break;
         }
-        form.setValue('config', defaultConfig as any);
+        form.setValue('config', defaultConfig);
         form.clearErrors('config');
       }
     });
@@ -150,7 +148,7 @@ export function FilterDialog({
       });
       onOpenChange(false);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || i18n._(msg`Failed to create filter`));
     },
   });
@@ -165,7 +163,7 @@ export function FilterDialog({
       });
       onOpenChange(false);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || i18n._(msg`Failed to update filter`));
     },
   });
@@ -186,10 +184,6 @@ export function FilterDialog({
         return <TimeBasedFilterForm />;
       case 'KEYWORD':
         return <KeywordFilterForm />;
-      /*
-      case 'CATEGORY':
-        return <CategoryFilterForm />;
-      */
       case 'CRON':
         return <CronFilterForm />;
       case 'REGEX':

@@ -268,6 +268,10 @@
 
 ## Web interface
 
+- **Notification and preset cards show their colors again**
+
+  The rounded tile behind the icon at the top of every notification-channel and processing-preset card had lost its colored tint and sat on a plain background. Each tile is tinted again to match the kind of channel or processing step it stands for — indigo for Discord, blue for e-mail, green for uploads, and so on.
+
 - **Configuration editors respond faster while typing**
 
   Editing a template, a platform or a streamer redrew the whole form on every keystroke, which felt sluggish on the longer forms and worst of all with the pipeline editor open. A change now refreshes only the part of the page that shows it. The import summary under **Backup & Restore** and the 24-hour bar in the time filter no longer rebuild themselves for unrelated changes either, and the live figures on a running recording count up smoothly instead of stopping partway.
