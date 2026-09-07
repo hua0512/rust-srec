@@ -76,6 +76,8 @@ External channel delivery retries transient failures with backoff and uses a cir
 
 These mechanisms reduce transient loss but do not create an end-to-end delivery guarantee. Monitor the receiving service, use the channel test after configuration changes, and configure a second destination for critical events.
 
+Web Push uses a 2,048-event FIFO queue and normal worker batches of up to 64 events. When the queue is full, the newest event is dropped at every priority, including critical. A missing or closed worker and service shutdown also reject new push events. The `notification_stats.web_push_dropped` counter records these admission failures, with rate-limited warning logs. Event-history persistence and external channel delivery continue independently; dropped push events are not replayed. Shutdown attempts to flush admitted events within the existing background-task shutdown budget, but admission does not guarantee delivery.
+
 ## Critical Storage Events
 
 - `out_of_space` indicates that the disk threshold has been crossed.
