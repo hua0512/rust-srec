@@ -12,7 +12,7 @@ use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
 
 /// Email channel configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EmailConfig {
     /// Stable channel instance identifier (recommended).
     ///
@@ -49,6 +49,32 @@ pub struct EmailConfig {
     /// Batch emails within this window (seconds).
     #[serde(default = "default_batch_window")]
     pub batch_window_secs: u64,
+}
+
+impl std::fmt::Debug for EmailConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmailConfig")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("enabled", &self.enabled)
+            .field("smtp_host", &self.smtp_host)
+            .field("smtp_port", &self.smtp_port)
+            .field(
+                "smtp_username",
+                &self.smtp_username.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "smtp_password",
+                &self.smtp_password.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("use_tls", &self.use_tls)
+            .field("from_address", &"[REDACTED]")
+            .field("recipient_count", &self.to_addresses.len())
+            .field("min_priority", &self.min_priority)
+            .field("locale", &self.locale)
+            .field("batch_window_secs", &self.batch_window_secs)
+            .finish()
+    }
 }
 
 fn default_email_priority() -> NotificationPriority {
