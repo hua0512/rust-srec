@@ -55,6 +55,12 @@ SELECT table_name, row_id, column_name,
     END
 FROM parts;
 
+-- Timestamp normalization is not a user edit. Preserve queued deletions that
+-- the ordinary configuration UPDATE triggers cancel, within SQLx's migration
+-- transaction, without changing those triggers for subsequent user edits.
+CREATE TEMP TABLE _preset_template_retirement_deletions AS
+SELECT kind, config_id FROM retirement_config_deletions;
+
 UPDATE job_presets SET
     created_at = (SELECT epoch_ms FROM _preset_template_timestamp_ms
         WHERE table_name = 'job_presets' AND row_id = job_presets.id AND column_name = 'created_at'),
@@ -73,4 +79,13 @@ UPDATE template_config SET
     updated_at = (SELECT epoch_ms FROM _preset_template_timestamp_ms
         WHERE table_name = 'template_config' AND row_id = template_config.id AND column_name = 'updated_at');
 
+INSERT INTO retirement_config_deletions (kind, config_id)
+SELECT kind, config_id FROM _preset_template_retirement_deletions
+WHERE NOT EXISTS (
+    SELECT 1 FROM retirement_config_deletions AS pending
+    WHERE pending.kind = _preset_template_retirement_deletions.kind
+        AND pending.config_id = _preset_template_retirement_deletions.config_id
+);
+
+DROP TABLE _preset_template_retirement_deletions;
 DROP TABLE _preset_template_timestamp_ms;

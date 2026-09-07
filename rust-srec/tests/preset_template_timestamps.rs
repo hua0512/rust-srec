@@ -16,6 +16,55 @@ use rust_srec::database::repositories::{
 
 const VERSION: i64 = 20260907120000;
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+const RETIRING_TABLES: [(&str, &str, &str, &str); 3] = [
+    (
+        "job_presets",
+        "job_preset",
+        ", processor, config",
+        ", 'remux', '{}'",
+    ),
+    ("pipeline_presets", "pipeline_preset", "", ""),
+    ("template_config", "template", "", ""),
+];
+
+async fn seed_retiring_configurations(pool: &SqlitePool) {
+    for (table, kind, extra_columns, extra_values) in RETIRING_TABLES {
+        for (id, timestamp) in [
+            ("retiring-integer", "1788784496123"),
+            ("retiring-text", "'2026-09-07T12:34:56.123456Z'"),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO {table} (id, name, created_at, updated_at{extra_columns}) VALUES (?, ?, {timestamp}, {timestamp}{extra_values})"
+            )))
+            .bind(id).bind(id).execute(pool).await.unwrap();
+            sqlx::query("INSERT INTO retirement_config_deletions (kind, config_id) VALUES (?, ?)")
+                .bind(kind)
+                .bind(id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+    }
+    // Intentions without a current definition must also survive normalization.
+    sqlx::query("INSERT INTO retirement_config_deletions (kind, config_id) VALUES ('template', 'missing-template')")
+        .execute(pool).await.unwrap();
+}
+
+async fn retirement_deletions(pool: &SqlitePool) -> Vec<(String, String)> {
+    sqlx::query_as(
+        "SELECT kind, config_id FROM retirement_config_deletions ORDER BY kind, config_id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn schema_definitions(pool: &SqlitePool) -> Vec<(String, String)> {
+    sqlx::query_as("SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY name")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
 
 async fn previous_database() -> SqlitePool {
     let pool = SqlitePoolOptions::new()
@@ -185,6 +234,110 @@ async fn timestamp_migration_rejects_malformed_values_atomically_and_can_retry()
             .unwrap();
         MIGRATOR.run(&pool).await.unwrap();
         assert_eq!(timestamps(&pool, "template_config", "bad").await.0, 0);
+    }
+}
+
+#[tokio::test]
+async fn timestamp_migration_preserves_retirement_intentions_and_user_edit_triggers() {
+    let pool = previous_database().await;
+    seed_retiring_configurations(&pool).await;
+    let mut pending = retirement_deletions(&pool).await;
+    assert_eq!(pending.len(), 7);
+    let schema = schema_definitions(&pool).await;
+
+    MIGRATOR.run(&pool).await.unwrap();
+    MIGRATOR.run(&pool).await.unwrap();
+    assert_eq!(retirement_deletions(&pool).await, pending);
+    assert_eq!(schema_definitions(&pool).await, schema);
+
+    for (table, kind, _, _) in RETIRING_TABLES {
+        for id in ["retiring-integer", "retiring-text"] {
+            assert_eq!(
+                timestamps(&pool, table, id).await,
+                (1788784496123, 1788784496123)
+            );
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE {table} SET name = ? WHERE id = ?"
+            )))
+            .bind(format!("{id}-kept"))
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+            pending.retain(|(pending_kind, pending_id)| pending_kind != kind || pending_id != id);
+            assert_eq!(retirement_deletions(&pool).await, pending);
+        }
+    }
+    assert!(
+        sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("PRAGMA integrity_check")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "ok"
+    );
+}
+
+#[tokio::test]
+async fn timestamp_migration_rolls_back_retirement_cancellations_and_can_retry() {
+    let pool = previous_database().await;
+    seed_retiring_configurations(&pool).await;
+    let pending = retirement_deletions(&pool).await;
+    let schema = schema_definitions(&pool).await;
+    // Fail after the job and pipeline updates have already canceled intentions.
+    sqlx::raw_sql(
+        "CREATE TRIGGER fail_timestamp_normalization BEFORE UPDATE ON template_config
+         BEGIN SELECT RAISE(ABORT, 'injected normalization failure'); END;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = MIGRATOR.run(&pool).await.unwrap_err().to_string();
+    assert!(error.contains("injected normalization failure"), "{error}");
+    assert_eq!(retirement_deletions(&pool).await, pending);
+    for (table, _, _, _) in RETIRING_TABLES {
+        assert_eq!(
+            timestamps(&pool, table, "retiring-integer").await,
+            (1788784496123, 1788784496123)
+        );
+        let text: (String, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT created_at, updated_at FROM {table} WHERE id = 'retiring-text'"
+        )))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(text.0, "2026-09-07T12:34:56.123456Z");
+        assert_eq!(text.1, text.0);
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM _sqlx_migrations WHERE version = ?")
+            .bind(VERSION)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("DROP TRIGGER fail_timestamp_normalization")
+        .execute(&pool)
+        .await
+        .unwrap();
+    MIGRATOR.run(&pool).await.unwrap();
+    assert_eq!(retirement_deletions(&pool).await, pending);
+    assert_eq!(schema_definitions(&pool).await, schema);
+    for (table, _, _, _) in RETIRING_TABLES {
+        for id in ["retiring-integer", "retiring-text"] {
+            assert_eq!(
+                timestamps(&pool, table, id).await,
+                (1788784496123, 1788784496123)
+            );
+        }
     }
 }
 
