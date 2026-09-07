@@ -77,6 +77,21 @@ struct PersistedLogCursor {
     persisted_rows: Option<usize>,
 }
 
+struct LogCursorCleanup<'a> {
+    queue: &'a JobQueue,
+    job_id: &'a str,
+}
+
+impl Drop for LogCursorCleanup<'_> {
+    fn drop(&mut self) {
+        if !self.queue.jobs_cache.contains_key(self.job_id)
+            && !self.queue.cancellation_tokens.contains_key(self.job_id)
+        {
+            self.queue.persisted_log_cursor.remove(self.job_id);
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum LogPersistence {
     /// The caller owns a disjoint batch and removes it only after a successful write.
@@ -953,6 +968,10 @@ impl JobQueue {
         // snapshots can otherwise both observe an unpersisted occurrence before insertion.
         // The lock must survive removal of the cursor by cancellation or terminal cleanup.
         let _guard = self.log_persistence_lock(job_id).lock().await;
+        let _cleanup = LogCursorCleanup {
+            queue: self,
+            job_id,
+        };
         let previous_rows = self
             .persisted_log_cursor
             .entry(job_id.to_owned())
@@ -1032,10 +1051,6 @@ impl JobQueue {
         if let Some(mut cursor) = self.persisted_log_cursor.get_mut(job_id) {
             cursor.persisted_rows = Some(persisted_rows);
         }
-        if !self.jobs_cache.contains_key(job_id) && !self.cancellation_tokens.contains_key(job_id) {
-            self.persisted_log_cursor.remove(job_id);
-        }
-
         Ok(new_logs)
     }
 
@@ -3045,7 +3060,7 @@ mod tests {
         crate::database::run_migrations(&pool).await.unwrap();
         let repo = Arc::new(crate::database::repositories::SqlxJobRepository::new(
             pool.clone(),
-            pool,
+            pool.clone(),
         ));
         let queue = JobQueue::with_repository(JobQueueConfig::default(), repo.clone());
         let job_id = queue
@@ -3090,6 +3105,20 @@ mod tests {
         assert!(
             logs.iter()
                 .any(|entry| entry.message.as_deref() == Some("second late batch"))
+        );
+        assert!(!queue.persisted_log_cursor.contains_key(&job_id));
+        sqlx::query(
+            "CREATE TRIGGER reject_late_log BEFORE INSERT ON job_execution_logs
+             BEGIN SELECT RAISE(FAIL, 'injected late failure'); END",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            queue
+                .append_log_entry(&job_id, &[JobLogEntry::info("failed late batch")])
+                .await
+                .is_err()
         );
         assert!(!queue.persisted_log_cursor.contains_key(&job_id));
     }
