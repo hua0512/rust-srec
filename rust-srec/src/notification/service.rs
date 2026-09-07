@@ -46,6 +46,7 @@ use crate::utils::task_supervisor::TaskSupervisor;
 
 mod dead_letter;
 mod delivery;
+mod web_push_queue;
 
 /// Best-effort interval for in-memory dead-letter cleanup.
 ///
@@ -231,6 +232,7 @@ pub struct NotificationService {
     web_push_service: Option<Arc<WebPushService>>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
     web_push_worker_started: AtomicBool,
+    web_push_dropped: AtomicU64,
     subscriptions_by_event: RwLock<HashMap<String, Vec<String>>>,
     channels: RwLock<Vec<Arc<RuntimeChannel>>>,
     channels_by_key: DashMap<String, Arc<RuntimeChannel>>,
@@ -311,6 +313,7 @@ impl NotificationService {
             web_push_service: None,
             web_push_tx: parking_lot::RwLock::new(None),
             web_push_worker_started: AtomicBool::new(false),
+            web_push_dropped: AtomicU64::new(0),
             subscriptions_by_event: RwLock::new(HashMap::new()),
             channels: RwLock::new(Vec::new()),
             channels_by_key: DashMap::new(),
@@ -928,34 +931,13 @@ impl NotificationService {
         }
 
         // Best-effort: send web push notifications (independent of channel delivery).
-        if let Some(web_push) = self.web_push_service.as_ref().cloned() {
+        if self.web_push_service.is_some() {
             let queued = WebPushQueuedEvent {
                 event: event.clone(),
                 event_log_id: Some(event_log_id.clone()),
             };
 
-            let web_push_tx = self.web_push_tx.read().clone();
-
-            match web_push_tx {
-                Some(tx) => match tx.try_send(queued) {
-                    Ok(()) => {}
-                    Err(err) => {
-                        warn!(error = %err, "Web push queue full/closed; falling back to detached send");
-                        let event = event.clone();
-                        let event_log_id = event_log_id.clone();
-                        self.task_supervisor.spawn("web push fallback", async move {
-                            web_push.send_event(&event, Some(&event_log_id)).await;
-                        });
-                    }
-                },
-                None => {
-                    let event = event.clone();
-                    let event_log_id = event_log_id.clone();
-                    self.task_supervisor.spawn("web push fallback", async move {
-                        web_push.send_event(&event, Some(&event_log_id)).await;
-                    });
-                }
-            }
+            self.enqueue_web_push(queued);
         }
 
         // Queue the notification
@@ -1032,6 +1014,7 @@ impl NotificationService {
             pending_count: self.pending_queue.len(),
             dead_letter_count: self.dead_letters.len(),
             channel_count: self.channels.read().len(),
+            web_push_dropped: self.web_push_dropped.load(Ordering::Relaxed),
             circuit_breakers: self
                 .circuit_breakers
                 .iter()
@@ -1499,12 +1482,12 @@ impl NotificationService {
     /// Stop the notification service.
     pub async fn stop(&self) {
         info!("Stopping notification service");
-        self.cancellation_token.cancel();
-
-        // Closing the queue lets the supervised worker flush pending events.
-        let tx = self.web_push_tx.write().take();
-        if let Some(tx) = tx {
-            drop(tx);
+        // Fence admission before waking the worker to drain. A sender that already
+        // holds the read lock must publish before cancellation becomes visible.
+        {
+            let mut sender = self.web_push_tx.write();
+            self.cancellation_token.cancel();
+            sender.take();
         }
         if self.owns_task_supervisor
             && !self.task_supervisor.shutdown(Duration::from_secs(10)).await
@@ -1578,6 +1561,9 @@ impl Default for NotificationService {
 /// Statistics about the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationStats {
+    /// Web-push events rejected by queue admission (all priorities). No automatic replay.
+    #[serde(default)]
+    pub web_push_dropped: u64,
     /// Number of pending notifications.
     pub pending_count: usize,
     /// Number of dead letter entries.
