@@ -275,7 +275,9 @@ pub struct TemplateConfigDbModel {
     pub paired_segment_pipeline: Option<String>,
     pub offline_check_count: Option<i32>,
     pub offline_check_delay_ms: Option<i64>,
+    #[sqlx(try_from = "crate::database::time::EpochMillis")]
     pub created_at: DateTime<Utc>,
+    #[sqlx(try_from = "crate::database::time::EpochMillis")]
     pub updated_at: DateTime<Utc>,
 }
 

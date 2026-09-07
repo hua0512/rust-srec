@@ -10,6 +10,10 @@
 
 ## Configuration
 
+- **Preset and template dates use consistent millisecond storage**
+
+  Built-in presets and templates updated during credential refresh now display correct dates. Preset, template, and configuration-import writes consistently store integer milliseconds while the API keeps its existing date-string format. A new migration converts historical date strings without rounding fractional milliseconds or altering existing integers. Invalid historical values stop the migration without changing the data; see [timestamp repair guidance](../operations/upgrading.md#preset-and-template-timestamps).
+
 - **Bilibili quality overrides preserve inheritance**
 
   Opening an inherited platform-options form no longer writes a quality override. Template and streamer forms show an inherited choice; selecting it clears the override. Platform defaults and quality codes now match the Bilibili extractor. Template options saved by the UI are applied by the resolver, while existing flat configurations remain supported.

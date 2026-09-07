@@ -60,8 +60,10 @@ pub struct JobPreset {
     /// This corresponds to the `config` field in `ProcessorInput`.
     pub config: String,
     /// Creation timestamp.
+    #[sqlx(try_from = "crate::database::time::EpochMillis")]
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
+    #[sqlx(try_from = "crate::database::time::EpochMillis")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -182,8 +184,10 @@ pub struct PipelinePreset {
     #[serde(default)]
     pub pipeline_type: Option<String>,
     /// Creation timestamp.
+    #[sqlx(try_from = "crate::database::time::EpochMillis")]
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
+    #[sqlx(try_from = "crate::database::time::EpochMillis")]
     pub updated_at: DateTime<Utc>,
 }
 

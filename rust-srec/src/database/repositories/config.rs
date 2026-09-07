@@ -1,7 +1,6 @@
 //! Configuration repository.
 
 use async_trait::async_trait;
-use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::database::models::{
@@ -424,8 +423,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.paired_segment_pipeline)
         .bind(config.offline_check_count)
         .bind(config.offline_check_delay_ms)
-        .bind(config.created_at)
-        .bind(config.updated_at)
+        .bind(config.created_at.timestamp_millis())
+        .bind(config.updated_at.timestamp_millis())
         .execute(&self.write_pool)
         .await?;
         Ok(())
@@ -483,7 +482,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.paired_segment_pipeline)
         .bind(config.offline_check_count)
         .bind(config.offline_check_delay_ms)
-        .bind(Utc::now())
+        .bind(crate::database::time::now_ms())
         .bind(&config.id)
         .execute(&self.write_pool)
         .await?;
