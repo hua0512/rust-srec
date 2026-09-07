@@ -64,6 +64,10 @@
 
 ## Recording
 
+- **Engine resolution uses bounded version probes and reports invalid settings**
+
+  Custom engine resolution and engine tests probe executables asynchronously with a three-second limit and bounded process cleanup. Probe output is drained with bounded memory use. Repository failures, malformed base settings, and invalid overrides are reported instead of silently selecting defaults; missing named configurations retain the existing fallback behavior. Synchronous startup constructors use the same bounded probe.
+
 - **Recording stops retain confirmed final segments**
 
   FFmpeg and Streamlink receive a separate bounded cleanup period after their graceful-stop deadline expires. Confirmed final segments are published once before the recording ends; unconfirmed cleanup does not advertise completion. Unused FFmpeg standard output cannot fill an unread pipe, and stopping Mesio before its first HLS segment no longer counts as an engine failure.

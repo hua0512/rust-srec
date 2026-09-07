@@ -12,6 +12,12 @@ The `FFMPEG` downloader is the compatibility-focused external engine. It is writ
 > [!NOTE]
 > The FFMPEG version provided in our Docker images is a specialized build from [yt-dlp/FFmpeg-Builds](https://github.com/yt-dlp/FFmpeg-Builds/). This build is optimized for streaming and includes (or has upstreamed) critical patches for smooth integration with `yt-dlp`, such as fixing AAC HLS truncation, supporting long paths on Windows, and decoding non-standard HEVC in FLV containers.
 
+### Executable Checks
+
+FFmpeg and Streamlink version checks have a three-second deadline, followed by bounded process cleanup if needed. Engine tests and custom-engine resolution run these checks asynchronously. An executable that cannot be started or does not finish its version check before the deadline is reported unavailable. Synchronous startup initialization waits for the same bounded check.
+
+Missing named engine configurations retain the default-engine fallback. Database access failures, malformed saved settings, and invalid overrides fail resolution instead of silently changing the effective configuration.
+
 ## 1. Engines Feature List
 
 |         Feature          |                Mesio                 |                 FFMPEG                  |               STREAMLINK                |

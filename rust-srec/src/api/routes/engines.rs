@@ -263,12 +263,12 @@ pub async fn test_engine(
         EngineType::Ffmpeg => {
             let engine_config: FfmpegEngineConfig = serde_json::from_str(&config.config)
                 .map_err(|e| ApiError::internal(format!("Invalid ffmpeg config: {}", e)))?;
-            Box::new(FfmpegEngine::with_config(engine_config))
+            Box::new(FfmpegEngine::with_config_async(engine_config).await)
         }
         EngineType::Streamlink => {
             let engine_config: StreamlinkEngineConfig = serde_json::from_str(&config.config)
                 .map_err(|e| ApiError::internal(format!("Invalid streamlink config: {}", e)))?;
-            Box::new(StreamlinkEngine::with_config(engine_config))
+            Box::new(StreamlinkEngine::with_config_async(engine_config).await)
         }
         EngineType::Mesio => {
             let engine_config: MesioEngineConfig = serde_json::from_str(&config.config)

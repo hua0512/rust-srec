@@ -65,8 +65,21 @@ impl StreamlinkEngine {
 
     /// Create with a custom configuration.
     pub fn with_config(config: StreamlinkEngineConfig) -> Self {
+        let version = super::utils::probe_version_sync(&config.binary_path, "--version")
+            .map(|output| output.trim().to_owned());
+        Self::with_version(config, version)
+    }
+
+    /// Probe a configured executable without blocking the async runtime.
+    pub async fn with_config_async(config: StreamlinkEngineConfig) -> Self {
+        let version = super::utils::probe_version(&config.binary_path, "--version")
+            .await
+            .map(|output| output.trim().to_owned());
+        Self::with_version(config, version)
+    }
+
+    fn with_version(config: StreamlinkEngineConfig, version: Option<String>) -> Self {
         let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
-        let version = Self::detect_version(&config.binary_path);
 
         Self {
             config,
@@ -75,17 +88,6 @@ impl StreamlinkEngine {
             #[cfg(test)]
             fixture: None,
         }
-    }
-
-    /// Detect streamlink version.
-    fn detect_version(path: &str) -> Option<String> {
-        let mut cmd = process_utils::std_command(path);
-        cmd.arg("--version");
-        cmd.output().ok().and_then(|output| {
-            String::from_utf8(output.stdout)
-                .ok()
-                .map(|s| s.trim().to_string())
-        })
     }
 
     /// Build streamlink command arguments.
