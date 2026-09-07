@@ -617,7 +617,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         _job_id: &str,
         _pagination: &crate::database::models::Pagination,
     ) -> Result<(Vec<JobExecutionLogDbModel>, u64)> {
-        unimplemented!("not needed for these tests")
+        Ok((Vec::new(), 0))
     }
 
     async fn delete_execution_logs_for_job(&self, _job_id: &str) -> Result<()> {

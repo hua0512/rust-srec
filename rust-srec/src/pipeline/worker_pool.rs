@@ -751,6 +751,11 @@ impl JobRunner {
 
     /// Run one job through its processor and record the terminal state it reached.
     async fn execute_job(&self, mut job: Job, processor: &Arc<dyn Processor>) {
+        let Some(job_token) = self.job_queue.get_cancellation_token(&job.id).await else {
+            info!(job_id = %job.id, "Skipping withdrawn job");
+            return;
+        };
+
         self.active_workers.fetch_add(1, Ordering::SeqCst);
         let started = std::time::Instant::now();
 
@@ -813,17 +818,6 @@ impl JobRunner {
             log_rx,
             log_dropped,
         );
-
-        let job_token = match self.job_queue.get_cancellation_token(&facts.id).await {
-            Some(token) => token,
-            None => {
-                warn!(
-                    job_id = %facts.id,
-                    "Missing cancellation token for processing job"
-                );
-                CancellationToken::new()
-            }
-        };
 
         let ctx = ProcessorContext::new(
             facts.id.clone(),
@@ -1674,6 +1668,128 @@ mod tests {
             poll_interval_ms: 10,
             adaptive: AdaptiveWorkerPoolConfig::default(),
         }
+    }
+
+    struct ObservedProcessor {
+        calls: AtomicUsize,
+        entered: tokio::sync::Notify,
+        token: parking_lot::Mutex<Option<CancellationToken>>,
+    }
+
+    #[async_trait]
+    impl Processor for ObservedProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["observed"]
+        }
+
+        fn name(&self) -> &'static str {
+            "observed"
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            *self.token.lock() = Some(ctx.cancellation_token.clone());
+            self.entered.notify_one();
+            std::future::pending().await
+        }
+    }
+
+    fn observed_runner(
+        job_queue: Arc<JobQueue>,
+        event_tx: broadcast::Sender<PipelineEvent>,
+    ) -> JobRunner {
+        JobRunner {
+            worker_type: WorkerType::Cpu,
+            job_queue,
+            processors: vec![],
+            dag_scheduler: None,
+            dag_notify_tx: None,
+            event_tx: Some(event_tx),
+            active_workers: Arc::new(AtomicUsize::new(0)),
+            avg_runtime_ms: Arc::new(AtomicU64::new(0)),
+            job_timeout: Duration::from_secs(30),
+            shutdown: CancellationToken::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn withdrawn_job_never_starts_execution() {
+        let queue = Arc::new(JobQueue::new());
+        let job_id = queue
+            .enqueue(Job::new("observed", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        let job = queue.dequeue(None).await.unwrap().unwrap();
+        queue.forget_jobs(std::slice::from_ref(&job_id));
+
+        let (event_tx, mut event_rx) = broadcast::channel(8);
+        let runner = observed_runner(queue.clone(), event_tx);
+        let observed = Arc::new(ObservedProcessor {
+            calls: AtomicUsize::new(0),
+            entered: tokio::sync::Notify::new(),
+            token: parking_lot::Mutex::new(None),
+        });
+        let processor: Arc<dyn Processor> = observed.clone();
+        tokio::time::timeout(Duration::from_secs(1), runner.execute_job(job, &processor))
+            .await
+            .expect("withdrawn job must return before spawning execution tasks");
+
+        assert_eq!(observed.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
+        assert!(matches!(
+            event_rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert!(queue.get_job(&job_id).await.unwrap().is_none());
+        assert_eq!(queue.depth(), 0);
+    }
+
+    #[tokio::test]
+    async fn forgetting_started_job_cancels_retained_processor_token() {
+        let queue = Arc::new(JobQueue::new());
+        let job_id = queue
+            .enqueue(Job::new("observed", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (event_tx, mut event_rx) = broadcast::channel(8);
+        let runner = observed_runner(queue.clone(), event_tx);
+        let active = runner.active_workers.clone();
+        let observed = Arc::new(ObservedProcessor {
+            calls: AtomicUsize::new(0),
+            entered: tokio::sync::Notify::new(),
+            token: parking_lot::Mutex::new(None),
+        });
+        let processor: Arc<dyn Processor> = observed.clone();
+        let execution = tokio::spawn(async move { runner.execute_job(job, &processor).await });
+        tokio::time::timeout(Duration::from_secs(1), observed.entered.notified())
+            .await
+            .expect("processor should start");
+        assert_eq!(active.load(Ordering::SeqCst), 1);
+        queue.forget_jobs(std::slice::from_ref(&job_id));
+        assert!(observed.token.lock().as_ref().unwrap().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(1), execution)
+            .await
+            .expect("worker and log collector should settle after withdrawal")
+            .unwrap();
+
+        assert_eq!(observed.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert!(matches!(
+            event_rx.try_recv(),
+            Ok(PipelineEvent::JobStarted { .. })
+        ));
+        assert!(event_rx.try_recv().is_err());
+        assert!(queue.get_job(&job_id).await.unwrap().is_none());
+        assert_eq!(queue.depth(), 0);
     }
 
     /// The worker is the only place a job's start and terminal state are known, so it is what
