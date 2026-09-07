@@ -12,12 +12,12 @@ node_modules
 dist
 dist-desktop
 
-# Local SQLite databases. A development database left in this directory would
-# otherwise be carried into the build stage by `COPY . .`.
-*.db
-*.db-wal
-*.db-shm
-*.db-journal
+# Local SQLite databases. A development database left anywhere in the build
+# context would otherwise be carried into the build stage by `COPY . .`.
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
 
 # Local environment overrides. The image is configured through runtime
 # environment variables, and a local file would silently win over them at
