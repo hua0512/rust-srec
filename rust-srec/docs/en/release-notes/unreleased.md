@@ -52,6 +52,10 @@
 
 ## Recording
 
+- **Recording stops retain confirmed final segments**
+
+  FFmpeg and Streamlink receive a separate bounded cleanup period after their graceful-stop deadline expires. Confirmed final segments are published once before the recording ends; unconfirmed cleanup does not advertise completion. Unused FFmpeg standard output cannot fill an unread pipe, and stopping Mesio before its first HLS segment no longer counts as an engine failure.
+
 - **Sessions reconcile correctly after restart**
 
   The first confirmed offline check closes an unfinished session left by the previous process and makes its final post-processing recoverable. Failed or suppressed checks remain retryable. A broadcast that is still live continues its existing session, and normal offline grace periods remain in effect.
