@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -50,12 +50,20 @@ export function ConnectionStatusIndicator() {
 
   return (
     <Tooltip>
+      {/*
+        The indicator only reports state, so it carries `role="status"` instead of being a
+        button that does nothing when activated. It stays focusable so the tooltip is
+        reachable without a pointer.
+      */}
       <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 rounded-full relative"
+        <span
+          role="status"
+          tabIndex={0}
           aria-label={i18n._(msg`Connection status: ${statusLabel}`)}
+          className={cn(
+            buttonVariants({ variant: 'ghost', size: 'icon' }),
+            'h-9 w-9 rounded-full relative',
+          )}
         >
           <span className="relative flex h-2.5 w-2.5">
             {connectionStatus === 'connecting' && (
@@ -91,7 +99,7 @@ export function ConnectionStatusIndicator() {
               )}
             />
           </span>
-        </Button>
+        </span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="flex items-center gap-2">
         <span

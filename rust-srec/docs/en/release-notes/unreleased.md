@@ -270,7 +270,7 @@
 
 - **Screen readers and keyboards can use every control**
 
-  Buttons that show only an icon — the menu and sidebar buttons, back arrows, remove and copy buttons, the player's settings and close buttons, and the pipeline graph's zoom controls — were announced as an unnamed button, so a screen reader could not say what they do. They now all have a spoken name. The day and hour pickers in a time filter and the merge/replace choice when restoring a backup could only be operated with a mouse; they can now be reached with Tab, changed with the arrow keys or the space bar, and they announce which options are selected.
+  Buttons that show only an icon — the menu and sidebar buttons, back arrows, remove and copy buttons, the player's settings and remove buttons, and the pipeline graph's zoom controls — were announced as an unnamed button, so a screen reader could not say what they do. They now all have a spoken name. The day and hour pickers in a time filter and the merge-or-replace choice when restoring a backup could only be operated with a mouse; they can now be reached with Tab and operated with the keyboard — the space bar for the day and hour buttons, the arrow keys for the merge-or-replace choice — and they announce which options are selected.
 
 - **Emptied settings boxes stay empty**
 

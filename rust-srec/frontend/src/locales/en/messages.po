@@ -1780,7 +1780,7 @@ msgstr "Connection Error"
 msgid "Connection Instability"
 msgstr "Connection Instability"
 
-#: src/components/connection-status-indicator.tsx:58
+#: src/components/connection-status-indicator.tsx:62
 msgid "Connection status: {statusLabel}"
 msgstr "Connection status: {statusLabel}"
 

@@ -312,7 +312,7 @@ msgstr "2"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:294
 msgid "24-hour timeline"
-msgstr "24 小时时间轴"
+msgstr "24 小时时间线"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:490
 msgid "30 days"
@@ -1780,7 +1780,7 @@ msgstr "连接错误"
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
-#: src/components/connection-status-indicator.tsx:58
+#: src/components/connection-status-indicator.tsx:62
 msgid "Connection status: {statusLabel}"
 msgstr "连接状态：{statusLabel}"
 
