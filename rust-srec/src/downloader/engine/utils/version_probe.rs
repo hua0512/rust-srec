@@ -168,6 +168,56 @@ mod tests {
         );
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn dropping_probe_stops_its_live_child() {
+        let dir = tempfile::tempdir().unwrap();
+        let heartbeat = dir.path().join("heartbeat");
+        let mut command = command("hung");
+        command.env("SREC_VERSION_TEST_HEARTBEAT", &heartbeat);
+        let mut probe = Box::pin(run_probe(command, Duration::from_secs(60)));
+        timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                result = &mut probe => panic!("probe finished before cancellation: {result:?}"),
+                _ = async {
+                    loop {
+                        if std::fs::metadata(&heartbeat).is_ok_and(|metadata| metadata.len() >= 2) {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                } => {}
+            }
+        })
+        .await
+        .expect("native child must start and produce repeated heartbeats");
+
+        // Drop the owning future, not just a pinned reference to it. The probe
+        // deadline is still far away, so only child drop containment can stop it.
+        drop(probe);
+        let settled_bytes = timeout(Duration::from_secs(2), async {
+            let mut bytes = std::fs::metadata(&heartbeat).unwrap().len();
+            let mut unchanged_since = Instant::now();
+            loop {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let current = std::fs::metadata(&heartbeat).unwrap().len();
+                if current != bytes {
+                    bytes = current;
+                    unchanged_since = Instant::now();
+                } else if unchanged_since.elapsed() >= Duration::from_millis(200) {
+                    break bytes;
+                }
+            }
+        })
+        .await
+        .expect("cancelled probe child must stop producing heartbeats promptly");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(
+            std::fs::metadata(&heartbeat).unwrap().len(),
+            settled_bytes,
+            "cancelled probe child must remain stopped"
+        );
+    }
+
     #[tokio::test]
     async fn probes_drain_large_output_and_do_not_cache_another_configuration() {
         for version in ["fixture-version-one", "fixture-version-two"] {
