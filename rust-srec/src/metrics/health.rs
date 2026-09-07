@@ -423,6 +423,18 @@ impl HealthChecker {
         self.start_with_sampler(cancel, SystemSampler::new)
     }
 
+    /// Exercise the refresh lifecycle in crate tests without querying the host OS.
+    #[cfg(test)]
+    pub(crate) fn start_with_test_metrics(
+        self: &Arc<Self>,
+        cancel: CancellationToken,
+        metrics: SystemMetricsSnapshot,
+    ) -> JoinHandle<()> {
+        self.start_with_sampler(cancel, move || {
+            SystemSampler::with_sampling_fn(move |_| metrics.clone())
+        })
+    }
+
     fn start_with_sampler(
         self: &Arc<Self>,
         cancel: CancellationToken,
