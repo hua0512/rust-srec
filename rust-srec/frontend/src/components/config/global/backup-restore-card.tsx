@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
 import { SettingsCard } from '../settings-card';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,14 +26,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { exportConfig, importConfig } from '@/server/functions';
+import {
+  ImportModeRadioGroup,
+  type ImportMode,
+} from './import-mode-radio-group';
 import { motion, AnimatePresence } from 'motion/react';
-
-type ImportMode = 'merge' | 'replace';
 
 interface ImportStats {
   templates_created: number;
@@ -482,92 +483,10 @@ export function BackupRestoreCard() {
                   </div>
                 )}
 
-                <div className="space-y-4">
-                  <Label className="text-sm font-semibold">
-                    <Trans>Import Strategy</Trans>
-                  </Label>
-
-                  <div className="grid gap-3">
-                    <div
-                      onClick={() => setImportMode('merge')}
-                      className={cn(
-                        'relative flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-all hover:bg-muted/50',
-                        importMode === 'merge'
-                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                          : 'opacity-80 hover:opacity-100',
-                      )}
-                    >
-                      <div className="flex h-5 items-center">
-                        <div
-                          className={cn(
-                            'h-4 w-4 rounded-full border border-primary flex items-center justify-center',
-                            importMode === 'merge'
-                              ? 'bg-primary'
-                              : 'bg-transparent',
-                          )}
-                        >
-                          {importMode === 'merge' && (
-                            <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
-                          )}
-                        </div>
-                      </div>
-                      <div className="grid gap-1">
-                        <div className="font-semibold text-sm flex items-center gap-2">
-                          <Trans>Merge Changes</Trans>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] h-5 bg-blue-500/10 text-blue-600 border-blue-200 dark:border-blue-800"
-                          >
-                            <Trans>Recommended</Trans>
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          <Trans>
-                            Updates existing items and creates new ones. Nothing
-                            is deleted.
-                          </Trans>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div
-                      onClick={() => setImportMode('replace')}
-                      className={cn(
-                        'relative flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-all hover:bg-red-500/5',
-                        importMode === 'replace'
-                          ? 'border-red-500 bg-red-500/5 ring-1 ring-red-500'
-                          : 'opacity-80 hover:opacity-100',
-                      )}
-                    >
-                      <div className="flex h-5 items-center">
-                        <div
-                          className={cn(
-                            'h-4 w-4 rounded-full border border-primary flex items-center justify-center',
-                            importMode === 'replace'
-                              ? 'bg-red-500 border-red-500'
-                              : 'bg-transparent border-muted-foreground',
-                          )}
-                        >
-                          {importMode === 'replace' && (
-                            <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                          )}
-                        </div>
-                      </div>
-                      <div className="grid gap-1">
-                        <div className="font-semibold text-sm flex items-center gap-2 text-red-600 dark:text-red-400">
-                          <Trans>Replace All</Trans>
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                        </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          <Trans>
-                            Deletes all existing configurations before
-                            importing. This action cannot be undone.
-                          </Trans>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ImportModeRadioGroup
+                  value={importMode}
+                  onValueChange={setImportMode}
+                />
               </motion.div>
             )}
           </AnimatePresence>

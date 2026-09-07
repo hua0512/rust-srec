@@ -243,6 +243,7 @@ export const SessionCard = memo(
                   variant="ghost"
                   size="icon"
                   className="h-9 w-9 text-muted-foreground/30 hover:text-foreground hover:bg-white/5 rounded-xl transition-all duration-500"
+                  aria-label={i18n._(msg`Open menu`)}
                 >
                   <MoreHorizontal className="h-4.5 w-4.5" />
                 </Button>

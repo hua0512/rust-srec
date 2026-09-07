@@ -210,9 +210,13 @@ export function TimeBasedFilterForm() {
                   return (
                     <Tooltip key={day.id}>
                       <TooltipTrigger asChild>
-                        <div
+                        <button
+                          type="button"
+                          aria-pressed={isSelected}
+                          aria-label={i18n._(day.full)}
                           className={cn(
                             'h-10 w-10 rounded-full flex items-center justify-center cursor-pointer transition-all border font-medium text-sm',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                             isSelected
                               ? 'bg-primary text-primary-foreground border-primary shadow-lg ring-2 ring-primary/20 ring-offset-2 scale-110'
                               : 'bg-background hover:bg-muted text-muted-foreground border-muted hover:border-muted-foreground/30',
@@ -226,7 +230,7 @@ export function TimeBasedFilterForm() {
                           }}
                         >
                           {i18n._(day.label)}
-                        </div>
+                        </button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
                         {i18n._(day.full)}
@@ -285,22 +289,27 @@ export function TimeBasedFilterForm() {
         {/* Visual Timeline */}
         <div className="relative pt-6 pb-2 px-1">
           <TooltipProvider delayDuration={0}>
-            <div className="flex h-12 w-full gap-[2px] rounded-lg bg-muted/30 p-1 border border-border/50 overflow-hidden shadow-inner">
-              {Array.from({ length: 24 }).map((_, i) => {
-                const active = isInRange(i);
-                const isStart = startTime?.startsWith(
-                  i.toString().padStart(2, '0'),
-                );
-                const isEnd = endTime?.startsWith(
-                  i.toString().padStart(2, '0'),
-                );
+            <div
+              role="group"
+              aria-label={i18n._(msg`24-hour timeline`)}
+              className="flex h-12 w-full gap-[2px] rounded-lg bg-muted/30 p-1 border border-border/50 overflow-hidden shadow-inner"
+            >
+              {Array.from({ length: 24 }).map((_, hour) => {
+                const active = isInRange(hour);
+                const padded = hour.toString().padStart(2, '0');
+                const isStart = startTime?.startsWith(padded);
+                const isEnd = endTime?.startsWith(padded);
 
                 return (
-                  <Tooltip key={i}>
+                  <Tooltip key={hour}>
                     <TooltipTrigger asChild>
-                      <div
+                      <button
+                        type="button"
+                        aria-pressed={active}
+                        aria-label={i18n._(msg`Hour ${hour}`)}
                         className={cn(
                           'flex-1 cursor-pointer transition-all rounded-[2px]',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                           active
                             ? 'bg-primary shadow-sm'
                             : 'bg-muted/40 hover:bg-muted',
@@ -310,10 +319,9 @@ export function TimeBasedFilterForm() {
                             'ring-2 ring-primary ring-offset-2 z-10 rounded-sm',
                         )}
                         onClick={() => {
-                          const timeStr = `${i.toString().padStart(2, '0')}:00:00`;
-                          // If clicking an already selected start, maybe set as end?
-                          // For simplicity, let's say left-click sets start, right-click sets end?
-                          // Or just alternate.
+                          const timeStr = `${padded}:00:00`;
+                          // The first pick opens a new window as the start, the
+                          // next one closes it as the end.
                           if (!startTime || (startTime && endTime)) {
                             setValue('config.start_time', timeStr);
                             setValue('config.end_time', '');
@@ -324,7 +332,7 @@ export function TimeBasedFilterForm() {
                       />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="px-2 py-1">
-                      <div className="text-[10px] font-bold">{i}:00</div>
+                      <div className="text-[10px] font-bold">{hour}:00</div>
                     </TooltipContent>
                   </Tooltip>
                 );

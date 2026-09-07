@@ -18,6 +18,9 @@ export function SheetMenu() {
       <SheetTrigger className="lg:hidden" asChild>
         <Button className="h-8" variant="outline" size="icon">
           <MenuIcon size={20} />
+          <span className="sr-only">
+            <Trans>Open navigation menu</Trans>
+          </span>
         </Button>
       </SheetTrigger>
       <SheetContent className="w-72 px-3 h-full flex flex-col" side="left">

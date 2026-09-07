@@ -41,6 +41,9 @@ export const StreamerHeader = memo(function StreamerHeader({
         >
           <Link to="/streamers">
             <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+            <span className="sr-only">
+              <Trans>Back to streamers</Trans>
+            </span>
           </Link>
         </Button>
 

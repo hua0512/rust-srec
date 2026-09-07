@@ -453,6 +453,7 @@ export const WebhookForm = memo(function WebhookForm() {
                       currentHeaders.filter((_: any, i: number) => i !== index),
                     );
                   }}
+                  aria-label={i18n._(msg`Remove header`)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

@@ -310,15 +310,19 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
       <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0">
         <div className="space-y-1.5">
           <div className="flex items-center gap-4">
-            <Link to="/config/engines">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full border-border/50 bg-background/50 backdrop-blur-sm hover:bg-background/80 hover:scale-105 transition-all"
-              >
+            <Button
+              asChild
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-full border-border/50 bg-background/50 backdrop-blur-sm hover:bg-background/80 hover:scale-105 transition-all"
+            >
+              <Link to="/config/engines">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+                <span className="sr-only">
+                  <Trans>Back to engines</Trans>
+                </span>
+              </Link>
+            </Button>
             <div>
               <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                 {isEdit ? i18n._(msg`Edit Engine`) : i18n._(msg`Create Engine`)}

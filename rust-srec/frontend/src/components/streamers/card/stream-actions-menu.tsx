@@ -35,6 +35,9 @@ export const StreamActionsMenu = ({
           className="h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:group-focus-within:opacity-100 transition-opacity -mr-2 text-muted-foreground hover:text-foreground"
         >
           <MoreHorizontal className="h-4 w-4" />
+          <span className="sr-only">
+            <Trans>Open menu</Trans>
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

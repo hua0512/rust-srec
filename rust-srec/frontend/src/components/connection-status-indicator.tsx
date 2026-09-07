@@ -46,6 +46,7 @@ export function ConnectionStatusIndicator() {
     useStore(useDownloadStore, (state) => state.connectionStatus) ??
     'disconnected';
   const config = STATUS_CONFIG[connectionStatus];
+  const statusLabel = i18n._(config.label);
 
   return (
     <Tooltip>
@@ -54,6 +55,7 @@ export function ConnectionStatusIndicator() {
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full relative"
+          aria-label={i18n._(msg`Connection status: ${statusLabel}`)}
         >
           <span className="relative flex h-2.5 w-2.5">
             {connectionStatus === 'connecting' && (
@@ -100,7 +102,7 @@ export function ConnectionStatusIndicator() {
           )}
         />
         <span key={config.label.id} className="rs-tooltip-status-label">
-          {i18n._(config.label)}
+          {statusLabel}
         </span>
       </TooltipContent>
     </Tooltip>

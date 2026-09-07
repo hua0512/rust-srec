@@ -129,6 +129,7 @@ function CustomMetadataFields({ basePath }: { basePath: string }) {
               onClick={() =>
                 writeRows(rows.filter((entry) => entry.id !== row.id))
               }
+              aria-label={i18n._(msg`Remove custom tag`)}
             >
               <Trash2 className="h-4 w-4" />
             </Button>

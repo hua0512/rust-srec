@@ -60,6 +60,9 @@ export function EngineOverrideCard({
           onClick={onRemove}
         >
           <Trash2 className="w-4 h-4" />
+          <span className="sr-only">
+            <Trans>Remove engine override</Trans>
+          </span>
         </Button>
       </CardHeader>
       <CardContent className="pt-6">{renderEngineForm()}</CardContent>

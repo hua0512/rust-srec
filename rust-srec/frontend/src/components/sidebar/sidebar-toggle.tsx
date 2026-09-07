@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,13 @@ export const SidebarToggle = React.memo(function SidebarToggle({
             isOpen === false ? 'rotate-180' : 'rotate-0',
           )}
         />
+        <span className="sr-only">
+          {isOpen === false ? (
+            <Trans>Expand sidebar</Trans>
+          ) : (
+            <Trans>Collapse sidebar</Trans>
+          )}
+        </span>
       </Button>
     </div>
   );
