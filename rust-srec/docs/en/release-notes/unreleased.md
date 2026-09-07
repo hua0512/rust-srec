@@ -40,6 +40,10 @@
 
 ## Post-processing
 
+- **Pipeline coordination drains accepted events during shutdown**
+
+  Pending coordination events and queries finish in order before later requests use the same state directly. Closing or aborting the coordinator no longer discards its accepted queue, and a lost reply never causes an accepted event to run twice. Callers still own executing returned work; cancelling a caller does not guarantee those external actions complete.
+
 - **Failed workflow publication releases its pending context**
 
   Failed database publication removes temporary segment and paired-workflow tracking. Successfully published workflows keep their tracking so workers can complete them. Malformed stored preset JSON is rejected before jobs are created, and validation errors omit configuration values.

@@ -4,11 +4,16 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, trace, warn};
 
 use crate::database::models::job::DagPipelineDefinition;
+
+const COORDINATOR_CAPACITY: usize = 1024;
+
+#[cfg(test)]
+mod delivery_tests;
 
 /// Source type for segment outputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -335,31 +340,67 @@ enum CoordinatorRequest {
 #[derive(Debug, Clone)]
 pub struct PipelineCoordinator {
     inner: Arc<Mutex<PipelineCoordinatorState>>,
-    tx: Arc<AsyncMutex<Option<mpsc::Sender<CoordinatorRequest>>>>,
+    tx: Arc<Mutex<Option<mpsc::Sender<CoordinatorRequest>>>>,
+}
+
+/// Owns the accepted-request boundary even when `start` is aborted or dropped.
+struct CoordinatorActor<'a> {
+    coordinator: &'a PipelineCoordinator,
+    sender: mpsc::Sender<CoordinatorRequest>,
+    receiver: mpsc::Receiver<CoordinatorRequest>,
+}
+
+impl Drop for CoordinatorActor<'_> {
+    fn drop(&mut self) {
+        let mut admission = self.coordinator.lock_admission();
+        self.receiver.close();
+        // Submission holds this same gate while publishing through a reserved permit.
+        // No permit holder can enqueue after close, so try_recv drains a finite FIFO
+        // (at most COORDINATOR_CAPACITY requests) without waiting on senders.
+        while let Ok(request) = self.receiver.try_recv() {
+            PipelineCoordinator::handle_request(&self.coordinator.inner, request);
+        }
+        if admission
+            .as_ref()
+            .is_some_and(|sender| sender.same_channel(&self.sender))
+        {
+            *admission = None;
+        }
+    }
 }
 
 impl PipelineCoordinator {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(PipelineCoordinatorState::new())),
-            tx: Arc::new(AsyncMutex::new(None)),
+            tx: Arc::new(Mutex::new(None)),
         }
     }
 
+    /// Run the coordinator until cancellation. Cancellation or future drop closes
+    /// admission and drains the bounded accepted queue before enabling inline calls.
+    /// Reducers must remain synchronous and nonblocking: the drain is bounded by
+    /// request count, not a wall-clock timeout that could discard accepted events.
     pub async fn start(&self, cancellation_token: CancellationToken) {
-        let mut tx_guard = self.tx.lock().await;
-        if tx_guard.is_some() {
-            return;
-        }
-
-        let (tx, mut rx) = mpsc::channel::<CoordinatorRequest>(1024);
-        *tx_guard = Some(tx);
-        drop(tx_guard);
+        let mut actor = {
+            let mut tx_guard = self.lock_admission();
+            if tx_guard.is_some() {
+                return;
+            }
+            let (tx, rx) = mpsc::channel::<CoordinatorRequest>(COORDINATOR_CAPACITY);
+            *tx_guard = Some(tx.clone());
+            CoordinatorActor {
+                coordinator: self,
+                sender: tx,
+                receiver: rx,
+            }
+        };
 
         loop {
             tokio::select! {
+                biased;
                 _ = cancellation_token.cancelled() => break,
-                request = rx.recv() => {
+                request = actor.receiver.recv() => {
                     let Some(request) = request else {
                         break;
                     };
@@ -367,8 +408,71 @@ impl PipelineCoordinator {
                 }
             }
         }
+    }
 
-        *self.tx.lock().await = None;
+    fn lock_admission(
+        &self,
+    ) -> std::sync::MutexGuard<'_, Option<mpsc::Sender<CoordinatorRequest>>> {
+        match self.tx.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("Pipeline coordinator admission lock was poisoned; recovering");
+                poisoned.into_inner()
+            }
+        }
+    }
+
+    async fn submit(&self, mut request: CoordinatorRequest) {
+        loop {
+            let sender = {
+                let admission = self.lock_admission();
+                let Some(sender) = admission.as_ref() else {
+                    Self::handle_request(&self.inner, request);
+                    return;
+                };
+                sender.clone()
+            };
+            // Waiting for capacity does not accept the request. Dropping this future here
+            // leaves no event in the actor, and shutdown can close admission without waiting.
+            let permit = match sender.reserve().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    let mut admission = self.lock_admission();
+                    if admission
+                        .as_ref()
+                        .is_some_and(|current| current.same_channel(&sender))
+                    {
+                        *admission = None;
+                    }
+                    continue;
+                }
+            };
+            match self.publish_reserved(&sender, permit, request) {
+                None => return,
+                Some(unaccepted) => request = unaccepted,
+            }
+            // A reserved slot from an older actor generation is not admission to its
+            // successor. Release it and retry against the post-drain state.
+        }
+    }
+
+    fn publish_reserved(
+        &self,
+        sender: &mpsc::Sender<CoordinatorRequest>,
+        permit: mpsc::Permit<'_, CoordinatorRequest>,
+        request: CoordinatorRequest,
+    ) -> Option<CoordinatorRequest> {
+        let admission = self.lock_admission();
+        if !sender.is_closed()
+            && admission
+                .as_ref()
+                .is_some_and(|current| current.same_channel(sender))
+        {
+            permit.send(request);
+            None
+        } else {
+            Some(request)
+        }
     }
 
     fn lock_state(
@@ -387,7 +491,24 @@ impl PipelineCoordinator {
         match request {
             CoordinatorRequest::Apply { event, reply } => {
                 let commands = Self::lock_state(inner).apply_event(event);
-                let _ = reply.send(commands);
+                if let Err(commands) = reply.send(commands)
+                    && let Some(command) = commands.first()
+                {
+                    let session_id = match command {
+                        PipelineCommand::CreateSegmentDag { session_id, .. } => session_id,
+                        PipelineCommand::CreatePairedSegmentDag { outputs, .. } => {
+                            &outputs.session_id
+                        }
+                        PipelineCommand::CreateSessionCompleteDag { outputs, .. } => {
+                            &outputs.session_id
+                        }
+                    };
+                    warn!(
+                        session_id,
+                        commands = commands.len(),
+                        "Coordinator caller dropped before receiving commands; event will not be replayed"
+                    );
+                }
             }
             CoordinatorRequest::Cleanup { session_ttl_secs } => {
                 Self::lock_state(inner).cleanup_stale(session_ttl_secs);
@@ -412,21 +533,20 @@ impl PipelineCoordinator {
     /// Production code should use this method consistently. `apply_event_inline`
     /// is for tests and pre-actor bootstrap paths only; do not mix the two for
     /// the same live coordinator after `start` has been called.
+    ///
+    /// Admission is the channel publication, not waiting for capacity. Accepted events
+    /// reduce once even if this caller is cancelled; the caller still owns executing
+    /// returned commands. Losing that caller cannot guarantee external command effects.
     pub async fn apply_event(&self, event: PipelineCoordinationEvent) -> Vec<PipelineCommand> {
-        let tx = { self.tx.lock().await.clone() };
-        let Some(tx) = tx else {
-            return self.apply_event_inline(event);
-        };
-
         let (reply, rx) = oneshot::channel();
-        if tx
-            .send(CoordinatorRequest::Apply { event, reply })
-            .await
-            .is_err()
-        {
-            return Vec::new();
-        }
-        rx.await.unwrap_or_default()
+        self.submit(CoordinatorRequest::Apply { event, reply })
+            .await;
+        rx.await.unwrap_or_else(|_| {
+            // An accepted event may already have changed the reducer. A lost response
+            // is never permission to apply it again and duplicate counters or commands.
+            warn!("Coordinator reply lost after admission; event will not be replayed");
+            Vec::new()
+        })
     }
 
     /// Apply an event by taking the coordinator state lock directly.
@@ -439,36 +559,22 @@ impl PipelineCoordinator {
     }
 
     pub async fn cleanup_stale(&self, session_ttl_secs: u64) {
-        let tx = { self.tx.lock().await.clone() };
-        if let Some(tx) = tx {
-            if tx
-                .send(CoordinatorRequest::Cleanup { session_ttl_secs })
-                .await
-                .is_err()
-            {
-                warn!("Pipeline coordinator stopped; cleaning stale sessions inline");
-                Self::lock_state(&self.inner).cleanup_stale(session_ttl_secs);
-            }
-        } else {
-            Self::lock_state(&self.inner).cleanup_stale(session_ttl_secs);
-        }
+        self.submit(CoordinatorRequest::Cleanup { session_ttl_secs })
+            .await;
     }
 
     pub async fn active_session_count(&self) -> usize {
-        let tx = { self.tx.lock().await.clone() };
-        let Some(tx) = tx else {
-            return self.active_session_count_inline();
-        };
-
-        let (reply, rx) = oneshot::channel();
-        if tx
-            .send(CoordinatorRequest::ActiveSessionCount { reply })
-            .await
-            .is_err()
-        {
-            return 0;
+        loop {
+            let (reply, rx) = oneshot::channel();
+            self.submit(CoordinatorRequest::ActiveSessionCount { reply })
+                .await;
+            if let Ok(count) = rx.await {
+                return count;
+            }
+            // Unlike mutation, a read can safely retry through the admission boundary.
+            // Direct fallback could overtake an actor that is still draining accepted work.
+            warn!("Coordinator count reply lost; retrying through admission");
         }
-        rx.await.unwrap_or(0)
     }
 
     pub fn active_session_count_inline(&self) -> usize {
@@ -476,20 +582,15 @@ impl PipelineCoordinator {
     }
 
     pub async fn active_pair_count(&self) -> usize {
-        let tx = { self.tx.lock().await.clone() };
-        let Some(tx) = tx else {
-            return self.active_pair_count_inline();
-        };
-
-        let (reply, rx) = oneshot::channel();
-        if tx
-            .send(CoordinatorRequest::ActivePairCount { reply })
-            .await
-            .is_err()
-        {
-            return 0;
+        loop {
+            let (reply, rx) = oneshot::channel();
+            self.submit(CoordinatorRequest::ActivePairCount { reply })
+                .await;
+            if let Ok(count) = rx.await {
+                return count;
+            }
+            warn!("Coordinator pair-count reply lost; retrying through admission");
         }
-        rx.await.unwrap_or(0)
     }
 
     pub fn active_pair_count_inline(&self) -> usize {
@@ -505,29 +606,21 @@ impl PipelineCoordinator {
         &self,
         session_id: &str,
     ) -> Option<SessionCoordinationOutstanding> {
-        let tx = { self.tx.lock().await.clone() };
-        let Some(tx) = tx else {
-            return self.session_outstanding_inline(session_id);
-        };
-
-        let (reply, rx) = oneshot::channel();
-        if tx
-            .send(CoordinatorRequest::SessionOutstanding {
+        loop {
+            let (reply, rx) = oneshot::channel();
+            self.submit(CoordinatorRequest::SessionOutstanding {
                 session_id: session_id.to_string(),
                 reply,
             })
-            .await
-            .is_err()
-        {
-            // The actor stopped between the `tx` clone and the send. Read the
-            // state directly rather than reporting the session as untracked -
-            // `None` is indistinguishable from "no such session", which callers
-            // treat as idle. `cleanup_stale` falls back the same way.
-            warn!("Pipeline coordinator stopped; reading session state inline");
-            return self.session_outstanding_inline(session_id);
+            .await;
+            if let Ok(outstanding) = rx.await {
+                return outstanding;
+            }
+            warn!(
+                session_id,
+                "Coordinator session reply lost; retrying through admission"
+            );
         }
-        rx.await
-            .unwrap_or_else(|_| self.session_outstanding_inline(session_id))
     }
 
     pub fn session_outstanding_inline(
