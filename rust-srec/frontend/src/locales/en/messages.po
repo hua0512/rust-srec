@@ -1511,6 +1511,7 @@ msgstr "Close"
 msgid "Closest to bitrate"
 msgstr "Closest to bitrate"
 
+#: src/lib/__tests__/split-reason.test.tsx:11
 #: src/lib/split-reason.ts:151
 #: src/lib/split-reason.ts:205
 msgid "Codec"
@@ -2807,6 +2808,7 @@ msgstr "Drag from edge to link steps"
 msgid "Dual Format"
 msgstr "Dual Format"
 
+#: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:80
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:682
 #: src/components/streamers/edit/active-download-card.tsx:153
@@ -3982,6 +3984,7 @@ msgstr "Frequent words to keep"
 msgid "Friday"
 msgstr "Friday"
 
+#: src/lib/__tests__/split-reason.test.tsx:13
 #: src/lib/split-reason.ts:117
 msgctxt "Comparison table column"
 msgid "From"
@@ -4525,6 +4528,9 @@ msgid "Importing..."
 msgstr "Importing..."
 
 #: src/components/sessions/overview-tab.tsx:327
+msgid "In progress"
+msgstr "In progress"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:476
 msgid "Inactive"
 msgstr "Inactive"
@@ -6547,6 +6553,7 @@ msgstr "Pipeline must have at least one step"
 msgid "Pipeline Name"
 msgstr "Pipeline Name"
 
+#: src/routes/__tests__/create-pipeline-schema.test.ts:9
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
 msgid "Pipeline name is required"
 msgstr "Pipeline name is required"
@@ -7569,6 +7576,7 @@ msgstr "Same as server"
 msgid "Same-name policy"
 msgstr "Same-name policy"
 
+#: src/lib/__tests__/split-reason.test.tsx:12
 #: src/lib/split-reason.ts:213
 msgid "Sample Rate"
 msgstr "Sample Rate"
@@ -8155,6 +8163,7 @@ msgstr "Since {0}"
 msgid "Single URL"
 msgstr "Single URL"
 
+#: src/components/notifications/__tests__/payload-preview.test.tsx:21
 #: src/components/notifications/events/payload-preview.tsx:90
 #: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
@@ -8982,9 +8991,11 @@ msgid "Title"
 msgstr "Title"
 
 #: src/components/notifications/channel-card.tsx:98
+#: src/lib/__tests__/split-reason.test.tsx:63
 msgid "To"
 msgstr "To"
 
+#: src/lib/__tests__/split-reason.test.tsx:14
 #: src/lib/split-reason.ts:125
 msgctxt "Comparison table column"
 msgid "To"

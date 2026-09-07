@@ -324,7 +324,7 @@ function TimeBlock({ label, date, icon: Icon, delay }: any) {
             year: 'numeric',
           })
         ) : (
-          <Trans>Inactive</Trans>
+          <Trans>In progress</Trans>
         )}
       </div>
     </motion.div>

@@ -1511,6 +1511,7 @@ msgstr "关闭"
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
+#: src/lib/__tests__/split-reason.test.tsx:11
 #: src/lib/split-reason.ts:151
 #: src/lib/split-reason.ts:205
 msgid "Codec"
@@ -2807,6 +2808,7 @@ msgstr "从边缘拖动以连接步骤"
 msgid "Dual Format"
 msgstr "双格式输出"
 
+#: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:80
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:682
 #: src/components/streamers/edit/active-download-card.tsx:153
@@ -3982,6 +3984,7 @@ msgstr "保留高频词数量"
 msgid "Friday"
 msgstr "星期五"
 
+#: src/lib/__tests__/split-reason.test.tsx:13
 #: src/lib/split-reason.ts:117
 msgctxt "Comparison table column"
 msgid "From"
@@ -4525,6 +4528,9 @@ msgid "Importing..."
 msgstr "正在导入..."
 
 #: src/components/sessions/overview-tab.tsx:327
+msgid "In progress"
+msgstr "进行中"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:476
 msgid "Inactive"
 msgstr "未激活"
@@ -6547,6 +6553,7 @@ msgstr "处理管道必须至少包含一个步骤"
 msgid "Pipeline Name"
 msgstr "处理管道名称"
 
+#: src/routes/__tests__/create-pipeline-schema.test.ts:9
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
 msgid "Pipeline name is required"
 msgstr "处理管道名称是必填项"
@@ -7569,6 +7576,7 @@ msgstr "与服务端一致"
 msgid "Same-name policy"
 msgstr "同名文件策略"
 
+#: src/lib/__tests__/split-reason.test.tsx:12
 #: src/lib/split-reason.ts:213
 msgid "Sample Rate"
 msgstr "采样率"
@@ -8155,6 +8163,7 @@ msgstr "自 {0} 起"
 msgid "Single URL"
 msgstr "单个 URL"
 
+#: src/components/notifications/__tests__/payload-preview.test.tsx:21
 #: src/components/notifications/events/payload-preview.tsx:90
 #: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
@@ -8982,9 +8991,11 @@ msgid "Title"
 msgstr "标题"
 
 #: src/components/notifications/channel-card.tsx:98
+#: src/lib/__tests__/split-reason.test.tsx:63
 msgid "To"
 msgstr "收件人"
 
+#: src/lib/__tests__/split-reason.test.tsx:14
 #: src/lib/split-reason.ts:125
 msgctxt "Comparison table column"
 msgid "To"

@@ -274,7 +274,7 @@
 
 - **Dates, times and durations follow your language**
 
-  "5 minutes ago" on notifications, streamer cards and the system health page, and the date ranges on the recordings and log pages, were always written in English and in an English date format. They now match the language you have selected, and a session's duration is shown with units in your language. A session that has not finished yet is now labelled "Inactive" instead of the mistyped "In active".
+  "5 minutes ago" on notifications, streamer cards and the system health page, and the date ranges on the recordings and log pages, were always written in English and in an English date format. They now match the language you have selected, and a session's duration is shown with units in your language. A session that has not finished yet is now labelled "In progress" instead of the mistyped "In active".
 
 - **A bad link no longer replaces a list page with an error**
 
