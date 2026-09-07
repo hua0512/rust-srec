@@ -192,28 +192,7 @@ impl NotificationService {
                         }
                     }
 
-                    if dead_lettered
-                        && let (Some(repo), Some(db_channel_id)) =
-                            (notification_repo.clone(), channel.db_channel_id.clone())
-                    {
-                        if let Ok(payload) = serde_json::to_string(&pending_snapshot.event) {
-                            let entry = NotificationDeadLetterDbModel::new(
-                                db_channel_id.clone(),
-                                pending_snapshot.event.event_type(),
-                                payload,
-                                error.to_string(),
-                                attempts as i32,
-                                pending_snapshot.created_at.timestamp_millis(),
-                            );
-                            if let Err(persist_error) = repo.add_to_dead_letter(&entry).await {
-                                warn!(
-                                    channel_id = %db_channel_id,
-                                    error = %persist_error,
-                                    "Failed to persist dead letter entry"
-                                );
-                            }
-                        }
-
+                    if dead_lettered {
                         let dead_letter_id = next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
                         dead_letters.insert(
                             dead_letter_id,
@@ -242,6 +221,39 @@ impl NotificationService {
                             attempts = config.max_retries,
                             "Notification dead-lettered"
                         );
+
+                        if let (Some(repo), Some(db_channel_id)) =
+                            (notification_repo.as_ref(), channel.db_channel_id.as_ref())
+                        {
+                            match serde_json::to_string(&pending_snapshot.event) {
+                                Ok(payload) => {
+                                    let entry = NotificationDeadLetterDbModel::new(
+                                        db_channel_id.clone(),
+                                        pending_snapshot.event.event_type(),
+                                        payload,
+                                        error.to_string(),
+                                        attempts as i32,
+                                        pending_snapshot.created_at.timestamp_millis(),
+                                    );
+                                    if let Err(persist_error) =
+                                        repo.add_to_dead_letter(&entry).await
+                                    {
+                                        warn!(
+                                            channel_id = %db_channel_id,
+                                            error = %persist_error,
+                                            "Failed to persist dead letter entry"
+                                        );
+                                    }
+                                }
+                                Err(serialize_error) => {
+                                    warn!(
+                                        channel_id = %db_channel_id,
+                                        error = %serialize_error,
+                                        "Failed to serialize dead letter entry"
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
