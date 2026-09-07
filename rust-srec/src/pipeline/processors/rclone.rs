@@ -426,6 +426,7 @@ impl RcloneProcessor {
 
         for attempt in 0..self.max_retries {
             if matches!(*operation, RcloneOperation::Move)
+                && (context.is_retry || attempt > 0)
                 && Self::is_confirmed_absent(Path::new(input_path)).await
             {
                 info!(
@@ -562,7 +563,7 @@ impl RcloneProcessor {
         })?;
         let base_dir_str = base_dir.to_string_lossy().to_string();
         let (mut pending_inputs, already_moved_inputs) =
-            if matches!(*operation, RcloneOperation::Move) {
+            if matches!(*operation, RcloneOperation::Move) && context.is_retry {
                 Self::partition_move_inputs(inputs).await
             } else {
                 (inputs.to_vec(), Vec::new())
@@ -874,8 +875,9 @@ impl Processor for RcloneProcessor {
             None => RcloneConfig::default(),
         };
 
-        // A retried move may legitimately reference sources consumed by an earlier attempt.
-        if !matches!(config.operation, RcloneOperation::Move) {
+        // Only persisted retries may begin with sources consumed by an earlier
+        // execution. Validate the entire initial batch before transferring any file.
+        if !matches!(config.operation, RcloneOperation::Move) || !ctx.is_retry {
             for input_path in &input.inputs {
                 let path = Path::new(input_path);
                 let exists = tokio::fs::try_exists(path)
@@ -1161,7 +1163,10 @@ mod tests {
         };
 
         let output = processor
-            .process(&input, &ProcessorContext::noop("resumed-batch-move"))
+            .process(
+                &input,
+                &ProcessorContext::noop("resumed-batch-move").with_retry(true),
+            )
             .await
             .unwrap();
 
@@ -1185,13 +1190,100 @@ mod tests {
         };
 
         let output = processor
-            .process(&input, &ProcessorContext::noop("resumed-single-move"))
+            .process(
+                &input,
+                &ProcessorContext::noop("resumed-single-move").with_retry(true),
+            )
             .await
             .unwrap();
 
         assert_eq!(output.succeeded_inputs, vec![input_path]);
         assert!(output.outputs.is_empty());
         assert!(runner.commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn initial_move_rejects_missing_inputs_before_any_transfer() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let present = temp_dir.path().join("present.mp4");
+        tokio::fs::write(&present, b"video").await.unwrap();
+        let present_input = present.to_string_lossy().into_owned();
+        let missing = temp_dir
+            .path()
+            .join("missing.mp4")
+            .to_string_lossy()
+            .into_owned();
+        let another_missing = temp_dir
+            .path()
+            .join("missing.jpg")
+            .to_string_lossy()
+            .into_owned();
+
+        for inputs in [
+            vec![missing.clone()],
+            vec![present_input.clone(), missing.clone()],
+            vec![missing.clone(), another_missing],
+        ] {
+            let runner = Arc::new(MockRcloneCommandRunner::new(Vec::new()));
+            let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+            let input = ProcessorInput {
+                inputs,
+                outputs: vec!["remote:/records".to_owned()],
+                config: Some(r#"{"operation":"move"}"#.to_owned()),
+                ..Default::default()
+            };
+            let error = processor
+                .process(&input, &ProcessorContext::noop("initial-move"))
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, crate::Error::Validation(ref message) if message.contains(&missing))
+            );
+            assert!(
+                runner.commands().is_empty(),
+                "invalid batch must fail before rclone runs"
+            );
+            assert!(runner.manifests().is_empty());
+            assert_eq!(tokio::fs::read(&present).await.unwrap(), b"video");
+        }
+    }
+
+    #[tokio::test]
+    async fn retried_move_accepts_batch_already_consumed_by_previous_attempt() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let inputs: Vec<String> = ["already-moved.mp4", "already-moved.jpg"]
+            .iter()
+            .map(|name| temp_dir.path().join(name).to_string_lossy().into_owned())
+            .collect();
+        let runner = Arc::new(MockRcloneCommandRunner::new(Vec::new()));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input = ProcessorInput {
+            inputs: inputs.clone(),
+            outputs: vec!["remote:/records".to_owned()],
+            config: Some(r#"{"operation":"move"}"#.to_owned()),
+            ..Default::default()
+        };
+        let output = processor
+            .process(
+                &input,
+                &ProcessorContext::noop("resumed-complete-batch").with_retry(true),
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.succeeded_inputs, inputs);
+        assert!(output.outputs.is_empty());
+        assert_eq!(output.uploads.len(), 2);
+        assert!(
+            output
+                .uploads
+                .iter()
+                .all(|upload| upload.status == UploadItemStatus::Completed)
+        );
+        assert!(runner.commands().is_empty());
+        let metadata: serde_json::Value =
+            serde_json::from_str(output.metadata.as_deref().unwrap()).unwrap();
+        assert_eq!(metadata["resumed_inputs"], 2);
+        assert_eq!(metadata["attempts"], 0);
     }
 
     #[tokio::test]
@@ -1282,12 +1374,16 @@ mod tests {
             ..Default::default()
         };
 
-        let error = RcloneProcessor::new()
-            .process(&input, &ProcessorContext::noop("missing-copy"))
-            .await
-            .unwrap_err();
-
-        assert!(error.to_string().contains("Input file does not exist"));
+        for is_retry in [false, true] {
+            let error = RcloneProcessor::new()
+                .process(
+                    &input,
+                    &ProcessorContext::noop("missing-copy").with_retry(is_retry),
+                )
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("Input file does not exist"));
+        }
     }
 
     /// The ordered flag block `process_single`/`process_batch` place before
