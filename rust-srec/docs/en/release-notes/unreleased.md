@@ -86,10 +86,6 @@
 
 ## Notifications
 
-- **Telegram formatting preserves literal content**
-
-  HTML, Markdown, and MarkdownV2 settings now use explicit formatting entities so special characters in streamer names, titles, and errors cannot break message parsing. Unicode-safe truncation keeps formatting spans valid. Empty mode sends plain text; unknown modes return a local configuration error.
-
 - **Configuration channels retain failed deliveries**
 
   Notifications that exhaust their retries now appear in the in-memory dead-letter list even when their channel comes from configuration. Database persistence remains available for database channels; persistence failures preserve the in-memory record. Retention cleanup still applies, and successful channels are not sent the same notification again during retries.
@@ -97,6 +93,10 @@
 - **Failed notification deliveries finish within a time limit and protect credentials**
 
   Discord and Telegram requests now time out after 30 seconds. Gotify and webhook timeouts are capped at five minutes; zero uses the 30-second default. Rate-limit retries wait at most 30 seconds each and stop after three attempts. Invalid retry delays no longer cause a panic. Delivery errors retain the failure category or HTTP status without exposing token-bearing URLs or server response bodies.
+
+- **Telegram formatting preserves literal content**
+
+  HTML, Markdown, and MarkdownV2 settings now use explicit formatting entities so special characters in streamer names, titles, and errors cannot break message parsing. Unicode-safe truncation keeps formatting spans valid. Empty mode sends plain text; unknown modes return a local configuration error.
 
 ## Recording
 
