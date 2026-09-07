@@ -10,6 +10,10 @@
 
 ## Post-processing
 
+- **Workflow edits keep dependencies and preset warnings accurate**
+
+  Renaming a step updates its dependents in both workflow editors, and empty or duplicate IDs are rejected. Labels and delete-after-transform checks resolve referenced presets by exact name regardless of the preset count. Inline steps display their own processor. Loading, failed, or missing preset lookups are shown explicitly, and saving a potentially destructive step with unresolved presets requires confirmation.
+
 - **Incomplete outputs no longer replace completed files**
 
   Thumbnails, extracted audio, metadata copies, and subtitle burn-ins now use temporary files and verify that output exists and is nonempty before publishing it. A failed or cancelled batch cleans up its staged files and preserves source files and existing destinations. Publication failures roll back earlier outputs in the batch. Output paths that alias inputs are rejected, and disabling overwrite remains safe when jobs publish to the same destination concurrently.

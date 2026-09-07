@@ -27,10 +27,12 @@ import { LayoutGrid } from 'lucide-react';
 import { getInitialNodePosition, getLayoutedElements } from './layout';
 import { Trans } from '@lingui/react/macro';
 import {
-  usePresetProcessorMap,
+  buildPresetProcessorMap,
   getDeleteAfterTransformStepIds,
 } from '../delete-warning';
 import { removeStep } from '../step-operations';
+import { useReferencedPresets } from '../preset-lookup';
+import { PresetLookupStatus } from '../preset-lookup-status';
 
 const nodeTypes = {
   stepNode: StepNode,
@@ -88,7 +90,11 @@ const WorkflowFlowEditorInner = memo(
 
     // Flag delete nodes wired after a transform step: they would delete the converted artifact
     // produced by that step, not the original recording.
-    const presetProcessorByName = usePresetProcessorMap();
+    const lookup = useReferencedPresets(steps);
+    const presetProcessorByName = useMemo(
+      () => buildPresetProcessorMap(lookup.presets),
+      [lookup.presets],
+    );
     const warnedStepIds = useMemo(
       () => getDeleteAfterTransformStepIds(steps, presetProcessorByName),
       [steps, presetProcessorByName],
@@ -294,59 +300,62 @@ const WorkflowFlowEditorInner = memo(
     }, [nodes, edges, setNodes, setEdges, topologyKey, fitView]);
 
     return (
-      <GraphViewport className="h-full min-h-0">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={handleNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onEdgesDelete={onEdgeDelete}
-          nodeTypes={nodeTypes}
-          defaultEdgeOptions={defaultEdgeOptions}
-          connectionMode={ConnectionMode.Loose}
-          fitView={!hasLaidOut} // Only fit view on initial load
-          colorMode="system"
-        >
-          <Background
-            variant={'dots' as any}
-            color="currentColor"
-            gap={20}
-            size={1}
-            className="opacity-[0.02]"
-          />
-          <Controls className="!bg-background/40 !border-border/40 !backdrop-blur-md !shadow-2xl !rounded-lg overflow-hidden" />
+      <div className="h-full min-h-0 flex flex-col">
+        <PresetLookupStatus {...lookup} />
+        <GraphViewport className="flex-1 min-h-0">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onEdgesDelete={onEdgeDelete}
+            nodeTypes={nodeTypes}
+            defaultEdgeOptions={defaultEdgeOptions}
+            connectionMode={ConnectionMode.Loose}
+            fitView={!hasLaidOut} // Only fit view on initial load
+            colorMode="system"
+          >
+            <Background
+              variant={'dots' as any}
+              color="currentColor"
+              gap={20}
+              size={1}
+              className="opacity-[0.02]"
+            />
+            <Controls className="!bg-background/40 !border-border/40 !backdrop-blur-md !shadow-2xl !rounded-lg overflow-hidden" />
 
-          <Panel position="top-right" className="flex gap-2">
-            <div className="bg-background/40 backdrop-blur-md border border-border/40 rounded-lg p-1 flex gap-1 shadow-2xl">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 px-3 hover:bg-muted/50 text-foreground/70"
-                onClick={handleLayout}
-              >
-                <LayoutGrid className="h-3.5 w-3.5 mr-2" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">
-                  <Trans>Auto Layout</Trans>
-                </span>
-              </Button>
-            </div>
-          </Panel>
-
-          <Panel position="bottom-center">
-            <div className="bg-card/70 backdrop-blur-md border border-primary/20 rounded-full px-5 py-2 flex items-center gap-3 shadow-2xl">
-              <div className="flex relative h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+            <Panel position="top-right" className="flex gap-2">
+              <div className="bg-background/40 backdrop-blur-md border border-border/40 rounded-lg p-1 flex gap-1 shadow-2xl">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-3 hover:bg-muted/50 text-foreground/70"
+                  onClick={handleLayout}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5 mr-2" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">
+                    <Trans>Auto Layout</Trans>
+                  </span>
+                </Button>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/60">
-                <Trans>Drag from edge to link steps</Trans>
-              </span>
-            </div>
-          </Panel>
-        </ReactFlow>
-      </GraphViewport>
+            </Panel>
+
+            <Panel position="bottom-center">
+              <div className="bg-card/70 backdrop-blur-md border border-primary/20 rounded-full px-5 py-2 flex items-center gap-3 shadow-2xl">
+                <div className="flex relative h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/60">
+                  <Trans>Drag from edge to link steps</Trans>
+                </span>
+              </div>
+            </Panel>
+          </ReactFlow>
+        </GraphViewport>
+      </div>
     );
   },
 );
