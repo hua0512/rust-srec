@@ -20,6 +20,10 @@ curl http://localhost:12555/api/health/ready \
 
 There is no `/metrics` endpoint. Scrape the JSON health endpoints above, or collect from outside the application.
 
+The internal delivery collector tracks web-push outcomes only. Download,
+pipeline and scheduler information comes from their dedicated API snapshots;
+these are not a Prometheus export.
+
 ### Slow Filesystem Sampling
 
 System and disk metrics are sampled on one dedicated thread. Health refreshes

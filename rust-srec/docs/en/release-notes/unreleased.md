@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Internal Metrics
+
+- **Monitoring code reflects the available interfaces**
+
+  Removed the unused Prometheus exporter and unwired download, pipeline, streamer and system counters, including their latent underflow and label-escaping paths. Internal web-push delivery counters and JSON health endpoints remain available. Rust callers of the removed metrics API must use the supported subsystem snapshots.
+
 ## Danmu Text
 
 - **Danmu XML and MCP pages preserve valid text**
