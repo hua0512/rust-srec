@@ -420,11 +420,10 @@ impl ServiceContainer {
         // Retention values are loaded from global_config on every sweep.
         let maintenance_scheduler_start = Instant::now();
         let maintenance_config = MaintenanceConfig::default();
-        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            write_pool.clone(),
-            maintenance_config,
-        ));
+        let maintenance_scheduler = Arc::new(
+            MaintenanceScheduler::new(pool.clone(), write_pool.clone(), maintenance_config)
+                .with_download_manager(Arc::downgrade(&download_manager)),
+        );
         let maintenance_scheduler_ms = maintenance_scheduler_start.elapsed().as_millis();
 
         let scheduler_config = crate::scheduler::SchedulerConfig {

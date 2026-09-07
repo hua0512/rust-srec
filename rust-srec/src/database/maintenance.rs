@@ -5,7 +5,7 @@
 //! by the configured maintenance window.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, NaiveTime, Utc};
@@ -18,6 +18,7 @@ use tracing::{debug, info, warn};
 use crate::database::models::{DagExecutionStatus, JobStatus, RetentionDays};
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::database::{DbPool, WritePool};
+use crate::downloader::DownloadManager;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -455,6 +456,7 @@ pub struct MaintenanceScheduler {
     write_pool: WritePool,
     repository: MaintenanceRepository,
     config: MaintenanceConfig,
+    download_manager: Weak<DownloadManager>,
 }
 
 impl MaintenanceScheduler {
@@ -471,7 +473,15 @@ impl MaintenanceScheduler {
             write_pool,
             repository,
             config,
+            download_manager: Weak::new(),
         }
+    }
+
+    /// Attach the recording admission owner. Without a live owner, vacuuming
+    /// is skipped; lightweight retention remains available independently.
+    pub fn with_download_manager(mut self, download_manager: Weak<DownloadManager>) -> Self {
+        self.download_manager = download_manager;
+        self
     }
 
     /// Starts maintenance and returns its cancellation-aware background task.
@@ -718,9 +728,20 @@ impl MaintenanceScheduler {
             return Ok(false);
         }
 
-        let active = self.get_active_download_count().await?;
-        if active > self.config.max_active_downloads_for_vacuum {
-            debug!(active, "Skipping vacuum while downloads are active");
+        let Some(download_manager) = self.download_manager.upgrade() else {
+            debug!("Skipping vacuum without a live download admission owner");
+            return Ok(false);
+        };
+        let Ok(max_active) = usize::try_from(self.config.max_active_downloads_for_vacuum) else {
+            warn!("Skipping vacuum with a negative active-download limit");
+            return Ok(false);
+        };
+        // Avoid expensive conversion preflight when recording admission is busy,
+        // but release this preliminary check before inspecting filesystems.
+        if download_manager.try_admit_maintenance(max_active).is_none() {
+            debug!(
+                "Skipping vacuum while download admission is busy or recordings exceed the limit"
+            );
             return Ok(false);
         }
 
@@ -728,15 +749,9 @@ impl MaintenanceScheduler {
             .fetch_one(&self.pool)
             .await?;
         let before_size = self.get_database_size().await?;
-        let started = Instant::now();
-
-        match mode.0 {
-            AUTO_VACUUM_NONE => self.convert_to_incremental_auto_vacuum(before_size).await?,
-            AUTO_VACUUM_INCREMENTAL => {
-                sqlx::query("PRAGMA incremental_vacuum")
-                    .execute(&self.write_pool)
-                    .await?;
-            }
+        let conversion_path = match mode.0 {
+            AUTO_VACUUM_NONE => Some(self.prepare_incremental_auto_vacuum(before_size).await?),
+            AUTO_VACUUM_INCREMENTAL => None,
             AUTO_VACUUM_FULL => {
                 debug!("Database already uses full auto-vacuum");
                 return Ok(false);
@@ -746,6 +761,22 @@ impl MaintenanceScheduler {
                     "unexpected PRAGMA auto_vacuum value {unexpected}"
                 )));
             }
+        };
+        // Recheck after preflight and hold admission through SQLite completion.
+        // The production loop awaits this operation through ordinary shutdown;
+        // cancelling a SQLx future alone would not stop its SQLite worker.
+        let Some(_admission) = download_manager.try_admit_maintenance(max_active) else {
+            debug!("Skipping vacuum because download admission changed during preflight");
+            return Ok(false);
+        };
+        let started = Instant::now();
+
+        if let Some(path) = conversion_path {
+            self.convert_to_incremental_auto_vacuum(&path).await?;
+        } else {
+            sqlx::query("PRAGMA incremental_vacuum")
+                .execute(&self.write_pool)
+                .await?;
         }
 
         let after_size = self.get_database_size().await?;
@@ -757,17 +788,24 @@ impl MaintenanceScheduler {
         Ok(true)
     }
 
-    async fn convert_to_incremental_auto_vacuum(&self, database_size: i64) -> Result<()> {
+    async fn prepare_incremental_auto_vacuum(&self, database_size: i64) -> Result<PathBuf> {
         let path = self.database_path().await?;
         let required_space = u64::try_from(database_size)
             .unwrap_or_default()
             .saturating_add(64 * 1024 * 1024);
-        let available_space = available_space_for_path(&path).ok_or_else(|| {
-            Error::Database(format!(
-                "could not determine available space for '{}'",
-                path.display()
-            ))
-        })?;
+        let probe_path = path.clone();
+        let available_space =
+            tokio::task::spawn_blocking(move || available_space_for_path(&probe_path))
+                .await
+                .map_err(|error| {
+                    Error::Database(format!("Available-space probe task failed: {error}"))
+                })?
+                .ok_or_else(|| {
+                    Error::Database(format!(
+                        "could not determine available space for '{}'",
+                        path.display()
+                    ))
+                })?;
 
         if available_space < required_space {
             return Err(Error::Database(format!(
@@ -777,6 +815,10 @@ impl MaintenanceScheduler {
             )));
         }
 
+        Ok(path)
+    }
+
+    async fn convert_to_incremental_auto_vacuum(&self, path: &Path) -> Result<()> {
         info!(
             path = %path.display(),
             "Converting existing database to incremental auto-vacuum"
@@ -805,16 +847,6 @@ impl MaintenanceScheduler {
     async fn get_freeable_space(&self) -> Result<i64> {
         let result: (i64,) = sqlx::query_as(
             "SELECT freelist_count * page_size FROM pragma_freelist_count(), pragma_page_size()",
-        )
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(result.0)
-    }
-
-    async fn get_active_download_count(&self) -> Result<i32> {
-        let result: (i32,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM job \
-             WHERE job_type = 'DOWNLOAD' AND status IN ('PENDING', 'PROCESSING')",
         )
         .fetch_one(&self.pool)
         .await?;
@@ -891,6 +923,140 @@ mod tests {
             ..MaintenanceConfig::default()
         })
         .await
+    }
+
+    struct ActiveRecordingEngine;
+
+    #[async_trait::async_trait]
+    impl crate::downloader::engine::DownloadEngine for ActiveRecordingEngine {
+        fn engine_type(&self) -> crate::downloader::engine::EngineType {
+            crate::downloader::engine::EngineType::Mesio
+        }
+
+        async fn run(
+            &self,
+            handle: Arc<crate::downloader::engine::DownloadHandle>,
+        ) -> std::result::Result<(), crate::downloader::engine::EngineStartError> {
+            use crate::downloader::engine::{DownloadFailureKind, EngineStartError, SegmentEvent};
+            handle.cancellation_token.cancelled().await;
+            handle
+                .event_tx
+                .send(SegmentEvent::DownloadCompleted {
+                    total_bytes: 0,
+                    total_duration_secs: 0.0,
+                    total_segments: 0,
+                    engine_signal: crate::downloader::EngineEndSignal::Unknown,
+                })
+                .await
+                .map_err(|error| {
+                    EngineStartError::new(DownloadFailureKind::Other, error.to_string())
+                })
+        }
+
+        fn is_available(&self) -> bool {
+            true
+        }
+        fn version(&self) -> Option<String> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn vacuum_admission_uses_live_recordings_without_download_job_rows() {
+        let mut database = setup_with_config(MaintenanceConfig {
+            vacuum_threshold_bytes: 0,
+            ..MaintenanceConfig::default()
+        })
+        .await;
+        let manager = Arc::new(DownloadManager::new());
+        manager.register_engine(Arc::new(ActiveRecordingEngine));
+        Arc::get_mut(&mut database.scheduler)
+            .unwrap()
+            .download_manager = Arc::downgrade(&manager);
+        let config = crate::downloader::engine::DownloadConfig::new(
+            "https://invalid.test/live",
+            database._directory.path().join("recording"),
+            "streamer",
+            "Streamer",
+            "session",
+        );
+        let id = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.start_download(config, Some("MESIO".to_owned()), false),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let (jobs,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM job")
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+        assert_eq!(jobs, 0);
+        assert_eq!(manager.active_count(), 1);
+        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
+        tokio::time::timeout(Duration::from_secs(2), manager.stop_download(&id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(manager.active_count(), 0);
+        assert!(database.scheduler.run_vacuum_if_needed().await.unwrap());
+        // SQL job rows are not a second source of recording activity.
+        insert_job(&database, "synthetic-download", JobStatus::Pending, 0).await;
+        sqlx::query("UPDATE job SET job_type = 'DOWNLOAD' WHERE id = 'synthetic-download'")
+            .execute(&database.pool)
+            .await
+            .unwrap();
+        assert!(database.scheduler.run_vacuum_if_needed().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn vacuum_admission_is_conservative_without_a_live_owner_or_valid_limit() {
+        let mut database = setup_with_config(MaintenanceConfig {
+            vacuum_threshold_bytes: 0,
+            ..MaintenanceConfig::default()
+        })
+        .await;
+        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
+        let manager = Arc::new(DownloadManager::new());
+        Arc::get_mut(&mut database.scheduler)
+            .unwrap()
+            .download_manager = Arc::downgrade(&manager);
+        let admission = manager.try_admit_maintenance(0).unwrap();
+        assert!(
+            !database.scheduler.run_vacuum_if_needed().await.unwrap(),
+            "another admission owner defers vacuum immediately"
+        );
+        drop(admission);
+        Arc::get_mut(&mut database.scheduler)
+            .unwrap()
+            .config
+            .max_active_downloads_for_vacuum = -1;
+        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
+        Arc::get_mut(&mut database.scheduler)
+            .unwrap()
+            .config
+            .max_active_downloads_for_vacuum = 0;
+        drop(manager);
+        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn service_builder_wires_the_actual_download_admission_owner() {
+        let database = setup(1).await;
+        let container = crate::services::ServiceContainer::with_config(
+            database.pool.clone(),
+            database.scheduler.write_pool.clone(),
+            Duration::from_secs(60),
+            8,
+        )
+        .await
+        .unwrap();
+        let owner = container
+            .maintenance_scheduler
+            .download_manager
+            .upgrade()
+            .expect("production maintenance must have an admission owner");
+        assert!(Arc::ptr_eq(&owner, &container.download_manager));
     }
 
     async fn setup_with_config(config: MaintenanceConfig) -> TestDatabase {

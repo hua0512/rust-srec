@@ -1378,14 +1378,61 @@ impl DownloadManager {
         config: DownloadConfig,
         engine: EngineHandle,
     ) -> Result<String> {
-        self.start_download_with_engine_and_slot(
-            config,
-            engine.engine,
-            engine.engine_type,
-            engine.engine_key,
-            slot,
-        )
-        .await
+        self.start_with_slot_cancellable(slot, config, engine, &CancellationToken::new())
+            .await?
+            .ok_or_else(|| crate::Error::Other("download startup cancelled".to_string()))
+    }
+
+    /// Start an acquired recording unless its session is cancelled while waiting
+    /// for admission. `None` releases the slot and clears a previously queued event.
+    pub(crate) async fn start_with_slot_cancellable(
+        &self,
+        slot: SlotGuard,
+        config: DownloadConfig,
+        engine: EngineHandle,
+        cancel: &CancellationToken,
+    ) -> Result<Option<String>> {
+        struct QueuedStartCleanup<'a> {
+            manager: &'a DownloadManager,
+            event: Option<DownloadProgressEvent>,
+        }
+        impl Drop for QueuedStartCleanup<'_> {
+            fn drop(&mut self) {
+                if let Some(event) = self.event.take() {
+                    self.manager
+                        .events
+                        .publish(DownloadManagerEvent::Progress(event));
+                }
+            }
+        }
+        let mut cleanup = QueuedStartCleanup {
+            manager: self,
+            event: slot
+                .queued_event_emitted()
+                .then(|| DownloadProgressEvent::DownloadDequeued {
+                    streamer_id: config.streamer_id.clone(),
+                    streamer_name: config.streamer_name.clone(),
+                    session_id: config.session_id.clone(),
+                }),
+        };
+        let _operation = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Ok(None),
+            operation = self.begin_operation() => operation?,
+        };
+        let result = self
+            .start_download_with_engine_and_slot(
+                config,
+                engine.engine,
+                engine.engine_type,
+                engine.engine_key,
+                slot,
+            )
+            .await;
+        if result.is_ok() {
+            cleanup.event = None;
+        }
+        result.map(Some)
     }
 
     /// Emit the cleanup event for a queued slot that was granted but
@@ -1520,6 +1567,22 @@ impl DownloadManager {
     /// Get the number of active downloads.
     pub fn active_count(&self) -> usize {
         self.active_downloads.len()
+    }
+
+    /// Admit database maintenance without waiting for recordings or in-flight
+    /// admission work. Holding the guard prevents new recordings from starting;
+    /// active attempts can finish and release their entries independently.
+    pub(crate) fn try_admit_maintenance(
+        &self,
+        max_active_downloads: usize,
+    ) -> Option<tokio::sync::RwLockWriteGuard<'_, ()>> {
+        let guard = self.operation_gate.try_write().ok()?;
+        if !self.accepting_operations.load(Ordering::Acquire)
+            || self.active_count() > max_active_downloads
+        {
+            return None;
+        }
+        Some(guard)
     }
 
     /// Snapshot of currently-pending acquires (downloads that emitted
@@ -2406,6 +2469,204 @@ mod tests {
         let manager = DownloadManager::new();
         assert_eq!(manager.active_count(), 0);
         assert!(!manager.available_engines().is_empty());
+    }
+
+    #[tokio::test]
+    async fn maintenance_admission_fences_preacquired_recording_starts() {
+        let manager = DownloadManager::new();
+        let temp = tempfile::tempdir().unwrap();
+        let config = test_download_config(temp.path().to_path_buf(), "maintenance-fence");
+        let slot = manager
+            .acquire_slot(
+                AcquireRequest {
+                    session_id: config.session_id.clone(),
+                    streamer_id: config.streamer_id.clone(),
+                    streamer_name: config.streamer_name.clone(),
+                    engine_type: EngineType::Ffmpeg,
+                    priority: Priority::Normal,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let admission = manager
+            .try_admit_maintenance(0)
+            .expect("idle maintenance admitted");
+        let engine = EngineHandle {
+            engine: Arc::new(ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![])),
+            engine_type: EngineType::Ffmpeg,
+            engine_key: EngineKey::global(EngineType::Ffmpeg),
+        };
+        let mut start = Box::pin(manager.start_with_slot(slot, config, engine));
+        assert!(
+            futures::poll!(start.as_mut()).is_pending(),
+            "even a preacquired slot cannot bypass maintenance"
+        );
+        assert_eq!(manager.active_count(), 0);
+        assert!(manager.try_admit_maintenance(0).is_none());
+        drop(admission);
+        let id = tokio::time::timeout(Duration::from_secs(2), start)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(manager.active_count(), 1);
+        assert!(manager.try_admit_maintenance(0).is_none());
+        let admission = manager
+            .try_admit_maintenance(1)
+            .expect("configured active threshold is honored");
+        // Completion does not acquire the admission lock: it must remain able
+        // to settle an already running recording while maintenance is admitted.
+        tokio::time::timeout(Duration::from_secs(2), manager.stop_download(&id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(manager.active_count(), 0);
+        drop(admission);
+        assert!(manager.try_admit_maintenance(0).is_some());
+        let operation = manager.begin_operation().await.unwrap();
+        assert!(
+            manager.try_admit_maintenance(0).is_none(),
+            "in-flight admission work conservatively defers maintenance"
+        );
+        drop(operation);
+    }
+
+    #[tokio::test]
+    async fn maintenance_admission_respects_shutdown_and_cancelled_starts() {
+        let manager = DownloadManager::new();
+        let admission = manager.try_admit_maintenance(0).unwrap();
+        let mut operation = Box::pin(manager.begin_operation());
+        assert!(futures::poll!(operation.as_mut()).is_pending());
+        drop(operation);
+        drop(admission);
+        assert!(
+            manager.try_admit_maintenance(0).is_some(),
+            "cancelled waiter does not retain the fence"
+        );
+        let report = tokio::time::timeout(
+            Duration::from_secs(2),
+            manager.shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1)),
+        )
+        .await
+        .unwrap();
+        assert!(report.failures.is_empty());
+        assert!(
+            manager.try_admit_maintenance(0).is_none(),
+            "maintenance cannot race shutdown admission"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_queued_start_clears_event_and_capacity_while_maintenance_is_admitted() {
+        enum CancelMode {
+            DropFuture,
+            BeforeStart,
+            DuringWait,
+        }
+        for mode in [
+            CancelMode::DropFuture,
+            CancelMode::BeforeStart,
+            CancelMode::DuringWait,
+        ] {
+            let manager = DownloadManager::with_config(DownloadManagerConfig {
+                max_concurrent_downloads: 1,
+                high_priority_extra_slots: 0,
+                ..Default::default()
+            });
+            let mut events = manager.subscribe();
+            let request = |session: &str| AcquireRequest {
+                session_id: session.to_owned(),
+                streamer_id: "streamer".to_owned(),
+                streamer_name: "Streamer".to_owned(),
+                engine_type: EngineType::Ffmpeg,
+                priority: Priority::Normal,
+            };
+            let holder = manager
+                .acquire_slot(request("holder"), CancellationToken::new())
+                .await
+                .unwrap();
+            let mut queued =
+                Box::pin(manager.acquire_slot(request("queued"), CancellationToken::new()));
+            assert!(futures::poll!(queued.as_mut()).is_pending());
+            drop(holder);
+            let slot = tokio::time::timeout(Duration::from_secs(2), queued)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(slot.queued_event_emitted());
+            let admission = manager.try_admit_maintenance(0).unwrap();
+            let config = DownloadConfig::new(
+                "https://invalid.test/live",
+                "recordings",
+                "streamer",
+                "Streamer",
+                "queued",
+            );
+            let engine = EngineHandle {
+                engine: Arc::new(ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![])),
+                engine_type: EngineType::Ffmpeg,
+                engine_key: EngineKey::global(EngineType::Ffmpeg),
+            };
+            let cancel = CancellationToken::new();
+            if matches!(mode, CancelMode::BeforeStart) {
+                cancel.cancel();
+            }
+            let mut start =
+                Box::pin(manager.start_with_slot_cancellable(slot, config, engine, &cancel));
+            if !matches!(mode, CancelMode::BeforeStart) {
+                assert!(futures::poll!(start.as_mut()).is_pending());
+            }
+            match mode {
+                CancelMode::DropFuture => drop(start),
+                CancelMode::BeforeStart | CancelMode::DuringWait => {
+                    cancel.cancel();
+                    assert!(
+                        tokio::time::timeout(Duration::from_secs(2), start)
+                            .await
+                            .unwrap()
+                            .unwrap()
+                            .is_none()
+                    );
+                }
+            }
+            let mut queued_events = 0;
+            let mut dequeued_events = 0;
+            while let Ok(event) = events.try_recv() {
+                match event {
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
+                        session_id,
+                        ..
+                    }) if session_id == "queued" => queued_events += 1,
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadDequeued {
+                        session_id,
+                        ..
+                    }) if session_id == "queued" => dequeued_events += 1,
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
+                        ..
+                    }) => panic!("cancelled start must not launch an engine"),
+                    _ => {}
+                }
+            }
+            assert_eq!(queued_events, 1);
+            assert_eq!(dequeued_events, 1);
+            drop(admission);
+            let replacement = tokio::time::timeout(
+                Duration::from_secs(2),
+                manager.acquire_slot(request("queued"), CancellationToken::new()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(
+                !replacement.queued_event_emitted(),
+                "cancelled start releases capacity and its session reservation"
+            );
+            assert_eq!(
+                manager.active_count(),
+                0,
+                "cancelled start stays stopped after maintenance releases admission"
+            );
+        }
     }
 
     #[test]

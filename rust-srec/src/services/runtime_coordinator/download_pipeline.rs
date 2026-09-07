@@ -505,9 +505,13 @@ pub(super) async fn run_live_download_pipeline(
     let cookies = merged_config.cookies.clone();
     let danmu_statistics = merged_config.danmu_statistics.clone();
 
-    // Start engine on the slot.
-    let started = match download_manager.start_with_slot(slot, config, engine).await {
-        Ok(download_id) => {
+    // Maintenance may defer admission after a slot has been granted. Keep the
+    // session cancellation connected until the manager actually starts the engine.
+    let started = match download_manager
+        .start_with_slot_cancellable(slot, config, engine, &cancel)
+        .await
+    {
+        Ok(Some(download_id)) => {
             info!(
                 "Started download {} for streamer {} (priority: {})",
                 download_id,
@@ -515,6 +519,10 @@ pub(super) async fn run_live_download_pipeline(
                 if is_high_priority { "high" } else { "normal" }
             );
             true
+        }
+        Ok(None) => {
+            debug!(%streamer_id, "Download startup cancelled while waiting for admission");
+            false
         }
         Err(e) => {
             warn!(
