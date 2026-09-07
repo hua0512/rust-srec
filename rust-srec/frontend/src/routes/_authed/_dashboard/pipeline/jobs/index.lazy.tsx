@@ -62,17 +62,6 @@ import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { formatDuration } from '@/lib/format';
-import { z } from 'zod';
-
-// Search params schema for URL persistence
-const searchParamsSchema = z.object({
-  q: z.string().optional(),
-  status: z.string().optional(),
-  page: z.number().int().min(0).optional(),
-  size: z.number().int().positive().optional(),
-});
-
-type SearchParams = z.infer<typeof searchParamsSchema>;
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
@@ -86,7 +75,8 @@ function PipelineJobsPage() {
   const { i18n } = useLingui();
 
   // Read state from URL search params
-  const { q, status, page, size } = Route.useSearch();
+  const search = Route.useSearch();
+  const { q, status, page, size } = search;
 
   // Derive state from URL params with defaults
   const selectedStatus = status ?? null;
@@ -119,7 +109,7 @@ function PipelineJobsPage() {
     [i18n],
   );
 
-  const updateSearch = useUpdateSearch<SearchParams>();
+  const updateSearch = useUpdateSearch<typeof search>();
 
   // Reset page when status changes
   const handleStatusChange = useCallback(

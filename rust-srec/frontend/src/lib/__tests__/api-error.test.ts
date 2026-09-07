@@ -2,7 +2,9 @@ import {
   BackendApiError,
   DAG_ALREADY_TERMINAL_CODE,
   hasErrorCode,
+  isBackendStatus,
   isDagAlreadyTerminalError,
+  isNotFoundError,
   isPasswordChangeRequiredError,
 } from '../api-error';
 
@@ -62,6 +64,37 @@ describe('isDagAlreadyTerminalError', () => {
   it('does not match non-errors', () => {
     expect(isDagAlreadyTerminalError(undefined)).toBe(false);
     expect(isDagAlreadyTerminalError({ body: { code: 'X' } })).toBe(false);
+  });
+});
+
+describe('isNotFoundError', () => {
+  it('matches a BackendApiError with a 404 status', () => {
+    expect(
+      isNotFoundError(new BackendApiError(404, 'Not Found', { message: 'no' })),
+    ).toBe(true);
+  });
+
+  // An `instanceof BackendApiError` check is always false for an error a
+  // component receives from a server function, so a 404 has to be recognised
+  // from the own properties alone.
+  it('matches the shape that survives the server-function boundary', () => {
+    const error = rethrownAcrossBoundary(404, { message: 'no statistics yet' });
+
+    expect(error).not.toBeInstanceOf(BackendApiError);
+    expect(isNotFoundError(error)).toBe(true);
+  });
+
+  it('does not match other failures', () => {
+    expect(isNotFoundError(rethrownAcrossBoundary(500, {}))).toBe(false);
+    expect(isNotFoundError(new Error('Network request failed'))).toBe(false);
+    expect(isNotFoundError(undefined)).toBe(false);
+    expect(isNotFoundError({ status: 404 })).toBe(false);
+  });
+
+  it('shares its matching with isBackendStatus', () => {
+    const error = rethrownAcrossBoundary(422, {});
+    expect(isBackendStatus(error, 422)).toBe(true);
+    expect(isBackendStatus(error, 404)).toBe(false);
   });
 });
 

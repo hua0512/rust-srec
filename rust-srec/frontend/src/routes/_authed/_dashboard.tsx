@@ -7,7 +7,7 @@ import { Footer } from '@/components/sidebar/footer';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { SidebarConfigProvider } from '@/contexts/sidebar-context';
-import { useSidebarConfig } from '@/hooks/use-sidebar-config';
+import { useSidebarConfig } from '@/contexts/sidebar-context';
 import { createServerFn } from '@/server/createServerFn';
 
 // ── server function: read sidebar cookie during SSR ──────────────

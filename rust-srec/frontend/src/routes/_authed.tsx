@@ -14,7 +14,14 @@ export const Route = createFileRoute('/_authed')({
     const user = await fetchUser();
 
     if (!user && location.pathname !== '/login') {
-      throw redirect({ to: '/login', replace: true });
+      // `href` is the pathname plus search and hash, so the filters and page
+      // number the visitor followed survive signing in. The login page drops
+      // anything that is not a path on this application.
+      throw redirect({
+        to: '/login',
+        search: { redirect: location.href },
+        replace: true,
+      });
     }
 
     if (user?.mustChangePassword && location.pathname !== '/change-password') {

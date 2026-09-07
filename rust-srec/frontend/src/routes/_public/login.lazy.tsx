@@ -21,6 +21,7 @@ import { msg } from '@lingui/core/macro';
 import { useState, useCallback, memo } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { loginFn } from '@/server/functions';
+import { safeRedirectPath } from '@/lib/url';
 
 export const Route = createLazyFileRoute('/_public/login')({
   component: LoginComp,
@@ -63,14 +64,15 @@ function LoginPage() {
 
       toast.success(i18n._(msg`Logged in successfully`));
 
-      const isValidRedirect =
-        search.redirect &&
-        search.redirect.startsWith('/') &&
-        !search.redirect.startsWith('//') &&
-        !search.redirect.includes(':');
-
-      const safeRedirect = isValidRedirect ? search.redirect : '/dashboard';
-      void router.navigate({ to: safeRedirect, replace: true });
+      // `/_authed` records the page that turned the visitor away, search string
+      // included, so navigate by href: `to` would fold a query string into the
+      // pathname instead of parsing it.
+      const target = safeRedirectPath(search.redirect);
+      if (target) {
+        void router.navigate({ href: target, replace: true });
+        return;
+      }
+      void router.navigate({ to: '/dashboard', replace: true });
     },
     [router, search.redirect],
   );

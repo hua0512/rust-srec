@@ -1,5 +1,36 @@
 import { z } from 'zod';
 
+/**
+ * Read a field the backend stores as JSON text, reporting an unusable value as
+ * `null` instead of failing the surrounding parse.
+ *
+ * A row written by an earlier version, or edited by hand in the database, can
+ * hold text that is not JSON or no longer matches `schema`. These fields are
+ * parsed as part of list responses, so rejecting one row would blank the whole
+ * page; degrading that single field to "not configured" keeps the rest of the
+ * response usable. A value that arrives already decoded is accepted as is,
+ * which is what the write paths and the config forms hand back.
+ */
+export function jsonTextField<Schema extends z.ZodType>(schema: Schema) {
+  return z
+    .unknown()
+    .transform((value): z.output<Schema> | null => {
+      if (value === null) return null;
+      let decoded: unknown = value;
+      if (typeof value === 'string') {
+        if (value.trim() === '') return null;
+        try {
+          decoded = JSON.parse(value);
+        } catch {
+          return null;
+        }
+      }
+      const result = schema.safeParse(decoded);
+      return result.success ? result.data : null;
+    })
+    .optional();
+}
+
 // --- Priority Enum ---
 export const PrioritySchema = z
   .enum(['HIGH', 'NORMAL', 'LOW'])

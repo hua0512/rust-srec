@@ -36,7 +36,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
 import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
-import { BackendApiError } from '@/lib/api-error';
+import { isNotFoundError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
 import { SessionHeader } from '@/components/sessions/session-header';
@@ -141,9 +141,7 @@ function SessionDetailPage() {
     refetchInterval: isSessionLive ? 60_000 : false,
   });
 
-  const isDanmuStatsUnavailable =
-    danmuStatsQuery.error instanceof BackendApiError &&
-    danmuStatsQuery.error.status === 404;
+  const isDanmuStatsUnavailable = isNotFoundError(danmuStatsQuery.error);
 
   const { data: outputsData, isLoading: isOutputsLoading } = useQuery({
     queryKey: ['pipeline', 'outputs', sessionId],
@@ -165,50 +163,35 @@ function SessionDetailPage() {
   const dags = dagsData?.dags || [];
   const segments = segmentsData || [];
 
-  const handleDownload = async (outputId: string, filename: string) => {
-    try {
-      const url = getMediaUrl(
-        `/api/media/${outputId}/content`,
-        user?.token?.access_token,
-      );
-      if (!url) throw new Error('Invalid download URL');
-
-      toast.promise(
-        async () => {
-          const response = await fetch(url, {
-            headers: {
-              Authorization: `Bearer ${user?.token?.access_token}`,
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error(
-              `Download failed: ${response.status} ${response.statusText}`,
-            );
-          }
-
-          const blob = await response.blob();
-          const downloadUrl = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = downloadUrl;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(downloadUrl);
-          document.body.removeChild(a);
-        },
-        {
-          loading: 'Downloading...',
-          success: 'Download started',
-          error: (err) => `Download failed: ${err.message}`,
-        },
-      );
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
   const { i18n } = useLingui();
+
+  // Handing the URL to a plain anchor lets the browser stream the response
+  // straight to disk; reading it into a Blob first would hold the whole
+  // recording — often several gigabytes — in the tab's memory. That rules out
+  // an Authorization header, so the media token travels in the query string
+  // only (getMediaUrl appends it) and is never sent twice.
+  const handleDownload = (outputId: string, filename: string) => {
+    const url = getMediaUrl(
+      `/api/media/${outputId}/content`,
+      user?.token?.access_token,
+    );
+    if (!url) {
+      toast.error(i18n._(msg`Invalid download URL`));
+      return;
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    // Applies when the media is served from this origin; otherwise the
+    // backend's Content-Disposition names the file.
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    toast.success(i18n._(msg`Download started`));
+  };
 
   if (isSessionLoading) {
     return (
@@ -394,7 +377,9 @@ function SessionDetailPage() {
           }
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>Media Player</DialogTitle>
+            <DialogTitle>
+              <Trans>Media Player</Trans>
+            </DialogTitle>
           </DialogHeader>
           <div
             className={

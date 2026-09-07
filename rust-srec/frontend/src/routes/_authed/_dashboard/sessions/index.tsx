@@ -1,7 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
+import { searchParamsValidator } from '@/lib/search-params';
 
-const searchSchema = z.object({
+// Search params schema for URL persistence — keeps the status/time filters, the
+// search term and pagination in the URL so they survive navigation into a
+// session detail page and reloads.
+const validateSearch = searchParamsValidator({
   page: z.number().optional(),
   limit: z.number().optional(),
   streamer_id: z.string().optional(),
@@ -15,5 +19,5 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute('/_authed/_dashboard/sessions/')({
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch,
 });

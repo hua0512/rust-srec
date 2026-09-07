@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-const TimestampMsSchema = z
+/**
+ * Epoch milliseconds as the backend serialises them: a number, a numeric
+ * string, or an RFC3339 timestamp depending on the endpoint.
+ */
+export const TimestampMsSchema = z
   .union([z.number(), z.string()])
   .transform((v, ctx) => {
     if (typeof v === 'number') return v;

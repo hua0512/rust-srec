@@ -7,7 +7,7 @@ import { ConnectionStatusIndicator } from '@/components/connection-status-indica
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ModeToggle } from '@/components/sidebar/mode-toggle';
 import { Button } from '@/components/ui/button';
-import { useSidebarConfig } from '@/hooks/use-sidebar-config';
+import { useSidebarConfig } from '@/contexts/sidebar-context';
 import {
   Breadcrumb,
   BreadcrumbItem,

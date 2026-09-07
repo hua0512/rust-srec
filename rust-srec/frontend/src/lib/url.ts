@@ -103,6 +103,30 @@ export function buildWebSocketUrl(
 }
 
 /**
+ * Narrow a post-login redirect target to a path on this application.
+ *
+ * The value reaches us through the `redirect` search param, so it is attacker
+ * controllable: anything that could resolve to another origin has to be
+ * rejected. A target must therefore start with a single `/` — that also rules
+ * out a scheme, which can only appear before the first `/` — and must not open
+ * with `//` or `/\`, both of which browsers read as protocol-relative. Tabs,
+ * newlines and carriage returns are removed from a URL before it is parsed, so
+ * a value containing one is rejected rather than sanitized — a tab in
+ * `/<tab>/example.com` would otherwise leave `//example.com`.
+ *
+ * @returns the path to navigate to, or `null` when it cannot be trusted.
+ */
+export function safeRedirectPath(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  if (!value.startsWith('/')) return null;
+  if (value.startsWith('//') || value.startsWith('/\\')) return null;
+  if (value.includes('\t') || value.includes('\n') || value.includes('\r')) {
+    return null;
+  }
+  return value;
+}
+
+/**
  * Best-effort host extraction for display purposes.
  *
  * Used to show a CDN host without exposing URL paths or query params.

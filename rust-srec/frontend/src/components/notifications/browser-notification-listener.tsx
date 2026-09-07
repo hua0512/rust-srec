@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listEvents } from '@/server/functions/notifications';
 import type { NotificationEventLog } from '@/api/schemas/notifications';
@@ -59,6 +60,7 @@ function formatBrowserNotification(
 
 export function BrowserNotificationListener() {
   const { i18n } = useLingui();
+  const navigate = useNavigate();
   const isSupported = typeof window !== 'undefined' && 'Notification' in window;
 
   const [enabled, setEnabled] = useState(false);
@@ -122,7 +124,10 @@ export function BrowserNotificationListener() {
         n.onclick = () => {
           try {
             window.focus();
-            window.location.assign('/notifications/events');
+            // Routing through the router rather than the address bar: the
+            // desktop build serves the app from hash history, where a
+            // pathname navigation lands on the index route instead.
+            void navigate({ to: '/notifications/events' });
           } catch {
             // ignore
           }
@@ -134,7 +139,7 @@ export function BrowserNotificationListener() {
     }
 
     setLastNotifiedCriticalMs(maxNotified);
-  }, [events, shouldPoll, i18n]);
+  }, [events, shouldPoll, i18n, navigate]);
 
   return null;
 }

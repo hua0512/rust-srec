@@ -290,7 +290,39 @@
 
 - **A bad link no longer replaces a list page with an error**
 
-  Recordings, streamers, processing jobs, workflows, presets, media files and the player all remember your search, filters and page number in the address bar. If any one of those values was not something the page could read — a hand-edited address, a truncated link, or one saved before an update changed what a filter accepts — the whole page was replaced by "Something went wrong!" and a block of technical detail. Values that cannot be read are now simply ignored, and the rest of the address still applies: a link carrying both a search term and an unusable page number now runs the search and starts from the first page.
+  Recordings, streamers, platforms, templates, processing jobs, workflows, presets, media files, the notification events feed and the player all remember your search, filters and page number in the address bar. If any one of those values was not something the page could read — a hand-edited address, a truncated link, or one saved before an update changed what a filter accepts — the whole page was replaced by "Something went wrong!" and a block of technical detail. Values that cannot be read are now simply ignored, and the rest of the address still applies: a link carrying both a search term and an unusable page number now runs the search and starts from the first page.
+
+- **Selected items no longer follow you to another page**
+
+  On the recordings and streamers lists, rows you had ticked stayed selected after you searched, changed a filter or moved to another page, even though they were no longer on screen — and a delete or batch action then applied to them too. Changing what the list shows now clears the selection, so an action only ever affects rows you can see.
+
+- **Downloading a recording starts right away**
+
+  Saving a recording from a session used to pull the entire file into the browser first and only then offer to save it: nothing appeared to happen for a long time, and a large recording could take the tab down with it. The download now goes straight to disk and starts as soon as you click. The player window's title is translated as well.
+
+- **One unreadable setting no longer blanks the platforms and templates pages**
+
+  A platform or template whose stored settings could not be read — written by an older version, or edited by hand — stopped the whole list from loading. Only the setting that cannot be read is now skipped, and every other setting and entry loads normally.
+
+- **A recording without chat statistics says so**
+
+  Opening a recording that has no danmaku statistics, because chat capture was off or the recording had only just begun, reported "Failed to load danmu statistics." with a retry button. It now simply says the statistics are not available for that recording.
+
+- **A pipeline that cannot be opened reports the reason**
+
+  Opening a processing pipeline that no longer exists, or opening one while the server was unreachable, left the page showing loading placeholders indefinitely. The page now explains what went wrong and offers a way back.
+
+- **Signing out and back in behaves like a fresh start**
+
+  After signing out, the next person to sign in on the same tab could still see the previous account's streamers, recordings and transfers for a moment. Following a link into the app while signed out also dropped you at the dashboard afterwards, losing the page you actually wanted. Signing out now clears everything from the previous session, and signing in takes you to the page you originally opened, with its search and filters intact.
+
+- **Clicking a critical notification opens the events list**
+
+  In the desktop app, clicking a critical system notification landed on the dashboard instead of the event it was about. It now opens the notification events list in the desktop app and in the browser alike.
+
+- **The dashboard's processing tile keeps up with cancellations**
+
+  Cancelling a pipeline updated the counts on the processing jobs page but left the dashboard's own processing tile showing the old numbers until its next automatic refresh. Both now update together.
 
 - **Media files page is readable again**
 
