@@ -20,7 +20,8 @@ use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
 use crate::pipeline::{Job, JobQueue, JobStatus};
 use crate::{Error, Result};
 
-type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
+pub(crate) type PublicationRollback = Box<dyn FnOnce() + Send>;
+pub(crate) type BeforeRootJobsHook = Box<dyn FnOnce(&str) -> PublicationRollback + Send>;
 
 /// Optional metadata associated with a DAG execution.
 #[derive(Debug, Clone, Default)]
@@ -166,7 +167,9 @@ impl DagScheduler {
     }
 
     /// Create a new DAG pipeline execution with an optional hook called before the atomic
-    /// publication makes its root jobs claimable.
+    /// publication makes its root jobs claimable. The hook returns a callback to undo its
+    /// registration if publication fails. A successfully published DAG retains registration,
+    /// including when subsequent in-memory enqueueing fails.
     pub async fn create_dag_pipeline_with_hook(
         &self,
         dag_definition: DagPipelineDefinition,
@@ -222,13 +225,21 @@ impl DagScheduler {
             root_jobs.push(job);
         }
 
-        if let Some(hook) = before_root_jobs {
-            hook(&dag_id);
-        }
+        let rollback = before_root_jobs.map(|hook| hook(&dag_id));
 
-        self.dag_repository
+        if let Err(error) = self
+            .dag_repository
             .publish_dag(&dag_exec, &step_executions, &root_job_models)
-            .await?;
+            .await
+        {
+            if let Some(rollback) = rollback {
+                rollback();
+            }
+            return Err(error);
+        }
+        // Do not roll back on cancellation of an in-flight publication: commit may already
+        // have succeeded without the caller observing it. Only a definite error rolls back.
+        drop(rollback);
 
         info!(
             dag_id = %dag_id,

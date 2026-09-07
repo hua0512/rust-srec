@@ -28,6 +28,10 @@
 
 ## Post-processing
 
+- **Failed workflow publication releases its pending context**
+
+  Failed database publication removes temporary segment and paired-workflow tracking. Successfully published workflows keep their tracking so workers can complete them. Malformed stored preset JSON is rejected before jobs are created, and validation errors omit configuration values.
+
 - **Worker logs retain repeated messages and withdrawn jobs stay stopped**
 
   Successive log batches retain every entry even when timestamps and messages match. Completion snapshots avoid repeating entries already streamed to storage, while the existing log limit and API format stay intact. Workers check queue ownership before starting execution, so a removed job cannot run with a replacement cancellation token.
