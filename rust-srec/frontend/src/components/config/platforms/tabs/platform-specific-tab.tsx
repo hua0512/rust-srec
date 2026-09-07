@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { Boxes, Code, List } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   HuyaConfigSchema,
@@ -56,6 +56,125 @@ const SPECIFIC_CONFIG_COMPONENTS: Record<string, any> = {
   soop: SoopConfigFields,
   bigo: BigoConfigFields,
 };
+
+function toJsonText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  // A stored string is already the raw text; anything else is printed as JSON.
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2) ?? '';
+}
+
+/**
+ * Identity of a form value for change detection.
+ *
+ * The form hands back a fresh deep copy on every update, so references say
+ * nothing about whether the options actually changed.
+ */
+function identityOf(value: unknown): string {
+  return value === undefined ? '' : (JSON.stringify(value) ?? '');
+}
+
+/**
+ * Raw JSON view of the platform options.
+ *
+ * The textarea owns its text. Re-deriving it from the parsed form value would
+ * reprint what is being typed as indented JSON and send the caret to the end, so
+ * the form value is only adopted when it differs from what this editor last
+ * emitted — a config load or a form reset, never a keystroke.
+ */
+function RawJsonEditor({
+  form,
+  fieldName,
+  platformName,
+  value,
+  onChange,
+}: {
+  form: UseFormReturn<any>;
+  fieldName: string;
+  platformName?: string;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const [text, setText] = useState(() => toJsonText(value));
+  const [error, setError] = useState<string | null>(null);
+  const lastEmitted = useRef(identityOf(value));
+
+  useEffect(() => {
+    const identity = identityOf(value);
+    if (identity === lastEmitted.current) return;
+    lastEmitted.current = identity;
+    setText(toJsonText(value));
+    setError(null);
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value;
+    setText(newText);
+
+    const emit = (parsed: unknown) => {
+      lastEmitted.current = identityOf(parsed);
+      onChange(parsed);
+      setError(null);
+      form.clearErrors(fieldName);
+    };
+
+    if (!newText.trim()) {
+      emit(null);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(newText);
+      const schema = platformName
+        ? PLATFORM_SCHEMAS[platformName.toLowerCase()]
+        : null;
+      if (schema) {
+        schema.parse(parsed);
+      }
+      emit(parsed);
+    } catch (err) {
+      setError((err as Error).message);
+      form.setError(fieldName, {
+        type: 'manual',
+        message: (err as Error).message,
+      });
+    }
+  };
+
+  return (
+    <div className="p-6 md:p-8 space-y-4">
+      <div className="flex items-center gap-2 text-indigo-500">
+        <Code className="w-4 h-4" />
+        <span className="text-sm font-bold uppercase tracking-wider">
+          <Trans>Raw JSON Editor</Trans>
+        </span>
+      </div>
+      <FormItem>
+        <FormControl>
+          <div className="space-y-2">
+            <Textarea
+              value={text}
+              onChange={handleChange}
+              className="font-mono text-sm min-h-[500px] bg-background/50 focus:bg-background border-border/50 focus-visible:ring-indigo-500 rounded-2xl shadow-inner scrollbar-none"
+              placeholder="{ ... }"
+            />
+            {error && (
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs font-semibold text-destructive animate-in shake duration-300">
+                <Trans>Invalid JSON: {error}</Trans>
+              </div>
+            )}
+          </div>
+        </FormControl>
+        <FormDescription className="text-xs font-medium">
+          <Trans>
+            Expert mode: Edit the raw platform-specific configuration directly.
+          </Trans>
+        </FormDescription>
+        <FormMessage />
+      </FormItem>
+    </div>
+  );
+}
 
 interface PlatformSpecificTabProps {
   form: UseFormReturn<any>;
@@ -185,88 +304,15 @@ export function PlatformSpecificTab({
             <FormField
               control={form.control}
               name={fieldName}
-              render={({ field }) => {
-                const [text, setText] = useState('');
-                const [error, setError] = useState<string | null>(null);
-
-                useEffect(() => {
-                  const val = field.value;
-                  if (val === null || val === undefined) {
-                    setText('');
-                  } else if (typeof val === 'object') {
-                    setText(JSON.stringify(val, null, 2));
-                  } else {
-                    setText(String(val));
-                  }
-                }, [field.value]);
-
-                const handleChange = (
-                  e: React.ChangeEvent<HTMLTextAreaElement>,
-                ) => {
-                  const newVal = e.target.value;
-                  setText(newVal);
-
-                  if (!newVal.trim()) {
-                    field.onChange(null);
-                    setError(null);
-                    return;
-                  }
-
-                  try {
-                    const parsed = JSON.parse(newVal);
-                    const schema = platformName
-                      ? PLATFORM_SCHEMAS[platformName.toLowerCase()]
-                      : null;
-                    if (schema) {
-                      schema.parse(parsed);
-                    }
-                    field.onChange(parsed);
-                    setError(null);
-                    form.clearErrors(fieldName);
-                  } catch (err) {
-                    setError((err as Error).message);
-                    form.setError(fieldName, {
-                      type: 'manual',
-                      message: (err as Error).message,
-                    });
-                  }
-                };
-
-                return (
-                  <div className="p-6 md:p-8 space-y-4">
-                    <div className="flex items-center gap-2 text-indigo-500">
-                      <Code className="w-4 h-4" />
-                      <span className="text-sm font-bold uppercase tracking-wider">
-                        <Trans>Raw JSON Editor</Trans>
-                      </span>
-                    </div>
-                    <FormItem>
-                      <FormControl>
-                        <div className="space-y-2">
-                          <Textarea
-                            value={text}
-                            onChange={handleChange}
-                            className="font-mono text-sm min-h-[500px] bg-background/50 focus:bg-background border-border/50 focus-visible:ring-indigo-500 rounded-2xl shadow-inner scrollbar-none"
-                            placeholder="{ ... }"
-                          />
-                          {error && (
-                            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs font-semibold text-destructive animate-in shake duration-300">
-                              <Trans>Invalid JSON: {error}</Trans>
-                            </div>
-                          )}
-                        </div>
-                      </FormControl>
-                      <FormDescription className="text-xs font-medium">
-                        <Trans>
-                          Expert mode: Edit the raw platform-specific
-                          configuration directly.
-                        </Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  </div>
-                );
-              }}
+              render={({ field }) => (
+                <RawJsonEditor
+                  form={form}
+                  fieldName={fieldName}
+                  platformName={platformName}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
           )}
         </div>

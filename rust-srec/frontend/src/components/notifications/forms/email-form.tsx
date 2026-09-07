@@ -23,6 +23,7 @@ import {
   CONFIG_INPUT,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { NumberInput } from '@/components/ui/number-input';
 
 export function EmailForm() {
   const { i18n } = useLingui();
@@ -62,13 +63,11 @@ export function EmailForm() {
                 <Trans>Port</Trans>
               </ConfigFieldLabel>
               <FormControl>
-                <IconInput
+                <NumberInput
+                  field={field}
                   icon={Hash}
-                  type="number"
                   placeholder={i18n._(msg`587`)}
                   className={CONFIG_INPUT}
-                  {...field}
-                  onChange={(e) => field.onChange(e.target.valueAsNumber)}
                 />
               </FormControl>
               <FormMessage />

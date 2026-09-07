@@ -348,6 +348,26 @@
 
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.
 
+- **Emptied settings boxes stay empty**
+
+  Clearing a number — a timeout, a retry count, an image width — left something behind that could not be saved, and saving reported a value that is not a number. Douyu's preferred CDN could not be cleared at all: deleting it immediately put the previous value back. Clearing a box now returns that setting to its default, the box stays empty, and the value that will be used instead is shown in its place.
+
+- **Editing a list of settings no longer jumps to another row**
+
+  Removing a custom webhook header, a metadata tag or a stream parameter shifted the remaining rows onto their neighbours and took the cursor with them. Two blank custom tags also merged into one as soon as they were added. Each row now keeps what you typed into it, blank rows stay separate, and a tag is saved once you give it a name.
+
+- **The raw JSON editor no longer rewrites what you type**
+
+  In the platform options JSON view every keystroke reformatted the whole document and sent the cursor to the end, so compact JSON was impossible to type. The text now stays as you typed it, an incomplete snippet is reported without being thrown away, and loading a configuration or cancelling still refreshes the editor.
+
+- **Notification subscriptions survive switching away and back**
+
+  Ticking events for a notification channel, switching to another window and coming back discarded everything you had ticked and restored the previously saved list. Your selection is now kept until you save or close the dialog, and clicking a checkbox toggles it instead of only clicking the row around it.
+
+- **Bilibili QR sign-in stops once the code expires**
+
+  The sign-in dialog kept asking the server about an expired QR code every two seconds, and typing anywhere else on the settings page sent an extra request each time. It now stops as soon as the code expires and waits for you to ask for a new one.
+
 ## Security
 
 - **Successful logins preserve other failed-login attempts**

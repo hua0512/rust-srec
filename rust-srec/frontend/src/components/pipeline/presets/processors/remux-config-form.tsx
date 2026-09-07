@@ -45,6 +45,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { NumberInput } from '@/components/ui/number-input';
+import { useRowKeys } from '@/hooks/use-row-keys';
 
 type RemuxConfig = z.infer<typeof RemuxConfigSchema>;
 
@@ -107,6 +109,78 @@ function getPresetsForCodecFamily(family: CodecFamily) {
     case 'software':
       return SOFTWARE_PRESETS;
   }
+}
+
+function MetadataTagRows({
+  value,
+  onChange,
+}: {
+  value: Array<[string, string]>;
+  onChange: (next: Array<[string, string]>) => void;
+}) {
+  const { i18n } = useLingui();
+  const rowKeys = useRowKeys(value.length);
+
+  if (value.length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[11px] text-muted-foreground/50 text-center py-4 border border-dashed border-border/30 rounded-lg">
+          <Trans>No metadata tags added</Trans>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {value.map(([key, tagValue], index) => (
+        <div
+          key={rowKeys.keyAt(index)}
+          className="flex gap-2 items-center group animate-in fade-in slide-in-from-top-1 duration-200"
+        >
+          <div className="relative flex-1 group/input">
+            <Tags className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40 group-focus-within/input:text-primary/50 transition-colors" />
+            <Input
+              placeholder={i18n._(msg`Key`)}
+              value={key}
+              onChange={(e) =>
+                onChange(
+                  value.map((pair, i) =>
+                    i === index ? [e.target.value, tagValue] : pair,
+                  ),
+                )
+              }
+              className="h-9 pl-8 bg-background/50 border-border/50 focus:bg-background text-xs"
+            />
+          </div>
+          <Input
+            placeholder={i18n._(msg`Value`)}
+            value={tagValue}
+            onChange={(e) =>
+              onChange(
+                value.map((pair, i) =>
+                  i === index ? [key, e.target.value] : pair,
+                ),
+              )
+            }
+            className="flex-1 h-9 bg-background/50 border-border/50 focus:bg-background text-xs"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10"
+            onClick={() => {
+              rowKeys.removeAt(index);
+              onChange(value.filter((_, i) => i !== index));
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export const RemuxConfigForm = memo(function RemuxConfigForm({
@@ -590,15 +664,10 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           <Trans>Framerate (FPS)</Trans>
                         </FormLabel>
                         <FormControl>
-                          <Input
+                          <NumberInput
+                            field={field}
                             className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                            type="number"
                             placeholder="e.g. 60"
-                            {...field}
-                            value={field.value ?? ''}
-                            onChange={(e) =>
-                              field.onChange(parseFloat(e.target.value))
-                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -1012,58 +1081,10 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           <Trans>Add Tag</Trans>
                         </Button>
                       </div>
-                      <div className="space-y-2">
-                        {(field.value || []).map(
-                          ([key, value]: [string, string], index: number) => (
-                            <div
-                              key={index}
-                              className="flex gap-2 items-center group animate-in fade-in slide-in-from-top-1 duration-200"
-                            >
-                              <div className="relative flex-1 group/input">
-                                <Tags className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40 group-focus-within/input:text-primary/50 transition-colors" />
-                                <Input
-                                  placeholder={i18n._(msg`Key`)}
-                                  value={key}
-                                  onChange={(e) => {
-                                    const newValue = [...(field.value || [])];
-                                    newValue[index] = [e.target.value, value];
-                                    field.onChange(newValue);
-                                  }}
-                                  className="h-9 pl-8 bg-background/50 border-border/50 focus:bg-background text-xs"
-                                />
-                              </div>
-                              <Input
-                                placeholder={i18n._(msg`Value`)}
-                                value={value}
-                                onChange={(e) => {
-                                  const newValue = [...(field.value || [])];
-                                  newValue[index] = [key, e.target.value];
-                                  field.onChange(newValue);
-                                }}
-                                className="flex-1 h-9 bg-background/50 border-border/50 focus:bg-background text-xs"
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9 shrink-0 text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => {
-                                  const newValue = [...(field.value || [])];
-                                  newValue.splice(index, 1);
-                                  field.onChange(newValue);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ),
-                        )}
-                        {(!field.value || field.value.length === 0) && (
-                          <div className="text-[11px] text-muted-foreground/50 text-center py-4 border border-dashed border-border/30 rounded-lg">
-                            <Trans>No metadata tags added</Trans>
-                          </div>
-                        )}
-                      </div>
+                      <MetadataTagRows
+                        value={field.value || []}
+                        onChange={field.onChange}
+                      />
                       <FormMessage />
                     </FormItem>
                   )}

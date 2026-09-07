@@ -23,6 +23,7 @@ import { AssBurninConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { motion } from 'motion/react';
 import { Video, Type, Settings, Trash2 } from 'lucide-react';
+import { NumberInput } from '@/components/ui/number-input';
 
 type AssBurninConfig = z.infer<typeof AssBurninConfigSchema>;
 
@@ -105,13 +106,12 @@ export function AssBurninConfigForm({
                     <Trans>CRF (0-51)</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
+                    <NumberInput
+                      field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      type="number"
                       min={0}
                       max={51}
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
+                      placeholder="23"
                     />
                   </FormControl>
                   <FormMessage />

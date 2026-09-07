@@ -19,6 +19,7 @@ import {
   CONFIG_INPUT,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { NumberInput } from '@/components/ui/number-input';
 
 export function GotifyForm() {
   const { i18n } = useLingui();
@@ -79,15 +80,13 @@ export function GotifyForm() {
                 <Trans>Timeout (s)</Trans>
               </ConfigFieldLabel>
               <FormControl>
-                <IconInput
+                <NumberInput
+                  field={field}
                   icon={Timer}
-                  type="number"
                   min={1}
                   max={300}
                   placeholder="30"
                   className={CONFIG_INPUT}
-                  {...field}
-                  onChange={(e) => field.onChange(e.target.valueAsNumber)}
                 />
               </FormControl>
               <FormMessage />

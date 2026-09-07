@@ -47,6 +47,8 @@ import {
   ConfigFieldLabel,
   CONFIG_INPUT,
 } from '@/components/config/shared/config-field';
+import { NumberInput } from '@/components/ui/number-input';
+import { useRowKeys } from '@/hooks/use-row-keys';
 
 export const WebhookForm = memo(function WebhookForm() {
   const { i18n } = useLingui();
@@ -61,6 +63,7 @@ export const WebhookForm = memo(function WebhookForm() {
       control: form.control,
       name: 'settings.headers',
     }) || [];
+  const rowKeys = useRowKeys(headers.length);
 
   return (
     <div className="space-y-6">
@@ -141,12 +144,11 @@ export const WebhookForm = memo(function WebhookForm() {
                   <Trans>Timeout (seconds)</Trans>
                 </ConfigFieldLabel>
                 <FormControl>
-                  <Input
+                  <NumberInput
+                    field={field}
                     className={CONFIG_INPUT}
-                    type="number"
                     min={1}
-                    {...field}
-                    onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                    placeholder="30"
                   />
                 </FormControl>
                 <FormDescription className={CONFIG_DESCRIPTION}>
@@ -402,7 +404,10 @@ export const WebhookForm = memo(function WebhookForm() {
               </div>
             )}
             {headers.map((_: any, index: number) => (
-              <div key={index} className="flex gap-2 items-start group">
+              <div
+                key={rowKeys.keyAt(index)}
+                className="flex gap-2 items-start group"
+              >
                 <FormField
                   control={form.control}
                   name={`settings.headers.${index}.0`}
@@ -441,6 +446,7 @@ export const WebhookForm = memo(function WebhookForm() {
                   size="icon"
                   className="text-muted-foreground hover:text-destructive transition-colors"
                   onClick={() => {
+                    rowKeys.removeAt(index);
                     const currentHeaders = form.getValues('settings.headers');
                     form.setValue(
                       'settings.headers',

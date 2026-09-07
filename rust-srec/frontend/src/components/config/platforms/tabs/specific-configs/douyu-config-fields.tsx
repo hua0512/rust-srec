@@ -8,6 +8,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Switch } from '@/components/ui/switch';
 import { Zap, Cloud, Gamepad2, RotateCcw } from 'lucide-react';
 import { DouyuQualityCombobox } from './douyu-quality-combobox';
@@ -15,13 +17,27 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
+import { NumberInput } from '@/components/ui/number-input';
 
 interface DouyuConfigFieldsProps {
   form: UseFormReturn<any>;
   fieldName: string;
+  inherited?: boolean;
 }
 
-export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
+export function DouyuConfigFields({
+  form,
+  fieldName,
+  inherited = false,
+}: DouyuConfigFieldsProps) {
+  const { i18n } = useLingui();
+  const defaultPlaceholder = useDefaultPlaceholder();
+  // A template or streamer layer leaves a blank field to the layer above it;
+  // the platform layer falls back to the extractor's own default instead.
+  const unsetPlaceholder = (fallback: string | number) =>
+    inherited ? i18n._(msg`Inherited`) : defaultPlaceholder(fallback);
+
   return (
     <div className="space-y-12">
       {/* Extraction Settings Section */}
@@ -45,9 +61,12 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
                   </div>
                   <FormControl>
                     <Input
-                      placeholder="ws-h5, hw-h5, etc."
+                      placeholder={unsetPlaceholder('ws-h5')}
                       {...field}
-                      value={field.value || 'ws-h5'}
+                      value={field.value ?? ''}
+                      // Null rather than an empty string, which the extractor
+                      // would read as a CDN preference of its own.
+                      onChange={(e) => field.onChange(e.target.value || null)}
                       className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all"
                     />
                   </FormControl>
@@ -135,13 +154,10 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
                   </FormLabel>
                 </div>
                 <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    onChange={(e) =>
-                      field.onChange(parseInt(e.target.value) || 0)
-                    }
-                    value={field.value ?? 3}
+                  <NumberInput
+                    field={field}
+                    min={0}
+                    placeholder={unsetPlaceholder(3)}
                     className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all max-w-[120px]"
                   />
                 </FormControl>

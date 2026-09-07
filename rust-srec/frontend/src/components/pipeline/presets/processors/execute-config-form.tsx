@@ -65,7 +65,10 @@ export function ExecuteConfigForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormDescription className="mt-2 text-sm max-w-full">
+                  {/* A sibling of the description slot rather than its child:
+                      `FormDescription` renders a paragraph, which cannot legally
+                      contain this grid and would fail hydration. */}
+                  <div className="mt-2 text-sm max-w-full text-muted-foreground">
                     <div className="p-3 border border-border/40 rounded-lg bg-muted/20">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -223,7 +226,7 @@ export function ExecuteConfigForm({
                         </div>
                       </div>
                     </div>
-                  </FormDescription>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getSubscriptions,
@@ -225,17 +225,20 @@ export function SubscriptionManager({
     enabled: !!channel && open,
   });
 
-  // Sync state when data loads
-  useQuery({
-    queryKey: ['sync-subs', channel?.id, currentSubs],
-    queryFn: async () => {
-      if (currentSubs) {
-        setSelectedEvents(currentSubs);
-      }
-      return null;
-    },
-    enabled: !!currentSubs,
-  });
+  // The dialog owns the selection from the moment the saved subscriptions
+  // arrive: adopting them again would discard choices the user has not saved
+  // yet, and the query refetches on its own whenever the window regains focus.
+  const adoptedChannelId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !channel) {
+      adoptedChannelId.current = null;
+      setSelectedEvents([]);
+      return;
+    }
+    if (adoptedChannelId.current === channel.id || !currentSubs) return;
+    adoptedChannelId.current = channel.id;
+    setSelectedEvents(currentSubs);
+  }, [open, channel, currentSubs]);
 
   const mutation = useMutation({
     mutationFn: (events: string[]) =>
@@ -407,6 +410,9 @@ export function SubscriptionManager({
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => handleToggle(type.event_type)}
+                          // The whole row toggles too, so the click has to stop
+                          // here or the row would immediately toggle it back.
+                          onClick={(event) => event.stopPropagation()}
                           className={`transition-all duration-200 ${isSelected ? 'data-[state=checked]:bg-primary data-[state=checked]:border-primary' : ''}`}
                         />
 

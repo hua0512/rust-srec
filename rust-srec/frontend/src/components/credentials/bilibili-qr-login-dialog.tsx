@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -73,24 +73,45 @@ export function BilibiliQrLoginDialog({
     }
   }, [open, generateQr]);
 
+  // Held in refs so that a parent re-rendering with freshly built callbacks and
+  // scope object does not count as a change to the polling effect, which would
+  // cancel the pending interval and fire an extra request every time the
+  // surrounding settings form re-renders.
+  const onSuccessRef = useRef(onSuccess);
+  const onOpenChangeRef = useRef(onOpenChange);
+  const scopeRef = useRef(scope);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+    onOpenChangeRef.current = onOpenChange;
+    scopeRef.current = scope;
+  });
+
   // Poll for login status
   useEffect(() => {
-    if (!open || !authCode || status === 'success' || status === 'error') {
+    // An expired code is terminal until the user asks for a new one; polling it
+    // further only produces the same answer.
+    if (
+      !open ||
+      !authCode ||
+      status === 'success' ||
+      status === 'error' ||
+      status === 'expired'
+    ) {
       return;
     }
 
     const poll = async () => {
       try {
         const result = await pollBilibiliQr({
-          data: { auth_code: authCode, scope },
+          data: { auth_code: authCode, scope: scopeRef.current },
         });
 
         if (result.success) {
           setStatus('success');
           setMessage(result.message);
-          onSuccess?.();
+          onSuccessRef.current?.();
           // Auto close after success
-          setTimeout(() => onOpenChange(false), 1500);
+          setTimeout(() => onOpenChangeRef.current(false), 1500);
         } else if (result.status === 'expired') {
           setStatus('expired');
           setMessage(result.message);
@@ -111,7 +132,9 @@ export function BilibiliQrLoginDialog({
     void poll();
 
     return () => clearInterval(interval);
-  }, [open, authCode, scope, status, onSuccess, onOpenChange]);
+    // Compared by contents: the caller rebuilds `scope` on every render, and an
+    // equal one must not restart polling.
+  }, [open, authCode, scope.type, scope.id, status]);
 
   const getStatusContent = () => {
     switch (status) {

@@ -29,6 +29,7 @@ import {
   Share2,
 } from 'lucide-react';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
+import { useRowKeys } from '@/hooks/use-row-keys';
 import {
   CONFIG_DESCRIPTION,
   CONFIG_INPUT,
@@ -82,6 +83,7 @@ function KeyValuePairsEditor({
     (useWatch({ control, name: path }) as
       | Array<[string, string]>
       | undefined) ?? [];
+  const rowKeys = useRowKeys(value.length);
 
   const addEntry = () => {
     setValue(path, [...value, ['', '']], { shouldDirty: true });
@@ -93,6 +95,7 @@ function KeyValuePairsEditor({
   };
 
   const removeEntry = (idx: number) => {
+    rowKeys.removeAt(idx);
     const nextValue = value.filter((_, i) => i !== idx);
     setValue(path, nextValue.length > 0 ? nextValue : undefined, {
       shouldDirty: true,
@@ -119,7 +122,10 @@ function KeyValuePairsEditor({
           )}
 
           {value.map(([k, v], idx) => (
-            <div key={idx} className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            <div
+              key={rowKeys.keyAt(idx)}
+              className="grid grid-cols-1 sm:grid-cols-5 gap-2"
+            >
               <Input
                 value={k}
                 onChange={(e) => updateEntry(idx, [e.target.value, v])}

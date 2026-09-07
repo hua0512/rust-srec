@@ -9,7 +9,6 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -23,6 +22,7 @@ import { CompressionConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { motion } from 'motion/react';
 import { Archive, Settings2 } from 'lucide-react';
+import { NumberInput } from '@/components/ui/number-input';
 
 type CompressionConfig = z.infer<typeof CompressionConfigSchema>;
 
@@ -91,14 +91,11 @@ export function CompressionConfigForm({
                     <Trans>Compression Level</Trans>
                   </FormLabel>
                   <FormControl>
-                    <Input
+                    <NumberInput
+                      field={field}
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      type="number"
                       min={0}
                       max={9}
-                      {...field}
-                      value={field.value ?? ''}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
