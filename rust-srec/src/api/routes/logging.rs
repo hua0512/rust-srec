@@ -261,13 +261,11 @@ fn scan_log_files_matching(
     include: impl Fn(&LogFileInternal) -> bool,
     max_files: usize,
 ) -> Result<Vec<LogFileInternal>, ApiError> {
-    let entries = std::fs::read_dir(log_dir)
-        .map_err(|e| ApiError::internal(format!("Failed to read log dir: {e}")))?;
+    let entries = std::fs::read_dir(log_dir).map_err(ApiError::from)?;
 
     let mut out = Vec::new();
     for entry in entries {
-        let entry =
-            entry.map_err(|e| ApiError::internal(format!("Failed to read dir entry: {e}")))?;
+        let entry = entry.map_err(ApiError::from)?;
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -282,8 +280,7 @@ fn scan_log_files_matching(
             continue;
         }
 
-        let meta = std::fs::metadata(&path)
-            .map_err(|e| ApiError::internal(format!("Failed to stat log file: {e}")))?;
+        let meta = std::fs::metadata(&path).map_err(ApiError::from)?;
         let size_bytes = meta.len();
 
         let date = if let Some(suffix) = filename.strip_prefix("rust-srec.log.") {
@@ -364,8 +361,7 @@ fn list_log_lines(
     let mut remaining = limit + 1; // collect one extra to know has_more
 
     for file in files {
-        let fh = std::fs::File::open(&file.path)
-            .map_err(|e| ApiError::internal(format!("Failed to open log file: {e}")))?;
+        let fh = std::fs::File::open(&file.path).map_err(ApiError::from)?;
         let mut reader = BufReader::new(fh);
 
         let mut line = String::new();
@@ -373,9 +369,7 @@ fn list_log_lines(
 
         loop {
             line.clear();
-            let n = reader
-                .read_line(&mut line)
-                .map_err(|e| ApiError::internal(format!("Failed to read log file: {e}")))?;
+            let n = reader.read_line(&mut line).map_err(ApiError::from)?;
             if n == 0 {
                 break;
             }
@@ -547,7 +541,7 @@ pub async fn list_log_files(
         })
     })
     .await
-    .map_err(|e| ApiError::internal(format!("Failed to join list task: {e}")))??;
+    .map_err(ApiError::from)??;
 
     Ok(Json(result))
 }
@@ -620,7 +614,7 @@ pub async fn list_log_entries(
         list_log_lines(files, offset, limit, contains.as_deref())
     })
     .await
-    .map_err(|e| ApiError::internal(format!("Failed to join entries task: {e}")))??;
+    .map_err(ApiError::from)??;
 
     Ok(Json(result))
 }
@@ -657,7 +651,7 @@ pub async fn download_logs_archive(
     response_headers.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
-            .map_err(|e| ApiError::internal(format!("Invalid header value: {e}")))?,
+            .map_err(ApiError::from)?,
     );
 
     Ok((response_headers, body))
@@ -724,13 +718,13 @@ pub async fn update_logging_config(
         .config_service
         .get_global_config()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to get config: {}", e)))?;
+        .map_err(ApiError::from)?;
     global_config.log_filter_directive = request.filter.clone();
     state
         .config_service
         .update_global_config(&global_config)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to persist config: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let modules: Vec<ModuleInfo> = available_modules()
         .into_iter()

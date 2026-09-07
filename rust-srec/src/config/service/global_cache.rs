@@ -151,7 +151,7 @@ mod tests {
     async fn cancelled_fill_releases_admission_and_repeated_invalidation_is_bounded() {
         let cache = GlobalConfigCache::default();
         let mut fill =
-            Box::pin(cache.get_or_load(|| std::future::pending::<Result<GlobalConfigDbModel>>()));
+            Box::pin(cache.get_or_load(std::future::pending::<Result<GlobalConfigDbModel>>));
         assert!(futures::poll!(fill.as_mut()).is_pending());
         drop(fill);
         let attempts = AtomicUsize::new(0);

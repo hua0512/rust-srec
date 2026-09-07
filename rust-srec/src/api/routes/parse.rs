@@ -9,7 +9,7 @@ use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection}
 use std::time::Duration;
 use tracing::{debug, warn};
 
-use crate::api::error::ApiResult;
+use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
 use crate::credentials::{
@@ -65,6 +65,17 @@ struct ResolvedExtractorConfig {
     extractor: ExtractorSelection,
 }
 
+const MAX_PARSE_BATCH_SIZE: usize = 100;
+
+fn validate_parse_batch_size(count: usize) -> ApiResult<()> {
+    if count > MAX_PARSE_BATCH_SIZE {
+        return Err(ApiError::validation(format!(
+            "A batch may contain at most {MAX_PARSE_BATCH_SIZE} URLs"
+        )));
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     post,
     path = "/api/parse",
@@ -100,7 +111,8 @@ pub async fn parse_url(
     tag = "parse",
     request_body = Vec<ParseUrlRequest>,
     responses(
-        (status = 200, description = "URLs parsed", body = Vec<ParseUrlResponse>)
+        (status = 200, description = "URLs parsed", body = Vec<ParseUrlResponse>),
+        (status = 422, description = "Batch exceeds 100 URLs", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -108,6 +120,7 @@ pub async fn parse_url_batch(
     State(state): State<ParseRouteState>,
     Json(requests): Json<Vec<ParseUrlRequest>>,
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
+    validate_parse_batch_size(requests.len())?;
     let mut responses = Vec::new();
     for request in requests {
         let extractor_config =
@@ -600,6 +613,49 @@ mod tests {
 
     const STREAMER_ID: &str = "streamer-under-test";
     const STREAMER_URL: &str = "https://live.bilibili.com/1";
+
+    #[tokio::test]
+    async fn oversized_parse_batch_is_rejected_before_async_extraction_or_credentials() {
+        assert!(validate_parse_batch_size(0).is_ok());
+        assert!(validate_parse_batch_size(MAX_PARSE_BATCH_SIZE).is_ok());
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let state = ParseRouteState {
+            config_service: Arc::new(ConfigService::new(
+                config_repo.clone(),
+                streamer_repo.clone(),
+            )),
+            credential_service: Arc::new(CredentialRefreshService::new(
+                Arc::new(CredentialResolver::new(config_repo)),
+                Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone())),
+            )),
+            streamer_manager: Arc::new(StreamerManager::new(
+                streamer_repo,
+                ConfigEventBroadcaster::new(),
+            )),
+        };
+        let request = ParseUrlRequest {
+            url: STREAMER_URL.to_string(),
+            cookies: None,
+        };
+        // Occupying the only connection would suspend a premature configuration/credential
+        // lookup. The invalid batch must finish in its first poll instead.
+        let connection = pool.acquire().await.unwrap();
+        let mut response = Box::pin(parse_url_batch(
+            State(state),
+            Json(vec![request; MAX_PARSE_BATCH_SIZE + 1]),
+        ));
+        match futures::poll!(response.as_mut()) {
+            std::task::Poll::Ready(Err(error)) => {
+                assert_eq!(error.status, axum::http::StatusCode::UNPROCESSABLE_ENTITY)
+            }
+            _ => panic!("invalid batch must be rejected before processing any URL"),
+        }
+        drop(response);
+        drop(connection);
+        pool.close().await;
+    }
 
     /// Resolving a registered streamer's URL refreshes its credentials through
     /// `CredentialStore::update_credentials`, which rewrites `streamer_specific_config` with its

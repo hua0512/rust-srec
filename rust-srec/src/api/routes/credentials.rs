@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
-use crate::credentials::{CredentialScope, CredentialSource};
+use crate::credentials::{CredentialError, CredentialScope, CredentialSource};
 use crate::streamer::{
     StreamerMetadata,
     manager::{ReloadPublish, StreamerUpdateParams},
@@ -27,6 +27,38 @@ type CredentialConfigService = crate::config::ConfigService<
     crate::database::repositories::config::SqlxConfigRepository,
     crate::database::repositories::streamer::SqlxStreamerRepository,
 >;
+
+fn credential_failure_message(error: &CredentialError) -> &'static str {
+    match error {
+        CredentialError::MissingCookie(_) => "Missing required cookie",
+        CredentialError::MissingRefreshToken => "Missing refresh token",
+        CredentialError::InvalidRefreshToken | CredentialError::InvalidCredentials(_) => {
+            "Credentials are invalid"
+        }
+        CredentialError::UnsupportedPlatform(_) => {
+            "Credential refresh is not supported for this platform"
+        }
+        CredentialError::RateLimited => "Credential service rate limit reached; try again later",
+        CredentialError::NoCredentials => "No credentials configured for this scope",
+        _ => "Credential operation failed",
+    }
+}
+
+fn credential_refresh_error(error: CredentialError) -> ApiError {
+    ApiError::bad_request(format!(
+        "{} (requires_relogin={})",
+        credential_failure_message(&error),
+        error.requires_relogin()
+    ))
+}
+
+fn credential_internal_error(error: CredentialError) -> ApiError {
+    tracing::error!(
+        reason = credential_failure_message(&error),
+        "Credential API operation failed"
+    );
+    ApiError::internal("Credential operation failed")
+}
 
 #[derive(Clone)]
 pub struct CredentialRouteState {
@@ -463,11 +495,7 @@ pub async fn refresh_streamer_credentials(
             requires_relogin: false,
             source: Some(CredentialSourceResponse::from_source(source)),
         })),
-        Err(e) => Err(ApiError::bad_request(format!(
-            "{} (requires_relogin={})",
-            e,
-            e.requires_relogin()
-        ))),
+        Err(error) => Err(credential_refresh_error(error)),
     }
 }
 
@@ -534,11 +562,7 @@ pub async fn refresh_platform_credentials(
             requires_relogin: false,
             source: Some(CredentialSourceResponse::from_source(&source)),
         })),
-        Err(e) => Err(ApiError::bad_request(format!(
-            "{} (requires_relogin={})",
-            e,
-            e.requires_relogin()
-        ))),
+        Err(error) => Err(credential_refresh_error(error)),
     }
 }
 
@@ -618,11 +642,7 @@ pub async fn refresh_template_credentials(
             requires_relogin: false,
             source: Some(CredentialSourceResponse::from_source(&source)),
         })),
-        Err(e) => Err(ApiError::bad_request(format!(
-            "{} (requires_relogin={})",
-            e,
-            e.requires_relogin()
-        ))),
+        Err(error) => Err(credential_refresh_error(error)),
     }
 }
 
@@ -659,8 +679,7 @@ fn merge_streamer_credentials(
         }
     }
 
-    serde_json::to_string(&config)
-        .map_err(|error| ApiError::internal(format!("Failed to save credentials: {error}")))
+    serde_json::to_string(&config).map_err(ApiError::from)
 }
 
 /// Save a completed bilibili QR login onto streamer `id`, returning the updated metadata.
@@ -745,8 +764,7 @@ async fn save_streamer_credentials(
 fn bilibili_qr_manager() -> Result<BilibiliCredentialManager, ApiError> {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     let client = CLIENT.get_or_init(reqwest::Client::new).clone();
-    BilibiliCredentialManager::new(client)
-        .map_err(|error| ApiError::internal(format!("Failed to create manager: {error}")))
+    BilibiliCredentialManager::new(client).map_err(credential_internal_error)
 }
 
 #[utoipa::path(
@@ -765,7 +783,7 @@ pub async fn bilibili_qr_generate() -> ApiResult<Json<QrGenerateApiResponse>> {
     let result = manager
         .generate_qr()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to generate QR: {}", e)))?;
+        .map_err(credential_internal_error)?;
 
     Ok(Json(QrGenerateApiResponse {
         url: result.url,
@@ -793,7 +811,7 @@ pub async fn bilibili_qr_poll(
     let result = manager
         .poll_qr(&body.auth_code)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to poll QR: {}", e)))?;
+        .map_err(credential_internal_error)?;
 
     let api_message = if !result.message.is_empty() {
         result.message.as_str()
@@ -1221,5 +1239,45 @@ mod tests {
         let config: serde_json::Value = serde_json::from_str(&merged).unwrap();
         assert_eq!(config["cookies"], "SESSDATA=abc");
         assert_eq!(config.as_object().expect("object").len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod error_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn credential_errors_preserve_relogin_signal_without_underlying_details() {
+        for (source, relogin) in [
+            (
+                CredentialError::InvalidCredentials("private-refresh-secret".to_string()),
+                true,
+            ),
+            (
+                CredentialError::RefreshFailed("private-refresh-secret".to_string()),
+                false,
+            ),
+            (
+                CredentialError::ParseError("private-refresh-secret".to_string()),
+                false,
+            ),
+            (
+                CredentialError::Application("private-refresh-secret".to_string()),
+                false,
+            ),
+        ] {
+            let error = credential_refresh_error(source);
+            assert_eq!(error.status, axum::http::StatusCode::BAD_REQUEST);
+            assert!(!error.message.contains("private-refresh-secret"));
+            assert!(
+                error
+                    .message
+                    .contains(&format!("requires_relogin={relogin}"))
+            );
+        }
+        let error =
+            credential_internal_error(CredentialError::Internal("private-qr-secret".to_string()));
+        assert_eq!(error.status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(!error.message.contains("private-qr-secret"));
     }
 }

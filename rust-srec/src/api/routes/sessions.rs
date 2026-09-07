@@ -515,7 +515,7 @@ pub async fn get_session_danmu_statistics(
         .as_deref()
         .map(serde_json::from_str::<Vec<DanmuRateEntry>>)
         .transpose()
-        .map_err(|e| ApiError::internal(format!("Failed to parse danmu rate timeseries: {e}")))?
+        .map_err(ApiError::from)?
         .unwrap_or_default()
         .into_iter()
         .map(|point| DanmuRatePoint {
@@ -524,10 +524,10 @@ pub async fn get_session_danmu_statistics(
         })
         .collect();
 
-    let parse_talkers = |json: Option<&str>, field: &'static str| {
+    let parse_talkers = |json: Option<&str>| {
         json.map(serde_json::from_str::<Vec<TopTalkerEntry>>)
             .transpose()
-            .map_err(|e| ApiError::internal(format!("Failed to parse {field}: {e}")))
+            .map_err(ApiError::from)
             .map(|entries| {
                 entries
                     .unwrap_or_default()
@@ -541,15 +541,15 @@ pub async fn get_session_danmu_statistics(
                     .collect::<Vec<_>>()
             })
     };
-    let top_talkers = parse_talkers(stats.top_talkers.as_deref(), "top talkers")?;
-    let top_gifters = parse_talkers(stats.top_gifters.as_deref(), "top gifters")?;
+    let top_talkers = parse_talkers(stats.top_talkers.as_deref())?;
+    let top_gifters = parse_talkers(stats.top_gifters.as_deref())?;
 
     let top_gifts = stats
         .top_gifts
         .as_deref()
         .map(serde_json::from_str::<Vec<GiftTallyEntry>>)
         .transpose()
-        .map_err(|e| ApiError::internal(format!("Failed to parse top gifts: {e}")))?
+        .map_err(ApiError::from)?
         .unwrap_or_default()
         .into_iter()
         .map(|entry| DanmuGiftTally {
@@ -565,7 +565,7 @@ pub async fn get_session_danmu_statistics(
         .as_deref()
         .map(serde_json::from_str::<Vec<WordFrequencyEntry>>)
         .transpose()
-        .map_err(|e| ApiError::internal(format!("Failed to parse word frequency: {e}")))?
+        .map_err(ApiError::from)?
         .unwrap_or_default()
         .into_iter()
         .map(|entry| DanmuWordFrequency {
@@ -691,7 +691,7 @@ pub async fn delete_session(
 /// Request body for batch session deletion.
 #[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct BatchDeleteRequest {
-    /// List of session IDs to delete
+    /// List of session IDs to delete (at most 100).
     pub ids: Vec<String>,
 }
 
@@ -700,6 +700,17 @@ pub struct BatchDeleteRequest {
 pub struct BatchDeleteResponse {
     /// Number of sessions deleted
     pub deleted: u64,
+}
+
+const MAX_SESSION_DELETE_BATCH_SIZE: usize = 100;
+
+fn validate_session_delete_batch(ids: &[String]) -> ApiResult<()> {
+    if ids.len() > MAX_SESSION_DELETE_BATCH_SIZE {
+        return Err(ApiError::validation(format!(
+            "A batch may contain at most {MAX_SESSION_DELETE_BATCH_SIZE} session IDs"
+        )));
+    }
+    Ok(())
 }
 
 /// Delete multiple sessions by IDs.
@@ -736,6 +747,7 @@ pub struct BatchDeleteResponse {
     request_body = BatchDeleteRequest,
     responses(
         (status = 200, description = "Sessions deleted", body = BatchDeleteResponse),
+        (status = 422, description = "Batch exceeds 100 session IDs", body = crate::api::error::ApiErrorResponse),
         (status = 500, description = "Server error", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -744,6 +756,7 @@ pub async fn delete_sessions_batch(
     State(state): State<SessionRouteState>,
     Json(request): Json<BatchDeleteRequest>,
 ) -> ApiResult<Json<BatchDeleteResponse>> {
+    validate_session_delete_batch(&request.ids)?;
     // Get session repository from state
     let session_repository = &state.session_repository;
 
@@ -759,6 +772,59 @@ pub async fn delete_sessions_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn session_delete_batch_limit_prevents_partial_work_and_accepts_the_boundary() {
+        use crate::database::repositories::{
+            SqlxSessionEventRepository, SqlxSessionRepository, SqlxStreamerRepository,
+        };
+        use std::sync::Arc;
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        sqlx::query("INSERT INTO live_sessions (id, start_time) VALUES ('kept', 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = SessionRouteState {
+            session_repository: Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone())),
+            session_event_repository: Arc::new(SqlxSessionEventRepository::new(
+                pool.clone(),
+                pool.clone(),
+            )),
+            streamer_repository: Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
+        };
+        let mut ids: Vec<_> = (0..MAX_SESSION_DELETE_BATCH_SIZE)
+            .map(|id| format!("missing-{id}"))
+            .collect();
+        ids.push("kept".to_string());
+        let error = delete_sessions_batch(
+            State(state.clone()),
+            Json(BatchDeleteRequest { ids: ids.clone() }),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM live_sessions WHERE id = 'kept'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(remaining, 1);
+        ids.remove(0);
+        let Json(response) =
+            delete_sessions_batch(State(state.clone()), Json(BatchDeleteRequest { ids }))
+                .await
+                .unwrap();
+        assert_eq!(response.deleted, 1);
+        let Json(response) =
+            delete_sessions_batch(State(state), Json(BatchDeleteRequest { ids: vec![] }))
+                .await
+                .unwrap();
+        assert_eq!(response.deleted, 0);
+        pool.close().await;
+    }
     use crate::api::models::SessionSegmentResponse;
     use chrono::{TimeZone, Utc};
 

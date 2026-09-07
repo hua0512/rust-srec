@@ -217,6 +217,10 @@
 
 ## API and integrations
 
+- **API errors and request batches have explicit boundaries**
+
+  Internal diagnostics no longer enter ad-hoc API errors. Parse and session-delete batches reject more than 100 items before work begins. Device descriptions are bounded to 256 Unicode characters for new logins, refreshed legacy sessions and diagnostics; credential refresh keeps its relogin indication.
+
 - **Configuration reads are cached coherently and missing entities use typed errors**
 
   Stream proxy and parsing requests reuse a five-second global snapshot, immediately invalidated by application writes and imports. Administrative reads remain authoritative and expired cache entries never hide refresh failures. Platform, template and engine handlers distinguish missing entities from database errors without matching message text.

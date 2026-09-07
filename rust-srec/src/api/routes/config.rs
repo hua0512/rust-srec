@@ -205,18 +205,12 @@ pub fn router() -> Router<AppState> {
 /// Map GlobalConfigDbModel to GlobalConfigResponse.
 fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<GlobalConfigResponse> {
     let job_history_retention_days = RetentionDays::try_from(config.job_history_retention_days)
-        .map_err(|error| {
-            ApiError::internal(format!(
-                "Invalid job_history_retention_days in database: {error}"
-            ))
-        })?
+        .map_err(|_| ApiError::internal("Stored job retention configuration is invalid"))?
         .as_u32();
     let notification_event_log_retention_days =
         RetentionDays::try_from(config.notification_event_log_retention_days)
-            .map_err(|error| {
-                ApiError::internal(format!(
-                    "Invalid notification_event_log_retention_days in database: {error}"
-                ))
+            .map_err(|_| {
+                ApiError::internal("Stored notification retention configuration is invalid")
             })?
             .as_u32();
 
@@ -325,7 +319,7 @@ pub async fn get_global_config(
     let config = config_service
         .get_global_config()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to get global config: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(map_global_config_to_response(config)?))
 }
@@ -356,7 +350,7 @@ pub async fn update_global_config(
     let mut config = config_service
         .get_global_config()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to get global config: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let mut updated_fields: Vec<&'static str> = Vec::new();
 
@@ -431,10 +425,7 @@ pub async fn update_global_config(
             updated_fields = %updated_fields_summary,
             "Failed to update global config via API"
         );
-        return Err(ApiError::internal(format!(
-            "Failed to update global config: {}",
-            e
-        )));
+        return Err(ApiError::from(e));
     }
 
     tracing::info!(
@@ -462,7 +453,7 @@ pub async fn list_platform_configs(
     let configs = config_service
         .list_platform_configs()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list platform configs: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let responses: Vec<PlatformConfigResponse> = configs
         .into_iter()
@@ -627,10 +618,7 @@ pub async fn replace_platform_config(
             error = %e,
             "Failed to replace platform config"
         );
-        return Err(ApiError::internal(format!(
-            "Failed to replace platform config: {}",
-            e
-        )));
+        return Err(ApiError::from(e));
     }
 
     tracing::info!(
