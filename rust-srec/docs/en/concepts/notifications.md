@@ -74,6 +74,8 @@ Then open **Notifications**, enable Web Push for the current browser, grant brow
 
 External channel delivery retries transient failures with backoff and uses a circuit breaker for repeatedly failing channels. Exhausted deliveries are dead-lettered and notification events remain available in the event history according to the configured retention period.
 
+Database channel reloads publish channels and subscriptions together. A channel keeps its circuit-breaker history while its database ID stays loaded, including name, destination, credential, and subscription edits. Removal or disabling ends that generation; re-adding starts a fresh breaker. Notifications already admitted, including their retries, continue using the channel instance selected before the reload. A repository read failure preserves the loaded registry.
+
 These mechanisms reduce transient loss but do not create an end-to-end delivery guarantee. Monitor the receiving service, use the channel test after configuration changes, and configure a second destination for critical events.
 
 ## Critical Storage Events

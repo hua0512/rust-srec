@@ -90,6 +90,10 @@
 
   Notifications that exhaust their retries now appear in the in-memory dead-letter list even when their channel comes from configuration. Database persistence remains available for database channels; persistence failures preserve the in-memory record. Retention cleanup still applies, and successful channels are not sent the same notification again during retries.
 
+- **Notification reloads preserve breaker state and delivery targets**
+
+  Channel and subscription lookups see one complete registry during reload. Still-loaded database IDs retain breaker history, failed reads preserve the registry, and dynamic additions survive discovery. Admitted notifications keep their selected channel instance through delivery and retries; removal followed by re-addition gets an isolated breaker generation.
+
 - **Failed notification deliveries finish within a time limit and protect credentials**
 
   Discord and Telegram requests now time out after 30 seconds. Gotify and webhook timeouts are capped at five minutes; zero uses the 30-second default. Rate-limit retries wait at most 30 seconds each and stop after three attempts. Invalid retry delays no longer cause a panic. Delivery errors retain the failure category or HTTP status without exposing token-bearing URLs or server response bodies.

@@ -13,8 +13,8 @@ use crate::database::repositories::NotificationRepository;
 use crate::utils::task_supervisor::TaskSupervisor;
 
 use super::{
-    CircuitBreakerState, DeadLetterEntry, DeliveryStatus, NotificationService,
-    NotificationServiceConfig, PendingNotification, RuntimeChannel,
+    DeadLetterEntry, DeliveryStatus, NotificationService, NotificationServiceConfig,
+    PendingNotification, RuntimeChannel,
 };
 
 /// State fixed for the lifetime of one notification's delivery and shared by
@@ -30,7 +30,6 @@ struct DeliveryContext {
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     dead_letter_cleanup_ts: Arc<AtomicU64>,
-    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
     config: Arc<NotificationServiceConfig>,
     next_dead_letter_id: Arc<AtomicU64>,
@@ -40,14 +39,19 @@ struct DeliveryContext {
 
 impl NotificationService {
     pub(super) async fn process_notification(&self, id: u64) {
-        let channels = self.channels.read().clone();
+        let Some(channels) = self
+            .pending_queue
+            .get(&id)
+            .map(|pending| pending.targets.clone())
+        else {
+            return;
+        };
         Self::process_notification_detached(Arc::new(DeliveryContext {
             id,
             channels,
             pending_queue: self.pending_queue.clone(),
             dead_letters: self.dead_letters.clone(),
             dead_letter_cleanup_ts: self.dead_letter_cleanup_ts.clone(),
-            circuit_breakers: self.circuit_breakers.clone(),
             notification_repo: self.notification_repo.clone(),
             config: self.config.clone(),
             next_dead_letter_id: self.next_dead_letter_id.clone(),
@@ -121,7 +125,6 @@ impl NotificationService {
             pending_queue,
             dead_letters,
             dead_letter_cleanup_ts,
-            circuit_breakers,
             notification_repo,
             config,
             next_dead_letter_id,
@@ -148,10 +151,7 @@ impl NotificationService {
                 continue;
             }
 
-            let allowed = circuit_breakers
-                .get(channel_key)
-                .map(|breaker| breaker.is_allowed())
-                .unwrap_or(true);
+            let allowed = channel.breaker.lock().is_allowed();
             if !allowed {
                 circuit_blocked = true;
                 continue;
@@ -159,9 +159,7 @@ impl NotificationService {
 
             match channel.channel.send(&pending_snapshot.event).await {
                 Ok(()) => {
-                    if let Some(mut breaker) = circuit_breakers.get_mut(channel_key) {
-                        breaker.record_success();
-                    }
+                    channel.breaker.lock().record_success();
                     if let Some(mut pending) = pending_queue.get_mut(&id)
                         && let Some(state) = pending.channel_state.get_mut(channel_key)
                     {
@@ -172,9 +170,10 @@ impl NotificationService {
                     debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
                 }
                 Err(error) => {
-                    if let Some(mut breaker) = circuit_breakers.get_mut(channel_key) {
-                        breaker.record_failure(config.circuit_breaker_threshold);
-                    }
+                    channel
+                        .breaker
+                        .lock()
+                        .record_failure(config.circuit_breaker_threshold);
 
                     let now = Utc::now();
                     let mut attempts = 0;
