@@ -1886,6 +1886,7 @@ mod tests {
         subscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
         unsubscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
         dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
+        fail_dead_letter_insert: bool,
     }
 
     impl MockNotificationRepo {
@@ -1896,6 +1897,7 @@ mod tests {
                 subscribe_calls: tokio::sync::Mutex::new(Vec::new()),
                 unsubscribe_calls: tokio::sync::Mutex::new(Vec::new()),
                 dead_letters: tokio::sync::Mutex::new(Vec::new()),
+                fail_dead_letter_insert: false,
             }
         }
     }
@@ -1971,6 +1973,11 @@ mod tests {
         }
 
         async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()> {
+            if self.fail_dead_letter_insert {
+                return Err(crate::Error::Other(
+                    "forced dead letter insert failure".into(),
+                ));
+            }
             self.dead_letters.lock().await.push(entry.clone());
             Ok(())
         }
@@ -2124,6 +2131,119 @@ mod tests {
         assert_eq!(persisted[0].channel_id, "channel-1");
         assert_eq!(persisted[0].event_name, "system_startup");
         assert_eq!(persisted[0].retry_count, 1);
+        assert_eq!(service.stats().dead_letter_count, 1);
+        assert_eq!(service.stats().pending_count, 0);
+    }
+
+    async fn assert_exhausted_channel_retained(with_repo: bool, with_id: bool, fail_insert: bool) {
+        let repo = Arc::new(MockNotificationRepo {
+            fail_dead_letter_insert: fail_insert,
+            ..MockNotificationRepo::new()
+        });
+        let config = NotificationServiceConfig {
+            max_retries: 2,
+            initial_retry_delay_ms: 1,
+            max_retry_delay_ms: 1,
+            circuit_breaker_threshold: 100,
+            ..Default::default()
+        };
+        let service = if with_repo {
+            NotificationService::with_repository(config, repo.clone())
+        } else {
+            NotificationService::with_config(config)
+        };
+        let failed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let successful_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        for (key, attempts, fail_for_attempts) in [
+            ("failed", failed_attempts.clone(), u32::MAX),
+            ("successful", successful_attempts.clone(), 0),
+        ] {
+            let channel = Arc::new(RuntimeChannel {
+                key: key.into(),
+                db_channel_id: with_id.then(|| key.to_string()),
+                display_name: key.into(),
+                channel_type: "test".into(),
+                channel: Arc::new(TestChannel {
+                    channel_type: "test",
+                    fail_for_attempts,
+                    attempts,
+                }),
+            });
+            service.channels_by_key.insert(key.into(), channel.clone());
+            service.channels.write().push(channel);
+        }
+        let event = NotificationEvent::SystemStartup {
+            version: "test".into(),
+            timestamp: Utc::now(),
+        };
+        service.dead_letters.insert(
+            0,
+            DeadLetterEntry {
+                id: 0,
+                notification_id: 0,
+                event: event.clone(),
+                channel_key: Some("old".into()),
+                channel_id: None,
+                channel_type: "test".into(),
+                attempts: 2,
+                error: "old failure".into(),
+                created_at: Utc::now() - chrono::Duration::days(9),
+                dead_lettered_at: Utc::now() - chrono::Duration::days(8),
+            },
+        );
+        service
+            .notify_channel_instances(
+                ["failed".to_string(), "successful".to_string()]
+                    .into_iter()
+                    .collect(),
+                event,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while service.stats().pending_count != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("retry delivery should settle");
+
+        assert_eq!(failed_attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(successful_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(service.stats().dead_letter_count, 1);
+        assert!(
+            !service.dead_letters.contains_key(&0),
+            "retention removes old entries"
+        );
+        let entry = service.dead_letters.iter().next().unwrap();
+        assert_eq!(entry.channel_key.as_deref(), Some("failed"));
+        assert_eq!(entry.channel_id.as_deref(), with_id.then_some("failed"));
+        assert_eq!(entry.attempts, 2);
+        assert_eq!(entry.error, "forced failure 2");
+        assert_eq!(
+            repo.dead_letters.lock().await.len(),
+            usize::from(with_repo && with_id && !fail_insert)
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_config_channel_retained_without_repository() {
+        assert_exhausted_channel_retained(false, false, false).await;
+    }
+
+    #[tokio::test]
+    async fn exhausted_config_channel_retained_with_repository() {
+        assert_exhausted_channel_retained(true, false, false).await;
+    }
+
+    #[tokio::test]
+    async fn exhausted_channel_retained_when_persistence_fails() {
+        assert_exhausted_channel_retained(true, true, true).await;
+    }
+
+    #[tokio::test]
+    async fn exhausted_channel_retained_and_persisted_after_retries() {
+        assert_exhausted_channel_retained(true, true, false).await;
     }
 
     #[tokio::test]
