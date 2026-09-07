@@ -13,6 +13,7 @@ mod files;
 mod output_record_reader;
 mod process_runner;
 mod redact;
+mod version_probe;
 
 #[cfg(test)]
 pub(super) mod test_support;
@@ -26,6 +27,7 @@ pub use files::ensure_output_dir;
 pub use output_record_reader::OutputRecordReader;
 pub use process_runner::{spawn_piped_process_waiter, spawn_process_waiter};
 pub use redact::redact_process_args;
+pub(crate) use version_probe::{probe_version, probe_version_sync};
 
 pub(super) fn observe_segment_event_send(
     result: Result<(), mpsc::error::SendError<SegmentEvent>>,

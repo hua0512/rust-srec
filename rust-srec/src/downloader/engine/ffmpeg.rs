@@ -99,25 +99,26 @@ impl FfmpegEngine {
 
     /// Create with a custom configuration.
     pub fn with_config(config: FfmpegEngineConfig) -> Self {
-        let version = Self::detect_version(&config.binary_path);
+        let version = super::utils::probe_version_sync(&config.binary_path, "-version")
+            .and_then(|output| output.lines().next().map(str::to_owned));
+        Self::with_version(config, version)
+    }
 
+    /// Probe a configured executable without blocking the async runtime.
+    pub async fn with_config_async(config: FfmpegEngineConfig) -> Self {
+        let version = super::utils::probe_version(&config.binary_path, "-version")
+            .await
+            .and_then(|output| output.lines().next().map(str::to_owned));
+        Self::with_version(config, version)
+    }
+
+    fn with_version(config: FfmpegEngineConfig, version: Option<String>) -> Self {
         Self {
             config,
             version,
             #[cfg(test)]
             fixture: None,
         }
-    }
-
-    /// Detect ffmpeg version.
-    fn detect_version(path: &str) -> Option<String> {
-        let mut cmd = process_utils::std_command(path);
-        cmd.arg("-version");
-        cmd.output().ok().and_then(|output| {
-            String::from_utf8(output.stdout)
-                .ok()
-                .and_then(|s| s.lines().next().map(|l| l.to_string()))
-        })
     }
 
     /// Build ffmpeg command arguments.
