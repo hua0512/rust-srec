@@ -20,7 +20,10 @@ export const PlatformConfigSchema = z.object({
   download_delay_ms: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
-  platform_specific_config: jsonTextField(AllPlatformConfigsSchema),
+  platform_specific_config: jsonTextField(
+    'platform_specific_config',
+    AllPlatformConfigsSchema,
+  ),
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
@@ -31,13 +34,28 @@ export const PlatformConfigSchema = z.object({
   max_part_size_bytes: z.number().nullable().optional(),
 
   // Complex fields: Backend sends JSON string, we parse to object
-  stream_selection_config: jsonTextField(StreamSelectionConfigObjectSchema),
-  danmu_statistics: jsonTextField(DanmuStatisticsObjectSchema),
-  download_retry_policy: jsonTextField(DownloadRetryPolicyObjectSchema),
-  proxy_config: jsonTextField(ProxyConfigObjectSchema),
-  pipeline: jsonTextField(DagPipelineDefinitionSchema),
-  session_complete_pipeline: jsonTextField(DagPipelineDefinitionSchema),
-  paired_segment_pipeline: jsonTextField(DagPipelineDefinitionSchema),
+  stream_selection_config: jsonTextField(
+    'stream_selection_config',
+    StreamSelectionConfigObjectSchema,
+  ),
+  danmu_statistics: jsonTextField(
+    'danmu_statistics',
+    DanmuStatisticsObjectSchema,
+  ),
+  download_retry_policy: jsonTextField(
+    'download_retry_policy',
+    DownloadRetryPolicyObjectSchema,
+  ),
+  proxy_config: jsonTextField('proxy_config', ProxyConfigObjectSchema),
+  pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
+  session_complete_pipeline: jsonTextField(
+    'session_complete_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
+  paired_segment_pipeline: jsonTextField(
+    'paired_segment_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
 
   // Per-platform overrides for the global offline-confirmation cadence.
   // NULL = inherit from global. Floors mirror server-side

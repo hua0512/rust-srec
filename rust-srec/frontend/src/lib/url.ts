@@ -103,6 +103,28 @@ export function buildWebSocketUrl(
 }
 
 /**
+ * True when `url` resolves to the page's own origin.
+ *
+ * An anchor's `download` attribute is honoured only for a same-origin URL, and
+ * the backend's media route serves the file with no `Content-Disposition`.
+ * Clicking a cross-origin media link is therefore an ordinary top-level
+ * navigation that replaces the application with the raw file — which is what
+ * the desktop build and any deployment with an absolute API base would do,
+ * because `getMediaUrl` returns the backend's own origin there. Callers use
+ * this to decide whether the browser can be left to stream the download.
+ *
+ * Returns `false` off the browser and for a URL that cannot be resolved.
+ */
+export function isSameOriginUrl(url: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Narrow a post-login redirect target to a path on this application.
  *
  * The value reaches us through the `redirect` search param, so it is attacker

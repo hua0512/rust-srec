@@ -33,7 +33,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { getMediaUrl } from '@/lib/url';
+import { getMediaUrl, isSameOriginUrl } from '@/lib/url';
 import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
 import { isNotFoundError } from '@/lib/api-error';
@@ -60,6 +60,17 @@ const PlayerCard = React.lazy(() =>
 );
 
 const SESSION_TIMELINE_PAGE_SIZE = 100;
+
+/** Ask the browser to save `href` under `filename` without leaving the page. */
+function saveAs(href: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
 
 async function listAllSessionOutputs(
   sessionId: string,
@@ -165,11 +176,18 @@ function SessionDetailPage() {
 
   const { i18n } = useLingui();
 
-  // Handing the URL to a plain anchor lets the browser stream the response
-  // straight to disk; reading it into a Blob first would hold the whole
-  // recording — often several gigabytes — in the tab's memory. That rules out
-  // an Authorization header, so the media token travels in the query string
-  // only (getMediaUrl appends it) and is never sent twice.
+  // `getMediaUrl` appends the media token to the query string, and the backend
+  // accepts it there, so neither branch below adds an Authorization header:
+  // the token travels one way only.
+  //
+  // Same-origin, an anchor with `download` hands the transfer to the browser,
+  // which streams it to disk — the only workable option for a recording that
+  // can run to several gigabytes. Cross-origin the attribute is ignored and
+  // the media route sends no `Content-Disposition`, so the click would simply
+  // navigate away from the application and display the file; there the
+  // response has to be fetched and offered as an object URL, which does hold
+  // it in memory. That is the desktop build, where the backend lives on its
+  // own origin, and any deployment configured with an absolute API base.
   const handleDownload = (outputId: string, filename: string) => {
     const url = getMediaUrl(
       `/api/media/${outputId}/content`,
@@ -180,17 +198,28 @@ function SessionDetailPage() {
       return;
     }
 
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    // Applies when the media is served from this origin; otherwise the
-    // backend's Content-Disposition names the file.
-    anchor.download = filename;
-    anchor.rel = 'noopener';
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
+    if (isSameOriginUrl(url)) {
+      saveAs(url, filename);
+      toast.success(i18n._(msg`Download started`));
+      return;
+    }
 
-    toast.success(i18n._(msg`Download started`));
+    toast.promise(
+      async () => {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        const objectUrl = URL.createObjectURL(await response.blob());
+        saveAs(objectUrl, filename);
+        URL.revokeObjectURL(objectUrl);
+      },
+      {
+        loading: i18n._(msg`Preparing download...`),
+        success: i18n._(msg`Download started`),
+        error: (error: Error) => i18n._(msg`Download failed: ${error.message}`),
+      },
+    );
   };
 
   if (isSessionLoading) {

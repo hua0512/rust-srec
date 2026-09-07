@@ -10,8 +10,15 @@ import { z } from 'zod';
  * page; degrading that single field to "not configured" keeps the rest of the
  * response usable. A value that arrives already decoded is accepted as is,
  * which is what the write paths and the config forms hand back.
+ *
+ * `field` names the column in the warning logged whenever a value degrades:
+ * saving the row afterwards overwrites whatever was there, so the discarded
+ * value has to be visible somewhere.
  */
-export function jsonTextField<Schema extends z.ZodType>(schema: Schema) {
+export function jsonTextField<Schema extends z.ZodType>(
+  field: string,
+  schema: Schema,
+) {
   return z
     .unknown()
     .transform((value): z.output<Schema> | null => {
@@ -21,12 +28,20 @@ export function jsonTextField<Schema extends z.ZodType>(schema: Schema) {
         if (value.trim() === '') return null;
         try {
           decoded = JSON.parse(value);
-        } catch {
+        } catch (error) {
+          console.warn(`Discarding unreadable JSON in "${field}":`, error);
           return null;
         }
       }
       const result = schema.safeParse(decoded);
-      return result.success ? result.data : null;
+      if (!result.success) {
+        console.warn(
+          `Discarding "${field}", which does not match its schema:`,
+          result.error.issues,
+        );
+        return null;
+      }
+      return result.data;
     })
     .optional();
 }

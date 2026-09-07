@@ -149,7 +149,7 @@ msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 
 #. placeholder {0}: step.outputs.length
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:473
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:478
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, one {file} other {files}}"
 
@@ -936,7 +936,7 @@ msgstr "Back to Jobs"
 msgid "Back to link"
 msgstr "Back to link"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:181
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:186
 msgid "Back to Pipeline Jobs"
 msgstr "Back to Pipeline Jobs"
 
@@ -1238,7 +1238,7 @@ msgstr "Cancel"
 msgid "Cancel Execution"
 msgstr "Cancel Execution"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:248
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:253
 msgid "Cancel Pipeline"
 msgstr "Cancel Pipeline"
 
@@ -1262,7 +1262,7 @@ msgid "Cancelled"
 msgstr "Cancelled"
 
 #. placeholder {0}: result.cancelled_steps
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:94
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:229
 msgid "Cancelled {0} steps in pipeline"
 msgstr "Cancelled {0} steps in pipeline"
@@ -1545,7 +1545,7 @@ msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
 #: src/components/pipeline/status-config.ts:106
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:358
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:292
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:297
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:629
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:475
@@ -2204,7 +2204,7 @@ msgstr "Cutoff"
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:315
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:320
 msgid "DAG Graph"
 msgstr "DAG Graph"
 
@@ -2762,6 +2762,11 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:220
+msgid "Download failed: {0}"
+msgstr "Download failed: {0}"
+
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:295
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:356
 msgid "Download Manager"
@@ -2771,7 +2776,8 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:193
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:203
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:219
 msgid "Download started"
 msgstr "Download started"
 
@@ -3135,7 +3141,7 @@ msgstr "Error Details"
 msgid "Error Loading Job"
 msgstr "Error Loading Job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:131
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:136
 msgid "Error Loading Pipeline"
 msgstr "Error Loading Pipeline"
 
@@ -3147,7 +3153,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:224
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:253
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -3364,7 +3370,7 @@ msgctxt "terminal-cause"
 msgid "Failed"
 msgstr "Failed"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:82
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:87
 msgid "Failed steps retry initiated"
 msgstr "Failed steps retry initiated"
 
@@ -3376,7 +3382,7 @@ msgstr "Failed to autofill name"
 msgid "Failed to cancel job"
 msgstr "Failed to cancel job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:101
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:245
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
@@ -3614,7 +3620,7 @@ msgstr "Failed to retry all failed pipelines"
 msgid "Failed to retry job"
 msgstr "Failed to retry job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:87
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:92
 msgid "Failed to retry steps"
 msgstr "Failed to retry steps"
 
@@ -4093,7 +4099,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:234
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:232
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -4603,7 +4609,7 @@ msgstr "Interval between checks."
 msgid "Interval between offline checks."
 msgstr "Interval between offline checks."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:179
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
@@ -4679,7 +4685,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:310
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:339
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -5235,7 +5241,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:381
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:410
 msgid "Media Player"
 msgstr "Media Player"
 
@@ -6183,7 +6189,7 @@ msgstr "Output Settings"
 #: src/components/sessions/overview-tab.tsx:130
 #: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:90
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:465
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:470
 msgid "Outputs"
 msgstr "Outputs"
 
@@ -6223,7 +6229,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:279
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:308
 msgid "Overview"
 msgstr "Overview"
 
@@ -6464,7 +6470,7 @@ msgstr "Pipeline Configuration"
 msgid "Pipeline deleted successfully"
 msgstr "Pipeline deleted successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:211
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:216
 msgid "Pipeline Execution"
 msgstr "Pipeline Execution"
 
@@ -6523,7 +6529,7 @@ msgstr "Pipeline Name"
 msgid "Pipeline name is required"
 msgstr "Pipeline name is required"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:134
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:139
 msgid "Pipeline not found"
 msgstr "Pipeline not found"
 
@@ -6717,6 +6723,10 @@ msgstr "Preferred Qualities"
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:218
+msgid "Preparing download..."
+msgstr "Preparing download..."
+
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:130
 msgid "Preserve Paths"
 msgstr "Preserve Paths"
@@ -6901,7 +6911,7 @@ msgstr "Profile"
 msgid "Programmatic & MCP access"
 msgstr "Programmatic & MCP access"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:280
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:285
 msgid "Progress"
 msgstr "Progress"
 
@@ -7152,7 +7162,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:298
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -7411,7 +7421,7 @@ msgstr "Retry Delay Base (ms)"
 msgid "Retry Job"
 msgstr "Retry Job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:264
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:269
 msgid "Retry Pipeline"
 msgstr "Retry Pipeline"
 
@@ -7424,7 +7434,7 @@ msgstr "Retry Policy"
 msgid "Retry selected"
 msgstr "Retry selected"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:142
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:147
 msgid "Return Previous Page"
 msgstr "Return Previous Page"
 
@@ -7992,7 +8002,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:227
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:256
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -8259,7 +8269,7 @@ msgstr "Start Time"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:309
 #: src/components/sessions/overview-tab.tsx:224
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:298
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:303
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:618
 msgid "Started"
 msgstr "Started"
@@ -8275,7 +8285,7 @@ msgstr "State"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:181
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:479
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:445
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:450
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:151
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:228
 msgid "Status"
@@ -8305,7 +8315,7 @@ msgstr "Step Identifier (Unique)"
 msgid "Step Library"
 msgstr "Step Library"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:326
 msgid "Steps List"
 msgstr "Steps List"
 
@@ -8884,7 +8894,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:477
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:285
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:314
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -9014,7 +9024,7 @@ msgstr "Total Size"
 msgid "Total size:"
 msgstr "Total size:"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:286
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:291
 msgid "Total Steps"
 msgstr "Total Steps"
 
@@ -9557,7 +9567,7 @@ msgstr "View application logs in real-time. Logs are limited to the last {MAX_LO
 msgid "View Danmu"
 msgstr "View Danmu"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:486
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:491
 msgid "View Detailed Logs & Outputs"
 msgstr "View Detailed Logs & Outputs"
 

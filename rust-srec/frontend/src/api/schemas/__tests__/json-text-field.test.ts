@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { jsonTextField } from '../common';
@@ -6,8 +6,14 @@ import { PlatformConfigSchema } from '../platform';
 import { TemplateSchema } from '../template';
 
 const schema = z.object({
-  value: jsonTextField(z.object({ enabled: z.boolean() })),
+  value: jsonTextField('value', z.object({ enabled: z.boolean() })),
 });
+
+// Every degraded value is reported, so the suite would otherwise be noisy.
+const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+beforeEach(() => warn.mockClear());
+afterAll(() => warn.mockRestore());
 
 describe('jsonTextField', () => {
   it('decodes a stored JSON string', () => {
@@ -36,6 +42,29 @@ describe('jsonTextField', () => {
 
   it('leaves an absent field absent', () => {
     expect(schema.parse({})).toEqual({});
+  });
+
+  // Saving the row afterwards overwrites what was there, so the discarded
+  // value has to leave a trace.
+  it('names the field it discarded', () => {
+    schema.parse({ value: '{"enabled":' });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('"value"'),
+      expect.anything(),
+    );
+  });
+
+  it('reports the schema issues when the JSON is the wrong shape', () => {
+    schema.parse({ value: '{"enabled":"yes"}' });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('"value"'),
+      expect.arrayContaining([expect.objectContaining({ path: ['enabled'] })]),
+    );
+  });
+
+  it('says nothing about a value it could read', () => {
+    schema.parse({ value: '{"enabled":true}' });
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

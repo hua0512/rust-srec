@@ -12,6 +12,10 @@ export const Route = createFileRoute('/logout')({
     // Query results and the live download/upload state outlive the session
     // cookie, so without this the next person to sign in on the same tab would
     // briefly see the previous account's streamers, sessions and transfers.
+    // Polling observers are still mounted until the redirect commits, so
+    // in-flight fetches are cancelled first rather than left to write a round
+    // of results back into the cache that was just emptied.
+    await context.queryClient.cancelQueries();
     context.queryClient.clear();
     useDownloadStore.getState().clearAll();
     useUploadStore.getState().clearAll();

@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { type DagStep } from '@/api/schemas';
+import { isNotFoundError } from '@/lib/api-error';
 import {
   getStatusConfig,
   getStatusLabel,
@@ -59,6 +60,10 @@ function PipelineExecutionPage() {
   } = useQuery({
     queryKey: ['pipeline', 'executions', pipelineId, 'status'],
     queryFn: () => getDagExecution({ data: pipelineId }),
+    // A pipeline that does not exist will not appear on a retry, and the
+    // default backoff would hold the page on skeletons for several seconds
+    // before the error is shown.
+    retry: (failureCount, error) => !isNotFoundError(error) && failureCount < 3,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return ['PENDING', 'PROCESSING'].includes(status || '') ? 1000 : false;

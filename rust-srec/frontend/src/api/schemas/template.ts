@@ -12,6 +12,7 @@ import { EngineConfigOverrideSchema } from './engine';
 
 // Read schema: be permissive (don't break loading older/hand-edited templates).
 const EnginesOverrideReadSchema = jsonTextField(
+  'engines_override',
   z.record(z.string(), z.record(z.string(), z.any())),
 );
 
@@ -30,19 +31,34 @@ export const TemplateSchema = z.object({
   download_engine: z.string().nullable().optional(),
   extractor: ExtractorSelectionSchema.nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  platform_overrides: jsonTextField(z.any()),
+  platform_overrides: jsonTextField('platform_overrides', z.any()),
   engines_override: EnginesOverrideReadSchema,
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
   max_part_size_bytes: z.number().nullable().optional(),
   cookies: z.string().nullable().optional(),
-  stream_selection_config: jsonTextField(StreamSelectionConfigObjectSchema),
-  danmu_statistics: jsonTextField(DanmuStatisticsObjectSchema),
-  download_retry_policy: jsonTextField(DownloadRetryPolicyObjectSchema),
-  proxy_config: jsonTextField(ProxyConfigObjectSchema),
-  pipeline: jsonTextField(DagPipelineDefinitionSchema),
-  session_complete_pipeline: jsonTextField(DagPipelineDefinitionSchema),
-  paired_segment_pipeline: jsonTextField(DagPipelineDefinitionSchema),
+  stream_selection_config: jsonTextField(
+    'stream_selection_config',
+    StreamSelectionConfigObjectSchema,
+  ),
+  danmu_statistics: jsonTextField(
+    'danmu_statistics',
+    DanmuStatisticsObjectSchema,
+  ),
+  download_retry_policy: jsonTextField(
+    'download_retry_policy',
+    DownloadRetryPolicyObjectSchema,
+  ),
+  proxy_config: jsonTextField('proxy_config', ProxyConfigObjectSchema),
+  pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
+  session_complete_pipeline: jsonTextField(
+    'session_complete_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
+  paired_segment_pipeline: jsonTextField(
+    'paired_segment_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
   // Per-template overrides for the offline-confirmation cadence.
   offline_check_count: z.number().int().min(1).nullable().optional(),
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),

@@ -1,6 +1,34 @@
 import { describe, expect, it } from 'vitest';
 
-import { safeRedirectPath } from '../url';
+import { isSameOriginUrl, safeRedirectPath } from '../url';
+
+// jsdom serves the tests from http://localhost:3000 by default.
+describe('isSameOriginUrl', () => {
+  it('accepts a relative media path', () => {
+    expect(isSameOriginUrl('/api/media/abc/content?token=t')).toBe(true);
+  });
+
+  it('accepts an absolute URL on the page origin', () => {
+    expect(
+      isSameOriginUrl(`${window.location.origin}/api/media/abc/content`),
+    ).toBe(true);
+  });
+
+  // The desktop build reaches the backend on its own origin, where an anchor's
+  // `download` attribute is ignored and clicking would navigate away from the
+  // application instead of saving the file.
+  it.each([
+    ['a different port', 'http://127.0.0.1:12555/api/media/abc/content'],
+    ['a different host', 'https://media.example/api/media/abc/content'],
+    ['a different scheme', 'https://localhost:3000/api/media/abc/content'],
+  ])('rejects %s', (_label, url) => {
+    expect(isSameOriginUrl(url)).toBe(false);
+  });
+
+  it('rejects a URL it cannot resolve', () => {
+    expect(isSameOriginUrl('http://')).toBe(false);
+  });
+});
 
 describe('safeRedirectPath', () => {
   it('keeps a path on this application, search string included', () => {
