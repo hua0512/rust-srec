@@ -22,6 +22,10 @@
 
 ## Configuration
 
+- **Startup output probes use recording-compatible gate keys**
+
+  Probe discovery uses actual streamer/platform values and concrete directories, so a startup failure can block and later recover through the same key used by recording attempts. Writable child directories no longer require write access to ancestor keys. Explicit root boundaries retain precedence; ambiguous templates are skipped and probe work is bounded. Discovery follows saved settings, while historical gate entries and startup disk-probe topology remain unchanged; see [output-root probes](../operations/storage.md#output-root-probes).
+
 - **Invalid configuration patches are rejected before saving**
 
   Global settings reject incorrect JSON types, invalid negative values, and overflowing counts before changing any saved field. Existing zero values for automatic concurrency, disabled recording limits, and retention remain supported, as do the existing timeout clamps. Platform settings retain their canonical name so edits cannot break URL-based platform lookup; numeric overrides are checked before storage.

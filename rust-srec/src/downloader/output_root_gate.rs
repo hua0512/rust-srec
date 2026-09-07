@@ -192,6 +192,38 @@ impl OutputRootGate {
         })
     }
 
+    pub(crate) fn configured_paths(&self) -> &[PathBuf] {
+        &self.configured_roots
+    }
+
+    /// Find a concrete probe directory whose gate key equals the fully expanded runtime
+    /// directory's key. Unknown placeholders after that key are safe; earlier ones are not.
+    /// Probe the deepest concrete directory, not a potentially read-only ancestor gate key.
+    pub(crate) fn probe_path_for_template(&self, template: &str) -> Option<PathBuf> {
+        let key = self.resolve_path(Path::new(template));
+        if contains_placeholder(&key) {
+            return None;
+        }
+        let prefix = concrete_template_prefix(template);
+        if contains_placeholder(Path::new(template))
+            && self.configured_roots.iter().any(|configured| {
+                configured != &key && configured.starts_with(normalize_root(&prefix))
+            })
+        {
+            // An unknown suffix might choose a longer explicit prefix after expansion.
+            // Explicit boundaries are probed separately; do not invent this template's key.
+            return None;
+        }
+        if !prefix
+            .components()
+            .any(|part| matches!(part, Component::Normal(_)))
+            || self.resolve_path(&prefix) != key
+        {
+            return None;
+        }
+        Some(prefix)
+    }
+
     /// Hot-path check called before every download `prepare_output_dir`.
     ///
     /// Returns `Ok(())` if the caller may proceed to the real `ensure_output_dir`
@@ -452,6 +484,18 @@ impl OutputRootGate {
             })
             .collect()
     }
+}
+
+fn contains_placeholder(path: &Path) -> bool {
+    path.to_string_lossy().contains(['{', '%'])
+}
+
+/// Keeps whole concrete components, including a final static directory without a slash.
+pub(crate) fn concrete_template_prefix(template: &str) -> PathBuf {
+    Path::new(template)
+        .components()
+        .take_while(|part| !part.as_os_str().to_string_lossy().contains(['{', '%']))
+        .collect()
 }
 
 /// Resolve the gate-tracking root for an output directory.

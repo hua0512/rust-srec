@@ -123,7 +123,7 @@ If initial migrations or saving the output folder fail, the next start resumes i
 
 Later starts preserve the saved setting. Change it under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. The resolved path shown by the application is authoritative. An existing binary or system-service installation that still has `/app/output` needs this setting changed to a writable directory.
 
-Keep `OUTPUT_DIR` and `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder so the write gate and health probes watch the recording volume.
+Keep `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder when explicit boundaries are configured. Discovery uses saved output settings and overrides; a stale `OUTPUT_DIR` value does not add a second probe location after initialization.
 :::
 
 ### Shutdown
@@ -196,7 +196,7 @@ Both share the window length set by `API_LOGIN_WINDOW_SECS`.
 | `RUST_SREC_LOCALE` | Locale for backend-emitted notification strings. Affects every notification event — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, credential events. Supported: `en`, `zh-CN`. | `en` |
 | `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of **absolute** paths to treat as output-root boundaries for the write gate. If unset, the gate uses a heuristic that takes the first **two named components** of each resolved output path (e.g. `/rec/huya` for `/rec/huya/X/20260415`, `/home/user` for `/home/user/recordings/X/20260415`). Two named components is the smallest safe default — it avoids accidentally sharing a gate key across unrelated users in `/home/...` layouts. For a single-mount `/rec`-style layout where you want one gate key per mount (and therefore one aggregated notification on failure instead of one per platform), set this explicitly: `RUST_SREC_OUTPUT_ROOTS=/rec`. | - |
 
-The heuristic is worth checking whenever the output directory sits more than two components deep. `/var/lib/rust-srec/output` collapses to `/var/lib`, which a hardened system service leaves read-only — the startup probe then reports the `output-root` component degraded even though the recording directory itself is perfectly writable. Setting `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` pins the root to the real directory; a configured path is also preferred as the longest matching prefix, so it wins over the heuristic. Keep the value in step with `output_folder`.
+The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` uses `/var/lib`. Startup discovery tests a concrete recording directory that resolves to that same key, so it does not require write access to a read-only ancestor. Setting `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` gives the directory its own boundary; the longest matching configured prefix wins. Explicit boundaries are themselves probed and should name writable recording locations. See [output-root probes](../operations/storage.md#output-root-probes) for discovery limits.
 
 ### Resource Limits (Docker)
 | Variable | Description | Default |
