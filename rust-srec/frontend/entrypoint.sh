@@ -32,9 +32,7 @@ nginx
 # bundle in /app/.output or the rendered nginx configuration. Everything above
 # needs root and has already run by this point.
 #
-# su-exec replaces itself with node, so exec still leaves node as PID 1 and the
-# container's stop signal reaches it directly.
-# su-exec keeps the inherited environment, in which HOME still points at root's
-# home directory; point it at the `node` account's own writable home instead.
-export HOME=/home/node
+# su-exec switches to the account, points HOME at its home directory, and then
+# replaces itself with node, so node still ends up as PID 1 and the container's
+# stop signal reaches it directly.
 exec su-exec node node .output/server/index.mjs
