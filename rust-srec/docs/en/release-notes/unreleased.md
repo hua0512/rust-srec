@@ -86,6 +86,10 @@
 
 ## Notifications
 
+- **Web-push overload stays bounded**
+
+  Full or unavailable push queues drop new events without spawning fallback tasks. FIFO admission applies to every priority; rejected pushes are counted in notification statistics and are not automatically replayed. Event history and ordinary channel delivery remain independent; see [delivery behavior](../concepts/notifications.md#delivery-behavior).
+
 - **Configuration channels retain failed deliveries**
 
   Notifications that exhaust their retries now appear in the in-memory dead-letter list even when their channel comes from configuration. Database persistence remains available for database channels; persistence failures preserve the in-memory record. Retention cleanup still applies, and successful channels are not sent the same notification again during retries.
