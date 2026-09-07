@@ -57,7 +57,22 @@ rust-srec 的强大之处在于其自动化的触发机制。您可以根据需�
 | `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
 | `metadata` | 写入元数据（nfo, json） | - |
 | `delete` | 自动清理中间文件 | - |
-| `execute` | 执行自定义 Shell 脚本 | `command`, `scan_output_dir`, `scan_extension` |
+| `execute` | 运行程序或自定义 Shell 命令 | `program`, `args` 或 `command`, `scan_output_dir`, `scan_extension` |
+
+### 执行程序（`execute`）
+
+使用 `program` 和 `args` 可以直接运行可执行程序，无需经过 Shell：
+
+```json
+{
+  "program": "ffmpeg",
+  "args": ["-nostdin", "-n", "-i", "{input}", "-c", "copy", "{output}"]
+}
+```
+
+`program` 是 `PATH` 中的固定可执行程序名或可执行文件路径，不展开占位符。`args` 中每一项都是一个参数，空字符串也会保留。参数支持与 `command` 相同的文件、元数据、JSON 数组和时间占位符。插入的取值保持原样：引号、空格、Shell 运算符、环境变量引用及取值内的其他占位符都不会被解释。不要在参数外额外添加 Shell 引号。被调用的程序仍会按自身规则解释选项。
+
+省略 `args` 表示不传入参数。`program`（可带 `args`）与 `command` 只能选择一种，混用会使步骤失败。在 Windows 上，`program` 拒绝 `.bat` 和 `.cmd` 文件，因为 Windows 会隐式通过 Shell 运行它们；批处理脚本请使用 `command`。两种模式均保留输出目录扫描、管道输出处理、超时和进程清理行为。
 
 `execute` 命令中的 `{input}`、`{output}`、`{streamer}`、`{title}` 等占位符，其取值会自动加引号后再交给 Shell，因此包含空格、引号、`$` 或 `;` 的路径和标题都会以纯文本形式传入。转义方式会跟随占位符所处的位置：直接作为参数、位于 `'...'` 或 `"..."` 中、位于 `$(...)` 或反引号中、位于 `$(( ... ))` 中，以及位于 here-document 正文中。占位符按原样书写即可（加不加引号都行），不需要自己再做转义。命令的其余部分不受影响，管道符、`&&` 和重定向照常可用。
 

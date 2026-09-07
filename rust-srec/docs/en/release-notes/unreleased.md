@@ -16,6 +16,10 @@
 
 ## Post-processing
 
+- **Execute jobs can run programs without a shell**
+
+  The execute processor accepts `program` and an optional `args` array. Each argument expands placeholders once and retains spaces, quotes, empty values, and shell metacharacters as literal data. Existing `command` configurations remain supported. Both modes use the same timeout, process cleanup, and output scanning; ambiguous configurations and Windows batch files in program mode are rejected.
+
 - **Lower worker limits take effect while jobs are running**
 
   Reducing CPU or I/O concurrency now restricts subsequent job admission immediately. Already-admitted jobs finish normally, and released capacity follows the latest limit without requiring another settings change. Rapid limit changes and worker cancellation do not leave stale permit reservations.
