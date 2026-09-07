@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Configuration
+
+- **Bilibili quality overrides preserve inheritance**
+
+  Opening an inherited platform-options form no longer writes a quality override. Template and streamer forms show an inherited choice; selecting it clears the override. Platform defaults and quality codes now match the Bilibili extractor. Template options saved by the UI are applied by the resolver, while existing flat configurations remain supported.
+
 ## Post-processing
 
 - **Workflow edits keep dependencies and preset warnings accurate**

@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import { get, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -26,20 +25,31 @@ import {
 interface BilibiliConfigFieldsProps {
   form: UseFormReturn<any>;
   fieldName: string;
+  inherited?: boolean;
 }
+
+// Keep these request codes aligned with the extractor's BilibiliQuality enum.
+const QUALITY_OPTIONS = [
+  { code: 30000, label: msg`Dolby Vision (30000)` },
+  { code: 20000, label: msg`4K (20000)` },
+  { code: 10000, label: msg`Original (10000)` },
+  { code: 401, label: msg`Blu-ray Dolby (401)` },
+  { code: 400, label: msg`Blu-ray (400)` },
+  { code: 250, label: msg`Ultra (250)` },
+  { code: 150, label: msg`HD (150)` },
+  { code: 80, label: msg`Low (80)` },
+  { code: 0, label: msg`Lowest (0)` },
+];
 
 export function BilibiliConfigFields({
   form,
   fieldName,
+  inherited = false,
 }: BilibiliConfigFieldsProps) {
   const { i18n } = useLingui();
-  useEffect(() => {
-    // If current value is undefined or null, initialized to 10000 (backend default for 4K)
-    const currentVal = form.getValues(`${fieldName}.quality`);
-    if (currentVal === undefined || currentVal === null) {
-      form.setValue(`${fieldName}.quality`, 10000);
-    }
-  }, [form, fieldName]);
+  const defaultLabel = inherited
+    ? i18n._(msg`Inherited`)
+    : i18n._(msg`Default: Dolby Vision (30000)`);
 
   return (
     <div className="space-y-12">
@@ -51,44 +61,67 @@ export function BilibiliConfigFields({
 
         <div className="grid gap-6">
           <FormField
+            // A controller retains its initial default as a fallback for undefined resets.
+            // Recreate it when saved defaults change so clearing an override stays unset.
+            key={
+              JSON.stringify(
+                get(form.formState.defaultValues, `${fieldName}.quality`),
+              ) ?? 'unset'
+            }
             control={form.control}
             name={`${fieldName}.quality`}
-            render={({ field }) => (
-              <FormItem className="space-y-4">
-                <ConfigFieldLabel accent="indigo">
-                  <Trans>Preferred Quality (QN)</Trans>
-                </ConfigFieldLabel>
-                <Select
-                  onValueChange={(v) => field.onChange(parseInt(v))}
-                  value={field.value?.toString() || '10000'}
-                >
-                  <FormControl>
-                    <SelectTrigger className="bg-background/50 h-12 rounded-2xl border-border/50 focus:bg-background transition-all shadow-sm">
-                      <SelectValue placeholder={i18n._(msg`Select quality`)} />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="rounded-xl border-border/50 shadow-xl">
-                    <SelectItem value="30000">Dolby Vision (30000)</SelectItem>
-                    <SelectItem value="20000">HDR (20000)</SelectItem>
-                    <SelectItem value="10000">4K (10000)</SelectItem>
-                    <SelectItem value="127">8K (127)</SelectItem>
-                    <SelectItem value="125">HDR (125)</SelectItem>
-                    <SelectItem value="120">4K (120)</SelectItem>
-                    <SelectItem value="116">1080P60 (116)</SelectItem>
-                    <SelectItem value="112">1080P+ (112)</SelectItem>
-                    <SelectItem value="80">1080P (80)</SelectItem>
-                    <SelectItem value="64">720P (64)</SelectItem>
-                    <SelectItem value="32">480P (32)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
-                  <Trans>
-                    Select the highest quality level you want to attempt
-                    capturing.
-                  </Trans>
-                </FormDescription>
-              </FormItem>
-            )}
+            render={({ field }) => {
+              const selected = QUALITY_OPTIONS.find(
+                (option) => option.code === field.value,
+              );
+              return (
+                <FormItem className="space-y-4">
+                  <ConfigFieldLabel accent="indigo">
+                    <Trans>Preferred Quality (QN)</Trans>
+                  </ConfigFieldLabel>
+                  <Select
+                    onValueChange={(v) =>
+                      field.onChange(v === 'default' ? null : Number(v))
+                    }
+                    value={field.value?.toString() ?? 'default'}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="bg-background/50 h-12 rounded-2xl border-border/50 focus:bg-background transition-all shadow-sm">
+                        <SelectValue>
+                          {field.value == null
+                            ? defaultLabel
+                            : selected
+                              ? i18n._(selected.label)
+                              : String(field.value)}
+                        </SelectValue>
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                      <SelectItem value="default">{defaultLabel}</SelectItem>
+                      {QUALITY_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={option.code}
+                          value={String(option.code)}
+                        >
+                          {i18n._(option.label)}
+                        </SelectItem>
+                      ))}
+                      {field.value != null && !selected && (
+                        <SelectItem value={String(field.value)}>
+                          {String(field.value)}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+                    <Trans>
+                      Select the highest quality level you want to attempt
+                      capturing.
+                    </Trans>
+                  </FormDescription>
+                </FormItem>
+              );
+            }}
           />
 
           <EndStreamOnDanmuCloseField

@@ -120,7 +120,7 @@ msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:118
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
@@ -259,6 +259,10 @@ msgstr "404"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:170
 msgid "44100"
 msgstr "44100"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:34
+msgid "4K (20000)"
+msgstr "4K (20000)"
 
 #: src/components/notifications/forms/email-form.tsx:68
 msgid "587"
@@ -1051,6 +1055,14 @@ msgstr "已阻止"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
 msgid "Blocked by browser"
 msgstr "被浏览器阻止"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:37
+msgid "Blu-ray (400)"
+msgstr "蓝光 (400)"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:36
+msgid "Blu-ray Dolby (401)"
+msgstr "蓝光杜比 (401)"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Border Radius"
@@ -2286,6 +2298,10 @@ msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原�
 msgid "Default: {value}"
 msgstr "默认值：{value}"
 
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:52
+msgid "Default: Dolby Vision (30000)"
+msgstr "默认：杜比视界 (30000)"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:536
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
@@ -2606,6 +2622,10 @@ msgstr "磁盘"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:352
 msgid "Disk Space"
 msgstr "磁盘空间"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:33
+msgid "Dolby Vision (30000)"
+msgstr "杜比视界 (30000)"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:420
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:172
@@ -3172,7 +3192,7 @@ msgstr "退出选择模式"
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:256
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:260
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -3240,7 +3260,7 @@ msgstr "提取 MP3"
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:49
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:42
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:30
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:28
@@ -3833,7 +3853,7 @@ msgstr "强制请求可用的最高原画质量（直连流）。"
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:145
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
 msgid "Form"
 msgstr "表单"
 
@@ -4070,6 +4090,10 @@ msgstr "硬件加速"
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:38
 msgid "HD"
 msgstr "高清"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
+msgid "HD (150)"
+msgstr "高清 (150)"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:9
 msgid "HD Thumbnail"
@@ -4406,6 +4430,7 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:51
 #: src/components/config/shared/offline-check-card.tsx:78
 #: src/components/config/shared/offline-check-card.tsx:110
 msgid "Inherited"
@@ -4490,7 +4515,7 @@ msgstr "检查间隔。"
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:250
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:254
 msgid "Invalid JSON: {error}"
 msgstr "JSON 格式有误：{error}"
 
@@ -4566,7 +4591,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:161
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
 msgid "JSON"
 msgstr "JSON"
 
@@ -4876,6 +4901,10 @@ msgctxt "priority"
 msgid "Low"
 msgstr "低"
 
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
+msgid "Low (80)"
+msgstr "流畅 (80)"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
@@ -4883,6 +4912,10 @@ msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:480
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
+msgid "Lowest (0)"
+msgstr "最低画质 (0)"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:509
 msgid "Lowest bitrate"
@@ -4906,7 +4939,7 @@ msgstr "维护"
 msgid "Manage credentials and session cookies."
 msgstr "管理凭据和会话 Cookie。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:123
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:127
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
@@ -5624,7 +5657,7 @@ msgstr "没有找到结果"
 msgid "No running pipelines selected"
 msgstr "未选择运行中的流水线"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:174
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:178
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -5955,6 +5988,10 @@ msgstr "选项"
 #: src/components/streamers/config/streamer-recording-fields.tsx:118
 msgid "Order this streamer is checked in."
 msgstr "该主播的检查优先顺序。"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:35
+msgid "Original (10000)"
+msgstr "原画 (10000)"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:26
 msgid "Original / Blu-ray"
@@ -6439,7 +6476,7 @@ msgstr "未找到平台"
 msgid "Platform options"
 msgstr "平台选项"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:119
+#: src/components/config/templates/tabs/platform-override-card.tsx:120
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
@@ -6447,7 +6484,7 @@ msgstr "平台覆盖设置"
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:119
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:123
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -6566,7 +6603,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:80
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -6864,7 +6901,7 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:236
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:240
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -7716,10 +7753,6 @@ msgstr "选择预设"
 msgid "Select priority"
 msgstr "选择优先级"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:67
-msgid "Select quality"
-msgstr "选择画质"
-
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:183
 msgid "Select strategy"
 msgstr "选择策略"
@@ -7741,7 +7774,7 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:117
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
@@ -9065,6 +9098,10 @@ msgstr "类型"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
 msgid "Type something..."
 msgstr "输入内容..."
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
+msgid "Ultra (250)"
+msgstr "超清 (250)"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:32
 msgid "Ultra HD"

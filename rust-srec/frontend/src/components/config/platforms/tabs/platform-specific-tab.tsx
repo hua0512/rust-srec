@@ -67,6 +67,7 @@ interface PlatformSpecificTabProps {
    * `platform_extras`, which is the key its config resolver reads.
    */
   field?: string;
+  inherited?: boolean;
 }
 
 export function PlatformSpecificTab({
@@ -74,6 +75,7 @@ export function PlatformSpecificTab({
   basePath,
   platformName,
   field: fieldKey = 'platform_specific_config',
+  inherited = false,
 }: PlatformSpecificTabProps) {
   const fieldName = basePath ? `${basePath}.${fieldKey}` : fieldKey;
 
@@ -97,7 +99,9 @@ export function PlatformSpecificTab({
 
     if (!SpecificFields) return null;
 
-    return <SpecificFields form={form} fieldName={fieldName} />;
+    return (
+      <SpecificFields form={form} fieldName={fieldName} inherited={inherited} />
+    );
   };
 
   return (

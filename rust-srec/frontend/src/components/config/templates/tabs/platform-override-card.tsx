@@ -70,6 +70,7 @@ export function PlatformOverrideCard({
       icon: Boxes,
       content: (
         <PlatformSpecificTab
+          inherited
           form={form}
           basePath={basePath}
           platformName={platformName}
