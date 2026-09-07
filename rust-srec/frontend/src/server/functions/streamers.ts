@@ -1,5 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   StreamerSchema,
   CreateStreamerSchema,
@@ -12,6 +13,19 @@ import {
 import { z } from 'zod';
 import { removeEmpty } from '@/lib/format';
 import type { BatchStreamerAction } from '@/api/schemas';
+
+const StreamerFiltersSchema = z.object({
+  page: z.number().optional(),
+  limit: z.number().optional(),
+  search: z.string().optional(),
+  platform: z.string().optional(),
+  template: z.string().optional(),
+  templateUnassigned: z.boolean().optional(),
+  state: z.string().optional(),
+  priority: z.enum(['HIGH', 'NORMAL', 'LOW']).optional(),
+  sortBy: z.enum(['name', 'priority', 'state', 'updated_at']).optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
+});
 
 export const listStreamers = createServerFn({ method: 'GET' })
   .validator(
@@ -28,7 +42,7 @@ export const listStreamers = createServerFn({ method: 'GET' })
         sortBy?: 'name' | 'priority' | 'state' | 'updated_at';
         sortDir?: 'asc' | 'desc';
       } = {},
-    ) => d,
+    ) => StreamerFiltersSchema.parse(d),
   )
   .handler(async ({ data }) => {
     // Backend endpoint expects query params with offset-based pagination
@@ -73,14 +87,16 @@ export const batchUpdateStreamers = createServerFn({ method: 'POST' })
   });
 
 export const getStreamer = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/streamers/${id}`);
+    const json = await fetchBackend(backendPath`/streamers/${id}`);
     return StreamerSchema.parse(json);
   });
 
 export const createStreamer = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateStreamerSchema>) => data)
+  .validator((data: z.infer<typeof CreateStreamerSchema>) =>
+    CreateStreamerSchema.parse(data),
+  )
   .handler(async ({ data }) => {
     const payload = {
       ...data,
@@ -97,7 +113,10 @@ export const createStreamer = createServerFn({ method: 'POST' })
 
 export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST to support non-GET, commonly patch is used but server fn usually distinguishes mainly GET/POST
   .validator(
-    (d: { id: string; data: z.infer<typeof UpdateStreamerSchema> }) => d,
+    (d: { id: string; data: z.infer<typeof UpdateStreamerSchema> }) => ({
+      id: PathIdSchema.parse(d.id),
+      data: UpdateStreamerSchema.parse(d.data),
+    }),
   )
   .handler(async ({ data: { id, data } }) => {
     const payload = {
@@ -106,7 +125,7 @@ export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST t
         ? removeEmpty(data.streamer_specific_config)
         : undefined,
     };
-    const json = await fetchBackend(`/streamers/${id}`, {
+    const json = await fetchBackend(backendPath`/streamers/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
@@ -114,19 +133,19 @@ export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST t
   });
 
 export const deleteStreamer = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/streamers/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/streamers/${id}`, { method: 'DELETE' });
   });
 
 export const checkStreamer = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/streamers/${id}/check`, { method: 'POST' });
+    await fetchBackend(backendPath`/streamers/${id}/check`, { method: 'POST' });
   });
 
 export const extractMetadata = createServerFn({ method: 'POST' })
-  .validator((url: string) => url)
+  .validator((url: string) => z.url().parse(url))
   .handler(async ({ data: url }) => {
     const json = await fetchBackend('/streamers/extract-metadata', {
       method: 'POST',
@@ -140,9 +159,9 @@ export const extractMetadata = createServerFn({ method: 'POST' })
  * POST /api/streamers/{id}/clear-error
  */
 export const clearStreamerError = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/streamers/${id}/clear-error`, {
+    const json = await fetchBackend(backendPath`/streamers/${id}/clear-error`, {
       method: 'POST',
     });
     return StreamerSchema.parse(json);
@@ -153,9 +172,12 @@ export const clearStreamerError = createServerFn({ method: 'POST' })
  * PATCH /api/streamers/{id}/priority
  */
 export const updateStreamerPriority = createServerFn({ method: 'POST' })
-  .validator((d: { id: string; priority: z.infer<typeof PrioritySchema> }) => d)
+  .validator((d: { id: string; priority: z.infer<typeof PrioritySchema> }) => ({
+    id: PathIdSchema.parse(d.id),
+    priority: PrioritySchema.parse(d.priority),
+  }))
   .handler(async ({ data: { id, priority } }) => {
-    const json = await fetchBackend(`/streamers/${id}/priority`, {
+    const json = await fetchBackend(backendPath`/streamers/${id}/priority`, {
       method: 'PATCH',
       body: JSON.stringify({ priority }),
     });
@@ -215,12 +237,15 @@ export type StreamerCheckHistoryEntry = z.infer<
  * Server returns oldest-first so the UI renders left → right = past → now.
  */
 export const getStreamerCheckHistory = createServerFn({ method: 'GET' })
-  .validator((d: { id: string; limit?: number }) => d)
+  .validator((d: { id: string; limit?: number }) => ({
+    id: PathIdSchema.parse(d.id),
+    limit: z.number().optional().parse(d.limit),
+  }))
   .handler(async ({ data: { id, limit } }) => {
     const params = new URLSearchParams();
     if (typeof limit === 'number') params.set('limit', String(limit));
-    const qs = params.toString();
-    const url = `/streamers/${id}/check-history${qs ? `?${qs}` : ''}`;
-    const json = await fetchBackend(url);
+    const json = await fetchBackend(
+      withQuery(backendPath`/streamers/${id}/check-history`, params),
+    );
     return StreamerCheckHistoryResponseSchema.parse(json);
   });

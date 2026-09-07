@@ -1,5 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema } from '../backend-path';
 import {
   EngineConfigSchema,
   CreateEngineRequestSchema,
@@ -52,9 +53,9 @@ export const listEngines = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getEngine = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/engines/${id}`);
+    const json = await fetchBackend(backendPath`/engines/${id}`);
     const raw = json as any;
 
     // Parse config from JSON string to structured object
@@ -97,7 +98,7 @@ export const createEngine = createServerFn({ method: 'POST' })
 export const updateEngine = createServerFn({ method: 'POST' })
   .validator(
     (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => ({
-      id: z.string().parse(d.id),
+      id: PathIdSchema.parse(d.id),
       data: (() => {
         const parsed = UpdateEngineRequestSchema.parse(d.data);
         if (parsed.engine_type && parsed.config) {
@@ -112,7 +113,7 @@ export const updateEngine = createServerFn({ method: 'POST' })
   )
   .handler(async ({ data: { id, data } }) => {
     // Backend expects config as JSON value
-    const json = await fetchBackend(`/engines/${id}`, {
+    const json = await fetchBackend(backendPath`/engines/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -128,14 +129,14 @@ export const updateEngine = createServerFn({ method: 'POST' })
   });
 
 export const deleteEngine = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/engines/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/engines/${id}`, { method: 'DELETE' });
   });
 
 export const testEngine = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/engines/${id}/test`);
+    const json = await fetchBackend(backendPath`/engines/${id}/test`);
     return EngineTestResponseSchema.parse(json);
   });

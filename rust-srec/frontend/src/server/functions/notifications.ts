@@ -1,5 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   NotificationChannelSchema,
   CreateChannelRequestSchema,
@@ -25,14 +26,16 @@ export const listChannels = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getChannel = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/notifications/channels/${id}`);
+    const json = await fetchBackend(backendPath`/notifications/channels/${id}`);
     return NotificationChannelSchema.parse(json);
   });
 
 export const createChannel = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateChannelRequestSchema>) => data)
+  .validator((data: z.infer<typeof CreateChannelRequestSchema>) =>
+    CreateChannelRequestSchema.parse(data),
+  )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/notifications/channels', {
       method: 'POST',
@@ -43,36 +46,47 @@ export const createChannel = createServerFn({ method: 'POST' })
 
 export const updateChannel = createServerFn({ method: 'POST' })
   .validator(
-    (d: { id: string; data: z.infer<typeof UpdateChannelRequestSchema> }) => d,
+    (d: { id: string; data: z.infer<typeof UpdateChannelRequestSchema> }) => ({
+      id: PathIdSchema.parse(d.id),
+      data: UpdateChannelRequestSchema.parse(d.data),
+    }),
   )
   .handler(async ({ data: { id, data } }) => {
-    const json = await fetchBackend(`/notifications/channels/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    const json = await fetchBackend(
+      backendPath`/notifications/channels/${id}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
     return NotificationChannelSchema.parse(json);
   });
 
 export const deleteChannel = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/notifications/channels/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/notifications/channels/${id}`, {
+      method: 'DELETE',
+    });
   });
 
 export const getSubscriptions = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
-      `/notifications/channels/${id}/subscriptions`,
+      backendPath`/notifications/channels/${id}/subscriptions`,
     );
     return z.array(z.string()).parse(json);
   });
 
 export const updateSubscriptions = createServerFn({ method: 'POST' })
-  .validator((d: { id: string; events: string[] }) => d)
+  .validator((d: { id: string; events: string[] }) => ({
+    id: PathIdSchema.parse(d.id),
+    events: z.array(z.string().min(1)).parse(d.events),
+  }))
   .handler(async ({ data: { id, events } }) => {
     const json = await fetchBackend(
-      `/notifications/channels/${id}/subscriptions`,
+      backendPath`/notifications/channels/${id}/subscriptions`,
       {
         method: 'PUT',
         body: JSON.stringify({ events }),
@@ -82,12 +96,21 @@ export const updateSubscriptions = createServerFn({ method: 'POST' })
   });
 
 export const testChannel = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/notifications/channels/${id}/test`, {
+    await fetchBackend(backendPath`/notifications/channels/${id}/test`, {
       method: 'POST',
     });
   });
+
+const EventFiltersSchema = z.object({
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+  event_type: z.string().optional(),
+  streamer_id: z.string().optional(),
+  search: z.string().optional(),
+  priority: z.string().optional(),
+});
 
 export const listEvents = createServerFn({ method: 'GET' })
   .validator(
@@ -100,7 +123,7 @@ export const listEvents = createServerFn({ method: 'GET' })
         search?: string;
         priority?: string;
       } = {},
-    ) => q,
+    ) => EventFiltersSchema.parse(q),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
@@ -111,10 +134,7 @@ export const listEvents = createServerFn({ method: 'GET' })
     if (data.search) params.set('search', data.search);
     if (data.priority) params.set('priority', data.priority);
 
-    const qs = params.toString();
-    const json = await fetchBackend(
-      `/notifications/events${qs ? `?${qs}` : ''}`,
-    );
+    const json = await fetchBackend(withQuery('/notifications/events', params));
     return z.array(NotificationEventLogSchema).parse(json);
   });
 
@@ -146,27 +166,30 @@ const WebPushSubscriptionJsonSchema = z.object({
   }),
 });
 
+const SubscribeWebPushSchema = z.object({
+  subscription: WebPushSubscriptionJsonSchema,
+  min_priority: z.number().optional(),
+});
+
 export const subscribeWebPush = createServerFn({ method: 'POST' })
   .validator(
     (d: {
       subscription: z.infer<typeof WebPushSubscriptionJsonSchema>;
       min_priority?: number;
-    }) => d,
+    }) => SubscribeWebPushSchema.parse(d),
   )
   .handler(async ({ data }) => {
-    const payload = {
-      subscription: WebPushSubscriptionJsonSchema.parse(data.subscription),
-      min_priority: data.min_priority,
-    };
     const json = await fetchBackend('/notifications/web-push/subscribe', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
     return WebPushSubscriptionSchema.parse(json);
   });
 
 export const unsubscribeWebPush = createServerFn({ method: 'POST' })
-  .validator((d: { endpoint: string }) => d)
+  .validator((d: { endpoint: string }) =>
+    z.object({ endpoint: z.string().min(1) }).parse(d),
+  )
   .handler(async ({ data }) => {
     await fetchBackend('/notifications/web-push/unsubscribe', {
       method: 'POST',

@@ -6,9 +6,10 @@ import {
   localeStorageKey,
 } from '../../integrations/lingui/i18n';
 import { isDesktopBuild } from '@/utils/desktop';
+import { z } from 'zod';
 
 export const updateLocale = createServerFn({ method: 'POST' })
-  .validator((locale: string) => locale as Locale)
+  .validator((locale: string) => z.string().parse(locale) as Locale)
   .handler(async ({ data }) => {
     if (isLocaleValid(data)) {
       if (isDesktopBuild()) {

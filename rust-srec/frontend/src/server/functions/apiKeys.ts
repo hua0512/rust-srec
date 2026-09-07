@@ -1,5 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema } from '../backend-path';
 import { z } from 'zod';
 
 export const ApiKeyAccessLevelSchema = z.enum(['read_only', 'full']);
@@ -49,7 +50,7 @@ export const createApiKey = createServerFn({ method: 'POST' })
   });
 
 export const revokeApiKey = createServerFn({ method: 'POST' })
-  .validator((id: string) => z.string().parse(id))
+  .validator((id: string) => PathIdSchema.parse(id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/auth/api-keys/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/auth/api-keys/${id}`, { method: 'DELETE' });
   });

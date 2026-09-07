@@ -1,5 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
+import { withQuery } from '../backend-path';
 import {
   LoggingConfigResponseSchema,
   UpdateLogFilterRequestSchema,
@@ -18,13 +19,18 @@ export const getLoggingConfig = createServerFn({ method: 'GET' }).handler(
   },
 );
 
+// An empty directive is a valid filter that silences every module, so it is
+// treated as a missing value rather than forwarded.
+const UpdateLoggingFilterSchema = UpdateLogFilterRequestSchema.extend({
+  filter: z.string().min(1),
+});
+
 /** Update logging filter directive */
 export const updateLoggingFilter = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof UpdateLogFilterRequestSchema>) => data)
+  .validator((data: z.infer<typeof UpdateLogFilterRequestSchema>) =>
+    UpdateLoggingFilterSchema.parse(data),
+  )
   .handler(async ({ data }) => {
-    if (!data || !data.filter) {
-      throw new Error('Missing filter in request');
-    }
     const json = await fetchBackend('/logging', {
       method: 'PUT',
       headers: {
@@ -37,22 +43,27 @@ export const updateLoggingFilter = createServerFn({ method: 'POST' })
 
 // --- Log Files ---
 
+const LogFileFiltersSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+});
+
 /** List log files with optional date range filtering */
 export const listLogFiles = createServerFn({ method: 'GET' })
   .validator(
     (data: { from?: string; to?: string; limit?: number; offset?: number }) =>
-      data,
+      LogFileFiltersSchema.parse(data),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
-    if (data?.from) params.set('from', data.from);
-    if (data?.to) params.set('to', data.to);
-    if (data?.limit) params.set('limit', String(data.limit));
-    if (data?.offset) params.set('offset', String(data.offset));
+    if (data.from) params.set('from', data.from);
+    if (data.to) params.set('to', data.to);
+    if (data.limit) params.set('limit', String(data.limit));
+    if (data.offset) params.set('offset', String(data.offset));
 
-    const query = params.toString();
-    const endpoint = query ? `/logging/files?${query}` : '/logging/files';
-    const json = await fetchBackend(endpoint);
+    const json = await fetchBackend(withQuery('/logging/files', params));
     return LogFilesResponseSchema.parse(json);
   });
 
