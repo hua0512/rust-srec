@@ -133,7 +133,7 @@ impl XmlDanmuWriter {
             file.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
                 .await?;
             for comment in &self.header_comments {
-                let comment_xml = format!("<!-- {} -->\n", comment.replace("-->", "--"));
+                let comment_xml = format!("<!-- {} -->\n", sanitize_xml_comment(comment));
                 file.write_all(comment_xml.as_bytes()).await?;
             }
             self.header_comments.clear();
@@ -399,16 +399,19 @@ fn super_chat_to_xml(message: &DanmuMessage, ts: f64, timestamp_ms: i64) -> Stri
     )
 }
 
-/// Escape special XML characters in a string.
+/// Escape markup and remove characters forbidden by XML 1.0's `Char` production.
 ///
 /// Borrows the input when it contains nothing to escape, which is the common
 /// case for usernames and chat content.
 pub fn escape_xml(s: &str) -> Cow<'_, str> {
-    if !s.contains(['&', '<', '>', '"', '\'']) {
+    if !s.contains(['&', '<', '>', '"', '\'']) && s.chars().all(is_xml_char) {
         return Cow::Borrowed(s);
     }
     let mut out = String::with_capacity(s.len() + 8);
     for ch in s.chars() {
+        if !is_xml_char(ch) {
+            continue;
+        }
         match ch {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
@@ -417,6 +420,29 @@ pub fn escape_xml(s: &str) -> Cow<'_, str> {
             '\'' => out.push_str("&apos;"),
             _ => out.push(ch),
         }
+    }
+    Cow::Owned(out)
+}
+
+fn is_xml_char(ch: char) -> bool {
+    matches!(ch, '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}')
+}
+
+fn sanitize_xml_comment(s: &str) -> Cow<'_, str> {
+    if s.chars().all(is_xml_char) && !s.contains("--") && !s.ends_with('-') {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars().filter(|ch| is_xml_char(*ch)) {
+        // Process hyphens after filtering: removing a forbidden character can
+        // itself join two hyphens, and replacing nonoverlapping pairs misses triples.
+        if ch == '-' && out.ends_with('-') {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    if out.ends_with('-') {
+        out.push(' ');
     }
     Cow::Owned(out)
 }
@@ -469,6 +495,66 @@ mod tests {
         assert_eq!(escape_xml("<script>"), "&lt;script&gt;");
         assert_eq!(escape_xml("a & b"), "a &amp; b");
         assert_eq!(escape_xml("\"quoted\""), "&quot;quoted&quot;");
+    }
+
+    #[test]
+    fn xml_character_filter_preserves_allowed_whitespace_and_unicode() {
+        assert!(roxmltree::Document::parse("<i>\0</i>").is_err());
+        assert!(roxmltree::Document::parse("<!--bad--comment--><i/>").is_err());
+        assert_eq!(escape_xml("\0\u{1}\u{b}\u{c}\u{1f}\u{fffe}\u{ffff}"), "");
+        let valid = "中😀é\t\n\r\u{7f}\u{e000}\u{10ffff}";
+        assert!(matches!(escape_xml(valid), Cow::Borrowed(_)));
+        assert_eq!(escape_xml(valid), valid);
+        for comment in ["--", "---", "---->", "ends-", "-\0-", "x\u{fffe}y"] {
+            let sanitized = sanitize_xml_comment(comment);
+            assert!(!sanitized.contains("--"));
+            assert!(!sanitized.ends_with('-'));
+            roxmltree::Document::parse(&format!("<!--{sanitized}--><i/>")).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn xml_writer_emits_strictly_parseable_chat_gift_superchat_and_comments() {
+        let path =
+            std::env::temp_dir().join(format!("danmu-integrity-{}.xml", uuid::Uuid::new_v4()));
+        let start = Utc::now();
+        let mut writer = XmlDanmuWriter::with_start_time_and_comments(
+            &path,
+            start,
+            vec![
+                "metadata--- --> ends-".to_owned(),
+                "-\0-\u{fffe}".to_owned(),
+            ],
+        )
+        .await
+        .unwrap();
+        for message in [
+            DanmuMessage::chat("1", "u", "A\0&B\u{fffe}", "x\u{1}<中😀\nend"),
+            DanmuMessage::gift("2", "u\u{b}&", "A\0&B\u{fffe}", "g\u{ffff}<", 2),
+            DanmuMessage::super_chat("3", "u\u{c}&", "A\0&B\u{fffe}", "x\u{1}<中😀\nend", 3),
+        ] {
+            writer
+                .write_message(&message.with_timestamp(start))
+                .await
+                .unwrap();
+        }
+        writer.finalize().await.unwrap();
+        let xml = tokio::fs::read_to_string(&path).await.unwrap();
+        tokio::fs::remove_file(&path).await.unwrap();
+        let document = roxmltree::Document::parse(&xml).expect("writer emits well-formed XML 1.0");
+        let nodes: Vec<_> = document
+            .root_element()
+            .children()
+            .filter(|node| node.is_element())
+            .collect();
+        assert_eq!(nodes.len(), 3);
+        for node in &nodes {
+            assert_eq!(node.attribute("user"), Some("A&B"));
+        }
+        assert_eq!(nodes[0].text(), Some("x<中😀\nend"));
+        assert_eq!(nodes[1].attribute("giftname"), Some("g<"));
+        assert_eq!(nodes[1].attribute("uid"), Some("u&"));
+        assert_eq!(nodes[2].text(), Some("x<中😀\nend"));
     }
 
     #[test]

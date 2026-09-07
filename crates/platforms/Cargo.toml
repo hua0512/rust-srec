@@ -88,6 +88,9 @@ prost-types = { workspace = true }
 [build-dependencies]
 prost-build = { workspace = true }
 
+[dev-dependencies]
+roxmltree = "0.21"
+
 
 [features]
 default = ["rustls-tls"]

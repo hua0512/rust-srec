@@ -99,6 +99,8 @@ http://<host>:<port>/api/mcp
 
 分析弹幕时优先使用 `session_danmu_statistics`（总数、速率时间序列、发言排行、词频统计）；只有当助手需要实际聊天文本时，才使用 `session_list_danmu_files` + `session_read_danmu`。
 
+`session_read_danmu` 在请求的字节上限内返回完整 UTF-8 字符（默认 65,536，最大 262,144）。请使用返回的 `next_offset` 继续读取；XML 节点可能跨页。建议至少请求四字节，以容纳任意字符。零上限、位于字符内部的偏移、上限不足以容纳下一个字符，以及请求窗口中的无效或不完整 UTF-8 都会返回错误。历史损坏文件不会自动修复；仍在写入的文件可能需要稍后重试。
+
 包含配置的工具组（`config_*`、`template_*`、`engine_*`、`streamer_*`、`filter_*`、处理管道/任务预设与执行详情工具、通知渠道/订阅工具，以及 `parse_url`）即使只读取也需要 `full` 密钥。这样可以防止只读助手获取平台 Cookie、处理器配置、通知凭据、直播访问数据或其他已存机密。
 
 ## 安全注意事项
