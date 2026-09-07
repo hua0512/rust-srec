@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
@@ -37,7 +38,7 @@ const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
 
 export const updateGlobalConfig = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof GlobalConfigWriteSchema>) =>
-    GlobalConfigUpdateSchema.parse(data),
+    parseInput(GlobalConfigUpdateSchema, data),
   )
   .handler(async ({ data }) => {
     await fetchBackend('/config/global', {
@@ -55,7 +56,7 @@ export const listPlatformConfigs = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getPlatformConfig = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/config/platforms/${id}`);
     return PlatformConfigSchema.parse(json);
@@ -90,8 +91,8 @@ export const updatePlatformConfig = createServerFn({ method: 'POST' })
       id: string;
       data: Partial<z.infer<typeof PlatformConfigSchema>>;
     }) => ({
-      id: PathIdSchema.parse(d.id),
-      data: PlatformConfigWriteSchema.parse(d.data),
+      id: parseInput(PathIdSchema, d.id),
+      data: parseInput(PlatformConfigWriteSchema, d.data),
     }),
   )
   .handler(async ({ data: { id, data } }) => {
@@ -119,7 +120,7 @@ export const listTemplates = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getTemplate = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/templates/${id}`);
     return TemplateSchema.parse(json);
@@ -144,7 +145,7 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
 
 export const createTemplate = createServerFn({ method: 'POST' })
   .validator((data: z.input<typeof CreateTemplateRequestSchema>) =>
-    TemplateWriteSchema.parse(data),
+    parseInput(TemplateWriteSchema, data),
   )
   .handler(async ({ data }) => {
     const payload = data;
@@ -158,8 +159,8 @@ export const createTemplate = createServerFn({ method: 'POST' })
 export const updateTemplate = createServerFn({ method: 'POST' })
   .validator(
     (d: { id: string; data: z.input<typeof UpdateTemplateRequestSchema> }) => ({
-      id: PathIdSchema.parse(d.id),
-      data: TemplateWriteSchema.parse(d.data),
+      id: parseInput(PathIdSchema, d.id),
+      data: parseInput(TemplateWriteSchema, d.data),
     }),
   )
   .handler(async ({ data: { id, data } }) => {
@@ -172,15 +173,15 @@ export const updateTemplate = createServerFn({ method: 'POST' })
   });
 
 export const deleteTemplate = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/templates/${id}`, { method: 'DELETE' });
   });
 
 export const cloneTemplate = createServerFn({ method: 'POST' })
   .validator((d: { id: string; new_name: string }) => ({
-    id: PathIdSchema.parse(d.id),
-    new_name: z.string().min(1).parse(d.new_name),
+    id: parseInput(PathIdSchema, d.id),
+    new_name: parseInput(z.string().min(1), d.new_name),
   }))
   .handler(async ({ data }) => {
     const { id, new_name } = data;
@@ -206,7 +207,7 @@ const ImportConfigSchema = z.object({
 
 export const importConfig = createServerFn({ method: 'POST' })
   .validator((data: { config: any; mode: 'merge' | 'replace' }) =>
-    ImportConfigSchema.parse(data),
+    parseInput(ImportConfigSchema, data),
   )
   .handler(async ({ data }) => {
     return await fetchBackend('/config/backup/import', {

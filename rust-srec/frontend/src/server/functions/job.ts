@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import { JobPresetSchema } from '../../api/schemas';
@@ -56,7 +57,9 @@ interface JobPresetWriteInput {
 }
 
 export const listJobPresets = createServerFn({ method: 'GET' })
-  .validator((d: JobPresetFilters = {}) => JobPresetFiltersSchema.parse(d))
+  .validator((d: JobPresetFilters = {}) =>
+    parseInput(JobPresetFiltersSchema, d),
+  )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.category) params.set('category', data.category);
@@ -71,14 +74,14 @@ export const listJobPresets = createServerFn({ method: 'GET' })
   });
 
 export const getJobPreset = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/job/presets/${id}`);
     return JobPresetSchema.parse(json);
   });
 
 export const createJobPreset = createServerFn({ method: 'POST' })
-  .validator((d: JobPresetWriteInput) => JobPresetWriteSchema.parse(d))
+  .validator((d: JobPresetWriteInput) => parseInput(JobPresetWriteSchema, d))
   .handler(async ({ data }) => {
     // Stringify config before sending to backend
     const payload = {
@@ -93,7 +96,7 @@ export const createJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const updateJobPreset = createServerFn({ method: 'POST' })
-  .validator((d: JobPresetWriteInput) => JobPresetWriteSchema.parse(d))
+  .validator((d: JobPresetWriteInput) => parseInput(JobPresetWriteSchema, d))
   .handler(async ({ data }) => {
     const { id, ...rest } = data;
     // Stringify config before sending to backend
@@ -109,15 +112,15 @@ export const updateJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const deleteJobPreset = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/job/presets/${id}`, { method: 'DELETE' });
   });
 
 export const cloneJobPreset = createServerFn({ method: 'POST' })
   .validator((d: { id: string; new_name: string }) => ({
-    id: PathIdSchema.parse(d.id),
-    new_name: z.string().min(1).parse(d.new_name),
+    id: parseInput(PathIdSchema, d.id),
+    new_name: parseInput(z.string().min(1), d.new_name),
   }))
   .handler(async ({ data }) => {
     const { id, new_name } = data;

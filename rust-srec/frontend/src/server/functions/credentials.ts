@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend, BackendApiError } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
@@ -22,7 +23,7 @@ function templatePlatformQuery(platform?: string): URLSearchParams {
 }
 
 export const getStreamerCredentialSource = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     try {
       const json = await fetchBackend(
@@ -38,7 +39,7 @@ export const getStreamerCredentialSource = createServerFn({ method: 'GET' })
   });
 
 export const getPlatformCredentialSource = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     try {
       const json = await fetchBackend(
@@ -55,7 +56,7 @@ export const getPlatformCredentialSource = createServerFn({ method: 'GET' })
 
 export const getTemplateCredentialSource = createServerFn({ method: 'GET' })
   .validator((input: { id: string; platform?: string }) =>
-    TemplateCredentialInputSchema.parse(input),
+    parseInput(TemplateCredentialInputSchema, input),
   )
   .handler(async ({ data }) => {
     const { id, platform } = data;
@@ -76,7 +77,7 @@ export const getTemplateCredentialSource = createServerFn({ method: 'GET' })
   });
 
 export const refreshStreamerCredentials = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       backendPath`/credentials/streamers/${id}/refresh`,
@@ -88,7 +89,7 @@ export const refreshStreamerCredentials = createServerFn({ method: 'POST' })
   });
 
 export const refreshPlatformCredentials = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       backendPath`/credentials/platforms/${id}/refresh`,
@@ -101,7 +102,7 @@ export const refreshPlatformCredentials = createServerFn({ method: 'POST' })
 
 export const refreshTemplateCredentials = createServerFn({ method: 'POST' })
   .validator((input: { id: string; platform?: string }) =>
-    TemplateCredentialInputSchema.parse(input),
+    parseInput(TemplateCredentialInputSchema, input),
   )
   .handler(async ({ data }) => {
     const { id, platform } = data;
@@ -148,7 +149,7 @@ const PollBilibiliQrInputSchema = z.object({
 
 export const pollBilibiliQr = createServerFn({ method: 'POST' })
   .validator((input: PollBilibiliQrInput) =>
-    PollBilibiliQrInputSchema.parse(input),
+    parseInput(PollBilibiliQrInputSchema, input),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/credentials/bilibili/qr/poll', {

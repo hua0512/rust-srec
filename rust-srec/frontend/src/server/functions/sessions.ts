@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
@@ -37,7 +38,7 @@ export const listSessions = createServerFn({ method: 'GET' })
         to_date?: string;
         search?: string;
       } = {},
-    ) => SessionFiltersSchema.parse(d),
+    ) => parseInput(SessionFiltersSchema, d),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
@@ -61,14 +62,14 @@ export const listSessions = createServerFn({ method: 'GET' })
   });
 
 export const getSession = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/sessions/${id}`);
     return SessionSchema.parse(json);
   });
 
 export const getSessionDanmuStatistics = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       backendPath`/sessions/${id}/danmu-statistics`,
@@ -77,7 +78,7 @@ export const getSessionDanmuStatistics = createServerFn({ method: 'GET' })
   });
 
 export const deleteSession = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/sessions/${id}`, {
       method: 'DELETE',
@@ -85,7 +86,9 @@ export const deleteSession = createServerFn({ method: 'POST' })
   });
 
 export const deleteSessions = createServerFn({ method: 'POST' })
-  .validator((ids: string[]) => z.array(z.string().min(1)).min(1).parse(ids))
+  .validator((ids: string[]) =>
+    parseInput(z.array(z.string().min(1)).min(1), ids),
+  )
   .handler(async ({ data: ids }) => {
     const json = await fetchBackend('/sessions/batch-delete', {
       method: 'POST',
@@ -97,9 +100,9 @@ export const deleteSessions = createServerFn({ method: 'POST' })
 
 export const listSessionSegments = createServerFn({ method: 'GET' })
   .validator((d: { session_id: string; limit?: number; offset?: number }) => ({
-    session_id: PathIdSchema.parse(d.session_id),
-    limit: z.number().optional().parse(d.limit),
-    offset: z.number().optional().parse(d.offset),
+    session_id: parseInput(PathIdSchema, d.session_id),
+    limit: parseInput(z.number().optional(), d.limit),
+    offset: parseInput(z.number().optional(), d.offset),
   }))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();

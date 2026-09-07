@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
@@ -15,11 +16,11 @@ import { z } from 'zod';
 function normalizeConfig(engineType: string, config: Record<string, unknown>) {
   switch (engineType) {
     case 'FFMPEG':
-      return FfmpegConfigSchema.parse(config);
+      return parseInput(FfmpegConfigSchema, config);
     case 'STREAMLINK':
-      return StreamlinkConfigSchema.parse(config);
+      return parseInput(StreamlinkConfigSchema, config);
     case 'MESIO':
-      return MesioConfigSchema.parse(config);
+      return parseInput(MesioConfigSchema, config);
     default:
       return config;
   }
@@ -53,7 +54,7 @@ export const listEngines = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getEngine = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/engines/${id}`);
     const raw = json as any;
@@ -71,7 +72,7 @@ export const getEngine = createServerFn({ method: 'GET' })
 export const createEngine = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof CreateEngineRequestSchema>) =>
     (() => {
-      const parsed = CreateEngineRequestSchema.parse(data);
+      const parsed = parseInput(CreateEngineRequestSchema, data);
       return {
         ...parsed,
         config: normalizeConfig(parsed.engine_type, parsed.config),
@@ -98,9 +99,9 @@ export const createEngine = createServerFn({ method: 'POST' })
 export const updateEngine = createServerFn({ method: 'POST' })
   .validator(
     (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => ({
-      id: PathIdSchema.parse(d.id),
+      id: parseInput(PathIdSchema, d.id),
       data: (() => {
-        const parsed = UpdateEngineRequestSchema.parse(d.data);
+        const parsed = parseInput(UpdateEngineRequestSchema, d.data);
         if (parsed.engine_type && parsed.config) {
           return {
             ...parsed,
@@ -129,13 +130,13 @@ export const updateEngine = createServerFn({ method: 'POST' })
   });
 
 export const deleteEngine = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/engines/${id}`, { method: 'DELETE' });
   });
 
 export const testEngine = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/engines/${id}/test`);
     return EngineTestResponseSchema.parse(json);

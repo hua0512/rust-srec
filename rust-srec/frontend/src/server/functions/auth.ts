@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
@@ -28,7 +29,7 @@ function computeExpiryTimestamp(seconds?: number, fallback?: number): number {
 
 export const loginFn = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof LoginRequestSchema>) =>
-    LoginRequestSchema.parse(data),
+    parseInput(LoginRequestSchema, data),
   )
   .handler(async ({ data }) => {
     try {
@@ -84,7 +85,7 @@ export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
 
 export const changePassword = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof ChangePasswordRequestSchema>) =>
-    ChangePasswordRequestSchema.parse(data),
+    parseInput(ChangePasswordRequestSchema, data),
   )
   .handler(async ({ data }) => {
     // changePassword requires authentication, so we use fetchBackend

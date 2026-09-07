@@ -2,11 +2,15 @@ import { revokeApiKey } from '../functions/apiKeys';
 import { getTemplate } from '../functions/config';
 import { getTemplateCredentialSource } from '../functions/credentials';
 import { getEngine } from '../functions/engines';
-import { deleteFilter, updateFilter } from '../functions/filters';
+import { createFilter, deleteFilter, updateFilter } from '../functions/filters';
 import { getJobPreset } from '../functions/job';
 import { listLogFiles } from '../functions/logging';
-import { getChannel } from '../functions/notifications';
-import { deletePipelineOutput, getPipelineJob } from '../functions/pipeline';
+import { createChannel, getChannel } from '../functions/notifications';
+import {
+  createPipelinePreset,
+  deletePipelineOutput,
+  getPipelineJob,
+} from '../functions/pipeline';
 import { getSession } from '../functions/sessions';
 import { getStreamer, updateStreamer } from '../functions/streamers';
 
@@ -39,6 +43,12 @@ async function requestedPath(invoke: () => Promise<unknown>): Promise<string> {
 async function expectNoRequest(invoke: () => Promise<unknown>): Promise<void> {
   await expect(invoke()).rejects.toThrow();
   expect(fetchBackendMock).not.toHaveBeenCalled();
+}
+
+async function requestedBody(invoke: () => Promise<unknown>): Promise<string> {
+  await invoke().catch(() => undefined);
+  expect(fetchBackendMock).toHaveBeenCalledTimes(1);
+  return (fetchBackendMock.mock.calls[0][1] as RequestInit).body as string;
 }
 
 const ID = '0f6b2f7e-6c2f-4c1a-9e3f-2f0a1b8c7d55';
@@ -91,6 +101,12 @@ describe('server function request paths', () => {
     ],
   ])('%s builds the documented path', async (_name, invoke, expected) => {
     await expect(requestedPath(invoke)).resolves.toBe(expected);
+  });
+
+  it('lists log files without any filter', async () => {
+    await expect(requestedPath(() => listLogFiles())).resolves.toBe(
+      '/logging/files',
+    );
   });
 
   it('keeps a template lookup scoped when no platform is given', async () => {
@@ -175,5 +191,97 @@ describe('server function identifier containment', () => {
         deleteFilter({ data: { streamerId: '../x', filterId: 'a/b' } }),
       ),
     ).resolves.toBe('/streamers/..%2Fx/filters/a%2Fb');
+  });
+});
+
+describe('server function request bodies', () => {
+  // A validator that parses the payload must forward it unchanged: a schema
+  // default reaching a partial update would overwrite a field the caller never
+  // mentioned.
+  it('forwards only the fields a streamer toggle changes', async () => {
+    await expect(
+      requestedBody(() =>
+        updateStreamer({ data: { id: ID, data: { enabled: true } } }),
+      ),
+    ).resolves.toBe('{"enabled":true}');
+  });
+
+  it('preserves an explicit streamer priority', async () => {
+    await expect(
+      requestedBody(() =>
+        updateStreamer({ data: { id: ID, data: { priority: 'HIGH' } } }),
+      ),
+    ).resolves.toBe('{"priority":"HIGH"}');
+  });
+
+  // The channel editor submits `settings` as the object it built, which is what
+  // the backend stores; the shared schema describes the serialized form.
+  it('forwards channel settings given as an object', async () => {
+    const settings = {
+      webhook_url: 'https://example.test/hook',
+      enabled: true,
+    };
+    await expect(
+      requestedBody(() =>
+        createChannel({
+          data: {
+            name: 'ops',
+            channel_type: 'Discord',
+            settings: settings as unknown as string,
+          },
+        }),
+      ),
+    ).resolves.toBe(
+      JSON.stringify({ name: 'ops', channel_type: 'Discord', settings }),
+    );
+  });
+
+  it('forwards channel settings given as a string', async () => {
+    const settings = '{"a":1}';
+    await expect(
+      requestedBody(() =>
+        createChannel({
+          data: { name: 'ops', channel_type: 'Discord', settings },
+        }),
+      ),
+    ).resolves.toBe(
+      JSON.stringify({ name: 'ops', channel_type: 'Discord', settings }),
+    );
+  });
+
+  it('adds the streamer id to a created filter', async () => {
+    const body = {
+      filter_type: 'CATEGORY',
+      config: { categories: ['irl'] },
+      streamer_id: ID,
+    };
+    await expect(
+      requestedBody(() =>
+        createFilter({
+          data: {
+            streamerId: ID,
+            data: { filter_type: 'CATEGORY', config: { categories: ['irl'] } },
+          },
+        }),
+      ),
+    ).resolves.toBe(JSON.stringify(body));
+  });
+
+  it('forwards a pipeline preset definition unchanged', async () => {
+    const preset = {
+      name: 'remux only',
+      dag: {
+        name: 'remux only',
+        steps: [
+          {
+            id: 'remux',
+            step: { type: 'inline' as const, processor: 'remux', config: {} },
+          },
+        ],
+      },
+    };
+    await expect(
+      requestedBody(() => createPipelinePreset({ data: preset })),
+    ).resolves.toBe(JSON.stringify(preset));
   });
 });

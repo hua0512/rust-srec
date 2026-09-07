@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { withQuery } from '../backend-path';
 import {
@@ -28,7 +29,7 @@ const UpdateLoggingFilterSchema = UpdateLogFilterRequestSchema.extend({
 /** Update logging filter directive */
 export const updateLoggingFilter = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof UpdateLogFilterRequestSchema>) =>
-    UpdateLoggingFilterSchema.parse(data),
+    parseInput(UpdateLoggingFilterSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/logging', {
@@ -53,8 +54,14 @@ const LogFileFiltersSchema = z.object({
 /** List log files with optional date range filtering */
 export const listLogFiles = createServerFn({ method: 'GET' })
   .validator(
-    (data: { from?: string; to?: string; limit?: number; offset?: number }) =>
-      LogFileFiltersSchema.parse(data),
+    (
+      data: {
+        from?: string;
+        to?: string;
+        limit?: number;
+        offset?: number;
+      } = {},
+    ) => parseInput(LogFileFiltersSchema, data),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();

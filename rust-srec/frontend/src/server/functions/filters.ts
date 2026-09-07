@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
@@ -9,7 +10,7 @@ import {
 import { z } from 'zod';
 
 export const listFilters = createServerFn({ method: 'GET' })
-  .validator((streamerId: string) => PathIdSchema.parse(streamerId))
+  .validator((streamerId: string) => parseInput(PathIdSchema, streamerId))
   .handler(async ({ data: streamerId }) => {
     const json = await fetchBackend(
       backendPath`/streamers/${streamerId}/filters`,
@@ -23,8 +24,8 @@ export const createFilter = createServerFn({ method: 'POST' })
       streamerId: string;
       data: z.infer<typeof CreateFilterRequestSchema>;
     }) => ({
-      streamerId: PathIdSchema.parse(d.streamerId),
-      data: CreateFilterRequestSchema.parse(d.data),
+      streamerId: parseInput(PathIdSchema, d.streamerId),
+      data: parseInput(CreateFilterRequestSchema, d.data),
     }),
   )
   .handler(async ({ data: { streamerId, data } }) => {
@@ -45,9 +46,9 @@ export const updateFilter = createServerFn({ method: 'POST' })
       filterId: string;
       data: z.infer<typeof UpdateFilterRequestSchema>;
     }) => ({
-      streamerId: PathIdSchema.parse(d.streamerId),
-      filterId: PathIdSchema.parse(d.filterId),
-      data: UpdateFilterRequestSchema.parse(d.data),
+      streamerId: parseInput(PathIdSchema, d.streamerId),
+      filterId: parseInput(PathIdSchema, d.filterId),
+      data: parseInput(UpdateFilterRequestSchema, d.data),
     }),
   )
   .handler(async ({ data: { streamerId, filterId, data } }) => {
@@ -63,8 +64,8 @@ export const updateFilter = createServerFn({ method: 'POST' })
 
 export const deleteFilter = createServerFn({ method: 'POST' })
   .validator((d: { streamerId: string; filterId: string }) => ({
-    streamerId: PathIdSchema.parse(d.streamerId),
-    filterId: PathIdSchema.parse(d.filterId),
+    streamerId: parseInput(PathIdSchema, d.streamerId),
+    filterId: parseInput(PathIdSchema, d.filterId),
   }))
   .handler(async ({ data: { streamerId, filterId } }) => {
     await fetchBackend(

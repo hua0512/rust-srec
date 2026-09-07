@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import { z } from 'zod';
@@ -39,7 +40,7 @@ export const listApiKeys = createServerFn({ method: 'GET' }).handler(
 
 export const createApiKey = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof CreateApiKeyInputSchema>) =>
-    CreateApiKeyInputSchema.parse(data),
+    parseInput(CreateApiKeyInputSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/auth/api-keys', {
@@ -50,7 +51,7 @@ export const createApiKey = createServerFn({ method: 'POST' })
   });
 
 export const revokeApiKey = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/auth/api-keys/${id}`, { method: 'DELETE' });
   });

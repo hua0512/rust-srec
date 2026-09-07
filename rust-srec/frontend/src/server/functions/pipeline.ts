@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
@@ -51,7 +52,7 @@ const JobLogFiltersSchema = PageSchema.extend({ id: PathIdSchema });
 
 export const getPipelineJobLogs = createServerFn({ method: 'GET' })
   .validator((d: { id: string; limit?: number; offset?: number }) =>
-    JobLogFiltersSchema.parse(d),
+    parseInput(JobLogFiltersSchema, d),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
@@ -77,7 +78,7 @@ export const getPipelineJobLogs = createServerFn({ method: 'GET' })
   });
 
 export const getPipelineJobProgress = createServerFn({ method: 'GET' })
-  .validator((d: { id: string }) => ({ id: PathIdSchema.parse(d.id) }))
+  .validator((d: { id: string }) => ({ id: parseInput(PathIdSchema, d.id) }))
   .handler(async ({ data }) => {
     const json = await fetchBackend(
       backendPath`/pipeline/jobs/${data.id}/progress`,
@@ -86,7 +87,7 @@ export const getPipelineJobProgress = createServerFn({ method: 'GET' })
   });
 
 export const getPipelineJobUploads = createServerFn({ method: 'GET' })
-  .validator((d: { id: string }) => ({ id: PathIdSchema.parse(d.id) }))
+  .validator((d: { id: string }) => ({ id: parseInput(PathIdSchema, d.id) }))
   .handler(async ({ data }) => {
     const json = await fetchBackend(
       backendPath`/pipeline/jobs/${data.id}/uploads`,
@@ -113,7 +114,7 @@ export const listPipelines = createServerFn({ method: 'GET' })
         limit?: number;
         offset?: number;
       } = {},
-    ) => DagFiltersSchema.parse(d),
+    ) => parseInput(DagFiltersSchema, d),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
@@ -129,28 +130,28 @@ export const listPipelines = createServerFn({ method: 'GET' })
   });
 
 export const getDagExecution = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}`);
     return DagExecutionSchema.parse(json);
   });
 
 export const getDagGraph = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}/graph`);
     return DagGraphSchema.parse(json);
   });
 
 export const getDagStats = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}/stats`);
     return DagStatsSchema.parse(json);
   });
 
 export const cancelDag = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}`, {
       method: 'DELETE',
@@ -165,7 +166,7 @@ export const cancelDag = createServerFn({ method: 'POST' })
   });
 
 export const retryDagSteps = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}/retry`, {
       method: 'POST',
@@ -225,7 +226,7 @@ export const getPipelineStats = createServerFn({ method: 'GET' }).handler(
 );
 
 export const retryPipelineJob = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/pipeline/jobs/${id}/retry`, {
       method: 'POST',
@@ -233,7 +234,7 @@ export const retryPipelineJob = createServerFn({ method: 'POST' })
   });
 
 export const cancelActivePipelineJob = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/pipeline/jobs/${id}/cancel`, {
       method: 'POST',
@@ -241,7 +242,7 @@ export const cancelActivePipelineJob = createServerFn({ method: 'POST' })
   });
 
 export const deletePipelineJob = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/pipeline/jobs/${id}`, {
       method: 'DELETE',
@@ -249,7 +250,7 @@ export const deletePipelineJob = createServerFn({ method: 'POST' })
   });
 
 export const cancelPipeline = createServerFn({ method: 'POST' })
-  .validator((pipelineId: string) => PathIdSchema.parse(pipelineId))
+  .validator((pipelineId: string) => parseInput(PathIdSchema, pipelineId))
   .handler(async ({ data: pipelineId }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${pipelineId}`, {
       method: 'DELETE',
@@ -264,7 +265,7 @@ export const cancelPipeline = createServerFn({ method: 'POST' })
   });
 
 export const deletePipeline = createServerFn({ method: 'POST' })
-  .validator((pipelineId: string) => PathIdSchema.parse(pipelineId))
+  .validator((pipelineId: string) => parseInput(PathIdSchema, pipelineId))
   .handler(async ({ data: pipelineId }) => {
     const json = await fetchBackend(
       backendPath`/pipeline/dag/${pipelineId}/delete`,
@@ -281,7 +282,7 @@ export const deletePipeline = createServerFn({ method: 'POST' })
   });
 
 export const batchPipelines = createServerFn({ method: 'POST' })
-  .validator((data: BatchDagRequest) => BatchDagRequestSchema.parse(data))
+  .validator((data: BatchDagRequest) => parseInput(BatchDagRequestSchema, data))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/pipeline/dags/batch', {
       method: 'POST',
@@ -292,7 +293,7 @@ export const batchPipelines = createServerFn({ method: 'POST' })
 
 export const deletePipelineOutput = createServerFn({ method: 'POST' })
   .validator((data: { id: string; deleteFile: boolean }) =>
-    z.object({ id: PathIdSchema, deleteFile: z.boolean() }).parse(data),
+    parseInput(z.object({ id: PathIdSchema, deleteFile: z.boolean() }), data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend(
@@ -307,7 +308,7 @@ export const deletePipelineOutput = createServerFn({ method: 'POST' })
 
 export const batchDeletePipelineOutputs = createServerFn({ method: 'POST' })
   .validator((data: BatchDeleteOutputsRequest) =>
-    BatchDeleteOutputsRequestSchema.parse(data),
+    parseInput(BatchDeleteOutputsRequestSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/pipeline/outputs/batch-delete', {
@@ -319,7 +320,7 @@ export const batchDeletePipelineOutputs = createServerFn({ method: 'POST' })
 
 export const createPipelineJob = createServerFn({ method: 'POST' })
   .validator((data: CreatePipelineJobRequest) =>
-    CreatePipelineJobRequestSchema.parse(data),
+    parseInput(CreatePipelineJobRequestSchema, data),
   )
   .handler(async ({ data }) => {
     await fetchBackend('/pipeline/create', {
@@ -329,7 +330,7 @@ export const createPipelineJob = createServerFn({ method: 'POST' })
   });
 
 export const getPipelineJob = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/jobs/${id}`);
     return JobSchema.parse(json);
@@ -365,7 +366,7 @@ export const listPipelineOutputs = createServerFn({ method: 'GET' })
         limit?: number;
         offset?: number;
       } = {},
-    ) => PageSchema.extend(PipelineOutputFiltersSchema.shape).parse(d),
+    ) => parseInput(PageSchema.extend(PipelineOutputFiltersSchema.shape), d),
   )
   .handler(async ({ data }) => {
     const params = pipelineOutputFilterParams(data);
@@ -391,7 +392,7 @@ export const listPipelineOutputs = createServerFn({ method: 'GET' })
  */
 export const getPipelineOutputSummary = createServerFn({ method: 'GET' })
   .validator((d: Omit<PipelineOutputFilters, 'file_type'> = {}) =>
-    PipelineOutputFiltersSchema.omit({ file_type: true }).parse(d),
+    parseInput(PipelineOutputFiltersSchema.omit({ file_type: true }), d),
   )
   .handler(async ({ data }) => {
     const params = pipelineOutputFilterParams(data);
@@ -420,7 +421,7 @@ const PipelinePresetFiltersSchema = PageSchema.extend({
 
 export const listPipelinePresets = createServerFn({ method: 'GET' })
   .validator((d: PipelinePresetFilters = {}) =>
-    PipelinePresetFiltersSchema.parse(d),
+    parseInput(PipelinePresetFiltersSchema, d),
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
@@ -433,7 +434,7 @@ export const listPipelinePresets = createServerFn({ method: 'GET' })
   });
 
 export const getPipelinePreset = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/presets/${id}`);
     return PipelinePresetSchema.parse(json);
@@ -441,7 +442,7 @@ export const getPipelinePreset = createServerFn({ method: 'GET' })
 
 export const createPipelinePreset = createServerFn({ method: 'POST' })
   .validator((d: z.infer<typeof CreatePipelinePresetRequestSchema>) =>
-    CreatePipelinePresetRequestSchema.parse(d),
+    parseInput(CreatePipelinePresetRequestSchema, d),
   )
   .handler(async ({ data }) => {
     try {
@@ -470,8 +471,8 @@ export const updatePipelinePreset = createServerFn({ method: 'POST' })
       id: string;
       data: z.infer<typeof UpdatePipelinePresetRequestSchema>;
     }) => ({
-      id: PathIdSchema.parse(d.id),
-      data: UpdatePipelinePresetRequestSchema.parse(d.data),
+      id: parseInput(PathIdSchema, d.id),
+      data: parseInput(UpdatePipelinePresetRequestSchema, d.data),
     }),
   )
   .handler(async ({ data }) => {
@@ -497,7 +498,7 @@ export const updatePipelinePreset = createServerFn({ method: 'POST' })
   });
 
 export const deletePipelinePreset = createServerFn({ method: 'POST' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/pipeline/presets/${id}`, {
       method: 'DELETE',
@@ -505,7 +506,7 @@ export const deletePipelinePreset = createServerFn({ method: 'POST' })
   });
 
 export const previewPipelinePreset = createServerFn({ method: 'GET' })
-  .validator((id: string) => PathIdSchema.parse(id))
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       backendPath`/pipeline/presets/${id}/preview`,
