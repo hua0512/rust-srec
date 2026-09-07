@@ -36,6 +36,10 @@
 
   A move validates every input before starting a transfer, so a missing file cannot be reported as a completed upload on its first attempt. Retried jobs retain the existing recovery behavior for sources consumed by earlier moves, including partial transfers within one execution.
 
+- **Restart recovery pairs danmu with stored video segments**
+
+  Recovery uses stored video paths to associate XML files with their original segment indices, avoiding duplicate processing caused by title digits or media-output IDs. XML files without a unique matching segment are skipped with a warning; their historical associations are not guessed.
+
 - **Worker logs retain repeated messages and withdrawn jobs stay stopped**
 
   Successive log batches retain every entry even when timestamps and messages match. Completion snapshots avoid repeating entries already streamed to storage, while the existing log limit and API format stay intact. Workers check queue ownership before starting execution, so a removed job cannot run with a replacement cancellation token.

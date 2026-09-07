@@ -442,6 +442,10 @@ where
                 }
             }
 
+            // Collection derives the XML path from the original video path by replacing
+            // its extension. Only a unique persisted segment association is authoritative;
+            // titles and media-output UUIDs do not encode a segment index.
+            let mut danmu_segment_indices: HashMap<PathBuf, Option<u32>> = HashMap::new();
             match session_repo
                 .list_session_segments_for_session(&session_id, 10_000)
                 .await
@@ -457,6 +461,15 @@ where
                             continue;
                         };
 
+                        let path = PathBuf::from(segment.file_path);
+                        danmu_segment_indices
+                            .entry(path.with_extension("xml"))
+                            .and_modify(|existing| {
+                                if *existing != Some(segment_index) {
+                                    *existing = None;
+                                }
+                            })
+                            .or_insert(Some(segment_index));
                         commands.extend(
                             self.pipeline_coordinator
                                 .apply_event(PipelineCoordinationEvent::RecoverSourceArtifact {
@@ -464,7 +477,7 @@ where
                                     streamer_id: streamer_id.clone(),
                                     segment_index,
                                     source: SourceType::Video,
-                                    path: PathBuf::from(segment.file_path),
+                                    path,
                                 })
                                 .await,
                         );
@@ -486,17 +499,20 @@ where
                         if output.file_type != MediaFileType::DanmuXml.as_str() {
                             continue;
                         }
-                        let path = PathBuf::from(&output.file_path);
-                        let Some(segment_index) = parse_segment_index_from_danmu(&output.id, &path)
-                        else {
-                            trace!(
-                                session_id = %session_id,
-                                path = %path.display(),
-                                "Skipping recovered danmu output without segment index"
-                            );
-                            continue;
-                        };
                         recovered_danmu_activity = true;
+                        let path = PathBuf::from(&output.file_path);
+                        let segment_index = match danmu_segment_indices.get(&path) {
+                            Some(Some(index)) => *index,
+                            association => {
+                                warn!(
+                                    session_id = %session_id,
+                                    path = %path.display(),
+                                    reason = if association.is_some() { "ambiguous" } else { "unmatched" },
+                                    "Skipping recovered danmu output without a unique stored video segment"
+                                );
+                                continue;
+                            }
+                        };
                         commands.extend(
                             self.pipeline_coordinator
                                 .apply_event(PipelineCoordinationEvent::RecoverSourceArtifact {
