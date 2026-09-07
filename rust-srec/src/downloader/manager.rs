@@ -3507,6 +3507,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn early_cancellation_does_not_charge_breaker_but_racing_failure_does() {
+        for kind in [DownloadFailureKind::Cancelled, DownloadFailureKind::Other] {
+            let manager = DownloadManager::new();
+            let temp = tempfile::tempdir().unwrap();
+            let mut events = manager.subscribe();
+            let key = EngineKey::global(EngineType::Ffmpeg);
+            for attempt in 0..5 {
+                let scripted = ScriptedSegmentEngine::with_shutdown_tail(
+                    vec![],
+                    vec![SegmentEvent::DownloadFailed {
+                        kind,
+                        message: "early engine outcome".to_owned(),
+                    }],
+                );
+                let id = start_scripted_download_with_engine(
+                    &manager,
+                    test_download_config(
+                        temp.path().to_path_buf(),
+                        &format!("early-stop-{attempt}"),
+                    ),
+                    scripted,
+                )
+                .await
+                .unwrap();
+                manager
+                    .request_stop(&id, DownloadStopCause::Shutdown)
+                    .unwrap();
+                assert!(matches!(
+                    wait_for_download_terminal(&mut events).await,
+                    DownloadTerminalEvent::Cancelled { .. }
+                ));
+            }
+            assert_eq!(
+                manager.circuit_breakers.is_allowed(&key),
+                kind == DownloadFailureKind::Cancelled
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn prepare_output_dir_on_unwritable_parent_trips_gate() {
         // Force create_dir_all to fail portably. GHA's Windows runner
         // runs as admin, so `C:\nonexistent\...` is creatable there;

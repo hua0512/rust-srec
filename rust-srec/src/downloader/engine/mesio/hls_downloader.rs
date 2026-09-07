@@ -28,6 +28,25 @@ use crate::downloader::engine::traits::{
     DownloadConfig, DownloadFailureKind, EngineStartError, SegmentEvent,
 };
 
+async fn next_initial_item<T>(
+    next: impl std::future::Future<Output = T>,
+    cancellation: &CancellationToken,
+    session_cancellation: &CancellationToken,
+) -> std::result::Result<T, EngineStartError> {
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(EngineStartError::new(
+            DownloadFailureKind::Cancelled,
+            "HLS download cancelled before the first segment",
+        )),
+        _ = session_cancellation.cancelled() => Err(EngineStartError::new(
+            DownloadFailureKind::Cancelled,
+            "HLS download cancelled before the first segment",
+        )),
+        item = next => Ok(item),
+    }
+}
+
 /// HLS-specific download orchestrator.
 ///
 /// Handles HLS stream downloading with support for both pipeline-processed
@@ -124,22 +143,8 @@ impl HlsDownloader {
 
         // Peek at the first segment to determine file extension
         let first_segment = loop {
-            let next = tokio::select! {
-                biased;
-                _ = self.cancellation_token.cancelled() => {
-                    return Err(EngineStartError::new(
-                        DownloadFailureKind::Other,
-                        "HLS download cancelled before the first segment",
-                    ));
-                }
-                _ = token.cancelled() => {
-                    return Err(EngineStartError::new(
-                        DownloadFailureKind::Other,
-                        "HLS download cancelled before the first segment",
-                    ));
-                }
-                next = hls_stream.next() => next,
-            };
+            let next =
+                next_initial_item(hls_stream.next(), &self.cancellation_token, &token).await?;
             match next {
                 Some(Ok(HlsData::EndMarker(_))) => {
                     debug!("Skipping leading HLS EndMarker before first data segment");
@@ -435,6 +440,33 @@ mod tests {
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
     use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    async fn initial_segment_cancellation_is_typed_for_both_tokens() {
+        for cancel_parent in [true, false] {
+            let parent = CancellationToken::new();
+            let session = parent.child_token();
+            let stopped = if cancel_parent {
+                parent.clone()
+            } else {
+                session.clone()
+            };
+            let (result, ()) = timeout(Duration::from_secs(2), async {
+                tokio::join!(
+                    next_initial_item(std::future::pending::<()>(), &parent, &session),
+                    async {
+                        tokio::task::yield_now().await;
+                        stopped.cancel();
+                    },
+                )
+            })
+            .await
+            .expect("early cancellation remains bounded");
+            let error = result.unwrap_err();
+            assert_eq!(error.kind, DownloadFailureKind::Cancelled);
+            assert!(!error.kind.affects_circuit_breaker());
+        }
+    }
 
     #[tokio::test]
     async fn download_raw_emits_segment_completed_before_download_failed_on_stream_error() {

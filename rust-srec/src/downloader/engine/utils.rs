@@ -14,7 +14,7 @@ mod output_record_reader;
 mod process_runner;
 mod redact;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub(super) mod test_support;
 
 pub use disk_full::output_io_error_kind;

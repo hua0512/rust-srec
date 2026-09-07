@@ -30,9 +30,8 @@ enum FfmpegProcessExit {
 async fn settle_after_wait_failure(
     child: &mut Child,
     message: String,
-    timeout: Duration,
 ) -> (FfmpegProcessExit, bool) {
-    match terminate_and_reap(child, "ffmpeg", timeout).await {
+    match terminate_and_reap(child, "ffmpeg", PROCESS_CLEANUP_TIMEOUT).await {
         Ok(_) => (FfmpegProcessExit::Failed(message), true),
         Err(cleanup_error) => (
             FfmpegProcessExit::Failed(format!("{message}; cleanup error: {cleanup_error}")),
@@ -88,6 +87,8 @@ pub struct FfmpegEngine {
     config: FfmpegEngineConfig,
     /// Cached version string.
     version: Option<String>,
+    #[cfg(test)]
+    fixture: Option<super::utils::test_support::RecordingFixture>,
 }
 
 impl FfmpegEngine {
@@ -100,7 +101,12 @@ impl FfmpegEngine {
     pub fn with_config(config: FfmpegEngineConfig) -> Self {
         let version = Self::detect_version(&config.binary_path);
 
-        Self { config, version }
+        Self {
+            config,
+            version,
+            #[cfg(test)]
+            fixture: None,
+        }
     }
 
     /// Detect ffmpeg version.
@@ -259,11 +265,15 @@ impl DownloadEngine for FfmpegEngine {
 
         // Spawn ffmpeg process
         let mut command = process_utils::tokio_command(&self.config.binary_path);
+        command.args(&args);
+        #[cfg(test)]
+        if let Some(fixture) = &self.fixture {
+            command = fixture.command(false);
+        }
         crate::utils::configure_ffmpeg_locale(&mut command);
         command
-            .args(&args)
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
-            .stdout(Stdio::piped())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         let mut child = command.spawn().map_err(|e| {
@@ -296,6 +306,11 @@ impl DownloadEngine for FfmpegEngine {
         let started_instant = Instant::now();
         let graceful_stop_timeout_secs = self.config.graceful_stop_timeout_secs;
         let budget_handle = handle.clone();
+        #[cfg(test)]
+        let inject_unconfirmed_cleanup = self
+            .fixture
+            .as_ref()
+            .is_some_and(|fixture| fixture.unconfirmed);
         let process_task = AbortOnDropHandle::new(tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
 
@@ -316,7 +331,6 @@ impl DownloadEngine for FfmpegEngine {
                             settle_after_wait_failure(
                                 &mut child,
                                 message,
-                                graceful_stop_timeout(),
                             ).await
                         }
                     }
@@ -346,7 +360,6 @@ impl DownloadEngine for FfmpegEngine {
                             settle_after_wait_failure(
                                 &mut child,
                                 message,
-                                graceful_stop_timeout(),
                             ).await
                         }
                         Err(_) => {
@@ -354,7 +367,7 @@ impl DownloadEngine for FfmpegEngine {
                             match terminate_and_reap(
                                 &mut child,
                                 "ffmpeg",
-                                graceful_stop_timeout(),
+                                PROCESS_CLEANUP_TIMEOUT,
                             ).await {
                                 Ok(exit_code) => (FfmpegProcessExit::Status(exit_code), true),
                                 Err(cleanup_error) => {
@@ -372,6 +385,17 @@ impl DownloadEngine for FfmpegEngine {
                 }
             };
 
+            // Tests inject a failed cleanup report after safely reaping their
+            // real helper child, avoiding an intentionally leaked process.
+            #[cfg(test)]
+            let (process_exit, cleanup_confirmed) = if inject_unconfirmed_cleanup {
+                (
+                    FfmpegProcessExit::Failed("injected cleanup failure".to_owned()),
+                    false,
+                )
+            } else {
+                (process_exit, cleanup_confirmed)
+            };
             if !cleanup_confirmed {
                 process_forced_settlement.cancel();
             }
@@ -867,6 +891,7 @@ mod tests {
                 ..Default::default()
             },
             version: None,
+            fixture: None,
         };
         assert_output_failure(&engine, dir.path()).await;
     }
@@ -878,6 +903,7 @@ mod tests {
                 ..Default::default()
             },
             version: None,
+            fixture: None,
         }
     }
 
@@ -892,6 +918,23 @@ mod tests {
         .with_filename_template("recording-%Y%m%d-%H%M%S")
         .with_output_format(format)
         .with_max_segment_duration(segment_duration_secs)
+    }
+
+    #[tokio::test]
+    async fn recording_stop_settlement() {
+        use super::super::utils::test_support::{
+            RecordingFixture, StopCase, assert_recording_stop,
+        };
+        for case in StopCase::ALL {
+            let dir = tempfile::tempdir().unwrap();
+            let fixture = RecordingFixture::new(dir.path(), case);
+            let engine = FfmpegEngine {
+                config: FfmpegEngineConfig::default(),
+                version: None,
+                fixture: Some(fixture.clone()),
+            };
+            assert_recording_stop(engine, fixture, case).await;
+        }
     }
 
     fn has_arg_pair(args: &[String], option: &str, value: &str) -> bool {

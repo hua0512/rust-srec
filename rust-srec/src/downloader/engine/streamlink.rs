@@ -53,6 +53,8 @@ pub struct StreamlinkEngine {
     ffmpeg_path: String,
     /// Cached version string.
     version: Option<String>,
+    #[cfg(test)]
+    fixture: Option<super::utils::test_support::RecordingFixture>,
 }
 
 impl StreamlinkEngine {
@@ -70,6 +72,8 @@ impl StreamlinkEngine {
             config,
             ffmpeg_path,
             version,
+            #[cfg(test)]
+            fixture: None,
         }
     }
 
@@ -351,7 +355,7 @@ async fn wait_then_terminate(
         Ok(Ok(status)) => (Ok(status.code()), true),
         Ok(Err(error)) => {
             let message = format!("failed to wait for {process_name}: {error}");
-            match terminate_and_reap(child, process_name, timeout).await {
+            match terminate_and_reap(child, process_name, PROCESS_CLEANUP_TIMEOUT).await {
                 Ok(_) => (Err(message), true),
                 Err(cleanup_error) => (
                     Err(format!("{message}; cleanup error: {cleanup_error}")),
@@ -364,7 +368,7 @@ async fn wait_then_terminate(
                 process = process_name,
                 "Process did not exit in time; killing it"
             );
-            match terminate_and_reap(child, process_name, timeout).await {
+            match terminate_and_reap(child, process_name, PROCESS_CLEANUP_TIMEOUT).await {
                 Ok(code) => (Ok(code), true),
                 Err(error) => (
                     Err(format!(
@@ -446,8 +450,12 @@ impl DownloadEngine for StreamlinkEngine {
 
         // Spawn streamlink process
         let mut streamlink_command = process_utils::tokio_command(&self.config.binary_path);
+        streamlink_command.args(&streamlink_args);
+        #[cfg(test)]
+        if let Some(fixture) = &self.fixture {
+            streamlink_command = fixture.command(true);
+        }
         streamlink_command
-            .args(&streamlink_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
@@ -485,11 +493,15 @@ impl DownloadEngine for StreamlinkEngine {
 
         // Spawn ffmpeg process with stdin piped
         let mut ffmpeg_command = process_utils::tokio_command(&self.ffmpeg_path);
+        ffmpeg_command.args(&ffmpeg_args);
+        #[cfg(test)]
+        if let Some(fixture) = &self.fixture {
+            ffmpeg_command = fixture.command(false);
+        }
         crate::utils::configure_ffmpeg_locale(&mut ffmpeg_command);
         ffmpeg_command
-            .args(&ffmpeg_args)
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         let mut ffmpeg = match ffmpeg_command.spawn() {
@@ -550,6 +562,11 @@ impl DownloadEngine for StreamlinkEngine {
         let process_forced_settlement = forced_settlement.clone();
         let pipe_failure = Arc::new(Mutex::new(None::<String>));
         let process_pipe_failure = pipe_failure.clone();
+        #[cfg(test)]
+        let inject_unconfirmed_cleanup = self
+            .fixture
+            .as_ref()
+            .is_some_and(|fixture| fixture.unconfirmed);
         let process_task = AbortOnDropHandle::new(tokio::spawn(async move {
             // Resolved per use rather than once here: `set_stop_deadline` runs
             // when the stop is requested, which is after this task starts, so a
@@ -671,7 +688,7 @@ impl DownloadEngine for StreamlinkEngine {
                                 match terminate_and_reap(
                                     &mut ffmpeg,
                                     "ffmpeg",
-                                    ffmpeg_stop_timeout(),
+                                    PROCESS_CLEANUP_TIMEOUT,
                                 ).await {
                                     Ok(_) => (failure, true),
                                     Err(cleanup_error) => (
@@ -702,6 +719,18 @@ impl DownloadEngine for StreamlinkEngine {
                 }
             };
 
+            #[cfg(test)]
+            let (pipeline_exit, cleanup_confirmed) = if inject_unconfirmed_cleanup {
+                (
+                    StreamlinkPipelineExit::Failed {
+                        kind: DownloadFailureKind::ProcessExit { code: None },
+                        message: "injected cleanup failure".to_owned(),
+                    },
+                    false,
+                )
+            } else {
+                (pipeline_exit, cleanup_confirmed)
+            };
             if !cleanup_confirmed {
                 process_forced_settlement.cancel();
             }
@@ -1297,6 +1326,7 @@ mod tests {
             },
             ffmpeg_path,
             version: None,
+            fixture: None,
         };
         assert_output_failure(&engine, dir.path()).await;
     }
@@ -1304,6 +1334,24 @@ mod tests {
     fn test_engine_type() {
         let engine = StreamlinkEngine::new();
         assert_eq!(engine.engine_type(), EngineType::Streamlink);
+    }
+
+    #[tokio::test]
+    async fn recording_stop_settlement() {
+        use super::super::utils::test_support::{
+            RecordingFixture, StopCase, assert_recording_stop,
+        };
+        for case in StopCase::ALL {
+            let dir = tempfile::tempdir().unwrap();
+            let fixture = RecordingFixture::new(dir.path(), case);
+            let engine = StreamlinkEngine {
+                config: StreamlinkEngineConfig::default(),
+                ffmpeg_path: String::new(),
+                version: None,
+                fixture: Some(fixture.clone()),
+            };
+            assert_recording_stop(engine, fixture, case).await;
+        }
     }
 
     #[test]
