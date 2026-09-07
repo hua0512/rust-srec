@@ -107,13 +107,10 @@ pub async fn get_engine(
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
     let config_service = &state.config_service;
 
-    let engine = config_service.get_engine_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Engine config with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get engine config: {}", e))
-        }
-    })?;
+    let engine = config_service
+        .get_engine_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     Ok(Json(engine))
 }
@@ -167,13 +164,10 @@ pub async fn update_engine(
     let config_service = &state.config_service;
 
     // Get current config to apply partial updates
-    let mut engine = config_service.get_engine_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Engine config with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get engine config: {}", e))
-        }
-    })?;
+    let mut engine = config_service
+        .get_engine_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     // Apply updates
     if let Some(name) = request.name {
@@ -214,13 +208,10 @@ pub async fn delete_engine(
     let config_service = &state.config_service;
 
     // Check if exists first
-    config_service.get_engine_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Engine config with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get engine config: {}", e))
-        }
-    })?;
+    config_service
+        .get_engine_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     config_service
         .delete_engine_config(&id)
@@ -247,13 +238,10 @@ pub async fn test_engine(
 ) -> ApiResult<Json<EngineTestResponse>> {
     let config_service = &state.config_service;
 
-    let config = config_service.get_engine_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Engine config with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get engine config: {}", e))
-        }
-    })?;
+    let config = config_service
+        .get_engine_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     let engine_type = EngineType::parse(&config.engine_type).ok_or_else(|| {
         ApiError::internal(format!("Invalid engine type: {}", config.engine_type))
@@ -281,4 +269,71 @@ pub async fn test_engine(
         available: engine.is_available(),
         version: engine.version(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ConfigService;
+    use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
+    use axum::http::StatusCode;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn engine_routes_distinguish_typed_not_found_from_database_error_text() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE engine_configuration (id TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = EngineRouteState {
+            config_service: Arc::new(ConfigService::new(
+                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+                Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
+            )),
+        };
+        for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
+            let errors = [
+                get_engine(State(state.clone()), Path("missing".to_string()))
+                    .await
+                    .unwrap_err(),
+                update_engine(
+                    State(state.clone()),
+                    Path("missing".to_string()),
+                    Json(UpdateEngineRequest {
+                        name: None,
+                        engine_type: None,
+                        config: None,
+                    }),
+                )
+                .await
+                .unwrap_err(),
+                delete_engine(State(state.clone()), Path("missing".to_string()))
+                    .await
+                    .unwrap_err(),
+                test_engine(State(state.clone()), Path("missing".to_string()))
+                    .await
+                    .unwrap_err(),
+            ];
+            for error in errors {
+                assert_eq!(error.status, status);
+                if status == StatusCode::INTERNAL_SERVER_ERROR {
+                    assert_eq!(error.message, "Database error occurred");
+                }
+            }
+            if status == StatusCode::NOT_FOUND {
+                sqlx::query("DROP TABLE engine_configuration")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                sqlx::query("CREATE VIEW engine_configuration AS SELECT * FROM \"not found\"")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        }
+        pool.close().await;
+    }
 }

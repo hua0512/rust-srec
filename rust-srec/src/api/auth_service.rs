@@ -35,6 +35,10 @@ use super::jwt::{Claims, JwtError, JwtService};
 /// JWT validation, so it must never be a valid JWT prefix.
 pub const API_KEY_PREFIX: &str = "srec_";
 
+// A valid Argon2id PHC with the same work parameters as newly stored passwords.
+// Its digest is a fixed dummy value: even a matching result never authenticates a missing user.
+const LOGIN_DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c3JlYy1sb2dpbi1kdW1teQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
 /// Which credential authenticated the request.
 ///
 /// API key management endpoints (`routes::auth::api_keys`) only accept
@@ -325,6 +329,8 @@ pub struct AuthService {
     /// so without this a burst of login requests would occupy every
     /// `spawn_blocking` thread and stall unrelated blocking work.
     password_work_permits: Arc<Semaphore>,
+    #[cfg(test)]
+    password_verify_calls: Arc<AtomicU64>,
 }
 
 impl AuthService {
@@ -348,6 +354,8 @@ impl AuthService {
             api_key_last_used_writes: DashMap::new(),
             login_rate_limiter: LoginRateLimiter::from_env(),
             password_work_permits: Arc::new(Semaphore::new(password_work_permits())),
+            #[cfg(test)]
+            password_verify_calls: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -502,8 +510,12 @@ impl AuthService {
         let permit = self.acquire_password_work_permit().await?;
         let password = password.to_owned();
         let hash = hash.to_owned();
+        #[cfg(test)]
+        let calls = self.password_verify_calls.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
+            #[cfg(test)]
+            calls.fetch_add(1, Ordering::SeqCst);
             Self::verify_password(&password, &hash)
         })
         .await
@@ -641,30 +653,25 @@ impl AuthService {
                 return Err(AuthError::Database(e.to_string()));
             }
         };
-        let Some(user) = user else {
-            return Err(AuthError::InvalidCredentials);
-        };
-
-        // Check if account is active
-        if !user.is_active {
-            warn!(user_id = %user.id, "Login blocked: account disabled");
-            return Err(AuthError::AccountDisabled);
-        }
-
-        // Verify password
-        let password_matches = match self
-            .verify_password_blocking(password, &user.password_hash)
-            .await
-        {
+        // Missing users pay the same bounded password-verification workload. Account status
+        // is disclosed only after proving the password, never by a fast pre-password branch.
+        let password_hash = user.as_ref().map_or(LOGIN_DUMMY_PASSWORD_HASH, |user| {
+            user.password_hash.as_str()
+        });
+        let password_matches = match self.verify_password_blocking(password, password_hash).await {
             Ok(password_matches) => password_matches,
             Err(error) => {
                 self.login_rate_limiter.release(&rate_keys, reserved_at);
                 return Err(error);
             }
         };
-        if !password_matches {
-            warn!(user_id = %user.id, "Login failed: invalid credentials");
+        let Some(user) = user.filter(|_| password_matches) else {
+            warn!("Login failed: invalid credentials");
             return Err(AuthError::InvalidCredentials);
+        };
+        if !user.is_active {
+            warn!(user_id = %user.id, "Login blocked: account disabled");
+            return Err(AuthError::AccountDisabled);
         }
 
         self.login_rate_limiter
@@ -1236,6 +1243,9 @@ impl AuthService {
 
 #[cfg(test)]
 mod rotation_tests;
+
+#[cfg(test)]
+mod login_privacy_tests;
 
 #[cfg(test)]
 mod tests {

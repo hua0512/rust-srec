@@ -265,13 +265,10 @@ pub async fn get_template(
     let streamer_manager = &state.streamer_manager;
 
     // Get the template
-    let template = config_service.get_template_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Template with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get template: {}", e))
-        }
-    })?;
+    let template = config_service
+        .get_template_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     // Count streamers using this template
     let usage_count = streamer_manager.get_by_template(&id).len() as u32;
@@ -305,13 +302,10 @@ pub async fn update_template(
     let streamer_manager = &state.streamer_manager;
 
     // Get the existing template
-    let mut template = config_service.get_template_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Template with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get template: {}", e))
-        }
-    })?;
+    let mut template = config_service
+        .get_template_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     // Replace all fields (PUT semantics)
     if let Some(name) = request.name {
@@ -393,13 +387,10 @@ pub async fn delete_template(
     let streamer_manager = &state.streamer_manager;
 
     // Check if template exists
-    config_service.get_template_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Template with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get template: {}", e))
-        }
-    })?;
+    config_service
+        .get_template_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     // Check if any streamers are using this template. The guard counts rows
     // rather than visible streamers: `streamers.template_config_id` is a
@@ -460,13 +451,10 @@ pub async fn clone_template(
     let config_service = &state.config_service;
 
     // Get the existing template
-    let existing = config_service.get_template_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            ApiError::not_found(format!("Template with id '{}' not found", id))
-        } else {
-            ApiError::internal(format!("Failed to get template: {}", e))
-        }
-    })?;
+    let existing = config_service
+        .get_template_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     // Check if a template with the new name already exists
     if config_service
@@ -521,6 +509,75 @@ pub async fn clone_template(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn template_routes_distinguish_typed_not_found_from_database_error_text() {
+        use crate::config::{ConfigEventBroadcaster, ConfigService};
+        use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
+        use axum::http::StatusCode;
+        use std::sync::Arc;
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE template_config (id TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let state = TemplateRouteState {
+            config_service: Arc::new(ConfigService::new(
+                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+                streamers.clone(),
+            )),
+            streamer_manager: Arc::new(crate::streamer::StreamerManager::new(
+                streamers,
+                ConfigEventBroadcaster::new(),
+            )),
+        };
+        for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
+            let errors = [
+                get_template(State(state.clone()), Path("missing".to_string()))
+                    .await
+                    .unwrap_err(),
+                update_template(
+                    State(state.clone()),
+                    Path("missing".to_string()),
+                    Json(serde_json::from_value(serde_json::json!({})).unwrap()),
+                )
+                .await
+                .unwrap_err(),
+                delete_template(State(state.clone()), Path("missing".to_string()))
+                    .await
+                    .unwrap_err(),
+                clone_template(
+                    State(state.clone()),
+                    Path("missing".to_string()),
+                    Json(CloneTemplateRequest {
+                        new_name: "cloned".to_string(),
+                    }),
+                )
+                .await
+                .unwrap_err(),
+            ];
+            for error in errors {
+                assert_eq!(error.status, status);
+                if status == StatusCode::INTERNAL_SERVER_ERROR {
+                    assert_eq!(error.message, "Database error occurred");
+                }
+            }
+            if status == StatusCode::NOT_FOUND {
+                sqlx::query("DROP TABLE template_config")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                sqlx::query("CREATE VIEW template_config AS SELECT * FROM \"not found\"")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        }
+        pool.close().await;
+    }
 
     #[test]
     fn test_template_response_serialization() {
