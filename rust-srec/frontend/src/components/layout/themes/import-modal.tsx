@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Trans } from '@lingui/react/macro';
 import type { ImportedTheme } from '@/types/theme-customizer';
 
 interface ImportModalProps {
@@ -74,12 +75,17 @@ export function ImportModal({
     <Dialog open={open} onOpenChange={onOpenChange} modal={true}>
       <DialogContent className="max-w-4xl w-[90vw]">
         <DialogHeader>
-          <DialogTitle>Import Custom CSS</DialogTitle>
+          <DialogTitle>
+            <Trans>Import Custom CSS</Trans>
+          </DialogTitle>
           <DialogDescription>
-            Paste your CSS theme below. Include both <code>:root</code> (light
-            mode) and <code>.dark</code> (dark mode) sections with CSS variables
-            like <code>--primary</code>, <code>--background</code>, etc. The
-            theme will automatically switch between light and dark modes.
+            <Trans>
+              Paste your CSS theme below. Include both <code>:root</code> (light
+              mode) and <code>.dark</code> (dark mode) sections with CSS
+              variables like <code>--primary</code>, <code>--background</code>,
+              etc. The theme will automatically switch between light and dark
+              modes.
+            </Trans>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -108,14 +114,14 @@ export function ImportModal({
               onClick={() => onOpenChange(false)}
               className="cursor-pointer"
             >
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button
               onClick={processImport}
               disabled={!importText.trim()}
               className="cursor-pointer"
             >
-              Import Theme
+              <Trans>Import Theme</Trans>
             </Button>
           </div>
         </div>

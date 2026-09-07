@@ -1,4 +1,4 @@
-import type { I18n } from '@lingui/core';
+import type { I18n, MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type React from 'react';
 import { createElement as h } from 'react';
@@ -73,7 +73,7 @@ export function formatSplitReason(i18n: I18n, reason: unknown): string | null {
   return null;
 }
 
-type Row = { label: string; from: string; to: string };
+type Row = { label: MessageDescriptor; from: string; to: string };
 
 function monoCell(text: string): React.ReactElement {
   return h(
@@ -91,7 +91,13 @@ function labelCell(text: string): React.ReactElement {
   );
 }
 
-function ComparisonTable({ rows }: { rows: Row[] }): React.ReactElement {
+function ComparisonTable({
+  i18n,
+  rows,
+}: {
+  i18n: I18n;
+  rows: Row[];
+}): React.ReactElement {
   return h(
     'table',
     { className: 'mt-1 w-full border-collapse' },
@@ -108,7 +114,7 @@ function ComparisonTable({ rows }: { rows: Row[] }): React.ReactElement {
             className:
               'text-[10px] font-medium text-muted-foreground pb-1 pr-3 text-left',
           },
-          'From',
+          i18n._(msg({ message: 'From', context: 'Comparison table column' })),
         ),
         h(
           'th',
@@ -116,7 +122,7 @@ function ComparisonTable({ rows }: { rows: Row[] }): React.ReactElement {
             className:
               'text-[10px] font-medium text-muted-foreground pb-1 text-left',
           },
-          'To',
+          i18n._(msg({ message: 'To', context: 'Comparison table column' })),
         ),
       ),
     ),
@@ -127,7 +133,7 @@ function ComparisonTable({ rows }: { rows: Row[] }): React.ReactElement {
         h(
           'tr',
           { key: i, className: 'border-t border-border/30' },
-          h('td', { className: 'py-0.5' }, labelCell(row.label)),
+          h('td', { className: 'py-0.5' }, labelCell(i18n._(row.label))),
           h('td', { className: 'py-0.5 pr-3' }, monoCell(row.from)),
           h('td', { className: 'py-0.5' }, monoCell(row.to)),
         ),
@@ -142,7 +148,7 @@ function videoCodecRows(details: Record<string, unknown>): Row[] {
   const rows: Row[] = [];
 
   rows.push({
-    label: 'Codec',
+    label: msg`Codec`,
     from: isNonEmptyString(from.codec) ? from.codec : '—',
     to: isNonEmptyString(to.codec) ? to.codec : '—',
   });
@@ -156,7 +162,11 @@ function videoCodecRows(details: Record<string, unknown>): Row[] {
       ? String(to.profile)
       : null;
   if (fProfile || tProfile) {
-    rows.push({ label: 'Profile', from: fProfile ?? '—', to: tProfile ?? '—' });
+    rows.push({
+      label: msg`Profile`,
+      from: fProfile ?? '—',
+      to: tProfile ?? '—',
+    });
   }
 
   const fLevel =
@@ -168,19 +178,19 @@ function videoCodecRows(details: Record<string, unknown>): Row[] {
       ? String(to.level)
       : null;
   if (fLevel || tLevel) {
-    rows.push({ label: 'Level', from: fLevel ?? '—', to: tLevel ?? '—' });
+    rows.push({ label: msg`Level`, from: fLevel ?? '—', to: tLevel ?? '—' });
   }
 
   const fRes = formatWxH(from.width, from.height);
   const tRes = formatWxH(to.width, to.height);
   if (fRes || tRes) {
-    rows.push({ label: 'Resolution', from: fRes ?? '—', to: tRes ?? '—' });
+    rows.push({ label: msg`Resolution`, from: fRes ?? '—', to: tRes ?? '—' });
   }
 
   const fSig = formatSignature(from.signature);
   const tSig = formatSignature(to.signature);
   if (fSig || tSig) {
-    rows.push({ label: 'Signature', from: fSig ?? '—', to: tSig ?? '—' });
+    rows.push({ label: msg`Signature`, from: fSig ?? '—', to: tSig ?? '—' });
   }
 
   return rows;
@@ -192,7 +202,7 @@ function audioCodecRows(details: Record<string, unknown>): Row[] {
   const rows: Row[] = [];
 
   rows.push({
-    label: 'Codec',
+    label: msg`Codec`,
     from: isNonEmptyString(from.codec) ? from.codec : '—',
     to: isNonEmptyString(to.codec) ? to.codec : '—',
   });
@@ -200,7 +210,7 @@ function audioCodecRows(details: Record<string, unknown>): Row[] {
   const fHz = formatHz(from.sample_rate);
   const tHz = formatHz(to.sample_rate);
   if (fHz || tHz) {
-    rows.push({ label: 'Sample Rate', from: fHz ?? '—', to: tHz ?? '—' });
+    rows.push({ label: msg`Sample Rate`, from: fHz ?? '—', to: tHz ?? '—' });
   }
 
   const fCh =
@@ -216,22 +226,24 @@ function audioCodecRows(details: Record<string, unknown>): Row[] {
       ? `${to.channels}ch`
       : null;
   if (fCh || tCh) {
-    rows.push({ label: 'Channels', from: fCh ?? '—', to: tCh ?? '—' });
+    rows.push({ label: msg`Channels`, from: fCh ?? '—', to: tCh ?? '—' });
   }
 
   const fSig = formatSignature(from.signature);
   const tSig = formatSignature(to.signature);
   if (fSig || tSig) {
-    rows.push({ label: 'Signature', from: fSig ?? '—', to: tSig ?? '—' });
+    rows.push({ label: msg`Signature`, from: fSig ?? '—', to: tSig ?? '—' });
   }
 
   return rows;
 }
 
 export function SplitReasonDetails({
+  i18n,
   code,
   details,
 }: {
+  i18n: I18n;
   code: string;
   details: unknown;
 }): React.ReactElement | null {
@@ -246,7 +258,7 @@ export function SplitReasonDetails({
           className:
             'mt-2 rounded-md border border-border/60 bg-muted/30 px-2 pb-1.5',
         },
-        h(ComparisonTable, { rows }),
+        h(ComparisonTable, { i18n, rows }),
       );
     }
     case 'audio_codec_change': {
@@ -259,7 +271,7 @@ export function SplitReasonDetails({
           className:
             'mt-2 rounded-md border border-border/60 bg-muted/30 px-2 pb-1.5',
         },
-        h(ComparisonTable, { rows }),
+        h(ComparisonTable, { i18n, rows }),
       );
     }
     case 'resolution_change': {

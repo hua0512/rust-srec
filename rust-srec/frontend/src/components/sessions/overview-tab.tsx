@@ -23,6 +23,7 @@ import { isPlayable } from '@/lib/media';
 import type { SessionDanmuStatistics } from '@/api/schemas';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate } from '@/lib/datetime';
+import { formatLocalizedDuration } from '@/lib/date-utils';
 
 const DanmuStatsPanel = React.lazy(() =>
   import('./danmu-stats-panel').then((module) => ({
@@ -56,6 +57,12 @@ export function OverviewTab({
   onRetryDanmuStats,
 }: OverviewTabProps) {
   const { i18n } = useLingui();
+  // `duration` arrives pre-formatted with English unit suffixes, so the raw
+  // seconds are preferred when present to get localized unit labels.
+  const sessionDuration =
+    typeof session.duration_secs === 'number' && session.duration_secs > 0
+      ? formatLocalizedDuration(session.duration_secs, i18n.locale)
+      : duration;
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
   const playableOutput = outputs.find(isPlayable);
@@ -207,10 +214,7 @@ export function OverviewTab({
                   </span>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold tracking-tight text-foreground">
-                      {duration.split(' ')[0]}
-                    </span>
-                    <span className="text-lg font-medium text-muted-foreground">
-                      {duration.split(' ').slice(1).join(' ')}
+                      {sessionDuration}
                     </span>
                   </div>
                 </div>
@@ -320,7 +324,7 @@ function TimeBlock({ label, date, icon: Icon, delay }: any) {
             year: 'numeric',
           })
         ) : (
-          <Trans>In active</Trans>
+          <Trans>Inactive</Trans>
         )}
       </div>
     </motion.div>

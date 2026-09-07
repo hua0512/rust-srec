@@ -165,13 +165,13 @@ export const SessionCard = memo(
                     <span className="relative inline-flex rounded-full h-1 w-1 bg-red-500"></span>
                   </span>
                   <span className="text-[7.5px] font-black tracking-widest text-red-500">
-                    LIVE
+                    <Trans>LIVE</Trans>
                   </span>
                 </div>
               ) : (
                 <div className="px-1.5 py-0.5 rounded-full bg-muted/10 border border-white/5">
                   <span className="text-[7.5px] font-black tracking-widest text-muted-foreground/50">
-                    ENDED
+                    <Trans>ENDED</Trans>
                   </span>
                 </div>
               )}

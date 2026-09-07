@@ -11,7 +11,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
+import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useInView } from '@/lib/hooks/use-in-view';
@@ -238,8 +238,9 @@ export const StepLibrary = memo(function StepLibrary({
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground/70 pt-1">
                 <Tag className="h-3 w-3" />
                 <span>
-                  {presetsData?.pages[0]?.total ?? 0}{' '}
-                  <Trans>Presets Available</Trans>
+                  {t(
+                    i18n,
+                  )`${plural(presetsData?.pages[0]?.total ?? 0, { one: '# Preset Available', other: '# Presets Available' })}`}
                 </span>
               </div>
             </div>

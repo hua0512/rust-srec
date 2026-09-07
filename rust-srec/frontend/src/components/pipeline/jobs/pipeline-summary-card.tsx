@@ -44,7 +44,10 @@ import { type DagSummary } from '@/api/schemas';
 
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/date-utils';
-import { getStatusConfig } from '@/components/pipeline/status-config';
+import {
+  getStatusConfig,
+  getStatusLabel,
+} from '@/components/pipeline/status-config';
 
 interface PipelineSummaryCardProps {
   pipeline: DagSummary;
@@ -108,7 +111,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   const isPending = statusKey === 'PENDING';
   const isProcessing = statusKey === 'PROCESSING';
   const canCancel = isPending || isProcessing;
-  const statusLabel = statusKey.toLowerCase();
+  const statusLabel = getStatusLabel(i18n, statusKey);
 
   // In selection mode the card toggles its own selection instead of navigating,
   // and `[&_a]:pointer-events-none` stops the title Link from swallowing the click.
@@ -182,7 +185,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
         </div>
         <Badge
           variant={statusConfig.badgeVariant}
-          className="capitalize py-0 h-6 text-[10px] sm:text-xs"
+          className="py-0 h-6 text-[10px] sm:text-xs"
         >
           {statusLabel}
         </Badge>

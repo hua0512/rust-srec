@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
+import { plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatBytes, formatDuration } from '@/lib/format';
@@ -124,9 +125,10 @@ const SplitReasonBadge = memo(function SplitReasonBadge({
         className="max-w-[min(720px,calc(100vw-2rem))] px-3 py-2 bg-background text-foreground border shadow-xl z-[100]"
       >
         <div className="text-xs font-medium">
-          <Trans>Split Reason</Trans>: {formattedReason}
+          <Trans>Split Reason: {formattedReason}</Trans>
         </div>
         <SplitReasonDetails
+          i18n={i18n}
           code={splitReason.code ?? ''}
           details={splitReason.details}
         />
@@ -476,6 +478,7 @@ export function RecordingsTab({
   onDownload,
   onPlay,
 }: RecordingsTabProps) {
+  const { i18n } = useLingui();
   const timelineGroups = useMemo(
     () => buildTimelineGroups(outputs, segments),
     [outputs, segments],
@@ -494,8 +497,9 @@ export function RecordingsTab({
             <Trans>Media Timeline</Trans>
           </CardTitle>
           <Badge variant="secondary" className="font-mono text-xs">
-            {timelineGroups.length} <Trans>Segments</Trans> ({outputs.length}{' '}
-            <Trans>Files</Trans>)
+            {t(
+              i18n,
+            )`${plural(timelineGroups.length, { one: '# Segment', other: '# Segments' })} (${plural(outputs.length, { one: '# File', other: '# Files' })})`}
           </Badge>
         </CardHeader>
         <CardContent className="p-0">

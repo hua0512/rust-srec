@@ -1,8 +1,10 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
+import type { I18n } from '@lingui/core';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
@@ -44,17 +46,21 @@ import {
 import { PipelineWorkflowEditor } from '@/components/pipeline/workflows/pipeline-workflow-editor';
 import { DagStepDefinition } from '@/api/schemas';
 
-const createPipelineSchema = z.object({
-  name: z.string().min(1, msg`Pipeline name is required`),
-  session_id: z.string().min(1, msg`Session ID is required`),
-  streamer_id: z.string().min(1, msg`Streamer ID is required`),
-  input_paths: z
-    .array(z.string())
-    .min(1, msg`At least one input path is required`),
-  steps: z.array(z.any()).min(1, msg`Add at least one step`),
-});
+// Zod stores validation messages as plain strings, so they are resolved
+// against the active locale when the schema is built rather than declared as
+// descriptors.
+export const buildCreatePipelineSchema = (i18n: I18n) =>
+  z.object({
+    name: z.string().min(1, i18n._(msg`Pipeline name is required`)),
+    session_id: z.string().min(1, i18n._(msg`Session ID is required`)),
+    streamer_id: z.string().min(1, i18n._(msg`Streamer ID is required`)),
+    input_paths: z
+      .array(z.string())
+      .min(1, i18n._(msg`At least one input path is required`)),
+    steps: z.array(z.any()).min(1, i18n._(msg`Add at least one step`)),
+  });
 
-type CreatePipelineForm = z.infer<typeof createPipelineSchema>;
+type CreatePipelineForm = z.infer<ReturnType<typeof buildCreatePipelineSchema>>;
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/jobs/new',
@@ -66,6 +72,11 @@ function CreatePipelineJobPage() {
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
+
+  const createPipelineSchema = useMemo(
+    () => buildCreatePipelineSchema(i18n),
+    [i18n],
+  );
 
   const form = useForm<CreatePipelineForm>({
     resolver: zodResolver(createPipelineSchema),

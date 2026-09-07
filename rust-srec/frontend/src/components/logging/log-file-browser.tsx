@@ -39,7 +39,19 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBytes } from '@/lib/format';
+import { formatDate } from '@/lib/datetime';
 import { BASE_URL } from '@/utils/env';
+
+const FULL_DATE: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+};
+
+const SHORT_DATE: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: '2-digit',
+};
 
 export function LogFileBrowser() {
   const { i18n } = useLingui();
@@ -47,7 +59,7 @@ export function LogFileBrowser() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
 
-  // Format dates for API (YYYY-MM-DD)
+  // The API expects fixed machine dates (YYYY-MM-DD), not localized ones.
   const fromDate = dateRange?.from
     ? format(dateRange.from, 'yyyy-MM-dd')
     : undefined;
@@ -181,11 +193,11 @@ export function LogFileBrowser() {
                     {dateRange?.from ? (
                       dateRange.to ? (
                         <>
-                          {format(dateRange.from, 'MMM dd, yyyy')} -{' '}
-                          {format(dateRange.to, 'MMM dd, yyyy')}
+                          {formatDate(i18n.locale, dateRange.from, FULL_DATE)} -{' '}
+                          {formatDate(i18n.locale, dateRange.to, FULL_DATE)}
                         </>
                       ) : (
-                        format(dateRange.from, 'MMM dd, yyyy')
+                        formatDate(i18n.locale, dateRange.from, FULL_DATE)
                       )
                     ) : (
                       <Trans>Select date range</Trans>
@@ -258,8 +270,9 @@ export function LogFileBrowser() {
                   <Trans>Date range:</Trans>
                 </span>
                 <span className="font-medium">
-                  {format(dateRange.from, 'MMM dd')}
-                  {dateRange.to && ` - ${format(dateRange.to, 'MMM dd')}`}
+                  {formatDate(i18n.locale, dateRange.from, SHORT_DATE)}
+                  {dateRange.to &&
+                    ` - ${formatDate(i18n.locale, dateRange.to, SHORT_DATE)}`}
                 </span>
               </div>
             )}

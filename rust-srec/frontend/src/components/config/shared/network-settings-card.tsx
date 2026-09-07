@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { Trans } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
+import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import {
   Cookie,
@@ -217,7 +217,9 @@ export const NetworkSettingsCard = memo(
                         variant="outline"
                         className="text-[10px] py-0 h-4 bg-muted/50 font-mono"
                       >
-                        {field.value.length} chars
+                        {t(
+                          i18n,
+                        )`${plural(field.value.length, { one: '# char', other: '# chars' })}`}
                       </Badge>
                     )}
                   </div>

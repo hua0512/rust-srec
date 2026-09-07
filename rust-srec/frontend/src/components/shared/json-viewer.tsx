@@ -1,4 +1,6 @@
 import { memo } from 'react';
+import { plural, t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
 
 export const prettyJson = (payload?: string) => {
@@ -18,6 +20,7 @@ interface JsonNodeProps {
 }
 
 const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
+  const { i18n } = useLingui();
   const indent = depth * 16;
 
   if (value === null) {
@@ -145,7 +148,9 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
           )}
           <span className="text-muted-foreground text-sm font-mono">[</span>
           <span className="text-muted-foreground/60 text-xs ml-1">
-            {value.length} items
+            {t(
+              i18n,
+            )`${plural(value.length, { one: '# item', other: '# items' })}`}
           </span>
         </div>
         {value.map((item, idx) => (

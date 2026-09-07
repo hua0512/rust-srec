@@ -8,6 +8,7 @@ import {
 } from './form';
 import { Badge } from './badge';
 import { Switch } from './switch';
+import { Trans } from '@lingui/react/macro';
 
 type FlagFormFieldProps = {
   controlPrefix?: string;
@@ -48,7 +49,11 @@ export function FlagFormField({
               <div className={'flex flex-row items-center gap-x-2'}>
                 {title}
                 {info}
-                {showExperimentalBadge && <Badge>Experimental</Badge>}
+                {showExperimentalBadge && (
+                  <Badge>
+                    <Trans>Experimental</Trans>
+                  </Badge>
+                )}
               </div>
             </FormLabel>
             {description && (
