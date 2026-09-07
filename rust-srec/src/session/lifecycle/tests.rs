@@ -92,7 +92,6 @@ async fn expired_timer_cannot_claim_replacement_after_resume() {
         .unwrap();
     let sid = started.session_id();
     let guard = lifecycle.lock_streamer(STREAMER_ID).await;
-    tokio::time::pause();
     lifecycle
         .enter_hysteresis_state(
             sid,
@@ -102,8 +101,12 @@ async fn expired_timer_cannot_claim_replacement_after_resume() {
             Utc::now(),
         )
         .await;
+    tokio::time::pause();
     tokio::time::advance(Duration::from_secs(2)).await;
     tokio::task::yield_now().await;
+    // SQLite runs on a worker thread. Paused time can auto-advance pool
+    // deadlines before that thread replies, so resume before any DB awaits.
+    tokio::time::resume();
     assert!(lifecycle.hysteresis.contains_key(sid));
     assert!(
         lifecycle
