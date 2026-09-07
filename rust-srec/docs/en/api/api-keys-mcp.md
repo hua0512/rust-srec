@@ -99,6 +99,8 @@ Tools mirror the REST API and run in-process against the same services, so valid
 
 For danmu analysis, prefer `session_danmu_statistics` (aggregated totals, rate time series, top talkers, word frequency) over reading raw XML; use `session_list_danmu_files` + `session_read_danmu` when the assistant needs actual chat text.
 
+`session_read_danmu` returns complete UTF-8 characters within the requested byte limit (default 65,536; maximum 262,144). Continue with the returned `next_offset`; XML nodes may span pages. Use a limit of at least four bytes so any character can fit. Zero limits, offsets inside a character, insufficient space for the next character, and invalid or incomplete UTF-8 in the requested window return errors. Historical corrupt files are not repaired; a file still being written may require a later retry.
+
 Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `streamer_*`, `filter_*`, pipeline/job preset and execution-detail tools, notification channel/subscription tools, and `parse_url`) require a `full` key even for reads. This prevents a read-only assistant from retrieving platform cookies, processor configuration, notification credentials, stream access data, or other stored secrets.
 
 ## Security Notes

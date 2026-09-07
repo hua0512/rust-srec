@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Danmu Text
+
+- **Danmu XML and MCP pages preserve valid text**
+
+  Newly written danmu XML filters characters forbidden by XML 1.0 and sanitizes header comments. MCP byte pages preserve complete UTF-8 characters and continuation offsets; invalid encoding or nonprogressing limits return explicit errors. Existing files are not repaired; see [MCP paging](../api/api-keys-mcp.md).
+
 ## Health Monitoring
 
 - **Slow disk sampling keeps health checks responsive**
