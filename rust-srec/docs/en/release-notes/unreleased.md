@@ -124,6 +124,10 @@
 
 ## Recording
 
+- **Recording filenames and event tracking survive custom input**
+
+  Percent signs in streamer names, titles and concrete output directories remain literal while configured date tokens still expand. Startup probes follow the same rules. Required FFmpeg info logs and statistics override quiet options, long stderr records are scanned incrementally, and download snapshots copy only their public fields.
+
 - **Concurrent danmu stops share collector completion**
 
   Stop callers and replacement sessions wait for the same collector outcome without consuming another caller's completion signal. Waiting for startup serialization and the previous collector shares a ten-second handoff budget. A cancelled caller or timeout does not discard completion or allow an overlapping replacement; connection setup retains its separate behavior.

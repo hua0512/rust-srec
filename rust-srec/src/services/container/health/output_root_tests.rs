@@ -157,7 +157,11 @@ async fn discovered_startup_failure_blocks_actual_runtime_key_and_heals_once() {
     let service = ConfigService::new(configs.clone(), streamers.clone());
     let manager = StreamerManager::new(streamers.clone(), ConfigEventBroadcaster::new());
     let platform = configs.get_platform_config_by_name("huya").await.unwrap();
-    let streamer = StreamerDbModel::new("Alice/Name", "https://www.huya.com/alice", platform.id);
+    let streamer = StreamerDbModel::new(
+        "Alice/Name%Y%n%%",
+        "https://www.huya.com/alice",
+        platform.id,
+    );
     let metadata = StreamerMetadata::from_db_model(&streamer);
     manager.create_streamer(metadata.clone()).await.unwrap();
     let mut global = service.get_global_config().await.unwrap();
@@ -177,11 +181,13 @@ async fn discovered_startup_failure_blocks_actual_runtime_key_and_heals_once() {
         .output_folder
         .replace(
             "{streamer}",
-            &crate::utils::filename::sanitize_filename(&metadata.name),
+            &crate::utils::filename::sanitize_filename_for_template(&metadata.name),
         )
         .replace("{title}", "actual-title")
         .replace("{session_id}", "session")
         .replace("{platform}", metadata.platform());
+    let runtime = pipeline_common::expand_path_template(&runtime);
+    assert!(runtime.contains("Name%Y%n%%"));
     let paths = discover_output_probe_paths(&service, &manager, &gate).await;
     let probe = Path::new(&runtime).parent().unwrap();
     assert_eq!(paths, HashSet::from([probe.to_path_buf()]));
@@ -220,5 +226,32 @@ async fn discovered_startup_failure_blocks_actual_runtime_key_and_heals_once() {
     assert!(
         gate.check(Path::new("/existing/root/path")).is_err(),
         "failed discovery must not remove prior gate state"
+    );
+}
+
+#[test]
+fn escaped_percent_metadata_keeps_probe_identity_without_expanding_real_time_tokens() {
+    let gate = gate(vec![]);
+    let template = "/rec/Alice%%Y%%n%%%%/%Y/{title}";
+    let probe = gate.probe_path_for_template(template).unwrap();
+    assert_eq!(probe, PathBuf::from("/rec/Alice%Y%n%%"));
+    let runtime = pipeline_common::expand_path_template(&template.replace("{title}", "actual"));
+    assert_eq!(
+        gate.resolve_path(&probe),
+        gate.resolve_path(Path::new(&runtime))
+    );
+    assert!(gate.probe_path_for_template("/rec/%Y/Alice%%n").is_none());
+    let gate = self::gate(vec![
+        PathBuf::from("/rec"),
+        PathBuf::from("/rec/Alice%Y/special"),
+    ]);
+    assert!(
+        gate.probe_path_for_template("/rec/Alice%%Y/{title}")
+            .is_none(),
+        "unknown title might select a deeper explicit root"
+    );
+    assert_eq!(
+        gate.probe_path_for_template("/rec/Alice%%Y/special/{title}"),
+        Some(PathBuf::from("/rec/Alice%Y/special"))
     );
 }

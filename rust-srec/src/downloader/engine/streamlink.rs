@@ -179,8 +179,20 @@ impl StreamlinkEngine {
             ]);
         }
 
-        // Output path (same logic as FFmpeg engine)
-        let output_path = config.output_dir.join(format!(
+        // The stderr reader requires info-level segment announcements and stats.
+        args.extend([
+            "-loglevel".to_string(),
+            "info".to_string(),
+            "-stats".to_string(),
+        ]);
+
+        // The directory has already been expanded; only the basename is a template.
+        let output_directory = if config.max_segment_duration_secs > 0 {
+            PathBuf::from(config.output_dir.to_string_lossy().replace('%', "%%"))
+        } else {
+            config.output_dir.clone()
+        };
+        let output_path = output_directory.join(format!(
             "{}.{}",
             config.filename_template, config.output_format
         ));
@@ -1360,6 +1372,45 @@ mod tests {
     fn test_engine_type() {
         let engine = StreamlinkEngine::new();
         assert_eq!(engine.engine_type(), EngineType::Streamlink);
+    }
+
+    #[test]
+    fn remux_logging_and_literal_percent_paths_preserve_recording_contract() {
+        let engine = StreamlinkEngine {
+            config: StreamlinkEngineConfig::default(),
+            ffmpeg_path: String::new(),
+            version: None,
+            fixture: None,
+            shutdown_fixture: None,
+        };
+        for segment_duration in [0, 10] {
+            let config = DownloadConfig::new(
+                "https://invalid.test/live",
+                "root/50%d",
+                "id",
+                "Name",
+                "session",
+            )
+            .with_filename_template(crate::utils::filename::sanitize_filename_for_template(
+                "name%Y%n",
+            ))
+            .with_output_format("ts")
+            .with_max_segment_duration(segment_duration);
+            let args = engine.build_ffmpeg_args(&config);
+            assert_eq!(
+                &args[args.len() - 4..args.len() - 1],
+                ["-loglevel", "info", "-stats"]
+            );
+            let path = args.last().unwrap();
+            if segment_duration == 0 {
+                assert_eq!(path, "root/50%d/name%Y%n.ts");
+            } else {
+                assert_eq!(
+                    pipeline_common::expand_path_template(path),
+                    "root/50%d/name%Y%n.ts"
+                );
+            }
+        }
     }
 
     #[tokio::test]
