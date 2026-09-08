@@ -52,6 +52,10 @@
 
 ## Configuration
 
+- **Filters reuse parsed rules and handle timezone boundaries consistently**
+
+  Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Existing omitted timezone defaults remain server-local for time-based rules and UTC for cron; frontend timezone controls are not added.
+
 - **Proxy credentials preserve literal URL characters**
 
   Separate proxy usernames and passwords are percent-encoded before insertion, including literal percent signs, spaces, Unicode and authority delimiters. They replace embedded credentials while preserving the proxy host and port. Download-start diagnostics omit proxy URLs.

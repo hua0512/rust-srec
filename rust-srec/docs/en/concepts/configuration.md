@@ -340,3 +340,21 @@ A pipeline job that is already queued keeps the DAG definition it was created wi
 For the runtime behavior and how these updates route through the system, see:
 
 - `./architecture.md`
+
+## Filter Timezones and Boundaries
+
+Backend `TIME_BASED` filter JSON accepts an optional IANA `timezone`, for example
+`"Europe/Madrid"`. Matching and next-start/next-stop use that zone consistently.
+An overnight interval belongs to its starting weekday. During a repeated clock
+hour, its start uses the earlier instant and its end uses the later instant;
+overlapping or touching intervals remain continuously matched. A missing local
+boundary advances to the first valid minute within three hours; larger skipped
+date windows are omitted.
+
+Omitting the timezone preserves compatibility: time-based rules use the server's
+local timezone, while cron rules default to UTC. Set an explicit timezone when
+comparing the two rule types. The frontend time-based form does not expose this
+field yet. Cron matching has minute granularity, including expressions containing
+seconds; stop scans remain bounded to eight days. Parsed cron/regex definitions
+are reused in separate bounded caches; eviction or oversized definitions may
+require recompilation.
