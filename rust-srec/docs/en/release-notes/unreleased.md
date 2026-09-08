@@ -2,9 +2,11 @@
 
 ## `unreleased`
 
-## Email Delivery
+## Build Dependencies
 
-- Email channels now retain an SMTP connection pool and render localized content once per message. Configuration replacements keep separate pools while previously admitted deliveries retain their original channel. The unused `EmailConfig.batch_window_secs` field was removed; existing JSON values remain harmless and ignored. Email delivery is still immediate.
+- **Compile only the system inventory and logging features in use**
+
+  System inventory now enables CPU, memory and disk support without unused temperature-component, network-interface or user-account inventory features. Unused JSON log formatter features and direct protobuf well-known-type dependencies were removed; protobuf generation still retains its required dependencies. Backend dependency declarations share workspace versions without upgrading the locked packages.
 
 ## Backend Model Cleanup
 
@@ -169,6 +171,10 @@
 - **Cancelled and timed-out commands stop their subprocesses**
 
   Post-processing commands now stop their entire process tree when a job is cancelled or times out. They receive closed standard input and drain their output within bounded log limits, including when a parent exits while a descendant still holds a pipe. Audio probes use the same cleanup behavior.
+
+## Email Delivery
+
+- Email channels now retain an SMTP connection pool and render localized content once per message. Configuration replacements keep separate pools while previously admitted deliveries retain their original channel. The unused `EmailConfig.batch_window_secs` field was removed; existing JSON values remain harmless and ignored. Email delivery is still immediate.
 
 ## Notifications
 
