@@ -1,5 +1,7 @@
 //! Notification repository.
 
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
@@ -20,6 +22,18 @@ pub trait NotificationRepository: Send + Sync {
 
     // Subscriptions
     async fn get_subscriptions_for_channel(&self, channel_id: &str) -> Result<Vec<String>>;
+    /// Group subscriptions by channel, retaining event-name order within each channel.
+    /// An absent map entry represents a channel with no subscriptions.
+    async fn get_subscriptions_for_channels(
+        &self,
+        channel_ids: &[String],
+    ) -> Result<HashMap<String, Vec<String>>> {
+        let mut subscriptions = HashMap::new();
+        for id in channel_ids {
+            subscriptions.insert(id.clone(), self.get_subscriptions_for_channel(id).await?);
+        }
+        Ok(subscriptions)
+    }
     async fn get_channels_for_event(
         &self,
         event_name: &str,
@@ -65,6 +79,32 @@ impl SqlxNotificationRepository {
 
 #[async_trait]
 impl NotificationRepository for SqlxNotificationRepository {
+    async fn get_subscriptions_for_channels(
+        &self,
+        channel_ids: &[String],
+    ) -> Result<HashMap<String, Vec<String>>> {
+        let mut subscriptions: HashMap<String, Vec<String>> = HashMap::new();
+        let ids = super::unique_lookup_ids(channel_ids);
+        for ids in ids.chunks(super::LOOKUP_BATCH_SIZE) {
+            let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+                "SELECT channel_id, event_name FROM notification_subscription WHERE channel_id IN (",
+            );
+            let mut separated = query.separated(", ");
+            for id in ids {
+                separated.push_bind(*id);
+            }
+            separated.push_unseparated(") ORDER BY channel_id, event_name");
+            for (id, event) in query
+                .build_query_as::<(String, String)>()
+                .fetch_all(&self.pool)
+                .await?
+            {
+                subscriptions.entry(id).or_default().push(event);
+            }
+        }
+        Ok(subscriptions)
+    }
+
     async fn get_channel(&self, id: &str) -> Result<NotificationChannelDbModel> {
         sqlx::query_as::<_, NotificationChannelDbModel>(
             "SELECT * FROM notification_channel WHERE id = ?",
