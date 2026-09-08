@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Service Lifecycle Organization
+
+- **Startup timings focus on initialization work**
+
+  Container shutdown deadlines, output-root helpers, event decisions and existing lifecycle tests are separated by responsibility. Startup logs omit tiny synchronous construction timings while retaining I/O, engine discovery and overall measurements. Initialization order, the shared output-root snapshot and shutdown behavior are preserved; see [container responsibilities](../concepts/architecture.md#service-container-responsibilities).
+
 ## Build Dependencies
 
 - **Compile only the system inventory and logging features in use**

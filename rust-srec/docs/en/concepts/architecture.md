@@ -98,6 +98,12 @@ The `ServiceContainer` (in `rust-srec/src/services/container.rs`) wires everythi
 
 This gives the project one clear place to reason about lifecycle, dependencies, and shutdown order.
 
+## Service Container Responsibilities
+
+Container assembly, ordered shutdown, output-root helpers and event decisions live in separate private modules. Initialization still discovers output roots once and shares that snapshot between health registration and startup write probes. The public container API and shutdown deadlines are unchanged.
+
+Startup logs retain database/configuration I/O, engine discovery, awaited initialization phases and overall timings. Individual timings for synchronous wrapper construction and background-task spawning are omitted; those entries did not measure the work later performed by the tasks.
+
 ## Core components (what each one actually does)
 
 ### `ConfigService` (configuration + hot reload)
