@@ -372,6 +372,15 @@ Key properties:
 
 Exposed in `/api/health` as a single aggregated `output-root` component listing each Degraded root with its classified `io::ErrorKind`, rejected count, and staleness. See the [notifications doc](./notifications.md#critical-storage-events) for the event shape and the [Docker troubleshooting guide](../getting-started/docker.md#storage-cleanup) for the stale-mount failure mode.
 
+## Service Ownership
+
+Ended-session retention tasks are owned by the session lifecycle. Shutdown cancels
+and joins those tasks without waiting for the retention interval; cleanup never
+removes a newer session's current-session entry. API states share the container's
+repository wrappers and configuration import service. Import construction follows
+runtime coordinator construction, while log archive grants and archive capacity
+remain local to each API state.
+
 ## Observability, health, and shutdown
 
 - Logging uses `tracing` with a reloadable filter and log retention cleanup
@@ -403,12 +412,3 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
 The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
 
 Unused `database::batching` and `config::UpdateCoalescer` APIs, `domain::session` entities, streamer mutation helpers, and repository `list_active_streamers` / `resume_session` methods have been removed. Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
-
-## Service Ownership
-
-Ended-session retention tasks are owned by the session lifecycle. Shutdown cancels
-and joins those tasks without waiting for the retention interval; cleanup never
-removes a newer session's current-session entry. API states share the container's
-repository wrappers and configuration import service. Import construction follows
-runtime coordinator construction, while log archive grants and archive capacity
-remain local to each API state.

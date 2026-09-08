@@ -353,6 +353,13 @@ Healthy ◄───────────────────────
 
 写入门在 `/api/health` 中以一个聚合的 `output-root` 组件暴露，列出所有 Degraded 根及其分类后的 `io::ErrorKind`、被拒绝次数和上次尝试的时间。参见[通知系统文档](./notifications.md#存储严重事件)了解事件形态，以及 [Docker 故障排查](../getting-started/docker.md#清理存储)了解挂载失效的失败模式。
 
+## 服务所有权
+
+已结束会话的延迟清理由会话生命周期服务持有。关闭时会取消并等待这些任务结束，
+不必等待保留时间到期；清理不会移除后续新会话的当前会话索引。API 状态复用容器中的
+仓库实例与配置导入服务。导入服务在运行时协调器创建后构造，而日志归档授权及归档
+容量控制仍属于各自的 API 状态。
+
 ## 可观测性、健康检查与优雅退出
 
 - 日志：使用 `tracing`，支持动态调整过滤器并带日志保留清理
@@ -381,10 +388,3 @@ Healthy ◄───────────────────────
 主播状态的统一类型为 `rust_srec::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
 
 已移除未使用的 `database::batching`、`config::UpdateCoalescer`、`domain::session` 实体、主播状态修改辅助方法，以及仓库的 `list_active_streamers` / `resume_session` 方法。会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
-
-## 服务所有权
-
-已结束会话的延迟清理由会话生命周期服务持有。关闭时会取消并等待这些任务结束，
-不必等待保留时间到期；清理不会移除后续新会话的当前会话索引。API 状态复用容器中的
-仓库实例与配置导入服务。导入服务在运行时协调器创建后构造，而日志归档授权及归档
-容量控制仍属于各自的 API 状态。
