@@ -345,7 +345,7 @@ pub struct UpdatePipelinePresetRequest {
 /// Query parameters for filtering pipeline presets.
 #[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
 pub struct PipelinePresetFilterParams {
-    /// Search query (matches name or description).
+    /// Literal substring of name or description; ASCII case-insensitive.
     pub search: Option<String>,
 }
 
@@ -431,7 +431,7 @@ pub struct OutputFilterParams {
     /// Filter by media file type: `VIDEO`, `AUDIO`, `THUMBNAIL`, or `DANMU_XML`.
     /// This is the same value the list response returns as `format`.
     pub file_type: Option<String>,
-    /// Search query (matches file path, session ID, or format).
+    /// Literal substring of file path, session ID, or file type; ASCII case-insensitive.
     pub search: Option<String>,
 }
 

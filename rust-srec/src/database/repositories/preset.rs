@@ -186,7 +186,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
 
         if filters.search.is_some() {
             conditions.push(format!(
-                "(name LIKE ${} OR description LIKE ${})",
+                r"(name LIKE ${} ESCAPE '\' OR description LIKE ${} ESCAPE '\')",
                 bind_index, bind_index
             ));
             bind_index += 1;
@@ -223,7 +223,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
             count_query = count_query.bind(name);
         }
         if let Some(ref search) = filters.search {
-            let search_pattern = format!("%{}%", search);
+            let search_pattern = super::literal_substring_pattern(search);
             count_query = count_query.bind(search_pattern);
         }
         let total = count_query.fetch_one(&*self.pool).await? as u64;
@@ -241,7 +241,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
             data_query = data_query.bind(name);
         }
         if let Some(ref search) = filters.search {
-            let search_pattern = format!("%{}%", search);
+            let search_pattern = super::literal_substring_pattern(search);
             data_query = data_query.bind(search_pattern);
         }
         data_query = data_query.bind(pagination.limit as i64);
@@ -399,7 +399,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
 
         let where_clause = if filters.search.is_some() {
             let clause = format!(
-                "WHERE (name LIKE ${} OR description LIKE ${})",
+                r"WHERE (name LIKE ${} ESCAPE '\' OR description LIKE ${} ESCAPE '\')",
                 bind_index, bind_index
             );
             bind_index += 1;
@@ -422,7 +422,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         // Execute count query
         let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
         if let Some(ref search) = filters.search {
-            let search_pattern = format!("%{}%", search);
+            let search_pattern = super::literal_substring_pattern(search);
             count_query = count_query.bind(search_pattern);
         }
         let total = count_query.fetch_one(&*self.pool).await? as u64;
@@ -430,7 +430,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         // Execute data query
         let mut data_query = sqlx::query_as::<_, PipelinePreset>(sqlx::AssertSqlSafe(data_sql));
         if let Some(ref search) = filters.search {
-            let search_pattern = format!("%{}%", search);
+            let search_pattern = super::literal_substring_pattern(search);
             data_query = data_query.bind(search_pattern);
         }
         data_query = data_query.bind(pagination.limit as i64);

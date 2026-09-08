@@ -10,6 +10,8 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
+use super::literal_substring_pattern;
+
 /// Build the `WHERE ...` clause (empty string when no filter is set) shared by
 /// `list_jobs_filtered` and `list_jobs_page_filtered`. The placeholder order here must match the
 /// bind order in `bind_job_filters!` exactly.
@@ -51,7 +53,7 @@ fn job_filter_where_clause(filters: &JobFilters) -> String {
     }
     if filters.search.is_some() {
         conditions.push(
-            "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)".to_string(),
+            r"(id LIKE ? ESCAPE '\' OR session_id LIKE ? ESCAPE '\' OR streamer_id LIKE ? ESCAPE '\' OR job_type LIKE ? ESCAPE '\')".to_string(),
         );
     }
 
@@ -100,7 +102,7 @@ macro_rules! bind_job_filters {
             }
         }
         if let Some(search) = &$filters.search {
-            let pattern = format!("%{}%", search);
+            let pattern = literal_substring_pattern(search);
             query = query
                 .bind(pattern.clone())
                 .bind(pattern.clone())
@@ -571,10 +573,11 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>> {
-        sqlx::query_scalar::<_, String>("SELECT execution_info FROM job WHERE id = ?")
+        sqlx::query_scalar::<_, Option<String>>("SELECT execution_info FROM job WHERE id = ?")
             .bind(id)
             .fetch_optional(&self.pool)
             .await
+            .map(Option::flatten)
             .map_err(Error::from)
     }
 
