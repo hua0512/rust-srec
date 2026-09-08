@@ -5,11 +5,15 @@ use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
+use tokio::sync::OnceCell;
 use tracing::debug;
 
 use super::NotificationChannel;
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority};
+
+#[cfg(test)]
+mod smtp_tests;
 
 /// Email channel configuration.
 #[derive(Clone, Serialize, Deserialize)]
@@ -46,9 +50,6 @@ pub struct EmailConfig {
     /// See `notification::service::parse_channel_locale`.
     #[serde(default)]
     pub locale: Option<String>,
-    /// Batch emails within this window (seconds).
-    #[serde(default = "default_batch_window")]
-    pub batch_window_secs: u64,
 }
 
 impl std::fmt::Debug for EmailConfig {
@@ -72,17 +73,12 @@ impl std::fmt::Debug for EmailConfig {
             .field("recipient_count", &self.to_addresses.len())
             .field("min_priority", &self.min_priority)
             .field("locale", &self.locale)
-            .field("batch_window_secs", &self.batch_window_secs)
             .finish()
     }
 }
 
 fn default_email_priority() -> NotificationPriority {
     NotificationPriority::High
-}
-
-fn default_batch_window() -> u64 {
-    60
 }
 
 impl Default for EmailConfig {
@@ -100,7 +96,6 @@ impl Default for EmailConfig {
             to_addresses: Vec::new(),
             min_priority: NotificationPriority::High,
             locale: None,
-            batch_window_secs: 60,
         }
     }
 }
@@ -108,48 +103,75 @@ impl Default for EmailConfig {
 /// Email notification channel.
 pub struct EmailChannel {
     config: EmailConfig,
+    // Each immutable channel owns its pool; admitted deliveries retain that
+    // channel even when a configuration reload publishes a replacement.
+    transport: OnceCell<AsyncSmtpTransport<Tokio1Executor>>,
+}
+
+struct EmailContent {
+    title: String,
+    description: String,
+    priority: NotificationPriority,
+    event_type: &'static str,
+    timestamp: String,
 }
 
 impl EmailChannel {
     /// Create a new Email channel.
     pub fn new(config: EmailConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            transport: OnceCell::new(),
+        }
+    }
+
+    fn render(&self, event: &NotificationEvent) -> EmailContent {
+        // Resolve the process locale once so every MIME part uses one language.
+        let locale = self
+            .config
+            .locale
+            .clone()
+            .unwrap_or_else(crate::i18n::current_locale);
+        EmailContent {
+            title: event.title_in(&locale),
+            description: event.description_in(&locale),
+            priority: event.priority(),
+            event_type: event.event_type(),
+            timestamp: event.timestamp().to_rfc3339(),
+        }
     }
 
     /// Build the email subject.
-    fn build_subject(&self, event: &NotificationEvent) -> String {
-        format!(
-            "[rust-srec] {}",
-            event.title_for(self.config.locale.as_deref())
-        )
+    fn build_subject(&self, content: &EmailContent) -> String {
+        format!("[rust-srec] {}", content.title)
     }
 
     /// Build the email body (plain text).
-    fn build_body_text(&self, event: &NotificationEvent) -> String {
+    fn build_body_text(&self, content: &EmailContent) -> String {
         format!(
             "{}\n\n{}\n\nPriority: {}\nType: {}\nTime: {}",
-            event.title_for(self.config.locale.as_deref()),
-            event.description_for(self.config.locale.as_deref()),
-            event.priority(),
-            event.event_type(),
-            event.timestamp().to_rfc3339()
+            content.title,
+            content.description,
+            content.priority,
+            content.event_type,
+            content.timestamp
         )
     }
 
     /// Build the email body (HTML).
-    fn build_body_html(&self, event: &NotificationEvent) -> String {
-        let priority_color = match event.priority() {
+    fn build_body_html(&self, content: &EmailContent) -> String {
+        let priority_color = match content.priority {
             NotificationPriority::Low => "#808080",
             NotificationPriority::Normal => "#3498db",
             NotificationPriority::High => "#f39c12",
             NotificationPriority::Critical => "#e74c3c",
         };
 
-        let title = escape_html(&event.title_for(self.config.locale.as_deref()));
-        let description = escape_html(&event.description_for(self.config.locale.as_deref()));
-        let priority = escape_html(&event.priority().to_string());
-        let event_type = escape_html(event.event_type());
-        let timestamp = escape_html(&event.timestamp().to_rfc3339());
+        let title = escape_html(&content.title);
+        let description = escape_html(&content.description);
+        let priority = escape_html(&content.priority.to_string());
+        let event_type = escape_html(content.event_type);
+        let timestamp = escape_html(&content.timestamp);
 
         format!(
             r#"<!DOCTYPE html>
@@ -180,9 +202,10 @@ impl EmailChannel {
 
     fn build_message(&self, event: &NotificationEvent) -> Result<Message> {
         let from = parse_mailbox(&self.config.from_address, "sender")?;
+        let content = self.render(event);
         let mut builder = Message::builder()
             .from(from)
-            .subject(self.build_subject(event));
+            .subject(self.build_subject(&content));
 
         for address in &self.config.to_addresses {
             builder = builder.to(parse_mailbox(address, "recipient")?);
@@ -190,8 +213,8 @@ impl EmailChannel {
 
         builder
             .multipart(MultiPart::alternative_plain_html(
-                self.build_body_text(event),
-                self.build_body_html(event),
+                self.build_body_text(&content),
+                self.build_body_html(&content),
             ))
             .map_err(|error| crate::Error::config(format!("Invalid email message: {error}")))
     }
@@ -269,7 +292,10 @@ impl NotificationChannel for EmailChannel {
         }
 
         let message = self.build_message(event)?;
-        let transport = self.build_transport()?;
+        let transport = self
+            .transport
+            .get_or_try_init(|| async { self.build_transport() })
+            .await?;
         transport.send(message).await.map_err(|error| {
             crate::Error::Other(format!("Email delivery via SMTP failed: {error}"))
         })?;
@@ -334,7 +360,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let subject = channel.build_subject(&event);
+        let subject = channel.build_subject(&channel.render(&event));
         assert!(subject.contains("rust-srec"));
         assert!(subject.contains("TestStreamer"));
     }
@@ -379,7 +405,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let html = channel.build_body_html(&event);
+        let html = channel.build_body_html(&channel.render(&event));
         assert!(!html.contains("<script>"));
         assert!(html.contains("&lt;script&gt;"));
         assert!(html.contains("A &amp; B"));

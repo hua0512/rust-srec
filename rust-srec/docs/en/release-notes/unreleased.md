@@ -172,6 +172,10 @@
 
   Post-processing commands now stop their entire process tree when a job is cancelled or times out. They receive closed standard input and drain their output within bounded log limits, including when a parent exits while a descendant still holds a pipe. Audio probes use the same cleanup behavior.
 
+## Email Delivery
+
+- Email channels now retain an SMTP connection pool and render localized content once per message. Configuration replacements keep separate pools while previously admitted deliveries retain their original channel. The unused `EmailConfig.batch_window_secs` field was removed; existing JSON values remain harmless and ignored. Email delivery is still immediate.
+
 ## Notifications
 
 - **Web-push overload stays bounded**
