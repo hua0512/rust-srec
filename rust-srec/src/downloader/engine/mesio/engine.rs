@@ -37,8 +37,6 @@ use crate::downloader::engine::traits::{
 pub struct MesioEngine {
     /// Whether the engine is available.
     available: bool,
-    /// Engine version.
-    version: String,
     /// Engine configuration.
     config: MesioEngineConfig,
     /// Default HLS configuration.
@@ -57,7 +55,6 @@ impl MesioEngine {
     pub fn with_config(config: MesioEngineConfig) -> Self {
         Self {
             available: true,
-            version: "0.1.9".to_string(),
             config,
             hls_config: Some(
                 HlsProtocolBuilder::new()
@@ -170,7 +167,7 @@ impl DownloadEngine for MesioEngine {
     }
 
     fn version(&self) -> Option<String> {
-        Some(self.version.clone())
+        Some(mesio::VERSION.to_string())
     }
 }
 
@@ -193,7 +190,7 @@ mod tests {
     #[test]
     fn test_version() {
         let engine = MesioEngine::new();
-        assert!(engine.version().is_some());
+        assert_eq!(engine.version().as_deref(), Some(mesio::VERSION));
     }
 
     #[test]

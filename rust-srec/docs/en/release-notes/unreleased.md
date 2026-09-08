@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Downloader Interfaces
+
+- **Mesio diagnostics report the linked library version**
+
+  Engine checks now report Mesio's compiled package version instead of a hardcoded historical value. Download manager ownership, event delivery and tests are organized into focused modules, and unused update/process/configuration wrappers are removed. Existing download events and runtime shutdown behavior are preserved; see the [Rust interface notes](../concepts/architecture.md#downloader-rust-interfaces).
+
 ## Internal Metrics
 
 - **Monitoring code reflects the available interfaces**
