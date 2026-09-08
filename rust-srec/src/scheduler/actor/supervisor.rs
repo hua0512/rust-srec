@@ -861,7 +861,7 @@ mod tests {
             ),
             CheckError,
         > {
-            panic!("status check exploded");
+            std::panic::resume_unwind(Box::new("status check exploded"));
         }
 
         async fn process_status(
