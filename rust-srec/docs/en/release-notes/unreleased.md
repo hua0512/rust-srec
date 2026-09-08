@@ -255,6 +255,10 @@
 
 ## API and integrations
 
+- **Search treats percent signs and underscores literally**
+
+  Searches for jobs, sessions, media outputs, notification events and both kinds of presets no longer interpret `%` and `_` as wildcards. Backslashes also match literally, so `audio_extract` only finds that text rather than names such as `audioXextract`. Existing case matching, other filters, pagination totals and media summaries remain consistent; see [search filters](../api/index.md#search-filters).
+
 - **API errors and request batches have explicit boundaries**
 
   Internal diagnostics no longer enter ad-hoc API errors. Parse and session-delete batches reject more than 100 items before work begins. Device descriptions are bounded to 256 Unicode characters for new logins, refreshed legacy sessions and diagnostics; credential refresh keeps its relogin indication.

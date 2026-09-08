@@ -105,7 +105,7 @@ pub struct PresetFilterParams {
     /// Exact preset name. Returns at most one preset (`job_presets.name` is UNIQUE); use this
     /// to resolve a preset a pipeline step references by name.
     pub name: Option<String>,
-    /// Search query (substring of name or description).
+    /// Literal substring of name or description; ASCII case-insensitive.
     pub search: Option<String>,
 }
 
