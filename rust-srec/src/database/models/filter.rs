@@ -715,6 +715,31 @@ mod tests {
     }
 
     #[test]
+    fn optional_timezone_validates_and_roundtrips_to_domain_filter() {
+        let raw = r#"{"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":"Asia/Shanghai"}"#;
+        let mut config: TimeBasedFilterConfig = serde_json::from_str(raw).unwrap();
+        config.validate().unwrap();
+        let stored = FilterDbModel::new("streamer", FilterType::TimeBased, raw);
+        let domain = crate::domain::filter::Filter::try_from(&stored).unwrap();
+        let utc = |value: &str| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+        };
+        assert!(domain.matches("", "", utc("2024-01-01T02:00:00Z")));
+        assert!(!domain.matches("", "", utc("2024-01-01T09:00:00Z")));
+        assert_eq!(
+            serde_json::to_value(&config).unwrap()["timezone"],
+            "Asia/Shanghai"
+        );
+        config.timezone = Some("Mars/Olympus".to_owned());
+        assert!(matches!(
+            config.validate(),
+            Err(FilterValidationError::InvalidTimezone(_))
+        ));
+    }
+
+    #[test]
     fn database_model_converts_to_typed_domain_filter() {
         let model = FilterDbModel::new(
             "streamer-1",

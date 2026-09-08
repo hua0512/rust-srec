@@ -190,30 +190,7 @@ fn cron_second_occurrence_opens_its_entire_matching_minute() {
 }
 
 #[test]
-fn optional_timezone_roundtrips_validates_and_preserves_legacy_defaults() {
-    use crate::database::models::filter::{
-        FilterConfigValidator, FilterValidationError, TimeBasedFilterConfig,
-    };
-    let raw = r#"{"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":"Asia/Shanghai"}"#;
-    let mut config: TimeBasedFilterConfig = serde_json::from_str(raw).unwrap();
-    config.validate().unwrap();
-    let stored = crate::database::models::FilterDbModel::new(
-        "streamer",
-        crate::database::models::filter::FilterType::TimeBased,
-        raw,
-    );
-    let domain = Filter::try_from(&stored).unwrap();
-    assert!(domain.matches("", "", utc("2024-01-01T02:00:00Z")));
-    assert!(!domain.matches("", "", utc("2024-01-01T09:00:00Z")));
-    assert_eq!(
-        serde_json::to_value(&config).unwrap()["timezone"],
-        "Asia/Shanghai"
-    );
-    config.timezone = Some("Mars/Olympus".to_owned());
-    assert!(matches!(
-        config.validate(),
-        Err(FilterValidationError::InvalidTimezone(_))
-    ));
+fn invalid_timezone_fails_closed_and_omission_preserves_legacy_defaults() {
     let invalid = TimeBasedFilter::new(vec!["Monday".to_owned()], "09:00", "17:00")
         .with_timezone("Mars/Olympus");
     assert!(!invalid.matches(utc("2024-01-01T10:00:00Z")));
