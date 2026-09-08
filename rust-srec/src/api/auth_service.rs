@@ -39,6 +39,13 @@ pub const API_KEY_PREFIX: &str = "srec_";
 // Its digest is a fixed dummy value: even a matching result never authenticates a missing user.
 const LOGIN_DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c3JlYy1sb2dpbi1kdW1teQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
+/// Maximum stored/logged device-description length; longer user agents are truncated.
+pub const MAX_DEVICE_INFO_LENGTH: usize = 256;
+
+fn bounded_device_info(value: Option<String>) -> Option<String> {
+    value.map(|value| value.chars().take(MAX_DEVICE_INFO_LENGTH).collect())
+}
+
 /// Which credential authenticated the request.
 ///
 /// API key management endpoints (`routes::auth::api_keys`) only accept
@@ -603,6 +610,9 @@ impl AuthService {
         device_info: Option<String>,
         client_ip: Option<IpAddr>,
     ) -> Result<AuthResponse, AuthError> {
+        // Device info is advisory metadata. Bound it before logging or awaiting work without
+        // rejecting an otherwise valid login from a browser with a long user-agent string.
+        let device_info = bounded_device_info(device_info);
         debug!(
             device_info = ?device_info.as_deref(),
             "Login attempt"
@@ -744,7 +754,7 @@ impl AuthService {
         debug!(token_hash_prefix = %token_hash_prefix, "Refresh token request received");
 
         // Find the token
-        let stored_token = self
+        let mut stored_token = self
             .token_repo
             .find_by_token_hash(&token_hash)
             .await
@@ -753,6 +763,7 @@ impl AuthService {
                 warn!(token_hash_prefix = %token_hash_prefix, "Refresh token not found");
                 AuthError::InvalidToken
             })?;
+        stored_token.device_info = bounded_device_info(stored_token.device_info.take());
 
         // Check if token is revoked (potential reuse attack).
         // Grace changes reuse-detection consequences, never eligibility for another rotation.
@@ -951,7 +962,7 @@ impl AuthService {
         let token_hash_prefix = Self::token_hash_prefix(&token_hash);
         debug!(token_hash_prefix = %token_hash_prefix, "Logout request received");
 
-        let stored_token = self
+        let mut stored_token = self
             .token_repo
             .find_by_token_hash(&token_hash)
             .await
@@ -960,6 +971,7 @@ impl AuthService {
                 warn!(token_hash_prefix = %token_hash_prefix, "Logout failed: refresh token not found");
                 AuthError::InvalidToken
             })?;
+        stored_token.device_info = bounded_device_info(stored_token.device_info.take());
 
         self.token_repo
             .revoke(&stored_token.id)
@@ -1005,7 +1017,7 @@ impl AuthService {
             .into_iter()
             .map(|t| SessionInfo {
                 id: t.id,
-                device_info: t.device_info,
+                device_info: bounded_device_info(t.device_info),
                 created_at: t.created_at,
                 expires_at: t.expires_at,
             })
