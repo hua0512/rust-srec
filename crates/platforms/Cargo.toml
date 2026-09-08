@@ -83,7 +83,6 @@ process-utils = { path = "../process-utils" }
 
 # Protocol Buffers
 prost = { workspace = true }
-prost-types = { workspace = true }
 
 [build-dependencies]
 prost-build = { workspace = true }
