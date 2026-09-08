@@ -66,6 +66,17 @@ async fn schema_definitions(pool: &SqlitePool) -> Vec<(String, String)> {
         .unwrap()
 }
 
+// Schema equality belongs to this data-only migration, not later schema upgrades.
+fn timestamp_migrator() -> Migrator {
+    Migrator::with_migrations(
+        MIGRATOR
+            .iter()
+            .filter(|migration| migration.version <= VERSION)
+            .cloned()
+            .collect::<Vec<_>>(),
+    )
+}
+
 async fn previous_database() -> SqlitePool {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
@@ -141,8 +152,8 @@ async fn timestamp_migration_preserves_seeds_and_normalizes_historical_text() {
         }
     }
 
-    MIGRATOR.run(&pool).await.unwrap();
-    MIGRATOR.run(&pool).await.unwrap();
+    timestamp_migrator().run(&pool).await.unwrap();
+    timestamp_migrator().run(&pool).await.unwrap();
     for (table, id, created, updated) in seeds {
         assert_eq!(timestamps(&pool, &table, &id).await, (created, updated));
     }
@@ -166,6 +177,9 @@ async fn timestamp_migration_preserves_seeds_and_normalizes_historical_text() {
         schema, after,
         "indexes, triggers, and table definitions are unchanged"
     );
+    // Keep the complete upgrade chain covered after checking the migration's own contract.
+    MIGRATOR.run(&pool).await.unwrap();
+    MIGRATOR.run(&pool).await.unwrap();
     assert!(
         sqlx::query("PRAGMA foreign_key_check")
             .fetch_all(&pool)
@@ -245,10 +259,13 @@ async fn timestamp_migration_preserves_retirement_intentions_and_user_edit_trigg
     assert_eq!(pending.len(), 7);
     let schema = schema_definitions(&pool).await;
 
-    MIGRATOR.run(&pool).await.unwrap();
-    MIGRATOR.run(&pool).await.unwrap();
+    timestamp_migrator().run(&pool).await.unwrap();
+    timestamp_migrator().run(&pool).await.unwrap();
     assert_eq!(retirement_deletions(&pool).await, pending);
     assert_eq!(schema_definitions(&pool).await, schema);
+    // Keep the complete upgrade chain covered after checking the migration's own contract.
+    MIGRATOR.run(&pool).await.unwrap();
+    MIGRATOR.run(&pool).await.unwrap();
 
     for (table, kind, _, _) in RETIRING_TABLES {
         for id in ["retiring-integer", "retiring-text"] {
@@ -299,7 +316,11 @@ async fn timestamp_migration_rolls_back_retirement_cancellations_and_can_retry()
     .await
     .unwrap();
 
-    let error = MIGRATOR.run(&pool).await.unwrap_err().to_string();
+    let error = timestamp_migrator()
+        .run(&pool)
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("injected normalization failure"), "{error}");
     assert_eq!(retirement_deletions(&pool).await, pending);
     for (table, _, _, _) in RETIRING_TABLES {
@@ -328,9 +349,12 @@ async fn timestamp_migration_rolls_back_retirement_cancellations_and_can_retry()
         .execute(&pool)
         .await
         .unwrap();
-    MIGRATOR.run(&pool).await.unwrap();
+    timestamp_migrator().run(&pool).await.unwrap();
     assert_eq!(retirement_deletions(&pool).await, pending);
     assert_eq!(schema_definitions(&pool).await, schema);
+    // Keep the complete upgrade chain covered after checking the migration's own contract.
+    MIGRATOR.run(&pool).await.unwrap();
+    MIGRATOR.run(&pool).await.unwrap();
     for (table, _, _, _) in RETIRING_TABLES {
         for id in ["retiring-integer", "retiring-text"] {
             assert_eq!(
