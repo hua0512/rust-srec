@@ -7,13 +7,17 @@ use super::ServiceContainer;
 
 #[tokio::test]
 async fn api_states_retain_shared_services_and_keep_archive_caches_local() {
+    let stage = std::cell::Cell::new("open SQLite pool");
     tokio::time::timeout(Duration::from_secs(30), async {
         let directory = tempfile::tempdir().unwrap();
         let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
             .await
             .unwrap();
+        stage.set("run migrations");
         crate::database::run_migrations(&pool).await.unwrap();
+        stage.set("build container");
         let container = ServiceContainer::new(pool.clone(), pool).await.unwrap();
+        stage.set("assemble API states");
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_path_buf());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
@@ -71,11 +75,19 @@ async fn api_states_retain_shared_services_and_keep_archive_caches_local() {
 
         let streamer =
             StreamerDbModel::new("Shared owner", "https://example.com/owner", "platform-huya");
+        stage.set("write streamer through first API state");
         first
             .streamer_repository
             .create_streamer(&streamer)
             .await
             .unwrap();
+        stage.set("stop constructor-owned services");
+        // These services use their own cancellation tokens for tasks registered
+        // with the shared supervisor. Stop them before joining, without the
+        // full container shutdown that would close the retained API's SQL pools.
+        container.stream_monitor.stop();
+        container.notification_service.stop().await;
+        stage.set("join container background tasks");
         container.cancellation_token.cancel();
         assert!(
             container
@@ -83,8 +95,10 @@ async fn api_states_retain_shared_services_and_keep_archive_caches_local() {
                 .shutdown(Duration::from_secs(1))
                 .await
         );
+        stage.set("drop container and first API state");
         drop(container);
         drop(first);
+        stage.set("read streamer through retained API state");
         assert_eq!(
             second
                 .streamer_repository
@@ -96,5 +110,10 @@ async fn api_states_retain_shared_services_and_keep_archive_caches_local() {
         );
     })
     .await
-    .expect("real-container API ownership scenario must finish");
+    .unwrap_or_else(|_| {
+        panic!(
+            "real-container API ownership timed out during {}",
+            stage.get()
+        )
+    });
 }
