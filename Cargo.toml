@@ -60,7 +60,7 @@ serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json", "fmt"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 async-trait = "0.1.89"
 rand = "0.10.0"
 regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
@@ -72,7 +72,6 @@ futures = "0.3.32"
 chrono = { version = "0.4.44", features = ["serde"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
 prost = "0.14.3"
-prost-types = "0.14.3"
 prost-build = "0.14.3"
 parking_lot = "0.12.3"
 sha2 = "0.11.0"
@@ -99,7 +98,8 @@ tar = "0.4"
 chrono-tz = "0.10"
 cron = "0.17"
 dotenvy = "0.15"
-sysinfo = { version = "0.39" }
+# Health sampling and disk maintenance use only CPU/memory and disk inventory.
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 tracing-appender = "0.2"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.0"
@@ -122,6 +122,12 @@ cipher = "0.5.2"
 indicatif = "0.18"
 insta = "1.47"
 tracing-indicatif = "0.3"
+dashmap = "6.1"
+rust-i18n = "4"
+aes-gcm = "0.11"
+hkdf = "0.13"
+p256 = { version = "0.14", features = ["ecdsa", "ecdh"] }
+tower = { version = "0.5.3", features = ["util"] }
 
 [profile.dev]
 incremental = true

@@ -8,6 +8,12 @@
 
   Container shutdown deadlines, output-root helpers, event decisions and existing lifecycle tests are separated by responsibility. Startup logs omit tiny synchronous construction timings while retaining I/O, engine discovery and overall measurements. Initialization order, the shared output-root snapshot and shutdown behavior are preserved; see [container responsibilities](../concepts/architecture.md#service-container-responsibilities).
 
+## Build Dependencies
+
+- **Compile only the system inventory and logging features in use**
+
+  System inventory now enables CPU, memory and disk support without unused temperature-component, network-interface or user-account inventory features. Unused JSON log formatter features and direct protobuf well-known-type dependencies were removed; protobuf generation still retains its required dependencies. Backend dependency declarations share workspace versions without upgrading the locked packages.
+
 ## Backend Model Cleanup
 
 - **One canonical streamer state and fewer unused Rust interfaces**
