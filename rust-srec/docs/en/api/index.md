@@ -102,6 +102,23 @@ Treat access tokens, refresh tokens, cookies, and platform credentials as secret
 
 Use the generated OpenAPI document for request and response schemas instead of guessing fields from this summary.
 
+## Creation responses and job progress
+
+Creating streamers, templates, engines, filters, notification channels, job
+presets, pipeline presets and pipelines returns **201 Created** with the created
+resource's JSON body. Cloning templates and job presets also returns 201 with
+the new resource. Clients should accept successful 2xx statuses rather than
+requiring 200 for every JSON response.
+
+The generated OpenAPI document includes session segment listing, template
+cloning and the four browser Web Push operations (public key, subscriptions,
+subscribe and unsubscribe), including their request and response schemas.
+
+Job list, job detail and pipeline-creation summaries return `progress: null`
+when progress is unavailable in that response. This does not mean zero percent
+complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
+processor-specific snapshot; it returns 404 when no snapshot is available.
+
 Pipeline job pages resolve display names through deduplicated streamer batches,
 with at most 500 IDs per query. Job order and response fields are unchanged.
 Missing streamers still have no display name. A failed batch is retried by owner,

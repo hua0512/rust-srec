@@ -128,7 +128,11 @@ impl SrecMcpServer {
             settings: params.settings,
         };
         let state = NotificationRouteState::from_ref(&self.app_state);
-        tool_json(notifications::create_channel(State(state), Json(request)).await)
+        tool_json(
+            notifications::create_channel(State(state), Json(request))
+                .await
+                .map(|(_, body)| body),
+        )
     }
 
     #[tool(

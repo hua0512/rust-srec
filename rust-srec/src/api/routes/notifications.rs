@@ -458,7 +458,7 @@ pub async fn get_channel(
 pub async fn create_channel(
     State(state): State<NotificationRouteState>,
     Json(req): Json<CreateChannelRequest>,
-) -> Result<Json<NotificationChannelDbModel>, ApiError> {
+) -> Result<(StatusCode, Json<NotificationChannelDbModel>), ApiError> {
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
@@ -478,7 +478,7 @@ pub async fn create_channel(
         tracing::error!("Failed to reload notification service: {}", e);
     }
 
-    Ok(Json(channel))
+    Ok((StatusCode::CREATED, Json(channel)))
 }
 
 #[utoipa::path(

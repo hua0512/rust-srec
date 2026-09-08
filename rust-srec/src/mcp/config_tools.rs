@@ -216,7 +216,11 @@ impl SrecMcpServer {
         let request: CreateTemplateRequest = serde_json::from_value(params.template)
             .map_err(|error| invalid_json_param("template", error))?;
         let state = TemplateRouteState::from_ref(&self.app_state);
-        tool_json(templates::create_template(State(state), Json(request)).await)
+        tool_json(
+            templates::create_template(State(state), Json(request))
+                .await
+                .map(|(_, body)| body),
+        )
     }
 
     #[tool(

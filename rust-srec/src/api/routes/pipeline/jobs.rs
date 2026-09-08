@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::StatusCode,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -943,7 +944,7 @@ pub async fn get_stats(
 pub async fn create_pipeline(
     State(state): State<PipelineRouteState>,
     Json(request): Json<CreatePipelineRequest>,
-) -> ApiResult<Json<CreatePipelineResponse>> {
+) -> ApiResult<(StatusCode, Json<CreatePipelineResponse>)> {
     // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;
 
@@ -989,7 +990,7 @@ pub async fn create_pipeline(
         pipeline_id: result.dag_id,
         first_job: job_to_response(first_job, streamer_name),
     };
-    Ok(Json(response))
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 // ============================================================================
@@ -1071,7 +1072,7 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
             Some(job.outputs)
         },
         error_message: job.error,
-        progress: Some(0.0), // Progress tracking not implemented yet, default to 0.0
+        progress: None,
         created_at: job.created_at,
         started_at: job.started_at,
         completed_at: job.completed_at,
