@@ -103,6 +103,22 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 - **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
 
+Logins use the [BaiduPCS-Go v4.0.1 stdin command interface](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)
+with an isolated copy of its standard `pcs_config.json`. This avoids exposing
+cookies, BDUSS or STOKEN in process arguments. The CLI's history path is blocked
+inside that private directory, so login commands are not saved to history. A
+successful result updates only the active account and selected UID in the original
+config; rejected logins leave it unchanged. External changes observed when the
+original bytes are checked before commit cause the update to be refused. External
+CLI/config writers do not share the backend lock and must not run concurrently.
+
+Custom binaries must support the same no-argument command interface, `env`
+config-directory report and standard account-config format. Incompatible binaries
+return an error; credentials are never retried through command-line flags. Login
+subprocesses keep a 60-second deadline, including stdin delivery, with up to five
+seconds for forced cleanup. A cancelled request retains the account lock until
+cleanup completes. Do not include line breaks or NUL characters in pasted credentials.
+
 ## Restart recovery of danmu segments
 
 Recovery associates a stored XML output with the stored video segment whose path

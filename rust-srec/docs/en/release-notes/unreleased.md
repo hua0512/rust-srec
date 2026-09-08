@@ -538,6 +538,10 @@
 
 ## Security
 
+- **Baidu Netdisk login credentials no longer appear in process arguments**
+
+  Manual and automatic BaiduPCS-Go logins now use private stdin/config staging. Command history is disabled only in the temporary directory; existing history, unrelated settings and other accounts are preserved. Successful account updates are committed atomically, failures preserve the previous config, and cancellation/timeout cleans up the contained child before releasing account access. See [Baidu Netdisk login](../concepts/pipeline.md#baidu-netdisk-baidupcs) for compatible binaries and storage boundaries.
+
 - **Notification diagnostics redact credentials consistently**
 
   Channel configuration Debug output hides tokens, passwords, credential-bearing URLs, authentication headers, and private destinations, including nested service configuration. Web-push diagnostics also hide private VAPID keys, cached tokens, and subscription credentials. Serialization and delivery continue to use the configured values.
