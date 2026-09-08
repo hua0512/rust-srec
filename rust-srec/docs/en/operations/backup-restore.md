@@ -22,6 +22,24 @@ Import supports two modes:
 - `merge` updates matching entities and keeps entities absent from the file.
 - `replace` removes existing managed configuration not present in the import. Treat this as destructive and test it on a disposable instance first.
 
+For exports using schema version `0.1.3` or later with a nonempty user list,
+users are matched by username. Email uniqueness is checked against the final
+user set before any configuration writes, including accounts retained by `merge`.
+Email comparisons preserve case and whitespace: `User@example.com` and
+`user@example.com` are distinct. An empty string is a unique value; multiple
+users may have no email (`null`).
+
+An import may swap emails between updated users or assign an email released by
+another updated user. In `replace` mode it may reuse an omitted user's email.
+Existing users keep their IDs and creation dates when their usernames match.
+If any later import write fails, email changes and other configuration writes
+roll back together. An omitted or empty user list, or a schema older than `0.1.3`,
+leaves existing users unchanged in either mode.
+
+Every successful import revokes all refresh tokens, including a `merge` that
+omits users. Existing access tokens retain their normal expiry; sign in again
+when the client needs to renew its login. Rejected imports do not revoke tokens.
+
 An export is useful for migration and source-controlled review after secrets are removed, but it is not a database backup.
 
 ## Consistent Filesystem Backup

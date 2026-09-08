@@ -34,6 +34,10 @@
 
 ## Configuration
 
+- **Backup imports validate the final account email assignments**
+
+  Imports reject emails already assigned to retained accounts before changing configuration. Swaps between updated users and reuse of released emails work in either input order, while later failures roll back all changes. Email uniqueness follows stored values exactly, including case, whitespace, empty strings and absent emails. Every successful import still revokes all refresh tokens, even when a Merge import omits users; see [backup and restore](../operations/backup-restore.md#configuration-export).
+
 - **Startup output probes use recording-compatible gate keys**
 
   Probe discovery uses actual streamer/platform values and concrete directories, so a startup failure can block and later recover through the same key used by recording attempts. Writable child directories no longer require write access to ancestor keys. Explicit root boundaries retain precedence; ambiguous templates are skipped and probe work is bounded. Discovery follows saved settings, while historical gate entries and startup disk-probe topology remain unchanged; see [output-root probes](../operations/storage.md#output-root-probes).
