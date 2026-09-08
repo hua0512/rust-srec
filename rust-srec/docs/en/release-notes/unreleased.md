@@ -10,6 +10,10 @@
 
 ## Scheduler Recovery
 
+- **Actor timing uses resolved overrides and recurring checks are spread out**
+
+  Actor creation and metadata/template/platform/global updates now resolve offline-confirmation settings directly from the four-layer configuration instead of racing a separate metadata refresh. Recurring checks receive bounded ±10% jitter. Unrelated updates preserve pending deadlines; actual cadence changes can shorten them while keeping admission, cooldown, smart-wake and immediate-check constraints. See [scheduler timing](../concepts/architecture.md).
+
 - **Terminal actor decisions no longer trigger crash restarts**
 
   A removed streamer or another non-recoverable message error now follows the same graceful-stop path as a timer error. Recoverable crashes still restart, but ten consecutive crashes stop automatic recovery even when backoff has aged earlier failures out of its window. Explicit removal/reset restores the budget; see [restart limits](../operations/monitoring.md#scheduler-restart-limits).

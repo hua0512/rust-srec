@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
+use rand::RngExt;
 use tokio::sync::oneshot;
 
 use crate::domain::{Priority, StreamerState};
@@ -562,6 +563,9 @@ pub struct StreamerActorState {
     pub streamer_state: StreamerState,
     /// Next scheduled check time.
     pub next_check: Option<Instant>,
+    /// Only interval-based polling can be shortened by a config update. Admission,
+    /// cooldown, smart-wake and explicit immediate deadlines keep their authority.
+    pub(crate) recurring_interval_ms: Option<u64>,
     /// Last observed download activity time (heartbeats / progress).
     ///
     /// This is used only while Live to implement a "stall watchdog" that can
@@ -578,6 +582,7 @@ impl Default for StreamerActorState {
         Self {
             streamer_state: StreamerState::NotLive,
             next_check: None,
+            recurring_interval_ms: None,
             last_download_activity_at: None,
             hysteresis: HysteresisState::default(),
             last_check: None,
@@ -591,6 +596,7 @@ impl StreamerActorState {
         Self {
             streamer_state: metadata.state,
             next_check: Some(Instant::now()), // Due immediately
+            recurring_interval_ms: None,
             last_download_activity_at: None,
             hysteresis: HysteresisState::from_state(metadata.state),
             last_check: None,
@@ -661,6 +667,45 @@ impl StreamerActorState {
     /// * `config` - Actor configuration
     /// * `error_count` - Current consecutive error count from metadata
     pub fn schedule_next_check(&mut self, config: &StreamerConfig, error_count: u32) {
+        self.schedule_next_check_at(
+            config,
+            error_count,
+            Instant::now(),
+            Utc::now(),
+            rand::rng().random_range(9000..=11000),
+        );
+    }
+
+    fn interval_ms(&self, config: &StreamerConfig, error_count: u32) -> u64 {
+        let use_short = self.hysteresis.was_live()
+            && (self.streamer_state == StreamerState::NotLive
+                || (self.streamer_state == StreamerState::Error
+                    && error_count < config.offline_check_count));
+        if use_short {
+            config.offline_check_interval_ms
+        } else {
+            config.check_interval_ms
+        }
+    }
+
+    fn jittered_delay(interval_ms: u64, basis_points: u16) -> std::time::Duration {
+        // Integer nanoseconds retain the ±10% bound even for sub-ten-millisecond intervals.
+        let nanos = u128::from(interval_ms) * u128::from(basis_points.clamp(9000, 11000)) * 100;
+        std::time::Duration::new(
+            (nanos / 1_000_000_000) as u64,
+            (nanos % 1_000_000_000) as u32,
+        )
+    }
+
+    fn schedule_next_check_at(
+        &mut self,
+        config: &StreamerConfig,
+        error_count: u32,
+        now: Instant,
+        wall_now: DateTime<Utc>,
+        basis_points: u16,
+    ) {
+        self.recurring_interval_ms = None;
         // Don't schedule checks when streamer is live - we're downloading and know they're online
         if self.streamer_state == StreamerState::Live {
             self.next_check = None;
@@ -670,53 +715,85 @@ impl StreamerActorState {
         // Use shorter interval when streamer was previously live and is in grace period
         // This enables quick re-detection when a stream ends unexpectedly
         // For streamers that were never live, use the longer interval
-        let use_short_interval = self.hysteresis.was_live()
-            && (self.streamer_state == StreamerState::NotLive
-                || (self.streamer_state == StreamerState::Error
-                    && error_count < config.offline_check_count));
-
-        let interval_ms = if use_short_interval {
-            config.offline_check_interval_ms
-        } else {
-            config.check_interval_ms
-        };
+        let interval_ms = self.interval_ms(config, error_count);
 
         // Check if we have a hint from the last result (e.g. smart wake for OutOfSchedule)
         if let Some(ref last) = self.last_check
             && let Some(hint) = last.next_check_hint
+            && self.streamer_state == StreamerState::OutOfSchedule
+            && hint > wall_now
         {
-            // Only use hint if we are in OutOfSchedule state
-            if self.streamer_state == StreamerState::OutOfSchedule {
-                let now = Utc::now();
-                if hint > now {
-                    let delay = hint
-                        .signed_duration_since(now)
-                        .to_std()
-                        .unwrap_or(std::time::Duration::ZERO);
-                    // Add a small buffer (5s) to ensure we wake up inside the window
-                    let buffer = std::time::Duration::from_secs(5);
-                    let total_delay = delay + buffer;
+            let delay = hint
+                .signed_duration_since(wall_now)
+                .to_std()
+                .unwrap_or(std::time::Duration::ZERO);
+            // Add a small buffer (5s) to ensure we wake up inside the window
+            let buffer = std::time::Duration::from_secs(5);
+            let total_delay = delay + buffer;
 
-                    tracing::debug!(
-                        "Smart wake: sleep for {:?} until {:?} (hint)",
-                        total_delay,
-                        hint
-                    );
+            tracing::debug!(
+                "Smart wake: sleep for {:?} until {:?} (hint)",
+                total_delay,
+                hint
+            );
 
-                    self.next_check = Some(Instant::now() + total_delay);
-                    return;
-                }
-            }
+            self.next_check = now.checked_add(total_delay);
+            return;
         }
 
-        self.next_check = Some(Instant::now() + std::time::Duration::from_millis(interval_ms));
+        self.next_check = now.checked_add(Self::jittered_delay(interval_ms, basis_points));
+        self.recurring_interval_ms = Some(interval_ms);
+        if self.next_check.is_none() {
+            tracing::error!(
+                interval_ms,
+                "Polling interval exceeds the platform clock range; waiting for corrected configuration"
+            );
+        }
+    }
+
+    pub(crate) fn set_next_check(&mut self, deadline: Option<Instant>) {
+        self.next_check = deadline;
+        self.recurring_interval_ms = None;
+    }
+
+    pub(crate) fn reschedule_for_config(&mut self, config: &StreamerConfig, error_count: u32) {
+        self.reschedule_for_config_at(
+            config,
+            error_count,
+            Instant::now(),
+            rand::rng().random_range(9000..=11000),
+        );
+    }
+
+    fn reschedule_for_config_at(
+        &mut self,
+        config: &StreamerConfig,
+        error_count: u32,
+        now: Instant,
+        basis_points: u16,
+    ) {
+        let Some(previous_interval) = self.recurring_interval_ms else {
+            return;
+        };
+        let interval_ms = self.interval_ms(config, error_count);
+        if previous_interval == interval_ms
+            || self.next_check.is_some_and(|deadline| deadline <= now)
+        {
+            return;
+        }
+        let candidate = now.checked_add(Self::jittered_delay(interval_ms, basis_points));
+        self.next_check = match (self.next_check, candidate) {
+            (Some(existing), Some(candidate)) => Some(existing.min(candidate)),
+            (existing, candidate) => existing.or(candidate),
+        };
+        self.recurring_interval_ms = Some(interval_ms);
     }
 
     /// Force schedule a check (used when download fails or streamer goes offline).
     ///
     /// This bypasses the live state check and schedules an immediate check.
     pub fn schedule_immediate_check(&mut self) {
-        self.next_check = Some(Instant::now());
+        self.set_next_check(Some(Instant::now()));
     }
 
     /// Check if a check is due.
@@ -779,6 +856,131 @@ impl PlatformActorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recurring_poll_jitter_is_bounded_for_normal_and_post_live_cadence() {
+        let now = Instant::now();
+        let wall = Utc::now();
+        let config = StreamerConfig::default();
+        let mut state = StreamerActorState::default();
+        for (sample, normal, offline) in [(9000, 54, 18), (10000, 60, 20), (11000, 66, 22)] {
+            state.hysteresis.reset();
+            state.schedule_next_check_at(&config, 0, now, wall, sample);
+            assert_eq!(
+                state.next_check,
+                now.checked_add(std::time::Duration::from_secs(normal))
+            );
+            state.hysteresis.mark_live();
+            state.schedule_next_check_at(&config, 0, now, wall, sample);
+            assert_eq!(
+                state.next_check,
+                now.checked_add(std::time::Duration::from_secs(offline))
+            );
+        }
+        for interval in [0, 1, 5, 1000, u64::MAX] {
+            let lower = StreamerActorState::jittered_delay(interval, 0).as_nanos();
+            let upper = StreamerActorState::jittered_delay(interval, u16::MAX).as_nanos();
+            assert_eq!(lower, u128::from(interval) * 900_000);
+            assert_eq!(upper, u128::from(interval) * 1_100_000);
+        }
+    }
+
+    #[test]
+    fn config_updates_preserve_deadlines_unless_effective_cadence_can_bring_polling_forward() {
+        let now = Instant::now();
+        let wall = Utc::now();
+        let config = StreamerConfig::default();
+        let mut state = StreamerActorState::default();
+        state.schedule_next_check_at(&config, 0, now, wall, 11000);
+        let original = state.next_check;
+        let later = now + std::time::Duration::from_secs(5);
+        state.reschedule_for_config_at(&config, 0, later, 9000);
+        assert_eq!(
+            state.next_check, original,
+            "unchanged timing must not resample or postpone"
+        );
+        let faster = StreamerConfig {
+            check_interval_ms: 10_000,
+            ..config.clone()
+        };
+        state.reschedule_for_config_at(&faster, 0, later, 9000);
+        assert_eq!(
+            state.next_check,
+            Some(later + std::time::Duration::from_secs(9))
+        );
+        let earlier = state.next_check;
+        state.reschedule_for_config_at(&config, 0, later, 11000);
+        assert_eq!(
+            state.next_check, earlier,
+            "slower cadence applies after the pending check"
+        );
+
+        state.hysteresis.mark_live();
+        state.streamer_state = StreamerState::Error;
+        state.schedule_next_check_at(&config, 2, now, wall, 10000);
+        assert_eq!(state.recurring_interval_ms, Some(20_000));
+        state.reschedule_for_config_at(
+            &StreamerConfig {
+                offline_check_count: 1,
+                ..config
+            },
+            2,
+            later,
+            10000,
+        );
+        assert_eq!(
+            state.recurring_interval_ms,
+            Some(60_000),
+            "threshold changes can change the effective cadence"
+        );
+        assert_eq!(
+            state.next_check,
+            Some(now + std::time::Duration::from_secs(20))
+        );
+    }
+
+    #[test]
+    fn jitter_and_config_updates_leave_smart_wake_retry_and_parked_deadlines_authoritative() {
+        let now = Instant::now();
+        let wall = Utc::now();
+        let config = StreamerConfig::default();
+        let mut check = CheckResult::success(StreamerState::OutOfSchedule);
+        check.next_check_hint = Some(wall + chrono::Duration::hours(1));
+        let mut state = StreamerActorState {
+            streamer_state: StreamerState::OutOfSchedule,
+            last_check: Some(check),
+            ..Default::default()
+        };
+        for sample in [9000, 11000] {
+            state.schedule_next_check_at(&config, 0, now, wall, sample);
+            assert_eq!(
+                state.next_check,
+                Some(now + std::time::Duration::from_secs(3605))
+            );
+        }
+        let faster = StreamerConfig {
+            check_interval_ms: 1000,
+            ..config.clone()
+        };
+        state.reschedule_for_config_at(&faster, 0, now, 9000);
+        assert_eq!(
+            state.next_check,
+            Some(now + std::time::Duration::from_secs(3605))
+        );
+        for deadline in [
+            None,
+            Some(now),
+            Some(now + std::time::Duration::from_secs(45)),
+        ] {
+            state.set_next_check(deadline);
+            state.reschedule_for_config_at(&faster, 0, now, 9000);
+            assert_eq!(state.next_check, deadline);
+        }
+        state.streamer_state = StreamerState::Live;
+        state.schedule_next_check_at(&config, 0, now, wall, 9000);
+        assert!(state.next_check.is_none());
+        assert!(state.recurring_interval_ms.is_none());
+    }
 
     #[test]
     fn test_streamer_config_default() {

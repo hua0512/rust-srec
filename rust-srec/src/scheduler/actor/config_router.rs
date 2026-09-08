@@ -229,41 +229,58 @@ impl<'a> ConfigRouter<'a> {
         streamer_config_fn: impl Fn(&str) -> StreamerConfig,
         platform_config_fn: impl Fn(&str) -> PlatformConfig,
     ) -> RoutingPlan {
-        let mut plan = RoutingPlan::default();
+        let (streamers, platforms) = self.target_ids(scope);
+        RoutingPlan {
+            streamers: streamers
+                .into_iter()
+                .map(|id| {
+                    let config = streamer_config_fn(&id);
+                    (id, config)
+                })
+                .collect(),
+            platforms: platforms
+                .into_iter()
+                .map(|id| {
+                    let config = platform_config_fn(&id);
+                    (id, config)
+                })
+                .collect(),
+        }
+    }
+
+    /// Capture target identities before asynchronous resolution; platform routing is unchanged.
+    pub(crate) fn target_ids(&self, scope: &ConfigScope) -> (Vec<String>, Vec<String>) {
+        let mut streamers = Vec::new();
+        let mut platforms = Vec::new();
 
         match scope {
             ConfigScope::Streamer(streamer_id) => {
                 if self.streamer_handles.contains_key(streamer_id) {
-                    plan.streamers
-                        .push((streamer_id.clone(), streamer_config_fn(streamer_id)));
+                    streamers.push(streamer_id.clone());
                 }
             }
             ConfigScope::Platform(platform_id) => {
                 if self.platform_handles.contains_key(platform_id) {
-                    plan.platforms
-                        .push((platform_id.clone(), platform_config_fn(platform_id)));
+                    platforms.push(platform_id.clone());
                 }
 
                 for streamer_id in self.platform_mapping.streamers_on_platform(platform_id) {
                     if self.streamer_handles.contains_key(streamer_id) {
-                        plan.streamers
-                            .push((streamer_id.clone(), streamer_config_fn(streamer_id)));
+                        streamers.push(streamer_id.clone());
                     }
                 }
             }
             ConfigScope::Global => {
                 for platform_id in self.platform_handles.keys() {
-                    plan.platforms
-                        .push((platform_id.clone(), platform_config_fn(platform_id)));
+                    platforms.push(platform_id.clone());
                 }
                 for streamer_id in self.streamer_handles.keys() {
-                    plan.streamers
-                        .push((streamer_id.clone(), streamer_config_fn(streamer_id)));
+                    streamers.push(streamer_id.clone());
                 }
             }
         }
 
-        plan
+        (streamers, platforms)
     }
 
     pub async fn deliver_plan(&self, plan: RoutingPlan) -> RoutingResult {

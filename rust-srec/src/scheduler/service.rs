@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
+use futures::{StreamExt, stream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
@@ -26,7 +27,6 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
-use crate::domain::Priority;
 use crate::downloader::{
     DownloadManagerEvent, DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent,
 };
@@ -117,6 +117,27 @@ const DEFAULT_OFFLINE_CHECK_INTERVAL_MS: u64 = 20_000;
 /// Default offline check count before switching to offline interval.
 const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
 
+#[async_trait::async_trait]
+trait ActorConfigResolver: Send + Sync {
+    async fn resolve(&self, streamer_id: &str, base: StreamerConfig) -> Result<StreamerConfig>;
+}
+
+#[async_trait::async_trait]
+impl<C, S> ActorConfigResolver for crate::config::ConfigService<C, S>
+where
+    C: ConfigRepository + Send + Sync + 'static,
+    S: StreamerRepository + Send + Sync + 'static,
+{
+    async fn resolve(&self, streamer_id: &str, mut base: StreamerConfig) -> Result<StreamerConfig> {
+        // Metadata publication and the container's resolver fan-out are separate subscribers.
+        // Read current layers directly without using the pre-publication cached context.
+        let config = self.get_fresh_config_for_streamer(streamer_id).await?;
+        base.offline_check_count = config.offline_check_count;
+        base.offline_check_interval_ms = config.offline_check_delay_ms;
+        Ok(base)
+    }
+}
+
 /// Scheduler configuration.
 #[derive(Debug, Clone)]
 pub struct SchedulerConfig {
@@ -168,6 +189,7 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     config: SchedulerConfig,
     /// Config repository for pulling fresh global timing config on hot reload.
     config_repo: Option<Arc<dyn ConfigRepository>>,
+    config_resolver: Option<Arc<dyn ActorConfigResolver>>,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
     /// Supervisor for managing actor lifecycle.
@@ -286,6 +308,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             event_broadcaster,
             config,
             config_repo: None,
+            config_resolver: None,
             cancellation_token,
             supervisor,
             stats_tx,
@@ -396,6 +419,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         SSR: SessionRepository + Send + Sync + 'static,
         CR: ConfigRepository + Send + Sync + 'static,
     {
+        let config_resolver = monitor.config_service();
         // Create status and batch checkers directly from the StreamMonitor
         let status_checker = Arc::new(match history_writer {
             Some(writer) => MonitorStatusChecker::with_history_writer(monitor.clone(), writer),
@@ -422,6 +446,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             event_broadcaster,
             config,
             config_repo: None,
+            config_resolver: Some(config_resolver),
             cancellation_token,
             supervisor,
             stats_tx,
@@ -481,19 +506,23 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         !self.cancellation_token.is_cancelled()
     }
 
-    /// Create a StreamerConfig from scheduler config and metadata.
-    ///
-    /// `offline_check_*` come from the metadata's resolved per-streamer
-    /// values (populated by the resolver at registration / config-update
-    /// time). Falls back to the global scheduler config when the metadata
-    /// hasn't been resolved yet (e.g. defensive default during early boot).
-    fn create_streamer_config(&self, metadata: &StreamerMetadata) -> StreamerConfig {
-        StreamerConfig {
+    /// Resolve effective timing before spawning or replacing the actor's restart config.
+    async fn create_streamer_config(&self, metadata: &StreamerMetadata) -> Result<StreamerConfig> {
+        let base = StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: metadata.offline_check_delay_ms,
-            offline_check_count: metadata.offline_check_count,
+            offline_check_interval_ms: self.config.offline_check_interval_ms,
+            offline_check_count: self.config.offline_check_count,
             priority: metadata.priority,
             batch_capable: self.is_batch_capable_platform(&metadata.platform_config_id),
+        };
+        match &self.config_resolver {
+            Some(resolver) => tokio::select! {
+                biased;
+                _ = self.cancellation_token.cancelled() => Err(crate::Error::Other("Scheduler configuration resolution cancelled".to_owned())),
+                result = resolver.resolve(&metadata.id, base) => result,
+            },
+            // No-monitor constructors are also used by callers that supply explicit timing.
+            None => Ok(base),
         }
     }
 
@@ -678,7 +707,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
                 // Process pending restarts
                 _ = Self::wait_for_restart(next_restart) => {
-                    let restarted = self.supervisor.process_pending_restarts();
+                    let restarted = self.process_pending_restarts().await;
                     if restarted > 0 {
                         debug!("Processed {} pending restarts", restarted);
                     }
@@ -721,6 +750,36 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
+    async fn process_pending_restarts(&mut self) -> usize {
+        // Keep the cutoff fixed while resolving; later-due actors must not bypass this pass.
+        let due_at = tokio::time::Instant::now();
+        if self.config_resolver.is_some() {
+            let scheduler = &*self;
+            let resolved = stream::iter(self.supervisor.due_streamer_restart_ids(due_at))
+                .map(|id| async move {
+                    let config = scheduler.build_streamer_config(&id).await;
+                    (id, config)
+                })
+                .buffered(8)
+                .collect::<Vec<_>>()
+                .await;
+            if self.cancellation_token.is_cancelled() {
+                return 0;
+            }
+            for (id, config) in resolved {
+                match config {
+                    Ok(config) => self.supervisor.update_streamer_restart_config(&id, config),
+                    Err(error) => {
+                        warn!(streamer_id = %id, %error, "Deferring actor restart until current configuration can be resolved");
+                        self.supervisor
+                            .defer_streamer_restart(&id, Duration::from_secs(5));
+                    }
+                }
+            }
+        }
+        self.supervisor.process_pending_restarts_at(due_at)
+    }
+
     /// Wait for the next actor task completion, or wait indefinitely if no tasks pending.
     /// This prevents busy-looping when there are no actor tasks.
     async fn join_next_if_pending(
@@ -759,7 +818,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         // Then spawn streamer actors
         for streamer in streamers {
-            if let Err(e) = self.spawn_streamer_actor(streamer) {
+            if let Err(e) = self.spawn_streamer_actor(streamer).await {
                 warn!("Failed to spawn streamer actor: {}", e);
             }
         }
@@ -793,7 +852,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Spawn a streamer actor.
-    fn spawn_streamer_actor(&mut self, metadata: StreamerMetadata) -> Result<()> {
+    async fn spawn_streamer_actor(&mut self, metadata: StreamerMetadata) -> Result<()> {
         let streamer_id = metadata.id.clone();
         let platform_id = metadata.platform_config_id.clone();
 
@@ -802,7 +861,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             return Ok(());
         }
 
-        let config = self.create_streamer_config(&metadata);
+        let config = self.create_streamer_config(&metadata).await?;
 
         // Get platform actor sender if on batch-capable platform
         let platform_sender = if config.batch_capable {
@@ -858,13 +917,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             }
             ConfigUpdateEvent::GlobalUpdated => match self.refresh_timing_config_from_db().await {
                 Ok(true) => {}
-                Ok(false) => {
+                Ok(false) if self.config_resolver.is_none() => {
                     // Avoid broadcasting config updates to every actor if global changes don't
                     // affect scheduler timing (e.g., log filter changes).
                     return;
                 }
+                Ok(false) => {}
                 Err(error) => {
                     warn!("Failed to refresh scheduler timing config: {}", error);
+                    return;
                 }
             },
             ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
@@ -887,7 +948,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         // Ensure actor state/platform mapping for streamer-scoped updates.
         if let ConfigScope::Streamer(streamer_id) = &scope
-            && !self.ensure_streamer_actor_state(streamer_id)
+            && !self.ensure_streamer_actor_state(streamer_id).await
         {
             return;
         }
@@ -896,19 +957,42 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         //
         // Note: we intentionally keep the router borrows scoped to avoid holding an immutable
         // borrow of self.supervisor across the restart-cache mutation.
-        let plan = {
+        let (streamer_ids, platform_ids) = {
             let registry = self.supervisor.registry();
             let router = ConfigRouter::new(
                 registry.streamer_handles_map(),
                 registry.platform_handles_map(),
                 &self.platform_mapping,
             );
-            router.plan_with_scope(
-                &scope,
-                |id| self.build_streamer_config(id),
-                |id| self.create_platform_config(id),
-            )
+            router.target_ids(&scope)
         };
+        let scheduler = &*self;
+        let resolved = stream::iter(streamer_ids)
+            .map(|id| async move {
+                let config = scheduler.build_streamer_config(&id).await;
+                (id, config)
+            })
+            .buffered(8)
+            .collect::<Vec<_>>()
+            .await;
+        let mut plan = RoutingPlan {
+            platforms: platform_ids
+                .into_iter()
+                .map(|id| {
+                    let config = self.create_platform_config(&id);
+                    (id, config)
+                })
+                .collect(),
+            streamers: Vec::new(),
+        };
+        for (id, result) in resolved {
+            match result {
+                Ok(config) => plan.streamers.push((id, config)),
+                Err(error) => {
+                    warn!(streamer_id = %id, %error, "Keeping previous actor timing after configuration resolution failed")
+                }
+            }
+        }
 
         self.update_restart_cache_from_plan(&plan);
 
@@ -932,38 +1016,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
-    fn build_streamer_config(&self, streamer_id: &str) -> StreamerConfig {
-        let metadata = self.streamer_manager.get_streamer(streamer_id);
-        let priority = metadata
-            .as_ref()
-            .map(|m| m.priority)
-            .unwrap_or(Priority::Normal);
-        let batch_capable = metadata
-            .as_ref()
-            .map(|m| self.is_batch_capable_platform(&m.platform_config_id))
-            .unwrap_or(false);
-        // Per-streamer offline-check cadence is cached on metadata (set by
-        // the resolver fan-out). Fall back to the scheduler-wide global
-        // when no metadata is registered yet.
-        let offline_check_interval_ms = metadata
-            .as_ref()
-            .map(|m| m.offline_check_delay_ms)
-            .unwrap_or(self.config.offline_check_interval_ms);
-        let offline_check_count = metadata
-            .as_ref()
-            .map(|m| m.offline_check_count)
-            .unwrap_or(self.config.offline_check_count);
-
-        StreamerConfig {
-            check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms,
-            offline_check_count,
-            priority,
-            batch_capable,
-        }
+    async fn build_streamer_config(&self, streamer_id: &str) -> Result<StreamerConfig> {
+        let metadata = self
+            .streamer_manager
+            .get_streamer(streamer_id)
+            .ok_or_else(|| crate::Error::not_found("Streamer", streamer_id))?;
+        self.create_streamer_config(&metadata).await
     }
 
-    fn ensure_streamer_actor_state(&mut self, streamer_id: &str) -> bool {
+    async fn ensure_streamer_actor_state(&mut self, streamer_id: &str) -> bool {
         let Some(metadata) = self.streamer_manager.get_streamer(streamer_id) else {
             // Streamer not found - might have been deleted, remove actor if exists
             if self.remove_streamer(streamer_id) {
@@ -994,7 +1055,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     "Spawning missing actor for active streamer: {}",
                     streamer_id
                 );
-                if let Err(e) = self.spawn_streamer_actor(metadata) {
+                if let Err(e) = self.spawn_streamer_actor(metadata).await {
                     warn!("Failed to spawn actor for {}: {}", streamer_id, e);
                 }
             }
@@ -1053,7 +1114,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     "Spawning actor for newly active streamer: {} (state: {})",
                     streamer_id, metadata.state
                 );
-                if let Err(e) = self.spawn_streamer_actor(metadata) {
+                if let Err(e) = self.spawn_streamer_actor(metadata).await {
                     warn!("Failed to spawn actor for {}: {}", streamer_id, e);
                 }
             }
@@ -1271,7 +1332,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// This spawns a new StreamerActor for the streamer without requiring
     /// a full re-schedule.
-    pub fn add_streamer(&mut self, metadata: StreamerMetadata) -> Result<()> {
+    pub async fn add_streamer(&mut self, metadata: StreamerMetadata) -> Result<()> {
         let platform_id = metadata.platform_config_id.clone();
 
         // Ensure platform actor exists if needed
@@ -1279,7 +1340,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             self.spawn_platform_actor(&platform_id)?;
         }
 
-        self.spawn_streamer_actor(metadata)
+        self.spawn_streamer_actor(metadata).await
     }
 
     /// Remove a streamer dynamically.
@@ -1360,7 +1421,7 @@ mod tests {
                     platform_config_id: "twitch".to_string(),
                     template_config_id: None,
                     state: StreamerState::NotLive,
-                    priority: Priority::Normal,
+                    priority: crate::domain::Priority::Normal,
                     avatar_url: None,
                     consecutive_error_count: 0,
                     disabled_until: None,
@@ -1512,3 +1573,6 @@ mod tests {
         assert_eq!(handle.stats().streamer_count, 2);
     }
 }
+
+#[cfg(test)]
+mod config_tests;
