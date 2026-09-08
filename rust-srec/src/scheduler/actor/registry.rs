@@ -699,7 +699,7 @@ mod tests {
             self.entered.notify_one();
             self.release.notified().await;
             if matches!(self.on_release, OnRelease::Panic) {
-                panic!("status check exploded");
+                std::panic::resume_unwind(Box::new("status check exploded"));
             }
             Ok((
                 crate::scheduler::actor::messages::CheckResult::success(StreamerState::NotLive),
@@ -742,7 +742,7 @@ mod tests {
             _streamer: &StreamerMetadata,
         ) -> Result<(crate::scheduler::actor::messages::CheckResult, LiveStatus), CheckError>
         {
-            panic!("status check exploded");
+            std::panic::resume_unwind(Box::new("status check exploded"));
         }
 
         async fn process_status(
