@@ -123,18 +123,25 @@ impl StreamerRepository for SqlxStreamerRepository {
             return Ok(Vec::new());
         }
 
-        let mut builder =
-            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM streamers WHERE id IN (");
-        let mut separated = builder.separated(", ");
-        for id in ids {
-            separated.push_bind(id);
-        }
-        separated.push_unseparated(")");
+        let mut streamers = Vec::new();
+        let ids = super::unique_lookup_ids(ids);
+        for ids in ids.chunks(super::LOOKUP_BATCH_SIZE) {
+            let mut builder =
+                sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM streamers WHERE id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(*id);
+            }
+            separated.push_unseparated(")");
 
-        Ok(builder
-            .build_query_as::<StreamerDbModel>()
-            .fetch_all(&self.pool)
-            .await?)
+            streamers.extend(
+                builder
+                    .build_query_as::<StreamerDbModel>()
+                    .fetch_all(&self.pool)
+                    .await?,
+            );
+        }
+        Ok(streamers)
     }
 
     async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel> {
