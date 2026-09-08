@@ -352,9 +352,20 @@ impl LogStore {
             loop {
                 let index = Self::reserve_index(&mut lock, highest_seen)?;
                 let path = self.directory.join(filename(date, index));
-                match OpenOptions::new().create_new(true).write(true).open(path) {
+                match std::fs::symlink_metadata(&path) {
+                    Ok(_) => continue,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+                match OpenOptions::new().create_new(true).write(true).open(&path) {
                     Ok(file) => break file,
                     Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                    // Windows reports an occupied directory as PermissionDenied.
+                    // Recheck without following links to distinguish that race
+                    // from a genuine failure to create a file in the log directory.
+                    Err(error)
+                        if error.kind() == io::ErrorKind::PermissionDenied
+                            && std::fs::symlink_metadata(&path).is_ok() => {}
                     Err(error) => return Err(error),
                 }
             }
