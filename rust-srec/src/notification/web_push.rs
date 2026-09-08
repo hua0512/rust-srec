@@ -54,6 +54,8 @@ const KEY_INFO: &str = "Content-Encoding: aes128gcm\0";
 const NONCE_INFO: &str = "Content-Encoding: nonce\0";
 
 #[cfg(test)]
+mod delivery_tests;
+#[cfg(test)]
 mod redaction_tests;
 
 #[derive(Clone)]
@@ -387,10 +389,6 @@ impl WebPushService {
             .map_err(|e| Error::Other(format!("Web push request failed: {}", e)))?;
 
         let status = response.status();
-        if status.is_success() {
-            return Ok(());
-        }
-
         if status.as_u16() == 429
             && let Some(delay) = retry_after_delay(&response)
             && delay <= Duration::from_secs(30)
@@ -448,13 +446,7 @@ impl WebPushService {
 
         // Clean up stale subscriptions.
         if status.as_u16() == 404 || status.as_u16() == 410 {
-            if let Err(e) = self.delete_subscription_by_endpoint(&sub.endpoint).await {
-                tracing::warn!(
-                    endpoint = %sub.endpoint,
-                    error = %e,
-                    "Failed to delete stale web push subscription"
-                );
-            }
+            self.delete_subscription_by_endpoint(&sub.endpoint).await?;
             tracing::info!(
                 endpoint = %sub.endpoint,
                 status = %status,
@@ -585,6 +577,11 @@ impl WebPushPayload {
 
         let bytes = serde_json::to_vec(&minimal)
             .map_err(|e| Error::Other(format!("Failed to serialize web push payload: {}", e)))?;
+        if bytes.len() > max_bytes {
+            return Err(Error::Other(
+                "Web push metadata exceeds the payload size limit".to_string(),
+            ));
+        }
         Ok(bytes)
     }
 }

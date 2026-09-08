@@ -132,6 +132,10 @@ pub struct StreamlinkEngineConfig {
     /// Path to streamlink binary
     #[serde(default = "default_streamlink_path")]
     pub binary_path: String,
+    /// FFmpeg executable used to remux Streamlink output.
+    /// Falls back to `FFMPEG_PATH`, then `ffmpeg`, when omitted or null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffmpeg_path: Option<String>,
     /// Quality preference (e.g., "best", "720p")
     #[serde(default = "default_quality")]
     pub quality: String,
@@ -162,6 +166,7 @@ impl Default for StreamlinkEngineConfig {
     fn default() -> Self {
         Self {
             binary_path: default_streamlink_path(),
+            ffmpeg_path: None,
             quality: default_quality(),
             extra_args: Vec::new(),
             twitch_proxy_playlist: None,

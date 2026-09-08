@@ -3427,3 +3427,100 @@ async fn required_transition_survives_lagged_observer() {
         Err(tokio::sync::broadcast::error::RecvError::Lagged(_))
     ));
 }
+
+async fn ended_lifecycle_with_long_retention() -> (Arc<SessionLifecycle>, String) {
+    let pool = setup_pool().await;
+    let lifecycle = Arc::new(
+        SessionLifecycle::new(
+            Arc::new(SessionLifecycleRepository::new(pool)),
+            Arc::new(OfflineClassifier::new()),
+            16,
+        )
+        .with_ended_retention(Duration::from_secs(3600)),
+    );
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let session_id = started.session_id().to_string();
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_hls_endlist(&session_id))
+        .await
+        .unwrap();
+    (lifecycle, session_id)
+}
+
+#[tokio::test]
+async fn shutdown_joins_evictions_without_waiting_for_retention() {
+    let (lifecycle, session_id) = ended_lifecycle_with_long_retention().await;
+    assert!(Arc::strong_count(&lifecycle.sessions) > 1);
+    let mut events = lifecycle.subscribe();
+    let report = tokio::time::timeout(
+        Duration::from_secs(2),
+        lifecycle.shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1)),
+    )
+    .await
+    .expect("eviction shutdown must not wait an hour");
+    assert!(report.failures.is_empty());
+    assert!(report.overruns.is_empty());
+    assert_eq!(report.forced_timer_count, 0);
+    assert_eq!(
+        Arc::strong_count(&lifecycle.sessions),
+        1,
+        "all eviction futures released the map"
+    );
+    assert!(lifecycle.session_snapshot(&session_id).unwrap().is_ended());
+    assert!(events.try_recv().is_err());
+    lifecycle.schedule_ended_eviction(STREAMER_ID, &session_id);
+    assert_eq!(
+        Arc::strong_count(&lifecycle.sessions),
+        1,
+        "shutdown fences late eviction admission"
+    );
+}
+
+#[tokio::test]
+async fn forced_shutdown_joins_eviction_futures() {
+    let (lifecycle, session_id) = ended_lifecycle_with_long_retention().await;
+    assert!(Arc::strong_count(&lifecycle.sessions) > 1);
+    let aborted = tokio::time::timeout(
+        Duration::from_secs(2),
+        lifecycle.abort_timers(tokio::time::Instant::now() + Duration::from_secs(1)),
+    )
+    .await
+    .expect("aborted evictions must settle promptly");
+    assert_eq!(aborted, 0, "evictions are not hysteresis timers");
+    assert_eq!(Arc::strong_count(&lifecycle.sessions), 1);
+    assert!(lifecycle.session_snapshot(&session_id).unwrap().is_ended());
+}
+
+#[tokio::test]
+async fn owned_eviction_preserves_the_live_successor() {
+    let (lifecycle, old_id) = ended_lifecycle_with_long_retention().await;
+    let next = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let next_id = next.session_id().to_string();
+    assert_ne!(old_id, next_id);
+    // Pause only after SQLite replies; worker-thread I/O must not race virtual deadlines.
+    tokio::time::pause();
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(3601)).await;
+    tokio::time::resume();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while lifecycle.session_snapshot(&old_id).is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("retention must evict the old session");
+    assert!(lifecycle.is_session_active(&next_id));
+    assert_eq!(
+        lifecycle.current_session_id_for_streamer(STREAMER_ID),
+        Some(next_id)
+    );
+    lifecycle
+        .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+        .await;
+}

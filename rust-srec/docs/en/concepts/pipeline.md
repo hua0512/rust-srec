@@ -327,6 +327,16 @@ Produced-artifact history can include files published by earlier attempts. A lat
 failure does not delete those files. Processors manage their own staged temporary
 outputs, with the cleanup limits described above.
 
+### Processor Result Contracts
+
+Media processors share command-error selection and batch result accumulation.
+Batch results retain input order for outputs, skipped/succeeded inputs and logs;
+each processor still owns output naming, publication, rollback and source deletion.
+Transfer processors capture source sizes before an upload can remove them and
+only treat a positively confirmed missing source as already consumed. An I/O
+error leaves that input pending. These shared helpers do not unify remux and ASS
+path-identity rules or processor-specific skip metadata.
+
 ### Cancelling a Running Pipeline
 
 `DELETE /api/pipeline/{pipeline_id}` cancels a pipeline. When the id names a DAG execution, the whole DAG is stood down: in-flight step jobs are cancelled and the DAG itself reaches a terminal cancelled state instead of staying in processing, so the session that is waiting on it stops waiting and the pipeline no longer reappears as in-flight after a restart.

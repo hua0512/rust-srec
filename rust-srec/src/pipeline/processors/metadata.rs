@@ -322,10 +322,8 @@ impl MetadataProcessor {
                     "ffmpeg failed with exit code {}: {}",
                     command_output.status.code().unwrap_or(-1),
                     command_output
-                        .logs
-                        .iter()
-                        .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                        .map(|l| l.message.clone())
+                        .last_error_message()
+                        .map(str::to_owned)
                         .unwrap_or_else(|| "Unknown error".to_string())
                 )
             };
@@ -442,12 +440,7 @@ impl Processor for MetadataProcessor {
                         &mut batch,
                     )
                     .await?;
-                output.duration_secs += one.duration_secs;
-                output.outputs.extend(one.outputs);
-                output.items_produced.extend(one.items_produced);
-                output.skipped_inputs.extend(one.skipped_inputs);
-                output.succeeded_inputs.extend(one.succeeded_inputs);
-                output.logs.extend(one.logs);
+                super::outputs::accumulate_media_output(&mut output, one);
             }
             output.metadata = Some(serde_json::json!({
                 "batch": true, "inputs": input.inputs.len(), "input_removed": config.remove_input_on_success,

@@ -8,6 +8,7 @@ mod copy_move;
 mod danmaku_factory;
 mod delete;
 mod execute;
+mod inputs;
 mod metadata;
 #[cfg(test)]
 mod output_tests;

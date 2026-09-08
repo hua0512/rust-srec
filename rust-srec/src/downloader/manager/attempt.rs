@@ -28,7 +28,7 @@ use crate::utils::task_supervisor::DrainedTasks;
 
 use super::{
     ActiveDownload, AttemptPhase, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
-    DownloadStopCause, DownloadTerminalEvent, PendingConfigUpdate, resolve_segment_path,
+    DownloadStopCause, DownloadTerminalEvent, resolve_segment_path,
 };
 
 /// Completion signal shared by stop callers and the attempt finalizer.
@@ -292,7 +292,6 @@ impl Drop for RunningAttemptGuard {
 struct AttemptFinalizer {
     download_id: String,
     active_downloads: Arc<DashMap<String, ActiveDownload>>,
-    pending_updates: Arc<DashMap<String, PendingConfigUpdate>>,
     completion: Arc<AttemptCompletion>,
     outcome: Option<std::result::Result<(), String>>,
     active_released: bool,
@@ -308,7 +307,6 @@ impl AttemptFinalizer {
             return;
         }
         self.active_downloads.remove(&self.download_id);
-        self.pending_updates.remove(&self.download_id);
         self.active_released = true;
     }
 }
@@ -400,7 +398,6 @@ impl DownloadManager {
             current_segment_path: None,
             current_segment_started_at: None,
             slot: Some(active_slot),
-            retry_config_override: None,
         };
 
         let streamer_id = config.streamer_id.clone();
@@ -410,7 +407,6 @@ impl DownloadManager {
         let cdn_host = crate::utils::url::extract_host(&config.url).unwrap_or_default();
 
         let active_downloads = self.active_downloads.clone();
-        let pending_updates = self.pending_updates.clone();
         let session_segment_indices = self.session_segment_indices.clone();
         let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
         let output_root_gate_ref: Option<Arc<OutputRootGate>> =
@@ -419,7 +415,6 @@ impl DownloadManager {
 
         let attempt_download_id = download_id.clone();
         let attempt_active_downloads = active_downloads.clone();
-        let attempt_pending_updates = pending_updates.clone();
         let attempt_completion = completion.clone();
         let terminal_events = events.clone();
         let terminal_streamer_id = streamer_id.clone();
@@ -472,7 +467,6 @@ impl DownloadManager {
         let translator_session_id = session_id.clone();
         let translator_events = events.clone();
         let translator_active_downloads = active_downloads.clone();
-        let translator_pending_updates = pending_updates.clone();
         let translator_phase = phase.clone();
         let translator_handle = handle.clone();
         // Non-fatal required-event failures the translator observes mid-run.
@@ -787,20 +781,6 @@ impl DownloadManager {
                             };
                         }
 
-                        if let Some((_, pending_update)) =
-                            translator_pending_updates.remove(&translator_download_id)
-                            && let Some(mut download) =
-                                translator_active_downloads.get_mut(&translator_download_id)
-                        {
-                            DownloadManager::apply_pending_update_to_download(
-                                &mut download,
-                                pending_update,
-                                &translator_download_id,
-                                &translator_streamer_id,
-                                &translator_events,
-                            );
-                        }
-
                         debug!(
                             download_id = %translator_download_id,
                             path = %path.display(),
@@ -850,7 +830,6 @@ impl DownloadManager {
         let finalizer = AttemptFinalizer {
             download_id: attempt_download_id.clone(),
             active_downloads: attempt_active_downloads,
-            pending_updates: attempt_pending_updates,
             completion: attempt_completion,
             outcome: None,
             active_released: false,

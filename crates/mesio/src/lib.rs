@@ -12,6 +12,9 @@
 //! - Protocol-neutral session and event API
 //! - Protocol auto-detection from URLs
 
+/// Version of the linked Mesio crate.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod builder;
 pub mod bytes_stream;
 pub mod cache;

@@ -97,6 +97,12 @@ flowchart TB
 
 这让系统的生命周期与依赖关系有一个统一的“入口点”，方便定位与演进。
 
+## 服务容器职责
+
+容器组装、有序关闭、输出根目录辅助逻辑和事件决策位于独立的私有模块中。初始化仍只发现一次输出根目录，并将同一份快照用于健康检查注册和启动写入探测。容器公开 API 和关闭期限保持不变。
+
+启动日志保留数据库与配置 I/O、引擎发现、需要等待的初始化阶段及整体耗时。不再单独记录同步包装对象构造和后台任务启动的耗时；这些记录并不代表任务随后执行工作的耗时。
+
 ## 核心组件（按实际实现）
 
 ### `ConfigService`（配置合并 + 热更新）
@@ -231,6 +237,12 @@ Telegram / Webhook 通道，包含重试、熔断与 dead-letter 持久化。可
 
 参见：[通知](./notifications.md)
 
+## 下载器 Rust 接口
+
+下载管理器将事件契约放在 `downloader::manager::events`，确认式事件传递放在 `coordination`，引擎配置放在 `configuration`，下载任务生命周期放在 `attempt`。这些实现模块保持私有；通过 `downloader` 导入现有事件的公开路径以及通过 `downloader::manager` 导入的内部路径保持不变。运行时关闭使用 `DownloadManager::shutdown_until`，活动下载条目持有队列槽位，直到条目被移除。
+
+已移除未使用的下载中配置更新 API、只写不读的重试覆盖字段，以及 `stop_all`、`get_downloads_by_status`、`set_high_priority_extra_slots` 和旧进程等待辅助函数。Rust 集成应使用受支持的管理器关闭与快照方法、`DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`，以及公开的 `CircuitBreaker` 方法。内部熔断器管理通过 `CircuitBreakerManager::get` 获取实例。Mesio 引擎诊断现在报告所链接库的 `mesio::VERSION`。
+
 ## 关键流程
 
 ### 录制生命周期（端到端）
@@ -313,6 +325,12 @@ sequenceDiagram
 校验 bearer token；未配置 JWT 鉴权时也会返回 `401`。liveness 路由保持公开。WebSocket、
 媒体与流代理路由使用各自文档中说明的查询参数鉴权路径。
 
+## 调度器状态与退避
+
+主播 Actor 使用内存中的调度状态以及基于数据库的元数据缓存。已移除未使用的 JSON 状态文件接口（`with_state_path`、`restore_state`、恢复状态构造函数、`PersistedActorState`、`PersistedConfig` 和 `SupervisorConfig.state_dir`）。运行时恢复仍使用数据库与会话生命周期，无需 Actor 状态文件。
+
+同时移除了未使用的 `StreamerManager::record_error` 和 `StreamerRepository::record_streamer_error`。监控保留事务式错误写入与 `disabled_until_for_error_count` 计算。退避保留配置的阈值，从 60 秒开始翻倍，最多一小时；即使存储的错误计数很大，也会安全达到上限，不会溢出。数据库与缓存的协调仍由现有服务共同完成。
+
 ## 事件驱动通信
 
 跨服务协调主要依赖 Tokio `broadcast`：
@@ -352,6 +370,13 @@ Healthy ◄───────────────────────
 - **只有 `ENOSPC` 会在录制途中进入写入门**。写入器写满磁盘时，会在录制仍在进行的过程中把故障上报给写入门，使该根降级，从而对下一次启动进行限流。其他写入失败——文件系统只读、权限丢失、路径消失——会被归类为文件级故障，仍由引擎的 `CircuitBreaker` 处理；它们通过启动探测抵达写入门，只有在同时导致启动前钩子的 `create_dir_all` 失败时才会经由该钩子抵达。目录已存在但不可写时 `ensure_output_dir` 返回 `Ok`，因此启动前钩子发现不了这种情况。之所以这样划分，是因为 `OutputRootUnavailable` 不计入熔断器，对这一类故障来说写入门是唯一的限流手段。
 
 写入门在 `/api/health` 中以一个聚合的 `output-root` 组件暴露，列出所有 Degraded 根及其分类后的 `io::ErrorKind`、被拒绝次数和上次尝试的时间。参见[通知系统文档](./notifications.md#存储严重事件)了解事件形态，以及 [Docker 故障排查](../getting-started/docker.md#清理存储)了解挂载失效的失败模式。
+
+## 服务所有权
+
+已结束会话的延迟清理由会话生命周期服务持有。关闭时会取消并等待这些任务结束，
+不必等待保留时间到期；清理不会移除后续新会话的当前会话索引。API 状态复用容器中的
+仓库实例与配置导入服务。导入服务在运行时协调器创建后构造，而日志归档授权及归档
+容量控制仍属于各自的 API 状态。
 
 ## 可观测性、健康检查与优雅退出
 
