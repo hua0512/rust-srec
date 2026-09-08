@@ -63,7 +63,7 @@ async fn sampler_panic_becomes_a_stable_failure_without_restarting_workers() {
     let observed = calls.clone();
     let mut sampler = SystemSampler::with_sampling_fn(move |_| {
         observed.fetch_add(1, Ordering::SeqCst);
-        panic!("injected sampler panic");
+        std::panic::resume_unwind(Box::new("injected sampler panic"));
     });
     for _ in 0..3 {
         assert!(
