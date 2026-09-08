@@ -6,7 +6,7 @@ ARG RUST_VERSION=1.95.0
 # Stage 0: Chef - Rust toolchain + cargo-chef (shared base)
 # =============================================================================
 FROM rust:${RUST_VERSION}-bookworm AS chef
-RUN cargo install --locked cargo-chef
+RUN cargo install --locked cargo-chef --version 0.1.78
 WORKDIR /app
 
 # =============================================================================
@@ -94,89 +94,58 @@ RUN set -eux; \
     cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    curl \
-    libssl3 \
-    locales \
-    python3 \
-    python3-pip \
-    unzip \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/* \
-    && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \
-    && locale-gen
+# Debian security updates remain available; downloaded tool artifacts are independently locked.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl libssl3 locales python3 python3-venv \
+        libgcc-s1; \
+    rm -rf /var/lib/apt/lists/*; \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen; \
+    locale-gen
 
-# Install ffmpeg with architecture check
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-      URL="https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-      URL="https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"; \
-    fi && \
-    curl -L -o /tmp/ffmpeg.tar.xz "$URL" && \
-    mkdir -p /tmp/ffmpeg && \
-    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 && \
-    mv /tmp/ffmpeg/bin/ffmpeg /usr/local/bin/ && \
-    mv /tmp/ffmpeg/bin/ffprobe /usr/local/bin/ && \
-    mv /tmp/ffmpeg/bin/ffplay /usr/local/bin/ && \
-    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/ffplay && \
-    rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz
+COPY rust-srec/docker/ /usr/local/share/rust-srec/image/
+RUN set -eux; \
+    python3 /usr/local/share/rust-srec/image/install-runtime-tools.py --architecture "$(dpkg --print-architecture)"; \
+    python3 -m venv /opt/streamlink; \
+    /opt/streamlink/bin/pip install --no-cache-dir --only-binary=:all: --require-hashes \
+        --index-url https://pypi.org/simple \
+        -r /usr/local/share/rust-srec/image/streamlink-requirements.txt; \
+    /opt/streamlink/bin/pip check
 
-# Set UTF-8 locale
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,video,utility \
+    HOME=/app/config \
+    XDG_CONFIG_HOME=/app/config \
+    XDG_DATA_HOME=/app/config \
+    XDG_CACHE_HOME=/app/config/cache \
+    BAIDUPCS_GO_CONFIG_DIR=/app/config/BaiduPCS-Go \
+    DATABASE_URL=sqlite:///app/data/rust-srec.db \
+    OUTPUT_DIR=/app/output \
+    LOG_DIR=/app/logs \
+    API_PORT=8080 \
+    API_BIND_ADDRESS=0.0.0.0
 
-# NVIDIA Container Toolkit support: when the container runs under the toolkit,
-# these env vars tell it which driver capabilities to expose.
-# Has no effect when no NVIDIA GPU is present.
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
-
-# Install Streamlink, ttvlol plugin, and rclone
-RUN pip3 install --break-system-packages streamlink \
-    && mkdir -p /root/.local/share/streamlink/plugins \
-    && curl -L -o /root/.local/share/streamlink/plugins/twitch.py \
-        'https://github.com/2bc4/streamlink-ttvlol/releases/latest/download/twitch.py' \
-    && curl https://rclone.org/install.sh | bash \
-    && arch=$(dpkg --print-architecture) \
-    && if [ "$arch" = "amd64" ]; then \
-        DANMAKU_ARCH="x86_64"; \
-    elif [ "$arch" = "arm64" ]; then \
-        DANMAKU_ARCH="arm64"; \
-    else \
-        echo "Unsupported architecture: $arch"; exit 1; \
-    fi \
-    && curl -L -o /tmp/danmaku.zip "https://github.com/renmu123/DanmakuFactory/releases/download/v2.0.0/DanmakuFactory-linux-${DANMAKU_ARCH}-CLI.zip" \
-    && unzip /tmp/danmaku.zip -d /tmp/danmaku \
-    && mv /tmp/danmaku/DanmakuFactory /usr/local/bin/DanmakuFactory \
-    && chmod +x /usr/local/bin/DanmakuFactory \
-    && rm -rf /tmp/danmaku.zip /tmp/danmaku \
-    && curl -L -o /tmp/baidupcs.zip "https://github.com/qjfoidnh/BaiduPCS-Go/releases/download/v4.0.1/BaiduPCS-Go-v4.0.1-linux-${arch}.zip" \
-    && unzip /tmp/baidupcs.zip -d /tmp/baidupcs \
-    && mv /tmp/baidupcs/*/BaiduPCS-Go /usr/local/bin/BaiduPCS-Go \
-    && chmod +x /usr/local/bin/BaiduPCS-Go \
-    && rm -rf /tmp/baidupcs.zip /tmp/baidupcs
-
-# Keep the BaiduPCS-Go login session inside the mounted config volume; the
-# default location under $HOME would be lost on container recreation. The
-# `baidupcs` pipeline processor and /api/tools/baidupcs both honor this.
-ENV BAIDUPCS_GO_CONFIG_DIR=/app/config/BaiduPCS-Go
+RUN set -eux; \
+    groupadd --gid 1000 recorder; \
+    useradd --uid 1000 --gid 1000 --home-dir /app/config --no-create-home --shell /usr/sbin/nologin recorder; \
+    mkdir -p /app/data /app/config/streamlink/plugins /app/config/cache /app/output /app/logs; \
+    chown -R 1000:1000 /app
 
 WORKDIR /app
-
-# Copy the built binary from the builder stage
-COPY --from=builder /app/target/release/rust-srec /app/rust-srec
-
-# Watchtower pre-update hook: gates container auto-updates on /api/health/idle.
+COPY --from=builder --chmod=755 /app/target/release/rust-srec /app/rust-srec
 COPY --chmod=755 rust-srec/scripts/watchtower-pre-update.sh /app/watchtower-pre-update.sh
+COPY --chmod=755 rust-srec/docker/entrypoint.sh /usr/local/bin/rust-srec-entrypoint
+COPY --chmod=755 rust-srec/docker/streamlink.sh /usr/local/bin/streamlink
+COPY --chmod=755 rust-srec/docker/healthcheck.sh /usr/local/bin/rust-srec-healthcheck
 
-# Expose the default port (adjust as needed)
+USER 1000:1000
 EXPOSE 8080
-
-# Run the application
-CMD ["./rust-srec"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 CMD ["rust-srec-healthcheck"]
+ENTRYPOINT ["rust-srec-entrypoint"]
+CMD ["/app/rust-srec"]

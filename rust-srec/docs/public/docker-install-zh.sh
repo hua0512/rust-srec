@@ -133,6 +133,32 @@ main() {
     download "$BASE_URL/env.zh.example" ".env"
     success ".env 下载完成"
     
+    # Prepare bind mounts before Docker can create root-owned host directories.
+    local runtime_uid runtime_gid default_uid default_gid
+    default_uid=$(id -u)
+    default_gid=$(id -g)
+    [[ "$default_uid" != 0 ]] || default_uid=1000
+    [[ "$default_gid" != 0 ]] || default_gid=1000
+    runtime_uid="${PUID:-$default_uid}"
+    runtime_gid="${PGID:-$default_gid}"
+    if [[ ! "$runtime_uid" =~ ^[1-9][0-9]*$ || ! "$runtime_gid" =~ ^[1-9][0-9]*$ ]]; then
+        error "PUID 和 PGID 必须是正整数用户与组 ID。"
+        return 1
+    fi
+    for directory in data config output logs; do
+        if [[ ! -e "$directory" ]]; then
+            mkdir -p "$directory"
+            if [[ $(id -u) == 0 ]]; then
+                chown "$runtime_uid:$runtime_gid" "$directory"
+            fi
+        fi
+    done
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' -e "s/^PUID=.*/PUID=$runtime_uid/" -e "s/^PGID=.*/PGID=$runtime_gid/" .env
+    else
+        sed -i -e "s/^PUID=.*/PUID=$runtime_uid/" -e "s/^PGID=.*/PGID=$runtime_gid/" .env
+    fi
+
     # Generate secure secrets
     info "生成安全密钥..."
     JWT_SECRET=$(generate_secret 32)

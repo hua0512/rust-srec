@@ -1,0 +1,40 @@
+{
+  "ffmpeg": {
+    "version": "N-126435-gf93cd72dde",
+    "source": "https://github.com/yt-dlp/FFmpeg-Builds/releases/tag/autobuild-2026-09-06-16-53",
+    "format": "tar.xz",
+    "executables": {"ffmpeg": "bin/ffmpeg", "ffprobe": "bin/ffprobe", "ffplay": "bin/ffplay"},
+    "amd64": {"url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-09-06-16-53/ffmpeg-N-126435-gf93cd72dde-linux64-gpl.tar.xz", "sha256": "90f067062842e6830ba724ab063d0f742440dd139022921735d75e4056647818"},
+    "arm64": {"url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-09-06-16-53/ffmpeg-N-126435-gf93cd72dde-linuxarm64-gpl.tar.xz", "sha256": "7a8c14db06b8832e890f50524488da58d0ef3b26569e1c204d7189a5e9bb03d8"}
+  },
+  "rclone": {
+    "version": "1.75.1",
+    "source": "https://github.com/rclone/rclone/releases/tag/v1.75.1",
+    "format": "zip",
+    "executables": {"rclone": "rclone"},
+    "amd64": {"url": "https://github.com/rclone/rclone/releases/download/v1.75.1/rclone-v1.75.1-linux-amd64.zip", "sha256": "982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab"},
+    "arm64": {"url": "https://github.com/rclone/rclone/releases/download/v1.75.1/rclone-v1.75.1-linux-arm64.zip", "sha256": "03f2504174034b6d004152ed7369251c9a9ec1f7e0836eda420f5c7a5ec0dff9"}
+  },
+  "danmaku-factory": {
+    "version": "2.0.0",
+    "source": "https://github.com/renmu123/DanmakuFactory/releases/tag/v2.0.0",
+    "format": "zip",
+    "executables": {"DanmakuFactory": "DanmakuFactory"},
+    "amd64": {"url": "https://github.com/renmu123/DanmakuFactory/releases/download/v2.0.0/DanmakuFactory-linux-x86_64-CLI.zip", "sha256": "fe388944270754e9fa2db2dd945a9947e297e416629e577a85a4ffa8dc526a8e"},
+    "arm64": {"url": "https://github.com/renmu123/DanmakuFactory/releases/download/v2.0.0/DanmakuFactory-linux-arm64-CLI.zip", "sha256": "046fd5f86416e5ecbbd8b47893d69f9cde06380708c5d48a80217af6b7b7c829"}
+  },
+  "baidupcs-go": {
+    "version": "4.0.1",
+    "source": "https://github.com/qjfoidnh/BaiduPCS-Go/releases/tag/v4.0.1",
+    "format": "zip",
+    "executables": {"BaiduPCS-Go": "BaiduPCS-Go"},
+    "amd64": {"url": "https://github.com/qjfoidnh/BaiduPCS-Go/releases/download/v4.0.1/BaiduPCS-Go-v4.0.1-linux-amd64.zip", "sha256": "ffbf6d15eef8f7df06ad59d46e7347c71d725dec24d1f558357bd27d16aa65b3"},
+    "arm64": {"url": "https://github.com/qjfoidnh/BaiduPCS-Go/releases/download/v4.0.1/BaiduPCS-Go-v4.0.1-linux-arm64.zip", "sha256": "d1d5e0ba44cdfad219ea12749dce1103a07873d9adf89dcf64dafc47aea44e53"}
+  },
+  "ttvlol": {
+    "version": "8.3.0-20260701",
+    "source": "https://github.com/2bc4/streamlink-ttvlol/releases/tag/8.3.0-20260701",
+    "format": "file",
+    "common": {"url": "https://github.com/2bc4/streamlink-ttvlol/releases/download/8.3.0-20260701/twitch.py", "sha256": "4d465380159ec59f7caef6cb6a28368bbbbd3abcf80886138182184c30f2fad0"}
+  }
+}

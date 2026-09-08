@@ -3,6 +3,8 @@ services:
     # NOTE: Images are tagged as vX.Y.Z (leading 'v'), e.g. VERSION=v0.1.0.
     image: ghcr.io/hua0512/rust-srec:${VERSION:-latest}
     container_name: rust-srec
+    # Match bind-mount ownership; the image never starts as root to chown host data.
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     stop_grace_period: ${RUST_SREC_CONTAINER_STOP_GRACE_PERIOD:-35s}
     # Watchtower auto-update (only in effect when the optional `autoupdate`
@@ -47,7 +49,7 @@ services:
       - WEB_PUSH_VAPID_PRIVATE_KEY=${WEB_PUSH_VAPID_PRIVATE_KEY:-}
       - WEB_PUSH_VAPID_SUBJECT=${WEB_PUSH_VAPID_SUBJECT:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
+      test: ["CMD", "rust-srec-healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3

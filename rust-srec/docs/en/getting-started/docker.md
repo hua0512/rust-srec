@@ -59,7 +59,7 @@ The [systemd service](./installation.md#systemd-service-linux) installs the back
 
 2. Rename them to `docker-compose.yml` and `.env`.
 3. Generate two different secrets and set `JWT_SECRET` and `SESSION_SECRET` in `.env`. Empty values intentionally make Compose refuse to start.
-4. Review paths, timezone, ports, and `VERSION`.
+4. Review paths, timezone, ports, `VERSION`, and the [backend UID/GID and volume permissions](#backend-user-and-volume-permissions).
 5. Start and verify:
 
 ```bash
@@ -90,6 +90,42 @@ $bytes = New-Object Byte[] 32
 Use absolute host paths for a long-running deployment. The example enables `unless-stopped`, backend health checks, frontend startup ordering, and container log rotation.
 
 ## Access and First Login
+
+### Backend User and Volume Permissions
+
+The backend image runs as UID/GID `1000:1000`. Compose uses `PUID` and `PGID` from
+`.env` to override that identity; direct Docker runs use `--user UID:GID`. These
+settings do not run a root entrypoint or change host ownership automatically.
+On Linux, set the IDs to the account that owns your bind mounts and create the
+directories before starting Compose, for example:
+
+```bash
+mkdir -p data config output logs
+id -u
+id -g
+```
+
+Put those numeric values into `PUID` and `PGID`. The Unix installer does this for
+new directories (or defaults to `1000:1000` when run as root). Existing directories
+are preserved. Before upgrading a root-run deployment, stop it and explicitly
+transfer its mounted files to the chosen identity; for the default paths/IDs:
+
+```bash
+docker compose down
+sudo chown -R 1000:1000 data config output logs
+docker compose up -d
+```
+
+Use your actual paths and IDs. Docker Desktop users should grant the shared host
+directories read/write access; its host permission mapping differs from Linux.
+The backend reports the unwritable path and UID/GID if startup permissions fail.
+
+Tool configuration stays in `/app/config`. Custom Streamlink plugins go in
+`config/streamlink/plugins`; a custom `twitch.py` overrides the pinned bundled
+plugin. The image itself includes a public-liveness healthcheck that works with
+authentication enabled and follows `API_PORT`, even without Compose.
+
+### First Login
 
 - Web interface: `http://localhost:15275`
 - Swagger UI: `http://localhost:12555/api/docs`

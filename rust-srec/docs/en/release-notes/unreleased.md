@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Backend Runtime Image
+
+- **Non-root runtime and verified tool downloads**
+
+  The backend image now defaults to UID/GID `1000:1000`, keeps writable tool configuration/plugins under the mounted config directory, and includes a liveness healthcheck. Compose supports numeric `PUID`/`PGID` overrides; existing root-owned volumes need an explicit ownership migration before upgrading. Runtime executables, Streamlink dependencies and the Twitch plugin use pinned versions and SHA256 checks instead of mutable `latest` downloads or remote installation scripts. Native amd64/arm64 build and smoke checks gate image changes. See [volume permissions](../getting-started/docker.md#backend-user-and-volume-permissions).
+
 ## Internal Metrics
 
 - **Monitoring code reflects the available interfaces**
