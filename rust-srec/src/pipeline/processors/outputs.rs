@@ -6,6 +6,21 @@ use tracing::warn;
 
 use crate::{Error, Result};
 
+/// Accumulate successful or skipped media results in input order. Batch callers
+/// own metadata, size metrics, commit/rollback and post-publication source deletion.
+/// Transfer results and partial-failure drivers use their own aggregation policy.
+pub(super) fn accumulate_media_output(
+    batch: &mut super::ProcessorOutput,
+    one: super::ProcessorOutput,
+) {
+    batch.duration_secs += one.duration_secs;
+    batch.outputs.extend(one.outputs);
+    batch.items_produced.extend(one.items_produced);
+    batch.skipped_inputs.extend(one.skipped_inputs);
+    batch.succeeded_inputs.extend(one.succeeded_inputs);
+    batch.logs.extend(one.logs);
+}
+
 pub(super) struct TempOutputGuard {
     path: PathBuf,
     cleanup: bool,

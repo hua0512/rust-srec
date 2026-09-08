@@ -944,10 +944,8 @@ impl Processor for ExecuteCommandProcessor {
         if !command_output.status.success() {
             // Find last error log
             let error_msg = command_output
-                .logs
-                .iter()
-                .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                .map(|l| l.message.clone())
+                .last_error_message()
+                .map(str::to_owned)
                 .unwrap_or_else(|| "Command failed".to_string());
 
             ctx.error(format!(

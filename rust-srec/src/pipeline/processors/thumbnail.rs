@@ -372,45 +372,25 @@ impl Processor for ThumbnailProcessor {
             )));
         }
 
-        let mut outputs = Vec::with_capacity(input.inputs.len());
-        let mut items_produced = Vec::new();
-        let mut skipped_inputs = Vec::new();
-        let mut succeeded_inputs = Vec::new();
-        let mut logs = Vec::new();
-        let mut duration_secs = 0.0;
+        let mut output = ProcessorOutput {
+            outputs: Vec::with_capacity(input.inputs.len()),
+            ..Default::default()
+        };
 
         for (idx, input_path) in input.inputs.iter().enumerate() {
             let output_override = input.outputs.get(idx).map(|s| s.as_str());
             let one = self
                 .process_one(input_path, output_override, &config, ctx, &mut batch)
                 .await?;
-            duration_secs += one.duration_secs;
-            outputs.extend(one.outputs);
-            items_produced.extend(one.items_produced);
-            skipped_inputs.extend(one.skipped_inputs);
-            succeeded_inputs.extend(one.succeeded_inputs);
-            logs.extend(one.logs);
+            super::outputs::accumulate_media_output(&mut output, one);
         }
         batch.commit().await?;
 
         Ok(ProcessorOutput {
-            outputs,
-            duration_secs,
             metadata: Some(
-                serde_json::json!({
-                    "batch": true,
-                    "inputs": input.inputs.len(),
-                })
-                .to_string(),
+                serde_json::json!({ "batch": true, "inputs": input.inputs.len() }).to_string(),
             ),
-            items_produced,
-            input_size_bytes: None,
-            output_size_bytes: None,
-            failed_inputs: vec![],
-            succeeded_inputs,
-            skipped_inputs,
-            uploads: vec![],
-            logs,
+            ..output
         })
     }
 }

@@ -299,36 +299,12 @@ impl RcloneProcessor {
         Ok(temp_path)
     }
 
-    /// True only when the filesystem positively reports the path as absent.
-    ///
-    /// Source absence is what marks a move input as consumed, so an I/O
-    /// error from `try_exists` (e.g. an unreadable or unmounted parent
-    /// directory) must keep the input pending instead of reporting an
-    /// upload that never happened.
-    async fn is_confirmed_absent(path: &Path) -> bool {
-        matches!(tokio::fs::try_exists(path).await, Ok(false))
-    }
-
-    /// Split move inputs into (pending, already moved by an earlier attempt).
-    async fn partition_move_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
-        let mut pending = Vec::new();
-        let mut moved = Vec::new();
-        for input in inputs {
-            if Self::is_confirmed_absent(Path::new(input)).await {
-                moved.push(input.clone());
-            } else {
-                pending.push(input.clone());
-            }
-        }
-        (pending, moved)
-    }
-
     /// Drain inputs whose sources rclone consumed during the last attempt.
     async fn take_moved_inputs(pending_inputs: &mut Vec<String>) -> Vec<String> {
         let mut moved_inputs = Vec::new();
         let mut still_pending = Vec::with_capacity(pending_inputs.len());
         for input in pending_inputs.drain(..) {
-            if Self::is_confirmed_absent(Path::new(&input)).await {
+            if super::inputs::is_confirmed_absent(Path::new(&input)).await {
                 moved_inputs.push(input);
             } else {
                 still_pending.push(input);
@@ -336,19 +312,6 @@ impl RcloneProcessor {
         }
         *pending_inputs = still_pending;
         moved_inputs
-    }
-
-    /// Per-file sizes captured before the transfer so `UploadResultItem`
-    /// sizes survive `move` operations that delete the local source.
-    /// Unreadable inputs are simply absent from the map.
-    async fn input_size_map(inputs: &[String]) -> std::collections::HashMap<String, u64> {
-        let mut sizes = std::collections::HashMap::with_capacity(inputs.len());
-        for input in inputs {
-            if let Ok(metadata) = tokio::fs::metadata(input).await {
-                sizes.insert(input.clone(), metadata.len());
-            }
-        }
-        sizes
     }
 
     /// Remote path of one batch input: `remote_root` + the input's path
@@ -431,7 +394,7 @@ impl RcloneProcessor {
         for attempt in 0..self.max_retries {
             if matches!(*operation, RcloneOperation::Move)
                 && (context.is_retry || attempt > 0)
-                && Self::is_confirmed_absent(Path::new(input_path)).await
+                && super::inputs::is_confirmed_absent(Path::new(input_path)).await
             {
                 info!(
                     input = input_path,
@@ -481,7 +444,7 @@ impl RcloneProcessor {
                 Ok(output) => output,
                 Err(e) => {
                     if matches!(*operation, RcloneOperation::Move)
-                        && Self::is_confirmed_absent(Path::new(input_path)).await
+                        && super::inputs::is_confirmed_absent(Path::new(input_path)).await
                     {
                         warn!(
                             input = input_path,
@@ -503,15 +466,13 @@ impl RcloneProcessor {
                 return Ok(success_output(logs));
             } else {
                 let error_msg = command_output
-                    .logs
-                    .iter()
-                    .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                    .map(|l| l.message.clone())
+                    .last_error_message()
+                    .map(str::to_owned)
                     .unwrap_or_else(|| "Unknown error".to_string());
                 logs.extend(command_output.logs);
 
                 if matches!(*operation, RcloneOperation::Move)
-                    && Self::is_confirmed_absent(Path::new(input_path)).await
+                    && super::inputs::is_confirmed_absent(Path::new(input_path)).await
                 {
                     warn!(
                         input = input_path,
@@ -568,7 +529,7 @@ impl RcloneProcessor {
         let base_dir_str = base_dir.to_string_lossy().to_string();
         let (mut pending_inputs, already_moved_inputs) =
             if matches!(*operation, RcloneOperation::Move) && context.is_retry {
-                Self::partition_move_inputs(inputs).await
+                super::inputs::partition_absent_inputs(inputs).await
             } else {
                 (inputs.to_vec(), Vec::new())
             };
@@ -577,7 +538,7 @@ impl RcloneProcessor {
         // Sizes are captured before rclone runs so move'd sources still have
         // one; inputs already consumed by an earlier attempt are absent and
         // fall back to None (the upsert's COALESCE keeps any earlier value).
-        let file_sizes = Self::input_size_map(&pending_inputs).await;
+        let file_sizes = super::inputs::input_size_map(&pending_inputs).await;
         let total_input_size = file_sizes.values().copied().sum::<u64>();
 
         let success_output = |logs, attempts| ProcessorOutput {
@@ -734,10 +695,8 @@ impl RcloneProcessor {
                 }
                 Ok(command_output) => {
                     let error_msg = command_output
-                        .logs
-                        .iter()
-                        .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                        .map(|l| l.message.clone())
+                        .last_error_message()
+                        .map(str::to_owned)
                         .unwrap_or_else(|| "Unknown error".to_string());
                     let exit_code = command_output.status.code().unwrap_or(-1);
                     logs.extend(command_output.logs);
@@ -972,10 +931,9 @@ impl Processor for RcloneProcessor {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::process::ExitStatus;
     use std::sync::Mutex;
 
-    use super::super::test_utils::utc_datetime;
+    use super::super::test_utils::{test_exit_status, utc_datetime};
     use super::*;
 
     struct MockAttempt {
@@ -1062,20 +1020,6 @@ mod tests {
                 },
             })
         }
-    }
-
-    #[cfg(unix)]
-    fn test_exit_status(succeeds: bool) -> ExitStatus {
-        use std::os::unix::process::ExitStatusExt;
-
-        ExitStatus::from_raw(if succeeds { 0 } else { 1 << 8 })
-    }
-
-    #[cfg(windows)]
-    fn test_exit_status(succeeds: bool) -> ExitStatus {
-        use std::os::windows::process::ExitStatusExt;
-
-        ExitStatus::from_raw(if succeeds { 0 } else { 1 })
     }
 
     fn expected_local_destination(dt: chrono::DateTime<chrono::Utc>) -> String {
@@ -1333,7 +1277,8 @@ mod tests {
         let unverifiable = not_a_dir.join("child.mp4").to_string_lossy().into_owned();
 
         let (pending, moved) =
-            RcloneProcessor::partition_move_inputs(std::slice::from_ref(&unverifiable)).await;
+            super::super::inputs::partition_absent_inputs(std::slice::from_ref(&unverifiable))
+                .await;
 
         assert_eq!(pending, vec![unverifiable]);
         assert!(moved.is_empty());

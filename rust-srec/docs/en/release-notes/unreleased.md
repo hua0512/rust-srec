@@ -134,6 +134,8 @@
 
 ## Post-processing
 
+- Media and transfer processors share compatible error selection, result accumulation and source-file accounting. Existing output order, skip metadata, staging/rollback and source-deletion policies remain intact; naming and path-identity rules stay processor-specific.
+
 - **Processor publication, paths and retries preserve their contracts**
 
   Subtitle filters accept apostrophes and filter delimiters in paths. No-overwrite publication uses native no-replace operations on supported platforms, retry waits cap at 30 seconds without overflow, and FFmpeg progress reports milliseconds consistently. File checks and abandoned temporary-output cleanup no longer block async workers.

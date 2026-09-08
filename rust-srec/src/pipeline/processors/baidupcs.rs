@@ -133,7 +133,7 @@ pub struct BaiduPcsConfig {
     /// Delete each local file after its upload (or benign skip) is
     /// confirmed. On a job retry, an already-absent input is treated as
     /// uploaded by the earlier attempt, mirroring
-    /// `RcloneProcessor::is_confirmed_absent` move-resume semantics.
+    /// `inputs::is_confirmed_absent` move-resume semantics.
     pub remove_source_after_upload: bool,
 }
 
@@ -540,36 +540,6 @@ impl BaiduPcsProcessor {
             .unwrap_or(local_path);
         format!("{}/{}", remote_dir.trim_end_matches('/'), file_name)
     }
-
-    /// Split inputs into (present, confirmed absent). Only a positive
-    /// `Ok(false)` from `try_exists` counts as absent — an I/O error must
-    /// keep the input pending instead of reporting an upload that never
-    /// happened (same contract as `RcloneProcessor::is_confirmed_absent`).
-    async fn partition_absent_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
-        let mut pending = Vec::new();
-        let mut resumed = Vec::new();
-        for input in inputs {
-            if matches!(tokio::fs::try_exists(Path::new(input)).await, Ok(false)) {
-                resumed.push(input.clone());
-            } else {
-                pending.push(input.clone());
-            }
-        }
-        (pending, resumed)
-    }
-
-    /// Per-file sizes captured before the upload so `UploadResultItem`
-    /// sizes survive `remove_source_after_upload`. Unreadable inputs are
-    /// simply absent from the map.
-    async fn input_size_map(inputs: &[String]) -> HashMap<String, u64> {
-        let mut sizes = HashMap::with_capacity(inputs.len());
-        for input in inputs {
-            if let Ok(metadata) = tokio::fs::metadata(input).await {
-                sizes.insert(input.clone(), metadata.len());
-            }
-        }
-        sizes
-    }
 }
 
 impl Default for BaiduPcsProcessor {
@@ -629,7 +599,7 @@ impl Processor for BaiduPcsProcessor {
         // With remove_source_after_upload, a retried job may legitimately
         // reference sources deleted after an earlier attempt's upload.
         let (mut pending, resumed) = if config.remove_source_after_upload && ctx.is_retry {
-            Self::partition_absent_inputs(&input.inputs).await
+            super::inputs::partition_absent_inputs(&input.inputs).await
         } else {
             for input_path in &input.inputs {
                 let path = Path::new(input_path);
@@ -646,7 +616,7 @@ impl Processor for BaiduPcsProcessor {
         };
 
         let remote_dir = Self::determine_remote_destination(input, &config);
-        let file_sizes = Self::input_size_map(&pending).await;
+        let file_sizes = super::inputs::input_size_map(&pending).await;
         let total_input_size = file_sizes.values().copied().sum::<u64>();
         let attempts_max = config.max_retries.clamp(1, MAX_ATTEMPTS_CAP);
 
@@ -938,10 +908,9 @@ impl Processor for BaiduPcsProcessor {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::process::ExitStatus;
     use std::sync::Mutex;
 
-    use super::super::test_utils::utc_datetime;
+    use super::super::test_utils::{test_exit_status, utc_datetime};
     use super::*;
 
     struct MockAttempt {
@@ -1014,20 +983,6 @@ mod tests {
                 logs: attempt.lines.into_iter().map(JobLogEntry::info).collect(),
             })
         }
-    }
-
-    #[cfg(unix)]
-    fn test_exit_status(succeeds: bool) -> ExitStatus {
-        use std::os::unix::process::ExitStatusExt;
-
-        ExitStatus::from_raw(if succeeds { 0 } else { 1 << 8 })
-    }
-
-    #[cfg(windows)]
-    fn test_exit_status(succeeds: bool) -> ExitStatus {
-        use std::os::windows::process::ExitStatusExt;
-
-        ExitStatus::from_raw(if succeeds { 0 } else { 1 })
     }
 
     fn queue_line(id: u32, path: &str) -> String {
