@@ -135,6 +135,11 @@ function Install-RustSrec {
         Get-RemoteFile -Url "$($script:BaseUrl)/env.example" -OutFile ".env"
         Write-Success ".env downloaded"
 
+        # Create bind-mount directories before starting the non-root backend.
+        foreach ($directory in @("data", "config", "output", "logs")) {
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        }
+
         # Generate secure secrets
         Write-Info "Generating secure secrets..."
         $jwtSecret = New-SecureSecret -Length 32

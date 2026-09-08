@@ -59,7 +59,7 @@ curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh RUST_SREC_DIR=/opt/rus
 
 2. 分别重命名为 `docker-compose.yml` 和 `.env`。
 3. 生成两个不同密钥，填写 `.env` 中的 `JWT_SECRET` 和 `SESSION_SECRET`。空值会让 Compose 有意拒绝启动。
-4. 审查目录、时区、端口和 `VERSION`。
+4. 审查目录、时区、端口、`VERSION` 以及[后端 UID/GID 与卷权限](#后端用户与卷权限)。
 5. 启动并验证：
 
 ```bash
@@ -90,6 +90,39 @@ $bytes = New-Object Byte[] 32
 长期部署应使用绝对宿主机路径。示例已经配置 `unless-stopped`、后端健康检查、前端启动顺序和容器日志轮转。
 
 ## 访问与首次登录
+
+### 后端用户与卷权限
+
+后端镜像默认使用 UID/GID `1000:1000`。Compose 通过 `.env` 中的 `PUID` 和 `PGID`
+覆盖运行身份；直接运行 Docker 时使用 `--user UID:GID`。这些设置不会启动 root
+入口程序，也不会自动修改宿主机文件归属。Linux 上应使用绑定挂载所属账号的 ID，
+并在启动 Compose 前创建目录，例如：
+
+```bash
+mkdir -p data config output logs
+id -u
+id -g
+```
+
+把查询到的数值填写到 `PUID` 和 `PGID`。Unix 安装脚本会为新目录完成这些设置；
+以 root 运行时默认使用 `1000:1000`，现有目录保持不变。升级此前以 root 运行的
+部署时，先停止服务，再明确修改挂载文件的归属；默认路径和 ID 的示例：
+
+```bash
+docker compose down
+sudo chown -R 1000:1000 data config output logs
+docker compose up -d
+```
+
+请替换为实际目录与 ID。Docker Desktop 用户应允许共享目录读写；其宿主机权限
+映射与 Linux 不同。启动权限不足时，后端会报告不可写路径及当前 UID/GID。
+
+工具配置保存在 `/app/config`。自定义 Streamlink 插件放在
+`config/streamlink/plugins`，其中的 `twitch.py` 可覆盖镜像内固定版本的插件。
+镜像本身包含公开存活接口健康检查，启用认证时同样有效，并会跟随 `API_PORT`，
+无需依赖 Compose 才能进行检查。
+
+### 首次登录
 
 - Web 界面：`http://localhost:15275`
 - Swagger UI：`http://localhost:12555/api/docs`

@@ -1,0 +1,67 @@
+name: Backend Runtime Image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'rust-srec/Dockerfile'
+      - 'rust-srec/docker/**'
+      - 'rust-srec/docker-compose.yml'
+      - 'rust-srec/docs/public/docker-compose.example.yml'
+      - 'rust-srec/docs/public/docker-install*'
+      - 'rust-srec/docs/public/env*.example'
+      - '.dockerignore'
+      - '.github/workflows/runtime-image.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'rust-srec/Dockerfile'
+      - 'rust-srec/docker/**'
+      - 'rust-srec/docker-compose.yml'
+      - 'rust-srec/docs/public/docker-compose.example.yml'
+      - 'rust-srec/docs/public/docker-install*'
+      - 'rust-srec/docs/public/env*.example'
+      - '.dockerignore'
+      - '.github/workflows/runtime-image.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-and-smoke:
+    name: Runtime image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check shell scripts
+        run: |
+          for script in rust-srec/docker/*.sh rust-srec/docs/public/docker-install*.sh; do
+            bash -n "$script"
+          done
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the real backend image without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: rust-srec/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: rust-srec-runtime-smoke:${{ matrix.arch }}
+          cache-from: type=gha,scope=runtime-image-${{ matrix.arch }}
+          cache-to: type=gha,scope=runtime-image-${{ matrix.arch }},mode=max
+      - name: Check non-root startup, tools, authentication, health and UID override
+        run: bash rust-srec/docker/smoke-test.sh rust-srec-runtime-smoke:${{ matrix.arch }}
