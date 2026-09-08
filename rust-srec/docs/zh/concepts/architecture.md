@@ -319,6 +319,12 @@ sequenceDiagram
 校验 bearer token；未配置 JWT 鉴权时也会返回 `401`。liveness 路由保持公开。WebSocket、
 媒体与流代理路由使用各自文档中说明的查询参数鉴权路径。
 
+## 调度器状态与退避
+
+主播 Actor 使用内存中的调度状态以及基于数据库的元数据缓存。已移除未使用的 JSON 状态文件接口（`with_state_path`、`restore_state`、恢复状态构造函数、`PersistedActorState`、`PersistedConfig` 和 `SupervisorConfig.state_dir`）。运行时恢复仍使用数据库与会话生命周期，无需 Actor 状态文件。
+
+同时移除了未使用的 `StreamerManager::record_error` 和 `StreamerRepository::record_streamer_error`。监控保留事务式错误写入与 `disabled_until_for_error_count` 计算。退避保留配置的阈值，从 60 秒开始翻倍，最多一小时；即使存储的错误计数很大，也会安全达到上限，不会溢出。数据库与缓存的协调仍由现有服务共同完成。
+
 ## 事件驱动通信
 
 跨服务协调主要依赖 Tokio `broadcast`：

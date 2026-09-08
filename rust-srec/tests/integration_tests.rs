@@ -1325,71 +1325,22 @@ mod streamer_manager_tests {
     }
 
     #[tokio::test]
-    async fn test_streamer_manager_error_backoff() {
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-        let streamer_id =
-            insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
-
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo, broadcaster);
-        manager.hydrate().await.expect("Failed to hydrate");
-        let metadata_store = manager.metadata_store();
-        metadata_store
-            .get_mut(&streamer_id)
-            .expect("Streamer not found")
-            .offline_check_count = 2;
-
-        // Record errors until backoff triggers
-        manager
-            .record_error(&streamer_id, "Error 1")
-            .await
-            .expect("Failed to record error");
-        assert!(!manager.is_disabled(&streamer_id));
-
-        manager
-            .record_error(&streamer_id, "Error 2")
-            .await
-            .expect("Failed to record error");
-        assert!(manager.is_disabled(&streamer_id));
-
-        // Verify in database
-        let result: (Option<i64>,) =
-            sqlx::query_as("SELECT disabled_until FROM streamers WHERE id = ?")
-                .bind(&streamer_id)
-                .fetch_one(&pool)
-                .await
-                .expect("Failed to query");
-        assert!(result.0.is_some());
-    }
-
-    #[tokio::test]
     async fn test_streamer_manager_record_success() {
         let pool = setup_test_db().await;
         let platform_id = setup_platform(&pool).await;
         let streamer_id =
             insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
 
+        sqlx::query("UPDATE streamers SET state = 'TEMPORAL_DISABLED', consecutive_error_count = 2, last_error = 'fixture error', disabled_until = ? WHERE id = ?")
+            .bind((chrono::Utc::now() + chrono::Duration::minutes(30)).timestamp_millis())
+            .bind(&streamer_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(repo, broadcaster);
         manager.hydrate().await.expect("Failed to hydrate");
-        let metadata_store = manager.metadata_store();
-        metadata_store
-            .get_mut(&streamer_id)
-            .expect("Streamer not found")
-            .offline_check_count = 2;
-
-        // Trigger backoff
-        manager
-            .record_error(&streamer_id, "Error 1")
-            .await
-            .expect("Failed to record error");
-        manager
-            .record_error(&streamer_id, "Error 2")
-            .await
-            .expect("Failed to record error");
         assert!(manager.is_disabled(&streamer_id));
 
         // Record success
@@ -1404,6 +1355,14 @@ mod streamer_manager_tests {
             .get_streamer(&streamer_id)
             .expect("Streamer not found");
         assert!(metadata.last_live_time.is_some());
+        let persisted: (String, i32, Option<i64>, Option<String>) = sqlx::query_as(
+            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
+        )
+        .bind(&streamer_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(persisted, ("LIVE".to_string(), 0, None, None));
     }
 }
 

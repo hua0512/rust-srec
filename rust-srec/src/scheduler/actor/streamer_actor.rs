@@ -8,16 +8,14 @@
 //!
 //! - Self-scheduling: Determines when to perform the next check based on state
 //! - Message handling: Processes CheckStatus, ConfigUpdate, BatchResult, Stop, GetState
-//! - State persistence: Saves state on shutdown for recovery
 //! - Fault isolation: Failures don't affect other actors
 //!
 //! # State Management
 //!
 //! The actor fetches streamer metadata on-demand from the shared metadata store
-//! rather than holding a local copy. This eliminates state drift between the
-//! actor and the canonical source of truth (StreamerManager).
+//! rather than storing configuration separately. The database-backed metadata
+//! cache and the actor's local scheduling state serve distinct purposes.
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -28,8 +26,8 @@ use tracing::{debug, info, trace, warn};
 
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
 use super::messages::{
-    BatchDetectionResult, CheckResult, HysteresisState, PlatformMessage, StreamerActorState,
-    StreamerConfig, StreamerMessage,
+    BatchDetectionResult, CheckResult, PlatformMessage, StreamerActorState, StreamerConfig,
+    StreamerMessage,
 };
 use super::metrics::ActorMetrics;
 use super::monitor_adapter::StatusChecker;
@@ -124,8 +122,6 @@ pub struct StreamerActor {
     cancellation_token: CancellationToken,
     /// Metrics handle.
     metrics: ActorMetrics,
-    /// State persistence path (optional).
-    state_path: Option<PathBuf>,
     /// Status checker for performing actual status checks.
     status_checker: Arc<dyn StatusChecker>,
 }
@@ -176,7 +172,6 @@ impl StreamerActor {
             config,
             cancellation_token,
             metrics,
-            state_path: None,
             status_checker,
         };
 
@@ -227,7 +222,6 @@ impl StreamerActor {
             config,
             cancellation_token,
             metrics,
-            state_path: None,
             status_checker,
         };
 
@@ -252,12 +246,6 @@ impl StreamerActor {
         );
         actor.platform_actor = Some(platform_actor);
         (actor, handle)
-    }
-
-    /// Set the state persistence path.
-    pub fn with_state_path(mut self, path: PathBuf) -> Self {
-        self.state_path = Some(path);
-        self
     }
 
     /// Get the actor's ID.
@@ -421,20 +409,17 @@ impl StreamerActor {
                 // Cancellation
                 _ = self.cancellation_token.cancelled() => {
                     info!("StreamerActor {} cancelled", self.id);
-                    self.persist_state().await?;
                     return Ok(ActorOutcome::Cancelled);
                 }
             }
         }
 
-        // Graceful shutdown - persist state
-        self.persist_state().await?;
         info!("StreamerActor {} stopped gracefully", self.id);
         Ok(ActorOutcome::Stopped)
     }
 
     /// Fatal mailbox errors are terminal policy decisions, just like fatal timer errors.
-    /// Return a stop signal so all mailbox paths reach graceful state persistence.
+    /// Return a stop signal so all mailbox paths reach graceful shutdown.
     async fn handle_run_message(&mut self, message: StreamerMessage) -> Result<bool, ActorError> {
         match self.handle_message(message).await {
             Err(error) if !error.recoverable => {
@@ -1389,269 +1374,6 @@ impl StreamerActor {
         // Send state, ignore if receiver dropped
         let _ = reply.send(self.state.clone());
     }
-
-    /// Persist the current state for recovery after restart.
-    ///
-    /// State is persisted to a JSON file if a state path is configured.
-    async fn persist_state(&self) -> Result<(), ActorError> {
-        let Some(ref path) = self.state_path else {
-            debug!(
-                "StreamerActor {} has no state path, skipping persistence",
-                self.id
-            );
-            return Ok(());
-        };
-
-        debug!("StreamerActor {} persisting state to {:?}", self.id, path);
-
-        let persisted = PersistedActorState::from_state(&self.id, &self.state, &self.config);
-
-        let json = serde_json::to_string_pretty(&persisted)
-            .map_err(|e| ActorError::recoverable(format!("Failed to serialize state: {}", e)))?;
-
-        // Ensure parent directory exists
-        crate::utils::fs::ensure_parent_dir_with_op("creating state directory", path)
-            .await
-            .map_err(|e| {
-                ActorError::recoverable(format!("Failed to create state directory: {}", e))
-            })?;
-
-        // Write atomically using a temp file
-        let temp_path = path.with_extension("tmp");
-        tokio::fs::write(&temp_path, &json)
-            .await
-            .map_err(|e| ActorError::recoverable(format!("Failed to write state file: {}", e)))?;
-
-        tokio::fs::rename(&temp_path, path)
-            .await
-            .map_err(|e| ActorError::recoverable(format!("Failed to rename state file: {}", e)))?;
-
-        debug!("StreamerActor {} state persisted successfully", self.id);
-        Ok(())
-    }
-
-    /// Restore state from a persisted file.
-    ///
-    /// Returns `None` if no persisted state exists or if restoration fails.
-    pub async fn restore_state(
-        id: &str,
-        state_path: &Path,
-    ) -> Option<(StreamerActorState, StreamerConfig)> {
-        let path = state_path.join(format!("{}.json", id));
-
-        if !path.exists() {
-            debug!("No persisted state found for actor {}", id);
-            return None;
-        }
-
-        match tokio::fs::read_to_string(&path).await {
-            Ok(json) => match serde_json::from_str::<PersistedActorState>(&json) {
-                Ok(persisted) => {
-                    info!("Restored state for actor {} from {:?}", id, path);
-                    Some(persisted.into_state_and_config())
-                }
-                Err(e) => {
-                    warn!("Failed to parse persisted state for {}: {}", id, e);
-                    None
-                }
-            },
-            Err(e) => {
-                warn!("Failed to read persisted state for {}: {}", id, e);
-                None
-            }
-        }
-    }
-
-    /// Create a StreamerActor with restored state if available.
-    pub async fn with_restored_state(
-        streamer_id: String,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
-        default_config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        state_dir: Option<&PathBuf>,
-        status_checker: std::sync::Arc<dyn StatusChecker>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::new(
-            streamer_id.clone(),
-            metadata_store,
-            default_config.clone(),
-            cancellation_token,
-            status_checker,
-        );
-
-        // Try to restore state
-        if let Some(state_dir) = state_dir {
-            if let Some((restored_state, restored_config)) =
-                Self::restore_state(&streamer_id, state_dir).await
-            {
-                actor.state = restored_state;
-                actor.config = restored_config;
-                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
-
-                // Reschedule next check based on restored state
-                if actor.state.next_check.is_none() {
-                    actor
-                        .state
-                        .schedule_next_check(&actor.config, actor.get_error_count());
-                }
-            } else {
-                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
-            }
-        }
-
-        (actor, handle)
-    }
-
-    /// Create a StreamerActor with priority channel and restored state if available.
-    pub async fn with_priority_and_restored_state(
-        streamer_id: String,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
-        default_config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        state_dir: Option<&PathBuf>,
-        status_checker: std::sync::Arc<dyn StatusChecker>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::with_priority_channel(
-            streamer_id.clone(),
-            metadata_store,
-            default_config.clone(),
-            cancellation_token,
-            status_checker,
-        );
-
-        // Try to restore state
-        if let Some(state_dir) = state_dir {
-            if let Some((restored_state, restored_config)) =
-                Self::restore_state(&streamer_id, state_dir).await
-            {
-                actor.state = restored_state;
-                actor.config = restored_config;
-                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
-
-                // Reschedule next check based on restored state
-                if actor.state.next_check.is_none() {
-                    actor
-                        .state
-                        .schedule_next_check(&actor.config, actor.get_error_count());
-                }
-            } else {
-                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
-            }
-        }
-
-        (actor, handle)
-    }
-}
-
-/// Persisted actor state for recovery.
-///
-/// This struct contains only the serializable parts of the actor state.
-/// `Instant` values are converted to durations for persistence.
-/// Note: error_count is not persisted here as it's stored in the database
-/// and fetched on-demand from the metadata store.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PersistedActorState {
-    /// Actor ID.
-    pub actor_id: String,
-    /// Streamer state.
-    pub streamer_state: String,
-    /// Hysteresis state (offline grace period tracking).
-    pub hysteresis: HysteresisState,
-    /// Last check timestamp (RFC3339).
-    pub last_check_time: Option<String>,
-    /// Last check state.
-    pub last_check_state: Option<String>,
-    /// Last check error.
-    pub last_check_error: Option<String>,
-    /// Configuration.
-    pub config: PersistedConfig,
-}
-
-/// Persisted configuration.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PersistedConfig {
-    /// Check interval in milliseconds.
-    pub check_interval_ms: u64,
-    /// Offline check interval in milliseconds.
-    pub offline_check_interval_ms: u64,
-    /// Offline check count threshold.
-    pub offline_check_count: u32,
-    /// Priority level.
-    pub priority: String,
-    /// Whether batch capable.
-    pub batch_capable: bool,
-}
-
-impl PersistedActorState {
-    /// Create from current state.
-    pub fn from_state(id: &str, state: &StreamerActorState, config: &StreamerConfig) -> Self {
-        Self {
-            actor_id: id.to_string(),
-            streamer_state: state.streamer_state.as_str().to_string(),
-            hysteresis: state.hysteresis.clone(),
-            last_check_time: state.last_check.as_ref().map(|c| c.checked_at.to_rfc3339()),
-            last_check_state: state
-                .last_check
-                .as_ref()
-                .map(|c| c.state.as_str().to_string()),
-            last_check_error: state.last_check.as_ref().and_then(|c| c.error.clone()),
-            config: PersistedConfig {
-                check_interval_ms: config.check_interval_ms,
-                offline_check_interval_ms: config.offline_check_interval_ms,
-                offline_check_count: config.offline_check_count,
-                priority: format!("{:?}", config.priority),
-                batch_capable: config.batch_capable,
-            },
-        }
-    }
-
-    /// Convert back to state and config.
-    pub fn into_state_and_config(self) -> (StreamerActorState, StreamerConfig) {
-        use crate::domain::Priority;
-
-        let streamer_state = StreamerState::parse(&self.streamer_state).unwrap_or_default();
-
-        let last_check = self.last_check_state.map(|state_str| {
-            let state = StreamerState::parse(&state_str).unwrap_or_default();
-            CheckResult {
-                state,
-                stream_url: None,
-                title: None,
-                checked_at: self
-                    .last_check_time
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(chrono::Utc::now),
-                error: self.last_check_error,
-                next_check_hint: None,
-            }
-        });
-
-        let priority = match self.config.priority.as_str() {
-            "High" => Priority::High,
-            "Low" => Priority::Low,
-            _ => Priority::Normal,
-        };
-
-        let state = StreamerActorState {
-            streamer_state,
-            next_check: None, // Will be recalculated
-            recurring_interval_ms: None,
-            last_download_activity_at: None,
-            hysteresis: self.hysteresis,
-            last_check,
-        };
-
-        let config = StreamerConfig {
-            check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: self.config.offline_check_interval_ms,
-            offline_check_count: self.config.offline_check_count,
-            priority,
-            batch_capable: self.config.batch_capable,
-        };
-
-        (state, config)
-    }
 }
 
 #[cfg(test)]
@@ -1866,23 +1588,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restored_live_actor_retries_failed_offline_at_grace_threshold() {
+    async fn live_actor_retries_failed_offline_at_grace_threshold() {
         for batch in [false, true] {
-            let dir = tempfile::tempdir().unwrap();
-            let state_dir = dir.path().to_path_buf();
             let mut previous_metadata = create_test_metadata();
             previous_metadata.state = StreamerState::Live;
-            let persisted = PersistedActorState::from_state(
-                "test-streamer",
-                &StreamerActorState::from_metadata(&previous_metadata),
-                &create_test_config(),
-            );
-            tokio::fs::write(
-                state_dir.join("test-streamer.json"),
-                serde_json::to_vec(&persisted).unwrap(),
-            )
-            .await
-            .unwrap();
+            let previous_state = StreamerActorState::from_metadata(&previous_metadata);
             let checker = Arc::new(SequenceStatusChecker::new(
                 (0..5)
                     .map(|_| {
@@ -1900,26 +1610,23 @@ mod tests {
                 .unwrap()
                 .push_front(Err(CheckError::transient("database busy")));
             let (mut actor, _handle) = if batch {
-                StreamerActor::with_priority_and_restored_state(
+                StreamerActor::with_priority_channel(
                     "test-streamer".to_string(),
                     create_test_metadata_store(),
                     create_test_config(),
                     CancellationToken::new(),
-                    Some(&state_dir),
                     checker.clone(),
                 )
-                .await
             } else {
-                StreamerActor::with_restored_state(
+                StreamerActor::new(
                     "test-streamer".to_string(),
                     create_test_metadata_store(),
                     create_test_config(),
                     CancellationToken::new(),
-                    Some(&state_dir),
                     checker.clone(),
                 )
-                .await
             };
+            actor.state = previous_state;
             assert_eq!(actor.state.streamer_state, StreamerState::Live);
             for (pending, remaining) in [(true, 3), (true, 3), (true, 2), (false, 1), (false, 1)] {
                 if batch {
@@ -2183,44 +1890,6 @@ mod tests {
         handle.send(StreamerMessage::Stop).await.unwrap();
         let result = actor_task.await.unwrap();
         assert!(matches!(result, Ok(ActorOutcome::Stopped)));
-    }
-
-    #[test]
-    fn test_persisted_state_roundtrip() {
-        // Create hysteresis state with was_live=true and offline_count=5
-        let mut hysteresis = HysteresisState::new();
-        hysteresis.mark_live();
-        // Simulate some offline checks
-        for _ in 0..5 {
-            hysteresis.should_emit(StreamerState::Live, StreamerState::NotLive, 10);
-        }
-
-        let state = StreamerActorState {
-            streamer_state: StreamerState::Live,
-            next_check: Some(Instant::now()),
-            recurring_interval_ms: None,
-            last_download_activity_at: None,
-            hysteresis,
-            last_check: Some(CheckResult::success(StreamerState::Live)),
-        };
-
-        let config = StreamerConfig {
-            check_interval_ms: 30000,
-            offline_check_interval_ms: 10000,
-            offline_check_count: 5,
-            priority: Priority::High,
-            batch_capable: true,
-        };
-
-        let persisted = PersistedActorState::from_state("test", &state, &config);
-        let (restored_state, restored_config) = persisted.into_state_and_config();
-
-        assert_eq!(restored_state.streamer_state, StreamerState::Live);
-        assert_eq!(restored_state.hysteresis.offline_count(), 5);
-        assert!(restored_state.hysteresis.was_live());
-        assert_eq!(restored_config.check_interval_ms, 30000);
-        assert_eq!(restored_config.priority, Priority::High);
-        assert!(restored_config.batch_capable);
     }
 
     #[test]
@@ -3044,10 +2713,8 @@ mod tests {
         assert!(actor.state.next_check.is_some());
     }
     #[tokio::test]
-    async fn fatal_timer_and_mailbox_errors_stop_gracefully_and_persist_state() {
+    async fn fatal_timer_and_mailbox_errors_stop_gracefully() {
         for trigger in ["timer", "normal", "priority", "late-priority"] {
-            let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("state.json");
             let metadata = create_test_metadata_store();
             let (mut actor, handle) = StreamerActor::with_priority_channel(
                 "test-streamer".to_owned(),
@@ -3056,7 +2723,6 @@ mod tests {
                 CancellationToken::new(),
                 Arc::new(AssertNotCalledStatusChecker),
             );
-            actor = actor.with_state_path(path.clone());
             actor.state.next_check = Some(Instant::now() + Duration::from_secs(3600));
             let message = StreamerMessage::DownloadEnded(DownloadEndPolicy::StreamerOffline);
             if trigger != "late-priority" {
@@ -3089,9 +2755,6 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(outcome.unwrap(), ActorOutcome::Stopped, "{trigger}");
-            let persisted: serde_json::Value =
-                serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
-            assert_eq!(persisted["actor_id"], "test-streamer", "{trigger}");
         }
     }
 

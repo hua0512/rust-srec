@@ -338,6 +338,12 @@ handlers validate bearer tokens themselves and return `401` when JWT authenticat
 configured; liveness remains public. WebSocket, media, and stream-proxy routes use their documented
 query-parameter authentication paths.
 
+## Scheduler State and Backoff
+
+Streamer actors use in-memory scheduling state and the database-backed metadata cache. The unused JSON state-file interfaces (`with_state_path`, `restore_state`, the restored-state constructors, `PersistedActorState`, `PersistedConfig` and `SupervisorConfig.state_dir`) have been removed. Runtime recovery still uses the database and session lifecycle; no actor state files are required.
+
+The unused `StreamerManager::record_error` and `StreamerRepository::record_streamer_error` methods are also removed. Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache coordination remains shared across existing services.
+
 ## Event-driven communication
 
 Most cross-service coordination happens via Tokio `broadcast` channels.
