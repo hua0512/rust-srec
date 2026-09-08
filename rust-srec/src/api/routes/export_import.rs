@@ -19,7 +19,8 @@ use crate::config::backup::{
     JobPresetExport, NotificationChannelExport, PipelinePresetExport, PlatformExport,
     StreamerExport, TemplateExport, UserExport, unwrap_json_value,
 };
-use crate::database::models::{StreamerDbModel, UserDbModel};
+use crate::database::models::{NotificationChannelDbModel, StreamerDbModel, UserDbModel};
+use crate::database::repositories::{FilterRepository, NotificationRepository};
 
 /// Current schema version for exports.
 const EXPORT_SCHEMA_VERSION: &str = "0.1.7";
@@ -64,6 +65,56 @@ fn build_streamer_export(
             .map(parse_db_config),
         filters,
     }
+}
+
+async fn export_streamers(
+    streamers: &[StreamerDbModel],
+    platform_map: &HashMap<String, String>,
+    template_map: &HashMap<String, String>,
+    repository: &dyn FilterRepository,
+) -> Vec<StreamerExport> {
+    let mut filters = crate::api::batch_lookup::collect(
+        streamers.iter().map(|streamer| streamer.id.clone()),
+        |ids| async move { repository.get_filters_for_streamers(&ids).await },
+        |id| async move { repository.get_filters_for_streamer(&id).await },
+    )
+    .await;
+    streamers
+        .iter()
+        .map(|streamer| {
+            let children = filters
+                .remove(&streamer.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|filter| FilterExport {
+                    filter_type: filter.filter_type,
+                    config: parse_db_config(filter.config),
+                })
+                .collect();
+            build_streamer_export(streamer, platform_map, template_map, children)
+        })
+        .collect()
+}
+
+async fn export_channels(
+    channels: &[NotificationChannelDbModel],
+    repository: &dyn NotificationRepository,
+) -> Vec<NotificationChannelExport> {
+    let mut subscriptions = crate::api::batch_lookup::collect(
+        channels.iter().map(|channel| channel.id.clone()),
+        |ids| async move { repository.get_subscriptions_for_channels(&ids).await },
+        |id| async move { repository.get_subscriptions_for_channel(&id).await },
+    )
+    .await;
+    channels
+        .iter()
+        .map(|channel| NotificationChannelExport {
+            name: channel.name.clone(),
+            channel_type: channel.channel_type.clone(),
+            settings: parse_db_config(channel.settings.clone()),
+            subscriptions: subscriptions.remove(&channel.id).unwrap_or_default(),
+        })
+        .collect()
 }
 
 /// Create the export/import router.
@@ -183,45 +234,14 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         .map(|t| (t.id.clone(), t.name.clone()))
         .collect();
 
-    // Export streamers with filters
-    let mut streamer_exports = Vec::new();
-    for streamer in &streamers {
-        let filters = filter_repo
-            .get_filters_for_streamer(&streamer.id)
-            .await
-            .unwrap_or_default();
-
-        let filter_exports: Vec<FilterExport> = filters
-            .iter()
-            .map(|f| FilterExport {
-                filter_type: f.filter_type.clone(),
-                config: parse_db_config(f.config.clone()),
-            })
-            .collect();
-
-        streamer_exports.push(build_streamer_export(
-            streamer,
-            &platform_map,
-            &template_map,
-            filter_exports,
-        ));
-    }
-
-    // Export notification channels with subscriptions
-    let mut channel_exports = Vec::new();
-    for channel in &channels {
-        let subscriptions = notification_repo
-            .get_subscriptions_for_channel(&channel.id)
-            .await
-            .unwrap_or_default();
-
-        channel_exports.push(NotificationChannelExport {
-            name: channel.name.clone(),
-            channel_type: channel.channel_type.clone(),
-            settings: parse_db_config(channel.settings.clone()),
-            subscriptions,
-        });
-    }
+    let streamer_exports = export_streamers(
+        &streamers,
+        &platform_map,
+        &template_map,
+        filter_repo.as_ref(),
+    )
+    .await;
+    let channel_exports = export_channels(&channels, notification_repo.as_ref()).await;
 
     let export = ConfigExport {
         version: EXPORT_SCHEMA_VERSION.to_string(),
@@ -430,6 +450,65 @@ pub async fn import_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn export_related_data_batches_queries_and_preserves_parent_and_child_order() {
+        use crate::database::repositories::{
+            SqlxFilterRepository, SqlxNotificationRepository, SqlxStreamerRepository,
+            StreamerRepository,
+        };
+        use std::sync::atomic::Ordering;
+        let (pool, queries) = crate::api::batch_lookup::tests::fixture().await;
+        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+        let notification_repo = SqlxNotificationRepository::new(pool.clone(), pool.clone());
+        let filter_repo = SqlxFilterRepository::new(pool.clone(), pool.clone());
+        let mut streamers = streamer_repo.list_streamers().await.unwrap();
+        let mut channels = notification_repo.list_channels().await.unwrap();
+        streamers.reverse();
+        channels.reverse();
+        queries.store(0, Ordering::SeqCst);
+        let exported =
+            export_streamers(&streamers, &HashMap::new(), &HashMap::new(), &filter_repo).await;
+        assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
+        assert_eq!(exported.len(), streamers.len());
+        for (export, owner) in exported.iter().zip(&streamers) {
+            assert_eq!(export.name, owner.name);
+            if owner.id == "owner-1000" {
+                assert!(export.filters.is_empty());
+            } else {
+                assert_eq!(
+                    export
+                        .filters
+                        .iter()
+                        .map(|filter| filter.filter_type.as_str())
+                        .collect::<Vec<_>>(),
+                    ["A", "Z"]
+                );
+                assert_eq!(export.filters[0].config, serde_json::json!({"value":1}));
+                assert_eq!(export.filters[1].config, serde_json::json!({"value":2}));
+            }
+        }
+        let exported = export_channels(&channels, &notification_repo).await;
+        assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
+        assert_eq!(exported.len(), channels.len());
+        for (export, owner) in exported.iter().zip(&channels) {
+            assert_eq!(export.name, owner.name);
+            assert_eq!(export.settings, serde_json::json!({"enabled":true}));
+            if owner.id == "owner-1000" {
+                assert!(export.subscriptions.is_empty());
+            } else {
+                assert_eq!(export.subscriptions, ["AEvent", "ZEvent"]);
+            }
+        }
+        assert!(
+            export_streamers(&[], &HashMap::new(), &HashMap::new(), &filter_repo)
+                .await
+                .is_empty()
+        );
+        assert!(export_channels(&[], &notification_repo).await.is_empty());
+        assert_eq!(queries.load(Ordering::SeqCst), 0);
+        pool.close().await;
+    }
 
     #[test]
     fn test_schema_version_at_least() {

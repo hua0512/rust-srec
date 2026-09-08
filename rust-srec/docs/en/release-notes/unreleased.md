@@ -291,6 +291,10 @@
 
   Resource creation and template/job-preset cloning now return the documented 201 status with the same JSON bodies. OpenAPI includes session segments, template cloning and all four browser Web Push operations. Job summaries report unavailable progress as `null` instead of a fabricated zero; the dedicated progress endpoint still returns actual snapshots when available. See [response contracts](../api/index.md#creation-responses-and-job-progress).
 
+- **Job pages and configuration exports batch related lookups**
+
+  Streamer display names, exported filters and notification subscriptions now use deduplicated batches of up to 500 owners instead of one query per owner. Response/export ordering, missing-owner behavior and best-effort handling of related-data failures are preserved; failed batches retry their owners individually. See [configuration exports](../operations/backup-restore.md#configuration-export).
+
 - **Search treats percent signs and underscores literally**
 
   Searches for jobs, sessions, media outputs, notification events and both kinds of presets no longer interpret `%` and `_` as wildcards. Backslashes also match literally, so `audio_extract` only finds that text rather than names such as `audioXextract`. Existing case matching, other filters, pagination totals and media summaries remain consistent; see [search filters](../api/index.md#search-filters).
@@ -577,6 +581,10 @@
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.
 
 ## Security
+
+- **Baidu Netdisk login credentials no longer appear in process arguments**
+
+  Manual and automatic BaiduPCS-Go logins now use private stdin/config staging. Command history is disabled only in the temporary directory; existing history, unrelated settings and other accounts are preserved. Successful account updates are committed atomically, failures preserve the previous config, and cancellation/timeout cleans up the contained child before releasing account access. See [Baidu Netdisk login](../concepts/pipeline.md#baidu-netdisk-baidupcs) for compatible binaries and storage boundaries.
 
 - **Notification diagnostics redact credentials consistently**
 

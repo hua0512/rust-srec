@@ -119,6 +119,11 @@ when progress is unavailable in that response. This does not mean zero percent
 complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
 processor-specific snapshot; it returns 404 when no snapshot is available.
 
+Pipeline job pages resolve display names through deduplicated streamer batches,
+with at most 500 IDs per query. Job order and response fields are unchanged.
+Missing streamers still have no display name. A failed batch is retried by owner,
+retaining names that can be read without failing the job page.
+
 ## Search filters
 
 The `search` filters for pipeline jobs, recording sessions, media outputs,

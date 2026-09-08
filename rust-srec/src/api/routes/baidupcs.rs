@@ -231,7 +231,7 @@ pub async fn baidupcs_login(
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
 
-    // The credential values end up on the child argv, so they must never be
+    // Credentials travel through private stdin/config staging and must never be
     // logged; this handler is skip_all-instrumented and `run_login` scrubs
     // any echo out of relayed output and errors.
     let material = baidupcs::LoginMaterial {
@@ -247,15 +247,22 @@ pub async fn baidupcs_login(
 
     // `login` rewrites the session store, so it must not run while uploads
     // hold the read side; reject instead of queueing behind a long upload.
-    let Ok(_guard) = baidupcs::cli_lock().try_write() else {
+    let Ok(guard) = baidupcs::cli_lock().clone().try_write_owned() else {
         return Err(ApiError::conflict(
             "BaiduPCS-Go is busy (an upload or another login is in progress); try again later",
         ));
     };
 
-    let outcome = baidupcs::run_login(&binary_path, config_dir, &material, baidupcs::LOGIN_TIMEOUT)
-        .await
-        .map_err(ApiError::from)?;
+    let lease = std::sync::Arc::new(guard);
+    let outcome = baidupcs::run_login(
+        &binary_path,
+        config_dir,
+        &material,
+        baidupcs::LOGIN_TIMEOUT,
+        lease.clone(),
+    )
+    .await
+    .map_err(ApiError::from)?;
     let mut message = output_tail(&outcome.message);
 
     let mut credentials_stored = false;
