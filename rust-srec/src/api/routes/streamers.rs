@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use axum::{
     Json, Router,
     extract::{FromRef, Path, Query, State},
+    http::StatusCode,
     routing::{delete, get, patch, post, put},
 };
 
@@ -276,7 +277,7 @@ fn find_platform_config(
 pub async fn create_streamer(
     State(state): State<StreamerRouteState>,
     Json(request): Json<CreateStreamerRequest>,
-) -> ApiResult<Json<StreamerResponse>> {
+) -> ApiResult<(StatusCode, Json<StreamerResponse>)> {
     // Validate URL format
     let url = StreamerUrl::new(&request.url).map_err(|e| ApiError::validation(e.to_string()))?;
 
@@ -346,7 +347,7 @@ pub async fn create_streamer(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(metadata_to_response(&metadata)))
+    Ok((StatusCode::CREATED, Json(metadata_to_response(&metadata))))
 }
 
 #[utoipa::path(
