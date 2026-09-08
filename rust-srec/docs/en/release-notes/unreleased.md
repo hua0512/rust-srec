@@ -22,6 +22,10 @@
 
 ## Scheduler Recovery
 
+- **Large error counts preserve the one-hour backoff cap**
+
+  Error backoff bounds the exponent before arithmetic can overflow. Dormant actor state-file APIs and the unused streamer error writer are removed; runtime recovery, batch detection and terminal actor decisions are preserved. Rust integrations should follow the [scheduler interface notes](../concepts/architecture.md#scheduler-state-and-backoff).
+
 - **Actor timing uses resolved overrides and recurring checks are spread out**
 
   Actor creation and metadata/template/platform/global updates now resolve offline-confirmation settings directly from the four-layer configuration instead of racing a separate metadata refresh. Recurring checks receive bounded ±10% jitter. Unrelated updates preserve pending deadlines; actual cadence changes can shorten them while keeping admission, cooldown, smart-wake and immediate-check constraints. See [scheduler timing](../concepts/architecture.md).

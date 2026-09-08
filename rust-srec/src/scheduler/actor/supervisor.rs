@@ -7,7 +7,6 @@
 //! - Emitting lifecycle events for monitoring
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -32,8 +31,6 @@ pub struct SupervisorConfig {
     pub restart_config: RestartTrackerConfig,
     /// Shutdown timeout.
     pub shutdown_timeout: Duration,
-    /// State persistence directory (optional).
-    pub state_dir: Option<PathBuf>,
 }
 
 impl Default for SupervisorConfig {
@@ -41,7 +38,6 @@ impl Default for SupervisorConfig {
         Self {
             restart_config: RestartTrackerConfig::default(),
             shutdown_timeout: Duration::from_secs(10),
-            state_dir: None,
         }
     }
 }
