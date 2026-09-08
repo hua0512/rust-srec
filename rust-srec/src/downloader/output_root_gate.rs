@@ -200,10 +200,9 @@ impl OutputRootGate {
     /// directory's key. Unknown placeholders after that key are safe; earlier ones are not.
     /// Probe the deepest concrete directory, not a potentially read-only ancestor gate key.
     pub(crate) fn probe_path_for_template(&self, template: &str) -> Option<PathBuf> {
-        let key = self.resolve_path(Path::new(template));
-        if contains_placeholder(&key) {
-            return None;
-        }
+        // Literal percent escapes participate in real root identity. Genuine
+        // time tokens remain unresolved and cannot extend the concrete prefix.
+        let key = self.resolve_path(Path::new(&template.replace("%%", "%")));
         let prefix = concrete_template_prefix(template);
         if contains_placeholder(Path::new(template))
             && self.configured_roots.iter().any(|configured| {
@@ -231,6 +230,14 @@ impl OutputRootGate {
     /// single-flight CAS). Returns `Err(GateBlocked)` if the caller should
     /// fast-reject without touching the filesystem or the engine.
     pub fn check(&self, output_dir: &Path) -> Result<(), GateBlocked> {
+        self.check_with_clock(output_dir, unix_now)
+    }
+
+    fn check_with_clock(
+        &self,
+        output_dir: &Path,
+        now: impl FnOnce() -> u64,
+    ) -> Result<(), GateBlocked> {
         // Fast path: if the gate has never recorded a failure, the map is
         // empty and we can return without resolving the root or hashing
         // anything. This is the steady state for healthy systems.
@@ -250,7 +257,7 @@ impl OutputRootGate {
 
         // Degraded path. Decide whether to allow this caller through (winning
         // the single-flight CAS) or fast-reject.
-        let now = unix_now();
+        let now = now();
         let last = entry.last_attempt_unix.load(Ordering::Acquire);
         let cooldown_secs = self.cooldown.as_secs().max(1);
 
@@ -487,15 +494,23 @@ impl OutputRootGate {
 }
 
 fn contains_placeholder(path: &Path) -> bool {
-    path.to_string_lossy().contains(['{', '%'])
+    let text = path.to_string_lossy();
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '{' || (ch == '%' && chars.next() != Some('%')) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Keeps whole concrete components, including a final static directory without a slash.
 pub(crate) fn concrete_template_prefix(template: &str) -> PathBuf {
-    Path::new(template)
+    let prefix: PathBuf = Path::new(template)
         .components()
-        .take_while(|part| !part.as_os_str().to_string_lossy().contains(['{', '%']))
-        .collect()
+        .take_while(|part| !contains_placeholder(Path::new(part.as_os_str())))
+        .collect();
+    PathBuf::from(prefix.to_string_lossy().replace("%%", "%"))
 }
 
 /// Resolve the gate-tracking root for an output directory.
@@ -778,23 +793,19 @@ mod tests {
 
     #[tokio::test]
     async fn cooldown_elapsed_allows_exactly_one_caller_through() {
-        let gate = make_gate(1); // 1-second cooldown
+        let gate = make_gate(1);
         gate.record_failure(Path::new("/rec/X"), &enoent());
-
-        // Immediately after record_failure the cooldown is NOT elapsed.
-        assert!(gate.check(Path::new("/rec/X")).is_err());
-
-        // Sleep just past the cooldown window (cooldown is in unix seconds, so
-        // we need the wall clock to advance by at least 1 full second from
-        // last_attempt_unix). 1.2s is comfortably enough.
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-
-        // Now exactly one caller should win the CAS. Subsequent callers (in
-        // the same second) fast-reject again because the winner advanced
-        // last_attempt_unix to "now".
-        let first = gate.check(Path::new("/rec/X"));
-        let second = gate.check(Path::new("/rec/X"));
-        let third = gate.check(Path::new("/rec/X"));
+        let last = gate
+            .roots
+            .iter()
+            .next()
+            .unwrap()
+            .last_attempt_unix
+            .load(AtomOrd::Acquire);
+        assert!(gate.check_with_clock(Path::new("/rec/X"), || last).is_err());
+        let first = gate.check_with_clock(Path::new("/rec/X"), || last + 1);
+        let second = gate.check_with_clock(Path::new("/rec/X"), || last + 1);
+        let third = gate.check_with_clock(Path::new("/rec/X"), || last + 1);
         let oks = [&first, &second, &third]
             .iter()
             .filter(|r| r.is_ok())
@@ -803,34 +814,46 @@ mod tests {
             oks, 1,
             "exactly one caller must win the probe slot per cooldown window"
         );
+        assert!(
+            gate.check_with_clock(Path::new("/rec/X"), || last + 2)
+                .is_ok()
+        );
     }
 
     #[tokio::test]
     async fn single_flight_only_one_caller_wins_concurrent_cas() {
-        // 100 concurrent checks on a Degraded root after the cooldown elapsed
-        // must yield exactly one winner. This is the property that prevents
-        // the thundering herd from all hitting the real ensure_output_dir
-        // simultaneously when many streamers come out of backoff at the same
-        // time.
         let gate = make_gate(1);
         gate.record_failure(Path::new("/rec/X"), &enoent());
-
-        // Wait past the cooldown so the next batch can race for the slot.
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-
-        let mut handles = vec![];
-        for _ in 0..100 {
-            let g = gate.clone();
-            handles.push(tokio::spawn(
-                async move { g.check(Path::new("/rec/X")).is_ok() },
-            ));
-        }
-        let mut allowed = 0;
-        for h in handles {
-            if h.await.unwrap() {
-                allowed += 1;
-            }
-        }
+        let probe_time = gate
+            .roots
+            .iter()
+            .next()
+            .unwrap()
+            .last_attempt_unix
+            .load(AtomOrd::Acquire)
+            + 1;
+        let barrier = std::sync::Barrier::new(8);
+        // Real threads race at one observed time; scheduling delays cannot open
+        // another cooldown window and admit a second legitimate probe.
+        let allowed: usize = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    let gate = &gate;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        usize::from(
+                            gate.check_with_clock(Path::new("/rec/X"), || probe_time)
+                                .is_ok(),
+                        )
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .sum()
+        });
         assert_eq!(
             allowed, 1,
             "exactly one caller must win the probe slot per cooldown window, got {}",

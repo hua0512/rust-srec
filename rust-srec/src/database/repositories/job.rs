@@ -571,10 +571,11 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>> {
-        sqlx::query_scalar::<_, String>("SELECT execution_info FROM job WHERE id = ?")
+        sqlx::query_scalar::<_, Option<String>>("SELECT execution_info FROM job WHERE id = ?")
             .bind(id)
             .fetch_optional(&self.pool)
             .await
+            .map(Option::flatten)
             .map_err(Error::from)
     }
 

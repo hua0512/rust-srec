@@ -153,12 +153,26 @@ impl AssBurnInProcessor {
     }
 
     fn escape_filter_path(value: &str) -> String {
-        // FFmpeg filter option escaping: backslash and colon are special.
-        // We also escape single quotes since we wrap values in single quotes.
-        value
-            .replace('\\', "\\\\")
-            .replace(':', "\\:")
-            .replace('\'', "\\'")
+        // FFmpeg parses the filtergraph and then the option value. Escape each layer;
+        // shell quoting is unnecessary because the filter is passed as one argv item.
+        let option = value.chars().fold(String::new(), |mut escaped, character| {
+            if matches!(character, '\\' | '\'' | ':') || character.is_ascii_whitespace() {
+                escaped.push('\\');
+            }
+            escaped.push(character);
+            escaped
+        });
+        option
+            .chars()
+            .fold(String::new(), |mut escaped, character| {
+                if matches!(character, '\\' | '\'' | '[' | ']' | ',' | ';')
+                    || character.is_ascii_whitespace()
+                {
+                    escaped.push('\\');
+                }
+                escaped.push(character);
+                escaped
+            })
     }
 
     fn make_subtitles_filter(ass_path: &str, fonts_dir: Option<&str>) -> String {
@@ -166,9 +180,9 @@ impl AssBurnInProcessor {
         let filename = Self::escape_filter_path(ass_path);
         if let Some(fonts) = fonts_dir {
             let fonts = Self::escape_filter_path(fonts);
-            format!("subtitles=filename='{}':fontsdir='{}'", filename, fonts)
+            format!("subtitles=filename={}:fontsdir={}", filename, fonts)
         } else {
-            format!("subtitles=filename='{}'", filename)
+            format!("subtitles=filename={}", filename)
         }
     }
 
@@ -449,7 +463,7 @@ impl Processor for AssBurnInProcessor {
         for (idx, video_path) in video_inputs.iter().enumerate() {
             let output_path = &output_paths[idx];
 
-            if !Path::new(video_path).exists() {
+            if !super::utils::try_exists(Path::new(video_path)).await? {
                 return Err(crate::Error::PipelineError(format!(
                     "Video input does not exist: {}",
                     video_path
@@ -474,7 +488,7 @@ impl Processor for AssBurnInProcessor {
                 continue;
             };
 
-            if !Path::new(&ass_path).exists() {
+            if !super::utils::try_exists(Path::new(&ass_path)).await? {
                 if config.require_ass {
                     return Err(crate::Error::PipelineError(format!(
                         "Matched ASS subtitle does not exist for video {}: {}",
@@ -488,7 +502,7 @@ impl Processor for AssBurnInProcessor {
                 continue;
             }
 
-            if Path::new(output_path).exists() && !config.overwrite {
+            if !config.overwrite && super::utils::try_exists(Path::new(output_path)).await? {
                 return Err(crate::Error::PipelineError(format!(
                     "Output already exists and overwrite is disabled: {}",
                     output_path
@@ -675,6 +689,52 @@ mod tests {
         let f = AssBurnInProcessor::make_subtitles_filter("a.ass", None);
         assert!(f.contains("subtitles="));
         assert!(f.contains("a.ass"));
+    }
+
+    #[test]
+    fn filter_values_escape_option_and_filtergraph_layers() {
+        assert_eq!(AssBurnInProcessor::escape_filter_path("'"), r"\\\'");
+        assert_eq!(AssBurnInProcessor::escape_filter_path(":"), r"\\:");
+        assert_eq!(AssBurnInProcessor::escape_filter_path("[,]"), r"\[\,\]");
+        assert_eq!(AssBurnInProcessor::escape_filter_path("\\"), r"\\\\");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an installed FFmpeg binary with the subtitles filter"]
+    async fn subtitle_filter_opens_paths_with_apostrophes_and_graph_delimiters() {
+        let dir = tempfile::tempdir().unwrap();
+        let subtitles = dir.path().join("Let's [play], now.srt");
+        let fonts = dir.path().join("Font's [collection], now");
+        tokio::fs::create_dir(&fonts).await.unwrap();
+        tokio::fs::write(&subtitles, "1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+            .await
+            .unwrap();
+        let filter = AssBurnInProcessor::make_subtitles_filter(
+            &subtitles.to_string_lossy(),
+            Some(&fonts.to_string_lossy()),
+        );
+        let mut command = Command::new("ffmpeg");
+        command
+            .args([
+                "-hide_banner",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=s=32x32:d=0.1",
+                "-vf",
+            ])
+            .arg(filter)
+            .args(["-frames:v", "1", "-f", "null", "-"]);
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            super::super::utils::run_command_with_logs(&mut command, None),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(output.status.success(), "{:?}", output.logs);
     }
 
     #[tokio::test]
