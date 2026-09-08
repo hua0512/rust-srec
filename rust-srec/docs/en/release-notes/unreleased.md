@@ -243,6 +243,10 @@
 
 ## API and integrations
 
+- **Search treats percent signs and underscores literally**
+
+  Searches for jobs, sessions, media outputs, notification events and both kinds of presets no longer interpret `%` and `_` as wildcards. Backslashes also match literally, so `audio_extract` only finds that text rather than names such as `audioXextract`. Existing case matching, other filters, pagination totals and media summaries remain consistent; see [search filters](../api/index.md#search-filters).
+
 - **Configuration reads are cached coherently and missing entities use typed errors**
 
   Stream proxy and parsing requests reuse a five-second global snapshot, immediately invalidated by application writes and imports. Administrative reads remain authoritative and expired cache entries never hide refresh failures. Platform, template and engine handlers distinguish missing entities from database errors without matching message text.
