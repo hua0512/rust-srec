@@ -371,6 +371,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     post,
     path = "/api/config/backup/import",
     tag = "export_import",
+    description = "Import configuration transactionally. Every successful import revokes all refresh tokens, including Merge imports that omit users. User-email conflicts with retained accounts are rejected before configuration writes.",
     request_body = ImportRequest,
     responses(
         (status = 200, description = "Configuration imported", body = ImportResult),

@@ -406,8 +406,55 @@ impl ImportSnapshot {
             }
         }
 
+        self.validate_user_emails(config, mode)?;
+
         Ok(())
     }
+
+    fn validate_user_emails(
+        &self,
+        config: &ConfigExport,
+        mode: ImportMode,
+    ) -> Result<(), ConfigurationImportError> {
+        if !includes_imported_users(config) {
+            return Ok(());
+        }
+        let replaced: HashSet<&str> = config
+            .users
+            .iter()
+            .map(|user| user.username.as_str())
+            .collect();
+        let mut emails = HashSet::new();
+        if mode == ImportMode::Merge {
+            for user in self
+                .users
+                .values()
+                .filter(|user| !replaced.contains(user.username.as_str()))
+            {
+                if let Some(email) = user.email.as_deref() {
+                    emails.insert(email);
+                }
+            }
+        }
+        // users.email uses SQLite's BINARY collation. Preserve case, whitespace, and empty
+        // strings exactly; NULL does not participate in the UNIQUE constraint.
+        for user in &config.users {
+            if let Some(email) = user.email.as_deref()
+                && !emails.insert(email)
+            {
+                return validation(format!(
+                    "Imported user '{}' has an email already assigned to another user",
+                    user.username,
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn includes_imported_users(config: &ConfigExport) -> bool {
+    crate::config::backup::schema_version_at_least(&config.version, (0, 1, 3))
+        && !config.users.is_empty()
 }
 
 fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
@@ -597,9 +644,7 @@ fn validate_import(
         validate_pipeline_preset(preset)?;
     }
 
-    let includes_users = crate::config::backup::schema_version_at_least(&config.version, (0, 1, 3))
-        && !config.users.is_empty();
-    if includes_users {
+    if includes_imported_users(config) {
         validate_unique(
             "username",
             config.users.iter().map(|item| item.username.as_str()),
@@ -613,7 +658,7 @@ fn validate_import(
         validate_unique(
             "user email",
             config.users.iter().filter_map(|item| item.email.as_deref()),
-            true,
+            false,
         )?;
         if mode == ImportMode::Replace
             && !config
@@ -1479,10 +1524,26 @@ async fn apply_users(
     replace: bool,
     stats: &mut ImportStats,
 ) -> Result<(), ConfigurationImportError> {
-    let includes_users = crate::config::backup::schema_version_at_least(&config.version, (0, 1, 3))
-        && !config.users.is_empty();
-    if !includes_users {
+    if !includes_imported_users(config) {
         return Ok(());
+    }
+
+    // Final-set validation has already succeeded. Release only email slots owned by users
+    // this import will replace/delete, so swaps and reassignment do not depend on item order.
+    // This stays in the import transaction: any later failure restores every original email.
+    if replace {
+        sqlx::query("UPDATE users SET email = NULL WHERE email IS NOT NULL")
+            .execute(&mut **tx)
+            .await?;
+    } else {
+        for user in &config.users {
+            if let Some(existing) = snapshot.users.get(&user.username) {
+                sqlx::query("UPDATE users SET email = NULL WHERE id = ? AND email IS NOT NULL")
+                    .bind(&existing.id)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+        }
     }
 
     for item in &config.users {
@@ -1912,6 +1973,7 @@ async fn persist_user(
 
 #[cfg(test)]
 mod tests {
+    mod email_validation;
     use super::*;
     use crate::config::backup::{GlobalConfigExport, JobPresetExport, UserExport};
     use crate::database::{init_pool_with_size, run_migrations};
