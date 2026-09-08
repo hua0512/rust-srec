@@ -40,6 +40,12 @@
 
   Newly written danmu XML filters characters forbidden by XML 1.0 and sanitizes header comments. MCP byte pages preserve complete UTF-8 characters and continuation offsets; invalid encoding or nonprogressing limits return explicit errors. Existing files are not repaired; see [MCP paging](../api/api-keys-mcp.md).
 
+## Service Ownership
+
+- **Session cleanup is joined during shutdown**
+
+  Shutdown cancels delayed ended-session eviction without waiting for its retention interval. API assembly reuses the container's repositories and configuration import service while keeping archive caches local. See [service ownership](../concepts/architecture.md#service-ownership).
+
 ## Health Monitoring
 
 - **Unknown components make overall health degraded**

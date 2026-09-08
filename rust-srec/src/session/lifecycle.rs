@@ -36,6 +36,7 @@ use dashmap::mapref::entry::Entry;
 use parking_lot::Mutex;
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard, RwLock, RwLockReadGuard, broadcast};
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::Result;
@@ -55,7 +56,7 @@ use crate::session::events::SessionEventPayload;
 use crate::session::hysteresis::{HysteresisConfig, HysteresisHandle};
 use crate::session::state::{SessionState, TerminalCause};
 use crate::session::transition::{SessionTransition, SessionTransitionSender};
-use crate::utils::task_supervisor::DrainedTasks;
+use crate::utils::task_supervisor::{DrainedTasks, TaskSupervisor};
 
 /// Default broadcast capacity for [`SessionTransition`] subscribers.
 pub const DEFAULT_TRANSITION_CHANNEL_CAPACITY: usize = 256;
@@ -146,6 +147,9 @@ pub struct SessionLifecycle {
     accepting_operations: AtomicBool,
     hysteresis_tasks: Mutex<JoinSet<()>>,
     hysteresis_shutdown: AtomicBool,
+    /// Delayed in-memory cleanup has no terminal side effects and stops on shutdown.
+    eviction_tasks: TaskSupervisor,
+    eviction_cancel: CancellationToken,
 }
 
 #[derive(Debug, Default)]
@@ -188,6 +192,7 @@ impl SessionLifecycle {
         hysteresis_config: HysteresisConfig,
     ) -> Self {
         let (transition_tx, _) = broadcast::channel(capacity);
+        let eviction_cancel = CancellationToken::new();
         Self {
             repo,
             classifier,
@@ -205,11 +210,13 @@ impl SessionLifecycle {
             accepting_operations: AtomicBool::new(true),
             hysteresis_tasks: Mutex::new(JoinSet::new()),
             hysteresis_shutdown: AtomicBool::new(false),
+            eviction_tasks: TaskSupervisor::with_cancellation(eviction_cancel.clone()),
+            eviction_cancel,
         }
     }
 
     /// Stop admitting lifecycle mutations, drain every admitted operation,
-    /// then cancel and join the owned hysteresis timers. The deadline bounds
+    /// then cancel and join the owned hysteresis and eviction tasks. The deadline bounds
     /// the graceful phase; timer cleanup remains owned and is joined after it.
     /// Once this returns, no lifecycle producer can write session state or
     /// publish a transition — the return value only classifies how that was
@@ -219,6 +226,7 @@ impl SessionLifecycle {
         deadline: tokio::time::Instant,
     ) -> SessionLifecycleShutdownReport {
         self.accepting_operations.store(false, Ordering::Release);
+        self.eviction_cancel.cancel();
 
         let (operation_fence, operation_deadline_exceeded) =
             match tokio::time::timeout_at(deadline, self.operation_gate.write()).await {
@@ -280,26 +288,33 @@ impl SessionLifecycle {
                 Some(Err(error)) => failures.push(format!(
                     "hysteresis timer task failed during shutdown: {error}"
                 )),
-                None => {
-                    return SessionLifecycleShutdownReport {
-                        failures,
-                        overruns,
-                        forced_timer_count,
-                    };
-                }
+                None => break,
             }
+        }
+        if !self
+            .eviction_tasks
+            .shutdown(deadline.saturating_duration_since(tokio::time::Instant::now()))
+            .await
+        {
+            overruns.push("session eviction cleanup exceeded the graceful deadline".to_string());
+        }
+        SessionLifecycleShutdownReport {
+            failures,
+            overruns,
+            forced_timer_count,
         }
     }
 
-    /// Cancel and abort the owned hysteresis timers instead of joining them.
+    /// Cancel and abort the owned hysteresis and eviction tasks.
     ///
     /// [`Self::shutdown_until`] keeps joining past its deadline, so a timer
     /// task that never returns holds it pending. Callers with no parent
     /// process to force-kill them use this.
     ///
-    /// Returns the number of timer tasks that were still running.
+    /// Returns the number of hysteresis timer tasks that were still running.
     pub(crate) async fn abort_timers(&self, deadline: tokio::time::Instant) -> usize {
         self.accepting_operations.store(false, Ordering::Release);
+        self.eviction_cancel.cancel();
         self.hysteresis_shutdown.store(true, Ordering::Release);
         for handle in self.hysteresis.iter() {
             handle.cancel();
@@ -322,6 +337,7 @@ impl SessionLifecycle {
             }
         }
 
+        self.eviction_tasks.abort_all(deadline).await;
         aborted
     }
 
@@ -584,16 +600,26 @@ impl SessionLifecycle {
         let streamer_current_sessions = self.streamer_current_sessions.clone();
         let streamer_id = streamer_id.to_string();
         let session_id = session_id.to_string();
-        let retention = self.ended_retention;
-        tokio::spawn(async move {
-            tokio::time::sleep(retention).await;
-            sessions.remove(&session_id);
-            remove_streamer_current_session_if_matches(
-                &streamer_current_sessions,
-                &streamer_id,
-                &session_id,
-            );
-        });
+        let cancel = self.eviction_cancel.clone();
+        if cancel.is_cancelled() {
+            return;
+        }
+        // Anchor retention to scheduling, even if the task is first polled later.
+        let retention = tokio::time::sleep(self.ended_retention);
+        self.eviction_tasks
+            .spawn("ended session eviction", async move {
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return,
+                    _ = retention => {}
+                }
+                sessions.remove(&session_id);
+                remove_streamer_current_session_if_matches(
+                    &streamer_current_sessions,
+                    &streamer_id,
+                    &session_id,
+                );
+            });
     }
 
     /// Start or resume a recording session on behalf of a monitor trigger.

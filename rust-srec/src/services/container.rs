@@ -368,6 +368,16 @@ pub struct ServiceContainer {
     pub(crate) download_manager: Arc<DownloadManager>,
     /// Session repository shared by monitor, pipeline, danmu, and download startup.
     pub(crate) session_repository: Arc<SqlxSessionRepository>,
+    session_event_repository: Arc<dyn crate::database::repositories::SessionEventRepository>,
+    streamer_check_history_repository:
+        Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
+    upload_record_repository: Arc<dyn crate::database::repositories::UploadRecordRepository>,
+    filter_repository: Arc<SqlxFilterRepository>,
+    streamer_repository: Arc<SqlxStreamerRepository>,
+    pipeline_preset_repository:
+        Arc<crate::database::repositories::preset::SqlitePipelinePresetRepository>,
+    job_preset_repository: Arc<crate::database::repositories::preset::SqliteJobPresetRepository>,
+    configuration_import_service: Arc<crate::services::config_import::ConfigurationImportService>,
     /// Output-root write gate. Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
@@ -479,6 +489,7 @@ fn wire_check_history_pipeline(
 ) -> (
     crate::monitor::CheckHistoryWriter,
     crate::monitor::CheckHistoryBroadcaster,
+    Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
 ) {
     use prost::Message;
 
@@ -504,13 +515,13 @@ fn wire_check_history_pipeline(
     task_supervisor.spawn(
         "check-history writer",
         crate::monitor::check_history_writer::run(
-            repo,
+            repo.clone(),
             rx,
             Some(broadcaster.clone()),
             cancellation_token.child_token(),
         ),
     );
-    (writer, broadcaster)
+    (writer, broadcaster, repo)
 }
 
 impl ServiceContainer {

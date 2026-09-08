@@ -9,13 +9,12 @@ use crate::api::jwt::JwtService;
 use crate::api::server::{ApiServer, ApiServices, AppState};
 use crate::database::repositories::{
     SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
-    filter::SqlxFilterRepository,
-    preset::{SqliteJobPresetRepository, SqlitePipelinePresetRepository},
-    streamer::SqlxStreamerRepository,
 };
 
 use super::ServiceContainer;
 
+#[cfg(test)]
+mod ownership_tests;
 #[cfg(test)]
 mod response_contract_tests;
 
@@ -89,59 +88,23 @@ impl ServiceContainer {
             pipeline_manager: self.pipeline_manager.clone(),
             download_manager: self.download_manager.clone(),
             session_repository: self.session_repository.clone(),
-            session_event_repository: Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ),
-            streamer_check_history_repository: Arc::new(
-                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ),
+            session_event_repository: self.session_event_repository.clone(),
+            streamer_check_history_repository: self.streamer_check_history_repository.clone(),
             check_history_broadcaster: self.check_history_broadcaster.clone(),
             upload_status_broadcaster: self.upload_status_broadcaster.clone(),
-            upload_record_repository: Arc::new(
-                crate::database::repositories::SqlxUploadRecordRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ),
-            filter_repository: Arc::new(SqlxFilterRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )),
+            upload_record_repository: self.upload_record_repository.clone(),
+            filter_repository: self.filter_repository.clone(),
             health_checker: self.health_checker.clone(),
-            streamer_repository: Arc::new(SqlxStreamerRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )),
-            pipeline_preset_repository: Arc::new(SqlitePipelinePresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )),
-            job_preset_repository: Arc::new(SqliteJobPresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )),
+            streamer_repository: self.streamer_repository.clone(),
+            pipeline_preset_repository: self.pipeline_preset_repository.clone(),
+            job_preset_repository: self.job_preset_repository.clone(),
             notification_repository: self.notification_repository.clone(),
             notification_service: self.notification_service.clone(),
             logging_config,
             logging_download_tokens: Arc::new(DashMap::new()),
             logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
             credential_service: self.credential_service.clone(),
-            configuration_import_service: Arc::new(
-                crate::services::config_import::ConfigurationImportService::new(
-                    self.write_pool.clone(),
-                    self.config_service.clone(),
-                    self.streamer_manager.clone(),
-                    self.notification_service.clone(),
-                    self.credential_service.clone(),
-                    self.runtime_coordinator.clone(),
-                ),
-            ),
+            configuration_import_service: self.configuration_import_service.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
         };
 
