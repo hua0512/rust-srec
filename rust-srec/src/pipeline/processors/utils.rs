@@ -128,6 +128,17 @@ pub struct CommandOutput {
     pub logs: Vec<JobLogEntry>,
 }
 
+impl CommandOutput {
+    /// Last captured error, excluding later warnings or informational output.
+    /// Callers choose their own fallback when no error line was captured.
+    pub fn last_error_message(&self) -> Option<&str> {
+        self.logs
+            .iter()
+            .rfind(|entry| entry.level == LogLevel::Error)
+            .map(|entry| entry.message.as_str())
+    }
+}
+
 async fn wait_for_reader_task(
     stream_name: &'static str,
     handle: Option<AbortOnDropHandle<std::io::Result<()>>>,
@@ -943,6 +954,24 @@ pub async fn run_baidupcs_with_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_error_ignores_trailing_non_error_output_and_preserves_fallback_choice() {
+        let mut output = CommandOutput {
+            status: super::super::test_utils::test_exit_status(false),
+            duration: 0.0,
+            logs: vec![JobLogEntry::warn("warning only")],
+        };
+        assert_eq!(output.last_error_message(), None);
+        output.logs.extend([
+            JobLogEntry::error("first failure"),
+            JobLogEntry::error("final failure"),
+            JobLogEntry::info("closing output"),
+        ]);
+        assert_eq!(output.last_error_message(), Some("final failure"));
+        output.logs.push(JobLogEntry::error(""));
+        assert_eq!(output.last_error_message(), Some(""));
+    }
 
     #[test]
     fn processor_retry_delay_saturates_and_caps_extreme_configuration() {

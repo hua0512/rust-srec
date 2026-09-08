@@ -2,6 +2,20 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 
+#[cfg(unix)]
+pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+
+    std::process::ExitStatus::from_raw(if succeeds { 0 } else { 1 << 8 })
+}
+
+#[cfg(windows)]
+pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
+    use std::os::windows::process::ExitStatusExt;
+
+    std::process::ExitStatus::from_raw(if succeeds { 0 } else { 1 })
+}
+
 /// Construct a fixed UTC instant from calendar components.
 pub(super) fn utc_datetime(
     year: i32,
