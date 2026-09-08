@@ -311,6 +311,14 @@ Put shared settings in a template rather than repeating them per streamer. Chang
 then re-resolves every streamer assigned to it, instead of requiring an edit per streamer.
 :::
 
+At startup and after global, platform or template changes, resolved offline-check
+settings refresh for up to 16 independent streamers at a time. The runtime event
+handler still finishes each selected batch before processing its next event.
+A failed lookup retains that streamer's previous metadata settings and does not
+stop healthy neighbors from refreshing; streamers already marked for retirement
+remain excluded from the bulk snapshot. This changes refresh scheduling, not
+configuration precedence or persistent recovery acknowledgements.
+
 ### When a change reaches a recording already in progress
 
 Invalidating the cache is not the same as changing a download that is already running. Nothing

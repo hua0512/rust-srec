@@ -368,11 +368,9 @@ impl ConfigEventHandler {
                     .filter(|m| m.platform_config_id == platform_id)
                     .map(|m| m.id)
                     .collect();
-                for id in affected {
-                    self.runtime_coordinator
-                        .refresh_metadata_offline_check(&id)
-                        .await;
-                }
+                self.runtime_coordinator
+                    .refresh_metadata_offline_checks(affected)
+                    .await;
             }
             ConfigUpdateEvent::TemplateUpdated { template_id } => {
                 debug!("Received template config update event: {}", template_id);
@@ -383,11 +381,9 @@ impl ConfigEventHandler {
                     .filter(|m| m.template_config_id.as_deref() == Some(template_id.as_str()))
                     .map(|m| m.id)
                     .collect();
-                for id in affected {
-                    self.runtime_coordinator
-                        .refresh_metadata_offline_check(&id)
-                        .await;
-                }
+                self.runtime_coordinator
+                    .refresh_metadata_offline_checks(affected)
+                    .await;
             }
             ConfigUpdateEvent::GlobalUpdated => {
                 debug!("Received global config update event");
@@ -401,11 +397,9 @@ impl ConfigEventHandler {
                     .into_iter()
                     .map(|m| m.id)
                     .collect();
-                for id in all_ids {
-                    self.runtime_coordinator
-                        .refresh_metadata_offline_check(&id)
-                        .await;
-                }
+                self.runtime_coordinator
+                    .refresh_metadata_offline_checks(all_ids)
+                    .await;
 
                 match self.config_service.get_global_config().await {
                     Ok(global) => {
