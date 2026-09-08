@@ -52,6 +52,12 @@ pub struct DagCompletionInfo {
     pub leaf_outputs: Vec<String>,
 }
 
+pub(super) struct LeafOutputs {
+    pub paths: Vec<String>,
+    /// False when a leaf row is missing or its stored output array is malformed.
+    pub complete: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct DagJobCompletedUpdate {
     pub new_job_ids: Vec<String>,
@@ -104,10 +110,10 @@ impl DagScheduler {
         }
     }
 
-    fn collect_leaf_outputs_from_step_executions(
+    pub(super) fn collect_leaf_outputs_from_step_executions(
         def: &DagPipelineDefinition,
         step_execs: &[DagStepExecutionDbModel],
-    ) -> Vec<String> {
+    ) -> LeafOutputs {
         // `get_steps_by_dag` does not guarantee ordering, but output order matters for
         // downstream uses (e.g. concat). Collect leaf outputs in the leaf-step order
         // defined by the DAG definition and de-duplicate while preserving order.
@@ -119,19 +125,35 @@ impl DagScheduler {
 
         let mut seen = HashSet::<String>::new();
         let mut outputs = Vec::new();
+        let mut complete = true;
 
         for leaf in def.leaf_steps() {
             let Some(exec) = exec_by_step_id.get(leaf.id.as_str()) else {
+                complete = false;
                 continue;
             };
-            for output in exec.get_outputs() {
+            let step_outputs = match exec.outputs.as_deref() {
+                None => Vec::new(),
+                Some(raw) => match serde_json::from_str::<Vec<String>>(raw) {
+                    Ok(outputs) => outputs,
+                    Err(_) => {
+                        complete = false;
+                        // Keep the model's contextual diagnostic and empty fallback.
+                        exec.get_outputs()
+                    }
+                },
+            };
+            for output in step_outputs {
                 if seen.insert(Self::output_dedup_key(&output)) {
                     outputs.push(output);
                 }
             }
         }
 
-        outputs
+        LeafOutputs {
+            paths: outputs,
+            complete,
+        }
     }
 
     async fn collect_leaf_outputs(&self, dag: &DagExecutionDbModel) -> Result<Vec<String>> {
@@ -144,10 +166,26 @@ impl DagScheduler {
         }
 
         let step_execs = self.dag_repository.get_steps_by_dag(&dag.id).await?;
-        Ok(Self::collect_leaf_outputs_from_step_executions(
-            &def,
-            &step_execs,
-        ))
+        Ok(Self::collect_leaf_outputs_from_step_executions(&def, &step_execs).paths)
+    }
+
+    /// Terminal notifications share one best-effort artifact projection. The
+    /// caller supplies success according to the transition it is reporting.
+    async fn completion_info(
+        &self,
+        dag: &DagExecutionDbModel,
+        succeeded: bool,
+    ) -> Option<DagCompletionInfo> {
+        if !dag.get_status().is_some_and(|status| status.is_terminal()) {
+            return None;
+        }
+        Some(DagCompletionInfo {
+            dag_id: dag.id.clone(),
+            streamer_id: dag.streamer_id.clone(),
+            session_id: dag.session_id.clone(),
+            succeeded,
+            leaf_outputs: self.collect_leaf_outputs(dag).await.unwrap_or_default(),
+        })
     }
 
     /// Create a new DAG pipeline execution.
@@ -278,21 +316,12 @@ impl DagScheduler {
         }
 
         let dag = self.dag_repository.get_dag(dag_id).await?;
-        let status = dag.get_status();
-        if !status.map(|s| s.is_terminal()).unwrap_or(false) {
-            return Ok(None);
-        }
-
-        let leaf_outputs = self.collect_leaf_outputs(&dag).await.unwrap_or_default();
-        let succeeded = status == Some(DagExecutionStatus::Completed);
-
-        Ok(Some(DagCompletionInfo {
-            dag_id: dag.id.clone(),
-            streamer_id: dag.streamer_id.clone(),
-            session_id: dag.session_id.clone(),
-            succeeded,
-            leaf_outputs,
-        }))
+        Ok(self
+            .completion_info(
+                &dag,
+                dag.get_status() == Some(DagExecutionStatus::Completed),
+            )
+            .await)
     }
 
     /// Fail the DAG execution for a given step execution ID (used when the scheduler can't advance).
@@ -327,9 +356,14 @@ impl DagScheduler {
         let session_title = session_title.map(ToString::to_string);
         let platform = platform.map(ToString::to_string);
 
-        // Get step info for logging
-        let step = self.dag_repository.get_step(dag_step_execution_id).await?;
-
+        let crate::database::repositories::StepCompletion {
+            step,
+            dag,
+            ready_steps,
+        } = self
+            .dag_repository
+            .complete_step_and_check_dependents(dag_step_execution_id, outputs)
+            .await?;
         info!(
             dag_id = %step.dag_id,
             step_id = %step.step_id,
@@ -337,17 +371,10 @@ impl DagScheduler {
             "DAG step completed"
         );
 
-        // Atomically complete step and find ready dependents
-        let ready_steps = self
-            .dag_repository
-            .complete_step_and_check_dependents(dag_step_execution_id, outputs)
-            .await?;
-
         let mut new_job_ids = Vec::new();
 
         if !ready_steps.is_empty() {
-            // Get DAG definition to resolve step configs
-            let dag = self.dag_repository.get_dag(&step.dag_id).await?;
+            // Definition and metadata come from the same transaction as readiness.
             let dag_def = dag
                 .get_dag_definition()
                 .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
@@ -422,26 +449,12 @@ impl DagScheduler {
 
         // Check if DAG reached a terminal state.
         let updated_dag = self.dag_repository.get_dag(&step.dag_id).await?;
-        let completion = if updated_dag
-            .get_status()
-            .map(|s| s.is_terminal())
-            .unwrap_or(false)
-        {
-            let leaf_outputs = self
-                .collect_leaf_outputs(&updated_dag)
-                .await
-                .unwrap_or_default();
-            let succeeded = updated_dag.get_status() == Some(DagExecutionStatus::Completed);
-            Some(DagCompletionInfo {
-                dag_id: updated_dag.id.clone(),
-                streamer_id: updated_dag.streamer_id.clone(),
-                session_id: updated_dag.session_id.clone(),
-                succeeded,
-                leaf_outputs,
-            })
-        } else {
-            None
-        };
+        let completion = self
+            .completion_info(
+                &updated_dag,
+                updated_dag.get_status() == Some(DagExecutionStatus::Completed),
+            )
+            .await;
 
         Ok(DagJobCompletedUpdate {
             new_job_ids,
@@ -517,19 +530,9 @@ impl DagScheduler {
                 None
             }
         };
-        let completion = if let Some(dag) = updated_dag
-            && dag.get_status().map(|s| s.is_terminal()).unwrap_or(false)
-        {
-            let leaf_outputs = self.collect_leaf_outputs(&dag).await.unwrap_or_default();
-            Some(DagCompletionInfo {
-                dag_id: dag.id.clone(),
-                streamer_id: dag.streamer_id.clone(),
-                session_id: dag.session_id.clone(),
-                succeeded: false,
-                leaf_outputs,
-            })
-        } else {
-            None
+        let completion = match updated_dag {
+            Some(dag) => self.completion_info(&dag, false).await,
+            None => None,
         };
 
         Ok(DagJobFailedUpdate {
@@ -691,19 +694,9 @@ impl DagScheduler {
                 None
             }
         };
-        let completion = if let Some(dag) = updated_dag
-            && dag.get_status().map(|s| s.is_terminal()).unwrap_or(false)
-        {
-            let leaf_outputs = self.collect_leaf_outputs(&dag).await.unwrap_or_default();
-            Some(DagCompletionInfo {
-                dag_id: dag.id.clone(),
-                streamer_id: dag.streamer_id.clone(),
-                session_id: dag.session_id.clone(),
-                succeeded: false,
-                leaf_outputs,
-            })
-        } else {
-            None
+        let completion = match updated_dag {
+            Some(dag) => self.completion_info(&dag, false).await,
+            None => None,
         };
 
         Ok(DagJobFailedUpdate {
@@ -951,8 +944,8 @@ impl DagScheduler {
                 continue;
             };
 
-            // A sibling created before this feature (or by an earlier retry)
-            // may carry an all-null state; keep scanning for one with values.
+            // Siblings can carry an all-null state; only a row with stored
+            // values can supply placeholder metadata for recovered steps.
             let meta = parse_job_state(&job.state);
             if meta.has_any() {
                 return meta;
@@ -1034,6 +1027,137 @@ impl DagScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completion_reuses_atomic_snapshots_and_keeps_guarded_downstream_publication() {
+        use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+        use crate::database::test_support::SqlTrace;
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+        let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+        let scheduler = DagScheduler::new(queue, dags.clone(), jobs.clone());
+        let created = scheduler
+            .create_dag_pipeline(
+                two_step_pipeline("atomic snapshots"),
+                &["input.flv".to_owned()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
+        let first = steps.iter().find(|step| step.step_id == "A").unwrap();
+        let trace = SqlTrace::install(&pool).await;
+        let update = scheduler
+            .on_job_completed(
+                &first.id,
+                &["first.mp4".to_owned()],
+                Some("Streamer"),
+                Some("Title"),
+                Some("twitch"),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(update.new_job_ids.len(), 1);
+        assert!(update.completion.is_none());
+        let statements = trace.statements();
+        assert_eq!(
+            statements
+                .iter()
+                .filter(|sql| sql.starts_with("SELECT "))
+                .count(),
+            3,
+            "{statements:?}"
+        );
+        assert_eq!(
+            statements
+                .iter()
+                .filter(|sql| sql.starts_with("SELECT * FROM dag_execution WHERE id ="))
+                .count(),
+            1
+        );
+        assert!(
+            !statements
+                .iter()
+                .any(|sql| sql.starts_with("SELECT * FROM dag_step_execution WHERE id ="))
+        );
+        assert!(statements.iter().any(|sql| {
+            sql.starts_with("UPDATE dag_step_execution SET status = 'PROCESSING'")
+                && sql.contains("AND job_id IS NULL")
+                && sql.contains("SELECT status FROM dag_execution")
+        }));
+        let replay = scheduler
+            .on_job_completed(&first.id, &["wrong.mp4".to_owned()], None, None, None, None)
+            .await
+            .unwrap();
+        assert!(replay.new_job_ids.is_empty());
+        assert_eq!(
+            dags.get_dag(&created.dag_id).await.unwrap().completed_steps,
+            1
+        );
+        let downstream = jobs.get_job(&update.new_job_ids[0]).await.unwrap();
+        let state: serde_json::Value = serde_json::from_str(&downstream.state).unwrap();
+        assert_eq!(state["streamer_name"], "Streamer");
+        assert_eq!(state["session_title"], "Title");
+        assert_eq!(state["platform"], "twitch");
+        let second = downstream.dag_step_execution_id.unwrap();
+        for output in ["final.mp4", "duplicate-must-not-replace.mp4"] {
+            let update = scheduler
+                .on_job_completed(&second, &[output.to_owned()], None, None, None, None)
+                .await
+                .unwrap();
+            let completion = update.completion.unwrap();
+            assert!(completion.succeeded);
+            assert_eq!(completion.dag_id, created.dag_id);
+            assert_eq!(completion.leaf_outputs, vec!["final.mp4"]);
+        }
+        assert_eq!(
+            dags.get_dag(&created.dag_id).await.unwrap().completed_steps,
+            2
+        );
+        pool.close().await;
+    }
+
+    #[test]
+    fn shared_leaf_collection_reports_incomplete_data_without_losing_valid_outputs() {
+        let definition = DagPipelineDefinition::new(
+            "leaves",
+            vec![
+                DagStep::new(
+                    "missing",
+                    PipelineStep::inline("remux", serde_json::json!({})),
+                ),
+                DagStep::new(
+                    "corrupt",
+                    PipelineStep::inline("remux", serde_json::json!({})),
+                ),
+                DagStep::new("good", PipelineStep::inline("remux", serde_json::json!({}))),
+            ],
+        );
+        let mut corrupt = DagStepExecutionDbModel::new("dag", "corrupt", &[]);
+        corrupt.outputs = Some("not JSON".to_owned());
+        let mut good = DagStepExecutionDbModel::new("dag", "good", &[]);
+        good.set_outputs(&[
+            "A.mp4".to_owned(),
+            "a.mp4".to_owned(),
+            "last.mp4".to_owned(),
+        ]);
+        let collected =
+            DagScheduler::collect_leaf_outputs_from_step_executions(&definition, &[good, corrupt]);
+        assert!(!collected.complete);
+        assert_eq!(
+            collected.paths,
+            if cfg!(windows) {
+                vec!["A.mp4", "last.mp4"]
+            } else {
+                vec!["A.mp4", "a.mp4", "last.mp4"]
+            }
+        );
+    }
     use crate::database::models::dag::DagStepExecutionDbModel;
     use crate::database::models::{DagPipelineDefinition, DagStep, JobStatus, PipelineStep};
     use crate::database::repositories::dag::DagRepository;
@@ -1268,7 +1392,9 @@ mod tests {
         // Simulate non-deterministic row order from DB (C then B).
         let step_execs = vec![exec_c, exec_b];
 
-        let out = DagScheduler::collect_leaf_outputs_from_step_executions(&def, &step_execs);
+        let collected = DagScheduler::collect_leaf_outputs_from_step_executions(&def, &step_execs);
+        assert!(collected.complete);
+        let out = collected.paths;
         assert_eq!(out, vec!["x".to_string(), "y".to_string(), "z".to_string()]);
     }
 
@@ -1607,7 +1733,8 @@ mod tests {
                 &["/a.mp4".to_string(), "/shared.xml".to_string()],
             )
             .await
-            .unwrap();
+            .unwrap()
+            .ready_steps;
         assert_eq!(ready.len(), 1);
         let pending = dag_repo.get_step(&ready[0].step.id).await.unwrap();
         assert_eq!(pending.get_status(), Some(DagStepStatus::Pending));

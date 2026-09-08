@@ -327,6 +327,10 @@
 
 ## Pipeline and uploads
 
+- **Pipeline completion and recovery share artifact handling with fewer reads**
+
+  Pipeline construction, input manifests, leaf-output collection and source-artifact reservations now use shared implementations. DAG publication reads a streamer once for its name and platform, completion reuses transaction-owned snapshots, and recovery pages all statuses for a session in one scan. Manifest schemas, output order, optional metadata, failed-write reporting and duplicate-completion protection remain unchanged; see [pipeline error handling](../concepts/pipeline.md#error-handling).
+
 - **Retries retain execution history and previously published files**
 
   Starting another attempt no longer resets step timings, log counters, file-size metadata or produced-artifact history. Earlier logs are not duplicated, and additional stored execution-metadata fields survive completion and failure updates. The processor runs only after its attempt marker is saved; invalid metadata or a failed write stops processing and reports a failure without replacing the original metadata. Failed retries do not delete files published by earlier attempts; processors retain responsibility for their staged temporary outputs.

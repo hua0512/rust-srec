@@ -15,6 +15,7 @@ use std::time::Duration;
 
 mod danmu_recovery;
 
+mod locality;
 mod publication;
 mod recovery_status;
 
@@ -847,7 +848,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         &self,
         _step_id: &str,
         _outputs: &[String],
-    ) -> Result<Vec<crate::database::models::ReadyStep>> {
+    ) -> Result<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1092,7 +1093,7 @@ impl DagRepository for TestDagRepository {
         &self,
         _step_id: &str,
         _outputs: &[String],
-    ) -> Result<Vec<crate::database::models::ReadyStep>> {
+    ) -> Result<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 

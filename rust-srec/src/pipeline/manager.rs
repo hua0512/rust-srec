@@ -46,11 +46,11 @@ use crate::database::repositories::{
     UploadRecordRepository,
 };
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
-use crate::utils::filename::sanitize_filename;
 
 mod dag;
 mod drain;
 mod events;
+mod inputs;
 mod jobs;
 mod recovery;
 mod runtime;
@@ -224,7 +224,6 @@ pub struct PipelineManager<
     SR: StreamerRepository + Send + Sync + 'static = SqlxStreamerRepository,
 > {
     /// Configuration.
-    config: PipelineManagerConfig,
     /// Job queue.
     job_queue: Arc<JobQueue>,
     /// CPU worker pool.
@@ -356,72 +355,28 @@ where
 
     /// Create an in-memory Pipeline Manager with custom configuration.
     pub fn with_config(config: PipelineManagerConfig) -> Self {
-        let (event_tx, _) = broadcast::channel(256);
-        let job_queue = Arc::new(JobQueue::with_config(config.job_queue.clone()));
-
-        let execute_timeout_secs = config.execute_timeout_secs;
-
-        // Create default processors
-        let processors: Vec<Arc<dyn Processor>> = vec![
-            Arc::new(RemuxProcessor::new()),
-            Arc::new(DanmakuFactoryProcessor::new()),
-            Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(BaiduPcsProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
-            Arc::new(ThumbnailProcessor::new()),
-            Arc::new(CopyMoveProcessor::new()),
-            Arc::new(AudioExtractProcessor::new()),
-            Arc::new(CompressionProcessor::new()),
-            Arc::new(MetadataProcessor::new()),
-            Arc::new(DeleteProcessor::new()),
-        ];
-
-        // Create throttle controller if enabled
-        let throttle_controller = if config.throttle.enabled {
-            Some(Arc::new(ThrottleController::new(config.throttle.clone())))
-        } else {
-            None
-        };
-
-        Self {
-            cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
-            io_pool: WorkerPool::with_config(WorkerType::Io, config.io_pool.clone()),
-            config,
-            job_queue,
-            processors,
-            event_tx,
-            session_repo: None,
-            streamer_repo: None,
-            cancellation_token: CancellationToken::new(),
-            runtime: parking_lot::Mutex::new(PipelineRuntime::new()),
-            throttle_controller,
-            download_adjuster: None,
-            preset_repo: None,
-            pipeline_preset_repo: None,
-            config_service: None,
-            last_queue_status: AtomicU8::new(0),
-            pipeline_coordinator: PipelineCoordinator::new(),
-            dag_segment_contexts: Arc::new(DashMap::new()),
-            paired_dag_contexts: Arc::new(DashMap::new()),
-            handled_dag_completions: DashMap::new(),
-            dag_repository: None,
-            job_repository: None,
-            dag_scheduler: None,
-        }
+        Self::build(config, None)
     }
 
-    /// Create a new Pipeline Manager with custom configuration and job repository.
-    /// This enables database persistence and job recovery on startup.
+    /// Create a persistent pipeline manager with startup job recovery.
     pub fn with_repository(
         config: PipelineManagerConfig,
         job_repository: Arc<dyn JobRepository>,
     ) -> Self {
+        Self::build(config, Some(job_repository))
+    }
+
+    fn build(
+        config: PipelineManagerConfig,
+        job_repository: Option<Arc<dyn JobRepository>>,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        let job_queue = Arc::new(JobQueue::with_repository(
-            config.job_queue.clone(),
-            job_repository.clone(),
-        ));
+        let job_queue = Arc::new(match &job_repository {
+            Some(repository) => {
+                JobQueue::with_repository(config.job_queue.clone(), repository.clone())
+            }
+            None => JobQueue::with_config(config.job_queue.clone()),
+        });
 
         let execute_timeout_secs = config.execute_timeout_secs;
 
@@ -451,7 +406,6 @@ where
         Self {
             cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
             io_pool: WorkerPool::with_config(WorkerType::Io, config.io_pool.clone()),
-            config,
             job_queue,
             processors,
             event_tx,
@@ -470,7 +424,7 @@ where
             paired_dag_contexts: Arc::new(DashMap::new()),
             handled_dag_completions: DashMap::new(),
             dag_repository: None,
-            job_repository: Some(job_repository),
+            job_repository,
             dag_scheduler: None,
         }
     }

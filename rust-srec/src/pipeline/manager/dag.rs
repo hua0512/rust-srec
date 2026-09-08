@@ -377,78 +377,15 @@ where
             return complete;
         }
 
-        #[derive(Serialize)]
-        struct SessionCompleteManifest {
-            session_id: String,
-            streamer_id: String,
-            video_inputs: Vec<String>,
-            danmu_inputs: Vec<String>,
-        }
-
-        let video_paths = outputs.get_sorted_video_outputs();
-        let danmu_paths = outputs.get_sorted_danmu_outputs();
-
-        let mut input_paths: Vec<String> = Vec::new();
-
-        if let Some(base_dir) = video_paths
-            .first()
-            .or_else(|| danmu_paths.first())
-            .and_then(|p| p.parent())
-        {
-            let manifest = SessionCompleteManifest {
-                session_id: outputs.session_id.clone(),
-                streamer_id: outputs.streamer_id.clone(),
-                video_inputs: video_paths
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect(),
-                danmu_inputs: danmu_paths
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect(),
-            };
-
-            let manifest_name = format!(
-                "session_{}_inputs.json",
-                sanitize_filename(&outputs.session_id)
-            );
-            let manifest_path = base_dir.join(manifest_name);
-
-            match serde_json::to_vec_pretty(&manifest) {
-                Ok(json) => {
-                    if let Err(e) = tokio::fs::write(&manifest_path, json).await {
-                        complete = false;
-                        warn!(
-                            session_id = %outputs.session_id,
-                            path = %manifest_path.display(),
-                            error = %e,
-                            "Failed to write session input manifest (continuing without manifest)"
-                        );
-                    } else {
-                        input_paths.push(manifest_path.to_string_lossy().to_string());
-                    }
-                }
-                Err(e) => {
-                    complete = false;
-                    warn!(
-                        session_id = %outputs.session_id,
-                        error = %e,
-                        "Failed to serialize session input manifest (continuing without manifest)"
-                    );
-                }
-            }
-        }
-
-        input_paths.extend(
-            video_paths
-                .into_iter()
-                .map(|p| p.to_string_lossy().to_string()),
-        );
-        input_paths.extend(
-            danmu_paths
-                .into_iter()
-                .map(|p| p.to_string_lossy().to_string()),
-        );
+        let (input_paths, manifest_complete) = super::inputs::prepare_pipeline_inputs(
+            &outputs.session_id,
+            &outputs.streamer_id,
+            None,
+            outputs.get_sorted_video_outputs(),
+            outputs.get_sorted_danmu_outputs(),
+        )
+        .await;
+        complete &= manifest_complete;
 
         info!(
             session_id = %outputs.session_id,
@@ -530,88 +467,15 @@ where
             return (Vec::new(), true);
         }
 
-        #[derive(Serialize)]
-        struct PairedSegmentManifest {
-            session_id: String,
-            streamer_id: String,
-            segment_index: u32,
-            video_inputs: Vec<String>,
-            danmu_inputs: Vec<String>,
-        }
-
-        let video_inputs: Vec<String> = outputs
-            .video_outputs
-            .iter()
-            .map(|p| p.to_string_lossy().to_string())
-            .collect();
-        let danmu_inputs: Vec<String> = outputs
-            .danmu_outputs
-            .iter()
-            .map(|p| p.to_string_lossy().to_string())
-            .collect();
-
-        let mut input_paths: Vec<String> = Vec::new();
-
-        if let Some(base_dir) = outputs
-            .video_outputs
-            .first()
-            .or_else(|| outputs.danmu_outputs.first())
-            .and_then(|p| p.parent())
-        {
-            let manifest = PairedSegmentManifest {
-                session_id: outputs.session_id.clone(),
-                streamer_id: outputs.streamer_id.clone(),
-                segment_index: outputs.segment_index,
-                video_inputs,
-                danmu_inputs,
-            };
-
-            let manifest_name = format!(
-                "segment_{}_{}_inputs.json",
-                sanitize_filename(&outputs.session_id),
-                outputs.segment_index
-            );
-            let manifest_path = base_dir.join(manifest_name);
-
-            match serde_json::to_vec_pretty(&manifest) {
-                Ok(json) => {
-                    if let Err(e) = tokio::fs::write(&manifest_path, json).await {
-                        complete = false;
-                        warn!(
-                            session_id = %outputs.session_id,
-                            segment_index = %outputs.segment_index,
-                            path = %manifest_path.display(),
-                            error = %e,
-                            "Failed to write paired-segment input manifest (continuing without manifest)"
-                        );
-                    } else {
-                        input_paths.push(manifest_path.to_string_lossy().to_string());
-                    }
-                }
-                Err(e) => {
-                    complete = false;
-                    warn!(
-                        session_id = %outputs.session_id,
-                        segment_index = %outputs.segment_index,
-                        error = %e,
-                        "Failed to serialize paired-segment input manifest (continuing without manifest)"
-                    );
-                }
-            }
-        }
-
-        input_paths.extend(
-            outputs
-                .video_outputs
-                .into_iter()
-                .map(|p| p.to_string_lossy().to_string()),
-        );
-        input_paths.extend(
-            outputs
-                .danmu_outputs
-                .into_iter()
-                .map(|p| p.to_string_lossy().to_string()),
-        );
+        let (input_paths, manifest_complete) = super::inputs::prepare_pipeline_inputs(
+            &outputs.session_id,
+            &outputs.streamer_id,
+            Some(outputs.segment_index),
+            outputs.video_outputs,
+            outputs.danmu_outputs,
+        )
+        .await;
+        complete &= manifest_complete;
 
         info!(
             session_id = %outputs.session_id,
@@ -694,52 +558,38 @@ where
         (Vec::new(), complete)
     }
 
-    /// Stop the pipeline manager.
-    pub(super) async fn lookup_streamer_name(&self, streamer_id: &str) -> Option<String> {
-        let repo = self.streamer_repo.as_ref()?;
-
-        match repo.get_streamer(streamer_id).await {
-            Ok(streamer) => Some(streamer.name),
-            Err(e) => {
-                debug!(
-                    streamer_id = %streamer_id,
-                    error = %e,
-                    "Failed to look up streamer name"
-                );
-                None
-            }
-        }
-    }
-
-    /// Look up the platform name (e.g. "Twitch") from the streamer's platform config.
-    pub(super) async fn lookup_platform_name(&self, streamer_id: &str) -> Option<String> {
-        let streamer_repo = self.streamer_repo.as_ref()?;
-        let config_service = self.config_service.as_ref()?;
-
-        let platform_id = match streamer_repo.get_streamer(streamer_id).await {
-            Ok(streamer) => streamer.platform_config_id,
-            Err(e) => {
-                debug!(
-                    streamer_id = %streamer_id,
-                    error = %e,
-                    "Failed to look up streamer platform_config_id"
-                );
-                return None;
+    /// Resolve both display fields from one streamer snapshot. Missing optional
+    /// metadata does not prevent publication of an otherwise valid DAG.
+    async fn lookup_streamer_metadata(
+        &self,
+        streamer_id: &str,
+    ) -> (Option<String>, Option<String>) {
+        let Some(repository) = self.streamer_repo.as_ref() else {
+            return (None, None);
+        };
+        let streamer = match repository.get_streamer(streamer_id).await {
+            Ok(streamer) => streamer,
+            Err(error) => {
+                debug!(streamer_id, %error, "Failed to look up streamer metadata");
+                return (None, None);
             }
         };
-
-        match config_service.get_platform_config(&platform_id).await {
-            Ok(platform) => Some(platform.platform_name),
-            Err(e) => {
-                debug!(
-                    streamer_id = %streamer_id,
-                    platform_id = %platform_id,
-                    error = %e,
-                    "Failed to look up platform name"
-                );
-                None
+        let platform = if let Some(service) = &self.config_service {
+            match service
+                .get_platform_config(&streamer.platform_config_id)
+                .await
+            {
+                Ok(platform) => Some(platform.platform_name),
+                Err(error) => {
+                    debug!(streamer_id, platform_id = %streamer.platform_config_id, %error,
+                        "Failed to look up platform name");
+                    None
+                }
             }
-        }
+        } else {
+            None
+        };
+        (Some(streamer.name), platform)
     }
 
     /// Look up session metadata from the repository.
@@ -1040,9 +890,8 @@ where
         self.validate_step_processors(&resolved_dag)?;
 
         // Look up metadata for placeholder support
-        let streamer_name = self.lookup_streamer_name(streamer_id).await;
+        let (streamer_name, platform) = self.lookup_streamer_metadata(streamer_id).await;
         let (session_title, session_start) = self.lookup_session_meta(session_id).await;
-        let platform = self.lookup_platform_name(streamer_id).await;
 
         // Delegate to DAG scheduler
         let result = dag_scheduler
