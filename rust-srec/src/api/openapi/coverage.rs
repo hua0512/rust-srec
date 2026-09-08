@@ -2,12 +2,78 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::Value;
-use syn::parse::Parser;
+use syn::parse::{Parse, ParseStream};
 use syn::visit::Visit;
 use syn::{Expr, Item, ItemFn, Lit, Meta, Token, UseTree};
 use utoipa::OpenApi;
 
 use super::ApiDoc;
+
+struct Operation {
+    path: String,
+    method: String,
+}
+
+impl Parse for Operation {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let mut path = None;
+        let mut method = None;
+        while !input.is_empty() {
+            let key: syn::Ident = input.parse()?;
+            if http_method(&key.to_string()) {
+                method = Some(key.to_string());
+            } else if key == "path" {
+                input.parse::<Token![=]>()?;
+                path = Some(input.parse::<syn::LitStr>()?.value());
+            } else {
+                // Utoipa's other fields contain types and a custom nested DSL,
+                // not Rust expressions. Skip balanced token trees and generic
+                // type arguments, so their commas cannot masquerade as fields.
+                let mut angles = 0usize;
+                while !input.is_empty() && !(angles == 0 && input.peek(Token![,])) {
+                    if input.peek(Token![<]) {
+                        input.parse::<Token![<]>()?;
+                        angles += 1;
+                    } else if input.peek(Token![>]) {
+                        input.parse::<Token![>]>()?;
+                        angles = angles.saturating_sub(1);
+                    } else {
+                        input.step(|cursor| {
+                            cursor
+                                .token_tree()
+                                .map(|(_, next)| ((), next))
+                                .ok_or_else(|| cursor.error("expected utoipa argument"))
+                        })?;
+                    }
+                }
+            }
+            if !input.is_empty() {
+                input.parse::<Token![,]>()?;
+            }
+        }
+        Ok(Self {
+            path: path.ok_or_else(|| input.error("missing documented path"))?,
+            method: method.ok_or_else(|| input.error("missing documented HTTP method"))?,
+        })
+    }
+}
+
+#[test]
+fn registration_identity_ignores_generic_and_nested_utoipa_arguments() {
+    let operation = syn::parse_str::<Operation>(
+        r#"
+        post,
+        request_body = Vec<Result<RequestBody, OtherBody>>,
+        params(("example" = String, Query, description = "path = /wrong, get")),
+        path = "/api/example",
+        responses((status = 200, body = std::collections::HashMap<String, Vec<ResponseBody>>)),
+        security(("bearer_auth" = [])),
+    "#,
+    )
+    .unwrap();
+    assert_eq!(operation.method, "post");
+    assert_eq!(operation.path, "/api/example");
+}
 
 #[derive(Default)]
 struct Sources {
@@ -204,7 +270,6 @@ fn every_annotated_handler_is_mounted_and_registered_with_its_method() {
     let mut routes = BTreeMap::new();
     sources.routed_handlers("crate::api::routes::create_router", "", &mut routes);
     let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let parser = syn::punctuated::Punctuated::<Meta, Token![,]>::parse_terminated;
     let mut annotated = 0;
     for (handler, function) in &sources.functions {
         for attribute in &function.attrs {
@@ -221,28 +286,9 @@ fn every_annotated_handler_is_mounted_and_registered_with_its_method() {
             let Meta::List(attribute) = &attribute.meta else {
                 unreachable!()
             };
-            let arguments = parser.parse2(attribute.tokens.clone()).unwrap();
-            let mut method = None;
-            let mut path = None;
-            for argument in arguments {
-                match argument {
-                    Meta::Path(name)
-                        if name
-                            .get_ident()
-                            .is_some_and(|name| http_method(&name.to_string())) =>
-                    {
-                        method = name.get_ident().map(ToString::to_string)
-                    }
-                    Meta::NameValue(value) if value.path.is_ident("path") => {
-                        path = string_literal(&value.value)
-                    }
-                    _ => {}
-                }
-            }
-            let pair = (
-                path.expect("documented path"),
-                method.expect("documented method"),
-            );
+            let operation = syn::parse2::<Operation>(attribute.tokens.clone())
+                .unwrap_or_else(|error| panic!("{handler}: invalid utoipa operation: {error}"));
+            let pair = (operation.path, operation.method);
             assert!(
                 routes
                     .get(handler)
