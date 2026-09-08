@@ -130,6 +130,7 @@ impl IntoResponse for ApiError {
 impl From<Error> for ApiError {
     fn from(err: Error) -> Self {
         match err {
+            Error::Serialization(error) => ApiError::from(error),
             Error::NotFound { entity_type, id } => {
                 ApiError::not_found(format!("{} with id '{}' not found", entity_type, id))
             }
@@ -168,6 +169,53 @@ impl From<Error> for ApiError {
                 ApiError::internal("An unexpected error occurred")
             }
         }
+    }
+}
+
+impl From<serde_json::Error> for ApiError {
+    fn from(error: serde_json::Error) -> Self {
+        // Data errors can include the stored value itself, including credentials.
+        tracing::error!(category = ?error.classify(), line = error.line(), column = error.column(),
+            "Internal JSON operation failed");
+        Self::internal("Internal JSON operation failed")
+    }
+}
+
+impl From<std::io::Error> for ApiError {
+    fn from(error: std::io::Error) -> Self {
+        Self::from(Error::Io(error))
+    }
+}
+
+impl From<sqlx::Error> for ApiError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::from(Error::DatabaseSqlx(error))
+    }
+}
+
+impl From<tokio::task::JoinError> for ApiError {
+    fn from(error: tokio::task::JoinError) -> Self {
+        tracing::error!(
+            cancelled = error.is_cancelled(),
+            panicked = error.is_panic(),
+            "API background operation failed"
+        );
+        Self::internal("Background operation failed")
+    }
+}
+
+impl From<zip::result::ZipError> for ApiError {
+    fn from(error: zip::result::ZipError) -> Self {
+        match error {
+            zip::result::ZipError::Io(error) => Self::from(error),
+            _ => Self::internal("Archive operation failed"),
+        }
+    }
+}
+
+impl From<axum::http::header::InvalidHeaderValue> for ApiError {
+    fn from(_: axum::http::header::InvalidHeaderValue) -> Self {
+        Self::internal("Response header could not be encoded")
     }
 }
 
@@ -222,6 +270,56 @@ pub type ApiResult<T> = Result<T, ApiError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn internal_sources_do_not_reach_error_responses_but_validation_stays_actionable() {
+        let stored_json = serde_json::from_str::<u64>("\"stored-secret-value\"").unwrap_err();
+        assert!(stored_json.to_string().contains("stored-secret-value"));
+        let errors = [
+            ApiError::from(stored_json),
+            ApiError::from(std::io::Error::other("private-filesystem-detail")),
+            ApiError::from(Error::Database("private-database-detail".to_string())),
+            ApiError::from(Error::Other("private-service-detail".to_string())),
+        ];
+        for error in errors {
+            assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert!(!error.message.contains("secret"));
+            assert!(!error.message.contains("private"));
+        }
+        let validation =
+            ApiError::from(Error::Validation("At most 100 IDs are allowed".to_string()));
+        assert_eq!(validation.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(validation.message, "At most 100 IDs are allowed");
+    }
+
+    #[test]
+    fn route_internal_errors_use_literal_messages_or_typed_mapping() {
+        // Keep stored/backend values out of ad-hoc 500 responses. Request validation remains
+        // free to explain the caller's own invalid fields.
+        let routes = [
+            include_str!("routes/config.rs"),
+            include_str!("routes/engines.rs"),
+            include_str!("routes/templates.rs"),
+            include_str!("routes/credentials.rs"),
+            include_str!("routes/notifications.rs"),
+            include_str!("routes/export_import.rs"),
+            include_str!("routes/filters.rs"),
+            include_str!("routes/media.rs"),
+            include_str!("routes/logging.rs"),
+            include_str!("routes/logging/archive.rs"),
+            include_str!("routes/sessions.rs"),
+            include_str!("routes/stream_proxy.rs"),
+            include_str!("routes/baidupcs.rs"),
+        ];
+        for source in routes {
+            for call in source.split("ApiError::internal(").skip(1) {
+                assert!(
+                    call.trim_start().starts_with('"'),
+                    "internal responses must not interpolate backend details"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_api_error_creation() {

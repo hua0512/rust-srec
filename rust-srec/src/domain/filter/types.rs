@@ -99,200 +99,143 @@ pub struct TimeBasedFilter {
     pub start_time: String,
     /// End time in HH:MM format.
     pub end_time: String,
+    /// Explicit IANA timezone. Omission preserves server-local time for existing filters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
 }
 
 impl TimeBasedFilter {
-    /// Create a new time-based filter.
     pub fn new(days: Vec<String>, start: impl Into<String>, end: impl Into<String>) -> Self {
         Self {
             days_of_week: days,
             start_time: start.into(),
             end_time: end.into(),
+            timezone: None,
         }
     }
 
-    /// Check if the current time matches this filter.
+    pub fn with_timezone(mut self, timezone: impl Into<String>) -> Self {
+        self.timezone = Some(timezone.into());
+        self
+    }
+
+    /// Match the same concrete intervals used for boundary wakeups. Overnight windows
+    /// belong to their start day; a Tuesday morning tail therefore requires Monday.
     pub fn matches(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
-        let local = now.with_timezone(&chrono::Local);
-        let weekday = local.weekday();
-        let current_time = local.time();
-
-        // Check if current day is in allowed days
-        let day_name = weekday_to_str(weekday);
-        if !self
-            .days_of_week
-            .iter()
-            .any(|d| d.eq_ignore_ascii_case(day_name))
-        {
-            // Also check if we're in an overnight range from the previous day
-            let prev_day = prev_weekday(weekday);
-            let prev_day_name = weekday_to_str(prev_day);
-            if !self
-                .days_of_week
-                .iter()
-                .any(|d| d.eq_ignore_ascii_case(prev_day_name))
-            {
-                return false;
-            }
-            // We're checking from previous day's overnight range
-            return self.is_in_overnight_range_next_day(current_time);
-        }
-
-        // Parse times
-        let Some(start) = parse_time(&self.start_time) else {
-            return false;
-        };
-        let Some(end) = parse_time(&self.end_time) else {
-            return false;
-        };
-
-        // Check if in range.
-        //
-        // The end boundary is exclusive. This matches user expectations for schedules like
-        // "09:00 - 17:00" meaning "stop at 17:00".
-        if start <= end {
-            // Normal range (e.g., 09:00 - 17:00)
-            current_time >= start && current_time < end
-        } else {
-            // Overnight range (e.g., 22:00 - 02:00)
-            current_time >= start || current_time < end
-        }
+        self.windows(now, 0)
+            .is_some_and(|mut windows| windows.any(|(start, end)| start <= now && now < end))
     }
 
-    fn is_in_overnight_range_next_day(&self, current_time: NaiveTime) -> bool {
-        let Some(start) = parse_time(&self.start_time) else {
-            return false;
-        };
-        let Some(end) = parse_time(&self.end_time) else {
-            return false;
-        };
-
-        // Only applies to overnight ranges
-        if start <= end {
-            return false;
-        }
-
-        // We're on the "next day" part of an overnight range
-        current_time < end
-    }
-
-    /// Calculate the next time this filter will match.
     pub fn next_match_time(
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Option<chrono::DateTime<chrono::Utc>> {
-        use chrono::{Days, TimeZone};
-
-        let local_now = now.with_timezone(&chrono::Local);
-        let start_time = parse_time(&self.start_time)?;
-
-        // Scan upcoming days (today + 7 days to cover a full week)
-        for i in 0..8 {
-            let Some(target_date) = local_now.date_naive().checked_add_days(Days::new(i)) else {
-                continue;
-            };
-            let weekday = target_date.weekday();
-            let day_name = weekday_to_str(weekday);
-
-            if self
-                .days_of_week
-                .iter()
-                .any(|d| d.eq_ignore_ascii_case(day_name))
-            {
-                // Found a valid day. Construct the candidate start time.
-                // We use the start_time of the filter on this valid day.
-                let chrono::LocalResult::Single(candidate_time) =
-                    chrono::Local.from_local_datetime(&target_date.and_time(start_time))
-                else {
-                    continue;
-                };
-
-                let candidate_utc = candidate_time.with_timezone(&chrono::Utc);
-
-                // If the start time is in the future, that's our next match start
-                if candidate_utc > now {
-                    return Some(candidate_utc);
-                }
-            }
-        }
-        None
+        self.windows(now, 14)?
+            .map(|(start, _)| start)
+            .filter(|start| *start > now)
+            .min()
     }
 
-    /// Calculate the next time this filter will stop matching.
-    ///
-    /// This is used to schedule a boundary wake to stop recording exactly at the end of a
-    /// time-based window while a download is active.
     pub fn next_unmatch_time(
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Option<chrono::DateTime<chrono::Utc>> {
-        use chrono::{Datelike as _, Days, TimeZone as _};
-
-        if !self.matches(now) {
-            return None;
+        // A fold can make tomorrow's window begin before today's overnight
+        // window ends. Merge the continuous run, including windows that have
+        // not begun yet, rather than stopping at an endpoint that still matches.
+        let mut windows: Vec<_> = self.windows(now, 14)?.collect();
+        windows.sort_unstable_by_key(|(start, _)| *start);
+        let mut current_end = windows
+            .iter()
+            .filter(|(start, end)| *start <= now && now < *end)
+            .map(|(_, end)| *end)
+            .max()?;
+        for (start, end) in windows {
+            if start > current_end {
+                break;
+            }
+            current_end = current_end.max(end);
         }
+        // Keep the scan bounded without claiming a stop at the horizon when
+        // a further window already covers that instant.
+        (!self.matches(current_end)).then_some(current_end)
+    }
 
-        let local_now = now.with_timezone(&chrono::Local);
-        let weekday = local_now.weekday();
-
+    fn windows(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        future_days: i64,
+    ) -> Option<
+        impl Iterator<Item = (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> + '_,
+    > {
+        let timezone = self
+            .timezone
+            .as_deref()
+            .map(str::parse::<chrono_tz::Tz>)
+            .transpose()
+            .ok()?;
+        let date = match timezone {
+            Some(timezone) => now.with_timezone(&timezone).date_naive(),
+            None => now.with_timezone(&chrono::Local).date_naive(),
+        };
         let start = parse_time(&self.start_time)?;
         let end = parse_time(&self.end_time)?;
-
-        let day_name = weekday_to_str(weekday);
-        let today_allowed = self
-            .days_of_week
-            .iter()
-            .any(|d| d.eq_ignore_ascii_case(day_name));
-
-        let end_date = if start <= end {
-            // Normal window ends the same day.
-            local_now.date_naive()
-        } else {
-            // Overnight window: end is on the day after the "anchor" day.
-            //
-            // This mirrors the matching logic which prioritizes today's allowed status.
-            let anchor_date = if today_allowed {
-                local_now.date_naive()
-            } else {
-                local_now.date_naive().checked_sub_days(Days::new(1))?
-            };
-
-            anchor_date.checked_add_days(Days::new(1))?
-        };
-
-        let naive = end_date.and_time(end);
-
-        // Convert local naive datetime to a concrete instant.
-        // Prefer the latest instant for ambiguous times (DST fall-back) to avoid early stops.
-        let mut dt_local = match chrono::Local.from_local_datetime(&naive) {
-            chrono::LocalResult::Single(t) => Some(t),
-            chrono::LocalResult::Ambiguous(_, latest) => Some(latest),
-            chrono::LocalResult::None => None,
-        };
-
-        if dt_local.is_none() {
-            // Handle DST gaps (nonexistent local times) by searching forward for the first
-            // representable instant.
-            for mins in 1..=180 {
-                let candidate = naive + chrono::Duration::minutes(mins);
-                match chrono::Local.from_local_datetime(&candidate) {
-                    chrono::LocalResult::Single(t) => {
-                        dt_local = Some(t);
-                        break;
-                    }
-                    chrono::LocalResult::Ambiguous(_, latest) => {
-                        dt_local = Some(latest);
-                        break;
-                    }
-                    chrono::LocalResult::None => {}
-                }
-            }
+        if start == end {
+            return None;
         }
-
-        dt_local.map(|t| t.with_timezone(&chrono::Utc))
+        Some((-1..=future_days).filter_map(move |offset| {
+            let anchor = date.checked_add_signed(chrono::Duration::days(offset))?;
+            if !self
+                .days_of_week
+                .iter()
+                .any(|day| day.eq_ignore_ascii_case(weekday_to_str(anchor.weekday())))
+            {
+                return None;
+            }
+            let end_date = if start > end {
+                anchor.checked_add_days(chrono::Days::new(1))?
+            } else {
+                anchor
+            };
+            let begins = resolve_local_boundary(timezone, anchor.and_time(start), true)?;
+            let ends = resolve_local_boundary(timezone, end_date.and_time(end), false)?;
+            (begins < ends).then_some((begins, ends))
+        }))
     }
 }
 
+/// Fold boundaries choose the earliest start and latest end. A gap advances up to
+/// three hours to its first representable minute; larger discontinuities (including
+/// skipped dates) omit the window. Every query uses this same bounded policy.
+fn resolve_local_boundary(
+    timezone: Option<chrono_tz::Tz>,
+    naive: chrono::NaiveDateTime,
+    start: bool,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    use chrono::{TimeZone, Timelike};
+    for minute in 0..=180 {
+        let mut wall = naive.checked_add_signed(chrono::Duration::minutes(minute))?;
+        if minute > 0 {
+            wall = wall.with_second(0)?.with_nanosecond(0)?;
+        }
+        let result = match timezone {
+            Some(timezone) => timezone
+                .from_local_datetime(&wall)
+                .map(|time| time.with_timezone(&chrono::Utc)),
+            None => chrono::Local
+                .from_local_datetime(&wall)
+                .map(|time| time.with_timezone(&chrono::Utc)),
+        };
+        match result {
+            chrono::LocalResult::Single(time) => return Some(time),
+            chrono::LocalResult::Ambiguous(earliest, latest) => {
+                return Some(if start { earliest } else { latest });
+            }
+            chrono::LocalResult::None => {}
+        }
+    }
+    None
+}
 /// Keyword filter with include/exclude lists.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeywordFilter {
@@ -403,22 +346,22 @@ impl CronFilter {
         now: chrono::DateTime<chrono::Utc>,
     ) -> Option<chrono::DateTime<chrono::Utc>> {
         use chrono_tz::Tz;
-        use std::str::FromStr;
 
-        let schedule = cron::Schedule::from_str(&self.expression).ok()?;
+        let schedule = super::compiled::cron(&self.expression).ok()?;
 
         let tz: Tz = match &self.timezone {
             Some(tz_str) => tz_str.parse().ok()?,
             None => chrono_tz::UTC,
         };
 
-        let now_in_tz = now.with_timezone(&tz);
-
-        // Find next occurrence after now
-        schedule
-            .after(&now_in_tz)
-            .next()
-            .map(|t| t.with_timezone(&chrono::Utc))
+        use chrono::Timelike;
+        let next = next_cron_occurrence(&schedule, tz, now)?;
+        let wall = next.with_timezone(&tz);
+        let minute = next
+            .checked_sub_signed(chrono::Duration::seconds(i64::from(wall.second())))?
+            .checked_sub_signed(chrono::Duration::nanoseconds(i64::from(wall.nanosecond())))?;
+        // A scheduled second activates its whole minute, matching evaluate_cron.
+        Some(if minute > now { minute } else { next })
     }
 
     /// Calculate the next time this filter will stop matching.
@@ -434,9 +377,8 @@ impl CronFilter {
     ) -> Option<chrono::DateTime<chrono::Utc>> {
         use chrono::Timelike as _;
         use chrono_tz::Tz;
-        use std::str::FromStr;
 
-        let schedule = cron::Schedule::from_str(&self.expression).ok()?;
+        let schedule = super::compiled::cron(&self.expression).ok()?;
 
         let tz: Tz = match &self.timezone {
             Some(tz_str) => tz_str.parse().ok()?,
@@ -444,47 +386,91 @@ impl CronFilter {
         };
 
         let now_in_tz = now.with_timezone(&tz);
-        let current_minute = now_in_tz
-            .with_second(0)
-            .and_then(|t| t.with_nanosecond(0))?;
-
-        // The scan below assumes `now` sits inside a matching minute; delegate
-        // that decision to `FilterEvaluator::time_matches_schedule` so it
-        // cannot disagree with what `CronFilter::matches` reports.
         use crate::domain::filter::FilterEvaluator;
         if !FilterEvaluator::time_matches_schedule(&schedule, now_in_tz).ok()? {
             return None;
         }
-
-        // Walk forward minute-by-minute at the *minute* level (not per occurrence).
-        //
-        // We do this by jumping to the first occurrence strictly after the end of the current
-        // minute. This avoids iterating every-second schedules.
-        const MAX_MINUTES: usize = 60 * 24 * 8; // 8 days
-        let mut minute = current_minute;
+        // Advance real instants rather than reconstructing local wall times. Both copies
+        // of a repeated hour are checked, and spring gaps cannot fabricate a minute.
+        let mut minute = now
+            .checked_sub_signed(chrono::Duration::seconds(i64::from(now_in_tz.second())))?
+            .checked_sub_signed(chrono::Duration::nanoseconds(i64::from(
+                now_in_tz.nanosecond(),
+            )))?;
+        const MAX_MINUTES: usize = 60 * 24 * 8;
         for _ in 0..MAX_MINUTES {
-            let end_of_minute =
-                minute + chrono::Duration::minutes(1) - chrono::Duration::nanoseconds(1);
-
-            let Some(next_occurrence) = schedule.after(&end_of_minute).next() else {
-                return Some((minute + chrono::Duration::minutes(1)).with_timezone(&chrono::Utc));
-            };
-
-            let next_minute = next_occurrence
-                .with_second(0)
-                .and_then(|t| t.with_nanosecond(0))?;
-
-            let expected_next = minute + chrono::Duration::minutes(1);
-            if next_minute != expected_next {
-                return Some(expected_next.with_timezone(&chrono::Utc));
+            minute = minute.checked_add_signed(chrono::Duration::minutes(1))?;
+            if !FilterEvaluator::time_matches_schedule(&schedule, minute.with_timezone(&tz)).ok()? {
+                return Some(minute);
             }
-
-            minute = next_minute;
         }
-
         // Schedule appears to match continuously for a long period; treat as unbounded.
         None
     }
+}
+
+fn next_cron_occurrence(
+    schedule: &cron::Schedule,
+    timezone: chrono_tz::Tz,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    use chrono::{TimeZone, Timelike};
+    let local = now.with_timezone(&timezone);
+    let normal = schedule
+        .after(&local)
+        .take(2)
+        .map(|time| time.with_timezone(&chrono::Utc))
+        .filter(|time| *time > now)
+        .min();
+    let chrono::LocalResult::Ambiguous(_, later) =
+        timezone.from_local_datetime(&local.naive_local())
+    else {
+        return normal;
+    };
+    if now >= later.with_timezone(&chrono::Utc) {
+        return normal;
+    }
+
+    // In the first pass through a fold, a smaller wall time may still occur again.
+    // Find the start of that repeated range, bounded even for historical date-line shifts.
+    let mut beginning = local.naive_local().with_nanosecond(0)?;
+    for _ in 0..(48 * 60) {
+        let Some(previous) = beginning.checked_sub_signed(chrono::Duration::minutes(1)) else {
+            break;
+        };
+        if !matches!(
+            timezone.from_local_datetime(&previous),
+            chrono::LocalResult::Ambiguous(..)
+        ) {
+            break;
+        }
+        beginning = previous;
+    }
+    for _ in 0..60 {
+        let Some(previous) = beginning.checked_sub_signed(chrono::Duration::seconds(1)) else {
+            break;
+        };
+        if !matches!(
+            timezone.from_local_datetime(&previous),
+            chrono::LocalResult::Ambiguous(..)
+        ) {
+            break;
+        }
+        beginning = previous;
+    }
+    let wall_before = beginning
+        .and_utc()
+        .checked_sub_signed(chrono::Duration::seconds(1))?;
+    let repeated = schedule.after(&wall_before).next().and_then(|wall| {
+        match timezone.from_local_datetime(&wall.naive_utc()) {
+            chrono::LocalResult::Ambiguous(_, second) => {
+                let second = second.with_timezone(&chrono::Utc);
+                (second > now).then_some(second)
+            }
+            _ => None,
+        }
+    });
+    normal.into_iter().chain(repeated).min()
 }
 
 /// Regex-based filter for stream title pattern matching.
@@ -554,18 +540,6 @@ fn weekday_to_str(weekday: Weekday) -> &'static str {
     }
 }
 
-fn prev_weekday(weekday: Weekday) -> Weekday {
-    match weekday {
-        Weekday::Mon => Weekday::Sun,
-        Weekday::Tue => Weekday::Mon,
-        Weekday::Wed => Weekday::Tue,
-        Weekday::Thu => Weekday::Wed,
-        Weekday::Fri => Weekday::Thu,
-        Weekday::Sat => Weekday::Fri,
-        Weekday::Sun => Weekday::Sat,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,65 +584,25 @@ mod tests {
 
     #[test]
     fn test_time_filter_normal_range() {
-        // NOTE: time-based filters evaluate using `chrono::Local`.
-        // Use fixed local datetimes that are likely unambiguous.
-        let filter = TimeBasedFilter::new(vec!["Monday".to_string()], "09:00", "17:00");
-
-        let date = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(); // Monday
-
-        let in_window_local = chrono::Local
-            .from_local_datetime(&date.and_hms_opt(10, 0, 0).unwrap())
-            .single();
-        let Some(in_window_local) = in_window_local else {
-            // If local time is ambiguous/nonexistent (rare), skip.
-            return;
-        };
-        let now = in_window_local.with_timezone(&chrono::Utc);
-
+        let filter =
+            TimeBasedFilter::new(vec!["Monday".to_string()], "09:00", "17:00").with_timezone("UTC");
+        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 17, 0, 0).unwrap();
         assert!(filter.matches(now));
-
-        // End is exclusive: 17:00 should not match.
-        let end_local = chrono::Local
-            .from_local_datetime(&date.and_hms_opt(17, 0, 0).unwrap())
-            .single();
-        let Some(end_local) = end_local else {
-            return;
-        };
-        assert!(!filter.matches(end_local.with_timezone(&chrono::Utc)));
-
-        // next_unmatch_time should point to the end boundary.
-        let end_at = filter.next_unmatch_time(now).expect("end boundary");
-        assert_eq!(end_at, end_local.with_timezone(&chrono::Utc));
+        assert!(!filter.matches(end));
+        assert_eq!(filter.next_unmatch_time(now), Some(end));
     }
 
     #[test]
     fn test_time_filter_overnight_end_boundary_from_next_day() {
-        // Allow Monday overnight into Tuesday.
-        let filter = TimeBasedFilter::new(vec!["Monday".to_string()], "22:00", "02:00");
-
-        let tuesday = chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
-        let now_local = chrono::Local
-            .from_local_datetime(&tuesday.and_hms_opt(1, 0, 0).unwrap())
-            .single();
-        let Some(now_local) = now_local else {
-            return;
-        };
-        let now = now_local.with_timezone(&chrono::Utc);
-
+        let filter =
+            TimeBasedFilter::new(vec!["Monday".to_string()], "22:00", "02:00").with_timezone("UTC");
+        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 1, 0, 0).unwrap();
+        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 2, 0, 0).unwrap();
         assert!(filter.matches(now));
-
-        let end_local = chrono::Local
-            .from_local_datetime(&tuesday.and_hms_opt(2, 0, 0).unwrap())
-            .single();
-        let Some(end_local) = end_local else {
-            return;
-        };
-
-        let end_at = filter.next_unmatch_time(now).expect("end boundary");
-        assert_eq!(end_at, end_local.with_timezone(&chrono::Utc));
-        assert!(!filter.matches(end_local.with_timezone(&chrono::Utc)));
+        assert_eq!(filter.next_unmatch_time(now), Some(end));
+        assert!(!filter.matches(end));
     }
-
     #[test]
     fn test_cron_filter_end_boundary_is_next_minute() {
         // This cron matches at 10:05:00 (and is considered active for that minute).

@@ -90,7 +90,9 @@ fn stream_proxy_client(allow_private_targets: bool) -> ApiResult<&'static reqwes
 
     match client {
         Ok(client) => Ok(client),
-        Err(message) => Err(ApiError::internal(message.clone())),
+        Err(_) => Err(ApiError::internal(
+            "Stream proxy HTTP client is unavailable",
+        )),
     }
 }
 

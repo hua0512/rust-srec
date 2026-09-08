@@ -26,6 +26,10 @@
 
 ## Process Cleanup
 
+- **Confirmed startup recovery clears earlier runtime debt**
+
+  Recovery now reports partial hydration, pipeline and coordinator failures explicitly and pages through all session segments. Only confirmed recovery clears earlier generation debt, while current ownership remains dirty until clean exit. Cross-process marker transactions prevent stale acknowledgements from overwriting a replacement generation.
+
 - **macOS process cleanup waits for exit confirmation within its deadline**
 
   Forced cleanup now handles a leader that is exiting but not yet waitable when process-group termination returns EPERM. It uses the remaining cleanup budget to confirm exit without reaping, then retries guarded group termination. Unconfirmed cleanup remains an error; Streamlink buffer-draining limits are unchanged.
@@ -47,6 +51,10 @@
   Scheduled vacuum checks the download manager's active recordings instead of counting nonexistent download jobs. It defers when recording activity exceeds the configured limit or admission is busy, and holds new starts until admitted vacuum work finishes. Filesystem preflight runs before that gate, so a slow disk-space check does not hold up recording starts. Lightweight retention remains independent.
 
 ## Configuration
+
+- **Filters reuse parsed rules and handle timezone boundaries consistently**
+
+  Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Existing omitted timezone defaults remain server-local for time-based rules and UTC for cron; frontend timezone controls are not added.
 
 - **Proxy credentials preserve literal URL characters**
 
@@ -246,6 +254,10 @@
 - **Search treats percent signs and underscores literally**
 
   Searches for jobs, sessions, media outputs, notification events and both kinds of presets no longer interpret `%` and `_` as wildcards. Backslashes also match literally, so `audio_extract` only finds that text rather than names such as `audioXextract`. Existing case matching, other filters, pagination totals and media summaries remain consistent; see [search filters](../api/index.md#search-filters).
+
+- **API errors and request batches have explicit boundaries**
+
+  Internal diagnostics no longer enter ad-hoc API errors. Parse and session-delete batches reject more than 100 items before work begins. Device descriptions are bounded to 256 Unicode characters for new logins, refreshed legacy sessions and diagnostics; credential refresh keeps its relogin indication.
 
 - **Configuration reads are cached coherently and missing entities use typed errors**
 

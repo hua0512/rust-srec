@@ -255,7 +255,7 @@ pub async fn baidupcs_login(
 
     let outcome = baidupcs::run_login(&binary_path, config_dir, &material, baidupcs::LOGIN_TIMEOUT)
         .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+        .map_err(ApiError::from)?;
     let mut message = output_tail(&outcome.message);
 
     let mut credentials_stored = false;
@@ -348,7 +348,7 @@ pub async fn baidupcs_logout(
     // `logout` asks `确认退出百度帐号: <name> ? (y/n) >` on stdin.
     let output = baidupcs::run_capture(cmd, Some(b"y\n"), LOGOUT_TIMEOUT)
         .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+        .map_err(ApiError::from)?;
 
     let combined = output.combined();
     let mut message = output_tail(&combined);

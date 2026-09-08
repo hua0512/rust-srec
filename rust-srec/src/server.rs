@@ -120,6 +120,20 @@ async fn run_worker() -> anyhow::Result<()> {
         .await;
     container.set_logging_config(logging_config.clone());
     container.initialize().await?;
+    match worker_control
+        .acknowledge_recovery(container.startup_recovery_complete())
+        .await
+    {
+        Ok(true) => {
+            info!("Startup recovery obligations confirmed for the active runtime generation")
+        }
+        Ok(false) => {
+            warn!("Startup recovery was incomplete; retaining earlier runtime recovery debt")
+        }
+        Err(error) => {
+            warn!(%error, "Could not confirm durable startup recovery acknowledgement")
+        }
+    }
     container.start_api_server().await?;
 
     let startup_event = NotificationEvent::SystemStartup {

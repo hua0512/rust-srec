@@ -115,6 +115,18 @@ Clients should branch on HTTP status and `code`, not parse the human-readable `m
 
 ## Compatibility and Deployment
 
+`POST /api/parse/batch` accepts at most 100 URLs; `DELETE /api/sessions/batch`
+accepts at most 100 session IDs. Larger arrays receive `422` before any item is
+processed. Split larger work into separate requests; empty arrays remain valid.
+Login device descriptions are limited to 256 Unicode characters in logs and
+newly stored tokens. Refresh also bounds descriptions inherited from older
+tokens; existing rows are not bulk-rewritten.
+
+Internal database, filesystem, stored-JSON and credential errors use generic
+responses rather than embedding backend diagnostics. Safe request-validation
+messages remain descriptive. Credential refresh retains its existing `400`
+status and `requires_relogin` indication.
+
 The v0.5 API paths are not prefixed with a version. Pin the backend image or binary version, keep the matching OpenAPI JSON with generated clients, and test before upgrading. Breaking behavior is described in the [Release Notes](../release-notes/).
 
 For network deployments, terminate TLS at a reverse proxy, restrict the API to intended clients, and do not expose Swagger publicly unless it is needed. See [Security](../operations/security.md) and [Production Deployment](../operations/production.md).

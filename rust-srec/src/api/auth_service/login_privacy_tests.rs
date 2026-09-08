@@ -121,3 +121,134 @@ async fn missing_user_obeys_password_worker_admission_and_throttling_skips_work(
     assert_eq!(service.password_verify_calls.load(Ordering::SeqCst), 1);
     pool.close().await;
 }
+
+#[tokio::test]
+async fn long_device_descriptions_are_bounded_without_rejecting_login() {
+    let (pool, service) = service().await;
+    for device in [
+        None,
+        Some(String::new()),
+        Some("😀é".repeat(MAX_DEVICE_INFO_LENGTH)),
+    ] {
+        let expected = device.as_ref().map(|value| {
+            value
+                .chars()
+                .take(MAX_DEVICE_INFO_LENGTH)
+                .collect::<String>()
+        });
+        let response = service
+            .authenticate("active", "correct-password", device, None)
+            .await
+            .unwrap();
+        let stored = service
+            .token_repo
+            .find_by_token_hash(&AuthService::hash_token(&response.refresh_token))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.device_info, expected);
+        assert!(
+            stored
+                .device_info
+                .as_ref()
+                .is_none_or(|value| value.chars().count() <= MAX_DEVICE_INFO_LENGTH)
+        );
+    }
+    pool.close().await;
+}
+
+#[derive(Clone)]
+struct CapturedLog(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn legacy_device_metadata_is_bounded_for_refresh_session_listing_and_logout_logs() {
+    use tracing::instrument::WithSubscriber;
+    let (pool, service) = service().await;
+    let login = service
+        .authenticate("active", "correct-password", None, None)
+        .await
+        .unwrap();
+    let original = service
+        .token_repo
+        .find_by_token_hash(&AuthService::hash_token(&login.refresh_token))
+        .await
+        .unwrap()
+        .unwrap();
+    let legacy = format!(
+        "{}LEGACY_SUFFIX_MUST_NOT_BE_LOGGED",
+        "界😀".repeat(MAX_DEVICE_INFO_LENGTH)
+    );
+    let expected = bounded_device_info(Some(legacy.clone()));
+    sqlx::query("UPDATE refresh_tokens SET device_info = ? WHERE id = ?")
+        .bind(&legacy)
+        .bind(&original.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let captured = CapturedLog(Arc::new(std::sync::Mutex::new(Vec::new())));
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || writer.clone())
+        .finish();
+    async {
+        let sessions = service
+            .list_active_sessions(&original.user_id)
+            .await
+            .unwrap();
+        assert_eq!(sessions[0].device_info, expected);
+        let refreshed = service.refresh_tokens(&login.refresh_token).await.unwrap();
+        let successor = service
+            .token_repo
+            .find_by_token_hash(&AuthService::hash_token(&refreshed.refresh_token))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(successor.device_info, expected);
+        sqlx::query("UPDATE refresh_tokens SET device_info = ?, expires_at = 0 WHERE id = ?")
+            .bind(&legacy)
+            .bind(&successor.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            service.refresh_tokens(&refreshed.refresh_token).await,
+            Err(AuthError::TokenExpired)
+        ));
+        service.logout(&refreshed.refresh_token).await.unwrap();
+        assert!(
+            service
+                .token_repo
+                .find_by_token_hash(&AuthService::hash_token(&refreshed.refresh_token))
+                .await
+                .unwrap()
+                .unwrap()
+                .is_revoked()
+        );
+    }
+    .with_subscriber(subscriber)
+    .await;
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    for event in [
+        "Token refresh succeeded",
+        "Expired refresh token presented",
+        "Logout successful",
+    ] {
+        assert!(output.contains(event), "missing captured event {event}");
+    }
+    assert!(!output.contains("LEGACY_SUFFIX_MUST_NOT_BE_LOGGED"));
+    pool.close().await;
+}

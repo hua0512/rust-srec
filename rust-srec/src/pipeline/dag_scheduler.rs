@@ -737,6 +737,13 @@ impl DagScheduler {
 
     /// Reconcile durable job results and unmaterialized ready steps before workers resume.
     pub async fn recover_dag_jobs(&self) -> Result<usize> {
+        self.recover_dag_jobs_with_status()
+            .await
+            .map(|(count, _)| count)
+    }
+
+    pub(crate) async fn recover_dag_jobs_with_status(&self) -> Result<(usize, bool)> {
+        let mut complete = true;
         let completed_steps = self
             .dag_repository
             .list_processing_steps_with_completed_jobs()
@@ -748,11 +755,13 @@ impl DagScheduler {
         // still recoverable. Each failure is isolated to its own step or DAG.
         for step in completed_steps {
             let Some(job_id) = step.job_id.as_deref() else {
+                complete = false;
                 continue;
             };
             let job = match self.job_repository.get_job(job_id).await {
                 Ok(job) => job,
                 Err(e) => {
+                    complete = false;
                     warn!(
                         dag_id = %step.dag_id,
                         step_id = %step.step_id,
@@ -763,6 +772,15 @@ impl DagScheduler {
                     continue;
                 }
             };
+            if !serde_json::from_str::<serde_json::Value>(&job.state)
+                .is_ok_and(|value| value.is_object())
+                || job
+                    .outputs
+                    .as_deref()
+                    .is_some_and(|raw| serde_json::from_str::<Vec<String>>(raw).is_err())
+            {
+                complete = false;
+            }
             let metadata = parse_job_state(&job.state);
             match self
                 .on_job_completed(
@@ -778,12 +796,15 @@ impl DagScheduler {
                 Ok(update) => {
                     materialized_jobs = materialized_jobs.saturating_add(update.new_job_ids.len());
                 }
-                Err(e) => warn!(
-                    dag_id = %step.dag_id,
-                    step_id = %step.step_id,
-                    error = %e,
-                    "Failed to advance DAG step from its durable job result"
-                ),
+                Err(e) => {
+                    complete = false;
+                    warn!(
+                        dag_id = %step.dag_id,
+                        step_id = %step.step_id,
+                        error = %e,
+                        "Failed to advance DAG step from its durable job result"
+                    );
+                }
             }
         }
 
@@ -796,15 +817,18 @@ impl DagScheduler {
                 Ok(new_job_ids) => {
                     materialized_jobs = materialized_jobs.saturating_add(new_job_ids.len());
                 }
-                Err(e) => warn!(
-                    dag_id = %dag_id,
-                    error = %e,
-                    "Failed to materialize jobs for ready DAG steps"
-                ),
+                Err(e) => {
+                    complete = false;
+                    warn!(
+                        dag_id = %dag_id,
+                        error = %e,
+                        "Failed to materialize jobs for ready DAG steps"
+                    );
+                }
             }
         }
 
-        Ok(materialized_jobs)
+        Ok((materialized_jobs, complete))
     }
 
     async fn enqueue_now_ready_steps(&self, dag_id: &str) -> Result<Vec<String>> {

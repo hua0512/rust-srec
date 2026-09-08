@@ -445,6 +445,7 @@ pub struct ServiceContainer {
     task_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
     logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
+    startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
@@ -511,16 +512,27 @@ fn wire_check_history_pipeline(
 }
 
 impl ServiceContainer {
+    /// True only after initialization confirmed every persistent recovery phase.
+    /// Resumed jobs need not finish: their durable ownership has been restored.
+    pub(crate) fn startup_recovery_complete(&self) -> bool {
+        self.startup_recovery_complete
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
     /// Initialize all services (hydrate data, start background tasks, etc.).
     pub async fn initialize(&self) -> Result<()> {
+        self.startup_recovery_complete
+            .store(false, std::sync::atomic::Ordering::Release);
         let overall = Instant::now();
         info!("Initializing services");
 
         let hydrate_start = Instant::now();
-        let (streamer_count, recovered_jobs) = tokio::try_join!(
-            self.streamer_manager.hydrate(),
-            self.pipeline_manager.recover_jobs(),
+        let ((streamer_count, hydration_complete), recovery) = tokio::try_join!(
+            self.streamer_manager.hydrate_with_recovery_status(),
+            self.pipeline_manager.recover_jobs_with_status(),
         )?;
+        let recovered_jobs = recovery.recovered_jobs;
+        let mut recovery_complete = hydration_complete && recovery.complete;
 
         let hydrate_recover_ms = hydrate_start.elapsed().as_millis();
 
@@ -593,6 +605,7 @@ impl ServiceContainer {
         );
         let notifications_health_checks_ms = health_checks_start.elapsed().as_millis();
         if let Err(e) = reload_result {
+            recovery_complete = false;
             warn!("Failed to load notification configuration from DB: {}", e);
         }
         info!(
@@ -641,7 +654,12 @@ impl ServiceContainer {
         );
 
         let total_ms = overall.elapsed().as_millis();
-        info!(elapsed_ms = total_ms, "Services initialized");
+        self.startup_recovery_complete
+            .store(recovery_complete, std::sync::atomic::Ordering::Release);
+        info!(
+            elapsed_ms = total_ms,
+            recovery_complete, "Services initialized"
+        );
 
         info!(
             startup_hydrate_recover_ms = hydrate_recover_ms,
