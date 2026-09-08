@@ -269,6 +269,19 @@ Save DAG definitions as reusable presets:
 
 ## Error Handling
 
+Delete, rclone and BaiduPCS retry delays grow exponentially but are capped at
+30 seconds per wait, including extreme configured values. Retry counts keep
+their configured meaning. FFmpeg progress timestamps exposed as `out_time_ms`
+are milliseconds for both supported upstream timestamp keys.
+
+Staged outputs with overwrite disabled use native no-replace publication on
+Windows, Linux and macOS, so a filesystem without hard links can still publish
+without overwriting a competing file. Systems that support neither no-replace
+publication nor hard links return an error. Temporary-file cleanup after an
+abandoned processor runs off the async worker and is best effort; a normal
+publication waits for its commit or rollback. Subtitle and font paths support
+apostrophes and filtergraph delimiters without extra user escaping.
+
 - **Fail-fast**: When a step fails, pending downstream steps are cancelled
 - **Retry**: Failed steps can be retried manually or automatically
 - **Logs**: Each step maintains execution logs for debugging

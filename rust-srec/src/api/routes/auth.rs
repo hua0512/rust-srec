@@ -900,8 +900,8 @@ mod tests {
             //! real `/api/auth/login` handler.
             //!
             //! `ForcedChangeUserRepository::find_by_username` always returns
-            //! `None`, so every attempt fails before Argon2id runs and the
-            //! test measures the counter rather than hashing throughput.
+            //! `None`, so attempts use dummy Argon2id verification while exercising
+            //! the same failed-credential budget as an existing account.
 
             use super::*;
             use axum::http::header::RETRY_AFTER;

@@ -20,6 +20,21 @@ use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;
+
+/// Retry delays stay representable and bounded even for extreme user settings.
+pub(super) fn retry_delay(base_ms: u64, attempt: u32) -> std::time::Duration {
+    std::time::Duration::from_millis(
+        base_ms
+            .saturating_mul(2u64.saturating_pow(attempt))
+            .min(30_000),
+    )
+}
+
+pub(super) async fn try_exists(path: &Path) -> crate::Result<bool> {
+    tokio::fs::try_exists(path)
+        .await
+        .map_err(|error| crate::Error::io_path("inspect processor path", path, error))
+}
 /// Hard per-line byte cap for child stdout/stderr readers (`CappedLines`).
 /// Bounds the line buffer against streams that never emit a newline —
 /// e.g. rclone's `--progress` display redraws with control codes instead
@@ -492,6 +507,7 @@ pub async fn run_command_with_logs(
 #[derive(Default)]
 struct FfmpegProgressState {
     out_time_ms: Option<u64>,
+    out_time_us: Option<u64>,
     total_size: Option<u64>,
     speed_x: Option<f64>,
     raw: serde_json::Map<String, serde_json::Value>,
@@ -516,12 +532,14 @@ fn parse_ffmpeg_kv_line(
     );
 
     match key {
-        "out_time_ms" => state.out_time_ms = value.parse::<u64>().ok(),
+        // FFmpeg's legacy out_time_ms name also carries microseconds.
+        "out_time_ms" => state.out_time_ms = value.parse::<u64>().ok().map(|us| us / 1000),
+        "out_time_us" => state.out_time_us = value.parse::<u64>().ok(),
         "total_size" => state.total_size = value.parse::<u64>().ok(),
         "speed" => state.speed_x = parse_speed_x(value),
         "progress" => {
             let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
-            snapshot.out_time_ms = state.out_time_ms;
+            snapshot.out_time_ms = state.out_time_us.map(|us| us / 1000).or(state.out_time_ms);
             snapshot.bytes_done = state.total_size;
             snapshot.raw = serde_json::Value::Object(state.raw.clone());
             return Some(snapshot);
@@ -925,6 +943,55 @@ pub async fn run_baidupcs_with_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn processor_retry_delay_saturates_and_caps_extreme_configuration() {
+        assert_eq!(retry_delay(100, 0), std::time::Duration::from_millis(100));
+        assert_eq!(retry_delay(100, 3), std::time::Duration::from_millis(800));
+        for (base, attempt) in [(u64::MAX, 0), (100, 64), (1000, u32::MAX)] {
+            assert_eq!(
+                retry_delay(base, attempt),
+                std::time::Duration::from_secs(30)
+            );
+        }
+        assert_eq!(retry_delay(0, u32::MAX), std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn ffmpeg_progress_converts_both_microsecond_keys_to_milliseconds() {
+        for key in ["out_time_ms", "out_time_us"] {
+            let mut state = FfmpegProgressState::default();
+            parse_ffmpeg_kv_line(&format!("{key}=1234567"), &mut state);
+            let progress = parse_ffmpeg_kv_line("progress=continue", &mut state).unwrap();
+            assert_eq!(progress.out_time_ms, Some(1234));
+            assert_eq!(progress.raw[key], "1234567");
+        }
+        let mut state = FfmpegProgressState::default();
+        parse_ffmpeg_kv_line("out_time_us=2000000", &mut state);
+        parse_ffmpeg_kv_line("out_time_ms=1000000", &mut state);
+        assert_eq!(
+            parse_ffmpeg_kv_line("progress=end", &mut state)
+                .unwrap()
+                .out_time_ms,
+            Some(2000)
+        );
+        parse_ffmpeg_kv_line("out_time_us=N/A", &mut state);
+        parse_ffmpeg_kv_line("out_time_ms=-1", &mut state);
+        assert_eq!(
+            parse_ffmpeg_kv_line("progress=end", &mut state)
+                .unwrap()
+                .out_time_ms,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn processor_path_checks_preserve_io_errors() {
+        assert!(try_exists(Path::new("invalid\0path")).await.is_err());
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!try_exists(&dir.path().join("missing")).await.unwrap());
+        assert!(try_exists(dir.path()).await.unwrap());
+    }
 
     const HELPER_MODE: &str = "RUST_SREC_PROCESSOR_COMMAND_HELPER";
     const HEARTBEAT_PATH: &str = "RUST_SREC_PROCESSOR_COMMAND_HEARTBEAT";

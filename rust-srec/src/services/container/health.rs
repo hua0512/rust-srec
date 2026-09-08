@@ -479,7 +479,7 @@ pub(super) async fn discover_output_probe_paths(
                         .output_folder
                         .replace(
                             "{streamer}",
-                            &crate::utils::filename::sanitize_filename(&streamer.name),
+                            &crate::utils::filename::sanitize_filename_for_template(&streamer.name),
                         )
                         .replace("{platform}", streamer.platform()),
                 );

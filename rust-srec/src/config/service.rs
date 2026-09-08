@@ -25,6 +25,9 @@ use super::cache::{ConfigCache, InFlightRequest};
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use super::{ConfigResolver, MergedConfig, ResolvedStreamerContext};
 
+mod global_cache;
+use global_cache::GlobalConfigCache;
+
 /// Hard upper bound for a single streamer config resolution. This prevents `in_flight` entries
 /// from getting stuck forever if an upstream call hangs.
 const CONFIG_RESOLVE_HARD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -77,6 +80,7 @@ where
     streamer_repo: Arc<S>,
     cache: ConfigCache,
     broadcaster: ConfigEventBroadcaster,
+    global_cache: GlobalConfigCache,
 }
 
 impl<C, S> ConfigService<C, S>
@@ -119,6 +123,7 @@ where
             streamer_repo,
             cache,
             broadcaster,
+            global_cache: GlobalConfigCache::default(),
         }
     }
 
@@ -141,9 +146,18 @@ where
         self.config_repo.get_global_config().await
     }
 
+    /// Short-lived snapshot for high-frequency readers. Administrative read-modify-write
+    /// callers keep using get_global_config, which always reads the authoritative row.
+    pub async fn get_cached_global_config(&self) -> Result<Arc<GlobalConfigDbModel>> {
+        self.global_cache
+            .get_or_load(|| self.config_repo.get_global_config())
+            .await
+    }
+
     /// Update the global configuration.
     pub async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         self.config_repo.update_global_config(config).await?;
+        self.global_cache.invalidate();
 
         // Invalidate all cached configs since global affects everything
         self.cache.invalidate_all();
@@ -487,6 +501,7 @@ where
     }
 
     pub(crate) fn notify_import_committed(&self) {
+        self.global_cache.invalidate();
         self.cache.invalidate_all();
         self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
     }
@@ -556,5 +571,63 @@ where
 
 #[cfg(test)]
 mod tests {
-    // Tests will be added with mock repositories
+    use super::*;
+    use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
+
+    #[tokio::test]
+    async fn global_hot_cache_invalidates_on_writes_and_import_but_admin_reads_are_authoritative() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let service = ConfigService::new(
+            repo.clone(),
+            Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
+        );
+        let mut config = service.get_global_config().await.unwrap();
+        config.stream_proxy_allow_private_targets = true;
+        service.update_global_config(&config).await.unwrap();
+        assert!(
+            service
+                .get_cached_global_config()
+                .await
+                .unwrap()
+                .stream_proxy_allow_private_targets
+        );
+        config.stream_proxy_allow_private_targets = false;
+        service.update_global_config(&config).await.unwrap();
+        assert!(
+            !service
+                .get_cached_global_config()
+                .await
+                .unwrap()
+                .stream_proxy_allow_private_targets
+        );
+
+        config.output_folder = "/imported".to_string();
+        repo.update_global_config(&config).await.unwrap();
+        assert_ne!(
+            service
+                .get_cached_global_config()
+                .await
+                .unwrap()
+                .output_folder,
+            "/imported"
+        );
+        assert_eq!(
+            service.get_global_config().await.unwrap().output_folder,
+            "/imported"
+        );
+        service.notify_import_committed();
+        assert_eq!(
+            service
+                .get_cached_global_config()
+                .await
+                .unwrap()
+                .output_folder,
+            "/imported"
+        );
+        pool.close().await;
+    }
 }

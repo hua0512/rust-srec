@@ -10,6 +10,10 @@
 
 ## Health Monitoring
 
+- **Unknown components make overall health degraded**
+
+  A completed refresh no longer reports healthy when a disk or another component has unknown status. Unhealthy components still take precedence; degraded instances remain ready.
+
 - **Slow disk sampling keeps health checks responsive**
 
   System and disk sampling runs on one dedicated thread with bounded waits. A stalled filesystem leaves earlier values marked stale or degraded while other probes continue, without accumulating replacement tasks. Health-checker shutdown can finish even if the operating-system call remains blocked; see [slow filesystem sampling](../operations/monitoring.md#slow-filesystem-sampling).
@@ -21,6 +25,10 @@
   Forced cleanup now handles a leader that is exiting but not yet waitable when process-group termination returns EPERM. It uses the remaining cleanup budget to confirm exit without reaping, then retries guarded group termination. Unconfirmed cleanup remains an error; Streamlink buffer-draining limits are unchanged.
 
 ## Logging
+
+- **Logging startup and idle behavior are predictable**
+
+  Log-file initialization returns errors instead of panicking, retention runs immediately at cleanup-service startup, redirected console output omits ANSI colors, and live-log formatting is skipped without subscribers. Daily files still have no byte-size cap.
 
 - **Log archives stream within resource limits**
 
@@ -37,6 +45,10 @@
 - **Filters reuse parsed rules and handle timezone boundaries consistently**
 
   Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Existing omitted timezone defaults remain server-local for time-based rules and UTC for cron; frontend timezone controls are not added.
+
+- **Proxy credentials preserve literal URL characters**
+
+  Separate proxy usernames and passwords are percent-encoded before insertion, including literal percent signs, spaces, Unicode and authority delimiters. They replace embedded credentials while preserving the proxy host and port. Download-start diagnostics omit proxy URLs.
 
 - **Startup output probes use recording-compatible gate keys**
 
@@ -59,6 +71,10 @@
   Opening an inherited platform-options form no longer writes a quality override. Template and streamer forms show an inherited choice; selecting it clears the override. Platform defaults and quality codes now match the Bilibili extractor. Template options saved by the UI are applied by the resolver, while existing flat configurations remain supported.
 
 ## Post-processing
+
+- **Processor publication, paths and retries preserve their contracts**
+
+  Subtitle filters accept apostrophes and filter delimiters in paths. No-overwrite publication uses native no-replace operations on supported platforms, retry waits cap at 30 seconds without overflow, and FFmpeg progress reports milliseconds consistently. File checks and abandoned temporary-output cleanup no longer block async workers.
 
 - **Pipeline coordination drains accepted events during shutdown**
 
@@ -123,6 +139,10 @@
   HTML, Markdown, and MarkdownV2 settings now use explicit formatting entities so special characters in streamer names, titles, and errors cannot break message parsing. Unicode-safe truncation keeps formatting spans valid. Empty mode sends plain text; unknown modes return a local configuration error.
 
 ## Recording
+
+- **Recording filenames and event tracking survive custom input**
+
+  Percent signs in streamer names, titles and concrete output directories remain literal while configured date tokens still expand. Startup probes follow the same rules. Required FFmpeg info logs and statistics override quiet options, long stderr records are scanned incrementally, and download snapshots copy only their public fields.
 
 - **Concurrent danmu stops share collector completion**
 
@@ -211,11 +231,19 @@
 
 ## Authentication
 
+- **Failed login responses conceal account existence and disabled state**
+
+  Missing users receive bounded dummy Argon2 verification and the same credential error as an incorrect password. Disabled-account status is disclosed only after a correct password. Login throttling still runs before password work.
+
 - **Refresh-token rotation is atomic and rejects replay**
 
   A refresh token issues at most one replacement, and failed database writes preserve the original token. Reusing an already revoked token now revokes the user's other refresh tokens by default. The optional grace window suppresses that revocation but no longer issues tokens for a replay. Clients must serialize refreshes; see [refresh-token rotation](../operations/security.md#refresh-token-rotation) for configuration and concurrency behavior.
 
 ## API and integrations
+
+- **Configuration reads are cached coherently and missing entities use typed errors**
+
+  Stream proxy and parsing requests reuse a five-second global snapshot, immediately invalidated by application writes and imports. Administrative reads remain authoritative and expired cache entries never hide refresh failures. Platform, template and engine handlers distinguish missing entities from database errors without matching message text.
 
 - **API keys for programmatic access**
 

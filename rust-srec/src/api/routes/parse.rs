@@ -540,7 +540,7 @@ async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> Pro
 
     // Global proxy config (base for non-streamer requests).
     let global_proxy = config_service
-        .get_global_config()
+        .get_cached_global_config()
         .await
         .map(|global_config| {
             json::parse_or_default(

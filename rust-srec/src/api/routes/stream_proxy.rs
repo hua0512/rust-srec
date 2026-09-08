@@ -471,7 +471,7 @@ pub async fn stream_proxy_get(
     // Fail closed: a config read error must not widen the target policy.
     let allow_private_targets = match &state.config_service {
         Some(config_service) => config_service
-            .get_global_config()
+            .get_cached_global_config()
             .await
             .map(|config| config.stream_proxy_allow_private_targets)
             .unwrap_or(false),
