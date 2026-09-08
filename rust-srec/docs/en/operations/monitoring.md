@@ -96,6 +96,19 @@ bound bytes per file. File initialization failures return a startup error.
 Console colors are enabled only when stdout is a terminal, and live-log event
 formatting is skipped when no client is subscribed.
 
+## Scheduler Restart Limits
+
+An actor that repeatedly crashes stops restarting after its tenth consecutive
+crash. This count does not expire with the 60-second restart-backoff window;
+ordinary platform-check failures handled inside the actor do not count as actor
+crashes. A removed streamer or another non-recoverable actor decision stops
+without scheduling a restart.
+
+Investigate an `exceeded restart limit` log before restoring monitoring. After
+fixing the cause, disable and re-enable the streamer to remove its old actor
+tracking and start with a fresh crash budget, or restart the service. Waiting
+for the backoff window alone does not restore an exhausted budget.
+
 ## Minimum Alert Set
 
 - Backend liveness failure or restart loop.

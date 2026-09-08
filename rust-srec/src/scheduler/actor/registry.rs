@@ -55,12 +55,12 @@ impl ActorTaskResult {
         }
     }
 
-    /// Check if the actor crashed (error or unexpected outcome).
+    /// Check if the actor crashed with a recoverable failure rather than a terminal stop.
     pub fn is_crash(&self) -> bool {
         match &self.outcome {
             Ok(ActorOutcome::Stopped) | Ok(ActorOutcome::Cancelled) => false,
             Ok(ActorOutcome::Completed) => false,
-            Err(_) => true,
+            Err(error) => error.recoverable,
         }
     }
 
@@ -958,12 +958,13 @@ mod tests {
         let error = ActorTaskResult::streamer(
             "test",
             1,
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
-                "test error",
-            )),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::recoverable("test error")),
         );
         assert!(error.is_crash());
         assert_eq!(error.error_message(), Some("test error"));
+        let terminal =
+            ActorTaskResult::streamer("test", 1, Err(ActorError::fatal("streamer removed")));
+        assert!(!terminal.is_crash());
     }
 
     #[tokio::test]

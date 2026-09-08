@@ -318,7 +318,7 @@ impl StreamerActor {
             // This ensures high-priority operations (like Stop) are handled promptly
             if let Some(msg) = self.try_recv_priority() {
                 let start = Instant::now();
-                let should_stop = self.handle_message(msg).await?;
+                let should_stop = self.handle_run_message(msg).await?;
                 self.metrics.record_message(start.elapsed());
 
                 if should_stop {
@@ -378,7 +378,7 @@ impl StreamerActor {
                 // Check priority mailbox first (if configured)
                 Some(msg) = Self::recv_priority_opt(&mut self.priority_mailbox) => {
                     let start = Instant::now();
-                    let should_stop = self.handle_message(msg).await?;
+                    let should_stop = self.handle_run_message(msg).await?;
                     self.metrics.record_message(start.elapsed());
 
                     if should_stop {
@@ -390,7 +390,7 @@ impl StreamerActor {
                 // Handle normal-priority messages
                 Some(msg) = self.mailbox.recv() => {
                     let start = Instant::now();
-                    let should_stop = self.handle_message(msg).await?;
+                    let should_stop = self.handle_run_message(msg).await?;
                     self.metrics.record_message(start.elapsed());
 
                     if should_stop {
@@ -431,6 +431,19 @@ impl StreamerActor {
         self.persist_state().await?;
         info!("StreamerActor {} stopped gracefully", self.id);
         Ok(ActorOutcome::Stopped)
+    }
+
+    /// Fatal mailbox errors are terminal policy decisions, just like fatal timer errors.
+    /// Return a stop signal so all mailbox paths reach graceful state persistence.
+    async fn handle_run_message(&mut self, message: StreamerMessage) -> Result<bool, ActorError> {
+        match self.handle_message(message).await {
+            Err(error) if !error.recoverable => {
+                self.metrics.record_error();
+                info!(streamer_id = %self.id, error = %error, "Stopping actor after terminal message error");
+                Ok(true)
+            }
+            result => result,
+        }
     }
 
     /// Try to receive a message from the priority mailbox without blocking.
@@ -1159,7 +1172,8 @@ impl StreamerActor {
                 self.state.hysteresis.reset();
                 self.state.schedule_next_check(&self.config, error_count);
             }
-            DownloadEndPolicy::OutOfSchedule => {
+            DownloadEndPolicy::OutOfSchedule
+            | DownloadEndPolicy::Stopped(DownloadStopCause::OutOfSchedule) => {
                 // Policy stop: the streamer may still be live, but the recording window ended.
                 // Do NOT publish Offline; the monitor already recorded OutOfSchedule.
                 //
@@ -1202,7 +1216,17 @@ impl StreamerActor {
                 self.state.hysteresis.mark_offline_observed();
                 self.state.schedule_next_check(&self.config, error_count);
             }
-            DownloadEndPolicy::StreamerOffline | DownloadEndPolicy::Stopped(_) => {
+            DownloadEndPolicy::Stopped(
+                DownloadStopCause::Shutdown | DownloadStopCause::StreamerDisabled,
+            ) => {
+                // Lifecycle orchestration owns these stops: shutdown preserves the session
+                // for recovery, while disable/delete performs its own authoritative closure.
+                // Park local polling until cancellation/configuration, without publishing Offline.
+                self.state.streamer_state = StreamerState::NotLive;
+                self.state.next_check = None;
+            }
+            DownloadEndPolicy::StreamerOffline
+            | DownloadEndPolicy::Stopped(DownloadStopCause::StreamerOffline) => {
                 // Streamer went offline normally. Push an Offline status to the monitor
                 // immediately so DB/session state is updated without waiting for the next check.
                 let metadata = self
@@ -1237,7 +1261,8 @@ impl StreamerActor {
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.schedule_immediate_check();
             }
-            DownloadEndPolicy::UserCancelled => {
+            DownloadEndPolicy::UserCancelled
+            | DownloadEndPolicy::Stopped(DownloadStopCause::User) => {
                 // User cancelled - stop monitoring this streamer entirely
                 // User intent: "I don't want to monitor this streamer anymore"
                 // The download orchestration layer should update the streamer state
@@ -1283,7 +1308,8 @@ impl StreamerActor {
                 self.state.hysteresis.mark_offline_observed();
                 self.state.schedule_next_check(&self.config, error_count);
             }
-            DownloadEndPolicy::Other(_) => {
+            DownloadEndPolicy::Other(_)
+            | DownloadEndPolicy::Stopped(DownloadStopCause::Other(_)) => {
                 // Unknown reason - don't reset hysteresis, let status checks verify state
                 // If streamer is truly offline, grace period will confirm it through multiple checks
                 self.state.streamer_state = StreamerState::NotLive;
@@ -3029,5 +3055,122 @@ mod tests {
             "DanmuStreamClosed is authoritative; hysteresis must be fully reset"
         );
         assert!(actor.state.next_check.is_some());
+    }
+    #[tokio::test]
+    async fn fatal_timer_and_mailbox_errors_stop_gracefully_and_persist_state() {
+        for trigger in ["timer", "normal", "priority", "late-priority"] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("state.json");
+            let metadata = create_test_metadata_store();
+            let (mut actor, handle) = StreamerActor::with_priority_channel(
+                "test-streamer".to_owned(),
+                metadata.clone(),
+                create_test_config(),
+                CancellationToken::new(),
+                Arc::new(AssertNotCalledStatusChecker),
+            );
+            actor = actor.with_state_path(path.clone());
+            actor.state.next_check = Some(Instant::now() + Duration::from_secs(3600));
+            let message = StreamerMessage::DownloadEnded(DownloadEndPolicy::StreamerOffline);
+            if trigger != "late-priority" {
+                metadata.remove("test-streamer");
+            }
+            match trigger {
+                "timer" => actor.state.next_check = Some(Instant::now()),
+                "normal" => handle.send(message).await.unwrap(),
+                "priority" => handle.send_priority(message).await.unwrap(),
+                _ => {}
+            }
+            let task = tokio::spawn(actor.run());
+            if trigger == "late-priority" {
+                let (reply, received) = tokio::sync::oneshot::channel();
+                handle.send(StreamerMessage::GetState(reply)).await.unwrap();
+                tokio::time::timeout(Duration::from_secs(2), received)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                metadata.remove("test-streamer");
+                handle
+                    .send_priority(StreamerMessage::DownloadEnded(
+                        DownloadEndPolicy::StreamerOffline,
+                    ))
+                    .await
+                    .unwrap();
+            }
+            let outcome = tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(outcome.unwrap(), ActorOutcome::Stopped, "{trigger}");
+            let persisted: serde_json::Value =
+                serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
+            assert_eq!(persisted["actor_id"], "test-streamer", "{trigger}");
+        }
+    }
+
+    #[tokio::test]
+    async fn orchestration_stops_and_unknown_causes_never_publish_offline() {
+        for cause in [
+            DownloadStopCause::Shutdown,
+            DownloadStopCause::StreamerDisabled,
+            DownloadStopCause::Other("internal stop".to_owned()),
+        ] {
+            let park = matches!(
+                cause,
+                DownloadStopCause::Shutdown | DownloadStopCause::StreamerDisabled
+            );
+            let (mut actor, _handle) = StreamerActor::new(
+                "test-streamer".to_owned(),
+                create_test_metadata_store(),
+                create_test_config(),
+                CancellationToken::new(),
+                Arc::new(AssertNotCalledStatusChecker),
+            );
+            actor.state.streamer_state = StreamerState::Live;
+            actor.state.hysteresis.mark_live();
+            actor.state.last_download_activity_at = Some(Instant::now());
+            actor
+                .handle_download_ended(DownloadEndPolicy::Stopped(cause))
+                .await
+                .unwrap();
+            assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+            assert!(
+                actor.state.hysteresis.was_live(),
+                "an orchestration stop is not an offline observation"
+            );
+            assert_eq!(actor.state.hysteresis.offline_count(), 0);
+            assert!(actor.state.last_download_activity_at.is_none());
+            assert_eq!(actor.state.next_check.is_none(), park);
+        }
+    }
+
+    #[tokio::test]
+    async fn authoritative_offline_still_emits_exactly_one_monitor_signal() {
+        for reason in [
+            DownloadEndPolicy::StreamerOffline,
+            DownloadEndPolicy::Stopped(DownloadStopCause::StreamerOffline),
+        ] {
+            let checker = Arc::new(SequenceStatusChecker::new(
+                vec![],
+                vec![ProcessStatusResult::Applied, ProcessStatusResult::Applied],
+            ));
+            let (mut actor, _handle) = StreamerActor::new(
+                "test-streamer".to_owned(),
+                create_test_metadata_store(),
+                create_test_config(),
+                CancellationToken::new(),
+                checker.clone(),
+            );
+            actor.state.streamer_state = StreamerState::Live;
+            actor.state.hysteresis.mark_live();
+            actor.handle_download_ended(reason).await.unwrap();
+            assert_eq!(
+                checker.outcomes.lock().unwrap().len(),
+                1,
+                "offline must reach process_status exactly once"
+            );
+            assert_eq!(actor.state.hysteresis.offline_count(), 1);
+            assert!(actor.state.next_check.is_some());
+        }
     }
 }

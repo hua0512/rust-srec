@@ -3,6 +3,7 @@
 use axum::{
     Json, Router,
     extract::{FromRef, Path, Query, State},
+    http::StatusCode,
     routing::{delete, get, post, put},
 };
 
@@ -138,7 +139,7 @@ fn validate_offline_check_overrides(
 pub async fn create_template(
     State(state): State<TemplateRouteState>,
     Json(request): Json<CreateTemplateRequest>,
-) -> ApiResult<Json<TemplateResponse>> {
+) -> ApiResult<(StatusCode, Json<TemplateResponse>)> {
     // Validate name
     if request.name.is_empty() {
         return Err(ApiError::validation("Template name cannot be empty"));
@@ -188,7 +189,10 @@ pub async fn create_template(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(db_model_to_response(&template, 0)))
+    Ok((
+        StatusCode::CREATED,
+        Json(db_model_to_response(&template, 0)),
+    ))
 }
 
 #[utoipa::path(
@@ -433,7 +437,7 @@ pub async fn clone_template(
     State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
     Json(request): Json<CloneTemplateRequest>,
-) -> ApiResult<Json<TemplateResponse>> {
+) -> ApiResult<(StatusCode, Json<TemplateResponse>)> {
     // Validate new name
     if request.new_name.is_empty() {
         return Err(ApiError::validation("Template name cannot be empty"));
@@ -495,7 +499,7 @@ pub async fn clone_template(
         existing.name, id, cloned.name, cloned.id
     );
 
-    Ok(Json(db_model_to_response(&cloned, 0)))
+    Ok((StatusCode::CREATED, Json(db_model_to_response(&cloned, 0))))
 }
 
 #[cfg(test)]

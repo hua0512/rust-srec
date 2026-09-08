@@ -137,6 +137,21 @@ The scheduler is a supervisor that manages self-scheduling actors:
 Actors call into `StreamMonitor` for real status checks; the scheduler also reacts to configuration
 events to spawn/stop actors dynamically.
 
+Non-recoverable actor errors represent terminal decisions, such as a removed
+streamer. Both timer and mailbox paths stop gracefully and run configured state
+persistence; the supervisor does not restart them. Recoverable task failures and
+panics remain eligible for restart. Ten consecutive crashes exhaust automatic
+restarts even when older crashes have left the 60-second backoff window. The
+window still determines restart delay; explicit failure reset or actor removal
+restores the crash budget.
+
+Download terminal feedback preserves lifecycle authority. Shutdown and
+streamer-disable stops park the actor's local polling without publishing an
+Offline observation: shutdown preserves the session for recovery, and disable
+cleanup owns its session closure. Unknown internal stops resume status checking
+to verify the platform state. Authoritative streamer-offline feedback still
+publishes Offline through the monitor.
+
 ### `StreamMonitor` (detect + filter + outbox)
 
 `StreamMonitor` is the data-plane detector. It:

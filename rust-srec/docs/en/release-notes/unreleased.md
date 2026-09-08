@@ -8,6 +8,16 @@
 
   Removed the unused Prometheus exporter and unwired download, pipeline, streamer and system counters, including their latent underflow and label-escaping paths. Internal web-push delivery counters and JSON health endpoints remain available. Rust callers of the removed metrics API must use the supported subsystem snapshots.
 
+## Scheduler Recovery
+
+- **Terminal actor decisions no longer trigger crash restarts**
+
+  A removed streamer or another non-recoverable message error now follows the same graceful-stop path as a timer error. Recoverable crashes still restart, but ten consecutive crashes stop automatic recovery even when backoff has aged earlier failures out of its window. Explicit removal/reset restores the budget; see [restart limits](../operations/monitoring.md#scheduler-restart-limits).
+
+- **Shutdown and disable feedback do not invent an offline event**
+
+  Scheduler feedback from shutdown or streamer-disable cleanup now parks local polling without publishing an authoritative Offline observation. This preserves shutdown session recovery and avoids racing the disable workflow's own session closure. Unknown internal stops wait for a real status check; actual streamer-offline feedback still reaches the monitor.
+
 ## Danmu Text
 
 - **Danmu XML and MCP pages preserve valid text**
@@ -274,6 +284,10 @@
   A refresh token issues at most one replacement, and failed database writes preserve the original token. Reusing a consumed token from an open session now revokes all of the user's access and refresh sessions by default; replaying a logged-out session leaves other devices signed in. The optional grace window suppresses that revocation but no longer issues tokens for a replay. Clients must serialize refreshes; see [refresh-token rotation](../operations/security.md#refresh-token-rotation) for configuration and concurrency behavior.
 
 ## API and integrations
+
+- **Creation responses and OpenAPI match the running API**
+
+  Resource creation and template/job-preset cloning now return the documented 201 status with the same JSON bodies. OpenAPI includes session segments, template cloning and all four browser Web Push operations. Job summaries report unavailable progress as `null` instead of a fabricated zero; the dedicated progress endpoint still returns actual snapshots when available. See [response contracts](../api/index.md#creation-responses-and-job-progress).
 
 - **Search treats percent signs and underscores literally**
 
@@ -561,6 +575,10 @@
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.
 
 ## Security
+
+- **Baidu Netdisk login credentials no longer appear in process arguments**
+
+  Manual and automatic BaiduPCS-Go logins now use private stdin/config staging. Command history is disabled only in the temporary directory; existing history, unrelated settings and other accounts are preserved. Successful account updates are committed atomically, failures preserve the previous config, and cancellation/timeout cleans up the contained child before releasing account access. See [Baidu Netdisk login](../concepts/pipeline.md#baidu-netdisk-baidupcs) for compatible binaries and storage boundaries.
 
 - **Notification diagnostics redact credentials consistently**
 

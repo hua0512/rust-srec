@@ -5,6 +5,7 @@
 use axum::{
     Json, Router,
     extract::{FromRef, Path, State},
+    http::StatusCode,
     routing::get,
 };
 
@@ -128,7 +129,7 @@ pub async fn get_engine(
 pub async fn create_engine(
     State(state): State<EngineRouteState>,
     Json(request): Json<CreateEngineRequest>,
-) -> ApiResult<Json<EngineConfigurationDbModel>> {
+) -> ApiResult<(StatusCode, Json<EngineConfigurationDbModel>)> {
     let config_service = &state.config_service;
 
     let config_str = serde_json::to_string(&request.config)
@@ -141,7 +142,7 @@ pub async fn create_engine(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(engine))
+    Ok((StatusCode::CREATED, Json(engine)))
 }
 
 #[utoipa::path(

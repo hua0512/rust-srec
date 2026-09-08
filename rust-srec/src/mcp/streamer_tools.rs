@@ -171,7 +171,11 @@ impl SrecMcpServer {
             streamer_specific_config: params.streamer_specific_config,
         };
         let state = StreamerRouteState::from_ref(&self.app_state);
-        tool_json(streamers::create_streamer(State(state), Json(request)).await)
+        tool_json(
+            streamers::create_streamer(State(state), Json(request))
+                .await
+                .map(|(_, body)| body),
+        )
     }
 
     #[tool(
@@ -272,7 +276,9 @@ impl SrecMcpServer {
         };
         let state = FilterRouteState::from_ref(&self.app_state);
         tool_json(
-            filters::create_filter(State(state), Path(params.streamer_id), Json(request)).await,
+            filters::create_filter(State(state), Path(params.streamer_id), Json(request))
+                .await
+                .map(|(_, body)| body),
         )
     }
 
