@@ -542,6 +542,7 @@ impl ServiceContainer {
             cancellation_token,
             task_supervisor,
             logging_config: std::sync::OnceLock::new(),
+            startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             discarded_segment_keys: Arc::new(DashMap::new()),
             danmu_link_down: Arc::new(DashMap::new()),
         })

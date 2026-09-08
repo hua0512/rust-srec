@@ -199,17 +199,26 @@ impl FfmpegEngine {
             segment_mode,
         );
 
+        // Segment-open messages and progress records are an engine contract.
+        // FFmpeg uses the final global options, overriding user -v/-loglevel/-nostats.
+        args.extend([
+            "-loglevel".to_string(),
+            "info".to_string(),
+            "-stats".to_string(),
+        ]);
+
         // Output path
-        let output_path = config.output_dir.join(format!(
+        let output_directory = if segment_mode {
+            PathBuf::from(config.output_dir.to_string_lossy().replace('%', "%%"))
+        } else {
+            config.output_dir.clone()
+        };
+        let output_path = output_directory.join(format!(
             "{}.{}",
             config.filename_template, config.output_format
         ));
 
         if segment_mode {
-            // Use segment pattern with strftime enabled by -strftime 1 flag
-            // In strftime mode, %d is the segment counter (not day-of-month)
-            // TODO : ENSURE USER PATH IS VALID
-
             // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
             // FFmpeg's segment muxer interprets backslashes as escape sequences
             let pattern_str = output_path.to_string_lossy().replace('\\', "/");
@@ -905,6 +914,44 @@ mod tests {
             },
             version: None,
             fixture: None,
+        }
+    }
+
+    #[test]
+    fn event_logging_overrides_quiet_user_options_and_escapes_literal_directories() {
+        let engine = FfmpegEngine {
+            config: FfmpegEngineConfig {
+                input_args: vec!["-v".to_owned(), "quiet".to_owned()],
+                output_args: vec![
+                    "-loglevel".to_owned(),
+                    "warning".to_owned(),
+                    "-nostats".to_owned(),
+                ],
+                ..Default::default()
+            },
+            version: None,
+            fixture: None,
+        };
+        for segment_duration in [0, 10] {
+            let mut config = download_config("ts", segment_duration);
+            config.output_dir = PathBuf::from("root/50%d");
+            config.filename_template =
+                crate::utils::filename::sanitize_filename_for_template("name%Y%n");
+            let args = engine.build_args(&config);
+            assert_eq!(
+                &args[args.len() - 4..args.len() - 1],
+                ["-loglevel", "info", "-stats"]
+            );
+            let path = args.last().unwrap();
+            if segment_duration == 0 {
+                assert_eq!(path, "root/50%d/name%Y%n.ts");
+            } else {
+                assert_eq!(path, "root/50%%d/name%%Y%%n.ts");
+                assert_eq!(
+                    pipeline_common::expand_path_template(path),
+                    "root/50%d/name%Y%n.ts"
+                );
+            }
         }
     }
 

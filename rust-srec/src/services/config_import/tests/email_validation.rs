@@ -14,7 +14,22 @@ async fn fixture(users: &[(&str, Option<&str>)]) -> (SqlitePool, ConfigExport) {
         persist_user(&mut tx, &user).await.unwrap();
     }
     tx.commit().await.unwrap();
-    (pool, import_config(&global))
+    let mut config = import_config(&global);
+    // Replace resolves engine references from the bundle, including the global default.
+    let engines: Vec<EngineConfigurationDbModel> =
+        sqlx::query_as("SELECT * FROM engine_configuration")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    config.engines = engines
+        .into_iter()
+        .map(|engine| crate::config::backup::EngineExport {
+            name: engine.name,
+            engine_type: engine.engine_type,
+            config: serde_json::from_str(&engine.config).unwrap(),
+        })
+        .collect();
+    (pool, config)
 }
 
 fn user(name: &str, email: Option<&str>) -> UserExport {
@@ -71,6 +86,7 @@ async fn retained_email_collision_is_validation_before_any_writes() {
             .await
             .unwrap_err();
         assert!(matches!(error, ConfigurationImportError::Validation(_)));
+        assert!(error.to_string().contains("email already assigned"));
         assert!(!error.to_string().contains("retained"));
         assert_unchanged(&pool, &before, &output).await;
     }
@@ -120,11 +136,24 @@ async fn swaps_and_reassignment_are_order_independent_and_preserve_identity() {
 async fn replace_can_reassign_deleted_users_email_and_existing_user_keeps_own_email() {
     let (pool, mut config) = fixture(&[("old", Some("same"))]).await;
     config.users = vec![user("old", Some("same"))];
-    let original_id = users(&pool).await[0].id.clone();
+    let original_id = users(&pool)
+        .await
+        .into_iter()
+        .find(|user| user.username == "old")
+        .unwrap()
+        .id;
     checked_import(&pool, &config, ImportMode::Merge)
         .await
         .unwrap();
-    assert_eq!(users(&pool).await[0].id, original_id);
+    assert_eq!(
+        users(&pool)
+            .await
+            .into_iter()
+            .find(|user| user.username == "old")
+            .unwrap()
+            .id,
+        original_id
+    );
     config.users = vec![user("replacement", Some("same"))];
     checked_import(&pool, &config, ImportMode::Replace)
         .await
@@ -138,6 +167,7 @@ async fn replace_can_reassign_deleted_users_email_and_existing_user_keeps_own_em
 #[tokio::test]
 async fn email_validation_matches_sqlite_binary_and_null_semantics() {
     let (pool, mut config) = fixture(&[("retained", Some("Email"))]).await;
+    let before = users(&pool).await;
     sqlx::query("CREATE TRIGGER protect_retained_email BEFORE UPDATE OF email ON users WHEN OLD.username = 'retained' BEGIN SELECT RAISE(ABORT, 'retained email touched'); END")
         .execute(&pool).await.unwrap();
     config.users = vec![
@@ -151,7 +181,23 @@ async fn email_validation_matches_sqlite_binary_and_null_semantics() {
     checked_import(&pool, &config, ImportMode::Merge)
         .await
         .unwrap();
-    assert_eq!(users(&pool).await.len(), 7);
+    let after = users(&pool).await;
+    assert_eq!(after.len(), before.len() + config.users.len());
+    for expected in &config.users {
+        let actual = after
+            .iter()
+            .find(|user| user.username == expected.username)
+            .unwrap();
+        assert_eq!(actual.email, expected.email);
+    }
+    for expected in &before {
+        let actual = after
+            .iter()
+            .find(|user| user.username == expected.username)
+            .unwrap();
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.email, expected.email);
+    }
     config.users = vec![
         user("duplicate1", Some("same")),
         user("duplicate2", Some("same")),
@@ -168,7 +214,12 @@ async fn email_reassignment_does_not_override_existing_user_id_conflicts() {
         let (pool, mut config) = fixture(&[("old", Some("email"))]).await;
         let before = users(&pool).await;
         let mut replacement = user("new", Some("email"));
-        replacement.id = before[0].id.clone();
+        replacement.id = before
+            .iter()
+            .find(|user| user.username == "old")
+            .unwrap()
+            .id
+            .clone();
         config.users = vec![replacement];
         let error = checked_import(&pool, &config, mode).await.unwrap_err();
         assert!(matches!(error, ConfigurationImportError::Validation(_)));
@@ -204,10 +255,9 @@ async fn later_user_failure_rolls_back_email_slot_clearing_and_all_prior_writes(
         ];
         sqlx::query("CREATE TRIGGER reject_broken_user BEFORE INSERT ON users WHEN NEW.username = 'broken' BEGIN SELECT RAISE(ABORT, 'forced late failure'); END")
             .execute(&pool).await.unwrap();
-        assert!(matches!(
-            checked_import(&pool, &config, mode).await,
-            Err(ConfigurationImportError::Database(_))
-        ));
+        let error = checked_import(&pool, &config, mode).await.unwrap_err();
+        assert!(matches!(error, ConfigurationImportError::Database(_)));
+        assert!(error.to_string().contains("forced late failure"));
         assert_unchanged(&pool, &before, &output).await;
     }
 }

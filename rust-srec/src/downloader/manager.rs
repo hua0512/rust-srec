@@ -185,6 +185,22 @@ struct ActiveDownload {
     retry_config_override: Option<RetryConfig>,
 }
 
+impl From<&ActiveDownload> for DownloadInfo {
+    fn from(download: &ActiveDownload) -> Self {
+        let config = download.handle.config.read();
+        Self {
+            id: download.handle.id.clone(),
+            url: config.url.clone(),
+            streamer_id: config.streamer_id.clone(),
+            session_id: config.session_id.clone(),
+            engine_type: download.handle.engine_type,
+            status: download.status,
+            progress: download.progress.clone(),
+            started_at: download.handle.started_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum AttemptPhase {
     Running,
@@ -1547,20 +1563,7 @@ impl DownloadManager {
     pub fn get_active_downloads(&self) -> Vec<DownloadInfo> {
         self.active_downloads
             .iter()
-            .map(|entry| {
-                let download = entry.value();
-                let config_snapshot = download.handle.config_snapshot();
-                DownloadInfo {
-                    id: download.handle.id.clone(),
-                    url: config_snapshot.url,
-                    streamer_id: config_snapshot.streamer_id,
-                    session_id: config_snapshot.session_id,
-                    engine_type: download.handle.engine_type,
-                    status: download.status,
-                    progress: download.progress.clone(),
-                    started_at: download.handle.started_at,
-                }
-            })
+            .map(|entry| DownloadInfo::from(entry.value()))
             .collect()
     }
 
@@ -1842,20 +1845,7 @@ impl DownloadManager {
             // Compare under the config read lock; `config_snapshot()` would
             // deep-clone the whole `DownloadConfig` per scanned entry.
             .find(|entry| entry.value().handle.config.read().streamer_id == streamer_id)
-            .map(|entry| {
-                let download = entry.value();
-                let config_snapshot = download.handle.config_snapshot();
-                DownloadInfo {
-                    id: download.handle.id.clone(),
-                    url: config_snapshot.url,
-                    streamer_id: config_snapshot.streamer_id,
-                    session_id: config_snapshot.session_id,
-                    engine_type: download.handle.engine_type,
-                    status: download.status,
-                    progress: download.progress.clone(),
-                    started_at: download.handle.started_at,
-                }
-            })
+            .map(|entry| DownloadInfo::from(entry.value()))
     }
 
     /// Check if a streamer has an active download.
@@ -2095,20 +2085,7 @@ impl DownloadManager {
         self.active_downloads
             .iter()
             .filter(|entry| entry.value().status == status)
-            .map(|entry| {
-                let download = entry.value();
-                let config_snapshot = download.handle.config_snapshot();
-                DownloadInfo {
-                    id: download.handle.id.clone(),
-                    url: config_snapshot.url,
-                    streamer_id: config_snapshot.streamer_id,
-                    session_id: config_snapshot.session_id,
-                    engine_type: download.handle.engine_type,
-                    status: download.status,
-                    progress: download.progress.clone(),
-                    started_at: download.handle.started_at,
-                }
-            })
+            .map(|entry| DownloadInfo::from(entry.value()))
             .collect()
     }
 
@@ -2469,6 +2446,67 @@ mod tests {
         let manager = DownloadManager::new();
         assert_eq!(manager.active_count(), 0);
         assert!(!manager.available_engines().is_empty());
+    }
+
+    #[tokio::test]
+    async fn download_info_views_project_consistent_live_metadata() {
+        let manager = DownloadManager::new();
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = test_download_config(directory.path().to_path_buf(), "projection-session");
+        config
+            .headers
+            .push(("Authorization".to_owned(), "private-header".repeat(1024)));
+        config.engines_override =
+            Some(serde_json::json!({"nested": ["private-config".repeat(1024)]}));
+        let id = start_scripted_download_with_engine(
+            &manager,
+            config,
+            ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![]),
+        )
+        .await
+        .unwrap();
+        let initial = manager.get_active_downloads().pop().unwrap();
+        assert_eq!(initial.id, id);
+        assert_eq!(initial.session_id, "projection-session");
+        let by_streamer = manager
+            .get_download_by_streamer(&initial.streamer_id)
+            .unwrap();
+        let by_status = manager
+            .get_downloads_by_status(initial.status)
+            .pop()
+            .unwrap();
+        assert_eq!(by_streamer.url, initial.url);
+        assert_eq!(by_status.url, initial.url);
+        manager
+            .active_downloads
+            .get(&id)
+            .unwrap()
+            .handle
+            .update_config(|config| {
+                config.url = "https://invalid.test/refreshed".to_owned();
+            });
+        assert_eq!(
+            manager
+                .get_download_by_streamer(&initial.streamer_id)
+                .unwrap()
+                .url,
+            "https://invalid.test/refreshed"
+        );
+        assert_ne!(
+            initial.url, "https://invalid.test/refreshed",
+            "earlier snapshots own their projected fields"
+        );
+        tokio::time::timeout(Duration::from_secs(2), manager.stop_download(&id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(manager.get_active_downloads().is_empty());
+        assert!(
+            manager
+                .get_download_by_streamer(&initial.streamer_id)
+                .is_none()
+        );
+        assert!(manager.get_downloads_by_status(initial.status).is_empty());
     }
 
     #[tokio::test]

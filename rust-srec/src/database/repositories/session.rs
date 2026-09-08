@@ -727,23 +727,24 @@ impl SessionRepository for SqlxSessionRepository {
     }
 
     async fn delete_media_output(&self, id: &str) -> Result<()> {
-        // Get output info before deletion to update session size
-        let output = self.get_media_output(id).await?;
-
         retry_on_sqlite_busy("delete_media_output", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            sqlx::query("DELETE FROM media_outputs WHERE id = ?")
-                .bind(id)
-                .execute(&mut *tx)
-                .await?;
+            // Only the transaction that removed the row owns its size adjustment.
+            let (session_id, size_bytes): (String, i64) = sqlx::query_as(
+                "DELETE FROM media_outputs WHERE id = ? RETURNING session_id, size_bytes",
+            )
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| Error::not_found("MediaOutput", id))?;
 
             // Update session total size
             sqlx::query(
                 "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
             )
-            .bind(output.size_bytes)
-            .bind(&output.session_id)
+            .bind(size_bytes)
+            .bind(&session_id)
             .execute(&mut *tx)
             .await?;
 

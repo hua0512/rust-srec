@@ -10,7 +10,7 @@ use crate::danmu::CollectionSpec;
 use crate::database::repositories::SessionRepository;
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{DownloadConfig, DownloadProtocol};
-use crate::utils::filename::sanitize_filename;
+use crate::utils::filename::sanitize_filename_for_template;
 
 use super::RuntimeCoordinator;
 
@@ -223,8 +223,8 @@ pub(super) async fn run_live_download_pipeline(
     };
 
     // Sanitize names for filename usage.
-    let sanitized_streamer = sanitize_filename(&streamer_name);
-    let sanitized_title = sanitize_filename(&title);
+    let sanitized_streamer = sanitize_filename_for_template(&streamer_name);
+    let sanitized_title = sanitize_filename_for_template(&title);
     let platform = streamer_metadata
         .as_ref()
         .map_or("unknown", |s| s.platform());
@@ -472,10 +472,8 @@ pub(super) async fn run_live_download_pipeline(
     let proxy_config = &merged_config.proxy_config;
     if proxy_config.enabled {
         if let Some(effective_proxy_url) = proxy_config.effective_url() {
-            // `ProxyConfig::effective_url` splices `username:password@` into the URL,
-            // so the bare `url` field is logged and the credentials only as a flag.
+            // Both the configured and effective URL may contain credentials.
             debug!(
-                proxy_url = ?proxy_config.url,
                 has_auth = proxy_config.password.is_some(),
                 "Applying explicit proxy from merged config to download"
             );

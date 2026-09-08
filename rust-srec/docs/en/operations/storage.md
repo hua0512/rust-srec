@@ -85,3 +85,17 @@ When output fails:
 2. Check free space, inode/file-count limits, mount state, and ownership.
 3. Restore write access and verify a small test write on the same filesystem.
 4. After the gate's cooldown, allow an affected recording to retry its real directory check, then confirm the System Health page recovers. A retained entry for a root no longer used cannot be healed by an attempt writing elsewhere.
+
+## Runtime Recovery Records
+
+The standalone runtime records active ownership and earlier incomplete generations
+beside its database. Startup clears earlier recovery debt only when streamer
+hydration and pipeline/DAG/coordinator reconciliation explicitly report success.
+Ambiguous historical artifacts and failed recovery operations retain the debt;
+startup remains best effort. Recovery pages through all session segments.
+
+Acknowledgement preserves the active generation, so a later crash creates new
+debt. Marker admission, acknowledgement and clean-exit updates share a short
+cross-process lock; a stale worker cannot overwrite a replacement generation.
+The persistent `.update.lock` file is separate from the supervisor's lifetime
+ownership lock. Do not remove these lock files while a runtime is active.
