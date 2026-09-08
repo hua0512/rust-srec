@@ -12,12 +12,11 @@ use sqlx::SqlitePool;
 
 use crate::api::models::{BatchStreamerAction, BatchStreamerRequest};
 use crate::api::routes::streamers::{self, StreamerRouteState};
-use crate::database::models::{
-    JobDbModel, LiveSessionDbModel, StreamerDbModel, StreamerState as DbStreamerState,
-};
+use crate::database::models::{JobDbModel, LiveSessionDbModel, StreamerDbModel};
 use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
+use crate::domain::StreamerState;
 use crate::services::runtime_coordinator::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
 use crate::session::{SessionTransition, TerminalCause};
 
@@ -77,7 +76,7 @@ impl Harness {
     async fn seed_streamer(&self) {
         let mut streamer = StreamerDbModel::new(STREAMER_NAME, STREAMER_URL, "platform-huya");
         streamer.id = STREAMER_ID.to_string();
-        streamer.state = DbStreamerState::Live.as_str().to_string();
+        streamer.state = StreamerState::Live.as_str().to_string();
         self.streamer_repository()
             .create_streamer(&streamer)
             .await

@@ -397,3 +397,9 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
   - That marker keeps the oldest and newest unresolved generations plus a count of the ones in
     between, so a restart loop cannot grow it. Startup and exit messages report how many
     generations still owe recovery.
+
+## Backend Rust Interfaces
+
+The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
+
+Unused `database::batching` and `config::UpdateCoalescer` APIs, `domain::session` entities, streamer mutation helpers, and repository `list_active_streamers` / `resume_session` methods have been removed. Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).

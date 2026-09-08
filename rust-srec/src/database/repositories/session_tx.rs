@@ -87,16 +87,6 @@ impl SessionTxOps {
         Ok(())
     }
 
-    /// Resume a session by clearing its end_time.
-    pub async fn resume_session(tx: &mut SqliteConnection, session_id: &str) -> Result<u64> {
-        let result = sqlx::query("UPDATE live_sessions SET end_time = NULL WHERE id = ?")
-            .bind(session_id)
-            .execute(tx)
-            .await?;
-
-        Ok(result.rows_affected())
-    }
-
     /// End a session by setting end_time and calculating total_size_bytes.
     pub async fn end_session(
         tx: &mut SqliteConnection,
@@ -300,7 +290,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resume_and_end_session() {
+    async fn test_end_session() {
         let pool = setup_test_db().await;
 
         let now = Utc::now();
@@ -316,27 +306,6 @@ mod tests {
         .await
         .unwrap();
         SessionTxOps::end_session(&mut tx, "sess-1", now)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        // Resume
-        let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::resume_session(&mut tx, "sess-1")
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        // Verify resumed
-        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
-            .get_session("sess-1")
-            .await
-            .unwrap();
-        assert!(session.end_time.is_none());
-
-        // End again
-        let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::end_session(&mut tx, "sess-1", Utc::now())
             .await
             .unwrap();
         tx.commit().await.unwrap();

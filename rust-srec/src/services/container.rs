@@ -1140,10 +1140,11 @@ mod tests {
     };
     use crate::danmu::test_support::FakeProvider;
     use crate::danmu::{CollectionSpec, DanmuService, ProviderRegistry};
-    use crate::database::models::{LiveSessionDbModel, StreamerDbModel, StreamerState};
+    use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
     use crate::database::repositories::{
         SessionRepository, SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository,
     };
+    use crate::domain::StreamerState;
     use crate::downloader::engine::{DownloadProgress, EngineStartError, EngineType};
     use crate::downloader::{
         DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadManagerConfig,
