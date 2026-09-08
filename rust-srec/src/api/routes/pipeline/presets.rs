@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::StatusCode,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -96,7 +97,7 @@ pub async fn get_pipeline_preset_by_id(
 pub async fn create_pipeline_preset(
     State(state): State<PresetRouteState>,
     Json(payload): Json<CreatePipelinePresetRequest>,
-) -> ApiResult<Json<PipelinePresetResponse>> {
+) -> ApiResult<(StatusCode, Json<PipelinePresetResponse>)> {
     let preset_repo = &state.pipeline_preset_repository;
 
     // Validate DAG has at least one step
@@ -117,7 +118,10 @@ pub async fn create_pipeline_preset(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(PipelinePresetResponse::from(preset)))
+    Ok((
+        StatusCode::CREATED,
+        Json(PipelinePresetResponse::from(preset)),
+    ))
 }
 
 #[utoipa::path(

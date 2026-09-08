@@ -225,6 +225,10 @@
 
 ## API and integrations
 
+- **Creation responses and OpenAPI match the running API**
+
+  Resource creation and template/job-preset cloning now return the documented 201 status with the same JSON bodies. OpenAPI includes session segments, template cloning and all four browser Web Push operations. Job summaries report unavailable progress as `null` instead of a fabricated zero; the dedicated progress endpoint still returns actual snapshots when available. See [response contracts](../api/index.md#creation-responses-and-job-progress).
+
 - **API errors and request batches have explicit boundaries**
 
   Internal diagnostics no longer enter ad-hoc API errors. Parse and session-delete batches reject more than 100 items before work begins. Device descriptions are bounded to 256 Unicode characters for new logins, refreshed legacy sessions and diagnostics; credential refresh keeps its relogin indication.

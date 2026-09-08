@@ -16,6 +16,9 @@ use crate::database::repositories::{
 
 use super::ServiceContainer;
 
+#[cfg(test)]
+mod response_contract_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ApiAuthMode {
     Enabled,

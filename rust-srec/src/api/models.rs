@@ -569,7 +569,7 @@ pub enum JobStatus {
 /// - `input_path` - List of input file paths
 /// - `output_path` - List of output file paths (set after completion)
 /// - `error_message` - Error details if job failed
-/// - `progress` - Processing progress (0.0-1.0) if available
+/// - `progress` - Unavailable in summaries; use the dedicated progress endpoint
 /// - `created_at` - When the job was created
 /// - `started_at` - When processing started
 /// - `completed_at` - When processing finished
@@ -588,6 +588,8 @@ pub struct JobResponse {
     pub input_path: Vec<String>,
     pub output_path: Option<Vec<String>>,
     pub error_message: Option<String>,
+    /// Unavailable in job summaries (`null`). Use `/api/pipeline/jobs/{id}/progress`
+    /// for the latest processor-specific progress snapshot.
     pub progress: Option<f32>,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,

@@ -17,6 +17,7 @@
 use axum::{
     Json, Router,
     extract::{FromRef, Path, Query, State},
+    http::StatusCode,
     routing::{get, post},
 };
 
@@ -235,7 +236,7 @@ pub async fn get_preset(
 pub async fn create_preset(
     State(state): State<JobPresetRouteState>,
     Json(payload): Json<CreatePresetRequest>,
-) -> ApiResult<Json<crate::database::models::JobPreset>> {
+) -> ApiResult<(StatusCode, Json<crate::database::models::JobPreset>)> {
     let pipeline_manager = &state.pipeline_manager;
 
     let preset = crate::database::models::JobPreset {
@@ -271,7 +272,7 @@ pub async fn create_preset(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(preset))
+    Ok((StatusCode::CREATED, Json(preset)))
 }
 
 #[utoipa::path(
@@ -376,7 +377,7 @@ pub async fn clone_preset(
     State(state): State<JobPresetRouteState>,
     Path(id): Path<String>,
     Json(payload): Json<ClonePresetRequest>,
-) -> ApiResult<Json<crate::database::models::JobPreset>> {
+) -> ApiResult<(StatusCode, Json<crate::database::models::JobPreset>)> {
     let pipeline_manager = &state.pipeline_manager;
 
     let cloned = pipeline_manager
@@ -384,5 +385,5 @@ pub async fn clone_preset(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(cloned))
+    Ok((StatusCode::CREATED, Json(cloned)))
 }

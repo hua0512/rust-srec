@@ -5,6 +5,9 @@
 
 use utoipa::OpenApi;
 
+#[cfg(test)]
+mod coverage;
+
 use crate::api::models::{
     ComponentHealth, CreateFilterRequest, CreateStreamerRequest, CreateTemplateRequest,
     DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, ExtractMetadataRequest,
@@ -135,10 +138,12 @@ pub struct MessageResponse {
         crate::api::routes::sessions::list_sessions,
         crate::api::routes::sessions::get_session,
         crate::api::routes::sessions::get_session_danmu_statistics,
+        crate::api::routes::sessions::list_session_segments,
         crate::api::routes::sessions::delete_session,
         crate::api::routes::sessions::delete_sessions_batch,
         // Template endpoints
         crate::api::routes::templates::create_template,
+        crate::api::routes::templates::clone_template,
         crate::api::routes::templates::list_templates,
         crate::api::routes::templates::get_template,
         crate::api::routes::templates::update_template,
@@ -206,6 +211,10 @@ pub struct MessageResponse {
         crate::api::routes::engines::test_engine,
         // Notification endpoints
         crate::api::routes::notifications::list_event_types,
+        crate::api::routes::notifications::get_web_push_public_key,
+        crate::api::routes::notifications::list_web_push_subscriptions,
+        crate::api::routes::notifications::subscribe_web_push,
+        crate::api::routes::notifications::unsubscribe_web_push,
         crate::api::routes::notifications::list_events,
         crate::api::routes::notifications::list_instances,
         crate::api::routes::notifications::list_channels,
@@ -278,6 +287,8 @@ pub struct MessageResponse {
             PlatformConfigResponse,
             // Session schemas
             SessionResponse,
+            crate::api::models::SessionSegmentResponse,
+            crate::api::models::PageResponse<crate::api::models::SessionSegmentResponse>,
             SessionDanmuStatisticsResponse,
             DanmuRatePoint,
             DanmuTopTalker,
@@ -287,6 +298,7 @@ pub struct MessageResponse {
             crate::api::routes::sessions::BatchDeleteResponse,
             // Template schemas
             CreateTemplateRequest,
+            crate::api::routes::templates::CloneTemplateRequest,
             UpdateTemplateRequest,
             TemplateResponse,
             PaginatedResponse<TemplateResponse>,
@@ -325,6 +337,12 @@ pub struct MessageResponse {
             crate::database::models::EngineType,
             // Notification schemas
             CreateChannelRequest,
+            crate::api::routes::notifications::WebPushPublicKeyResponse,
+            crate::api::routes::notifications::WebPushSubscriptionResponse,
+            crate::api::routes::notifications::WebPushSubscriptionJson,
+            crate::api::routes::notifications::WebPushSubscriptionKeys,
+            crate::api::routes::notifications::SubscribeWebPushRequest,
+            crate::api::routes::notifications::UnsubscribeWebPushRequest,
             UpdateChannelRequest,
             UpdateSubscriptionsRequest,
             crate::api::routes::notifications::ListEventsQuery,

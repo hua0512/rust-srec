@@ -3,6 +3,7 @@
 use axum::{
     Json, Router,
     extract::{FromRef, Path, State},
+    http::StatusCode,
     routing::{delete, get, patch, post},
 };
 use serde_json::Value;
@@ -162,7 +163,7 @@ pub async fn create_filter(
     State(state): State<FilterRouteState>,
     Path(streamer_id): Path<String>,
     Json(request): Json<CreateFilterRequest>,
-) -> ApiResult<Json<FilterResponse>> {
+) -> ApiResult<(StatusCode, Json<FilterResponse>)> {
     let filter_repo = &state.filter_repository;
 
     if request.streamer_id != streamer_id {
@@ -194,7 +195,7 @@ pub async fn create_filter(
         .config_service
         .notify_streamer_filters_updated(&streamer_id);
 
-    model_to_response(&filter).map(Json)
+    model_to_response(&filter).map(|response| (StatusCode::CREATED, Json(response)))
 }
 
 #[utoipa::path(
