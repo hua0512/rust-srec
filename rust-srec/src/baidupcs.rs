@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{OwnedRwLockWriteGuard, RwLock, Semaphore};
 use tracing::{debug, warn};
 
 use crate::database::models::ToolCredentialDbModel;
@@ -71,9 +71,9 @@ pub fn resolve_binary_path(explicit: Option<&str>) -> String {
 /// status probes hold the read side so they never observe a half-written
 /// session. API handlers should use `try_write()` and reject with a
 /// conflict instead of queueing behind a multi-hour upload.
-pub fn cli_lock() -> &'static RwLock<()> {
-    static LOCK: OnceLock<RwLock<()>> = OnceLock::new();
-    LOCK.get_or_init(|| RwLock::new(()))
+pub fn cli_lock() -> &'static Arc<RwLock<()>> {
+    static LOCK: OnceLock<Arc<RwLock<()>>> = OnceLock::new();
+    LOCK.get_or_init(|| Arc::new(RwLock::new(())))
 }
 
 /// Single-permit semaphore serializing `upload` invocations across IO
@@ -96,8 +96,7 @@ pub fn base_command(binary_path: &str, config_dir: Option<&str>) -> Command {
 
 /// Replace each secret value occurring in `text` with `***`. Applied to CLI
 /// output before it is returned in API responses or logged, because the
-/// login flow passes credentials on the command line and BaiduPCS-Go may
-/// echo parts of its input on errors.
+/// BaiduPCS-Go may echo parts of its input on errors.
 pub fn scrub(text: &str, secrets: &[&str]) -> String {
     let mut out = text.to_string();
     for secret in secrets {
@@ -309,19 +308,34 @@ impl LoginMaterial {
         Self::field(self.cookies.as_ref()).is_some() || Self::field(self.bduss.as_ref()).is_some()
     }
 
-    /// Arguments after `login`: `-cookies=` wins over `-bduss=`/`-stoken=`,
-    /// matching the precedence of `BaiduPcsLoginRequest`. `None` when no
-    /// usable material is present.
-    pub fn login_args(&self) -> Option<Vec<String>> {
-        if let Some(cookies) = Self::field(self.cookies.as_ref()) {
-            return Some(vec![format!("-cookies={cookies}")]);
+    /// Command input for the supported no-argument REPL. Never pass this to process argv.
+    fn login_input(&self) -> crate::Result<Vec<u8>> {
+        fn quoted(value: &str) -> crate::Result<String> {
+            if value.contains(['\r', '\n', '\0']) {
+                return Err(crate::Error::validation(
+                    "BaiduPCS-Go credentials must not contain line breaks or NUL",
+                ));
+            }
+            // The upstream pcsliner/args parser unescapes backslashes and quotes;
+            // shell expansion is not involved. Reject physical newlines above.
+            Ok(format!(
+                "\"{}\"",
+                value.replace('\\', "\\\\").replace('\"', "\\\"")
+            ))
         }
-        let bduss = Self::field(self.bduss.as_ref())?;
-        let mut args = vec![format!("-bduss={bduss}")];
-        if let Some(stoken) = Self::field(self.stoken.as_ref()) {
-            args.push(format!("-stoken={stoken}"));
-        }
-        Some(args)
+        let command = if let Some(cookies) = Self::field(self.cookies.as_ref()) {
+            format!("login -cookies={}\nquit\n", quoted(cookies)?)
+        } else {
+            let bduss = Self::field(self.bduss.as_ref())
+                .ok_or_else(|| crate::Error::validation("No usable BaiduPCS-Go login material"))?;
+            let mut command = format!("login -bduss={}", quoted(bduss)?);
+            if let Some(stoken) = Self::field(self.stoken.as_ref()) {
+                command.push_str(&format!(" -stoken={}", quoted(stoken)?));
+            }
+            command.push_str("\nquit\n");
+            command
+        };
+        Ok(command.into_bytes())
     }
 
     /// Values [`scrub`] must mask out of any relayed CLI output.
@@ -358,34 +372,18 @@ pub struct LoginOutcome {
     pub message: String,
 }
 
-/// Run `BaiduPCS-Go login` with `material`. The caller must hold the write
-/// side of [`cli_lock`] — this function does not lock, because the API
-/// handler acquires `try_write` up front to reject with a conflict instead
-/// of queueing. All errors and output are scrubbed of the material's
-/// secret values before they leave this function.
+mod login;
+
+/// Run a login through private stdin/config staging. The owned write-lock lease
+/// remains held by cleanup if the caller disconnects before the child exits.
 pub async fn run_login(
     binary_path: &str,
     config_dir: Option<&str>,
     material: &LoginMaterial,
     timeout: Duration,
+    lease: Arc<OwnedRwLockWriteGuard<()>>,
 ) -> crate::Result<LoginOutcome> {
-    let args = material.login_args().ok_or_else(|| {
-        crate::Error::Validation("No usable BaiduPCS-Go login material".to_string())
-    })?;
-    let secrets = material.secrets();
-
-    let mut command = base_command(binary_path, config_dir);
-    command.arg("login");
-    command.args(&args);
-
-    let output = run_capture(command, None, timeout)
-        .await
-        .map_err(|e| crate::Error::Other(scrub(&e.to_string(), &secrets)))?;
-    let combined = output.combined();
-    Ok(LoginOutcome {
-        success: combined.contains(LOGIN_SUCCESS_MARKER),
-        message: scrub(&combined, &secrets),
-    })
+    login::run(binary_path, config_dir, material, timeout, lease).await
 }
 
 /// How long a config-dir key sits out of automatic re-login after a
@@ -510,16 +508,10 @@ impl StoredLoginAuthenticator {
             } else {
                 key.to_string()
             },
-            message: truncate_chars(message, 300),
+            message: crate::utils::text::truncate_chars(message.trim(), 300),
             timestamp: chrono::Utc::now(),
         });
     }
-}
-
-/// First `max` characters of trimmed `text`, for relaying CLI output into
-/// notification payloads.
-fn truncate_chars(text: &str, max: usize) -> String {
-    text.trim().chars().take(max).collect()
 }
 
 #[async_trait]
@@ -582,8 +574,8 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
         };
 
         let outcome = {
-            let _guard = cli_lock().write().await;
-            run_login(binary_path, config_dir, &material, LOGIN_TIMEOUT).await
+            let lease = Arc::new(cli_lock().clone().write_owned().await);
+            run_login(binary_path, config_dir, &material, LOGIN_TIMEOUT, lease).await
         };
         match outcome {
             Ok(outcome) if outcome.success => {
@@ -709,8 +701,8 @@ mod tests {
         };
         assert!(material.is_usable());
         assert_eq!(
-            material.login_args(),
-            Some(vec!["-cookies=BDUSS=a; STOKEN=B".to_string()])
+            String::from_utf8(material.login_input().unwrap()).unwrap(),
+            "login -cookies=\"BDUSS=a; STOKEN=B\"\nquit\n"
         );
     }
 
@@ -722,8 +714,8 @@ mod tests {
             stoken: Some("ST".to_string()),
         };
         assert_eq!(
-            material.login_args(),
-            Some(vec!["-bduss=bd".to_string(), "-stoken=ST".to_string()])
+            String::from_utf8(material.login_input().unwrap()).unwrap(),
+            "login -bduss=\"bd\" -stoken=\"ST\"\nquit\n"
         );
         assert_eq!(material.secrets(), vec!["bd", "ST"]);
 
@@ -733,7 +725,7 @@ mod tests {
             stoken: Some("orphan-stoken".to_string()),
         };
         assert!(!empty.is_usable());
-        assert_eq!(empty.login_args(), None);
+        assert!(empty.login_input().is_err());
     }
 
     #[test]

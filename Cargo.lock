@@ -5583,6 +5583,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "syn 2.0.119",
  "sysinfo",
  "tar",
  "tempfile",
@@ -5598,6 +5599,7 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
+ "windows-sys 0.61.2",
  "zip 8.6.0",
 ]
 
