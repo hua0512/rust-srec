@@ -5583,6 +5583,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "syn 2.0.119",
  "sysinfo",
  "tar",
  "tempfile",

@@ -281,6 +281,10 @@
 
 ## API and integrations
 
+- **Creation responses and OpenAPI match the running API**
+
+  Resource creation and template/job-preset cloning now return the documented 201 status with the same JSON bodies. OpenAPI includes session segments, template cloning and all four browser Web Push operations. Job summaries report unavailable progress as `null` instead of a fabricated zero; the dedicated progress endpoint still returns actual snapshots when available. See [response contracts](../api/index.md#creation-responses-and-job-progress).
+
 - **Search treats percent signs and underscores literally**
 
   Searches for jobs, sessions, media outputs, notification events and both kinds of presets no longer interpret `%` and `_` as wildcards. Backslashes also match literally, so `audio_extract` only finds that text rather than names such as `audioXextract`. Existing case matching, other filters, pagination totals and media summaries remain consistent; see [search filters](../api/index.md#search-filters).
