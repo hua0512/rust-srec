@@ -197,6 +197,12 @@
 
   HTML、Markdown 与 MarkdownV2 配置现在使用显式格式实体，主播名、标题和错误中的特殊字符不会破坏消息解析。Unicode 安全截断保持格式范围有效。空模式发送纯文本；未知模式返回本地配置错误。
 
+## 录制引擎
+
+- **Streamlink 支持显式指定 FFmpeg 可执行文件**
+
+  通过可选的后端引擎字段 `ffmpeg_path` 指定 Streamlink 重封装使用的 FFmpeg 进程。省略该字段或设为 null 时，仍依次使用 `FFMPEG_PATH` 和 `ffmpeg`。详见[引擎配置](../concepts/engines.md#streamlink-的-ffmpeg-可执行文件)。
+
 ## 录制
 
 - **录制文件名与事件跟踪正确处理自定义输入**

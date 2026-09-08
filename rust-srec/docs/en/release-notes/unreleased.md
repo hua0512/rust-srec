@@ -194,6 +194,12 @@
 
   HTML, Markdown, and MarkdownV2 settings now use explicit formatting entities so special characters in streamer names, titles, and errors cannot break message parsing. Unicode-safe truncation keeps formatting spans valid. Empty mode sends plain text; unknown modes return a local configuration error.
 
+## Recording Engines
+
+- **Streamlink can use an explicit FFmpeg executable**
+
+  Set the optional backend engine field `ffmpeg_path` to choose the FFmpeg process used for Streamlink remuxing. Omitted or null values retain `FFMPEG_PATH` then `ffmpeg` fallback. See [engine configuration](../concepts/engines.md#streamlink-ffmpeg-executable).
+
 ## Recording
 
 - **Recording filenames and event tracking survive custom input**

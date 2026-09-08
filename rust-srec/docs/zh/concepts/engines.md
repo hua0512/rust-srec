@@ -28,6 +28,28 @@ FFmpeg 和 Streamlink 的版本检查限时三秒，必要时随后执行有时�
 
 不存在的命名引擎配置保留默认引擎回退行为。数据库访问失败、已保存配置损坏及无效覆盖会导致解析失败，不再静默改变实际使用的配置。
 
+### Streamlink 的 FFmpeg 可执行文件
+
+Streamlink 下载引擎的后端引擎配置 JSON 支持可选字段 `ffmpeg_path`。
+`binary_path` 指定 Streamlink 本身；`ffmpeg_path` 指定负责重封装其输出的
+独立 FFmpeg 进程：
+
+```json
+{
+  "binary_path": "streamlink",
+  "ffmpeg_path": "/opt/media-tools/ffmpeg",
+  "quality": "best"
+}
+```
+
+后端按顺序选择配置中的 `ffmpeg_path`、环境变量 `FFMPEG_PATH`，最后使用
+`PATH` 中的 `ffmpeg`。省略该字段或设为 `null` 会保留环境变量和默认值的行为。
+包含空格的路径会作为单个可执行文件路径传递，不需要 shell 引号，也不能附带参数。
+选择在创建引擎实例时确定；修改环境变量后需要重启后端。显式路径不会继承任何
+已注册 FFmpeg 引擎的设置；可执行文件不存在时录制启动失败，不会自动回退。
+空字符串或仅包含空白的字符串仍视为显式可执行文件值，不会触发回退；
+如需清除覆盖，请省略该字段或设为 `null`。
+
 ### 停止 Streamlink 录制
 
 停止 Streamlink 录制时，标准输出转发和标准错误读取会继续运行，直到源进程

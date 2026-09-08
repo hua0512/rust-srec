@@ -30,6 +30,30 @@ FFmpeg and Streamlink version checks have a three-second deadline, followed by b
 
 Missing named engine configurations retain the default-engine fallback. Database access failures, malformed saved settings, and invalid overrides fail resolution instead of silently changing the effective configuration.
 
+### Streamlink FFmpeg Executable
+
+The Streamlink download engine accepts an optional `ffmpeg_path` in its backend
+engine configuration JSON. `binary_path` selects Streamlink itself; `ffmpeg_path`
+selects the separate FFmpeg process that remuxes its output:
+
+```json
+{
+  "binary_path": "streamlink",
+  "ffmpeg_path": "/opt/media-tools/ffmpeg",
+  "quality": "best"
+}
+```
+
+The backend selects the configured `ffmpeg_path` first, then the `FFMPEG_PATH`
+environment variable, then `ffmpeg` from `PATH`. Omit the field or set it to `null`
+to retain the environment/default behavior. Paths containing spaces are passed
+as one executable path, without shell quoting or arguments. The choice is made
+when the engine instance is constructed; an environment change requires a backend
+restart. An explicit path does not inherit settings from any registered FFmpeg
+engine, and a missing executable fails recording startup instead of falling back.
+Empty or whitespace-only strings are explicit executable values, not a request
+for fallback; use omission or `null` to clear the override.
+
 ### Stopping Streamlink Recordings
 
 Stopping a Streamlink recording keeps its stdout forwarding and stderr readers

@@ -84,7 +84,11 @@ impl StreamlinkEngine {
     }
 
     fn with_version(config: StreamlinkEngineConfig, version: Option<String>) -> Self {
-        let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
+        let ffmpeg_path = config
+            .ffmpeg_path
+            .clone()
+            .or_else(|| std::env::var("FFMPEG_PATH").ok())
+            .unwrap_or_else(|| "ffmpeg".to_string());
 
         Self {
             config,
@@ -95,6 +99,12 @@ impl StreamlinkEngine {
             #[cfg(test)]
             shutdown_fixture: None,
         }
+    }
+
+    fn ffmpeg_command(&self, args: &[String]) -> tokio::process::Command {
+        let mut command = process_utils::tokio_command(&self.ffmpeg_path);
+        command.args(args);
+        command
     }
 
     /// Build streamlink command arguments.
@@ -527,8 +537,7 @@ impl DownloadEngine for StreamlinkEngine {
         };
 
         // Spawn ffmpeg process with stdin piped
-        let mut ffmpeg_command = process_utils::tokio_command(&self.ffmpeg_path);
-        ffmpeg_command.args(&ffmpeg_args);
+        let mut ffmpeg_command = self.ffmpeg_command(&ffmpeg_args);
         #[cfg(test)]
         if let Some(fixture) = &self.fixture {
             ffmpeg_command = fixture.command(false);
@@ -1342,6 +1351,114 @@ impl DownloadEngine for StreamlinkEngine {
 mod tests {
     use super::*;
     use crate::downloader::engine::utils::parse_time;
+
+    #[test]
+    fn ffmpeg_path_json_is_optional_and_round_trips() {
+        for json in [
+            r#"{}"#,
+            r#"{"binary_path":"streamlink","ffmpeg_path":null}"#,
+        ] {
+            let config: StreamlinkEngineConfig = serde_json::from_str(json).unwrap();
+            assert!(config.ffmpeg_path.is_none());
+            assert!(
+                serde_json::to_value(config)
+                    .unwrap()
+                    .get("ffmpeg_path")
+                    .is_none()
+            );
+        }
+        let json = serde_json::json!({"ffmpeg_path": "custom tools/ffmpeg"});
+        let config: StreamlinkEngineConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(config.ffmpeg_path.as_deref(), Some("custom tools/ffmpeg"));
+        assert_eq!(
+            serde_json::to_value(config).unwrap()["ffmpeg_path"],
+            "custom tools/ffmpeg"
+        );
+        assert!(serde_json::from_str::<StreamlinkEngineConfig>(r#"{"ffmpeg_path":7}"#).is_err());
+    }
+
+    #[test]
+    fn ffmpeg_command_selection_child() {
+        let Ok(json) = std::env::var("SREC_STREAMLINK_CONFIG_FIXTURE") else {
+            return;
+        };
+        let config = serde_json::from_str(&json).unwrap();
+        let engine = StreamlinkEngine::with_version(config, None);
+        let args = vec!["-i".to_string(), "pipe:0".to_string()];
+        let command = engine.ffmpeg_command(&args);
+        let expected = std::env::var("SREC_STREAMLINK_EXPECTED_FFMPEG").unwrap();
+        assert_eq!(
+            command.as_std().get_program(),
+            std::ffi::OsStr::new(&expected)
+        );
+        assert_eq!(
+            command.as_std().get_args().collect::<Vec<_>>(),
+            ["-i", "pipe:0"]
+        );
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_command_uses_configured_environment_then_default_executable() {
+        for (json, environment, expected) in [
+            (
+                r#"{"ffmpeg_path":"configured tools/ffmpeg"}"#,
+                Some("environment tools/ffmpeg"),
+                "configured tools/ffmpeg",
+            ),
+            (
+                r#"{"ffmpeg_path":"configured tools/ffmpeg"}"#,
+                None,
+                "configured tools/ffmpeg",
+            ),
+            (
+                r#"{"binary_path":"custom-streamlink"}"#,
+                Some("environment tools/ffmpeg"),
+                "environment tools/ffmpeg",
+            ),
+            (
+                r#"{"ffmpeg_path":null}"#,
+                Some("environment tools/ffmpeg"),
+                "environment tools/ffmpeg",
+            ),
+            (r#"{}"#, None, "ffmpeg"),
+            (r#"{"ffmpeg_path":null}"#, None, "ffmpeg"),
+            (r#"{"ffmpeg_path":""}"#, Some("environment-ffmpeg"), ""),
+            (
+                r#"{"ffmpeg_path":"   "}"#,
+                Some("environment-ffmpeg"),
+                "   ",
+            ),
+            (r#"{}"#, Some(""), ""),
+        ] {
+            let mut command = process_utils::tokio_command(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "downloader::engine::streamlink::tests::ffmpeg_command_selection_child",
+                    "--nocapture",
+                ])
+                .env("SREC_STREAMLINK_CONFIG_FIXTURE", json)
+                .env("SREC_STREAMLINK_EXPECTED_FFMPEG", expected)
+                .env_remove("FFMPEG_PATH")
+                .kill_on_drop(true);
+            if let Some(value) = environment {
+                command.env("FFMPEG_PATH", value);
+            }
+            let output = tokio::time::timeout(Duration::from_secs(10), command.output())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "selection case {json}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "selection fixture must execute exactly one test"
+            );
+        }
+    }
 
     #[cfg(unix)]
     #[tokio::test]
