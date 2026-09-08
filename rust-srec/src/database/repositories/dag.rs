@@ -12,6 +12,15 @@ use crate::database::models::{
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 
+/// The completion transaction's authoritative step and DAG snapshots, together
+/// with newly ready dependents. Duplicate notifications return no ready steps.
+#[derive(Debug, Clone)]
+pub struct StepCompletion {
+    pub step: DagStepExecutionDbModel,
+    pub dag: DagExecutionDbModel,
+    pub ready_steps: Vec<ReadyStep>,
+}
+
 /// DAG repository trait for pipeline execution management.
 #[async_trait]
 pub trait DagRepository: Send + Sync {
@@ -98,12 +107,12 @@ pub trait DagRepository: Send + Sync {
     // ========================================================================
 
     /// Atomically complete a step and check for ready dependents.
-    /// Returns steps that are now ready to run (all dependencies complete).
+    /// Returns the transaction's updated records and newly ready dependents.
     async fn complete_step_and_check_dependents(
         &self,
         step_id: &str,
         outputs: &[String],
-    ) -> Result<Vec<ReadyStep>>;
+    ) -> Result<StepCompletion>;
 
     /// Atomically fail an active step and its non-terminal DAG.
     /// Returns `None` when either record was already terminal.
@@ -775,7 +784,7 @@ impl DagRepository for SqlxDagRepository {
         &self,
         step_id: &str,
         outputs: &[String],
-    ) -> Result<Vec<ReadyStep>> {
+    ) -> Result<StepCompletion> {
         retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
@@ -810,46 +819,44 @@ impl DagRepository for SqlxDagRepository {
                 merged
             }
 
-            // 1. Mark step as completed with outputs.
-            // Guard against duplicate completion (idempotency) and against completing cancelled steps.
-            let completed = sqlx::query(
+            // The conditional transition fences duplicate notifications and cancelled steps.
+            let completed = sqlx::query_as::<_, DagStepExecutionDbModel>(
                 r#"
                 UPDATE dag_step_execution
                 SET status = 'COMPLETED', outputs = ?, updated_at = ?
                 WHERE id = ?
                   AND status IN ('PENDING', 'PROCESSING')
+                RETURNING *
                 "#,
             )
             .bind(&outputs_json)
             .bind(now)
             .bind(step_id)
-            .execute(&mut *tx)
+            .fetch_optional(&mut *tx)
             .await?;
 
-            if completed.rows_affected() == 0 {
+            let Some(completed_step) = completed else {
+                // A duplicate still supplies terminal state for notification replay,
+                // without incrementing counters or scheduling dependents again.
+                let step = sqlx::query_as::<_, DagStepExecutionDbModel>("SELECT * FROM dag_step_execution WHERE id = ?")
+                    .bind(step_id).fetch_optional(&mut *tx).await?
+                    .ok_or_else(|| Error::not_found("DAG step execution", step_id))?;
+                let dag = sqlx::query_as::<_, DagExecutionDbModel>("SELECT * FROM dag_execution WHERE id = ?")
+                    .bind(&step.dag_id).fetch_one(&mut *tx).await?;
                 tx.commit().await?;
-                return Ok(Vec::new());
-            }
+                return Ok(StepCompletion { step, dag, ready_steps: Vec::new() });
+            };
 
-            // 2. Get the completed step info
-            let completed_step = sqlx::query_as::<_, DagStepExecutionDbModel>(
-                "SELECT * FROM dag_step_execution WHERE id = ?",
-            )
-            .bind(step_id)
-            .fetch_one(&mut *tx)
-            .await?;
-
-            // 3. Increment completed count on DAG
-            sqlx::query(
-                "UPDATE dag_execution SET completed_steps = completed_steps + 1, updated_at = ? WHERE id = ?",
+            // Keep the DAG snapshot from its counter update within this transaction.
+            let mut dag = sqlx::query_as::<_, DagExecutionDbModel>(
+                "UPDATE dag_execution SET completed_steps = completed_steps + 1, updated_at = ? WHERE id = ? RETURNING *",
             )
             .bind(now)
             .bind(&completed_step.dag_id)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await?;
 
-            // 4. Find blocked steps that depend on this step
-            // SQLite: Use json_each to check if step_id is in depends_on_step_ids
+            // Dependency IDs are JSON arrays; inspect only blocked direct dependents.
             let blocked_dependents = sqlx::query_as::<_, DagStepExecutionDbModel>(
                 r#"
                 SELECT dse.* FROM dag_step_execution dse
@@ -866,10 +873,8 @@ impl DagRepository for SqlxDagRepository {
                 .fetch_all(&mut *tx)
                 .await?;
 
-            // 5. For each dependent, check if ALL its dependencies are complete.
-            //
-            // Performance: avoid per-dependent SQL queries. Instead, load the DAG step statuses
-            // and completed outputs once and evaluate readiness in-memory.
+            // Read statuses and outputs once for all fan-in readiness decisions,
+            // under the same write transaction as the completed-step transition.
             let step_rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
                 r#"
                 SELECT step_id, status, outputs
@@ -937,14 +942,7 @@ impl DagRepository for SqlxDagRepository {
                 }
             }
 
-            // 6. Check if DAG is complete
-            let dag = sqlx::query_as::<_, DagExecutionDbModel>(
-                "SELECT * FROM dag_execution WHERE id = ?",
-            )
-            .bind(&completed_step.dag_id)
-            .fetch_one(&mut *tx)
-            .await?;
-
+            // Settle the last step and parent DAG together before releasing the transaction.
             if dag.completed_steps + dag.failed_steps >= dag.total_steps {
                 // DAG is complete
                 let final_status = if dag.failed_steps > 0 {
@@ -952,19 +950,19 @@ impl DagRepository for SqlxDagRepository {
                 } else {
                     "COMPLETED"
                 };
-                sqlx::query(
-                    "UPDATE dag_execution SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+                dag = sqlx::query_as::<_, DagExecutionDbModel>(
+                    "UPDATE dag_execution SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? RETURNING *",
                 )
                 .bind(final_status)
                 .bind(now)
                 .bind(now)
                 .bind(&completed_step.dag_id)
-                .execute(&mut *tx)
+                .fetch_one(&mut *tx)
                 .await?;
             }
 
             tx.commit().await?;
-            Ok(ready_steps)
+            Ok(StepCompletion { step: completed_step, dag, ready_steps })
         })
         .await
     }
@@ -1570,10 +1568,19 @@ mod tests {
         repo.create_steps(&[step_a, step_b]).await.unwrap();
 
         // Complete step A
-        let ready_steps = repo
+        let completion = repo
             .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
             .await
             .unwrap();
+        assert_eq!(completion.step.id, step_a_id);
+        assert_eq!(completion.step.status, "COMPLETED");
+        assert_eq!(completion.step.get_outputs(), vec!["/output/a.mp4"]);
+        assert_eq!(completion.dag.completed_steps, 1);
+        assert_eq!(
+            serde_json::to_value(&completion.dag).unwrap(),
+            serde_json::to_value(repo.get_dag(&dag_id).await.unwrap()).unwrap()
+        );
+        let ready_steps = completion.ready_steps;
 
         // Step B should now be ready
         assert_eq!(ready_steps.len(), 1);
@@ -1617,14 +1624,16 @@ mod tests {
         let ready = repo
             .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
             .await
-            .unwrap();
+            .unwrap()
+            .ready_steps;
         assert!(ready.is_empty());
 
         // Complete step B - NOW C should be ready with merged inputs
         let ready = repo
             .complete_step_and_check_dependents(&step_b_id, &["/output/b.jpg".to_string()])
             .await
-            .unwrap();
+            .unwrap()
+            .ready_steps;
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].step.step_id, "C");
         assert_eq!(
@@ -1664,7 +1673,8 @@ mod tests {
         let ready = repo
             .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
             .await
-            .unwrap();
+            .unwrap()
+            .ready_steps;
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].step.step_id, "B");
 
@@ -1672,7 +1682,8 @@ mod tests {
         let ready2 = repo
             .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
             .await
-            .unwrap();
+            .unwrap()
+            .ready_steps;
         assert!(ready2.is_empty());
 
         let dag = repo.get_dag(&dag_id).await.unwrap();
@@ -1899,7 +1910,8 @@ mod tests {
         let ready = repo
             .complete_step_and_check_dependents(&step_a_id, &["/out/a.mp4".to_string()])
             .await
-            .unwrap();
+            .unwrap()
+            .ready_steps;
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].step.step_id, "B");
         assert_eq!(ready[0].merged_inputs, vec!["/out/a.mp4".to_string()]);

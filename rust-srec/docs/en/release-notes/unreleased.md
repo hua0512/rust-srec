@@ -8,6 +8,12 @@
 
   System inventory now enables CPU, memory and disk support without unused temperature-component, network-interface or user-account inventory features. Unused JSON log formatter features and direct protobuf well-known-type dependencies were removed; protobuf generation still retains its required dependencies. Backend dependency declarations share workspace versions without upgrading the locked packages.
 
+## Backend Model Cleanup
+
+- **One canonical streamer state and fewer unused Rust interfaces**
+
+  Database models now use `domain::StreamerState`. Removed unused database batching, configuration coalescing, duplicate session entities, and inactive convenience methods. Rust integrations should follow the [backend interface notes](../concepts/architecture.md#backend-rust-interfaces). REST payloads, recording behavior, state-transition validation and runtime retirement are unchanged.
+
 ## Internal Metrics
 
 - **Monitoring code reflects the available interfaces**
@@ -15,6 +21,10 @@
   Removed the unused Prometheus exporter and unwired download, pipeline, streamer and system counters, including their latent underflow and label-escaping paths. Internal web-push delivery counters and JSON health endpoints remain available. Rust callers of the removed metrics API must use the supported subsystem snapshots.
 
 ## Scheduler Recovery
+
+- **Actor timing uses resolved overrides and recurring checks are spread out**
+
+  Actor creation and metadata/template/platform/global updates now resolve offline-confirmation settings directly from the four-layer configuration instead of racing a separate metadata refresh. Recurring checks receive bounded ±10% jitter. Unrelated updates preserve pending deadlines; actual cadence changes can shorten them while keeping admission, cooldown, smart-wake and immediate-check constraints. See [scheduler timing](../concepts/architecture.md).
 
 - **Terminal actor decisions no longer trigger crash restarts**
 
@@ -332,6 +342,10 @@
   This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
 
 ## Pipeline and uploads
+
+- **Pipeline completion and recovery share artifact handling with fewer reads**
+
+  Pipeline construction, input manifests, leaf-output collection and source-artifact reservations now use shared implementations. DAG publication reads a streamer once for its name and platform, completion reuses transaction-owned snapshots, and recovery pages all statuses for a session in one scan. Manifest schemas, output order, optional metadata, failed-write reporting and duplicate-completion protection remain unchanged; see [pipeline error handling](../concepts/pipeline.md#error-handling).
 
 - **Retries retain execution history and previously published files**
 

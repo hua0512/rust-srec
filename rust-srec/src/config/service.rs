@@ -347,6 +347,21 @@ where
             .clone())
     }
 
+    /// Read current configuration layers without waiting for another subscriber's
+    /// invalidation, or cancelling an unrelated cached resolution in flight.
+    pub(crate) async fn get_fresh_config_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Arc<MergedConfig>> {
+        tokio::time::timeout(
+            CONFIG_RESOLVE_HARD_TIMEOUT,
+            self.resolve_context_for_streamer(streamer_id),
+        )
+        .await
+        .map_err(|_| crate::Error::config("Fresh streamer configuration resolution timed out"))?
+        .map(|context| context.config)
+    }
+
     /// Get the resolved streamer context for a streamer.
     ///
     /// This includes the merged config plus runtime-only derived values like `CredentialSource`.

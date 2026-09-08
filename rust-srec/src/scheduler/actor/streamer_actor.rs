@@ -578,7 +578,8 @@ impl StreamerActor {
     /// `last_download_activity_at`.
     fn schedule_blocked_retry(&mut self, state: StreamerState, retry_after_secs: u64) {
         self.state.streamer_state = state;
-        self.state.next_check = Some(Instant::now() + Duration::from_secs(retry_after_secs));
+        self.state
+            .set_next_check(Instant::now().checked_add(Duration::from_secs(retry_after_secs)));
     }
 
     fn handle_suppressed_live_status(
@@ -610,7 +611,8 @@ impl StreamerActor {
 
         self.state = previous_runtime_state;
         self.state.last_download_activity_at = None;
-        self.state.next_check = Some(Instant::now() + retry_after);
+        self.state
+            .set_next_check(Instant::now().checked_add(retry_after));
     }
 
     /// Initiate a status check.
@@ -627,7 +629,8 @@ impl StreamerActor {
         if metadata.is_disabled() {
             let remaining = metadata.remaining_backoff_std().unwrap_or(Duration::ZERO);
 
-            self.state.next_check = Some(Instant::now() + remaining);
+            self.state
+                .set_next_check(Instant::now().checked_add(remaining));
             debug!(
                 streamer_id = %self.id,
                 streamer_name = %metadata.name,
@@ -878,15 +881,15 @@ impl StreamerActor {
         debug!("StreamerActor {} received CheckStatus", self.id);
 
         // Reset next check to now to trigger immediate check
-        self.state.next_check = Some(Instant::now());
+        self.state.set_next_check(Some(Instant::now()));
 
         Ok(())
     }
 
     /// Handle ConfigUpdate message - apply new configuration without restart.
     ///
-    /// Configuration updates take effect immediately and the next check
-    /// is rescheduled based on the new configuration.
+    /// Changed cadence can bring recurring polling forward, but does not postpone
+    /// existing work or advance an admission/backoff/smart-wake deadline.
     async fn handle_config_update(&mut self, config: StreamerConfig) -> Result<(), ActorError> {
         debug!("StreamerActor {} received ConfigUpdate", self.id);
 
@@ -907,12 +910,8 @@ impl StreamerActor {
             );
         }
 
-        // Only reschedule if a check isn't already due or imminent
-        // This preserves immediate checks scheduled at actor startup
-        if !self.state.is_check_due() {
-            self.state
-                .schedule_next_check(&self.config, self.get_error_count());
-        }
+        self.state
+            .reschedule_for_config(&self.config, self.get_error_count());
 
         Ok(())
     }
@@ -1223,7 +1222,7 @@ impl StreamerActor {
                 // for recovery, while disable/delete performs its own authoritative closure.
                 // Park local polling until cancellation/configuration, without publishing Offline.
                 self.state.streamer_state = StreamerState::NotLive;
-                self.state.next_check = None;
+                self.state.set_next_check(None);
             }
             DownloadEndPolicy::StreamerOffline
             | DownloadEndPolicy::Stopped(DownloadStopCause::StreamerOffline) => {
@@ -1690,6 +1689,7 @@ impl PersistedActorState {
         let state = StreamerActorState {
             streamer_state,
             next_check: None, // Will be recalculated
+            recurring_interval_ms: None,
             last_download_activity_at: None,
             hysteresis: self.hysteresis,
             last_check,
@@ -1710,6 +1710,41 @@ impl PersistedActorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn config_messages_preserve_recurring_and_authoritative_retry_deadlines() {
+        let config = create_test_config();
+        let (mut actor, _) = StreamerActor::new(
+            "test-streamer".to_owned(),
+            create_test_metadata_store(),
+            config.clone(),
+            CancellationToken::new(),
+            create_noop_checker(),
+        );
+        actor.state.schedule_next_check(&config, 0);
+        let recurring = actor.state.next_check;
+        actor
+            .handle_config_update(StreamerConfig {
+                priority: Priority::High,
+                ..config.clone()
+            })
+            .await
+            .unwrap();
+        assert_eq!(actor.state.next_check, recurring);
+        actor.schedule_blocked_retry(StreamerState::TemporalDisabled, 30);
+        let retry = actor.state.next_check;
+        actor
+            .handle_config_update(StreamerConfig {
+                check_interval_ms: 1,
+                ..config
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            actor.state.next_check, retry,
+            "a shorter configured interval cannot advance an admission cooldown"
+        );
+    }
     use crate::domain::Priority;
     use crate::monitor::{ProcessStatusResult, ProcessStatusSuppression};
     use crate::scheduler::actor::monitor_adapter::{CheckError, NoOpStatusChecker};
@@ -2216,6 +2251,7 @@ mod tests {
         let state = StreamerActorState {
             streamer_state: StreamerState::Live,
             next_check: Some(Instant::now()),
+            recurring_interval_ms: None,
             last_download_activity_at: None,
             hysteresis,
             last_check: Some(CheckResult::success(StreamerState::Live)),
@@ -2432,7 +2468,11 @@ mod tests {
         assert!(actor.state.hysteresis.was_live());
         assert_eq!(actor.state.hysteresis.offline_count(), 1);
         let until = actor.state.time_until_next_check().unwrap();
-        assert!(until < Duration::from_millis(config.check_interval_ms / 2));
+        assert_eq!(
+            actor.state.recurring_interval_ms,
+            Some(config.offline_check_interval_ms)
+        );
+        assert!(until <= Duration::from_millis(config.offline_check_interval_ms * 11 / 10));
 
         // Reset and test error case
         actor.state.streamer_state = StreamerState::Live;
@@ -2531,12 +2571,12 @@ mod tests {
         assert!(actor.state.next_check.is_some());
         // Same post-live cadence as `StreamerOffline`: was_live preserved,
         // offline-observed counter incremented, next check arrives within
-        // the offline polling window (well under check_interval / 2).
+        // the jittered offline polling window.
         assert!(actor.state.hysteresis.was_live());
         assert_eq!(actor.state.hysteresis.offline_count(), 1);
         let until = actor.state.time_until_next_check().unwrap();
         assert!(
-            until < Duration::from_millis(config.check_interval_ms / 2),
+            until <= Duration::from_millis(config.offline_check_interval_ms * 11 / 10),
             "Completed must schedule next check within the post-live offline window"
         );
     }

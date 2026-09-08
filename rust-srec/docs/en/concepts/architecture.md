@@ -137,6 +137,25 @@ The scheduler is a supervisor that manages self-scheduling actors:
 Actors call into `StreamMonitor` for real status checks; the scheduler also reacts to configuration
 events to spawn/stop actors dynamically.
 
+Before spawning an actor or delivering updated timing, the scheduler resolves the
+Global → Platform → Template → Streamer hierarchy through the shared configuration
+service. It reads current layers independently of the container's metadata refresh,
+so publication order cannot leave an actor using default offline-confirmation
+counts or delays. Updates use the same resolved configuration for delivery and
+restart recovery. Resolution failures retain an existing actor's last good timing;
+new actors are not started with unresolved defaults. Update resolution is bounded
+to eight concurrent lookups and responds to shutdown cancellation.
+Queued crash restarts resolve again when due, including configuration changes
+made during backoff. A failed lookup defers that restart for five seconds instead
+of starting it with the captured old configuration.
+
+Recurring checks sample an interval within ±10% of the configured cadence. An
+unchanged effective interval preserves the pending deadline; a changed interval
+can bring it forward but never postpone an already scheduled check. Smart-wake
+hints, admission/cooldown deadlines, explicit immediate checks and parked/live
+states keep their existing timing authority. Rust callers of `Scheduler::add_streamer`
+now await configuration resolution before actor creation.
+
 Non-recoverable actor errors represent terminal decisions, such as a removed
 streamer. Both timer and mailbox paths stop gracefully and run configured state
 persistence; the supervisor does not restart them. Recoverable task failures and
@@ -378,3 +397,9 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
   - That marker keeps the oldest and newest unresolved generations plus a count of the ones in
     between, so a restart loop cannot grow it. Startup and exit messages report how many
     generations still owe recovery.
+
+## Backend Rust Interfaces
+
+The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
+
+Unused `database::batching` and `config::UpdateCoalescer` APIs, `domain::session` entities, streamer mutation helpers, and repository `list_active_streamers` / `resume_session` methods have been removed. Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).

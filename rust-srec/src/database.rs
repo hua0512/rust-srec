@@ -3,15 +3,16 @@
 //! This module provides the persistence layer using SQLite with sqlx.
 //! It includes connection pool management, models, repositories, and maintenance.
 
-pub mod batching;
 pub mod maintenance;
 pub mod models;
 pub mod repositories;
 pub mod retry;
 pub mod time;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 // Re-export commonly used types
-pub use batching::{BatchWriter, BatchWriterConfig, JobStatusUpdate, StatsUpdate};
 pub use maintenance::{MaintenanceConfig, MaintenanceScheduler};
 
 use std::str::FromStr;

@@ -13,7 +13,7 @@ pub(crate) mod service;
 
 pub use cache::{CacheStats, ConfigCache};
 pub use context::ResolvedStreamerContext;
-pub use events::{ConfigEventBroadcaster, ConfigUpdateEvent, UpdateCoalescer};
+pub use events::{ConfigEventBroadcaster, ConfigUpdateEvent};
 pub use merged::{
     GlobalConfigLayer, MergedConfig, MergedConfigBuilder, PlatformConfigLayer, TemplateConfigLayer,
 };
