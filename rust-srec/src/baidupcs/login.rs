@@ -250,7 +250,7 @@ async fn capture(
         .take_stderr()
         .ok_or_else(|| Error::Other("Missing BaiduPCS-Go stderr pipe".to_owned()))?;
     let operation = async {
-        let write = async {
+        let write = async move {
             // Unsupported binaries may exit before reading. Their status/output still
             // determines failure, but other write errors are reported explicitly.
             if let Err(error) = stdin.write_all(input).await
@@ -263,6 +263,8 @@ async fn capture(
             {
                 return Err(error);
             }
+            // Deliver EOF before waiting for the child and its output pipes.
+            drop(stdin);
             Ok(())
         };
         let (write, stdout, stderr, status) =
