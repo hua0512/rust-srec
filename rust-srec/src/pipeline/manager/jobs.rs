@@ -65,11 +65,6 @@ where
         self.job_queue.depth_status()
     }
 
-    /// Check if throttling should be enabled.
-    pub fn should_throttle(&self) -> bool {
-        self.config.throttle.enabled && self.job_queue.is_critical()
-    }
-
     // ========================================================================
     // Query and Management Methods
     // ========================================================================

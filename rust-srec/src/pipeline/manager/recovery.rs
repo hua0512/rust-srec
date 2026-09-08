@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use crate::database::models::DagExecutionDbModel;
 
@@ -235,7 +235,7 @@ where
         if let Some(dag_repo) = &self.dag_repository {
             for status in [DagExecutionStatus::Pending, DagExecutionStatus::Processing] {
                 for dag in self
-                    .list_recoverable_coordination_dags(dag_repo, status, None, complete)
+                    .list_recoverable_coordination_dags(dag_repo, Some(status), None, complete)
                     .await
                 {
                     let Some(session_id) = dag.session_id.as_deref() else {
@@ -260,7 +260,7 @@ where
                                 warn!(
                                     session_id = %session_id,
                                     dag_id = %dag.id,
-                                    status = %status.as_str(),
+                                    ?status,
                                     error = %e,
                                     "Skipping pipeline coordinator recovery for DAG with missing session"
                                 );
@@ -330,25 +330,8 @@ where
                 .await;
 
             let coordination_dags = if let Some(dag_repo) = &self.dag_repository {
-                let mut dags = Vec::new();
-                for status in [
-                    DagExecutionStatus::Pending,
-                    DagExecutionStatus::Processing,
-                    DagExecutionStatus::Completed,
-                    DagExecutionStatus::Failed,
-                    DagExecutionStatus::Cancelled,
-                ] {
-                    dags.extend(
-                        self.list_recoverable_coordination_dags(
-                            dag_repo,
-                            status,
-                            Some(&session_id),
-                            complete,
-                        )
-                        .await,
-                    );
-                }
-                dags
+                self.list_recoverable_coordination_dags(dag_repo, None, Some(&session_id), complete)
+                    .await
             } else {
                 Vec::new()
             };
@@ -655,7 +638,7 @@ where
     async fn list_recoverable_coordination_dags(
         &self,
         dag_repo: &Arc<dyn DagRepository>,
-        status: DagExecutionStatus,
+        status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
         complete: &mut bool,
     ) -> Vec<DagExecutionDbModel> {
@@ -665,7 +648,7 @@ where
         loop {
             match dag_repo
                 .list_dags(
-                    Some(status.as_str()),
+                    status.map(|status| status.as_str()),
                     session_id,
                     COORDINATOR_RECOVERY_PAGE_LIMIT,
                     offset,
@@ -690,7 +673,7 @@ where
                     *complete = false;
                     warn!(
                         session_id = ?session_id,
-                        status = %status.as_str(),
+                        ?status,
                         error = %e,
                         "Failed to list DAGs for pipeline coordinator recovery"
                     );
@@ -699,6 +682,18 @@ where
             }
         }
 
+        if status.is_none() {
+            // Apply active states before terminal history, keeping the repository's
+            // newest-first order within each status for repeated segment attempts.
+            dags.sort_by_key(|dag| match dag.get_status() {
+                Some(DagExecutionStatus::Pending) => 0,
+                Some(DagExecutionStatus::Processing) => 1,
+                Some(DagExecutionStatus::Completed) => 2,
+                Some(DagExecutionStatus::Failed) => 3,
+                Some(DagExecutionStatus::Cancelled) => 4,
+                None => 5,
+            });
+        }
         dags
     }
 
@@ -736,38 +731,10 @@ where
             }
         };
 
-        let mut steps_by_id = HashMap::with_capacity(steps.len());
-        for step in &steps {
-            steps_by_id.insert(step.step_id.as_str(), step);
-        }
-
-        let mut seen = HashSet::<String>::new();
-        let mut outputs = Vec::new();
-        for leaf in definition.leaf_steps() {
-            let Some(step) = steps_by_id.get(leaf.id.as_str()) else {
-                *complete = false;
-                continue;
-            };
-            if step
-                .outputs
-                .as_deref()
-                .is_some_and(|raw| serde_json::from_str::<Vec<String>>(raw).is_err())
-            {
-                *complete = false;
-            }
-            for output in step.get_outputs() {
-                let key = if cfg!(windows) {
-                    output.to_lowercase()
-                } else {
-                    output.clone()
-                };
-                if seen.insert(key) {
-                    outputs.push(PathBuf::from(output));
-                }
-            }
-        }
-
-        outputs
+        let collected =
+            DagScheduler::collect_leaf_outputs_from_step_executions(&definition, &steps);
+        *complete &= collected.complete;
+        collected.paths.into_iter().map(PathBuf::from).collect()
     }
 }
 

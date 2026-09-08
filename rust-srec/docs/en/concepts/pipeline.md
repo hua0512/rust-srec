@@ -269,6 +269,20 @@ Save DAG definitions as reusable presets:
 
 ## Error Handling
 
+Paired-segment and session-complete pipelines receive a successfully written
+input manifest first, followed by video inputs and then danmaku inputs. The
+manifest names remain `segment_<session>_<index>_inputs.json` and
+`session_<session>_inputs.json`. Session-complete inputs are ordered by segment
+index; paired inputs retain their collected order. If manifest writing fails,
+the original artifact inputs remain available and the operation is reported as
+incomplete.
+
+Normal completion and restart recovery collect leaf outputs in DAG definition
+order, keeping the first occurrence of each path with case folding on Windows.
+Missing leaf records or malformed output arrays leave recovery incomplete while
+preserving the valid outputs. Completing a step twice does not create another
+downstream job or increment the DAG's completed-step count again.
+
 Delete, rclone and BaiduPCS retry delays grow exponentially but are capped at
 30 seconds per wait, including extreme configured values. Retry counts keep
 their configured meaning. FFmpeg progress timestamps exposed as `out_time_ms`

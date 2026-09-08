@@ -72,11 +72,9 @@ pub struct PairedSegmentOutputs {
 }
 
 /// Snapshot of coordinator state at the moment `SessionPipelineState::try_finalize`
-/// emits `CreateSessionCompleteDag`. Read today by `run_session_complete_pipeline`
-/// (which uses only `session_id`, `streamer_id`, `video_outputs`, `danmu_outputs`
-/// to build the on-disk `session_<id>_inputs.json` manifest); the remaining
-/// fields are kept as the natural source for a planned `session_pipeline_runs`
-/// DB row that will retire the JSON manifest.
+/// emits `CreateSessionCompleteDag`. It carries sorted artifact inputs together
+/// with the readiness flags and monotonic observation times that produced the
+/// dispatch. The runner uses the identities and paths to write its input manifest.
 #[derive(Debug, Clone)]
 pub struct SessionOutputs {
     pub session_id: String,
@@ -88,9 +86,8 @@ pub struct SessionOutputs {
     pub danmu_expected: bool,
     /// Whether we observed any danmu activity for this session (start/segment/DAG/stop).
     pub danmu_observed: bool,
-    /// When `PipelineCoordinator` first saw this session (distinct from
-    /// `live_sessions.created_at`, which is when `SessionLifecycle` inserted
-    /// the row).
+    /// Monotonic time when the coordinator first observed this session,
+    /// distinct from the recording's persisted wall-clock start time.
     pub created_at: Instant,
     pub last_activity: Instant,
 
@@ -134,22 +131,6 @@ impl SessionOutputs {
         outputs.sort_by_key(|o| o.segment_index);
         outputs.into_iter().map(|o| o.path).collect()
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[expect(
-    dead_code,
-    reason = "retained for optional runtime paths and diagnostics"
-)]
-pub enum PipelineScope {
-    Segment {
-        source: SourceType,
-        segment_index: u32,
-    },
-    PairedSegment {
-        segment_index: u32,
-    },
-    SessionComplete,
 }
 
 #[derive(Debug, Clone)]
@@ -937,12 +918,8 @@ pub struct SessionPipelineState {
     /// the dispatch and its configuration for another attempt.
     session_complete_settled: bool,
     pending_session_complete_start: bool,
-    /// When `PipelineCoordinator` first observed this session (via any reducer
-    /// event). Distinct from `live_sessions.created_at`, which is the DB row
-    /// insertion time written by `SessionLifecycle`. Copied into
-    /// `SessionOutputs::created_at` at session-complete fire time so the
-    /// planned `session_pipeline_runs` DB row can record post-processing
-    /// coordination latency.
+    /// First monotonic observation by the reducer. Finalization copies this
+    /// into the dispatch snapshot alongside its last-activity time.
     created_at: Instant,
     last_activity: Instant,
     segment_pipeline: Option<DagPipelineDefinition>,
@@ -1054,7 +1031,6 @@ impl SessionPipelineState {
         path: PathBuf,
     ) -> Vec<PipelineCommand> {
         self.last_activity = Instant::now();
-        let mut commands = Vec::new();
         let has_segment_pipeline = self
             .segment_pipeline
             .as_ref()
@@ -1065,38 +1041,13 @@ impl SessionPipelineState {
         }
 
         if has_segment_pipeline {
-            let should_start_dag = {
-                let artifact = self.segment_mut(segment_index).artifact_mut(source);
-                artifact.add_source(path.clone());
-                if artifact.dag_started {
-                    if artifact.dag_failed {
-                        artifact.use_source_inputs_as_failed_fallback();
-                    }
-                    false
-                } else {
-                    artifact.dag_started = true;
-                    true
-                }
-            };
-            if should_start_dag && let Some(pipeline) = self.segment_pipeline.clone() {
-                self.pending_segment_starts.insert((source, segment_index));
-                commands.push(PipelineCommand::CreateSegmentDag {
-                    session_id: self.session_id.clone(),
-                    streamer_id: self.streamer_id.clone(),
-                    segment_index,
-                    source,
-                    input_path: path,
-                    pipeline,
-                });
-            }
-        } else {
-            self.segment_mut(segment_index)
-                .artifact_mut(source)
-                .add_final(path);
-            commands.extend(self.try_trigger_paired(segment_index));
-            commands.extend(self.try_finalize());
+            return self.start_segment_dag(source, segment_index, path);
         }
-
+        self.segment_mut(segment_index)
+            .artifact_mut(source)
+            .add_final(path);
+        let mut commands = self.try_trigger_paired(segment_index);
+        commands.extend(self.try_finalize());
         commands
     }
 
@@ -1117,31 +1068,7 @@ impl SessionPipelineState {
             .is_some_and(|pipeline| !pipeline.is_empty());
 
         if has_segment_pipeline {
-            let should_start_dag = {
-                let artifact = self.segment_mut(segment_index).artifact_mut(source);
-                artifact.add_source(path.clone());
-                if artifact.dag_started {
-                    if artifact.dag_failed {
-                        artifact.use_source_inputs_as_failed_fallback();
-                    }
-                    false
-                } else {
-                    artifact.dag_started = true;
-                    true
-                }
-            };
-            if should_start_dag && let Some(pipeline) = self.segment_pipeline.clone() {
-                self.pending_segment_starts.insert((source, segment_index));
-                return vec![PipelineCommand::CreateSegmentDag {
-                    session_id: self.session_id.clone(),
-                    streamer_id: self.streamer_id.clone(),
-                    segment_index,
-                    source,
-                    input_path: path,
-                    pipeline,
-                }];
-            }
-            return Vec::new();
+            return self.start_segment_dag(source, segment_index, path);
         }
 
         let artifact = self.segment_mut(segment_index).artifact_mut(source);
@@ -1150,6 +1077,42 @@ impl SessionPipelineState {
         let mut commands = self.try_trigger_paired(segment_index);
         commands.extend(self.try_finalize());
         commands
+    }
+
+    /// Record an artifact for a configured segment pipeline and reserve its
+    /// publication exactly once. Replayed sources after failure remain fallback
+    /// inputs, without opening another DAG or clearing the pending-start gate.
+    fn start_segment_dag(
+        &mut self,
+        source: SourceType,
+        segment_index: u32,
+        path: PathBuf,
+    ) -> Vec<PipelineCommand> {
+        let should_start = {
+            let artifact = self.segment_mut(segment_index).artifact_mut(source);
+            artifact.add_source(path.clone());
+            if artifact.dag_started {
+                if artifact.dag_failed {
+                    artifact.use_source_inputs_as_failed_fallback();
+                }
+                false
+            } else {
+                artifact.dag_started = true;
+                true
+            }
+        };
+        if should_start && let Some(pipeline) = self.segment_pipeline.clone() {
+            self.pending_segment_starts.insert((source, segment_index));
+            return vec![PipelineCommand::CreateSegmentDag {
+                session_id: self.session_id.clone(),
+                streamer_id: self.streamer_id.clone(),
+                segment_index,
+                source,
+                input_path: path,
+                pipeline,
+            }];
+        }
+        Vec::new()
     }
 
     fn recover_segment_dag_completed(
@@ -1672,6 +1635,49 @@ impl ArtifactLane {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_and_recovered_artifacts_share_reservation_and_failed_fallback_behavior() {
+        for recovered in [false, true] {
+            for source in [SourceType::Video, SourceType::Danmu] {
+                let mut session =
+                    SessionPipelineState::new("session".to_owned(), "streamer".to_owned());
+                session.segment_pipeline = Some(DagPipelineDefinition::new(
+                    "segment",
+                    vec![crate::database::models::DagStep::new(
+                        "root",
+                        crate::database::models::PipelineStep::inline(
+                            "remux",
+                            serde_json::json!({}),
+                        ),
+                    )],
+                ));
+                let deliver = |session: &mut SessionPipelineState, path: &str| {
+                    if recovered {
+                        session.recover_source_artifact(source, 3, PathBuf::from(path))
+                    } else {
+                        session.on_source_artifact(source, 3, PathBuf::from(path))
+                    }
+                };
+                let commands = deliver(&mut session, "first.flv");
+                assert!(
+                    matches!(&commands[..], [PipelineCommand::CreateSegmentDag { segment_index: 3, input_path, .. }] if input_path == &PathBuf::from("first.flv"))
+                );
+                assert!(session.pending_segment_starts.contains(&(source, 3)));
+                assert!(deliver(&mut session, "first.flv").is_empty());
+                session.on_segment_dag_started(source, 3);
+                session.on_segment_dag_failed(source, 3);
+                assert!(deliver(&mut session, "second.flv").is_empty());
+                let lane = session.segment_mut(3).artifact_mut(source);
+                assert!(lane.dag_failed && lane.final_outputs_are_fallback);
+                assert_eq!(
+                    lane.source_inputs,
+                    vec![PathBuf::from("first.flv"), PathBuf::from("second.flv")]
+                );
+                assert_eq!(lane.final_outputs, lane.source_inputs);
+            }
+        }
+    }
     use crate::database::models::job::{DagStep, PipelineStep};
 
     fn empty_session_pipeline() -> DagPipelineDefinition {
