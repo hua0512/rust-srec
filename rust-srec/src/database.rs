@@ -32,8 +32,19 @@ const DEFAULT_POOL_SIZE: u32 = 10;
 /// Default busy timeout in milliseconds.
 const DEFAULT_BUSY_TIMEOUT_MS: u64 = 30_000;
 
-/// Default cache size in KB (64MB = 65536 KB, but SQLite uses pages, so we use -64000 for 64MB).
-const DEFAULT_CACHE_SIZE_KB: i32 = -64000;
+/// Suggested private page-cache budget for one read pool plus its serialized writer.
+/// SQLite's negative cache_size is measured in KiB, not pages. Reserve writer capacity
+/// independently so callers opening the pools separately observe the same total budget.
+const PAGE_CACHE_BUDGET_KIB: u32 = 64 * 1024;
+const WRITE_PAGE_CACHE_KIB: u32 = 8 * 1024;
+
+fn read_page_cache_kib(max_connections: u32) -> Result<u32, sqlx::Error> {
+    (PAGE_CACHE_BUDGET_KIB - WRITE_PAGE_CACHE_KIB)
+        .checked_div(max_connections)
+        .ok_or_else(|| {
+            sqlx::Error::Configuration("Read pool must allow at least one connection".into())
+        })
+}
 
 /// Default WAL auto-checkpoint threshold in pages.
 /// With a typical 4KB page size, 1000 pages is ~4MB.
@@ -44,6 +55,7 @@ const DEFAULT_JOURNAL_SIZE_LIMIT_BYTES: i64 = 64 * 1024 * 1024; // 64MB
 
 async fn apply_per_connection_pragmas(
     conn: &mut sqlx::SqliteConnection,
+    cache_kib: u32,
 ) -> Result<(), sqlx::Error> {
     // Ensure WAL auto-checkpoint is enabled to avoid unbounded WAL growth.
     sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -61,10 +73,11 @@ async fn apply_per_connection_pragmas(
     .execute(&mut *conn)
     .await?;
 
-    // Set cache size (64MB)
+    // Divide the reader allowance by its configured limit; never multiply the budget
+    // when the pool opens additional connections. SQLite treats this as a suggestion.
     sqlx::query(sqlx::AssertSqlSafe(format!(
-        "PRAGMA cache_size = {}",
-        DEFAULT_CACHE_SIZE_KB
+        "PRAGMA cache_size = -{}",
+        cache_kib
     )))
     .execute(&mut *conn)
     .await?;
@@ -130,13 +143,14 @@ async fn open_pool_with_size(
     database_url: &str,
     max_connections: u32,
 ) -> Result<DbPool, sqlx::Error> {
+    let cache_kib = read_page_cache_kib(max_connections)?;
     let connect_options = sqlite_connect_options(database_url)?;
 
     let pool = SqlitePoolOptions::new()
         .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(30))
-        .after_connect(|conn, _meta| {
-            Box::pin(async move { apply_per_connection_pragmas(&mut *conn).await })
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move { apply_per_connection_pragmas(&mut *conn, cache_kib).await })
         })
         .connect_with(connect_options)
         .await?;
@@ -155,7 +169,7 @@ async fn open_pool_with_size(
 ///
 /// # Arguments
 /// * `database_url` - SQLite database URL (e.g., "sqlite:srec.db?mode=rwc")
-/// * `max_connections` - Maximum number of connections in the pool
+/// * `max_connections` - Maximum number of connections sharing the 56 MiB read-cache allowance
 ///
 /// # Returns
 /// A configured SQLite connection pool.
@@ -181,7 +195,8 @@ pub async fn init_pool(database_url: &str) -> Result<DbPool, sqlx::Error> {
 /// # Configuration
 /// - Max connections: 1 (serializes writes)
 /// - Acquire timeout: 60s (writes queue through a single connection)
-/// - Same WAL/pragma configuration as the read pool
+/// - 8 MiB suggested page cache, reserved from the combined 64 MiB budget
+/// - Same WAL/mmap configuration as the read pool
 ///
 /// # Arguments
 /// * `database_url` - SQLite database URL (same as the read pool)
@@ -200,7 +215,9 @@ async fn open_write_pool(database_url: &str) -> Result<WritePool, sqlx::Error> {
         .max_connections(1)
         .acquire_timeout(Duration::from_secs(60))
         .after_connect(|conn, _meta| {
-            Box::pin(async move { apply_per_connection_pragmas(&mut *conn).await })
+            Box::pin(
+                async move { apply_per_connection_pragmas(&mut *conn, WRITE_PAGE_CACHE_KIB).await },
+            )
         })
         .connect_with(connect_options)
         .await?;
@@ -289,6 +306,90 @@ pub type ImmediateTransaction = sqlx::Transaction<'static, Sqlite>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_cache_budget_rejects_empty_pools_and_rounds_down() {
+        assert!(read_page_cache_kib(0).is_err());
+        assert_eq!(read_page_cache_kib(1).unwrap(), 57344);
+        assert_eq!(read_page_cache_kib(4).unwrap(), 14336);
+        assert_eq!(read_page_cache_kib(10).unwrap(), 5734);
+        assert_eq!(read_page_cache_kib(u32::MAX).unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn every_pool_connection_observes_the_combined_cache_budget_and_existing_mmap() {
+        let directory = tempfile::tempdir().unwrap();
+        for (read_limit, expected_read_kib) in [(1, 57344_i64), (4, 14336), (10, 5734)] {
+            let url = format!(
+                "sqlite:{}?mode=rwc",
+                directory
+                    .path()
+                    .join(format!("cache-{read_limit}.db"))
+                    .to_string_lossy()
+            );
+            let read = init_pool_with_size(&url, read_limit).await.unwrap();
+            let write = init_write_pool(&url).await.unwrap();
+            let mut connections = Vec::new();
+            for _ in 0..read_limit {
+                let mut conn = read.acquire().await.unwrap();
+                let cache: i64 = sqlx::query_scalar("PRAGMA cache_size")
+                    .fetch_one(&mut *conn)
+                    .await
+                    .unwrap();
+                let mmap: i64 = sqlx::query_scalar("PRAGMA mmap_size")
+                    .fetch_one(&mut *conn)
+                    .await
+                    .unwrap();
+                assert_eq!(cache, -expected_read_kib);
+                assert_eq!(mmap, 268435456);
+                connections.push(conn);
+            }
+            let cache: i64 = sqlx::query_scalar("PRAGMA cache_size")
+                .fetch_one(&write)
+                .await
+                .unwrap();
+            let mmap: i64 = sqlx::query_scalar("PRAGMA mmap_size")
+                .fetch_one(&write)
+                .await
+                .unwrap();
+            assert_eq!(cache, -8192);
+            assert_eq!(mmap, 268435456);
+            assert!(i64::from(read_limit) * expected_read_kib - cache <= 65536);
+            // A replacement connection must receive the same share, not a per-connection default.
+            connections.pop().unwrap().close().await.unwrap();
+            let mut replacement = read.acquire().await.unwrap();
+            let cache: i64 = sqlx::query_scalar("PRAGMA cache_size")
+                .fetch_one(&mut *replacement)
+                .await
+                .unwrap();
+            assert_eq!(cache, -expected_read_kib);
+            drop(replacement);
+            drop(connections);
+            read.close().await;
+            write.close().await;
+        }
+
+        let url = format!(
+            "sqlite:{}?mode=rwc",
+            directory.path().join("paired.db").to_string_lossy()
+        );
+        let (read, write) = init_database_pools(&url).await.unwrap();
+        let cache: i64 = sqlx::query_scalar("PRAGMA cache_size")
+            .fetch_one(&read)
+            .await
+            .unwrap();
+        assert_eq!(
+            cache,
+            -i64::from(read_page_cache_kib(default_read_pool_size()).unwrap())
+        );
+        let cache: i64 = sqlx::query_scalar("PRAGMA cache_size")
+            .fetch_one(&write)
+            .await
+            .unwrap();
+        assert_eq!(cache, -8192);
+        read.close().await;
+        write.close().await;
+    }
 
     #[tokio::test]
     async fn test_init_pool() {

@@ -46,6 +46,14 @@
 
 ## Database Maintenance
 
+- **Default database pages avoid full-table sorting**
+
+  A new startup migration adds creation-time ordering indexes for unfiltered DAG and media-output pages. It removes four unused job timestamp indexes while preserving the indexes used by retention cleanup and duration statistics. Existing records and page ordering are unchanged; creating the new indexes scans those tables during the upgrade.
+
+- **SQLite pools share a bounded cache allowance**
+
+  The standard read and write pools now share a 64 MiB suggested private page-cache budget, with 56 MiB divided among read connections and 8 MiB reserved for the writer. The adaptive pool size and 256 MiB memory-mapping setting are unchanged. This reduces the cache allowance on larger pools; it is not a hard process-memory limit. See [SQLite memory budgeting](../operations/monitoring.md#sqlite-memory-budget).
+
 - **Concurrent database mutations preserve their own results**
 
   Competing media-output deletions adjust session size once, and a failed size update rolls back deletion. Error increments return their own count. Template credential refresh reads and writes under one reserved transaction, preserving configuration edits committed before it.
@@ -266,6 +274,10 @@
 - **Job pages and configuration exports batch related lookups**
 
   Streamer display names, exported filters and notification subscriptions now use deduplicated batches of up to 500 owners instead of one query per owner. Response/export ordering, missing-owner behavior and best-effort handling of related-data failures are preserved; failed batches retry their owners individually. See [configuration exports](../operations/backup-restore.md#configuration-export).
+
+- **Search treats percent signs and underscores literally**
+
+  Searches for jobs, sessions, media outputs, notification events and both kinds of presets no longer interpret `%` and `_` as wildcards. Backslashes also match literally, so `audio_extract` only finds that text rather than names such as `audioXextract`. Existing case matching, other filters, pagination totals and media summaries remain consistent; see [search filters](../api/index.md#search-filters).
 
 - **API errors and request batches have explicit boundaries**
 

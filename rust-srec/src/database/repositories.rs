@@ -46,6 +46,21 @@ pub use tool_credential::*;
 pub use upload_record::*;
 pub use user::*;
 
+/// Bind a literal substring to `LIKE ... ESCAPE '\'` without changing SQLite's
+/// case matching. The surrounding percent signs are the only wildcards.
+fn literal_substring_pattern(search: &str) -> String {
+    let mut pattern = String::with_capacity(search.len() + 2);
+    pattern.push('%');
+    for character in search.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
+}
+
 /// Stay below SQLite's historical 999-parameter limit while bounding each lookup.
 pub(crate) const LOOKUP_BATCH_SIZE: usize = 500;
 
