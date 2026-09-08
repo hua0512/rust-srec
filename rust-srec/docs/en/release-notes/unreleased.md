@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Service Lifecycle Organization
+
+- **Startup timings focus on initialization work**
+
+  Container shutdown deadlines, output-root helpers, event decisions and existing lifecycle tests are separated by responsibility. Startup logs omit tiny synchronous construction timings while retaining I/O, engine discovery and overall measurements. Initialization order, the shared output-root snapshot and shutdown behavior are preserved; see [container responsibilities](../concepts/architecture.md#service-container-responsibilities).
+
 ## Build Dependencies
 
 - **Compile only the system inventory and logging features in use**
@@ -22,6 +28,10 @@
 
 ## Scheduler Recovery
 
+- **Large error counts preserve the one-hour backoff cap**
+
+  Error backoff bounds the exponent before arithmetic can overflow. Dormant actor state-file APIs and the unused streamer error writer are removed; runtime recovery, batch detection and terminal actor decisions are preserved. Rust integrations should follow the [scheduler interface notes](../concepts/architecture.md#scheduler-state-and-backoff).
+
 - **Actor timing uses resolved overrides and recurring checks are spread out**
 
   Actor creation and metadata/template/platform/global updates now resolve offline-confirmation settings directly from the four-layer configuration instead of racing a separate metadata refresh. Recurring checks receive bounded ±10% jitter. Unrelated updates preserve pending deadlines; actual cadence changes can shorten them while keeping admission, cooldown, smart-wake and immediate-check constraints. See [scheduler timing](../concepts/architecture.md).
@@ -40,6 +50,12 @@
 
   Newly written danmu XML filters characters forbidden by XML 1.0 and sanitizes header comments. MCP byte pages preserve complete UTF-8 characters and continuation offsets; invalid encoding or nonprogressing limits return explicit errors. Existing files are not repaired; see [MCP paging](../api/api-keys-mcp.md).
 
+## Service Ownership
+
+- **Session cleanup is joined during shutdown**
+
+  Shutdown cancels delayed ended-session eviction without waiting for its retention interval. API assembly reuses the container's repositories and configuration import service while keeping archive caches local. See [service ownership](../concepts/architecture.md#service-ownership).
+
 ## Health Monitoring
 
 - **Unknown components make overall health degraded**
@@ -49,6 +65,12 @@
 - **Slow disk sampling keeps health checks responsive**
 
   System and disk sampling runs on one dedicated thread with bounded waits. A stalled filesystem leaves earlier values marked stale or degraded while other probes continue, without accumulating replacement tasks. Health-checker shutdown can finish even if the operating-system call remains blocked; see [slow filesystem sampling](../operations/monitoring.md#slow-filesystem-sampling).
+
+## Downloader Interfaces
+
+- **Mesio diagnostics report the linked library version**
+
+  Engine checks now report Mesio's compiled package version instead of a hardcoded historical value. Download manager ownership, event delivery and tests are organized into focused modules, and unused update/process/configuration wrappers are removed. Existing download events and runtime shutdown behavior are preserved; see the [Rust interface notes](../concepts/architecture.md#downloader-rust-interfaces).
 
 ## Process Cleanup
 
@@ -174,7 +196,15 @@
 
   Post-processing commands now stop their entire process tree when a job is cancelled or times out. They receive closed standard input and drain their output within bounded log limits, including when a parent exits while a descendant still holds a pipe. Audio probes use the same cleanup behavior.
 
+## Email Delivery
+
+- Email channels now retain an SMTP connection pool and render localized content once per message. Configuration replacements keep separate pools while previously admitted deliveries retain their original channel. The unused `EmailConfig.batch_window_secs` field was removed; existing JSON values remain harmless and ignored. Email delivery is still immediate.
+
 ## Notifications
+
+- **Bounded queues and consistent Web Push persistence**
+
+  Ordinary channel admission now enforces capacity atomically and cancels evicted retries. Breaker cooldowns preserve attempt accounting. First-attempt Web Push success clears stored backoff, failed stale-subscription deletion is not reported as successful, and abbreviated payloads also enforce their byte cap. See [delivery contracts](../concepts/notifications.md#queue-and-web-push-delivery).
 
 - **Web-push overload stays bounded**
 
@@ -195,6 +225,12 @@
 - **Telegram formatting preserves literal content**
 
   HTML, Markdown, and MarkdownV2 settings now use explicit formatting entities so special characters in streamer names, titles, and errors cannot break message parsing. Unicode-safe truncation keeps formatting spans valid. Empty mode sends plain text; unknown modes return a local configuration error.
+
+## Recording Engines
+
+- **Streamlink can use an explicit FFmpeg executable**
+
+  Set the optional backend engine field `ffmpeg_path` to choose the FFmpeg process used for Streamlink remuxing. Omitted or null values retain `FFMPEG_PATH` then `ffmpeg` fallback. See [engine configuration](../concepts/engines.md#streamlink-ffmpeg-executable).
 
 ## Recording
 

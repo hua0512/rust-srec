@@ -484,27 +484,6 @@ impl CircuitBreakerManager {
     pub fn is_allowed(&self, key: &EngineKey) -> bool {
         self.get(key).is_allowed()
     }
-
-    /// Record success for an engine.
-    #[expect(
-        dead_code,
-        reason = "retained for optional runtime paths and diagnostics"
-    )]
-    pub fn record_success(&self, key: &EngineKey) {
-        self.get(key).record_success();
-    }
-
-    /// Record failure for an engine.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "retained for optional runtime paths and diagnostics"
-        )
-    )]
-    pub fn record_failure(&self, key: &EngineKey) {
-        self.get(key).record_failure();
-    }
 }
 
 impl Default for CircuitBreakerManager {
@@ -601,9 +580,9 @@ mod tests {
 
         assert!(manager.is_allowed(&key_ffmpeg));
 
-        manager.record_failure(&key_ffmpeg);
-        manager.record_failure(&key_ffmpeg);
-        manager.record_failure(&key_ffmpeg);
+        manager.get(&key_ffmpeg).record_failure();
+        manager.get(&key_ffmpeg).record_failure();
+        manager.get(&key_ffmpeg).record_failure();
 
         assert!(!manager.is_allowed(&key_ffmpeg));
         assert!(manager.is_allowed(&key_streamlink)); // Different engine type
@@ -621,9 +600,9 @@ mod tests {
         let key_custom2 = EngineKey::custom(EngineType::Ffmpeg, "alt-ffmpeg");
 
         // Trip the custom config breaker
-        manager.record_failure(&key_custom);
-        manager.record_failure(&key_custom);
-        manager.record_failure(&key_custom);
+        manager.get(&key_custom).record_failure();
+        manager.get(&key_custom).record_failure();
+        manager.get(&key_custom).record_failure();
 
         // Custom config is blocked
         assert!(!manager.is_allowed(&key_custom));

@@ -62,7 +62,7 @@ const WEB_PUSH_FLUSH_INTERVAL_MS: u64 = 250;
 pub struct NotificationServiceConfig {
     /// Whether the notification service is enabled.
     pub enabled: bool,
-    /// Maximum queue size for pending notifications.
+    /// Maximum pending notifications; zero disables ordinary channel admission.
     pub max_queue_size: usize,
     /// Maximum retry attempts per notification.
     pub max_retries: u32,
@@ -150,7 +150,7 @@ impl CircuitBreakerState {
         // Check if cooldown has passed (half-open state)
         if let Some(opened_at) = self.opened_at {
             let elapsed = Utc::now().signed_duration_since(opened_at);
-            if elapsed.num_seconds() as u64 >= self.cooldown.as_secs() {
+            if elapsed.num_seconds().max(0) as u64 >= self.cooldown.as_secs() {
                 return true; // Allow one request to test recovery
             }
         }
@@ -208,6 +208,7 @@ struct PendingNotification {
     /// Delivery and retries keep the instance selected at admission, across reloads.
     targets: Vec<Arc<RuntimeChannel>>,
     retry_generation: u64,
+    retry_cancel: CancellationToken,
     next_retry_at: Option<DateTime<Utc>>,
 }
 
@@ -253,6 +254,7 @@ pub struct NotificationService {
     registry: RwLock<ChannelRegistry>,
     reload_gate: tokio::sync::Mutex<()>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
+    queue_admission: parking_lot::Mutex<()>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     /// Last time we performed in-memory dead-letter retention cleanup (unix epoch seconds).
     dead_letter_cleanup_ts: Arc<AtomicU64>,
@@ -332,6 +334,7 @@ impl NotificationService {
             registry: RwLock::new(ChannelRegistry::default()),
             reload_gate: tokio::sync::Mutex::new(()),
             pending_queue: Arc::new(DashMap::new()),
+            queue_admission: parking_lot::Mutex::new(()),
             dead_letters: Arc::new(DashMap::new()),
             dead_letter_cleanup_ts: Arc::new(AtomicU64::new(0)),
             next_id: AtomicU64::new(1),
@@ -677,10 +680,6 @@ impl NotificationService {
                     to_addresses: settings.to_addresses,
                     min_priority,
                     locale: locale.clone(),
-                    batch_window_secs: settings_json
-                        .get("batch_window_secs")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(60),
                 }))
             }
             ChannelType::Telegram => {
@@ -870,21 +869,41 @@ impl NotificationService {
             channel_state,
             targets: target_channels,
             retry_generation: 0,
+            retry_cancel: CancellationToken::new(),
             next_retry_at: None,
         };
 
+        if self.enqueue_pending(id, pending) {
+            self.process_notification(id).await;
+        }
+        Ok(())
+    }
+
+    fn enqueue_pending(&self, id: u64, pending: PendingNotification) -> bool {
+        // Capacity inspection, oldest selection and insertion form one admission.
+        // Delivery may remove entries concurrently, but cannot add capacity.
+        let _admission = self.queue_admission.lock();
+        if self.config.max_queue_size == 0 {
+            return false;
+        }
         if self.pending_queue.len() >= self.config.max_queue_size {
-            warn!("Notification queue full, dropping oldest notification");
-            if let Some(oldest) = self.pending_queue.iter().min_by_key(|e| e.created_at) {
-                let oldest_id = *oldest.key();
-                drop(oldest);
-                self.pending_queue.remove(&oldest_id);
+            let oldest_id = self
+                .pending_queue
+                .iter()
+                .min_by_key(|entry| (entry.created_at, *entry.key()))
+                .map(|entry| *entry.key());
+            if let Some(oldest_id) = oldest_id
+                && let Some((_, evicted)) = self.pending_queue.remove(&oldest_id)
+            {
+                evicted.retry_cancel.cancel();
+                warn!(
+                    notification_id = oldest_id,
+                    "Notification queue full, dropping oldest notification"
+                );
             }
         }
-
         self.pending_queue.insert(id, pending);
-        self.process_notification(id).await;
-        Ok(())
+        true
     }
 
     /// Send a notification to all enabled channels.
@@ -961,25 +980,13 @@ impl NotificationService {
             channel_state,
             targets: target_channels,
             retry_generation: 0,
+            retry_cancel: CancellationToken::new(),
             next_retry_at: None,
         };
 
-        // Check queue size
-        if self.pending_queue.len() >= self.config.max_queue_size {
-            warn!("Notification queue full, dropping oldest notification");
-            // Remove oldest notification
-            if let Some(oldest) = self.pending_queue.iter().min_by_key(|e| e.created_at) {
-                let oldest_id = *oldest.key();
-                drop(oldest);
-                self.pending_queue.remove(&oldest_id);
-            }
+        if self.enqueue_pending(id, pending) {
+            self.process_notification(id).await;
         }
-
-        self.pending_queue.insert(id, pending);
-
-        // Process immediately
-        self.process_notification(id).await;
-
         Ok(())
     }
 
@@ -1553,6 +1560,7 @@ mod tests {
     use crate::database::models::NotificationDeadLetterDbModel;
     use crate::notification::channels::DiscordConfig;
 
+    mod delivery_contracts;
     mod reload;
 
     #[test]

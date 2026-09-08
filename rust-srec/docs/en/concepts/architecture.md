@@ -98,6 +98,12 @@ The `ServiceContainer` (in `rust-srec/src/services/container.rs`) wires everythi
 
 This gives the project one clear place to reason about lifecycle, dependencies, and shutdown order.
 
+## Service Container Responsibilities
+
+Container assembly, ordered shutdown, output-root helpers and event decisions live in separate private modules. Initialization still discovers output roots once and shares that snapshot between health registration and startup write probes. The public container API and shutdown deadlines are unchanged.
+
+Startup logs retain database/configuration I/O, engine discovery, awaited initialization phases and overall timings. Individual timings for synchronous wrapper construction and background-task spawning are omitted; those entries did not measure the work later performed by the tasks.
+
 ## Core components (what each one actually does)
 
 ### `ConfigService` (configuration + hot reload)
@@ -249,6 +255,12 @@ dead-letter persistence. Optional browser Web Push delivery is handled by `WebPu
 
 See also: [Notifications](./notifications.md)
 
+## Downloader Rust Interfaces
+
+The download manager keeps event contracts in `downloader::manager::events`, acknowledged delivery in `coordination`, engine configuration in `configuration`, and attempt ownership in `attempt`. These implementation modules remain private; public event imports through `downloader` and internal imports through `downloader::manager` are preserved. Runtime shutdown uses `DownloadManager::shutdown_until`, and the active entry retains its queue slot until removal.
+
+The unused pending-download configuration update API and write-only retry override have been removed, along with `stop_all`, `get_downloads_by_status`, `set_high_priority_extra_slots` and the old process-waiter helpers. Rust integrations should use the supported manager shutdown and snapshot methods, `DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`, and the public `CircuitBreaker` methods. Internal breaker ownership uses `CircuitBreakerManager::get`. Mesio engine diagnostics report the linked crate's `mesio::VERSION`.
+
 ## Key flows
 
 ### Recording lifecycle (end-to-end)
@@ -332,6 +344,12 @@ handlers validate bearer tokens themselves and return `401` when JWT authenticat
 configured; liveness remains public. WebSocket, media, and stream-proxy routes use their documented
 query-parameter authentication paths.
 
+## Scheduler State and Backoff
+
+Streamer actors use in-memory scheduling state and the database-backed metadata cache. The unused JSON state-file interfaces (`with_state_path`, `restore_state`, the restored-state constructors, `PersistedActorState`, `PersistedConfig` and `SupervisorConfig.state_dir`) have been removed. Runtime recovery still uses the database and session lifecycle; no actor state files are required.
+
+The unused `StreamerManager::record_error` and `StreamerRepository::record_streamer_error` methods are also removed. Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache coordination remains shared across existing services.
+
 ## Event-driven communication
 
 Most cross-service coordination happens via Tokio `broadcast` channels.
@@ -371,6 +389,15 @@ Key properties:
 - **`ENOSPC` is the only mid-stream entry point.** A writer that runs out of space reports the failure to the gate while the recording is still in flight, degrading the root so the next start is throttled. Other write failures — read-only filesystem, lost permissions, a path that disappeared — are classified as file-scoped and stay with the engine's `CircuitBreaker`; they reach the gate through the startup probe, or through the pre-start hook only when they also make its `create_dir_all` fail. An existing but unwritable directory returns `Ok` from `ensure_output_dir`, so the pre-start hook does not see it. The split exists because `OutputRootUnavailable` is exempt from the circuit breaker, so the gate is the only thing throttling a retry for that kind.
 
 Exposed in `/api/health` as a single aggregated `output-root` component listing each Degraded root with its classified `io::ErrorKind`, rejected count, and staleness. See the [notifications doc](./notifications.md#critical-storage-events) for the event shape and the [Docker troubleshooting guide](../getting-started/docker.md#storage-cleanup) for the stale-mount failure mode.
+
+## Service Ownership
+
+Ended-session retention tasks are owned by the session lifecycle. Shutdown cancels
+and joins those tasks without waiting for the retention interval; cleanup never
+removes a newer session's current-session entry. API states share the container's
+repository wrappers and configuration import service. Import construction follows
+runtime coordinator construction, while log archive grants and archive capacity
+remain local to each API state.
 
 ## Observability, health, and shutdown
 

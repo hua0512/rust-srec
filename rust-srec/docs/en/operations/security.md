@@ -16,6 +16,30 @@ work as current-format passwords. Unknown users and incorrect passwords return
 the same credential error; disabled-account status is returned only after the
 correct password is supplied. Throttled requests still avoid password work.
 
+## Full Backend Access Is Administrative Access
+
+An authenticated login session or a full-access API key grants administrative
+authority over the backend's processes and files. Grant either only to people
+and integrations trusted to act as the operating-system account running the
+backend. Token role names do not restrict this authority; there is no separate
+operator role for managing recordings without executable configuration access.
+
+This authority includes direct execution through an `execute` pipeline step and
+request-supplied BaiduPCS executable paths. It also includes indirect execution:
+engine and processor settings can select tool binaries, presets can contain
+command steps, and configuration imports can introduce these settings for later
+recordings or jobs. File paths, upload destinations, and move/delete steps can
+read, transfer, replace or remove data accessible to the service account. A
+configuration import or preset from another source therefore needs the same
+review as code that will run on that account.
+
+Read-only API keys have a restricted endpoint/tool allowlist; use them when an
+integration only needs the supported read operations. They do not provide a
+recording-operator role. See [API keys and MCP](../api/api-keys-mcp.md). Operating
+system permissions, service sandboxing, and container mounts limit the backend's
+reach: run it with only the filesystem, network and device access it needs.
+Full backend access does not itself grant privileges beyond that environment.
+
 ## Revocable Login Sessions
 
 Access tokens and rotating refresh tokens belong to a durable login session.

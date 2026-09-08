@@ -57,13 +57,6 @@ pub trait StreamerRepository: Send + Sync {
     // Methods for StreamerManager
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
     async fn clear_streamer_last_error(&self, id: &str) -> Result<()>;
-    async fn record_streamer_error(
-        &self,
-        id: &str,
-        error_count: i32,
-        disabled_until: Option<DateTime<Utc>>,
-        error: Option<&str>,
-    ) -> Result<()>;
     async fn record_streamer_success(
         &self,
         id: &str,
@@ -391,32 +384,6 @@ impl StreamerRepository for SqlxStreamerRepository {
             .bind(id)
             .execute(&self.write_pool)
             .await?;
-        Ok(())
-    }
-
-    async fn record_streamer_error(
-        &self,
-        id: &str,
-        error_count: i32,
-        disabled_until: Option<DateTime<Utc>>,
-        error: Option<&str>,
-    ) -> Result<()> {
-        let disabled_until_ms = disabled_until.map(|dt| dt.timestamp_millis());
-        sqlx::query(
-            r#"
-            UPDATE streamers SET 
-                consecutive_error_count = ?,
-                disabled_until = ?,
-                last_error = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(error_count)
-        .bind(disabled_until_ms)
-        .bind(error)
-        .bind(id)
-        .execute(&self.write_pool)
-        .await?;
         Ok(())
     }
 

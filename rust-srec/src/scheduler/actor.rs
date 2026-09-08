@@ -44,9 +44,7 @@ pub use registry::{
     ActorRegistry, ActorRemoval, ActorRemovalOutcome, ActorTaskResult, RegistryError,
 };
 pub use restart_tracker::{RestartTracker, RestartTrackerConfig, RestartTrackerStats};
-pub use streamer_actor::{
-    ActorError, ActorOutcome, ActorResult, PersistedActorState, PersistedConfig, StreamerActor,
-};
+pub use streamer_actor::{ActorError, ActorOutcome, ActorResult, StreamerActor};
 pub use supervisor::{
     ShutdownReport, SpawnError, Supervisor, SupervisorConfig, SupervisorStats, TaskCompletionAction,
 };

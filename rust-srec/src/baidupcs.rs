@@ -71,6 +71,9 @@ pub fn resolve_binary_path(explicit: Option<&str>) -> String {
 /// status probes hold the read side so they never observe a half-written
 /// session. API handlers should use `try_write()` and reject with a
 /// conflict instead of queueing behind a multi-hour upload.
+/// This single process-wide lock covers all configured directories. Guards
+/// deliberately span CLI awaits; login retains its owned write lease until
+/// child cleanup is confirmed so cancellation cannot expose a live writer.
 pub fn cli_lock() -> &'static Arc<RwLock<()>> {
     static LOCK: OnceLock<Arc<RwLock<()>>> = OnceLock::new();
     LOCK.get_or_init(|| Arc::new(RwLock::new(())))

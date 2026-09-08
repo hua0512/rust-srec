@@ -34,15 +34,16 @@ struct DeliveryContext {
     config: Arc<NotificationServiceConfig>,
     next_dead_letter_id: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    retry_cancel: CancellationToken,
     task_supervisor: Arc<TaskSupervisor>,
 }
 
 impl NotificationService {
     pub(super) async fn process_notification(&self, id: u64) {
-        let Some(channels) = self
+        let Some((channels, retry_cancel)) = self
             .pending_queue
             .get(&id)
-            .map(|pending| pending.targets.clone())
+            .map(|pending| (pending.targets.clone(), pending.retry_cancel.clone()))
         else {
             return;
         };
@@ -56,6 +57,7 @@ impl NotificationService {
             config: self.config.clone(),
             next_dead_letter_id: self.next_dead_letter_id.clone(),
             cancellation_token: self.cancellation_token.clone(),
+            retry_cancel,
             task_supervisor: self.task_supervisor.clone(),
         }))
         .await;
@@ -80,7 +82,9 @@ impl NotificationService {
         let supervisor = ctx.task_supervisor.clone();
         supervisor.spawn("notification retry", async move {
             tokio::select! {
+                biased;
                 _ = ctx.cancellation_token.cancelled() => return,
+                _ = ctx.retry_cancel.cancelled() => return,
                 _ = sleep(delay) => {},
             }
 
@@ -170,10 +174,11 @@ impl NotificationService {
                     debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
                 }
                 Err(error) => {
-                    channel
-                        .breaker
-                        .lock()
-                        .record_failure(config.circuit_breaker_threshold);
+                    {
+                        let mut breaker = channel.breaker.lock();
+                        breaker.record_failure(config.circuit_breaker_threshold);
+                        circuit_blocked |= breaker.is_open;
+                    }
 
                     let now = Utc::now();
                     let mut attempts = 0;
@@ -276,7 +281,9 @@ impl NotificationService {
         };
 
         if !has_pending {
-            pending_queue.remove(&id);
+            if let Some((_, completed)) = pending_queue.remove(&id) {
+                completed.retry_cancel.cancel();
+            }
             return;
         }
 

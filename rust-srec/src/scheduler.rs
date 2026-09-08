@@ -22,11 +22,10 @@ mod service;
 pub use actor::{
     ActorError, ActorHandle, ActorMetadata, ActorMetrics, ActorOutcome, ActorRegistry, ActorResult,
     ActorTaskResult, BatchDetectionResult, CheckResult, ConfigRouter, ConfigScope,
-    PersistedActorState, PersistedConfig, PlatformActorState, PlatformConfig, PlatformMapping,
-    PlatformMessage, RegistryError, RestartTracker, RestartTrackerConfig, RestartTrackerStats,
-    RoutingResult, SendError, ShutdownReport, SpawnError, StreamerActor, StreamerActorState,
-    StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, SupervisorStats,
-    TaskCompletionAction,
+    PlatformActorState, PlatformConfig, PlatformMapping, PlatformMessage, RegistryError,
+    RestartTracker, RestartTrackerConfig, RestartTrackerStats, RoutingResult, SendError,
+    ShutdownReport, SpawnError, StreamerActor, StreamerActorState, StreamerConfig, StreamerMessage,
+    Supervisor, SupervisorConfig, SupervisorStats, TaskCompletionAction,
 };
 
 // Scheduler service
