@@ -847,7 +847,7 @@ impl Processor for RcloneProcessor {
     }
 
     fn job_types(&self) -> Vec<&'static str> {
-        // "upload" kept for backwards compatibility
+        // Both job type names select the rclone processor.
         vec!["rclone", "upload"]
     }
 

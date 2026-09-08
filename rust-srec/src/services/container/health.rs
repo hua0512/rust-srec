@@ -545,16 +545,16 @@ fn bounded_output_probe_paths(
 
 impl ServiceContainer {
     /// Concrete directories safe to probe, each resolving to the runtime gate key.
-    /// Disk probes use these paths too, without testing write access to ancestor keys.
-    pub(super) async fn collect_output_roots(
-        &self,
-    ) -> std::collections::HashSet<std::path::PathBuf> {
-        discover_output_probe_paths(
+    /// Sorted and capped once for startup. Disk registrations and the write probe
+    /// share this exact input, without testing write access to ancestor keys.
+    pub(super) async fn collect_output_roots(&self) -> Vec<std::path::PathBuf> {
+        let roots = discover_output_probe_paths(
             &self.config_service,
             &self.streamer_manager,
             &self.output_root_gate,
         )
-        .await
+        .await;
+        bounded_output_probe_paths(&self.output_root_gate, roots)
     }
 
     /// Run the output-root write gate's one-shot startup probe.
@@ -572,10 +572,7 @@ impl ServiceContainer {
     /// transitions are event-driven via real `ensure_output_dir` calls
     /// and engine stderr readers. See
     /// `crate::downloader::output_root_gate` for the rationale.
-    pub(super) async fn run_output_root_startup_probe(&self) {
-        let roots =
-            bounded_output_probe_paths(&self.output_root_gate, self.collect_output_roots().await);
-
+    pub(super) async fn run_output_root_startup_probe(&self, roots: &[std::path::PathBuf]) {
         if roots.is_empty() {
             debug!("Output-root startup probe: no roots to probe");
             return;
@@ -583,7 +580,7 @@ impl ServiceContainer {
 
         info!(count = roots.len(), "Running output-root startup probe");
 
-        futures::stream::iter(roots)
+        futures::stream::iter(roots.iter().cloned())
             .map(|root| {
                 let gate = self.output_root_gate.clone();
                 async move {
@@ -691,7 +688,7 @@ impl ServiceContainer {
     }
 
     /// Register health checks for all components.
-    pub(super) async fn register_health_checks(&self) {
+    pub(super) async fn register_health_checks(&self, output_roots: &[std::path::PathBuf]) {
         use std::path::PathBuf;
 
         // Database health check — atomic pool-closed check; cheap.
@@ -709,8 +706,6 @@ impl ServiceContainer {
         // capped because these run for the process lifetime (30 s cadence)
         // unlike the one-shot write test in
         // `run_output_root_startup_probe`, which shares the same root set.
-        let output_roots =
-            bounded_output_probe_paths(&self.output_root_gate, self.collect_output_roots().await);
 
         if output_roots.is_empty() {
             // No concrete target has a provable runtime key. Inventory the available
@@ -737,7 +732,7 @@ impl ServiceContainer {
                 // Probe directories may be relative, just like the runtime output folder.
                 // Disk inventory uses absolute mount points, so anchor only this lookup.
                 let lookup_path = match std::env::current_dir() {
-                    Ok(cwd) => cwd.join(&root),
+                    Ok(cwd) => cwd.join(root),
                     Err(_) => root.clone(),
                 };
                 self.health_checker

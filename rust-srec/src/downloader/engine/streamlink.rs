@@ -113,8 +113,7 @@ impl StreamlinkEngine {
         if let Some(ref cookies) = config.cookies {
             let parsed = build_http_cookie_args(cookies);
             if parsed.is_empty() {
-                // Backward-compat: preserve previous behavior if parsing fails
-                // (even though Streamlink may reject it).
+                // Pass an unparsed cookie value to Streamlink for validation.
                 args.extend(["--http-cookie".to_string(), cookies.clone()]);
             } else {
                 args.extend(parsed);
@@ -463,9 +462,8 @@ impl DownloadEngine for StreamlinkEngine {
 
     async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
-        // Output directory is now prepared by
-        // `DownloadManager::prepare_output_dir` before this method is called.
-        // See the matching comment in ffmpeg.rs for the rationale.
+        // `DownloadManager::prepare_output_dir` runs before engine startup,
+        // enforcing the output-root write gate and classifying directory errors.
         let streamlink_args = self.build_streamlink_args(&config);
         let ffmpeg_args = self.build_ffmpeg_args(&config);
         let segment_mode = config.max_segment_duration_secs > 0;

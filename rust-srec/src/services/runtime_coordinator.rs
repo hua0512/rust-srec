@@ -1,8 +1,10 @@
 //! Operational policy for runtime events.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use futures::StreamExt;
 use tracing::{debug, info, warn};
 
 use crate::config::ConfigService;
@@ -28,6 +30,22 @@ mod retirement;
 use download_pipeline::{StreamerLivePayload, run_live_download_pipeline};
 
 pub(crate) use retirement::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
+
+const MAX_CONCURRENT_CONFIG_REFRESHES: usize = 16;
+
+/// Only independent owners run concurrently; callers await the whole batch before
+/// handling the next configuration event, retaining event order and bounded fan-out.
+async fn run_config_refreshes<F, Fut>(ids: impl IntoIterator<Item = String>, refresh: F)
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    futures::stream::iter(ids)
+        .map(refresh)
+        .buffer_unordered(MAX_CONCURRENT_CONFIG_REFRESHES)
+        .for_each(|()| async {})
+        .await;
+}
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamMonitor = StreamMonitor<
@@ -141,6 +159,16 @@ impl RuntimeCoordinator {
             task_supervisor,
             scheduler_handle,
         }
+    }
+
+    pub(crate) async fn refresh_metadata_offline_checks(
+        &self,
+        streamer_ids: impl IntoIterator<Item = String>,
+    ) {
+        run_config_refreshes(streamer_ids, |id| async move {
+            self.refresh_metadata_offline_check(&id).await;
+        })
+        .await;
     }
 
     pub(crate) async fn refresh_metadata_offline_check(&self, streamer_id: &str) {
@@ -543,3 +571,6 @@ impl RuntimeCoordinator {
             .await;
     }
 }
+
+#[cfg(test)]
+mod config_refresh_tests;

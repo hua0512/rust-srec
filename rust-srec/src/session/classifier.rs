@@ -21,25 +21,14 @@
 //!
 //! ## Why HTTP 404 is not classified
 //!
-//! Earlier revisions promoted any mesio 404 to `DefinitiveOffline`. That
-//! over-fired in two real production cases:
+//! HTTP 404 can be transient while a stream remains live: FLV URLs can
+//! arrive before a CDN edge has propagated a token, and HLS segment or
+//! playlist requests can race sliding-window eviction or token expiry.
+//! A 404 alone therefore does not establish `DefinitiveOffline`.
 //!
-//! 1. **FLV initial-request 404 on stream re-up** — Douyu and similar CDNs
-//!    occasionally return 404 on the freshly-issued FLV URL while the edge
-//!    propagates the new token. The platform monitor still reports `LIVE`,
-//!    so the only effect of the early end was three back-to-back empty
-//!    sessions (one per `LIVE` re-detection) before the actor's error
-//!    backoff finally engaged.
-//! 2. **HLS segment / playlist 404 mid-stream** — sliding-window eviction
-//!    races, signed-URL token expiry on platforms that 404 instead of 403,
-//!    and CDN edge desync all manifest as transient 404s on a stream that
-//!    is otherwise live.
-//!
-//! True end-of-stream signals are now sourced from:
-//! - Mesio HLS `#EXT-X-ENDLIST` → `EngineEndSignal::HlsEndlist`
-//!   (authoritative, bypasses hysteresis directly via the `Completed` path)
-//! - The consecutive-`Network` rule below, which catches genuinely-offline
-//!   streams without misfiring on transient 404s.
+//! Mesio HLS `#EXT-X-ENDLIST` produces `EngineEndSignal::HlsEndlist`
+//! through the authoritative `Completed` path. Consecutive `Network`
+//! failures use the window and threshold below.
 //!
 //! ## Configuration
 //!

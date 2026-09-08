@@ -1038,10 +1038,6 @@ mod tests {
                 .collect())
         }
 
-        async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>> {
-            Ok(self.streamers.lock().unwrap().clone())
-        }
-
         async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
             self.streamers.lock().unwrap().push(streamer.clone());
             Ok(())

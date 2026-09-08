@@ -89,21 +89,6 @@ impl RetryPolicy {
     pub fn should_retry(&self, attempt: u32) -> bool {
         attempt < self.max_retries
     }
-
-    /// Get the total maximum time that could be spent retrying.
-    pub fn max_total_delay(&self) -> Duration {
-        let mut total = 0u64;
-        for attempt in 0..self.max_retries {
-            let base_delay =
-                self.initial_delay_ms as f64 * self.backoff_multiplier.powi(attempt as i32);
-            total += base_delay.min(self.max_delay_ms as f64) as u64;
-        }
-        // Add potential jitter
-        if self.use_jitter {
-            total = (total as f64 * 1.25) as u64;
-        }
-        Duration::from_millis(total)
-    }
 }
 
 impl Default for RetryPolicy {

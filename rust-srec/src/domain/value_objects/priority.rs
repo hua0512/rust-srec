@@ -49,16 +49,6 @@ impl Priority {
             Self::Low => 1,
         }
     }
-
-    /// Check if this priority is higher than another.
-    pub fn is_higher_than(&self, other: &Self) -> bool {
-        self.numeric_value() > other.numeric_value()
-    }
-
-    /// Check if this priority should bypass concurrency limits.
-    pub fn bypasses_limits(&self) -> bool {
-        matches!(self, Self::High)
-    }
 }
 
 impl PartialOrd for Priority {
@@ -105,13 +95,6 @@ mod tests {
         assert_eq!(Priority::parse("NORMAL"), Some(Priority::Normal));
         assert_eq!(Priority::parse("LOW"), Some(Priority::Low));
         assert_eq!(Priority::parse("invalid"), None);
-    }
-
-    #[test]
-    fn test_priority_bypasses_limits() {
-        assert!(Priority::High.bypasses_limits());
-        assert!(!Priority::Normal.bypasses_limits());
-        assert!(!Priority::Low.bypasses_limits());
     }
 
     #[test]

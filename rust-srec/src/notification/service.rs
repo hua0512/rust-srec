@@ -1044,7 +1044,7 @@ impl NotificationService {
                                     continue;
                                 }
 
-                                // StreamOnline/StreamOffline now come from
+                                // StreamOnline/StreamOffline come from
                                 // `SessionTransition` via
                                 // `listen_for_session_transitions`; the monitor
                                 // subscription only produces FatalError alerts.
@@ -1087,11 +1087,8 @@ impl NotificationService {
     /// Listen for session lifecycle transitions and fan them out as
     /// `NotificationEvent::StreamOnline` / `StreamOffline` payloads.
     ///
-    /// Payload shape is byte-identical to the pre-refactor
-    /// `MonitorEvent::StreamerLive` / `StreamerOffline` routing — the
-    /// `SessionTransition::Started` / `Ended` variants carry the same
-    /// streamer_name / title / category / timestamp fields so the
-    /// notification channels see no change.
+    /// `SessionTransition::Started` / `Ended` supply streamer identity,
+    /// title, category, and timestamps for notification channel payloads.
     fn listen_for_session_transitions(
         self: &Arc<Self>,
         mut rx: broadcast::Receiver<crate::session::SessionTransition>,

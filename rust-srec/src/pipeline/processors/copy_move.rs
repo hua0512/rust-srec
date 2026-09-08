@@ -56,7 +56,7 @@ pub struct CopyMoveConfig {
 
     /// Optional timestamp source for time placeholder expansion.
     ///
-    /// None preserves the historical execution-time expansion behavior.
+    /// `None` expands time placeholders using the local time at execution.
     #[serde(default)]
     pub time_anchor: Option<TimeAnchor>,
 
@@ -270,8 +270,7 @@ impl Processor for CopyMoveProcessor {
         })?;
 
         // Expand placeholders in destination path. `time_anchor: None`
-        // preserves the historical expand_placeholders behavior (current
-        // local time at execution).
+        // uses the local time at execution via `expand_placeholders`.
         let dest_dir = if let Some(anchor) = config.time_anchor {
             expand_placeholders_at(
                 dest_template,

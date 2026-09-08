@@ -8,20 +8,14 @@
 //!   notification subscribers do nothing on this event; they wait for
 //!   `Ended`. Actor uses it to switch to short-polling cadence.
 //! - [`SessionTransition::Resumed`] — `Hysteresis` cancelled by a timely
-//!   resume. Subscribers cancel any work scheduled by `Ending` (today: no
-//!   such work; reserved for future async coordination).
+//!   resume; the same session returns to `Recording`.
 //! - [`SessionTransition::Ended`] — confirmed final end. Pipeline fires.
 //!   `end_time` is set in DB. The `via_hysteresis` flag tells subscribers
 //!   whether the end was reached via timer expiry (true) or directly from
 //!   an authoritative cause (false).
 //!
-//! `Ending` and `Resumed` are additive variants. Subscribers that care only
-//! about the final state filter on `Ended` and continue working as before.
-//!
-//! Backwards compatibility: today's `MonitorEvent::StreamerLive` /
-//! `StreamerOffline` are still emitted (now from `SessionLifecycle`, not
-//! from `monitor::service`) so the SSE / notification frontend contract is
-//! preserved byte-for-byte.
+//! Consumers interested in final state filter on `Ended`. The notification
+//! listener builds channel payloads from these transitions.
 
 use std::sync::Arc;
 
@@ -73,7 +67,7 @@ pub enum SessionTransition {
         /// [`DownloadStartPayload`] for the field rationale.
         ///
         /// Boxed so a `Started` without a payload stays one pointer wide
-        /// — historical consumers that never read the payload don't pay
+        /// — consumers that never read the payload don't pay
         /// the size of three media-metadata fields.
         download_start: Option<Box<DownloadStartPayload>>,
     },
@@ -111,9 +105,7 @@ pub enum SessionTransition {
     Ended {
         session_id: String,
         streamer_id: String,
-        /// Needed by the notification layer to keep `StreamOffline`
-        /// payloads byte-identical to the pre-refactor `MonitorEvent::
-        /// StreamerOffline` shape.
+        /// Streamer display name for `StreamOffline` notification payloads.
         streamer_name: String,
         ended_at: DateTime<Utc>,
         cause: TerminalCause,
