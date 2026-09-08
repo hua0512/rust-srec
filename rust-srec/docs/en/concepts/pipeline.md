@@ -286,6 +286,17 @@ apostrophes and filtergraph delimiters without extra user escaping.
 - **Retry**: Failed steps can be retried manually or automatically
 - **Logs**: Each step maintains execution logs for debugging
 
+Retries and restart recovery retain the job's earlier step timings, log counters,
+file-size metadata and produced-artifact history. Starting another attempt does
+not duplicate earlier log entries. The current processor is saved before it runs;
+if that write fails or stored execution metadata is invalid, processing stops and
+the failure is reported without replacing the original metadata. Completion and
+failure updates also preserve additional stored execution-metadata fields.
+
+Produced-artifact history can include files published by earlier attempts. A later
+failure does not delete those files. Processors manage their own staged temporary
+outputs, with the cleanup limits described above.
+
 ### Cancelling a Running Pipeline
 
 `DELETE /api/pipeline/{pipeline_id}` cancels a pipeline. When the id names a DAG execution, the whole DAG is stood down: in-flight step jobs are cancelled and the DAG itself reaches a terminal cancelled state instead of staying in processing, so the session that is waiting on it stops waiting and the pipeline no longer reappears as in-flight after a restart.

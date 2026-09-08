@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler,
 };
-use super::job_queue::{Job, JobExecutionInfo, JobLogEntry, JobQueue, JobResult};
+use super::job_queue::{Job, JobLogEntry, JobQueue, JobResult};
 use super::manager::PipelineEvent;
 use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput};
 
@@ -686,7 +686,7 @@ impl JobRunner {
 
             if let Err(e) = self
                 .job_queue
-                .fail_with_cleanup_and_step_info(
+                .fail_with_step_info(
                     &job.id,
                     &reason,
                     Some(processor.name()),
@@ -756,25 +756,43 @@ impl JobRunner {
             return;
         };
 
-        self.active_workers.fetch_add(1, Ordering::SeqCst);
-        let started = std::time::Instant::now();
-
-        // Record execution start info
-        let exec_info = JobExecutionInfo::new().with_processor(processor.name());
+        // Start metadata is a patch: prior attempts retain their diagnostics and
+        // produced-item history, and historical log snapshots are not replayed.
         if let Err(e) = self
             .job_queue
-            .update_execution_info(&job.id, exec_info)
+            .begin_execution(&job.id, processor.name())
             .await
         {
-            warn!("Failed to update execution info for job {}: {}", job.id, e);
+            let reason = format!("Failed to persist execution start: {e}");
+            error!(job_id = %job.id, error = %e, "Skipping processor without durable attempt metadata");
+            if job_token.is_cancelled() {
+                self.job_queue.finalize_cancelled_job(&job.id);
+                return;
+            }
+            if let Err(error) = self.job_queue.fail_execution_start(&job.id, &reason).await {
+                error!(job_id = %job.id, %error, "Failed to persist execution-start failure");
+            }
+            self.emit(PipelineEvent::JobFailed {
+                job_id: job.id.clone(),
+                job_type: job.job_type.clone(),
+                error: reason.clone(),
+            });
+            if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
+                self.fail_dag_step(dag_step_id, &reason, DagFailureKind::ProcessorError)
+                    .await;
+            }
+            return;
         }
+
+        self.active_workers.fetch_add(1, Ordering::SeqCst);
+        let started = std::time::Instant::now();
 
         // True when this job has been attempted before, which is what makes a processor's
         // resume path legitimate (see CopyMoveProcessor's absent-source handling).
         // `retry_count` covers an explicit `JobQueue::retry_job`; `current_processor` covers a
         // job a crash left PROCESSING that `JobQueue::recover_jobs` reset to PENDING, which
         // leaves `retry_count` alone but keeps the execution_info the earlier attempt wrote
-        // through `update_execution_info` above.
+        // through the execution-start metadata patch above.
         let is_retry = job.retry_count > 0
             || job
                 .execution_info
@@ -948,15 +966,15 @@ impl JobRunner {
         output: ProcessorOutput,
         input: &ProcessorInput,
     ) {
-        // Track partial outputs for observability
+        // Produced artifacts are observability data, not permission to delete files.
         if !output.items_produced.is_empty()
             && let Err(e) = self
                 .job_queue
-                .track_partial_outputs(&facts.id, &output.items_produced)
+                .record_produced_items(&facts.id, &output.items_produced)
                 .await
         {
             warn!(
-                "Failed to track partial outputs for job {}: {}",
+                "Failed to record produced items for job {}: {}",
                 facts.id, e
             );
         }
@@ -1052,7 +1070,8 @@ impl JobRunner {
         }
     }
 
-    /// Persist a failed or timed-out job, clean up what it half-produced, and fail its DAG.
+    /// Persist a failed or timed-out job and fail its DAG. Processors own cleanup
+    /// of their staged outputs; persisted artifact paths may belong to earlier attempts.
     async fn finish_failed(&self, facts: &JobFacts, error: &str, kind: DagFailureKind) {
         self.emit(PipelineEvent::JobFailed {
             job_id: facts.id.clone(),
@@ -1060,22 +1079,18 @@ impl JobRunner {
             error: error.to_string(),
         });
 
-        // Record step info for observability, and clean up partial outputs so a retry does not
-        // start from a half-written file.
-        let partial_outputs = self
+        if let Err(error) = self
             .job_queue
-            .fail_with_cleanup_and_step_info(
+            .fail_with_step_info(
                 &facts.id,
                 error,
                 Some(facts.processor_name),
                 facts.current_step,
                 facts.total_steps,
             )
-            .await;
-        if let Ok(outputs) = partial_outputs
-            && !outputs.is_empty()
+            .await
         {
-            cleanup_partial_outputs(&outputs).await;
+            error!(job_id = %facts.id, %error, "Failed to persist pipeline job failure");
         }
 
         if let Some(dag_step_id) = facts.dag_step_execution_id.as_deref() {
@@ -1267,22 +1282,6 @@ impl LogFlushBackoff {
                     (self.delay * 2).min(Self::MAX_DELAY)
                 };
                 self.next_flush_allowed = tokio::time::Instant::now() + self.delay;
-            }
-        }
-    }
-}
-
-/// Clean up partial outputs created by a failed job.
-async fn cleanup_partial_outputs(outputs: &[String]) {
-    for output in outputs {
-        let path = std::path::Path::new(output);
-        match tokio::fs::remove_file(path).await {
-            Ok(()) => {
-                info!("Cleaned up partial output: {}", output);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                warn!("Failed to clean up partial output {}: {}", output, e);
             }
         }
     }
@@ -1717,6 +1716,196 @@ mod tests {
             avg_runtime_ms: Arc::new(AtomicU64::new(0)),
             job_timeout: Duration::from_secs(30),
             shutdown: CancellationToken::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_attempt_metadata_never_invokes_processor_or_rewrites_history() {
+        use crate::database::models::JobDbModel;
+        use crate::database::repositories::{JobRepository, SqlxJobRepository};
+
+        for stored in [
+            None,
+            Some("malformed"),
+            Some("null"),
+            Some("[]"),
+            Some(r#"{"items_produced": false}"#),
+        ] {
+            let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                .await
+                .unwrap();
+            crate::database::run_migrations(&pool).await.unwrap();
+            let repository = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+            let queue = Arc::new(JobQueue::with_repository(
+                Default::default(),
+                repository.clone(),
+            ));
+            let mut model = JobDbModel::new_with_input("gated", "input.flv", 0, None, None, "{}");
+            model.execution_info = stored.map(str::to_owned);
+            repository.create_job(&model).await.unwrap();
+            if stored.is_none() {
+                sqlx::query("CREATE TRIGGER reject_attempt BEFORE UPDATE OF execution_info ON job BEGIN SELECT RAISE(ABORT, 'rejected attempt'); END")
+                    .execute(&pool).await.unwrap();
+            }
+            let job = queue.dequeue(None).await.unwrap().unwrap();
+            let (events, mut event_rx) = broadcast::channel(8);
+            let runner = observed_runner(queue.clone(), events);
+            let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+            let processor: Arc<dyn Processor> = Arc::new(GatedProcessor(started_tx));
+            tokio::time::timeout(Duration::from_secs(5), runner.execute_job(job, &processor))
+                .await
+                .unwrap();
+            assert!(started_rx.try_recv().is_err());
+            let failed = repository.get_job(&model.id).await.unwrap();
+            assert_eq!(failed.status, JobStatus::Failed.as_str());
+            assert_eq!(failed.execution_info.as_deref(), stored);
+            assert!(
+                failed
+                    .error
+                    .as_deref()
+                    .unwrap()
+                    .contains("Failed to persist execution start")
+            );
+            assert!(matches!(
+                event_rx.try_recv().unwrap(),
+                PipelineEvent::JobFailed { .. }
+            ));
+            assert!(event_rx.try_recv().is_err());
+            assert!(queue.get_cancellation_token(&model.id).await.is_none());
+            assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
+            pool.close().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_worker_persists_attempt_marker_before_processor_runs() {
+        use crate::database::models::JobDbModel;
+        use crate::database::repositories::{JobRepository, SqlxJobRepository};
+        use crate::pipeline::job_queue::JobExecutionInfo;
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repository = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            repository.clone(),
+        ));
+        let model = JobDbModel::new_with_input("gated", "input.flv", 0, None, None, "{}");
+        assert!(model.execution_info.is_none());
+        repository.create_job(&model).await.unwrap();
+        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (events, _) = broadcast::channel(8);
+        let runner = observed_runner(queue, events);
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let processor: Arc<dyn Processor> = Arc::new(GatedProcessor(started_tx));
+        let work = runner.execute_job(job, &processor);
+        tokio::pin!(work);
+        let release = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                () = &mut work => panic!("processor must wait for release"),
+                release = started_rx.recv() => release.unwrap(),
+            }
+        })
+        .await
+        .unwrap();
+        let stored = repository.get_job(&model.id).await.unwrap();
+        assert_eq!(stored.status, JobStatus::Processing.as_str());
+        let info: JobExecutionInfo =
+            serde_json::from_str(stored.execution_info.as_deref().unwrap()).unwrap();
+        assert_eq!(info.current_processor.as_deref(), Some("gated"));
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), work)
+            .await
+            .unwrap();
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn failed_retry_preserves_published_artifacts_and_prior_execution_history() {
+        use crate::database::models::{JobDbModel, Pagination};
+        use crate::database::repositories::{JobRepository, SqlxJobRepository};
+        use crate::pipeline::job_queue::JobExecutionInfo;
+
+        for retry_count in [0, 1] {
+            let directory = tempfile::tempdir().unwrap();
+            let published = directory.path().join("previously-published.mp4");
+            tokio::fs::write(&published, b"successful earlier artifact")
+                .await
+                .unwrap();
+            let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                .await
+                .unwrap();
+            crate::database::run_migrations(&pool).await.unwrap();
+            let repository = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+            let queue = Arc::new(JobQueue::with_repository(
+                Default::default(),
+                repository.clone(),
+            ));
+            let mut info = JobExecutionInfo::new()
+                .with_processor("previous")
+                .with_step(2, 4)
+                .with_input_size(123)
+                .with_output_size(456);
+            info.items_produced
+                .push(published.to_string_lossy().into_owned());
+            let now = chrono::Utc::now();
+            info.record_step_duration(1, "previous", 2.5, now, now);
+            let mut model = JobDbModel::new_with_input("failing", "input.flv", 0, None, None, "{}");
+            model.retry_count = retry_count;
+            model.execution_info = Some(serde_json::to_string(&info).unwrap());
+            repository.create_job(&model).await.unwrap();
+            let prior_log = JobLogEntry::warn("prior attempt warning");
+            queue
+                .append_log_entry(&model.id, std::slice::from_ref(&prior_log))
+                .await
+                .unwrap();
+            info.logs.push_back(prior_log);
+            info.log_lines_total = 1;
+            info.log_warn_count = 1;
+            repository
+                .update_job_execution_info(&model.id, &serde_json::to_string(&info).unwrap())
+                .await
+                .unwrap();
+            let job = queue.dequeue(None).await.unwrap().unwrap();
+            let (events, _) = broadcast::channel(8);
+            let runner = observed_runner(queue.clone(), events);
+            let processor: Arc<dyn Processor> = Arc::new(FailingProcessor);
+            tokio::time::timeout(Duration::from_secs(5), runner.execute_job(job, &processor))
+                .await
+                .unwrap();
+            assert_eq!(
+                tokio::fs::read(&published).await.unwrap(),
+                b"successful earlier artifact"
+            );
+            let failed = repository.get_job(&model.id).await.unwrap();
+            assert_eq!(failed.status, JobStatus::Failed.as_str());
+            let stored: JobExecutionInfo =
+                serde_json::from_str(failed.execution_info.as_deref().unwrap()).unwrap();
+            assert_eq!(stored.current_processor.as_deref(), Some("failing"));
+            assert_eq!(stored.current_step, Some(2));
+            assert_eq!(stored.total_steps, Some(4));
+            assert_eq!(stored.items_produced, info.items_produced);
+            assert_eq!(stored.step_durations.len(), 1);
+            assert_eq!(stored.total_step_duration(), 2.5);
+            assert_eq!(stored.input_size_bytes, Some(123));
+            assert_eq!(stored.output_size_bytes, Some(456));
+            assert_eq!(stored.log_lines_total, 2);
+            assert_eq!(stored.log_warn_count, 1);
+            assert_eq!(stored.log_error_count, 1);
+            let (rows, total) = repository
+                .list_execution_logs(&model.id, &Pagination::new(100, 0))
+                .await
+                .unwrap();
+            assert_eq!(total, 2);
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.message.as_deref() == Some("prior attempt warning"))
+                    .count(),
+                1
+            );
+            pool.close().await;
         }
     }
 

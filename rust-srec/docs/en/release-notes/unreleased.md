@@ -285,6 +285,10 @@
 
 ## Pipeline and uploads
 
+- **Retries retain execution history and previously published files**
+
+  Starting another attempt no longer resets step timings, log counters, file-size metadata or produced-artifact history. Earlier logs are not duplicated, and additional stored execution-metadata fields survive completion and failure updates. The processor runs only after its attempt marker is saved; invalid metadata or a failed write stops processing and reports a failure without replacing the original metadata. Failed retries do not delete files published by earlier attempts; processors retain responsibility for their staged temporary outputs.
+
 - **Retry workflows without leaving cancelled branches stuck**
 
   Retrying just one job in a failed workflow could leave its other branches stuck indefinitely. Workflow jobs now direct you to retry the whole workflow, which restarts its failed and cancelled branches together.
