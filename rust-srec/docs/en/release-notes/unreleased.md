@@ -26,6 +26,10 @@
 
 ## Process Cleanup
 
+- **Confirmed startup recovery clears earlier runtime debt**
+
+  Recovery now reports partial hydration, pipeline and coordinator failures explicitly and pages through all session segments. Only confirmed recovery clears earlier generation debt, while current ownership remains dirty until clean exit. Cross-process marker transactions prevent stale acknowledgements from overwriting a replacement generation.
+
 - **macOS process cleanup waits for exit confirmation within its deadline**
 
   Forced cleanup now handles a leader that is exiting but not yet waitable when process-group termination returns EPERM. It uses the remaining cleanup budget to confirm exit without reaping, then retries guarded group termination. Unconfirmed cleanup remains an error; Streamlink buffer-draining limits are unchanged.

@@ -314,9 +314,9 @@ where
     /// Logged rather than propagated: the DAG this marks is already durable, and the
     /// `segment_source = 'session_complete'` check in that query keeps a failed write from
     /// producing a duplicate run.
-    pub(super) async fn mark_session_complete_dispatched(&self, session_id: &str) {
+    pub(super) async fn mark_session_complete_dispatched(&self, session_id: &str) -> bool {
         let Some(repo) = self.session_repo.as_ref() else {
-            return;
+            return false;
         };
         if let Err(e) = repo.mark_session_complete_dispatched(session_id).await {
             warn!(
@@ -324,12 +324,14 @@ where
                 error = %e,
                 "Failed to mark session-complete pipeline as dispatched"
             );
+            return false;
         }
+        true
     }
 
     /// The end consumer records an explicit skip when no final work is needed.
     /// A failed creation stays owed, and a publication records its own receipt.
-    pub(super) async fn record_session_pipeline_settlement(&self, session_id: &str) {
+    pub(super) async fn record_session_pipeline_settlement(&self, session_id: &str) -> bool {
         if let Some(outstanding) = self
             .pipeline_coordinator
             .session_outstanding(session_id)
@@ -337,15 +339,17 @@ where
             && outstanding.end_processed
             && outstanding.is_idle()
         {
-            self.mark_session_complete_dispatched(session_id).await;
+            return self.mark_session_complete_dispatched(session_id).await;
         }
+        true
     }
 
     pub(super) async fn run_session_complete_pipeline(
         &self,
         outputs: SessionOutputs,
         pipeline_def: DagPipelineDefinition,
-    ) {
+    ) -> bool {
+        let mut complete = true;
         debug!(
             session_id = %outputs.session_id,
             streamer_id = %outputs.streamer_id,
@@ -360,7 +364,8 @@ where
                 session_id = %outputs.session_id,
                 "Skipping session-complete pipeline: no steps configured"
             );
-            self.mark_session_complete_dispatched(&outputs.session_id)
+            complete &= self
+                .mark_session_complete_dispatched(&outputs.session_id)
                 .await;
             let _ = self
                 .pipeline_coordinator
@@ -369,7 +374,7 @@ where
                     streamer_id: outputs.streamer_id,
                 })
                 .await;
-            return;
+            return complete;
         }
 
         #[derive(Serialize)]
@@ -412,6 +417,7 @@ where
             match serde_json::to_vec_pretty(&manifest) {
                 Ok(json) => {
                     if let Err(e) = tokio::fs::write(&manifest_path, json).await {
+                        complete = false;
                         warn!(
                             session_id = %outputs.session_id,
                             path = %manifest_path.display(),
@@ -423,6 +429,7 @@ where
                     }
                 }
                 Err(e) => {
+                    complete = false;
                     warn!(
                         session_id = %outputs.session_id,
                         error = %e,
@@ -465,7 +472,8 @@ where
             .await
         {
             Ok(_) => {
-                self.mark_session_complete_dispatched(&outputs.session_id)
+                complete &= self
+                    .mark_session_complete_dispatched(&outputs.session_id)
                     .await;
                 let _ = self
                     .pipeline_coordinator
@@ -476,6 +484,7 @@ where
                     .await;
             }
             Err(e) => {
+                complete = false;
                 tracing::error!(
                     "Failed to create session-complete pipeline for session {}: {}",
                     outputs.session_id,
@@ -491,13 +500,26 @@ where
                     .await;
             }
         }
+        complete
     }
 
+    #[cfg(test)]
     pub(super) async fn run_paired_segment_pipeline(
         &self,
         outputs: PairedSegmentOutputs,
         pipeline_def: DagPipelineDefinition,
     ) -> Vec<PipelineCommand> {
+        self.run_paired_segment_pipeline_with_status(outputs, pipeline_def)
+            .await
+            .0
+    }
+
+    async fn run_paired_segment_pipeline_with_status(
+        &self,
+        outputs: PairedSegmentOutputs,
+        pipeline_def: DagPipelineDefinition,
+    ) -> (Vec<PipelineCommand>, bool) {
+        let mut complete = true;
         // Skip if pipeline has no steps configured
         if pipeline_def.is_empty() {
             debug!(
@@ -505,7 +527,7 @@ where
                 segment_index = %outputs.segment_index,
                 "Skipping paired-segment pipeline: no steps configured"
             );
-            return Vec::new();
+            return (Vec::new(), true);
         }
 
         #[derive(Serialize)]
@@ -554,6 +576,7 @@ where
             match serde_json::to_vec_pretty(&manifest) {
                 Ok(json) => {
                     if let Err(e) = tokio::fs::write(&manifest_path, json).await {
+                        complete = false;
                         warn!(
                             session_id = %outputs.session_id,
                             segment_index = %outputs.segment_index,
@@ -566,6 +589,7 @@ where
                     }
                 }
                 Err(e) => {
+                    complete = false;
                     warn!(
                         session_id = %outputs.session_id,
                         segment_index = %outputs.segment_index,
@@ -606,6 +630,7 @@ where
             })
             .await;
         if !start_commands.is_empty() {
+            complete = false;
             warn!(
                 session_id = %outputs.session_id,
                 segment_index = %outputs.segment_index,
@@ -656,15 +681,17 @@ where
                 outputs.segment_index,
                 e
             );
-            return self
-                .pipeline_coordinator
-                .apply_event(PipelineCoordinationEvent::PairedDagFailed {
-                    session_id: outputs.session_id.clone(),
-                })
-                .await;
+            return (
+                self.pipeline_coordinator
+                    .apply_event(PipelineCoordinationEvent::PairedDagFailed {
+                        session_id: outputs.session_id.clone(),
+                    })
+                    .await,
+                false,
+            );
         }
 
-        Vec::new()
+        (Vec::new(), complete)
     }
 
     /// Stop the pipeline manager.
@@ -825,6 +852,14 @@ where
     }
 
     pub(super) async fn execute_pipeline_commands(&self, commands: Vec<PipelineCommand>) {
+        self.execute_pipeline_commands_with_status(commands).await;
+    }
+
+    pub(super) async fn execute_pipeline_commands_with_status(
+        &self,
+        commands: Vec<PipelineCommand>,
+    ) -> bool {
+        let mut complete = true;
         let mut pending = std::collections::VecDeque::from(commands);
         while let Some(command) = pending.pop_front() {
             match command {
@@ -836,8 +871,8 @@ where
                     input_path,
                     pipeline,
                 } => {
-                    pending.extend(
-                        self.run_segment_pipeline(
+                    let (commands, succeeded) = self
+                        .run_segment_pipeline_with_status(
                             session_id,
                             streamer_id,
                             segment_index,
@@ -845,19 +880,26 @@ where
                             input_path,
                             pipeline,
                         )
-                        .await,
-                    );
+                        .await;
+                    pending.extend(commands);
+                    complete &= succeeded;
                 }
                 PipelineCommand::CreatePairedSegmentDag { outputs, pipeline } => {
-                    pending.extend(self.run_paired_segment_pipeline(outputs, pipeline).await);
+                    let (commands, succeeded) = self
+                        .run_paired_segment_pipeline_with_status(outputs, pipeline)
+                        .await;
+                    pending.extend(commands);
+                    complete &= succeeded;
                 }
                 PipelineCommand::CreateSessionCompleteDag { outputs, pipeline } => {
-                    self.run_session_complete_pipeline(outputs, pipeline).await;
+                    complete &= self.run_session_complete_pipeline(outputs, pipeline).await;
                 }
             }
         }
+        complete
     }
 
+    #[cfg(test)]
     pub(super) async fn run_segment_pipeline(
         &self,
         session_id: String,
@@ -867,8 +909,29 @@ where
         input_path: PathBuf,
         pipeline_def: DagPipelineDefinition,
     ) -> Vec<PipelineCommand> {
+        self.run_segment_pipeline_with_status(
+            session_id,
+            streamer_id,
+            segment_index,
+            source,
+            input_path,
+            pipeline_def,
+        )
+        .await
+        .0
+    }
+
+    async fn run_segment_pipeline_with_status(
+        &self,
+        session_id: String,
+        streamer_id: String,
+        segment_index: u32,
+        source: SourceType,
+        input_path: PathBuf,
+        pipeline_def: DagPipelineDefinition,
+    ) -> (Vec<PipelineCommand>, bool) {
         if pipeline_def.is_empty() {
-            return Vec::new();
+            return (Vec::new(), true);
         }
 
         let start_commands = self
@@ -935,17 +998,19 @@ where
                 segment_index,
                 e
             );
-            return self
-                .pipeline_coordinator
-                .apply_event(PipelineCoordinationEvent::SegmentDagFailed {
-                    session_id,
-                    segment_index,
-                    source,
-                })
-                .await;
+            return (
+                self.pipeline_coordinator
+                    .apply_event(PipelineCoordinationEvent::SegmentDagFailed {
+                        session_id,
+                        segment_index,
+                        source,
+                    })
+                    .await,
+                false,
+            );
         }
 
-        Vec::new()
+        (Vec::new(), start_commands.is_empty())
     }
 
     pub(super) async fn create_dag_pipeline_internal(

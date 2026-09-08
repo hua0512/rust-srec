@@ -393,7 +393,7 @@ async fn supervise_command_with_monitor(
         std::fs::create_dir_all(parent)
             .map_err(|error| Error::io_path("creating runtime state directory", parent, error))?;
     }
-    let _runtime_lease = RuntimeLease::acquire(&marker_path)?;
+    let runtime_lease = Arc::new(RuntimeLease::acquire(&marker_path)?);
 
     let previous_state = DirtyGenerationMarker::load(&marker_path)?;
     let previous_generation = previous_state
@@ -414,6 +414,7 @@ async fn supervise_command_with_monitor(
     command
         .env(RUNTIME_ROLE_ENV, RUNTIME_WORKER_ROLE)
         .env(RUNTIME_GENERATION_ENV, generation.to_string())
+        .env(RUNTIME_MARKER_PATH_ENV, &marker_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
@@ -435,7 +436,20 @@ async fn supervise_command_with_monitor(
     // The worker waits for START before opening SQLite or output files. Install
     // the durable dirty marker only after OS containment is confirmed, then
     // release worker admission.
-    let marker = match DirtyGenerationMarker::begin(&marker_path, generation) {
+    let marker_result = tokio::task::spawn_blocking({
+        let path = marker_path.clone();
+        let lease = runtime_lease.clone();
+        move || {
+            // A cancelled supervisor future must not release ownership while a delayed
+            // begin is still able to install an old generation's marker.
+            let _lease = lease;
+            DirtyGenerationMarker::begin(path, generation)
+        }
+    })
+    .await
+    .map_err(|error| Error::Other(format!("runtime marker admission task failed: {error}")))
+    .and_then(|result| result);
+    let marker = match marker_result {
         Ok(marker) => marker,
         Err(error) => {
             terminate_failed_launch(&mut child).await;
@@ -456,7 +470,7 @@ async fn supervise_command_with_monitor(
             let status = status.map_err(|error| {
                 Error::Other(format!("failed waiting for contained runtime: {error}"))
             })?;
-            classify_settled_exit(marker, status, Duration::ZERO, false)
+            classify_settled_exit_async(marker, status, Duration::ZERO, false).await
         }
         request = shutdown_monitor.wait_for_shutdown() => {
             shutdown_contained_runtime(child, control, marker, request?).await
@@ -521,7 +535,7 @@ async fn shutdown_contained_runtime(
     let force_at = tokio::time::Instant::from_std(request.schedule.force_at());
     match timeout_at(force_at, child.wait()).await {
         Ok(Ok(status)) => {
-            classify_settled_exit(marker, status, request.started_at.elapsed(), false)
+            classify_settled_exit_async(marker, status, request.started_at.elapsed(), false).await
         }
         Ok(Err(error)) => {
             warn!(%error, "Contained runtime wait failed; forcing process tree");
@@ -541,7 +555,7 @@ async fn force_contained_runtime(
 ) -> Result<RuntimeExitReport> {
     let hard_deadline = tokio::time::Instant::from_std(schedule.deadline());
     match child.terminate_tree_until(hard_deadline).await {
-        Ok(status) => classify_settled_exit(marker, status, started_at.elapsed(), true),
+        Ok(status) => classify_settled_exit_async(marker, status, started_at.elapsed(), true).await,
         Err(error) => {
             error!(%error, "Whole runtime process tree did not settle before its hard deadline");
             // Returning would violate the containment interface. Keep the
@@ -554,6 +568,17 @@ async fn force_contained_runtime(
     }
 }
 
+async fn classify_settled_exit_async(
+    marker: DirtyGenerationMarker,
+    status: ExitStatus,
+    elapsed: Duration,
+    forced: bool,
+) -> Result<RuntimeExitReport> {
+    tokio::task::spawn_blocking(move || classify_settled_exit(marker, status, elapsed, forced))
+        .await
+        .map_err(|error| Error::Other(format!("runtime marker settlement task failed: {error}")))?
+}
+
 fn classify_settled_exit(
     marker: DirtyGenerationMarker,
     status: ExitStatus,
@@ -563,7 +588,11 @@ fn classify_settled_exit(
     let generation = marker.generation();
     // Dropping the marker leaves `generation` active on disk, so the debt the
     // marker carries is what the next launch will find.
-    let unresolved_generations = marker.unresolved_generations();
+    let (unresolved_generations, marker_read_error) = match marker.current_unresolved_generations()
+    {
+        Ok(count) => (count, None),
+        Err(error) => (marker.unresolved_generations(), Some(error.to_string())),
+    };
     if forced {
         drop(marker);
         return Ok(RuntimeExitReport {
@@ -571,7 +600,7 @@ fn classify_settled_exit(
             generation,
             exit_code: status.code(),
             elapsed,
-            marker_error: None,
+            marker_error: marker_read_error,
             unresolved_generations,
         });
     }
@@ -605,7 +634,7 @@ fn classify_settled_exit(
             generation,
             exit_code: status.code(),
             elapsed,
-            marker_error: None,
+            marker_error: marker_read_error,
             unresolved_generations,
         })
     }
@@ -710,12 +739,34 @@ pub(crate) struct WorkerControl {
 }
 
 impl WorkerControl {
+    /// The worker can acknowledge only after its explicit recovery report is complete.
+    /// Persistence failures are surfaced; acknowledgement never clears active ownership.
+    pub(crate) async fn acknowledge_recovery(&self, complete: bool) -> Result<bool> {
+        acknowledge_recovery_at(runtime_marker_path()?, self.generation, complete).await
+    }
+
     pub(crate) async fn wait_for_shutdown(&mut self) -> Result<WorkerShutdownReason> {
         let Some(line) = self.lines.next_line().await? else {
             return Ok(WorkerShutdownReason::SupervisorDisconnected);
         };
         parse_shutdown_command(&line)
     }
+}
+
+async fn acknowledge_recovery_at(
+    path: PathBuf,
+    generation: RuntimeGeneration,
+    complete: bool,
+) -> Result<bool> {
+    if !complete {
+        return Ok(false);
+    }
+    tokio::task::spawn_blocking(move || {
+        DirtyGenerationMarker::acknowledge_recovery(&path, generation)
+    })
+    .await
+    .map_err(|error| Error::Other(format!("recovery acknowledgement task failed: {error}")))??;
+    Ok(true)
 }
 
 pub(crate) async fn wait_for_worker_start() -> Result<WorkerControl> {
@@ -809,6 +860,46 @@ mod tests {
     use super::*;
 
     const TEST_WORKER_MODE_ENV: &str = "RUST_SREC_TEST_WORKER_MODE";
+
+    #[tokio::test]
+    async fn only_confirmed_recovery_report_acknowledges_prior_ledger_debt() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("runtime.dirty");
+        drop(DirtyGenerationMarker::begin(&path, RuntimeGeneration::generate()).unwrap());
+        let current = RuntimeGeneration::generate();
+        let marker = DirtyGenerationMarker::begin(&path, current).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            !acknowledge_recovery_at(path.clone(), current, false)
+                .await
+                .unwrap()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(acknowledge_recovery_at(path, current, true).await.unwrap());
+        assert_eq!(
+            marker.current_unresolved_generations().unwrap(),
+            DirtyGenerationCount::exactly(1)
+        );
+        #[cfg(unix)]
+        let exit = {
+            use std::os::unix::process::ExitStatusExt;
+            ExitStatus::from_raw(1 << 8)
+        };
+        #[cfg(windows)]
+        let exit = {
+            use std::os::windows::process::ExitStatusExt;
+            ExitStatus::from_raw(1)
+        };
+        let report = classify_settled_exit(marker, exit, Duration::ZERO, false).unwrap();
+        assert_eq!(
+            report.termination,
+            RuntimeTermination::CrashedRecoveryPending
+        );
+        assert_eq!(
+            report.unresolved_generations,
+            DirtyGenerationCount::exactly(1)
+        );
+    }
 
     #[test]
     fn control_protocol_rejects_malformed_frames() {
