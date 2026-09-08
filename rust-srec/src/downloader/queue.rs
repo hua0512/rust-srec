@@ -1609,8 +1609,7 @@ mod tests {
     }
 
     /// A newcomer must NOT take the slot ahead of an already-parked
-    /// waiter via the fast path. Before the fairness fix, the heap
-    /// could be non-empty but `try_acquire_fast` would ignore it.
+    /// waiter via the fast path; a non-empty heap takes priority.
     #[tokio::test]
     async fn fast_path_does_not_jump_ahead_of_existing_waiter() {
         let q = DownloadQueue::new(1, 0);

@@ -38,6 +38,8 @@ use crate::utils::task_supervisor::TaskSupervisor;
 
 mod api;
 mod builder;
+#[cfg(test)]
+mod config_refresh_tests;
 mod events;
 mod health;
 #[cfg(test)]
@@ -387,7 +389,7 @@ pub struct ServiceContainer {
     download_coordination_receiver:
         parking_lot::Mutex<Option<crate::downloader::DownloadCoordinationReceiver>>,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
-    /// hard-ended suppression cache, and the `SessionTransition` broadcast
+    /// hysteresis timers, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
     pub(crate) session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Required session-transition receiver used for runtime side effects.
@@ -548,11 +550,14 @@ impl ServiceContainer {
         // sits at default (3 / 20_000) and platform/template/streamer overrides
         // wouldn't take effect until each streamer's config was independently
         // resolved (e.g. on first config-update event).
-        for metadata in self.streamer_manager.get_all() {
-            self.runtime_coordinator
-                .refresh_metadata_offline_check(&metadata.id)
-                .await;
-        }
+        self.runtime_coordinator
+            .refresh_metadata_offline_checks(
+                self.streamer_manager
+                    .get_all()
+                    .into_iter()
+                    .map(|metadata| metadata.id),
+            )
+            .await;
 
         // Recover jobs from database on startup.
         // This resets PROCESSING jobs to PENDING for re-execution.
@@ -596,13 +601,14 @@ impl ServiceContainer {
         // Wire notification service to system events
         self.setup_notification_event_subscriptions();
 
-        // Load notification channels/subscriptions from DB (best-effort) and register health checks.
-        // Neither is required for the core runtime to start, so keep them concurrent.
+        // Load notifications and discover output paths concurrently, both best-effort.
+        // Health registration and the startup write probe share the same root snapshot.
         let health_checks_start = Instant::now();
-        let (reload_result, _) = tokio::join!(
+        let (reload_result, output_roots) = tokio::join!(
             self.notification_service.reload_from_db(),
-            self.register_health_checks(),
+            self.collect_output_roots(),
         );
+        self.register_health_checks(&output_roots).await;
         let notifications_health_checks_ms = health_checks_start.elapsed().as_millis();
         if let Err(e) = reload_result {
             recovery_complete = false;
@@ -619,7 +625,7 @@ impl ServiceContainer {
         // monitor tick to try starting a download. Per-root probes run in
         // parallel with a bounded per-root timeout so a hung mount can't
         // wedge startup.
-        self.run_output_root_startup_probe().await;
+        self.run_output_root_startup_probe(&output_roots).await;
 
         // Start the single database maintenance task. It performs an immediate
         // retention sweep before waiting for its periodic cadence.
@@ -1140,10 +1146,11 @@ mod tests {
     };
     use crate::danmu::test_support::FakeProvider;
     use crate::danmu::{CollectionSpec, DanmuService, ProviderRegistry};
-    use crate::database::models::{LiveSessionDbModel, StreamerDbModel, StreamerState};
+    use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
     use crate::database::repositories::{
         SessionRepository, SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository,
     };
+    use crate::domain::StreamerState;
     use crate::downloader::engine::{DownloadProgress, EngineStartError, EngineType};
     use crate::downloader::{
         DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadManagerConfig,

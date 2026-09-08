@@ -21,10 +21,8 @@ use crate::database::retry::retry_on_sqlite_busy;
 /// rows on every insert. The API caps `?limit=` at the same value, so a
 /// request that asks for everything sees exactly what's persisted.
 ///
-/// Sized for the screenshot's "HISTORY (60PTS)" UI plus a 3× debug headroom:
-/// operators occasionally want more context when investigating extractor
-/// flakiness, but per-streamer rows × ~200 B × N streamers stays well under
-/// a few MB at typical deployment sizes.
+/// Keeps additional context beyond the API's default 60-row page while
+/// bounding the storage used by each streamer.
 pub const KEEP_PER_STREAMER: i64 = 200;
 
 const INSERT_SQL: &str = r#"

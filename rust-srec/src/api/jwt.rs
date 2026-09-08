@@ -328,7 +328,7 @@ mod tests {
 mod property_tests {
     use super::*;
 
-    // **Feature: jwt-auth-and-api-implementation, Property 1: JWT Token Contains Required Claims**
+    // Token round-trips preserve the user identity and roles.
     // Test: Simple user_id with empty roles
     #[test]
     fn test_jwt_token_simple_user_empty_roles() {

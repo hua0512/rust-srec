@@ -87,16 +87,6 @@ impl SessionTxOps {
         Ok(())
     }
 
-    /// Resume a session by clearing its end_time.
-    pub async fn resume_session(tx: &mut SqliteConnection, session_id: &str) -> Result<u64> {
-        let result = sqlx::query("UPDATE live_sessions SET end_time = NULL WHERE id = ?")
-            .bind(session_id)
-            .execute(tx)
-            .await?;
-
-        Ok(result.rows_affected())
-    }
-
     /// End a session by setting end_time and calculating total_size_bytes.
     pub async fn end_session(
         tx: &mut SqliteConnection,
@@ -147,10 +137,9 @@ impl SessionTxOps {
     /// 1 row for a non-NULL `streamer_id`. The helper exists for the
     /// self-heal path inside
     /// [`crate::database::repositories::SessionLifecycleRepository::start_or_resume`]: if a
-    /// previous build ever produced multiple stale active rows (e.g. a
-    /// crash mid-tx, or a build without the index), the lifecycle calls
-    /// this with `keep = Some(most_recent_id)` to retain the row that's
-    /// about to be reused, ending the others — or `keep = None` to clear
+    /// database without that index contains multiple active rows, the
+    /// lifecycle calls this with `keep = Some(most_recent_id)` to retain
+    /// the row about to be reused, ending the others — or `keep = None` to clear
     /// the slot entirely before an `INSERT`.
     ///
     /// Returns the cleaned IDs (oldest first) so the caller can fan out
@@ -300,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resume_and_end_session() {
+    async fn test_end_session() {
         let pool = setup_test_db().await;
 
         let now = Utc::now();
@@ -316,27 +305,6 @@ mod tests {
         .await
         .unwrap();
         SessionTxOps::end_session(&mut tx, "sess-1", now)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        // Resume
-        let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::resume_session(&mut tx, "sess-1")
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        // Verify resumed
-        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
-            .get_session("sess-1")
-            .await
-            .unwrap();
-        assert!(session.end_time.is_none());
-
-        // End again
-        let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::end_session(&mut tx, "sess-1", Utc::now())
             .await
             .unwrap();
         tx.commit().await.unwrap();
