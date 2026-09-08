@@ -429,7 +429,10 @@ impl Supervisor {
     ///
     /// Returns the number of actors restarted.
     pub fn process_pending_restarts(&mut self) -> usize {
-        let now = tokio::time::Instant::now();
+        self.process_pending_restarts_at(tokio::time::Instant::now())
+    }
+
+    pub(crate) fn process_pending_restarts_at(&mut self, now: tokio::time::Instant) -> usize {
         let mut restarted = 0;
 
         // Partition pending restarts into due and not-due
@@ -450,6 +453,22 @@ impl Supervisor {
         }
 
         restarted
+    }
+
+    pub(crate) fn due_streamer_restart_ids(&self, now: tokio::time::Instant) -> Vec<String> {
+        self.pending_restarts
+            .iter()
+            .filter(|restart| restart.actor_type == "streamer" && restart.restart_at <= now)
+            .map(|restart| restart.actor_id.clone())
+            .collect()
+    }
+
+    pub(crate) fn defer_streamer_restart(&mut self, streamer_id: &str, delay: Duration) {
+        for restart in &mut self.pending_restarts {
+            if restart.actor_type == "streamer" && restart.actor_id == streamer_id {
+                restart.restart_at = tokio::time::Instant::now() + delay;
+            }
+        }
     }
 
     /// Execute a pending restart.
@@ -654,7 +673,22 @@ impl Supervisor {
     /// to update the config cache here for restart purposes.
     pub fn update_streamer_restart_config(&mut self, streamer_id: &str, config: StreamerConfig) {
         self.streamer_configs
-            .insert(streamer_id.to_string(), config);
+            .insert(streamer_id.to_string(), config.clone());
+        for restart in &mut self.pending_restarts {
+            if restart.actor_type == "streamer"
+                && restart.actor_id == streamer_id
+                && let RestartMetadata::Streamer {
+                    config: pending, ..
+                } = &mut restart.metadata
+            {
+                *pending = config.clone();
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn streamer_restart_config(&self, streamer_id: &str) -> Option<&StreamerConfig> {
+        self.streamer_configs.get(streamer_id)
     }
 
     /// Update cached restart configuration for a platform actor.

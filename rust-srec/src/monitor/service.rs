@@ -218,6 +218,10 @@ impl<
     CR: ConfigRepository + Send + Sync + 'static,
 > StreamMonitor<SR, FR, SSR, CR>
 {
+    pub(crate) fn config_service(&self) -> Arc<crate::config::ConfigService<CR, SR>> {
+        self.config_service.clone()
+    }
+
     async fn reload_streamer_cache(&self, streamer_id: &str, context: &str) {
         reload_streamer_metadata(&self.streamer_manager, streamer_id, context).await;
     }
