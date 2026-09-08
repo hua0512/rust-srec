@@ -462,9 +462,7 @@ mod tests {
 
     #[test]
     fn test_thumbnail_config_invalid_type() {
-        // This test confirms that providing a string for a numeric field causes deserialization to fail.
-        // This validates our hypothesis that a type mismatch (which causes the fallback to default)
-        // is caught by the error handling logic we added (which catches serde errors).
+        // Numeric configuration fields reject strings during deserialization.
         let json = r#"{"width": "1280"}"#; // "1280" string instead of number
         let result: serde_json::Result<ThumbnailConfig> = serde_json::from_str(json);
         assert!(

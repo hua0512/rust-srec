@@ -1199,10 +1199,8 @@ fn platform_config_to_response(config: PlatformConfigDbModel) -> PlatformConfigR
     }
 }
 
-/// Default `?limit=` for the check-history strip — matches the screenshot's
-/// "HISTORY (60PTS)" UI. The server caps requests at the writer's per-
-/// streamer retention so a request asking for everything sees exactly what's
-/// persisted.
+/// Default check-history page size; requests are capped at the writer's
+/// per-streamer retention limit.
 const CHECK_HISTORY_DEFAULT_LIMIT: i64 = 60;
 const CHECK_HISTORY_MAX_LIMIT: i64 = crate::database::repositories::KEEP_PER_STREAMER;
 

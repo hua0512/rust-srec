@@ -387,7 +387,7 @@ pub struct ServiceContainer {
     download_coordination_receiver:
         parking_lot::Mutex<Option<crate::downloader::DownloadCoordinationReceiver>>,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
-    /// hard-ended suppression cache, and the `SessionTransition` broadcast
+    /// hysteresis timers, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
     pub(crate) session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Required session-transition receiver used for runtime side effects.

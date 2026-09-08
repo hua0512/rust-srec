@@ -924,8 +924,7 @@ impl DownloadTerminalEvent {
     ///
     /// - [`Self::Completed`]: `true` — normal end, outputs finalised.
     /// - [`Self::Failed`]: `true` — the engine gave up; whatever's on disk
-    ///   is final. Prior to this method existing, sessions that ended this
-    ///   way silently skipped the session-complete pipeline.
+    ///   is final and eligible for the session-complete pipeline.
     /// - [`Self::Cancelled`]: `false` — the engine did not report a clean
     ///   completion. The control-plane stop owner decides whether to end or
     ///   preserve the session (shutdown preserves it for restart).
@@ -3381,10 +3380,7 @@ mod tests {
         assert_eq!(manager.set_max_concurrent_downloads(1), 1);
         assert_eq!(manager.max_concurrent_downloads(), 1);
 
-        // After saturating, a third acquire queues. We verify by
-        // calling acquire on the queue directly — this mirrors the
-        // semaphore-probe assertions the previous version made, but
-        // through the public abstraction.
+        // After both slots are occupied, a third acquire waits in the queue.
         let q = manager.queue.clone();
         let req = AcquireRequest {
             session_id: "s1".to_string(),
@@ -3896,7 +3892,7 @@ mod tests {
 
         // A second `prepare_output_dir` call inside the cooldown window
         // must fast-reject via `gate.check()`, not re-try `create_dir_all`.
-        // This is the key property that stops the 508 cascade.
+        // This bounds filesystem retries while the output root is unavailable.
         let result2 = manager.prepare_output_dir(&config).await;
         let err2 = result2.expect_err("second call should fast-reject");
         assert!(matches!(

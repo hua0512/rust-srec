@@ -147,10 +147,9 @@ impl SessionTxOps {
     /// 1 row for a non-NULL `streamer_id`. The helper exists for the
     /// self-heal path inside
     /// [`crate::database::repositories::SessionLifecycleRepository::start_or_resume`]: if a
-    /// previous build ever produced multiple stale active rows (e.g. a
-    /// crash mid-tx, or a build without the index), the lifecycle calls
-    /// this with `keep = Some(most_recent_id)` to retain the row that's
-    /// about to be reused, ending the others — or `keep = None` to clear
+    /// database without that index contains multiple active rows, the
+    /// lifecycle calls this with `keep = Some(most_recent_id)` to retain
+    /// the row about to be reused, ending the others — or `keep = None` to clear
     /// the slot entirely before an `INSERT`.
     ///
     /// Returns the cleaned IDs (oldest first) so the caller can fan out

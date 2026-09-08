@@ -1110,29 +1110,11 @@ impl StreamerActor {
     ///
     /// ## UserCancelled (User-Initiated Stop)
     ///
-    /// **Returns fatal error to stop the actor entirely.** This handles **Scenario 2: Manual Download Cancellation**:
-    /// - User cancels a download via UI/API (without disabling the streamer)
-    /// - Download manager emits one terminal outcome carrying the User stop cause
-    /// - Actor is still active and receives this message
-    /// - Actor ends the session by calling `process_status(Offline)`
-    /// - Actor then stops itself with a fatal error
-    ///
-    /// **Scenario 1: Streamer Disable/Delete** is handled separately by
-    /// `ServiceContainer::handle_streamer_disabled`:
-    /// - User disables/deletes a streamer
-    /// - Container explicitly ends the session BEFORE removing the actor
-    /// - Actor is removed and won't receive the terminal stop outcome
-    ///
-    /// Both paths are necessary: this path handles cancellation when the actor is still
-    /// active, while the container path handles cleanup when the actor is being removed.
-    ///
-    /// **IMPORTANT**: The download orchestration layer must:
-    /// 1. Update the streamer state to `CANCELLED` in the database
-    /// 2. Send the `DownloadEnded(UserCancelled)` message
-    /// 3. The actor will stop gracefully with a fatal error
-    ///
-    /// This prevents the scheduler from respawning the actor since the streamer state
-    /// is marked as `CANCELLED`.
+    /// The User stop cause submits offline status. It stops the actor only
+    /// when metadata is cancelled or inactive. The orchestration layer must
+    /// persist `CANCELLED` before delivery; otherwise the actor keeps polling.
+    /// Disable/delete instead ends the session through the runtime coordinator
+    /// before removing the actor.
     ///
     /// ## Other
     /// Unknown/unexpected reasons. We preserve hysteresis and use normal scheduling,
@@ -1146,28 +1128,10 @@ impl StreamerActor {
         // Update state and schedule check based on reason
         match reason {
             DownloadEndPolicy::Stopped(DownloadStopCause::DanmuStreamClosed) => {
-                // Authoritative offline signal: the platform's danmu stream
-                // explicitly told us the live ended. The container's danmu
-                // observer already owns the offline emission for this signal
-                // — it called `handle_offline_with_session(streamer,
-                // Some(session_id), Some(DanmuStreamClosed))` so the
-                // lifecycle records the cause as
-                // `TerminalCause::DefinitiveOffline { signal }`.
-                //
-                // We deliberately do NOT call `process_status(Offline)` here.
-                // The actor and the danmu observer both react to the same
-                // root event; if both call into the lifecycle, they race on
-                // `streamer.state == Live` (read from snapshots that lag
-                // each other by milliseconds), and Path B's `repo.end` with
-                // `session_id: None` falls back to the *active* session and
-                // ends a different row than Path A intended. Net result of
-                // the race: two `Session ended` rows, two
-                // `SessionTransition::Ended` broadcasts, two
-                // session-complete pipeline DAG fires for one stream.
-                //
-                // The actor still updates its own scheduling state below —
-                // those touches are local to this struct and don't race
-                // with the DB-layer end.
+                // The danmu observer owns `handle_offline_with_session` for
+                // this terminal event and records the definitive offline cause.
+                // The actor must not call `process_status(Offline)` again;
+                // it updates only its local scheduling state.
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.hysteresis.reset();
                 self.state.schedule_next_check(&self.config, error_count);
@@ -1187,28 +1151,11 @@ impl StreamerActor {
                 self.state.schedule_next_check(&self.config, error_count);
             }
             DownloadEndPolicy::Completed => {
-                // Engine reported clean EOF without authoritative platform
-                // signal. The session lifecycle has already routed this
-                // through `on_download_terminal` and either entered Hysteresis
-                // (CleanDisconnect — most FLV/HLS clean disconnects) or ended
-                // authoritatively (HlsEndlist via the engine_signal path).
-                //
-                // We deliberately do NOT call
-                // `status_checker.process_status(LiveStatus::Offline)` here.
-                // If we did, the monitor would emit `StreamerOffline` and the
-                // lifecycle's `on_offline_detected` would override the
-                // in-flight hysteresis (it always wins because StreamerOffline
-                // is authoritative). That race yields 0-byte session rows
-                // for connection blips on Douyin and similar platforms.
-                // Same precedent as the DanmuStreamClosed arm above:
-                // separate paths must not double-end the session.
-                //
-                // Local scheduling state only — switch to the post-live
-                // short-polling cadence so a quick stream restart is detected
-                // promptly. If the streamer is genuinely offline, the next
-                // status check (within `offline_check_interval_ms`) will
-                // surface it through the monitor path, cancelling hysteresis
-                // via `on_offline_detected` at the proper authority gradient.
+                // `on_download_terminal` owns lifecycle updates: clean EOF
+                // enters hysteresis, while HlsEndlist ends authoritatively.
+                // Calling `process_status(Offline)` here would override that
+                // decision. Resume local short polling so the next platform
+                // check can provide an authoritative status.
                 self.state.streamer_state = StreamerState::NotLive;
                 if !self.state.hysteresis.was_live() {
                     self.state.hysteresis.mark_live();

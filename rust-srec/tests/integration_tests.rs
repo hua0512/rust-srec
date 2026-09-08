@@ -1694,14 +1694,8 @@ mod end_to_end_tests {
         }
     }
 
-    /// Regression: disable a Live streamer with an active session via the
-    /// lifecycle's `end_for_disable`, then re-trigger LiveDetected. The
-    /// pre-fix `force_end_active_session` wrote DB-only and left the
-    /// in-memory FSM stuck in Hysteresis, so re-enable took the
-    /// `resume_from_hysteresis` short-circuit and silently restarted a
-    /// download under an already-ended session_id. With the fix, a new
-    /// `Created` outcome with a fresh session_id must be produced and the
-    /// old row must be ended in DB.
+    /// Disabling ends the session in memory and in the database. Re-enabling
+    /// must create a fresh session instead of resuming the ended session.
     #[tokio::test]
     async fn test_disable_then_reenable_creates_fresh_session() {
         use rust_srec::database::repositories::StartSessionOutcome;
@@ -1763,10 +1757,7 @@ mod end_to_end_tests {
                 .unwrap();
         assert!(end_time.is_some(), "first session must be ended in DB");
 
-        // In-memory state must be Ended (the bug we're fixing was that
-        // force_end_active_session only wrote DB, leaving in-memory state
-        // stale — re-enable would then take the resume_from_hysteresis
-        // short-circuit instead of creating a new session).
+        // `end_for_disable` must also leave the in-memory session `Ended`.
         let snap = lifecycle
             .session_snapshot(&first_id)
             .expect("session in memory after disable");

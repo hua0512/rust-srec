@@ -135,11 +135,9 @@ impl From<&crate::domain::streamer::CheckRecord> for StreamerCheckHistoryDbModel
                 if !candidates.is_empty() {
                     // Serialize the whole Vec in one pass — `SelectedStreamSummary`
                     // derives `Serialize` and its on-the-wire shape (six fields,
-                    // no URL) matches the persisted column. Avoids the per-element
-                    // intermediate `serde_json::Value` tree the previous
-                    // `json!`-macro path built. `unwrap_or_default()` is sound:
-                    // `Serialize` on a struct with `String`/numeric fields cannot
-                    // fail.
+                    // no URL) matches the persisted column without intermediate
+                    // per-element `serde_json::Value` trees. `unwrap_or_default()`
+                    // is sound: serializing `String`/numeric fields cannot fail.
                     row.streams_extracted_json =
                         Some(serde_json::to_string(candidates).unwrap_or_default());
                 }

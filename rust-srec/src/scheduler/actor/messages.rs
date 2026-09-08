@@ -107,9 +107,8 @@ pub enum DownloadEndPolicy {
     /// this variant. Doing so would emit a `MonitorEvent::StreamerOffline`
     /// that the lifecycle treats as authoritative — overriding the
     /// in-flight hysteresis quiet-period and forcing a direct end.
-    /// Same race shape (and same explicit fix) as
     /// [`Self::Stopped`]`(`[`DownloadStopCause::DanmuStreamClosed`]`)`
-    /// at `streamer_actor::handle_download_ended`.
+    /// likewise leaves lifecycle updates to the terminal event owner.
     ///
     /// Local actor scheduling state is updated (resume short polling,
     /// mark offline-observed for post-live cadence). The next status

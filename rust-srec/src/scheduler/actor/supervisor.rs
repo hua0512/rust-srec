@@ -109,7 +109,7 @@ pub struct Supervisor {
 impl Supervisor {
     /// Create a new supervisor with a metadata store.
     ///
-    /// Uses `NoOpStatusChecker` and `NoOpBatchChecker` for backwards compatibility.
+    /// Uses `NoOpStatusChecker` and `NoOpBatchChecker`; no platform requests are made.
     /// The metadata_store should be obtained from `StreamerManager::metadata_store()`.
     pub fn new(
         cancellation_token: CancellationToken,
@@ -124,7 +124,7 @@ impl Supervisor {
 
     /// Create a new supervisor with custom configuration and metadata store.
     ///
-    /// Uses `NoOpStatusChecker` and `NoOpBatchChecker` for backwards compatibility.
+    /// Uses `NoOpStatusChecker` and `NoOpBatchChecker`; no platform requests are made.
     pub fn with_config(
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
