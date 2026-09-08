@@ -174,6 +174,10 @@
 
 ## Notifications
 
+- **Bounded queues and consistent Web Push persistence**
+
+  Ordinary channel admission now enforces capacity atomically and cancels evicted retries. Breaker cooldowns preserve attempt accounting. First-attempt Web Push success clears stored backoff, failed stale-subscription deletion is not reported as successful, and abbreviated payloads also enforce their byte cap. See [delivery contracts](../concepts/notifications.md#queue-and-web-push-delivery).
+
 - **Web-push overload stays bounded**
 
   Full or unavailable push queues drop new events without spawning fallback tasks. FIFO admission applies to every priority; rejected pushes are counted in notification statistics and are not automatically replayed. Event history and ordinary channel delivery remain independent; see [delivery behavior](../concepts/notifications.md#delivery-behavior).
