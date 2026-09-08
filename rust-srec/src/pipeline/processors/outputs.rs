@@ -147,48 +147,13 @@ pub(super) async fn promote_output(
     .map_err(|error| Error::PipelineError(format!("Output promotion failed: {error}")))?
 }
 
-fn comparison_key(path: &Path) -> Result<PathBuf> {
-    match std::fs::canonicalize(path) {
-        Ok(path) => return Ok(path),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(Error::io_path("resolve output path", path, error)),
-    }
-    let absolute = std::path::absolute(path)
-        .map_err(|error| Error::io_path("resolve output path", path, error))?;
-    if let (Some(parent), Some(name)) = (absolute.parent(), absolute.file_name()) {
-        match std::fs::canonicalize(parent) {
-            Ok(parent) => return Ok(parent.join(name)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(Error::io_path("resolve output parent", parent, error)),
-        }
-    }
-    Ok(absolute)
-}
-
-fn aliases(left: &Path, right: &Path) -> Result<bool> {
-    match same_file::is_same_file(left, right) {
-        Ok(true) => return Ok(true),
-        Ok(false) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(Error::io_path("compare output identity", left, error)),
-    }
-    let left = comparison_key(left)?;
-    let right = comparison_key(right)?;
-    Ok(if cfg!(windows) {
-        left.to_string_lossy()
-            .eq_ignore_ascii_case(&right.to_string_lossy())
-    } else {
-        left == right
-    })
-}
-
 fn validate_destination(
     output: &Path,
     sources: &[PathBuf],
     other_outputs: &[PathBuf],
 ) -> Result<()> {
     for source in sources {
-        if aliases(output, source)? {
+        if super::paths::staged_aliases(output, source)? {
             return Err(Error::PipelineError(format!(
                 "Output path aliases an input file: {}",
                 output.display()
@@ -196,7 +161,7 @@ fn validate_destination(
         }
     }
     for other in other_outputs {
-        if aliases(output, other)? {
+        if super::paths::staged_aliases(output, other)? {
             return Err(Error::PipelineError(format!(
                 "Multiple outputs name the same file: {}",
                 output.display()

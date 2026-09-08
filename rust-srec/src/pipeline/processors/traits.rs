@@ -310,6 +310,30 @@ pub struct ProcessorOutput {
     pub logs: Vec<JobLogEntry>,
 }
 
+impl ProcessorOutput {
+    /// A single skipped file remains available for downstream processors.
+    /// Whole-job passthrough and processor-specific batch metadata are separate.
+    pub(super) fn skipped_file(
+        input: &str,
+        reason: &str,
+        json_reason: &str,
+        duration_secs: f64,
+        logs: Vec<JobLogEntry>,
+    ) -> Self {
+        Self {
+            outputs: vec![input.to_owned()],
+            duration_secs,
+            metadata: Some(
+                serde_json::json!({ "status": "skipped", "reason": json_reason, "input": input })
+                    .to_string(),
+            ),
+            skipped_inputs: vec![(input.to_owned(), reason.to_owned())],
+            logs,
+            ..Default::default()
+        }
+    }
+}
+
 /// Trait for pipeline processors.
 #[async_trait]
 pub trait Processor: Send + Sync {

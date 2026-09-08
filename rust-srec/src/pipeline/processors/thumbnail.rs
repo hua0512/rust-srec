@@ -100,23 +100,13 @@ impl ThumbnailProcessor {
                 "Input is already an image, passing through: {}",
                 input_path
             ));
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.to_string()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "already_image",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.to_string(),
-                    "input is already an image".to_string(),
-                )],
-                ..Default::default()
-            });
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "input is already an image",
+                "already_image",
+                duration,
+                Vec::new(),
+            ));
         }
 
         // Check if input is a supported video format
@@ -127,23 +117,13 @@ impl ThumbnailProcessor {
                 "Input file is not a supported video format for thumbnail extraction, passing through: {}",
                 input_path
             ));
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.to_string()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "unsupported_video_format",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.to_string(),
-                    "not a supported video format for thumbnail extraction".to_string(),
-                )],
-                ..Default::default()
-            });
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "not a supported video format for thumbnail extraction",
+                "unsupported_video_format",
+                duration,
+                Vec::new(),
+            ));
         }
 
         // Determine output path: use provided output or generate one dynamically
@@ -248,24 +228,13 @@ impl ThumbnailProcessor {
                     "Input file has no extractable video frames, passing through: {}",
                     input_path
                 ));
-                return Ok(ProcessorOutput {
-                    outputs: vec![input_path.to_string()],
-                    duration_secs: command_output.duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "status": "skipped",
-                            "reason": "no_video_frames",
-                            "input": input_path,
-                        })
-                        .to_string(),
-                    ),
-                    skipped_inputs: vec![(
-                        input_path.to_string(),
-                        "no extractable video frames".to_string(),
-                    )],
-                    logs: command_output.logs,
-                    ..Default::default()
-                });
+                return Ok(ProcessorOutput::skipped_file(
+                    input_path,
+                    "no extractable video frames",
+                    "no_video_frames",
+                    command_output.duration,
+                    command_output.logs,
+                ));
             }
 
             return Err(crate::Error::Other(format!(
@@ -315,6 +284,27 @@ impl ThumbnailProcessor {
     }
 }
 
+struct ThumbnailProcessorItem<'a> {
+    processor: &'a ThumbnailProcessor,
+    config: &'a ThumbnailConfig,
+    ctx: &'a ProcessorContext,
+}
+
+#[async_trait]
+impl super::media_driver::MediaItem for ThumbnailProcessorItem<'_> {
+    type Publication = super::media_driver::StagedPublication;
+    async fn process(
+        &self,
+        input: &str,
+        output: Option<&str>,
+        publication: &mut Self::Publication,
+    ) -> Result<ProcessorOutput> {
+        self.processor
+            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .await
+    }
+}
+
 impl Default for ThumbnailProcessor {
     fn default() -> Self {
         Self::new()
@@ -353,45 +343,25 @@ impl Processor for ThumbnailProcessor {
             ));
         }
 
-        let mut batch = OutputBatch::new(&input.inputs);
-        if input.inputs.len() == 1 {
-            let input_path = input.inputs[0].as_str();
-            let output_override = input.outputs.first().map(|s| s.as_str());
-            let output = self
-                .process_one(input_path, output_override, &config, ctx, &mut batch)
-                .await?;
-            batch.commit().await?;
-            return Ok(output);
-        }
-
-        if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
-            return Err(crate::Error::PipelineError(format!(
-                "Thumbnail batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
-                input.inputs.len(),
-                input.outputs.len()
-            )));
-        }
-
-        let mut output = ProcessorOutput {
-            outputs: Vec::with_capacity(input.inputs.len()),
-            ..Default::default()
-        };
-
-        for (idx, input_path) in input.inputs.iter().enumerate() {
-            let output_override = input.outputs.get(idx).map(|s| s.as_str());
-            let one = self
-                .process_one(input_path, output_override, &config, ctx, &mut batch)
-                .await?;
-            super::outputs::accumulate_media_output(&mut output, one);
-        }
-        batch.commit().await?;
-
-        Ok(ProcessorOutput {
-            metadata: Some(
+        let plan = super::planning::OutputPlan::unary_or_mapped(&input.inputs, &input.outputs)
+            .map_err(|_| crate::Error::PipelineError(format!("Thumbnail batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})", input.inputs.len(), input.outputs.len())))?;
+        let is_batch = plan.is_batch();
+        let mut output = super::media_driver::run_media(
+            plan,
+            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            &ThumbnailProcessorItem {
+                processor: self,
+                config: &config,
+                ctx,
+            },
+        )
+        .await?;
+        if is_batch {
+            output.metadata = Some(
                 serde_json::json!({ "batch": true, "inputs": input.inputs.len() }).to_string(),
-            ),
-            ..output
-        })
+            );
+        }
+        Ok(output)
     }
 }
 

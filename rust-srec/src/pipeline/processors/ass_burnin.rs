@@ -144,14 +144,6 @@ impl AssBurnInProcessor {
             .unwrap_or_else(|| "ffmpeg".to_string())
     }
 
-    fn paths_equal(a: &str, b: &str) -> bool {
-        if cfg!(windows) {
-            a.eq_ignore_ascii_case(b)
-        } else {
-            a == b
-        }
-    }
-
     fn escape_filter_path(value: &str) -> String {
         // FFmpeg parses the filtergraph and then the option value. Escape each layer;
         // shell quoting is unnecessary because the filter is passed as one argv item.
@@ -191,11 +183,12 @@ impl AssBurnInProcessor {
         config: &AssBurnInConfig,
         output_override: Option<&str>,
     ) -> Result<String> {
-        let input_abs = Self::make_absolute(input_path);
+        let input_abs = super::paths::lexical_absolute(input_path);
 
         if let Some(out) = output_override.filter(|s| !s.is_empty()) {
-            let out_abs = Self::make_absolute(out);
-            if Self::paths_equal(&input_abs, &out_abs) {
+            let out_abs = super::paths::lexical_absolute(out);
+            if super::paths::spelling_equal(&input_abs, &out_abs, super::paths::CasePolicy::Windows)
+            {
                 return Err(crate::Error::PipelineError(
                     "ASS burn-in output path must not be the same as the input path".to_string(),
                 ));
@@ -219,8 +212,12 @@ impl AssBurnInProcessor {
             .join(format!("{}_burnin.{}", stem, ext))
             .to_string_lossy()
             .to_string();
-        let candidate_abs = Self::make_absolute(&candidate);
-        if Self::paths_equal(&input_abs, &candidate_abs) {
+        let candidate_abs = super::paths::lexical_absolute(&candidate);
+        if super::paths::spelling_equal(
+            &input_abs,
+            &candidate_abs,
+            super::paths::CasePolicy::Windows,
+        ) {
             return Ok(parent
                 .join(format!("{}_burnin2.{}", stem, ext))
                 .to_string_lossy()
@@ -272,7 +269,7 @@ impl AssBurnInProcessor {
         match strategy {
             AssMatchStrategy::Manifest => {
                 if let Some(map) = manifest_map {
-                    let video_abs = Self::make_absolute(video_path);
+                    let video_abs = super::paths::lexical_absolute(video_path);
                     if let Some(ass) = map.get(&video_abs.to_lowercase()) {
                         return Some(ass.clone());
                     }
@@ -313,17 +310,6 @@ impl AssBurnInProcessor {
             }
         }
         out
-    }
-
-    fn make_absolute(path: &str) -> String {
-        let p = Path::new(path);
-        if p.is_absolute() {
-            return path.to_string();
-        }
-        match std::env::current_dir() {
-            Ok(cwd) => cwd.join(p).to_string_lossy().to_string(),
-            Err(_) => path.to_string(),
-        }
     }
 }
 
@@ -378,7 +364,7 @@ impl Processor for AssBurnInProcessor {
         {
             let mut map = HashMap::new();
             for (video, danmu) in video_inputs.iter().zip(danmu_inputs.iter()) {
-                let video_abs = Self::make_absolute(video);
+                let video_abs = super::paths::lexical_absolute(video);
                 // Assume danmu is xml and ass is alongside with same stem by default.
                 let ass_candidate = PathBuf::from(danmu)
                     .with_extension("ass")
@@ -431,24 +417,12 @@ impl Processor for AssBurnInProcessor {
         }
 
         // Output mapping contract: map outputs[] against video_inputs (not full inputs list).
-        let output_paths: Vec<String> = if input.outputs.is_empty() {
-            video_inputs
-                .iter()
-                .map(|v| Self::determine_output_path_for_video(v, &config, None))
-                .collect::<Result<Vec<_>>>()?
-        } else if input.outputs.len() == video_inputs.len() {
-            video_inputs
-                .iter()
-                .zip(input.outputs.iter())
-                .map(|(v, out)| Self::determine_output_path_for_video(v, &config, Some(out)))
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            return Err(crate::Error::PipelineError(format!(
-                "ass_burnin batch job requires outputs to be empty or have the same length as selected video inputs (videos={}, outputs={})",
-                video_inputs.len(),
-                input.outputs.len()
-            )));
-        };
+        let plan = super::planning::OutputPlan::selected(&video_inputs, &input.outputs)
+            .map_err(|_| crate::Error::PipelineError(format!("ass_burnin batch job requires outputs to be empty or have the same length as selected video inputs (videos={}, outputs={})", video_inputs.len(), input.outputs.len())))?;
+        let output_paths = plan
+            .items()
+            .map(|(video, output)| Self::determine_output_path_for_video(video, &config, output))
+            .collect::<Result<Vec<_>>>()?;
 
         let mut batch = OutputBatch::new(&input.inputs);
         for video in &video_inputs {

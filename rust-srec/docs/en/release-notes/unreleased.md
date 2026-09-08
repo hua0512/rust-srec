@@ -349,6 +349,10 @@
 
 ## Pipeline and uploads
 
+- **Shared processor drivers preserve publication policies**
+
+  Output planning, four media drivers, nine single-file skip results and path-resolution mechanisms now share implementations with explicit naming, mapping, publication and identity policies. Staged rollback and incremental remux cleanup remain distinct; see [processor contracts](../concepts/pipeline.md#processor-result-contracts).
+
 - **Pipeline completion and recovery share artifact handling with fewer reads**
 
   Pipeline construction, input manifests, leaf-output collection and source-artifact reservations now use shared implementations. DAG publication reads a streamer once for its name and platform, completion reuses transaction-owned snapshots, and recovery pages all statuses for a session in one scan. Manifest schemas, output order, optional metadata, failed-write reporting and duplicate-completion protection remain unchanged; see [pipeline error handling](../concepts/pipeline.md#error-handling).

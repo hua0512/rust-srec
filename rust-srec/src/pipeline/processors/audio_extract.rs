@@ -195,35 +195,16 @@ impl AudioExtractProcessor {
         &self,
         input_path: &str,
         config: &AudioExtractConfig,
-        processor_input: &ProcessorInput,
+        output_override: Option<&str>,
     ) -> String {
-        // Priority: config.output_path > processor_input.outputs > generated from input
-        if let Some(ref output) = config.output_path {
-            return output.clone();
-        }
-
-        if let Some(output) = processor_input.outputs.first() {
-            return output.clone();
-        }
-
-        // Generate output path from input path
-        let input = Path::new(input_path);
-        let stem = input
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        let parent = input.parent().unwrap_or(Path::new("."));
-
-        let extension = config
-            .format
-            .as_ref()
-            .map(|f| f.extension())
-            .unwrap_or("aac"); // Default to aac for stream copy
-
-        parent
-            .join(format!("{}_audio.{}", stem, extension))
-            .to_string_lossy()
-            .to_string()
+        super::planning::choose_output(config.output_path.as_deref(), output_override, || {
+            let extension = config
+                .format
+                .as_ref()
+                .map(|format| format.extension())
+                .unwrap_or("aac");
+            super::planning::sibling_output(Path::new(input_path), "output", "_audio", extension)
+        })
     }
 
     /// Check if the input file has an audio stream using ffprobe.
@@ -280,23 +261,13 @@ impl AudioExtractProcessor {
         if is_image(&ext) {
             let duration = start.elapsed().as_secs_f64();
             info!("Input is an image, passing through: {}", input_path);
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.to_string()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "already_image",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.to_string(),
-                    "input is an image, no audio to extract".to_string(),
-                )],
-                ..Default::default()
-            });
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "input is an image, no audio to extract",
+                "already_image",
+                duration,
+                Vec::new(),
+            ));
         }
 
         // Check if input is a supported media format
@@ -306,23 +277,13 @@ impl AudioExtractProcessor {
                 "Input file is not a supported media format for audio extraction, passing through: {}",
                 input_path
             );
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.to_string()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "unsupported_media_format",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.to_string(),
-                    "not a supported media format for audio extraction".to_string(),
-                )],
-                ..Default::default()
-            });
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "not a supported media format for audio extraction",
+                "unsupported_media_format",
+                duration,
+                Vec::new(),
+            ));
         }
 
         // Check if input has audio stream
@@ -335,23 +296,13 @@ impl AudioExtractProcessor {
                     "Input file contains no audio stream, passing through: {}",
                     input_path
                 );
-                return Ok(ProcessorOutput {
-                    outputs: vec![input_path.to_string()],
-                    duration_secs: duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "status": "skipped",
-                            "reason": "no_audio_stream",
-                            "input": input_path,
-                        })
-                        .to_string(),
-                    ),
-                    skipped_inputs: vec![(
-                        input_path.to_string(),
-                        "input file contains no audio stream".to_string(),
-                    )],
-                    ..Default::default()
-                });
+                return Ok(ProcessorOutput::skipped_file(
+                    input_path,
+                    "input file contains no audio stream",
+                    "no_audio_stream",
+                    duration,
+                    Vec::new(),
+                ));
             }
             Err(e) => {
                 // If ffprobe fails, we'll try to extract anyway and let ffmpeg report the error
@@ -359,13 +310,11 @@ impl AudioExtractProcessor {
             }
         }
 
-        let mut dummy_input = ProcessorInput::default();
-        if let Some(output_override) = output_override.filter(|s| !s.is_empty()) {
-            dummy_input.outputs = vec![output_override.to_string()];
-        }
-
-        // Determine output path
-        let output_path = self.determine_output_path(input_path, config, &dummy_input);
+        let output_path = self.determine_output_path(
+            input_path,
+            config,
+            output_override.filter(|s| !s.is_empty()),
+        );
         let temp_path = batch.stage(Path::new(&output_path), true).await?;
 
         info!(
@@ -409,24 +358,13 @@ impl AudioExtractProcessor {
                     "Input file contains no audio stream (detected by ffmpeg), passing through: {}",
                     input_path
                 );
-                return Ok(ProcessorOutput {
-                    outputs: vec![input_path.to_string()],
-                    duration_secs: command_output.duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "status": "skipped",
-                            "reason": "no_audio_stream",
-                            "input": input_path,
-                        })
-                        .to_string(),
-                    ),
-                    skipped_inputs: vec![(
-                        input_path.to_string(),
-                        "input file contains no audio stream".to_string(),
-                    )],
-                    logs: command_output.logs,
-                    ..Default::default()
-                });
+                return Ok(ProcessorOutput::skipped_file(
+                    input_path,
+                    "input file contains no audio stream",
+                    "no_audio_stream",
+                    command_output.duration,
+                    command_output.logs,
+                ));
             }
 
             let error_msg = command_output
@@ -479,6 +417,27 @@ impl AudioExtractProcessor {
     }
 }
 
+struct AudioExtractProcessorItem<'a> {
+    processor: &'a AudioExtractProcessor,
+    config: &'a AudioExtractConfig,
+    ctx: &'a ProcessorContext,
+}
+
+#[async_trait]
+impl super::media_driver::MediaItem for AudioExtractProcessorItem<'_> {
+    type Publication = super::media_driver::StagedPublication;
+    async fn process(
+        &self,
+        input: &str,
+        output: Option<&str>,
+        publication: &mut Self::Publication,
+    ) -> Result<ProcessorOutput> {
+        self.processor
+            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .await
+    }
+}
+
 impl Default for AudioExtractProcessor {
     fn default() -> Self {
         Self::new()
@@ -517,55 +476,27 @@ impl Processor for AudioExtractProcessor {
             ));
         }
 
-        let mut batch = OutputBatch::new(&input.inputs);
-        if input.inputs.len() > 1 {
-            // Batch mode: output_path is ambiguous when multiple inputs exist.
-            if config.output_path.is_some() {
-                return Err(crate::Error::PipelineError(
-                    "audio_extract: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_string(),
-                ));
-            }
-
-            if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
-                return Err(crate::Error::PipelineError(format!(
-                    "audio_extract batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
-                    input.inputs.len(),
-                    input.outputs.len()
-                )));
-            }
-
-            let mut output = ProcessorOutput {
-                outputs: Vec::with_capacity(input.inputs.len()),
-                ..Default::default()
-            };
-
-            for (idx, input_path) in input.inputs.iter().enumerate() {
-                let output_override = input.outputs.get(idx).map(|s| s.as_str());
-                let one = self
-                    .process_one(input_path, output_override, &config, ctx, &mut batch)
-                    .await?;
-                super::outputs::accumulate_media_output(&mut output, one);
-            }
-            batch.commit().await?;
-
-            return Ok(ProcessorOutput {
-                metadata: Some(
-                    serde_json::json!({ "batch": true, "inputs": input.inputs.len() }).to_string(),
-                ),
-                ..output
-            });
+        if input.inputs.len() > 1 && config.output_path.is_some() {
+            return Err(crate::Error::PipelineError("audio_extract: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_string()));
         }
-
-        let output = self
-            .process_one(
-                &input.inputs[0],
-                input.outputs.first().map(String::as_str),
-                &config,
+        let plan = super::planning::OutputPlan::unary_or_mapped(&input.inputs, &input.outputs)
+            .map_err(|_| crate::Error::PipelineError(format!("audio_extract batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})", input.inputs.len(), input.outputs.len())))?;
+        let is_batch = plan.is_batch();
+        let mut output = super::media_driver::run_media(
+            plan,
+            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            &AudioExtractProcessorItem {
+                processor: self,
+                config: &config,
                 ctx,
-                &mut batch,
-            )
-            .await?;
-        batch.commit().await?;
+            },
+        )
+        .await?;
+        if is_batch {
+            output.metadata = Some(
+                serde_json::json!({ "batch": true, "inputs": input.inputs.len() }).to_string(),
+            );
+        }
         Ok(output)
     }
 }
@@ -821,7 +752,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/input.mp4", &config, &input);
+        let output = processor.determine_output_path(
+            "/input.mp4",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert_eq!(output, "/custom/output.mp3");
     }
 
@@ -838,7 +773,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/input.mp4", &config, &input);
+        let output = processor.determine_output_path(
+            "/input.mp4",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert_eq!(output, "/processor/output.mp3");
     }
 
@@ -858,7 +797,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/path/to/video.mp4", &config, &input);
+        let output = processor.determine_output_path(
+            "/path/to/video.mp4",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert!(output.contains("video_audio.mp3"));
     }
 
