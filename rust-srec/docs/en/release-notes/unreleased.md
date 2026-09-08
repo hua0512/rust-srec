@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Backend Model Cleanup
+
+- **One canonical streamer state and fewer unused Rust interfaces**
+
+  Database models now use `domain::StreamerState`. Removed unused database batching, configuration coalescing, duplicate session entities, and inactive convenience methods. Rust integrations should follow the [backend interface notes](../concepts/architecture.md#backend-rust-interfaces). REST payloads, recording behavior, state-transition validation and runtime retirement are unchanged.
+
 ## Internal Metrics
 
 - **Monitoring code reflects the available interfaces**

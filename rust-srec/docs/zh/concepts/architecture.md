@@ -362,3 +362,9 @@ Healthy ◄───────────────────────
     并不负责重放文件。
   - 标记只保留最早和最新的未清理世代，中间的世代记为数量，因此反复重启也不会让它无限
     变大。启动和退出时的提示会写明还有多少个世代等待恢复。
+
+## 后端 Rust 接口
+
+主播状态的统一类型为 `rust_srec::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
+
+已移除未使用的 `database::batching`、`config::UpdateCoalescer`、`domain::session` 实体、主播状态修改辅助方法，以及仓库的 `list_active_streamers` / `resume_session` 方法。会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。

@@ -116,10 +116,6 @@ impl SessionRepository for TestSessionRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn resume_session(&self, _id: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn update_session_titles(&self, _id: &str, _titles: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }

@@ -98,14 +98,19 @@ impl HealthProbe for FixtureProbe {
         let health = ComponentHealth::healthy(self.name().into_owned());
         if self.disk {
             let disk = &metrics.disks[0];
-            HealthChecker::new()
-                .check_disk_space("fixture", disk.available_space, disk.total_space)
-                .with_disk(DiskUsage::new(
-                    "fixture",
-                    "/",
-                    disk.available_space,
-                    disk.total_space,
-                ))
+            HealthChecker::check_disk_space_with_thresholds(
+                "fixture",
+                disk.available_space,
+                disk.total_space,
+                0.80,
+                0.95,
+            )
+            .with_disk(DiskUsage::new(
+                "fixture",
+                "/",
+                disk.available_space,
+                disk.total_space,
+            ))
         } else {
             health
         }
