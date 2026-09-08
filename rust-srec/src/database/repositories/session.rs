@@ -269,8 +269,8 @@ impl OutputQueryClause {
             binds.push(file_type.clone());
         }
         if let Some(search) = &filters.search {
-            conditions.push("(m.file_path LIKE ? OR m.session_id LIKE ? OR m.file_type LIKE ?)");
-            let pattern = format!("%{search}%");
+            conditions.push(r"(m.file_path LIKE ? ESCAPE '\' OR m.session_id LIKE ? ESCAPE '\' OR m.file_type LIKE ? ESCAPE '\')");
+            let pattern = super::literal_substring_pattern(search);
             binds.extend([pattern.clone(), pattern.clone(), pattern]);
         }
 
@@ -948,7 +948,7 @@ impl SessionRepository for SqlxSessionRepository {
         // exists `st.name` wins, so a rename is searchable immediately.
         if filters.search.is_some() {
             conditions.push(
-                "(COALESCE(st.name, s.streamer_name) LIKE ? OR s.titles LIKE ? OR s.id LIKE ?)"
+                r"(COALESCE(st.name, s.streamer_name) LIKE ? ESCAPE '\' OR s.titles LIKE ? ESCAPE '\' OR s.id LIKE ? ESCAPE '\')"
                     .to_string(),
             );
         }
@@ -990,7 +990,7 @@ impl SessionRepository for SqlxSessionRepository {
             count_query = count_query.bind(to_date.timestamp_millis());
         }
         if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
+            let pattern = super::literal_substring_pattern(search);
             count_query = count_query
                 .bind(pattern.clone())
                 .bind(pattern.clone())
@@ -1013,7 +1013,7 @@ impl SessionRepository for SqlxSessionRepository {
             data_query = data_query.bind(to_date.timestamp_millis());
         }
         if let Some(search) = &filters.search {
-            let pattern = format!("%{}%", search);
+            let pattern = super::literal_substring_pattern(search);
             data_query = data_query
                 .bind(pattern.clone())
                 .bind(pattern.clone())
