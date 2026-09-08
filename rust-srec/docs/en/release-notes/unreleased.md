@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Recording Engines
+
+- **Streamlink can use an explicit FFmpeg executable**
+
+  Set the optional backend engine field `ffmpeg_path` to choose the FFmpeg process used for Streamlink remuxing. Omitted or null values retain `FFMPEG_PATH` then `ffmpeg` fallback. See [engine configuration](../concepts/engines.md#streamlink-ffmpeg-executable).
+
 ## Internal Metrics
 
 - **Monitoring code reflects the available interfaces**

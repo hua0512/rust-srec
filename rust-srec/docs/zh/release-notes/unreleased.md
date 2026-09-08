@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## 录制引擎
+
+- **Streamlink 支持显式指定 FFmpeg 可执行文件**
+
+  通过可选的后端引擎字段 `ffmpeg_path` 指定 Streamlink 重封装使用的 FFmpeg 进程。省略该字段或设为 null 时，仍依次使用 `FFMPEG_PATH` 和 `ffmpeg`。详见[引擎配置](../concepts/engines.md#streamlink-的-ffmpeg-可执行文件)。
+
 ## 内部指标
 
 - **监控代码与实际可用接口保持一致**
