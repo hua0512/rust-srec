@@ -200,6 +200,7 @@ async fn admitted_targets_survive_removal_before_delivery_begins() {
                 },
             )]),
             retry_generation: 0,
+            retry_cancel: CancellationToken::new(),
             next_retry_at: None,
         },
     );

@@ -92,3 +92,17 @@ Web Push uses a 2,048-event FIFO queue and normal worker batches of up to 64 eve
 - `output_path_inaccessible` means the [output-root write gate](./architecture.md#output-root-write-gate) has blocked new recording work because a tracked root cannot be written.
 
 Freeing genuine disk exhaustion can recover automatically after the next probe. A stale Docker bind mount may require a container restart; see [Storage and Capacity](../operations/storage.md).
+
+## Queue and Web Push Delivery
+
+Ordinary channel delivery serializes queue admission and evicts the oldest pending
+notification at capacity, cancelling its scheduled retries. A zero queue limit
+disables ordinary channel admission; event logging and Web Push remain independent.
+An already-running send may finish after eviction. Open circuit breakers do not
+consume delivery attempts, and retries respect the cooldown even when the failure
+that opened the breaker has just occurred.
+
+Web Push clears persisted throttling state on successful delivery, including the
+first HTTP attempt. Stale-subscription deletion is reported only after SQLite
+confirms it. Both normal and abbreviated JSON payloads must fit the byte limit;
+oversized metadata fails before an HTTP request is sent.
