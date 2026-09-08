@@ -36,9 +36,9 @@ If any later import write fails, email changes and other configuration writes
 roll back together. An omitted or empty user list, or a schema older than `0.1.3`,
 leaves existing users unchanged in either mode.
 
-Every successful import revokes all refresh tokens, including a `merge` that
-omits users. Existing access tokens retain their normal expiry; sign in again
-when the client needs to renew its login. Rejected imports do not revoke tokens.
+Every successful import revokes all refresh tokens and their bound access-token
+sessions, including a `merge` that omits users. Sign in again after import.
+Rejected imports do not revoke tokens.
 
 An export is useful for migration and source-controlled review after secrets are removed, but it is not a database backup.
 
