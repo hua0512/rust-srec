@@ -64,6 +64,10 @@
 
 ## Configuration
 
+- **Large configuration refreshes use bounded parallel lookups**
+
+  Startup and global/platform/template updates refresh up to 16 independent streamers together while preserving event order and per-streamer best-effort behavior. Startup output-root discovery is reused for both health registration and write probes. Configuration precedence, retirement handling and persistent recovery acknowledgements are unchanged. See [configuration refresh](../concepts/configuration.md#hot-reload-cache-and-update-events).
+
 - **Backup imports validate the final account email assignments**
 
   Imports reject emails already assigned to retained accounts before changing configuration. Swaps between updated users and reuse of released emails work in either input order, while later failures roll back all changes. Email uniqueness follows stored values exactly, including case, whitespace, empty strings and absent emails. Every successful import still revokes all refresh tokens, even when a Merge import omits users; see [backup and restore](../operations/backup-restore.md#configuration-export).

@@ -29,6 +29,15 @@ The internal delivery collector tracks web-push outcomes only. Download,
 pipeline and scheduler information comes from their dedicated API snapshots;
 these are not a Prometheus export.
 
+### Startup Output Paths
+
+Startup discovers and caps the output-root paths once, then shares that exact
+snapshot between disk-health registration and the one-shot write probes. It does
+not repeat all streamer configuration lookups for the second consumer. Existing
+limits remain: at most 16 write-probe targets, four probes at a time, and a
+five-second timeout per probe. Later configuration changes still rely on actual
+output writes for write-gate feedback; the startup snapshot is not a live inventory.
+
 ### Slow Filesystem Sampling
 
 System and disk metrics are sampled on one dedicated thread. Health refreshes
