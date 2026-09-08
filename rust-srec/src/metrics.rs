@@ -1,25 +1,19 @@
 //! Metrics and monitoring module.
 //!
-//! Provides Prometheus-compatible metrics collection and health check endpoints
-//! for monitoring the streaming recorder system.
+//! Provides background health snapshots and internal web-push delivery counters.
+//! The HTTP surface is `/api/health`, `/api/health/ready` and `/api/health/live`;
+//! there is no Prometheus exporter or `/metrics` route.
 //!
 //! # Features
 //!
-//! - Download metrics (active downloads, bytes, duration, errors)
-//! - Pipeline metrics (queue depth, jobs, duration)
-//! - Streamer metrics (total, live, errors)
-//! - System metrics (cache hits/misses, disk space, memory)
-//! - Health check endpoints (/health, /ready)
-//! - Prometheus metrics endpoint (/metrics)
+//! - System, disk and registered component health
+//! - GPU health monitoring
+//! - Internal web-push outcomes and delivery duration
 //!
 //! # Example
 //!
 //! ```ignore
-//! use rust_srec::metrics::{MetricsCollector, HealthChecker};
-//!
-//! let collector = MetricsCollector::new();
-//! collector.record_download_started("streamer-1");
-//! collector.record_download_bytes(1024 * 1024);
+//! use rust_srec::metrics::HealthChecker;
 //!
 //! let health = HealthChecker::new();
 //! let status = health.current();
@@ -28,7 +22,6 @@
 mod collector;
 pub mod gpu_health;
 mod health;
-mod prometheus;
 
 pub use collector::{MetricsCollector, MetricsSnapshot};
 pub use gpu_health::{
@@ -38,4 +31,3 @@ pub use health::{
     ComponentHealth, DiskSnapshot, DiskUsage, HealthChecker, HealthProbe, HealthStatus,
     SystemHealth, SystemMetricsSnapshot,
 };
-pub use prometheus::PrometheusExporter;

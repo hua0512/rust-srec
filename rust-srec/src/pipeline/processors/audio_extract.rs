@@ -266,7 +266,7 @@ impl AudioExtractProcessor {
         let start = std::time::Instant::now();
 
         // Check if input file exists
-        if !Path::new(input_path).exists() {
+        if !super::utils::try_exists(Path::new(input_path)).await? {
             return Err(crate::Error::PipelineError(format!(
                 "Input file does not exist: {}",
                 input_path

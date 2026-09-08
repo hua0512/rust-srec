@@ -323,21 +323,14 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn increment_error_count(&self, id: &str) -> Result<i32> {
-        sqlx::query(
-            "UPDATE streamers SET consecutive_error_count = COALESCE(consecutive_error_count, 0) + 1 WHERE id = ?",
+        let count = sqlx::query_scalar(
+            "UPDATE streamers SET consecutive_error_count = COALESCE(consecutive_error_count, 0) + 1 WHERE id = ? RETURNING consecutive_error_count",
         )
         .bind(id)
-        .execute(&self.write_pool)
+        .fetch_one(&self.write_pool)
         .await?;
 
-        let result: (i32,) = sqlx::query_as(
-            "SELECT COALESCE(consecutive_error_count, 0) FROM streamers WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(result.0)
+        Ok(count)
     }
 
     async fn reset_error_count(&self, id: &str) -> Result<()> {

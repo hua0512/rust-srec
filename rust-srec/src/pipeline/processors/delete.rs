@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
-use tokio::time::{Duration, sleep};
+use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
@@ -100,10 +100,10 @@ impl DeleteProcessor {
                 Err(e) => {
                     // Check if file is locked and we should retry
                     if Self::is_file_locked_error(&e) && attempt < config.max_retries {
-                        let delay = config.retry_delay_ms * 2u64.pow(attempt);
+                        let delay = super::utils::retry_delay(config.retry_delay_ms, attempt);
                         let msg = format!(
                             "File is locked, retrying in {}ms (attempt {}/{}): {:?}",
-                            delay,
+                            delay.as_millis(),
                             attempt + 1,
                             config.max_retries,
                             path
@@ -114,7 +114,7 @@ impl DeleteProcessor {
                             msg,
                         ));
 
-                        sleep(Duration::from_millis(delay)).await;
+                        sleep(delay).await;
                         last_error = Some(e);
                     } else {
                         // Not a locked file error or max retries reached
@@ -173,10 +173,7 @@ impl Processor for DeleteProcessor {
         }
 
         // Preserve the legacy single-input behavior (metadata schema + logs).
-        if input.inputs.len() == 1 {
-            // Get file path to delete
-            let file_path = input.inputs.first().expect("checked non-empty");
-
+        if let [file_path] = input.inputs.as_slice() {
             let path = Path::new(file_path);
 
             let start_msg = format!("Deleting file: {}", file_path);
