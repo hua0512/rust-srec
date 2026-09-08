@@ -295,7 +295,7 @@ impl NotificationRepository for SqlxNotificationRepository {
 
         if search.is_some() {
             query_str.push_str(" LEFT JOIN streamers s ON nel.streamer_id = s.id");
-            conditions.push("(LOWER(s.name) LIKE LOWER(?) OR LOWER(nel.payload) LIKE LOWER(?))");
+            conditions.push(r"(LOWER(s.name) LIKE LOWER(?) ESCAPE '\' OR LOWER(nel.payload) LIKE LOWER(?) ESCAPE '\')");
         }
 
         if event_type.is_some() {
@@ -321,7 +321,7 @@ impl NotificationRepository for SqlxNotificationRepository {
             sqlx::query_as::<_, NotificationEventLogDbModel>(sqlx::AssertSqlSafe(query_str));
 
         if let Some(s) = search {
-            let search_pattern = format!("%{}%", s);
+            let search_pattern = super::literal_substring_pattern(s);
             query = query.bind(search_pattern.clone());
             query = query.bind(search_pattern);
         }
