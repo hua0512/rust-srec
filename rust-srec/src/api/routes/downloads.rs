@@ -65,10 +65,10 @@ impl FromRef<AppState> for DownloadRouteState {
     }
 }
 
-/// Query parameters for WebSocket connection (JWT token).
+/// Query credential fallback for clients that cannot send Authorization headers.
 #[derive(Debug, Deserialize)]
 pub struct WsAuthParams {
-    /// JWT token for authentication
+    /// Session JWT or full-access API key.
     pub token: Option<String>,
 }
 
@@ -79,11 +79,12 @@ pub fn router() -> Router<AppState> {
 
 /// WebSocket handler for download status streaming.
 ///
-/// Authenticates via JWT token in query parameter, then upgrades to WebSocket.
+/// Authenticates the request, then upgrades to WebSocket.
 /// Sends an initial snapshot of active downloads, then streams metadata + metrics deltas.
 ///
 /// # Authentication
-/// Requires valid JWT token via `?token=<jwt>` query parameter.
+/// Accepts a session JWT or full-access API key in the Authorization header,
+/// falling back to `?token=<credential>` only when that header is absent.
 ///
 /// # Events (Protocol Buffer encoded)
 /// - `snapshot`: Initial list of all active downloads (each entry includes `meta` + `metrics`)
@@ -102,19 +103,25 @@ async fn download_progress_ws(
     ws: WebSocketUpgrade,
     State(state): State<DownloadRouteState>,
     Query(auth): Query<WsAuthParams>,
+    headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    if let Some(auth_service) = &state.auth_service {
-        let token = auth
-            .token
-            .as_deref()
-            .ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-        auth_service
-            .authorize_access_token(token, false)
-            .await
-            .map_err(ApiError::from)?;
-    }
-
-    Ok(ws.on_upgrade(|socket| handle_socket(socket, state)))
+    use crate::api::auth_request::{AccessPolicy, authorize_request, run_authenticated_session};
+    let principal = authorize_request(
+        state.auth_service.as_ref(),
+        &headers,
+        auth.token.as_deref(),
+        AccessPolicy::Full,
+    )
+    .await?;
+    Ok(ws.on_upgrade(move |socket| {
+        let service = state.auth_service.clone();
+        run_authenticated_session(
+            service,
+            principal,
+            AccessPolicy::Full,
+            handle_socket(socket, state),
+        )
+    }))
 }
 
 /// Active upload jobs for the snapshot, optionally filtered to one streamer.
@@ -738,6 +745,80 @@ mod tests {
     use super::*;
     use crate::downloader::ConfigUpdateType;
     use crate::downloader::engine::EngineType;
+
+    #[tokio::test]
+    async fn download_socket_rejects_read_keys_and_disconnects_revoked_credentials() {
+        use crate::api::auth_request::tests::{fixture, open_socket, wait_for_socket_close};
+        use crate::database::models::ApiKeyAccessLevel;
+        use std::sync::Arc;
+        let fixture = fixture().await;
+        let (_, read) = fixture
+            .service
+            .create_api_key(
+                &fixture.user_id,
+                "ws-read",
+                ApiKeyAccessLevel::ReadOnly,
+                None,
+            )
+            .await
+            .unwrap();
+        let (key, full) = fixture
+            .service
+            .create_api_key(&fixture.user_id, "ws-full", ApiKeyAccessLevel::Full, None)
+            .await
+            .unwrap();
+        let state = DownloadRouteState {
+            auth_service: Some(fixture.service.clone()),
+            download_manager: Arc::new(crate::downloader::DownloadManager::new()),
+            check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            pipeline_manager: Arc::new(PipelineManager::new()),
+        };
+        let app = Router::new()
+            .route("/ws", get(download_progress_ws))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        }));
+        open_socket(address, &format!("/ws?token={read}"), None, 403).await;
+        open_socket(
+            address,
+            &format!("/ws?token={full}"),
+            Some("Basic invalid"),
+            401,
+        )
+        .await;
+        let key_socket = open_socket(address, &format!("/ws?token={full}"), None, 101).await;
+        let jwt_socket = open_socket(
+            address,
+            "/ws?token=invalid",
+            Some(&format!("Bearer {}", fixture.access_token)),
+            101,
+        )
+        .await;
+        fixture
+            .service
+            .revoke_api_key(&fixture.user_id, &key.id)
+            .await
+            .unwrap();
+        fixture
+            .service
+            .logout(&fixture.refresh_token)
+            .await
+            .unwrap();
+        tokio::join!(
+            wait_for_socket_close(key_socket),
+            wait_for_socket_close(jwt_socket)
+        );
+        drop(server);
+        fixture.pool.close().await;
+    }
 
     #[test]
     fn test_ws_auth_params_deserialize() {

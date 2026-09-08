@@ -22,6 +22,9 @@ pub struct RefreshTokenDbModel {
     pub revoked_at: Option<i64>,
     /// Optional device/client information for audit purposes
     pub device_info: Option<String>,
+    /// Stable login-session lineage, retained across refresh rotation.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 impl RefreshTokenDbModel {
@@ -42,6 +45,7 @@ impl RefreshTokenDbModel {
             created_at: now,
             revoked_at: None,
             device_info,
+            session_id: None,
         }
     }
 
@@ -79,6 +83,15 @@ impl RefreshTokenDbModel {
     pub fn revoke(&mut self) {
         self.revoked_at = Some(crate::database::time::now_ms());
     }
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct AuthSessionDbModel {
+    pub id: String,
+    pub user_id: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub revoked_at: Option<i64>,
 }
 
 #[cfg(test)]

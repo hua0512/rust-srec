@@ -257,13 +257,17 @@
 
 ## Authentication
 
+- **Logout and password changes invalidate issued access tokens**
+
+  Login and refresh tokens now share a durable session. Single logout closes only that session; logout-all and configured refresh-token reuse detection revoke every session for the user. Password changes revoke existing sessions atomically, disabled accounts cannot restore old sessions, and successful configuration imports revoke login sessions too. Download/log WebSockets revalidate every five seconds with a three-second lookup deadline; one-shot log archive grants recheck their issuing identity. After upgrading, existing unbound access tokens require a refresh with a still-valid refresh token or a new sign-in. See [session security](../operations/security.md#revocable-login-sessions).
+
 - **Failed login responses conceal account existence and disabled state**
 
   Missing users receive bounded dummy Argon2 verification and the same credential error as an incorrect password. Disabled-account status is disclosed only after a correct password. Login throttling still runs before password work.
 
 - **Refresh-token rotation is atomic and rejects replay**
 
-  A refresh token issues at most one replacement, and failed database writes preserve the original token. Reusing an already revoked token now revokes the user's other refresh tokens by default. The optional grace window suppresses that revocation but no longer issues tokens for a replay. Clients must serialize refreshes; see [refresh-token rotation](../operations/security.md#refresh-token-rotation) for configuration and concurrency behavior.
+  A refresh token issues at most one replacement, and failed database writes preserve the original token. Reusing a consumed token from an open session now revokes all of the user's access and refresh sessions by default; replaying a logged-out session leaves other devices signed in. The optional grace window suppresses that revocation but no longer issues tokens for a replay. Clients must serialize refreshes; see [refresh-token rotation](../operations/security.md#refresh-token-rotation) for configuration and concurrency behavior.
 
 ## API and integrations
 
@@ -281,7 +285,7 @@
 
 - **API keys for programmatic access**
 
-  You can now create long-lived API keys as an alternative to short-lived JWT session tokens. Keys belong to the user who created them, carry an optional expiration timestamp, and can be scoped to either `read_only` (access to non-sensitive queries such as sessions, danmu, aggregate statistics, notification events, and system health) or `full` access (all requests including configuration changes and mutations). Keys are stored as SHA-256 hashes and displayed only once at creation. Revoking a key invalidates it immediately across the server and clears any authorization cache. API keys cannot manage other keys or change passwords, and WebSocket media/download streams continue to require JWT tokens to prevent keys from leaking into URLs or access logs. See [API Keys & MCP](../api/api-keys-mcp.md).
+  You can now create long-lived API keys as an alternative to short-lived JWT session tokens. Keys belong to the user who created them, carry an optional expiration timestamp, and can be scoped to either `read_only` (access to non-sensitive queries such as sessions, danmu, aggregate statistics, notification events, and system health) or `full` access (all requests including configuration changes and mutations). Keys are stored as SHA-256 hashes and displayed only once at creation. Revoking a key invalidates it immediately across the server and clears any authorization cache. API keys cannot manage other keys or change passwords. Read-only keys can read authenticated health details and recorded media; download/log WebSockets, stream proxy and logging routes require full keys. These manual routes prefer Authorization headers, with query-token fallback only when the header is absent. See [API Keys & MCP](../api/api-keys-mcp.md).
 
 - **Built-in Model Context Protocol (MCP) server**
 

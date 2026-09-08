@@ -878,6 +878,9 @@ async fn apply_import(
     apply_pipeline_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
     apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
 
+    sqlx::query("DELETE FROM auth_sessions")
+        .execute(&mut **tx)
+        .await?;
     sqlx::query("DELETE FROM refresh_tokens")
         .execute(&mut **tx)
         .await?;
@@ -2396,6 +2399,11 @@ mod tests {
         let mut setup_tx = begin_immediate(&pool).await.unwrap();
         persist_user(&mut setup_tx, &user).await.unwrap();
         setup_tx.commit().await.unwrap();
+        sqlx::query("INSERT INTO auth_sessions(id, user_id, created_at, expires_at) VALUES('session-id', ?, ?, ?)")
+            .bind(&user.id)
+            .bind(crate::database::time::now_ms())
+            .bind(crate::database::time::now_ms() + 60_000)
+            .execute(&pool).await.unwrap();
         sqlx::query(
             r#"
             INSERT INTO refresh_tokens
@@ -2432,6 +2440,13 @@ mod tests {
             .unwrap();
         assert_eq!(user_count.0, 1);
         assert_eq!(token_count.0, 0);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[tokio::test]

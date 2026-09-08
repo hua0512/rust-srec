@@ -7,7 +7,7 @@
 
 use axum::Router;
 use axum::extract::{FromRef, Query, Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use bytes::{Bytes, BytesMut};
@@ -452,23 +452,21 @@ pub async fn stream_proxy_get(
 ) -> ApiResult<Response> {
     let headers_in = req.headers();
 
-    if let Some(auth_service) = &state.auth_service {
-        // Media elements cannot always send an Authorization header, so query tokens are allowed.
-        let token = query.token.as_deref().or_else(|| {
-            headers_in
-                .get(AUTHORIZATION)
-                .and_then(|header| header.to_str().ok())
-                .and_then(|value| value.strip_prefix("Bearer "))
-        });
-        let token = token.ok_or_else(|| {
-            ApiError::unauthorized("Missing or invalid Authorization header or token query")
-        })?;
-
-        auth_service
-            .authorize_access_token(token, false)
-            .await
-            .map_err(ApiError::from)?;
-    }
+    crate::api::auth_request::authorize_request(
+        state.auth_service.as_ref(),
+        headers_in,
+        query.token.as_deref(),
+        crate::api::auth_request::AccessPolicy::Full,
+    )
+    .await?;
+    let relay_token = if state.auth_service.is_some() {
+        Some(crate::api::auth_request::request_credential(
+            headers_in,
+            query.token.as_deref(),
+        )?)
+    } else {
+        query.token.as_deref()
+    };
 
     // Fail closed: a config read error must not widen the target policy.
     let allow_private_targets = match &state.config_service {
@@ -629,12 +627,8 @@ pub async fn stream_proxy_get(
                     "Upstream HLS manifest is not UTF-8",
                 )
             })?;
-            let rewritten = rewrite_hls_manifest(
-                manifest,
-                &final_url,
-                query.headers.as_deref(),
-                query.token.as_deref(),
-            );
+            let rewritten =
+                rewrite_hls_manifest(manifest, &final_url, query.headers.as_deref(), relay_token);
             out_headers.remove(axum::http::header::CONTENT_LENGTH);
             out_headers.remove(axum::http::header::CONTENT_RANGE);
             out_headers.remove(axum::http::header::ACCEPT_RANGES);
@@ -714,6 +708,70 @@ mod tests {
             allow_private_targets,
             cors: CorsPolicy::AnyOrigin,
         }
+    }
+
+    #[tokio::test]
+    async fn proxy_router_requires_full_access_and_honors_header_precedence() {
+        use crate::database::models::ApiKeyAccessLevel;
+        let fixture = crate::api::auth_request::tests::fixture().await;
+        let (_, read) = fixture
+            .service
+            .create_api_key(
+                &fixture.user_id,
+                "proxy-read",
+                ApiKeyAccessLevel::ReadOnly,
+                None,
+            )
+            .await
+            .unwrap();
+        let (_, full) = fixture
+            .service
+            .create_api_key(
+                &fixture.user_id,
+                "proxy-full",
+                ApiKeyAccessLevel::Full,
+                None,
+            )
+            .await
+            .unwrap();
+        let mut state = test_state(false);
+        state.auth_service = Some(fixture.service.clone());
+        let app = super::router::<StreamProxyState>().with_state(state);
+        // An invalid scheme stops before any upstream request after authorization succeeds.
+        for (token, authorization, expected) in [
+            (read.as_str(), None, StatusCode::FORBIDDEN),
+            (full.as_str(), None, StatusCode::BAD_REQUEST),
+            (
+                full.as_str(),
+                Some("Basic invalid".to_owned()),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                full.as_str(),
+                Some(format!("Bearer {read}")),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "invalid",
+                Some(format!("Bearer {full}")),
+                StatusCode::BAD_REQUEST,
+            ),
+        ] {
+            let query = build_query(&[("url", "file:///not-an-upstream"), ("token", token)]);
+            let mut request = HttpRequest::builder().uri(format!("/?{query}"));
+            if let Some(header) = authorization {
+                request = request.header("Authorization", header);
+            }
+            assert_eq!(
+                app.clone()
+                    .oneshot(request.body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+                    .status(),
+                expected
+            );
+        }
+        fixture.pool.close().await;
     }
 
     #[tokio::test]

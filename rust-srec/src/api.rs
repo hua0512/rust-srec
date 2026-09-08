@@ -3,6 +3,7 @@
 //! Provides HTTP endpoints for managing streamers, configurations,
 //! templates, and monitoring pipeline jobs.
 
+pub(crate) mod auth_request;
 pub mod auth_service;
 pub mod cors;
 pub mod error;

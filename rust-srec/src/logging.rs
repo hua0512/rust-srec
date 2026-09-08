@@ -71,6 +71,15 @@ pub struct LoggingConfig {
 }
 
 impl LoggingConfig {
+    #[cfg(test)]
+    pub(crate) fn for_route_tests(
+        log_dir: PathBuf,
+    ) -> (Self, reload::Layer<EnvFilter, tracing_subscriber::Registry>) {
+        let (layer, handle) = reload::Layer::new(EnvFilter::new("info"));
+        let (sender, _) = broadcast::channel(LOG_BROADCAST_CAPACITY);
+        (Self::new(handle, sender, log_dir), layer)
+    }
+
     /// Create a new logging configuration.
     fn new(handle: FilterHandle, log_tx: broadcast::Sender<LogEvent>, log_dir: PathBuf) -> Self {
         Self {

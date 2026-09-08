@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, Request, State};
-use axum::http::header::AUTHORIZATION;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use tower_http::services::ServeFile;
@@ -80,23 +79,13 @@ pub async fn get_media_content(
     req: Request,
 ) -> ApiResult<Response> {
     let headers = req.headers();
-    if let Some(auth_service) = &state.auth_service {
-        let token = query.token.or_else(|| {
-            headers
-                .get(AUTHORIZATION)
-                .and_then(|header| header.to_str().ok())
-                .and_then(|value| value.strip_prefix("Bearer "))
-                .map(String::from)
-        });
-        let token = token.as_deref().ok_or_else(|| {
-            ApiError::unauthorized("Missing or invalid Authorization header or token query")
-        })?;
-
-        auth_service
-            .authorize_access_token(token, false)
-            .await
-            .map_err(ApiError::from)?;
-    }
+    crate::api::auth_request::authorize_request(
+        state.auth_service.as_ref(),
+        headers,
+        query.token.as_deref(),
+        crate::api::auth_request::AccessPolicy::Read,
+    )
+    .await?;
 
     let session_repo = &state.session_repository;
 
@@ -118,5 +107,72 @@ pub async fn get_media_content(
     match ServeFile::new(path).try_call(req).await {
         Ok(response) => Ok(response.into_response()),
         Err(error) => Err(ApiError::from(error)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::{models::ApiKeyAccessLevel, repositories::SqlxSessionRepository};
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn media_router_authenticates_read_keys_and_never_falls_back_from_a_header() {
+        let fixture = crate::api::auth_request::tests::fixture().await;
+        let (_, raw) = fixture
+            .service
+            .create_api_key(
+                &fixture.user_id,
+                "media-read",
+                ApiKeyAccessLevel::ReadOnly,
+                None,
+            )
+            .await
+            .unwrap();
+        let state = MediaRouteState {
+            auth_service: Some(fixture.service.clone()),
+            session_repository: std::sync::Arc::new(SqlxSessionRepository::new(
+                fixture.pool.clone(),
+                fixture.pool.clone(),
+            )),
+        };
+        let app = Router::new()
+            .route("/{id}/content", get(get_media_content))
+            .with_state(state);
+        // An absent output distinguishes authorization success from rejection without filesystem IO.
+        for (query, header, expected) in [
+            (raw.as_str(), None, StatusCode::NOT_FOUND),
+            (
+                "invalid",
+                Some(format!("Bearer {raw}")),
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                raw.as_str(),
+                Some("Basic malformed".to_owned()),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                raw.as_str(),
+                Some("Bearer invalid".to_owned()),
+                StatusCode::UNAUTHORIZED,
+            ),
+        ] {
+            let mut request = Request::builder().uri(format!("/absent/content?token={query}"));
+            if let Some(header) = header {
+                request = request.header("Authorization", header);
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+        }
+        fixture.pool.close().await;
     }
 }

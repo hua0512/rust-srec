@@ -290,6 +290,7 @@ pub async fn refresh(
 )]
 pub async fn logout(
     State(state): State<AuthRouteState>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
@@ -297,8 +298,21 @@ pub async fn logout(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Logout not available"))?;
 
+    let principal = if headers.contains_key(axum::http::header::AUTHORIZATION) {
+        Some(
+            auth_service
+                .authorize_credential(
+                    crate::api::auth_request::request_credential(&headers, None)?,
+                    true,
+                )
+                .await
+                .map_err(ApiError::from)?,
+        )
+    } else {
+        None
+    };
     auth_service
-        .logout(&request.refresh_token)
+        .logout_with_principal(&request.refresh_token, principal.as_ref())
         .await
         .map_err(ApiError::from)?;
 
@@ -550,6 +564,64 @@ pub async fn revoke_api_key(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn logout_router_revokes_bound_access_after_refresh_cleanup_and_rejects_bad_headers() {
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt;
+        let fixture = crate::api::auth_request::tests::fixture().await;
+        let app = Router::new()
+            .route("/logout", post(logout))
+            .with_state(AuthRouteState {
+                auth_service: Some(fixture.service.clone()),
+            });
+        let body = serde_json::json!({ "refresh_token": fixture.refresh_token }).to_string();
+        let malformed = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/logout")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Basic invalid")
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(malformed.status(), StatusCode::UNAUTHORIZED);
+        fixture
+            .service
+            .authorize_credential(&fixture.access_token, false)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
+            .bind(&fixture.user_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/logout")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", fixture.access_token))
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            fixture
+                .service
+                .authorize_credential(&fixture.access_token, false)
+                .await
+                .is_err()
+        );
+        fixture.pool.close().await;
+    }
+
     #[test]
     fn test_login_request_deserialize() {
         let json = r#"{"username": "test", "password": "secret"}"#;
@@ -700,6 +772,29 @@ mod tests {
 
         #[async_trait::async_trait]
         impl RefreshTokenRepository for NoopRefreshTokenRepository {
+            async fn create_session(
+                &self,
+                _session: &crate::database::models::AuthSessionDbModel,
+                _token: &RefreshTokenDbModel,
+                _expected_password_hash: &str,
+            ) -> crate::Result<bool> {
+                Ok(true)
+            }
+
+            async fn find_session(
+                &self,
+                user_id: &str,
+                session_id: &str,
+            ) -> crate::Result<Option<crate::database::models::AuthSessionDbModel>> {
+                Ok(Some(crate::database::models::AuthSessionDbModel {
+                    id: session_id.to_owned(),
+                    user_id: user_id.to_owned(),
+                    created_at: 0,
+                    expires_at: i64::MAX,
+                    revoked_at: None,
+                }))
+            }
+
             async fn rotate(
                 &self,
                 _id: &str,
@@ -792,7 +887,7 @@ mod tests {
                 .with_login_rate_limiter(test_login_rate_limiter()),
             );
             let token = jwt_service
-                .generate_token(&user_id, vec!["user".to_string()])
+                .generate_test_token(&user_id, vec!["user".to_string()])
                 .expect("token generation should succeed");
 
             let protected: Router<TestState> = Router::new()
@@ -1035,7 +1130,7 @@ mod tests {
                     AuthConfig::default(),
                 ));
                 let token = jwt_service
-                    .generate_token(&user_id, vec!["user".to_string()])
+                    .generate_test_token(&user_id, vec!["user".to_string()])
                     .expect("token generation should succeed");
 
                 let protected: Router<TestState> = Router::new()

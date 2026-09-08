@@ -17,14 +17,16 @@ use argon2::{
     Argon2, Params,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info, warn};
 
 use crate::api::rate_limit::{LoginRateKey, LoginRateLimiter};
-use crate::database::models::{ApiKeyAccessLevel, ApiKeyDbModel, RefreshTokenDbModel};
+use crate::database::models::{
+    ApiKeyAccessLevel, ApiKeyDbModel, AuthSessionDbModel, RefreshTokenDbModel,
+};
 use crate::database::repositories::refresh_token::RefreshTokenRotation;
 use crate::database::repositories::{ApiKeyRepository, RefreshTokenRepository, UserRepository};
 
@@ -34,6 +36,16 @@ use super::jwt::{Claims, JwtError, JwtService};
 /// starting with this prefix to `AuthService::authorize_api_key` instead of
 /// JWT validation, so it must never be a valid JWT prefix.
 pub const API_KEY_PREFIX: &str = "srec_";
+
+fn session_expiration(access_seconds: u64, refresh_ms: i64) -> Result<i64, AuthError> {
+    let access_ms = access_seconds
+        .checked_mul(1000)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or_else(|| {
+            AuthError::Internal("Access token expiration exceeds supported range".to_owned())
+        })?;
+    Ok(access_ms.max(refresh_ms))
+}
 
 // A valid Argon2id PHC with the same work parameters as newly stored passwords.
 // Its digest is a fixed dummy value: even a matching result never authenticates a missing user.
@@ -68,6 +80,8 @@ pub struct AuthPrincipal {
     /// middleware enforces this for REST routes and `mcp` tools enforce it
     /// per tool.
     pub access: ApiKeyAccessLevel,
+    /// Stable key identity for bounded revalidation without retaining the raw secret.
+    pub api_key_id: Option<String>,
 }
 
 /// Authentication configuration.
@@ -240,11 +254,8 @@ pub struct SessionInfo {
     pub expires_at: i64,
 }
 
-/// Hard TTL for `user_state_cache` entries consulted by
-/// `authorize_access_token`. Bounds how long a user disable or delete
-/// performed outside `AuthService` (direct `UserRepository` writes) can keep
-/// authorizing requests; mutations that go through `AuthService`, and the
-/// config import handler via `invalidate_user_cache`, invalidate immediately.
+/// TTL for cached user-state denials and API-key snapshots. Session authorization
+/// always reloads any state that could grant access, including password remediation.
 const USER_STATE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Snapshot of the per-user flags enforced by `authorize_access_token`.
@@ -379,13 +390,12 @@ impl AuthService {
         self.user_repo.clone()
     }
 
-    /// Validate an access token and enforce the current user security state.
+    /// Validate an access token and enforce durable session and user security state.
+    /// Session existence, expiry and revocation are fetched on every request; no session
+    /// cache or lookup-error fallback can authorize a revoked credential.
     ///
-    /// `is_active` / `must_change_password` are read from `user_state_cache`
-    /// when the entry is younger than `USER_STATE_CACHE_TTL`, and refetched
-    /// via `user_repo.find_by_id` otherwise. A `find_by_id` error always
-    /// fails closed as `AuthError::Database`; a stale entry is never used as
-    /// a fallback.
+    /// Cached user state can only deny a request. Potential grants always reload
+    /// the user row, and lookup errors fail closed without using a cached grant.
     pub(crate) async fn authorize_access_token(
         &self,
         token: &str,
@@ -399,12 +409,49 @@ impl AuthService {
             }
         })?;
 
+        self.authorize_session_claims(claims, allow_password_remediation, false)
+            .await
+    }
+
+    async fn authorize_session_claims(
+        &self,
+        claims: Claims,
+        allow_password_remediation: bool,
+        fresh_user: bool,
+    ) -> Result<Claims, AuthError> {
+        let now = crate::database::time::now_ms();
+        if claims.exp <= u64::try_from(now / 1000).map_err(|_| AuthError::InvalidToken)? {
+            return Err(AuthError::TokenExpired);
+        }
+        let session_id = claims
+            .sid
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .ok_or(AuthError::InvalidToken)?;
+        let session = self
+            .token_repo
+            .find_session(&claims.sub, session_id)
+            .await
+            .map_err(|error| AuthError::Database(error.to_string()))?
+            .ok_or(AuthError::TokenRevoked)?;
+        if session.revoked_at.is_some() {
+            return Err(AuthError::TokenRevoked);
+        }
+        if session.expires_at <= now {
+            return Err(AuthError::TokenExpired);
+        }
+
         // The `DashMap::get` shard guard is a temporary of this statement, so
         // it is released before the `find_by_id` await below.
         let cached = self
             .user_state_cache
             .get(&claims.sub)
-            .filter(|entry| entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL)
+            .filter(|entry| {
+                !fresh_user
+                    && entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL
+                    && (!entry.is_active
+                        || (entry.must_change_password && !allow_password_remediation))
+            })
             .map(|entry| *entry);
 
         let state = match cached {
@@ -443,6 +490,85 @@ impl AuthService {
         }
 
         Ok(claims)
+    }
+
+    pub(crate) async fn authorize_credential(
+        &self,
+        raw: &str,
+        allow_password_remediation: bool,
+    ) -> Result<AuthPrincipal, AuthError> {
+        let raw = raw.trim();
+        if raw.starts_with(API_KEY_PREFIX) {
+            self.authorize_api_key(raw).await
+        } else {
+            Ok(AuthPrincipal {
+                claims: self
+                    .authorize_access_token(raw, allow_password_remediation)
+                    .await?,
+                credential: CredentialKind::Jwt,
+                access: ApiKeyAccessLevel::Full,
+                api_key_id: None,
+            })
+        }
+    }
+
+    /// Revalidate a server-held principal against current durable credential state.
+    pub(crate) async fn revalidate_principal(
+        &self,
+        principal: &AuthPrincipal,
+    ) -> Result<AuthPrincipal, AuthError> {
+        match principal.credential {
+            CredentialKind::Jwt => Ok(AuthPrincipal {
+                claims: self
+                    .authorize_session_claims(principal.claims.clone(), false, true)
+                    .await?,
+                credential: CredentialKind::Jwt,
+                access: ApiKeyAccessLevel::Full,
+                api_key_id: None,
+            }),
+            CredentialKind::ApiKey => {
+                let id = principal
+                    .api_key_id
+                    .as_deref()
+                    .ok_or(AuthError::InvalidToken)?;
+                let key = self
+                    .api_key_repo
+                    .find_by_id(&principal.claims.sub, id)
+                    .await
+                    .map_err(|error| AuthError::Database(error.to_string()))?
+                    .ok_or(AuthError::TokenRevoked)?;
+                if key.is_revoked() {
+                    return Err(AuthError::TokenRevoked);
+                }
+                if key
+                    .expires_at
+                    .is_some_and(|expires| expires <= crate::database::time::now_ms())
+                {
+                    return Err(AuthError::TokenExpired);
+                }
+                let user = self
+                    .user_repo
+                    .find_by_id(&principal.claims.sub)
+                    .await
+                    .map_err(|error| AuthError::Database(error.to_string()))?
+                    .ok_or(AuthError::UserNotFound)?;
+                if !user.is_active {
+                    return Err(AuthError::AccountDisabled);
+                }
+                if user.must_change_password {
+                    return Err(AuthError::PasswordChangeRequired);
+                }
+                Ok(AuthPrincipal {
+                    claims: Claims {
+                        roles: user.get_roles(),
+                        ..principal.claims.clone()
+                    },
+                    credential: CredentialKind::ApiKey,
+                    access: key.get_access_level(),
+                    api_key_id: Some(key.id),
+                })
+            }
+        }
     }
 
     /// Drop the cached `authorize_access_token` state for one user.
@@ -684,43 +810,52 @@ impl AuthService {
             return Err(AuthError::AccountDisabled);
         }
 
-        self.login_rate_limiter
-            .commit_success(&rate_keys, reserved_at);
-
-        // Update last login timestamp
         let now = Utc::now();
-        self.user_repo
-            .update_last_login(&user.id, now.timestamp_millis())
-            .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-        // `update_last_login` writes the user row, so the cached
-        // `authorize_access_token` state must be refetched.
-        self.invalidate_user_state(&user.id);
-
-        // Generate tokens
         let roles = user.get_roles();
-        let access_token = self
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let (access_token, access_expires_at) = self
             .jwt_service
-            .generate_token(&user.id, roles.clone())
-            .map_err(|e| AuthError::Internal(e.to_string()))?;
-
+            .generate_session_token(&user.id, roles.clone(), &session_id)
+            .map_err(|error| {
+                self.login_rate_limiter.release(&rate_keys, reserved_at);
+                AuthError::Internal(error.to_string())
+            })?;
         let refresh_token = Self::generate_refresh_token();
-        let refresh_token_hash = Self::hash_token(&refresh_token);
-        let refresh_expires_at =
-            now + Duration::seconds(self.config.refresh_token_expiration_secs as i64);
-
-        // Store refresh token
-        let token_model = RefreshTokenDbModel::new(
+        let refresh_expires_at = self.refresh_expiration(now).inspect_err(|_| {
+            self.login_rate_limiter.release(&rate_keys, reserved_at);
+        })?;
+        let mut token_model = RefreshTokenDbModel::new(
             &user.id,
-            refresh_token_hash,
+            Self::hash_token(&refresh_token),
             refresh_expires_at,
             device_info,
         );
-        self.token_repo
-            .create(&token_model)
+        token_model.session_id = Some(session_id.clone());
+        let session = AuthSessionDbModel {
+            id: session_id,
+            user_id: user.id.clone(),
+            created_at: now.timestamp_millis(),
+            expires_at: session_expiration(access_expires_at, token_model.expires_at).inspect_err(
+                |_| {
+                    self.login_rate_limiter.release(&rate_keys, reserved_at);
+                },
+            )?,
+            revoked_at: None,
+        };
+        if !self
+            .token_repo
+            .create_session(&session, &token_model, &user.password_hash)
             .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-
+            .map_err(|error| {
+                self.login_rate_limiter.release(&rate_keys, reserved_at);
+                AuthError::Database(error.to_string())
+            })?
+        {
+            return Err(AuthError::InvalidCredentials);
+        }
+        self.login_rate_limiter
+            .commit_success(&rate_keys, reserved_at);
+        self.invalidate_user_state(&user.id);
         info!(
             user_id = %user.id,
             username = %username,
@@ -764,11 +899,27 @@ impl AuthService {
                 AuthError::InvalidToken
             })?;
         stored_token.device_info = bounded_device_info(stored_token.device_info.take());
+        let session_id = stored_token
+            .session_id
+            .as_deref()
+            .unwrap_or(&stored_token.id)
+            .to_owned();
+        if self
+            .token_repo
+            .find_session(&stored_token.user_id, &session_id)
+            .await
+            .map_err(|error| AuthError::Database(error.to_string()))?
+            .is_some_and(|session| session.revoked_at.is_some())
+        {
+            // Explicit logout closes only this lineage; a stale tab cannot escalate
+            // a deliberate single-session logout into revocation of other devices.
+            return Err(AuthError::TokenRevoked);
+        }
 
         // Check if token is revoked (potential reuse attack).
         // Grace changes reuse-detection consequences, never eligibility for another rotation.
         if let Some(revoked_at) = stored_token.revoked_at {
-            self.revoke_sessions_on_refresh_reuse(&stored_token.user_id, revoked_at)
+            self.revoke_sessions_on_refresh_reuse(&stored_token.user_id, &session_id, revoked_at)
                 .await?;
             return Err(AuthError::TokenRevoked);
         }
@@ -804,35 +955,44 @@ impl AuthService {
 
         // Generate new tokens
         let roles = user.get_roles();
-        let access_token = self
+        let (access_token, access_expires_at) = self
             .jwt_service
-            .generate_token(&user.id, roles.clone())
+            .generate_session_token(&user.id, roles.clone(), &session_id)
             .map_err(|e| AuthError::Internal(e.to_string()))?;
 
         let new_refresh_token = Self::generate_refresh_token();
         let new_refresh_token_hash = Self::hash_token(&new_refresh_token);
         let now = Utc::now();
-        let refresh_expires_at =
-            now + Duration::seconds(self.config.refresh_token_expiration_secs as i64);
+        let refresh_expires_at = self.refresh_expiration(now)?;
 
         // All fallible user lookup and token generation happens before consumption. The
         // repository rechecks predecessor validity and inserts the successor atomically.
-        let token_model = RefreshTokenDbModel::new(
+        let mut token_model = RefreshTokenDbModel::new(
             &user.id,
             new_refresh_token_hash,
             refresh_expires_at,
             stored_token.device_info,
         );
+        token_model.session_id = Some(session_id.clone());
         match self
             .token_repo
-            .rotate(&stored_token.id, &token_model)
+            .rotate_session(
+                &stored_token.id,
+                &token_model,
+                session_expiration(access_expires_at, token_model.expires_at)?,
+            )
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?
         {
             RefreshTokenRotation::Rotated => {}
+            RefreshTokenRotation::SessionRevoked => return Err(AuthError::TokenRevoked),
             RefreshTokenRotation::Revoked { revoked_at } => {
-                self.revoke_sessions_on_refresh_reuse(&stored_token.user_id, revoked_at)
-                    .await?;
+                self.revoke_sessions_on_refresh_reuse(
+                    &stored_token.user_id,
+                    &session_id,
+                    revoked_at,
+                )
+                .await?;
                 return Err(AuthError::TokenRevoked);
             }
             RefreshTokenRotation::Expired => return Err(AuthError::TokenExpired),
@@ -860,9 +1020,22 @@ impl AuthService {
         })
     }
 
+    fn refresh_expiration(&self, now: DateTime<Utc>) -> Result<DateTime<Utc>, AuthError> {
+        let duration = i64::try_from(self.config.refresh_token_expiration_secs)
+            .ok()
+            .and_then(Duration::try_seconds)
+            .ok_or_else(|| {
+                AuthError::Internal("Refresh token expiration exceeds supported range".to_owned())
+            })?;
+        now.checked_add_signed(duration).ok_or_else(|| {
+            AuthError::Internal("Refresh token expiration exceeds supported range".to_owned())
+        })
+    }
+
     async fn revoke_sessions_on_refresh_reuse(
         &self,
         user_id: &str,
+        session_id: &str,
         revoked_at: i64,
     ) -> Result<(), AuthError> {
         let elapsed = crate::database::time::now_ms().saturating_sub(revoked_at);
@@ -876,7 +1049,7 @@ impl AuthService {
             });
         if self.config.revoke_all_on_refresh_token_reuse && !within_grace {
             self.token_repo
-                .revoke_all_for_user(user_id)
+                .revoke_all_for_active_session(user_id, session_id)
                 .await
                 .map_err(|e| AuthError::Database(e.to_string()))?;
             warn!(
@@ -940,14 +1113,7 @@ impl AuthService {
         // still enforcing the pre-change flag.
         self.invalidate_user_state(user_id);
 
-        // Revoke all existing refresh tokens to invalidate all sessions
-        // This ensures that if an attacker has a stolen token, they cannot
-        // continue using it after the legitimate user changes their password
-        self.token_repo
-            .revoke_all_for_user(user_id)
-            .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-
+        // The password-update trigger revokes sessions and refresh tokens atomically.
         info!(
             user_id = %user_id,
             "Password changed; revoked all refresh tokens for user"
@@ -956,38 +1122,59 @@ impl AuthService {
         Ok(())
     }
 
-    /// Logout by revoking a specific refresh token.
+    /// Logout closes only the refresh token's session lineage, including issued access tokens.
+    #[cfg(test)]
     pub async fn logout(&self, refresh_token: &str) -> Result<(), AuthError> {
-        let token_hash = Self::hash_token(refresh_token);
-        let token_hash_prefix = Self::token_hash_prefix(&token_hash);
-        debug!(token_hash_prefix = %token_hash_prefix, "Logout request received");
+        self.logout_with_principal(refresh_token, None).await
+    }
 
-        let mut stored_token = self
+    pub(crate) async fn logout_with_principal(
+        &self,
+        refresh_token: &str,
+        principal: Option<&AuthPrincipal>,
+    ) -> Result<(), AuthError> {
+        let authenticated = if let Some(principal) = principal {
+            if principal.credential != CredentialKind::Jwt {
+                return Err(AuthError::InvalidToken);
+            }
+            Some(
+                self.authorize_session_claims(principal.claims.clone(), true, true)
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let token_hash = Self::hash_token(refresh_token.trim());
+        let stored = self
             .token_repo
             .find_by_token_hash(&token_hash)
             .await
-            .map_err(|e| AuthError::Database(e.to_string()))?
-            .ok_or_else(|| {
-                warn!(token_hash_prefix = %token_hash_prefix, "Logout failed: refresh token not found");
-                AuthError::InvalidToken
-            })?;
-        stored_token.device_info = bounded_device_info(stored_token.device_info.take());
-
+            .map_err(|error| AuthError::Database(error.to_string()))?;
+        let (user_id, session_id) = match stored {
+            Some(token) => {
+                if authenticated
+                    .as_ref()
+                    .is_some_and(|claims| claims.sub != token.user_id)
+                {
+                    return Err(AuthError::InvalidToken);
+                }
+                let session = token.session_id.unwrap_or(token.id);
+                (token.user_id, session)
+            }
+            None => {
+                // An expired refresh row may already have been pruned. A current bound
+                // JWT can still revoke its own session, never a different user's session.
+                let claims = authenticated.ok_or(AuthError::InvalidToken)?;
+                (claims.sub, claims.sid.ok_or(AuthError::InvalidToken)?)
+            }
+        };
         self.token_repo
-            .revoke(&stored_token.id)
+            .revoke_session(&user_id, &session_id)
             .await
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-
-        info!(
-            user_id = %stored_token.user_id,
-            refresh_token_id = %stored_token.id,
-            device_info = ?stored_token.device_info.as_deref(),
-            "Logout successful (refresh token revoked)"
-        );
-
+            .map_err(|error| AuthError::Database(error.to_string()))?;
+        info!(%user_id, %session_id, "Logout successful (session revoked)");
         Ok(())
     }
-
     /// Logout from all sessions by revoking all refresh tokens for a user.
     pub async fn logout_all(&self, user_id: &str) -> Result<(), AuthError> {
         self.token_repo
@@ -1221,14 +1408,16 @@ impl AuthService {
             roles: state.roles.clone(),
             iss: "rust-srec".to_string(),
             aud: "rust-srec-api".to_string(),
-            exp: now + self.config.access_token_expiration_secs,
+            exp: now.saturating_add(self.config.access_token_expiration_secs),
             iat: now,
+            sid: None,
         };
 
         Ok(AuthPrincipal {
             claims,
             credential: CredentialKind::ApiKey,
             access: state.access_level,
+            api_key_id: Some(state.key_id),
         })
     }
 
@@ -1445,6 +1634,27 @@ mod tests {
 
     #[async_trait::async_trait]
     impl RefreshTokenRepository for MockRefreshTokenRepository {
+        async fn create_session(
+            &self,
+            _session: &AuthSessionDbModel,
+            _token: &RefreshTokenDbModel,
+            _expected_password_hash: &str,
+        ) -> crate::Result<bool> {
+            Ok(true)
+        }
+        async fn find_session(
+            &self,
+            user_id: &str,
+            session_id: &str,
+        ) -> crate::Result<Option<AuthSessionDbModel>> {
+            Ok(Some(AuthSessionDbModel {
+                id: session_id.to_owned(),
+                user_id: user_id.to_owned(),
+                created_at: 0,
+                expires_at: i64::MAX,
+                revoked_at: None,
+            }))
+        }
         async fn rotate(
             &self,
             _id: &str,
@@ -1499,6 +1709,21 @@ mod tests {
 
     #[async_trait::async_trait]
     impl RefreshTokenRepository for SpyRefreshTokenRepository {
+        async fn rotate_session(
+            &self,
+            id: &str,
+            replacement: &RefreshTokenDbModel,
+            _expires_at: i64,
+        ) -> crate::Result<RefreshTokenRotation> {
+            self.rotate(id, replacement).await
+        }
+        async fn revoke_all_for_active_session(
+            &self,
+            user_id: &str,
+            _session_id: &str,
+        ) -> crate::Result<()> {
+            self.revoke_all_for_user(user_id).await
+        }
         async fn rotate(
             &self,
             id: &str,
@@ -1788,6 +2013,7 @@ mod tests {
             aud: "test-audience".to_string(),
             exp,
             iat,
+            sid: Some("test-session".to_owned()),
         };
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
@@ -1812,7 +2038,7 @@ mod tests {
         let (service, jwt_service) =
             create_access_test_service(Arc::new(SpyUserRepository { user }));
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let claims = service
@@ -1826,7 +2052,7 @@ mod tests {
     async fn authorize_access_token_rejects_unknown_user() {
         let (service, jwt_service) = create_access_test_service(Arc::new(MockUserRepository));
         let token = jwt_service
-            .generate_token("missing-user", vec!["user".to_string()])
+            .generate_test_token("missing-user", vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let result = service.authorize_access_token(&token, false).await;
@@ -1842,7 +2068,7 @@ mod tests {
         let (service, jwt_service) =
             create_access_test_service(Arc::new(SpyUserRepository { user }));
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let result = service.authorize_access_token(&token, false).await;
@@ -1853,7 +2079,7 @@ mod tests {
     async fn authorize_access_token_fails_closed_on_repository_error() {
         let (service, jwt_service) = create_access_test_service(Arc::new(FailingUserRepository));
         let token = jwt_service
-            .generate_token("user", vec!["user".to_string()])
+            .generate_test_token("user", vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let result = service.authorize_access_token(&token, false).await;
@@ -1867,7 +2093,7 @@ mod tests {
         let (service, jwt_service) =
             create_access_test_service(Arc::new(SpyUserRepository { user }));
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let denied = service.authorize_access_token(&token, false).await;
@@ -1878,13 +2104,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authorize_access_token_serves_fresh_cache_without_repo_hit() {
+    async fn authorize_access_token_refetches_even_fresh_permissive_state() {
         let mut user = UserDbModel::new("cached", "hash", vec!["user".to_string()]);
         user.must_change_password = false;
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         service
@@ -1899,8 +2125,8 @@ mod tests {
             .expect("second authorize should succeed");
         assert_eq!(
             repo.find_by_id_calls(),
-            1,
-            "an entry younger than USER_STATE_CACHE_TTL must not call find_by_id"
+            2,
+            "even a fresh cached grant must reload the current user state"
         );
     }
 
@@ -1911,7 +2137,7 @@ mod tests {
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         service
@@ -1942,7 +2168,7 @@ mod tests {
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let denied = service.authorize_access_token(&token, false).await;
@@ -1984,7 +2210,7 @@ mod tests {
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         let first = service.authorize_access_token(&token, false).await;
@@ -2001,26 +2227,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authorize_access_token_fails_closed_with_only_stale_cache() {
+    async fn authorize_access_token_fails_closed_with_fresh_permissive_cache() {
         let mut user = UserDbModel::new("stale-error", "hash", vec!["user".to_string()]);
         user.must_change_password = false;
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         service
             .authorize_access_token(&token, false)
             .await
             .expect("first authorize should succeed");
-        expire_cached_state(&service, &user_id);
         repo.fail_find_by_id.store(true, Ordering::SeqCst);
 
         let result = service.authorize_access_token(&token, false).await;
         assert!(
             matches!(result, Err(AuthError::Database(_))),
-            "a stale entry must not back an Ok decision when find_by_id fails"
+            "a cached grant must not back an Ok decision when find_by_id fails"
         );
         assert_eq!(repo.find_by_id_calls(), 2);
     }
@@ -2032,7 +2257,7 @@ mod tests {
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         service
@@ -2057,7 +2282,7 @@ mod tests {
         let user_id = user.id.clone();
         let (service, repo, jwt_service) = create_counting_access_service(user);
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
+            .generate_test_token(&user_id, vec!["user".to_string()])
             .expect("token generation should succeed");
 
         service
@@ -2568,3 +2793,6 @@ mod property_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod session_tests;

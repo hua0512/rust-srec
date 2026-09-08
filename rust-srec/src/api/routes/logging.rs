@@ -27,9 +27,14 @@ use utoipa::ToSchema;
 mod archive;
 pub(crate) use archive::LogArchiveService;
 
+use crate::api::auth_request::{
+    AccessPolicy, authorize_request, revalidate, run_authenticated_session,
+};
+use crate::api::auth_service::AuthPrincipal;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::proto::log_event::{self, EventType, LogLevel};
 use crate::api::server::AppState;
+use crate::api::server::LoggingArchiveGrant;
 use crate::logging::available_modules;
 
 #[derive(Clone)]
@@ -42,8 +47,7 @@ pub struct LoggingRouteState {
         >,
     >,
     logging_config: std::sync::Arc<crate::logging::LoggingConfig>,
-    logging_download_tokens:
-        std::sync::Arc<dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>>,
+    logging_download_tokens: std::sync::Arc<dashmap::DashMap<String, LoggingArchiveGrant>>,
 }
 
 impl FromRef<AppState> for LoggingRouteState {
@@ -60,7 +64,8 @@ impl FromRef<AppState> for LoggingRouteState {
 #[derive(Clone)]
 pub struct ArchiveRouteState {
     log_dir: PathBuf,
-    tokens: std::sync::Arc<dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>>,
+    tokens: std::sync::Arc<dashmap::DashMap<String, LoggingArchiveGrant>>,
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
     archives: std::sync::Arc<LogArchiveService>,
 }
 
@@ -69,12 +74,13 @@ impl FromRef<AppState> for ArchiveRouteState {
         Self {
             log_dir: state.logging_config.log_dir().to_path_buf(),
             tokens: state.logging_download_tokens.clone(),
+            auth_service: state.auth_service.clone(),
             archives: state.logging_archives.clone(),
         }
     }
 }
 
-/// Query parameters for WebSocket connection (JWT token).
+/// Query credential fallback for clients that cannot send Authorization headers.
 #[derive(Debug, Deserialize)]
 pub struct WsAuthParams {
     pub token: Option<String>,
@@ -184,37 +190,16 @@ pub fn router() -> Router<AppState> {
         .route("/stream", get(logging_stream_ws))
 }
 
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    let value = headers.get(header::AUTHORIZATION)?;
-    let value = value.to_str().ok()?;
-    let value = value.strip_prefix("Bearer ")?;
-    let value = value.trim();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value.to_string())
-    }
-}
-
-async fn authorize_token(state: &LoggingRouteState, token: Option<&str>) -> Result<(), ApiError> {
-    let Some(auth_service) = &state.auth_service else {
-        return Ok(());
-    };
-    let token = token.ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-
-    auth_service
-        .authorize_access_token(token, false)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(())
-}
-
 async fn authorize_headers(state: &LoggingRouteState, headers: &HeaderMap) -> Result<(), ApiError> {
-    let token = extract_bearer_token(headers);
-    authorize_token(state, token.as_deref()).await
+    authorize_request(
+        state.auth_service.as_ref(),
+        headers,
+        None,
+        AccessPolicy::Full,
+    )
+    .await
+    .map(|_| ())
 }
-
 fn parse_yyyy_mm_dd(s: &str) -> Result<chrono::NaiveDate, ApiError> {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
         .map_err(|_| ApiError::bad_request("Invalid date; expected YYYY-MM-DD"))
@@ -456,24 +441,29 @@ fn generate_download_token() -> String {
     hex::encode(bytes)
 }
 
-fn cleanup_expired_download_tokens(
-    tokens: &dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>,
-) {
+fn cleanup_expired_download_tokens(tokens: &dashmap::DashMap<String, LoggingArchiveGrant>) {
     if tokens.len() < 1000 {
         return;
     }
     let now = chrono::Utc::now();
-    tokens.retain(|_, expires_at| *expires_at > now);
+    tokens.retain(|_, grant| grant.expires_at > now);
 }
 
 fn issue_download_token(
-    tokens: &dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>,
+    tokens: &dashmap::DashMap<String, LoggingArchiveGrant>,
+    principal: Option<AuthPrincipal>,
 ) -> Result<ArchiveTokenResponse, ApiError> {
     cleanup_expired_download_tokens(tokens);
 
     let token = generate_download_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(5);
-    tokens.insert(token.clone(), expires_at);
+    tokens.insert(
+        token.clone(),
+        LoggingArchiveGrant {
+            expires_at,
+            principal,
+        },
+    );
 
     Ok(ArchiveTokenResponse {
         token,
@@ -481,13 +471,19 @@ fn issue_download_token(
     })
 }
 
-fn consume_download_token(
-    tokens: &dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>,
+async fn consume_download_token(
+    tokens: &dashmap::DashMap<String, LoggingArchiveGrant>,
     token: &str,
+    auth_service: Option<&std::sync::Arc<crate::api::auth_service::AuthService>>,
 ) -> Result<(), ApiError> {
     let now = chrono::Utc::now();
     match tokens.remove(token) {
-        Some((_, expires_at)) if expires_at > now => Ok(()),
+        Some((_, grant)) if grant.expires_at > now => tokio::time::timeout(
+            Duration::from_secs(3),
+            revalidate(auth_service, grant.principal.as_ref(), AccessPolicy::Full),
+        )
+        .await
+        .map_err(|_| ApiError::unauthorized("Archive credential revalidation timed out"))?,
         _ => Err(ApiError::unauthorized("Invalid or expired download token")),
     }
 }
@@ -560,8 +556,17 @@ pub async fn get_archive_token(
     State(state): State<LoggingRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<ArchiveTokenResponse>> {
-    authorize_headers(&state, &headers).await?;
-    Ok(Json(issue_download_token(&state.logging_download_tokens)?))
+    let principal = authorize_request(
+        state.auth_service.as_ref(),
+        &headers,
+        None,
+        AccessPolicy::Full,
+    )
+    .await?;
+    Ok(Json(issue_download_token(
+        &state.logging_download_tokens,
+        principal,
+    )?))
 }
 
 #[utoipa::path(
@@ -635,7 +640,7 @@ pub async fn download_logs_archive(
     State(state): State<ArchiveRouteState>,
     Query(query): Query<ArchiveQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    consume_download_token(&state.tokens, &query.token)?;
+    consume_download_token(&state.tokens, &query.token, state.auth_service.as_ref()).await?;
 
     let (from, to) = parse_range(query.from.as_deref(), query.to.as_deref())?;
 
@@ -745,12 +750,26 @@ async fn logging_stream_ws(
     ws: WebSocketUpgrade,
     State(state): State<LoggingRouteState>,
     Query(auth): Query<WsAuthParams>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    authorize_token(&state, auth.token.as_deref()).await?;
+    let principal = authorize_request(
+        state.auth_service.as_ref(),
+        &headers,
+        auth.token.as_deref(),
+        AccessPolicy::Full,
+    )
+    .await?;
 
     let logging_config = state.logging_config.clone();
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, logging_config)))
+    Ok(ws.on_upgrade(move |socket| {
+        run_authenticated_session(
+            state.auth_service,
+            principal,
+            AccessPolicy::Full,
+            handle_socket(socket, logging_config),
+        )
+    }))
 }
 
 /// Handle an established WebSocket connection for log streaming.
@@ -832,6 +851,9 @@ fn parse_log_level(level: &str) -> LogLevel {
 
 #[cfg(test)]
 mod archive_tests;
+
+#[cfg(test)]
+mod auth_tests;
 
 #[cfg(test)]
 mod tests {

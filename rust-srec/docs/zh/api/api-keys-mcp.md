@@ -50,8 +50,17 @@ curl http://localhost:12555/api/sessions \
 
 - API 密钥不能调用上述密钥管理端点、`POST /api/auth/change-password` 或 `POST /api/auth/logout-all`。
 - 只读密钥不能获取配置、主播覆盖配置、任务记录、预设、引擎、通知渠道、备份，以及其他可能包含已存凭据或运维机密的响应。
-- 通过 `?token=` 查询参数认证的 WebSocket / 媒体路由（`/api/downloads`、`/api/logging`、`/api/media`、`/api/stream-proxy`）只接受 JWT 访问令牌，因此密钥不会出现在 URL 或日志中。
+- 只读密钥可以读取需要认证的健康详情与录制媒体。下载/日志 WebSocket、流代理请求、日志配置和归档路由需要 `full` 权限。
 - 被禁用的用户、或处于强制改密状态的用户，其密钥会被拒绝。
+
+媒体、流代理以及下载/日志 WebSocket 路由接受绑定会话的 JWT，或具有所需权限的
+API 密钥。`Authorization: Bearer <credential>` 请求头优先；只有缺少该请求头时才
+使用 `?token=<credential>`。无效或格式错误的请求头不会回退到查询参数。
+优先使用请求头，因为 URL 可能进入浏览器历史记录和代理访问日志。
+
+下载/日志 WebSocket 每五秒重新验证凭据，每次查询最多等待三秒。日志归档授权
+保留签发时的会话或密钥身份，并在唯一一次使用时重新验证。撤销浏览器会话不会
+撤销单独管理的 API 密钥，需要另行撤销密钥。
 
 ## MCP 服务器
 

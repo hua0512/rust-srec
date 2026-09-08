@@ -50,8 +50,19 @@ Restrictions that always apply, regardless of access level:
 
 - API keys cannot call the key-management endpoints above, `POST /api/auth/change-password`, or `POST /api/auth/logout-all`.
 - Read-only keys cannot retrieve configuration, streamer overrides, job records, presets, engines, notification channels, backups, or other responses that can contain stored credentials or operational secrets.
-- The WebSocket/media routes that authenticate via `?token=` query parameter (`/api/downloads`, `/api/logging`, `/api/media`, `/api/stream-proxy`) accept JWT access tokens only, so keys never appear in URLs or logs.
+- Read-only keys may read authenticated health details and recorded media. Download/log WebSockets, stream proxy requests, and logging configuration or archive routes require `full` access.
 - Keys of a disabled user, or of a user in the forced-password-change state, are rejected.
+
+Media, stream proxy, and download/log WebSocket routes accept a session JWT or
+an API key with the required access level. `Authorization: Bearer <credential>`
+takes precedence. `?token=<credential>` is a fallback only when that header is
+absent; an invalid or malformed header never falls back to a query token. Prefer
+headers because URLs can appear in browser history and proxy access logs.
+
+Download/log WebSockets revalidate credentials every five seconds with a
+three-second lookup deadline. Log archive grants retain the issuing session or
+key identity and revalidate it on their one permitted use. Revoking a browser
+session does not revoke independently managed API keys; revoke those separately.
 
 ## MCP Server
 
