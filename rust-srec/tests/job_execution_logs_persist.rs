@@ -30,6 +30,181 @@ async fn log_queue() -> (TempDir, JobQueue, Arc<SqlxJobRepository>, String) {
 }
 
 #[tokio::test]
+async fn beginning_fresh_and_legacy_empty_execution_persists_processor_without_logs() {
+    let (_dir, queue, repo, job_id) = log_queue().await;
+    assert_eq!(repo.get_job_execution_info(&job_id).await.unwrap(), None);
+    assert_eq!(
+        repo.get_job_execution_info("missing-job").await.unwrap(),
+        None
+    );
+    for legacy_empty in [false, true] {
+        if legacy_empty {
+            repo.update_job_execution_info(&job_id, "").await.unwrap();
+        }
+        queue
+            .begin_execution(&job_id, "fresh-processor")
+            .await
+            .unwrap();
+        let info: JobExecutionInfo =
+            serde_json::from_str(&repo.get_job_execution_info(&job_id).await.unwrap().unwrap())
+                .unwrap();
+        assert_eq!(info.current_processor.as_deref(), Some("fresh-processor"));
+        assert!(info.logs.is_empty());
+        assert_eq!(
+            repo.list_execution_logs(&job_id, &Pagination::new(100, 0))
+                .await
+                .unwrap()
+                .1,
+            0
+        );
+    }
+}
+
+#[tokio::test]
+async fn beginning_retry_preserves_metadata_and_never_replays_historical_log_rows() {
+    let (_dir, queue, repo, job_id) = log_queue().await;
+    let prior = JobLogEntry::info("previous attempt log");
+    queue
+        .append_log_entry(&job_id, std::slice::from_ref(&prior))
+        .await
+        .unwrap();
+    let mut info = JobExecutionInfo::new()
+        .with_processor("previous")
+        .with_step(2, 4)
+        .with_input_size(123)
+        .with_output_size(456);
+    info.logs.push_back(prior);
+    info.log_lines_total = 1;
+    info.items_produced.push("published.mp4".to_owned());
+    let now = chrono::Utc::now();
+    info.record_step_duration(1, "previous", 2.5, now, now);
+    queue
+        .update_execution_info(&job_id, info.clone())
+        .await
+        .unwrap();
+    let mut expected = serde_json::to_value(&info).unwrap();
+    expected["extension_metadata"] = serde_json::json!({"preserve": true});
+    repo.update_job_execution_info(&job_id, &expected.to_string())
+        .await
+        .unwrap();
+    for processor in ["retry-one", "retry-two"] {
+        queue.begin_execution(&job_id, processor).await.unwrap();
+        expected["current_processor"] = serde_json::json!(processor);
+        let stored: serde_json::Value =
+            serde_json::from_str(&repo.get_job_execution_info(&job_id).await.unwrap().unwrap())
+                .unwrap();
+        assert_eq!(stored, expected);
+        let (_, total) = repo
+            .list_execution_logs(&job_id, &Pagination::new(100, 0))
+            .await
+            .unwrap();
+        assert_eq!(
+            total, 1,
+            "starting attempts must not reinsert historical snapshots"
+        );
+    }
+    repo.update_job_execution_info(&job_id, "[invalid metadata]")
+        .await
+        .unwrap();
+    assert!(queue.begin_execution(&job_id, "retry-three").await.is_err());
+    assert_eq!(
+        repo.get_job_execution_info(&job_id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("[invalid metadata]")
+    );
+}
+
+#[tokio::test]
+async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
+    for fail in [false, true] {
+        let (_dir, queue, repo, job_id) = log_queue().await;
+        let prior_log = JobLogEntry::warn("prior attempt warning");
+        queue
+            .append_log_entry(&job_id, std::slice::from_ref(&prior_log))
+            .await
+            .unwrap();
+        let mut prior = JobExecutionInfo::new()
+            .with_processor("previous")
+            .with_step(2, 4)
+            .with_input_size(123)
+            .with_output_size(456);
+        prior.logs.push_back(prior_log);
+        prior.log_lines_total = 1;
+        prior.log_warn_count = 1;
+        prior.items_produced.push("published.mp4".to_owned());
+        let now = chrono::Utc::now();
+        prior.record_step_duration(1, "previous", 2.5, now, now);
+        let mut document = serde_json::to_value(&prior).unwrap();
+        document["extension_metadata"] = serde_json::json!({"attempts": [{"kept": true}]});
+        repo.update_job_execution_info(&job_id, &document.to_string())
+            .await
+            .unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.begin_execution(&job_id, "retry").await.unwrap();
+        queue
+            .record_produced_items(&job_id, &["new.mp4".to_owned()])
+            .await
+            .unwrap();
+        if fail {
+            queue
+                .fail_with_step_info(&job_id, "retry failed", Some("retry"), Some(2), Some(4))
+                .await
+                .unwrap();
+        } else {
+            queue
+                .complete(
+                    &job_id,
+                    JobResult {
+                        outputs: vec!["new.mp4".to_owned()],
+                        duration_secs: 3.0,
+                        metadata: None,
+                        uploads: vec![],
+                        logs: vec![JobLogEntry::info("retry completed")],
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        let row = repo.get_job(&job_id).await.unwrap();
+        assert_eq!(row.status, if fail { "FAILED" } else { "COMPLETED" });
+        let stored: serde_json::Value =
+            serde_json::from_str(row.execution_info.as_deref().unwrap()).unwrap();
+        for field in [
+            "current_step",
+            "total_steps",
+            "input_size_bytes",
+            "output_size_bytes",
+            "step_durations",
+            "extension_metadata",
+        ] {
+            assert_eq!(stored[field], document[field], "lost {field}");
+        }
+        assert_eq!(stored["current_processor"], "retry");
+        assert_eq!(
+            stored["items_produced"],
+            serde_json::json!(["published.mp4", "new.mp4"])
+        );
+        assert_eq!(stored["logs"].as_array().unwrap().len(), 2);
+        assert_eq!(stored["log_lines_total"], 2);
+        assert_eq!(stored["log_warn_count"], 1);
+        assert_eq!(stored["log_error_count"], if fail { 1 } else { 0 });
+        let (logs, total) = repo
+            .list_execution_logs(&job_id, &Pagination::new(100, 0))
+            .await
+            .unwrap();
+        assert_eq!(total, 2);
+        assert_eq!(
+            logs.iter()
+                .filter(|log| log.message.as_deref() == Some("prior attempt warning"))
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
 async fn disjoint_batches_preserve_same_timestamp_and_identical_messages() {
     let (_dir, queue, repo, job_id) = log_queue().await;
     let timestamp = chrono::Utc::now();
