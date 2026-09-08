@@ -381,3 +381,9 @@ Healthy ◄───────────────────────
 主播状态的统一类型为 `rust_srec::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
 
 已移除未使用的 `database::batching`、`config::UpdateCoalescer`、`domain::session` 实体、主播状态修改辅助方法，以及仓库的 `list_active_streamers` / `resume_session` 方法。会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
+
+## 服务容器职责
+
+容器组装、有序关闭、输出根目录辅助逻辑和事件决策位于独立的私有模块中。初始化仍只发现一次输出根目录，并将同一份快照用于健康检查注册和启动写入探测。容器公开 API 和关闭期限保持不变。
+
+启动日志保留数据库与配置 I/O、引擎发现、需要等待的初始化阶段及整体耗时。不再单独记录同步包装对象构造和后台任务启动的耗时；这些记录并不代表任务随后执行工作的耗时。

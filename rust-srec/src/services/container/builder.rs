@@ -104,22 +104,18 @@ impl ServiceContainer {
         crate::i18n::init_from_env();
 
         let overall = Instant::now();
-        let cancellation_token_start = Instant::now();
         let cancellation_token = CancellationToken::new();
-        let cancellation_token_ms = cancellation_token_start.elapsed().as_millis();
         let task_supervisor = Arc::new(TaskSupervisor::with_cancellation(
             cancellation_token.clone(),
         ));
         info!("Initializing service container");
 
         // Create repositories
-        let repos_start = Instant::now();
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
         let streamer_repo = Arc::new(SqlxStreamerRepository::new(
             pool.clone(),
             write_pool.clone(),
         ));
-        let repos_ms = repos_start.elapsed().as_millis();
 
         // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
         let global_config_start = Instant::now();
@@ -127,18 +123,13 @@ impl ServiceContainer {
         let global_config_ms = global_config_start.elapsed().as_millis();
 
         // Create shared event broadcaster
-        let event_broadcaster_start = Instant::now();
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
-        let event_broadcaster_ms = event_broadcaster_start.elapsed().as_millis();
 
         // Create additional repositories for StreamMonitor
-        let monitor_repos_start = Instant::now();
         let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
-        let monitor_repos_ms = monitor_repos_start.elapsed().as_millis();
 
         // Create config service with custom cache
-        let config_service_start = Instant::now();
         let cache = ConfigCache::with_ttl(cache_ttl);
         let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
             config_repo.clone(),
@@ -146,15 +137,12 @@ impl ServiceContainer {
             cache,
             event_broadcaster.clone(),
         ));
-        let config_service_ms = config_service_start.elapsed().as_millis();
 
         // Create streamer manager
-        let streamer_manager_start = Instant::now();
         let streamer_manager = Arc::new(StreamerManager::new(
             streamer_repo.clone(),
             event_broadcaster.clone(),
         ));
-        let streamer_manager_ms = streamer_manager_start.elapsed().as_millis();
 
         // Construct the single-owner session lifecycle service up-front so
         // the stream monitor can delegate its atomic session+streamer+outbox
@@ -209,7 +197,6 @@ impl ServiceContainer {
         );
 
         // Create stream monitor for real status detection
-        let stream_monitor_start = Instant::now();
         let (required_monitor_event_sender, required_monitor_event_receiver) =
             tokio::sync::mpsc::channel(256);
         let mut stream_monitor = StreamMonitor::with_runtime(
@@ -225,10 +212,8 @@ impl ServiceContainer {
                 task_supervisor: task_supervisor.clone(),
             },
         );
-        let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
 
         // Build credential refresh service (shared between StreamMonitor + API).
-        let credential_service_start = Instant::now();
         let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
         let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
         let mut credential_service =
@@ -244,7 +229,6 @@ impl ServiceContainer {
         let credential_service = Arc::new(credential_service);
         stream_monitor.set_credential_service(Arc::clone(&credential_service));
         let stream_monitor = Arc::new(stream_monitor);
-        let credential_service_ms = credential_service_start.elapsed().as_millis();
 
         // Create download manager with custom config, overridden by global config for concurrency.
         let download_manager_start = Instant::now();
@@ -263,7 +247,6 @@ impl ServiceContainer {
         let download_manager_ms = download_manager_start.elapsed().as_millis();
 
         // Create job repository for pipeline persistence
-        let pipeline_repo_start = Instant::now();
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
 
         // Create job preset repository
@@ -299,11 +282,9 @@ impl ServiceContainer {
             });
             crate::pipeline::UploadStatusBroadcaster::new(encoder)
         };
-        let pipeline_repo_ms = pipeline_repo_start.elapsed().as_millis();
 
         // Create pipeline manager with job repository for database persistence.
         // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
-        let pipeline_manager_start = Instant::now();
         let mut effective_pipeline_config = pipeline_config;
         effective_pipeline_config.cpu_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
@@ -331,25 +312,19 @@ impl ServiceContainer {
                 upload_broadcaster: upload_status_broadcaster.clone(),
             },
         ));
-        let pipeline_manager_ms = pipeline_manager_start.elapsed().as_millis();
 
         // Get monitor event broadcaster
-        let monitor_event_broadcaster_start = Instant::now();
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
-        let monitor_event_broadcaster_ms = monitor_event_broadcaster_start.elapsed().as_millis();
 
         // Create danmu service
-        let danmu_service_start = Instant::now();
         let (danmu_coordination_sender, danmu_coordination_receiver) = danmu_coordination_channel();
         let danmu_service = Arc::new(
             DanmuService::new()
                 .with_session_repository(session_repo.clone())
                 .with_coordination_sender(danmu_coordination_sender.clone()),
         );
-        let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config
-        let notification_service_start = Instant::now();
         let notification_repository = Arc::new(SqlxNotificationRepository::new(
             pool.clone(),
             write_pool.clone(),
@@ -387,7 +362,6 @@ impl ServiceContainer {
             ))
             .with_notification_service(Arc::downgrade(&notification_service)),
         ));
-        let notification_service_ms = notification_service_start.elapsed().as_millis();
         let web_push_enabled = web_push_service.is_some();
 
         // Build the output-root write gate AFTER both StreamerManager
@@ -405,26 +379,20 @@ impl ServiceContainer {
 
         // Create metrics collector. Its only consumer is
         // `WebPushService::set_metrics_collector` delivery accounting.
-        let metrics_collector_start = Instant::now();
         let metrics_collector = Arc::new(MetricsCollector::new());
         if let Some(web_push) = web_push_service.as_ref() {
             web_push.set_metrics_collector(metrics_collector);
         }
-        let metrics_collector_ms = metrics_collector_start.elapsed().as_millis();
 
         // Create health checker
-        let health_checker_start = Instant::now();
         let health_checker = Arc::new(HealthChecker::new());
-        let health_checker_ms = health_checker_start.elapsed().as_millis();
 
         // Retention values are loaded from global_config on every sweep.
-        let maintenance_scheduler_start = Instant::now();
         let maintenance_config = MaintenanceConfig::default();
         let maintenance_scheduler = Arc::new(
             MaintenanceScheduler::new(pool.clone(), write_pool.clone(), maintenance_config)
                 .with_download_manager(Arc::downgrade(&download_manager)),
         );
-        let maintenance_scheduler_ms = maintenance_scheduler_start.elapsed().as_millis();
 
         let scheduler_config = crate::scheduler::SchedulerConfig {
             check_interval_ms: global_config.streamer_check_delay_ms as u64,
@@ -439,7 +407,6 @@ impl ServiceContainer {
             wire_check_history_pipeline(&pool, &write_pool, &cancellation_token, &task_supervisor);
 
         // Create scheduler with StreamMonitor for real status checking
-        let scheduler_start = Instant::now();
         let scheduler = Scheduler::with_monitor_history_and_config(
             streamer_manager.clone(),
             event_broadcaster.clone(),
@@ -451,7 +418,6 @@ impl ServiceContainer {
         .with_config_repo(config_repo.clone());
         let scheduler_handle = scheduler.handle();
         let scheduler = parking_lot::Mutex::new(Some(scheduler));
-        let scheduler_ms = scheduler_start.elapsed().as_millis();
 
         let session_cancels = Arc::new(SessionCancelTokens::new());
         let pending_pipelines = Arc::new(DashMap::new());
@@ -476,25 +442,8 @@ impl ServiceContainer {
 
         let total_ms = overall.elapsed().as_millis();
         info!(
-            startup_container_repos_ms = repos_ms,
             startup_container_global_config_ms = global_config_ms,
-            startup_container_event_broadcaster_ms = event_broadcaster_ms,
-            startup_container_monitor_repos_ms = monitor_repos_ms,
-            startup_container_config_service_ms = config_service_ms,
-            startup_container_streamer_manager_ms = streamer_manager_ms,
-            startup_container_stream_monitor_ms = stream_monitor_ms,
-            startup_container_credential_service_ms = credential_service_ms,
             startup_container_download_manager_ms = download_manager_ms,
-            startup_container_pipeline_repos_ms = pipeline_repo_ms,
-            startup_container_pipeline_manager_ms = pipeline_manager_ms,
-            startup_container_monitor_event_broadcaster_ms = monitor_event_broadcaster_ms,
-            startup_container_danmu_service_ms = danmu_service_ms,
-            startup_container_notification_service_ms = notification_service_ms,
-            startup_container_metrics_collector_ms = metrics_collector_ms,
-            startup_container_health_checker_ms = health_checker_ms,
-            startup_container_maintenance_scheduler_ms = maintenance_scheduler_ms,
-            startup_container_cancellation_token_ms = cancellation_token_ms,
-            startup_container_scheduler_ms = scheduler_ms,
             startup_container_total_ms = total_ms,
             web_push_enabled,
             "Startup: service container build summary"
