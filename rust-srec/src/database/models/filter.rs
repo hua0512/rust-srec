@@ -90,6 +90,7 @@ impl TryFrom<&FilterDbModel> for crate::domain::filter::Filter {
                     days_of_week: config.days_of_week,
                     start_time: config.start_time,
                     end_time: config.end_time,
+                    timezone: config.timezone,
                 }))
             }
             FilterType::Keyword => {
@@ -178,6 +179,9 @@ pub struct TimeBasedFilterConfig {
     pub start_time: String,
     /// End time in HH:MM:SS format (HH:MM accepted and normalized; can be next day for overnight ranges)
     pub end_time: String,
+    /// Explicit IANA timezone; absent retains server-local time for existing filters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
 }
 
 impl TimeBasedFilterConfig {
@@ -201,6 +205,11 @@ impl TimeBasedFilterConfig {
 
 impl FilterConfigValidator for TimeBasedFilterConfig {
     fn validate(&self) -> Result<(), FilterValidationError> {
+        if let Some(timezone) = &self.timezone {
+            timezone
+                .parse::<chrono_tz::Tz>()
+                .map_err(|_| FilterValidationError::InvalidTimezone(timezone.clone()))?;
+        }
         for day in &self.days_of_week {
             if normalize_day_of_week(day).is_none() {
                 return Err(FilterValidationError::InvalidDayOfWeek(day.clone()));
@@ -407,6 +416,7 @@ mod tests {
     #[test]
     fn test_time_based_filter_config() {
         let config = TimeBasedFilterConfig {
+            timezone: None,
             days_of_week: vec!["Saturday".to_string(), "Sunday".to_string()],
             start_time: "22:00".to_string(),
             end_time: "02:00".to_string(),
@@ -419,6 +429,7 @@ mod tests {
     #[test]
     fn test_time_based_filter_accepts_seconds_and_normalizes() {
         let mut config = TimeBasedFilterConfig {
+            timezone: None,
             days_of_week: vec!["Mon".to_string()],
             start_time: "09:00:00".to_string(),
             end_time: "17:30:59".to_string(),
@@ -701,6 +712,31 @@ mod tests {
         };
         assert_eq!(config1, config2);
         assert_ne!(config1, config3);
+    }
+
+    #[test]
+    fn optional_timezone_validates_and_roundtrips_to_domain_filter() {
+        let raw = r#"{"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":"Asia/Shanghai"}"#;
+        let mut config: TimeBasedFilterConfig = serde_json::from_str(raw).unwrap();
+        config.validate().unwrap();
+        let stored = FilterDbModel::new("streamer", FilterType::TimeBased, raw);
+        let domain = crate::domain::filter::Filter::try_from(&stored).unwrap();
+        let utc = |value: &str| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+        };
+        assert!(domain.matches("", "", utc("2024-01-01T02:00:00Z")));
+        assert!(!domain.matches("", "", utc("2024-01-01T09:00:00Z")));
+        assert_eq!(
+            serde_json::to_value(&config).unwrap()["timezone"],
+            "Asia/Shanghai"
+        );
+        config.timezone = Some("Mars/Olympus".to_owned());
+        assert!(matches!(
+            config.validate(),
+            Err(FilterValidationError::InvalidTimezone(_))
+        ));
     }
 
     #[test]

@@ -81,6 +81,12 @@ pub fn sanitize_filename(input: &str) -> String {
     trimmed.to_string()
 }
 
+/// Sanitize metadata inserted into a template that will undergo one later
+/// percent expansion. Literal percent signs must survive that expansion.
+pub fn sanitize_filename_for_template(input: &str) -> String {
+    sanitize_filename(input).replace('%', "%%")
+}
+
 /// Expand placeholders in a path template.
 ///
 /// This function handles both curly-brace placeholders (e.g., `{streamer}`) and
@@ -175,27 +181,57 @@ pub fn expand_placeholders_at(
     platform: Option<&str>,
     reference_timestamp_ms: Option<i64>,
 ) -> String {
-    // First, expand curly-brace placeholders
+    // Expand only the template's time tokens, before inserting literal metadata.
+    let expanded = pipeline_common::expand_path_template_at(template, reference_timestamp_ms);
     let streamer_display = streamer_name
         .map(sanitize_filename)
         .unwrap_or_else(|| streamer_id.to_string());
     let title_display = session_title.map(sanitize_filename).unwrap_or_default();
     let platform_display = platform.unwrap_or_default();
 
-    let result = template
+    expanded
         .replace("{streamer}", &streamer_display)
         .replace("{title}", &title_display)
         .replace("{streamer_id}", streamer_id)
         .replace("{session_id}", session_id)
-        .replace("{platform}", platform_display);
-
-    // Then expand time-based placeholders using pipeline_common's expand_path_template_at
-    pipeline_common::expand_path_template_at(&result, reference_timestamp_ms)
+        .replace("{platform}", platform_display)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metadata_percent_tokens_remain_literal_in_paths_and_recording_templates() {
+        let name = "频道%Y%n%%";
+        let title = "Top 5%d %i";
+        let path = expand_placeholders_at(
+            "root/%Y/{streamer}/{title}",
+            "id",
+            "session",
+            Some(name),
+            Some(title),
+            None,
+            Some(1_700_000_000_000),
+        );
+        assert_eq!(path, format!("root/2023/{name}/{title}"));
+        let template = format!(
+            "{}-{}-%i",
+            sanitize_filename_for_template(name),
+            sanitize_filename_for_template(title)
+        );
+        assert_eq!(
+            pipeline_common::expand_filename_template(&template, Some(7)),
+            format!("{name}-{title}-007")
+        );
+        assert_eq!(
+            pipeline_common::expand_path_template(&format!(
+                "root/{}",
+                sanitize_filename_for_template(name)
+            )),
+            format!("root/{name}")
+        );
+    }
 
     #[test]
     fn test_empty_string() {

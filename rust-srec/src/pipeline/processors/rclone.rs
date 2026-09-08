@@ -387,7 +387,11 @@ impl RcloneProcessor {
         let cmd_op = match *operation {
             RcloneOperation::Copy => "copyto",
             RcloneOperation::Move => "moveto",
-            RcloneOperation::Sync => unreachable!(),
+            RcloneOperation::Sync => {
+                return Err(crate::Error::Validation(
+                    "Sync requires batch inputs".to_owned(),
+                ));
+            }
         };
 
         info!(
@@ -438,7 +442,7 @@ impl RcloneProcessor {
 
             if attempt > 0 {
                 info!("Retry attempt {} for rclone {}", attempt + 1, cmd_op);
-                tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
+                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
             }
 
             let mut cmd = Command::new(&self.rclone_path);
@@ -649,7 +653,7 @@ impl RcloneProcessor {
         for attempt in 0..self.max_retries {
             if attempt > 0 {
                 info!("Retry attempt {} for rclone {} batch", attempt + 1, cmd_op);
-                tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
+                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
             }
 
             let files_from_path = Self::create_files_from_list(&pending_inputs, &base_dir)

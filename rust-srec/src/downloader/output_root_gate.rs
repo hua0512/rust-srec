@@ -200,10 +200,9 @@ impl OutputRootGate {
     /// directory's key. Unknown placeholders after that key are safe; earlier ones are not.
     /// Probe the deepest concrete directory, not a potentially read-only ancestor gate key.
     pub(crate) fn probe_path_for_template(&self, template: &str) -> Option<PathBuf> {
-        let key = self.resolve_path(Path::new(template));
-        if contains_placeholder(&key) {
-            return None;
-        }
+        // Literal percent escapes participate in real root identity. Genuine
+        // time tokens remain unresolved and cannot extend the concrete prefix.
+        let key = self.resolve_path(Path::new(&template.replace("%%", "%")));
         let prefix = concrete_template_prefix(template);
         if contains_placeholder(Path::new(template))
             && self.configured_roots.iter().any(|configured| {
@@ -487,15 +486,23 @@ impl OutputRootGate {
 }
 
 fn contains_placeholder(path: &Path) -> bool {
-    path.to_string_lossy().contains(['{', '%'])
+    let text = path.to_string_lossy();
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '{' || (ch == '%' && chars.next() != Some('%')) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Keeps whole concrete components, including a final static directory without a slash.
 pub(crate) fn concrete_template_prefix(template: &str) -> PathBuf {
-    Path::new(template)
+    let prefix: PathBuf = Path::new(template)
         .components()
-        .take_while(|part| !part.as_os_str().to_string_lossy().contains(['{', '%']))
-        .collect()
+        .take_while(|part| !contains_placeholder(Path::new(part.as_os_str())))
+        .collect();
+    PathBuf::from(prefix.to_string_lossy().replace("%%", "%"))
 }
 
 /// Resolve the gate-tracking root for an output directory.

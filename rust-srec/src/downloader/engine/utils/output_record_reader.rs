@@ -15,6 +15,9 @@ pub struct OutputRecordReader<R> {
     reader: BufReader<R>,
     pending: Vec<u8>,
     scratch: [u8; 4096],
+    scanned: usize,
+    #[cfg(test)]
+    scanned_bytes: usize,
 }
 
 impl<R> OutputRecordReader<R>
@@ -26,6 +29,9 @@ where
             reader: BufReader::new(reader),
             pending: Vec::new(),
             scratch: [0u8; 4096],
+            scanned: 0,
+            #[cfg(test)]
+            scanned_bytes: 0,
         }
     }
 
@@ -34,16 +40,32 @@ where
     /// Records are delimited by either `\n` or `\r`. Consecutive delimiters are skipped.
     pub async fn next_record(&mut self) -> io::Result<Option<String>> {
         loop {
-            if let Some((idx, _delim)) = find_record_delimiter(&self.pending) {
-                let record_bytes: Vec<u8> = self.pending.drain(..idx).collect();
-                consume_delimiters(&mut self.pending);
-
-                let record = String::from_utf8_lossy(&record_bytes).trim().to_string();
+            let delimiter = find_record_delimiter(&self.pending[self.scanned..]);
+            #[cfg(test)]
+            {
+                self.scanned_bytes +=
+                    delimiter.map_or(self.pending.len() - self.scanned, |(index, _)| index + 1);
+            }
+            if let Some((index, _delim)) = delimiter {
+                let idx = self.scanned + index;
+                let record = String::from_utf8_lossy(&self.pending[..idx])
+                    .trim()
+                    .to_string();
+                let delimiter_count = self.pending[idx..]
+                    .iter()
+                    .take_while(|&&byte| matches!(byte, b'\r' | b'\n'))
+                    .count();
+                self.pending.drain(..idx + delimiter_count);
+                self.scanned = 0;
                 if record.is_empty() {
                     continue;
                 }
                 return Ok(Some(record));
             }
+
+            // Preserve this position across pending reads and cancelled calls:
+            // bytes without delimiters never need to be examined again.
+            self.scanned = self.pending.len();
 
             let n = tokio::io::AsyncReadExt::read(&mut self.reader, &mut self.scratch).await?;
             if n == 0 {
@@ -53,6 +75,7 @@ where
 
                 let record = String::from_utf8_lossy(&self.pending).trim().to_string();
                 self.pending.clear();
+                self.scanned = 0;
 
                 if record.is_empty() {
                     return Ok(None);
@@ -71,20 +94,64 @@ fn find_record_delimiter(buf: &[u8]) -> Option<(usize, u8)> {
         .find_map(|(idx, &b)| matches!(b, b'\n' | b'\r').then_some((idx, b)))
 }
 
-fn consume_delimiters(buf: &mut Vec<u8>) {
-    let n = buf
-        .iter()
-        .take_while(|&&b| matches!(b, b'\n' | b'\r'))
-        .count();
-    if n > 0 {
-        buf.drain(..n);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
+
+    struct Fragmented {
+        bytes: std::io::Cursor<Vec<u8>>,
+        chunk: usize,
+    }
+
+    impl AsyncRead for Fragmented {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buffer: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<io::Result<()>> {
+            let start = self.bytes.position() as usize;
+            let end = (start + self.chunk.min(buffer.remaining())).min(self.bytes.get_ref().len());
+            buffer.put_slice(&self.bytes.get_ref()[start..end]);
+            self.bytes.set_position(end as u64);
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn fragmented_long_record_is_scanned_once_and_preserves_records() {
+        let long = "中😀".repeat(4096);
+        let input = format!(" {long} \r\n\r tail\nlast").into_bytes();
+        let mut reader = OutputRecordReader::new(Fragmented {
+            bytes: std::io::Cursor::new(input.clone()),
+            chunk: 1,
+        });
+        assert_eq!(reader.next_record().await.unwrap(), Some(long));
+        assert_eq!(reader.next_record().await.unwrap().as_deref(), Some("tail"));
+        assert_eq!(reader.next_record().await.unwrap().as_deref(), Some("last"));
+        assert!(reader.next_record().await.unwrap().is_none());
+        assert!(
+            reader.scanned_bytes <= input.len(),
+            "delimiter-free prefixes must not be rescanned"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_record_read_resumes_without_losing_buffered_utf8() {
+        let (mut tx, rx) = tokio::io::duplex(64);
+        tx.write_all(&[b'a', 0xe4, 0xb8]).await.unwrap();
+        let mut reader = OutputRecordReader::new(rx);
+        let mut read = Box::pin(reader.next_record());
+        assert!(futures::poll!(read.as_mut()).is_pending());
+        drop(read);
+        tx.write_all(&[0xad, b'\r', b'\n', 0xff, b'\n'])
+            .await
+            .unwrap();
+        drop(tx);
+        assert_eq!(reader.next_record().await.unwrap().as_deref(), Some("a中"));
+        assert_eq!(reader.next_record().await.unwrap().as_deref(), Some("�"));
+        assert!(reader.next_record().await.unwrap().is_none());
+    }
 
     #[tokio::test]
     async fn splits_on_cr_and_lf() {

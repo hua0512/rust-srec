@@ -1,15 +1,12 @@
 //! Evaluation of typed domain filters.
 
-use std::str::FromStr;
-
-use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
+use chrono::{DateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
-use regex::RegexBuilder;
 
 use super::{CronFilter, RegexFilter};
 
 /// Error type for filter evaluation failures.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum FilterEvalError {
     #[error("Invalid cron expression: {0}")]
     InvalidCronExpression(String),
@@ -29,8 +26,7 @@ pub struct FilterEvaluator;
 
 impl FilterEvaluator {
     pub fn evaluate_cron(filter: &CronFilter, now: DateTime<Utc>) -> Result<bool, FilterEvalError> {
-        let schedule = cron::Schedule::from_str(&filter.expression)
-            .map_err(|error| FilterEvalError::InvalidCronExpression(error.to_string()))?;
+        let schedule = super::compiled::cron(&filter.expression)?;
         let timezone: Tz = match &filter.timezone {
             Some(timezone) => timezone.parse().map_err(|_| {
                 FilterEvalError::InvalidTimezone(format!(
@@ -55,37 +51,25 @@ impl FilterEvaluator {
     where
         T::Offset: std::fmt::Display,
     {
-        let now_truncated = now
-            .with_second(0)
+        // Membership is a wall-clock rule. Inspect it as a naive UTC calendar value to
+        // avoid reconstructing an ambiguous zoned DateTime during a fall-back minute.
+        use cron::TimeUnitSpec;
+        let Some(second) = schedule.seconds().iter().next() else {
+            return Ok(false);
+        };
+        let wall_minute = now
+            .naive_local()
+            .and_utc()
+            .with_second(second)
             .and_then(|time| time.with_nanosecond(0))
             .ok_or_else(|| {
                 FilterEvalError::CronScheduleError("Failed to truncate time".to_string())
             })?;
-        let one_minute_ago = now_truncated.clone() - chrono::Duration::minutes(1);
-
-        for scheduled_time in schedule.after(&one_minute_ago).take(2) {
-            if scheduled_time.year() == now_truncated.year()
-                && scheduled_time.month() == now_truncated.month()
-                && scheduled_time.day() == now_truncated.day()
-                && scheduled_time.hour() == now_truncated.hour()
-                && scheduled_time.minute() == now_truncated.minute()
-            {
-                return Ok(true);
-            }
-
-            if scheduled_time > now_truncated {
-                break;
-            }
-        }
-
-        Ok(false)
+        Ok(schedule.includes(wall_minute))
     }
 
     pub fn evaluate_regex(filter: &RegexFilter, title: &str) -> Result<bool, FilterEvalError> {
-        let regex = RegexBuilder::new(&filter.pattern)
-            .case_insensitive(filter.case_insensitive)
-            .build()
-            .map_err(|error| FilterEvalError::InvalidRegexPattern(error.to_string()))?;
+        let regex = super::compiled::regex(&filter.pattern, filter.case_insensitive)?;
 
         Ok(regex.is_match(title) ^ filter.exclude)
     }
