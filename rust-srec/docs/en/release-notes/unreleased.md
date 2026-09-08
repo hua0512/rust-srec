@@ -42,6 +42,14 @@
 
 ## Database Maintenance
 
+- **Default database pages avoid full-table sorting**
+
+  A new startup migration adds creation-time ordering indexes for unfiltered DAG and media-output pages. It removes four unused job timestamp indexes while preserving the indexes used by retention cleanup and duration statistics. Existing records and page ordering are unchanged; creating the new indexes scans those tables during the upgrade.
+
+- **SQLite pools share a bounded cache allowance**
+
+  The standard read and write pools now share a 64 MiB suggested private page-cache budget, with 56 MiB divided among read connections and 8 MiB reserved for the writer. The adaptive pool size and 256 MiB memory-mapping setting are unchanged. This reduces the cache allowance on larger pools; it is not a hard process-memory limit. See [SQLite memory budgeting](../operations/monitoring.md#sqlite-memory-budget).
+
 - **Vacuum admission follows actual recording activity**
 
   Scheduled vacuum checks the download manager's active recordings instead of counting nonexistent download jobs. It defers when recording activity exceeds the configured limit or admission is busy, and holds new starts until admitted vacuum work finishes. Filesystem preflight runs before that gate, so a slow disk-space check does not hold up recording starts. Lightweight retention remains independent.
