@@ -46,6 +46,10 @@
 
 ## Database Maintenance
 
+- **Concurrent database mutations preserve their own results**
+
+  Competing media-output deletions adjust session size once, and a failed size update rolls back deletion. Error increments return their own count. Template credential refresh reads and writes under one reserved transaction, preserving configuration edits committed before it.
+
 - **Vacuum admission follows actual recording activity**
 
   Scheduled vacuum checks the download manager's active recordings instead of counting nonexistent download jobs. It defers when recording activity exceeds the configured limit or admission is busy, and holds new starts until admitted vacuum work finishes. Filesystem preflight runs before that gate, so a slow disk-space check does not hold up recording starts. Lightweight retention remains independent.
@@ -292,6 +296,10 @@
   This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
 
 ## Pipeline and uploads
+
+- **Retries retain execution history and previously published files**
+
+  Starting another attempt no longer resets step timings, log counters, file-size metadata or produced-artifact history. Earlier logs are not duplicated, and additional stored execution-metadata fields survive completion and failure updates. The processor runs only after its attempt marker is saved; invalid metadata or a failed write stops processing and reports a failure without replacing the original metadata. Failed retries do not delete files published by earlier attempts; processors retain responsibility for their staged temporary outputs.
 
 - **Retry workflows without leaving cancelled branches stuck**
 

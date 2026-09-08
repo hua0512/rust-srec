@@ -44,6 +44,16 @@ A pipeline can still change remote data, just not as part of a deletion the appl
 
 Two narrow cases delete a file without being asked to: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running, and a failed pipeline job's partial outputs are cleaned up. Neither substitutes for a retention policy.
 
+## Concurrent Database Updates
+
+Concurrent deletions of the same media-output record subtract its size from the
+session total once. If updating that total fails, the record deletion rolls back.
+This database guarantee does not make optional filesystem deletion transactional.
+
+Template credential refresh reads and updates the template in one reserved write
+transaction, preserving other configuration edits committed before it. Concurrent
+streamer error increments each return the count produced by their own update.
+
 ## Auditability Limits
 
 Sessions, pipeline jobs, notification events, and logs are operational tools, not compliance evidence. If you need an audit trail, legal hold, or data-subject request handling, see [Scope and Limits](./support.md#scope-and-limits) and add those controls externally.

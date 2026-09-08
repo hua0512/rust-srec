@@ -275,6 +275,7 @@ pub struct StepDuration {
 /// Extended job information for observability.
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct JobExecutionInfo {
     /// Current processor name.
     pub current_processor: Option<String>,
@@ -302,6 +303,9 @@ pub struct JobExecutionInfo {
     /// Per-step duration tracking for pipeline jobs.
     #[serde(default)]
     pub step_durations: Vec<StepDuration>,
+    /// Preserve extension fields when artifact and terminal updates rewrite this document.
+    #[serde(flatten)]
+    pub extra_metadata: serde_json::Map<String, serde_json::Value>,
 }
 
 impl JobExecutionInfo {
@@ -593,6 +597,13 @@ struct FailedUploadContext {
     streamer_id: Option<String>,
     session_id: Option<String>,
     inputs: Vec<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FailureMetadata {
+    Preserve,
+    DatabaseLog,
+    DatabaseAndCacheLog,
 }
 
 /// The job queue service.
@@ -1545,10 +1556,23 @@ impl JobQueue {
     }
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<()> {
-        self.fail_internal(job_id, error, None, None, None, false)
-            .await?;
+        self.fail_internal(
+            job_id,
+            error,
+            None,
+            None,
+            None,
+            FailureMetadata::DatabaseLog,
+        )
+        .await?;
         warn!("Job {} failed: {}", job_id, error);
         Ok(())
+    }
+
+    /// Fail before processor invocation without rewriting unavailable or invalid metadata.
+    pub async fn fail_execution_start(&self, job_id: &str, error: &str) -> Result<()> {
+        self.fail_internal(job_id, error, None, None, None, FailureMetadata::Preserve)
+            .await
     }
 
     /// Mark a job as failed with step information for observability.
@@ -1567,7 +1591,7 @@ impl JobQueue {
             processor_name,
             step_number,
             total_steps,
-            true,
+            FailureMetadata::DatabaseAndCacheLog,
         )
         .await?;
         warn!(
@@ -2277,9 +2301,9 @@ impl JobQueue {
         }
     }
 
-    /// Track partial outputs for a job (used for cleanup on failure).
-    /// Updates the job's execution_info with items_produced.
-    pub async fn track_partial_outputs(&self, job_id: &str, outputs: &[String]) -> Result<()> {
+    /// Record produced artifacts for observability. These paths do not convey
+    /// temporary-file ownership and must never authorize generic failure cleanup.
+    pub async fn record_produced_items(&self, job_id: &str, outputs: &[String]) -> Result<()> {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
             let exec_info_str = repo.get_job_execution_info(job_id).await?;
@@ -2292,7 +2316,7 @@ impl JobQueue {
                 "Invalid execution_info JSON; resetting to defaults",
             );
 
-            // Add the partial outputs
+            // Retain produced artifacts across attempts.
             exec_info.items_produced.extend(outputs.iter().cloned());
 
             let exec_info_json = serde_json::to_string(&exec_info)?;
@@ -2311,56 +2335,32 @@ impl JobQueue {
         Ok(())
     }
 
-    /// Get partial outputs for a job (for cleanup on failure).
-    pub async fn get_partial_outputs(&self, job_id: &str) -> Result<Vec<String>> {
-        // Try cache first
-        if let Some(job) = self.jobs_cache.get(job_id)
-            && let Some(ref exec_info) = job.execution_info
-        {
-            return Ok(exec_info.items_produced.clone());
-        }
-
-        // Try database
+    /// Patch the current processor before its log collector starts. Preserve all
+    /// stored metadata, including unknown fields, without replaying embedded logs.
+    pub async fn begin_execution(&self, job_id: &str, processor: &str) -> Result<()> {
         if let Some(repo) = &self.job_repository {
-            let db_job = repo.get_job(job_id).await?;
-            if let Some(exec_info_str) = &db_job.execution_info
-                && let Ok(exec_info) = serde_json::from_str::<JobExecutionInfo>(exec_info_str)
-            {
-                return Ok(exec_info.items_produced);
-            }
+            let stored = repo.get_job_execution_info(job_id).await?;
+            let mut info = match stored {
+                Some(raw) if !raw.is_empty() => serde_json::from_str::<JobExecutionInfo>(&raw)?,
+                // Legacy writers also used an empty string for absent metadata.
+                // Nonempty malformed documents remain errors rather than losing history.
+                _ => JobExecutionInfo::default(),
+            };
+            info.current_processor = Some(processor.to_owned());
+            repo.update_job_execution_info(job_id, &serde_json::to_string(&info)?)
+                .await?;
         }
-
-        Ok(vec![])
+        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
+            job.execution_info
+                .get_or_insert_with(JobExecutionInfo::default)
+                .current_processor = Some(processor.to_owned());
+        } else if self.job_repository.is_none() {
+            return Err(Error::not_found("Job", job_id));
+        }
+        Ok(())
     }
 
-    /// Fail a job and clean up partial outputs.
-    pub async fn fail_with_cleanup(&self, job_id: &str, error: &str) -> Result<Vec<String>> {
-        self.fail_with_cleanup_and_step_info(job_id, error, None, None, None)
-            .await
-    }
-
-    /// Fail a job with step info and clean up partial outputs.
-    /// Records the error message, failing step, and processor name in execution_info.
-    pub async fn fail_with_cleanup_and_step_info(
-        &self,
-        job_id: &str,
-        error: &str,
-        processor_name: Option<&str>,
-        step_number: Option<u32>,
-        total_steps: Option<u32>,
-    ) -> Result<Vec<String>> {
-        // Get partial outputs before failing
-        let partial_outputs = self.get_partial_outputs(job_id).await?;
-
-        // Mark job as failed with step info
-        self.fail_with_step_info(job_id, error, processor_name, step_number, total_steps)
-            .await?;
-
-        // Return partial outputs for cleanup by caller
-        Ok(partial_outputs)
-    }
-
-    /// Update execution info for a job.
+    /// Replace execution info with an explicit snapshot, persisting new log entries.
     pub async fn update_execution_info(
         &self,
         job_id: &str,
@@ -2461,7 +2461,7 @@ impl JobQueue {
         processor_name: Option<&str>,
         step_number: Option<u32>,
         total_steps: Option<u32>,
-        update_cache_logs: bool,
+        metadata: FailureMetadata,
     ) -> Result<()> {
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
         let mut transitioned = false;
@@ -2486,39 +2486,41 @@ impl JobQueue {
             }
             transitioned = true;
 
-            let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
-                exec_info_str.as_deref(),
-                JsonContext::JobField {
+            if metadata != FailureMetadata::Preserve {
+                let exec_info_str = repo.get_job_execution_info(job_id).await?;
+                let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                    exec_info_str.as_deref(),
+                    JsonContext::JobField {
+                        job_id,
+                        field: "execution_info",
+                    },
+                    "Invalid execution_info JSON; resetting to defaults",
+                );
+
+                if let Some(name) = processor_name {
+                    exec_info.current_processor = Some(name.to_string());
+                }
+                if let Some(step) = step_number {
+                    exec_info.current_step = Some(step);
+                }
+                if let Some(total) = total_steps {
+                    exec_info.total_steps = Some(total);
+                }
+
+                extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
+                update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
+
+                self.persist_logs_to_db(
                     job_id,
-                    field: "execution_info",
-                },
-                "Invalid execution_info JSON; resetting to defaults",
-            );
-
-            if let Some(name) = processor_name {
-                exec_info.current_processor = Some(name.to_string());
-            }
-            if let Some(step) = step_number {
-                exec_info.current_step = Some(step);
-            }
-            if let Some(total) = total_steps {
-                exec_info.total_steps = Some(total);
-            }
-
-            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
-            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
-
-            self.persist_logs_to_db(
-                job_id,
-                std::slice::from_ref(&log_entry),
-                LogPersistence::Append,
-            )
-            .await?;
-
-            let exec_info_json = serde_json::to_string(&exec_info)?;
-            repo.update_job_execution_info(job_id, &exec_info_json)
+                    std::slice::from_ref(&log_entry),
+                    LogPersistence::Append,
+                )
                 .await?;
+
+                let exec_info_json = serde_json::to_string(&exec_info)?;
+                repo.update_job_execution_info(job_id, &exec_info_json)
+                    .await?;
+            }
         }
 
         // Update cache
@@ -2529,7 +2531,7 @@ impl JobQueue {
                 job.completed_at = Some(Utc::now());
                 job.error = Some(error.to_string());
 
-                if update_cache_logs {
+                if metadata == FailureMetadata::DatabaseAndCacheLog {
                     let exec_info = job
                         .execution_info
                         .get_or_insert_with(JobExecutionInfo::default);
@@ -3827,7 +3829,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_track_partial_outputs() {
+    async fn test_record_produced_items() {
         let queue = JobQueue::new();
 
         let job = Job::new(
@@ -3840,57 +3842,28 @@ mod tests {
         let job_id = job.id.clone();
         queue.enqueue(job).await.unwrap();
 
-        // Track some partial outputs
+        // Record artifacts emitted by a completed processor.
         let partial = vec![
             "/tmp/partial1.mp4".to_string(),
             "/tmp/partial2.mp4".to_string(),
         ];
         queue
-            .track_partial_outputs(&job_id, &partial)
+            .record_produced_items(&job_id, &partial)
             .await
             .unwrap();
 
-        // Verify partial outputs are tracked
-        let tracked = queue.get_partial_outputs(&job_id).await.unwrap();
+        // Produced items remain available in execution metadata.
+        let tracked = queue
+            .get_job(&job_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .execution_info
+            .unwrap()
+            .items_produced;
         assert_eq!(tracked.len(), 2);
         assert!(tracked.contains(&"/tmp/partial1.mp4".to_string()));
         assert!(tracked.contains(&"/tmp/partial2.mp4".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_fail_with_cleanup_returns_partial_outputs() {
-        let queue = JobQueue::new();
-
-        let job = Job::new(
-            "compress",
-            vec!["/input.flv".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-        );
-        let job_id = job.id.clone();
-        queue.enqueue(job).await.unwrap();
-
-        // Track some partial outputs
-        let partial = vec!["/tmp/partial.mp4".to_string()];
-        queue
-            .track_partial_outputs(&job_id, &partial)
-            .await
-            .unwrap();
-
-        // Fail the job and get partial outputs for cleanup
-        let outputs = queue
-            .fail_with_cleanup(&job_id, "Test error")
-            .await
-            .unwrap();
-
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0], "/tmp/partial.mp4");
-
-        // Verify job is failed
-        let failed_job = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(failed_job.status, JobStatus::Failed);
-        assert_eq!(failed_job.error, Some("Test error".to_string()));
     }
 
     #[tokio::test]
@@ -4001,59 +3974,6 @@ mod tests {
         let last_log = exec_info.logs.back().unwrap();
         assert_eq!(last_log.level, LogLevel::Error);
         assert!(last_log.message.contains("FFmpeg error"));
-    }
-
-    /// Test that fail_with_cleanup_and_step_info combines cleanup and step info.
-
-    #[tokio::test]
-    async fn test_fail_with_cleanup_and_step_info() {
-        let queue = JobQueue::new();
-
-        let job = Job::new(
-            "compress",
-            vec!["/input.flv".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-        );
-        let job_id = job.id.clone();
-        queue.enqueue(job).await.unwrap();
-
-        // Track some partial outputs
-        let partial = vec!["/tmp/partial.mp4".to_string()];
-        queue
-            .track_partial_outputs(&job_id, &partial)
-            .await
-            .unwrap();
-
-        // Fail with cleanup and step info
-        let outputs = queue
-            .fail_with_cleanup_and_step_info(
-                &job_id,
-                "Compression failed",
-                Some("CompressionProcessor"),
-                Some(2),
-                Some(4),
-            )
-            .await
-            .unwrap();
-
-        // Verify partial outputs are returned for cleanup
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0], "/tmp/partial.mp4");
-
-        // Verify job is failed with step info
-        let failed_job = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(failed_job.status, JobStatus::Failed);
-        assert_eq!(failed_job.error, Some("Compression failed".to_string()));
-
-        let exec_info = failed_job.execution_info.unwrap();
-        assert_eq!(
-            exec_info.current_processor,
-            Some("CompressionProcessor".to_string())
-        );
-        assert_eq!(exec_info.current_step, Some(2));
-        assert_eq!(exec_info.total_steps, Some(4));
     }
 
     // ========================================================================

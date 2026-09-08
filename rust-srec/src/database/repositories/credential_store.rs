@@ -9,6 +9,7 @@ use tracing::{debug, instrument};
 use crate::credentials::{
     CredentialError, CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
 };
+use crate::database::begin_immediate;
 
 /// SQLx-backed credential store.
 pub struct SqlxCredentialStore {
@@ -90,6 +91,9 @@ impl SqlxCredentialStore {
         debug!(template_id = %template_id, "Updating template credentials");
 
         let now = crate::database::time::now_ms();
+        // Read the JSON only after reserving the write transaction, so a concurrent
+        // template update cannot be overwritten using an earlier snapshot.
+        let mut tx = begin_immediate(&self.write_pool).await?;
 
         let overrides_to_store =
             if credentials.refresh_token.is_some() || credentials.access_token.is_some() {
@@ -101,7 +105,7 @@ impl SqlxCredentialStore {
                 "#,
                 )
                 .bind(template_id)
-                .fetch_one(&self.pool)
+                .fetch_one(&mut *tx)
                 .await?;
 
                 let mut overrides: serde_json::Value = match existing_overrides.as_deref() {
@@ -158,7 +162,7 @@ impl SqlxCredentialStore {
                 .bind(overrides_json)
                 .bind(now)
                 .bind(template_id)
-                .execute(&self.write_pool)
+                .execute(&mut *tx)
                 .await?;
             }
             None => {
@@ -173,11 +177,12 @@ impl SqlxCredentialStore {
                 .bind(&credentials.cookies)
                 .bind(now)
                 .bind(template_id)
-                .execute(&self.write_pool)
+                .execute(&mut *tx)
                 .await?;
             }
         }
 
+        tx.commit().await?;
         debug!("Template credentials updated successfully");
         Ok(())
     }
