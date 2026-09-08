@@ -214,7 +214,7 @@ impl ServiceContainer {
             tokio::sync::mpsc::channel(256);
         let mut stream_monitor = StreamMonitor::with_runtime(
             streamer_manager.clone(),
-            filter_repo,
+            filter_repo.clone(),
             session_repo.clone(),
             config_service.clone(),
             write_pool.clone(),
@@ -323,11 +323,11 @@ impl ServiceContainer {
                 job_repository: job_repo,
                 session_repository: session_repo.clone(),
                 streamer_repository: streamer_repo.clone(),
-                preset_repository: preset_repo,
-                pipeline_preset_repository: pipeline_preset_repo,
+                preset_repository: preset_repo.clone(),
+                pipeline_preset_repository: pipeline_preset_repo.clone(),
                 config_service: config_service.clone(),
                 dag_repository: Arc::new(SqlxDagRepository::new(pool.clone(), write_pool.clone())),
-                upload_record_repository: upload_record_repo,
+                upload_record_repository: upload_record_repo.clone(),
                 upload_broadcaster: upload_status_broadcaster.clone(),
             },
         ));
@@ -435,7 +435,7 @@ impl ServiceContainer {
 
         // Wire the streamer-check-history pipeline (writer feeds the
         // monitor-side polling path; broadcaster feeds the WS route loop).
-        let (check_history_writer, check_history_broadcaster) =
+        let (check_history_writer, check_history_broadcaster, streamer_check_history_repository) =
             wire_check_history_pipeline(&pool, &write_pool, &cancellation_token, &task_supervisor);
 
         // Create scheduler with StreamMonitor for real status checking
@@ -471,6 +471,17 @@ impl ServiceContainer {
                     task_supervisor: task_supervisor.clone(),
                     scheduler_handle: scheduler_handle.clone(),
                 },
+            ),
+        );
+
+        let configuration_import_service = Arc::new(
+            crate::services::config_import::ConfigurationImportService::new(
+                write_pool.clone(),
+                config_service.clone(),
+                streamer_manager.clone(),
+                notification_service.clone(),
+                credential_service.clone(),
+                runtime_coordinator.clone(),
             ),
         );
 
@@ -510,6 +521,14 @@ impl ServiceContainer {
             event_broadcaster,
             download_manager,
             session_repository: session_repo,
+            session_event_repository: session_event_repo,
+            streamer_check_history_repository,
+            upload_record_repository: upload_record_repo,
+            filter_repository: filter_repo,
+            streamer_repository: streamer_repo,
+            pipeline_preset_repository: pipeline_preset_repo,
+            job_preset_repository: preset_repo,
+            configuration_import_service,
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,

@@ -2,6 +2,12 @@
 
 ## `unreleased`
 
+## Service Ownership
+
+- **Session cleanup is joined during shutdown**
+
+  Shutdown cancels delayed ended-session eviction without waiting for its retention interval. API assembly reuses the container's repositories and configuration import service while keeping archive caches local. See [service ownership](../concepts/architecture.md#service-ownership).
+
 ## Backend Model Cleanup
 
 - **One canonical streamer state and fewer unused Rust interfaces**
