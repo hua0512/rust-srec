@@ -64,6 +64,10 @@
 
 ## Configuration
 
+- **Backup imports validate the final account email assignments**
+
+  Imports reject emails already assigned to retained accounts before changing configuration. Swaps between updated users and reuse of released emails work in either input order, while later failures roll back all changes. Email uniqueness follows stored values exactly, including case, whitespace, empty strings and absent emails. Every successful import still revokes all refresh tokens, even when a Merge import omits users; see [backup and restore](../operations/backup-restore.md#configuration-export).
+
 - **Filters reuse parsed rules and handle timezone boundaries consistently**
 
   Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Existing omitted timezone defaults remain server-local for time-based rules and UTC for cron; frontend timezone controls are not added.
