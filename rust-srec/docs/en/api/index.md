@@ -119,6 +119,21 @@ when progress is unavailable in that response. This does not mean zero percent
 complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
 processor-specific snapshot; it returns 404 when no snapshot is available.
 
+## Search filters
+
+The `search` filters for pipeline jobs, recording sessions, media outputs,
+notification events, job presets and pipeline presets match literal substrings.
+`%`, `_` and `\` are ordinary characters, not search wildcards or escape syntax.
+For example, `audio_extract` does not match `audioXextract`, and `%` finds only
+values containing a percent sign. Send the text as entered, with normal URL
+encoding for query parameters; no extra search escaping is needed.
+
+ASCII letters match without regard to case. Non-ASCII characters retain SQLite's
+case-sensitive behavior, so `Ä` and `ä` remain distinct. Session-title and
+notification-payload searches still inspect the stored JSON text, including its
+keys and JSON escaping. Search combines with the endpoint's other filters, and
+result counts and media size summaries use the same matching rules as list pages.
+
 ## Errors
 
 API errors use one stable envelope:

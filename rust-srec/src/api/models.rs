@@ -682,7 +682,7 @@ pub struct JobFilterParams {
     pub from_date: Option<DateTime<Utc>>,
     /// Filter by date range end
     pub to_date: Option<DateTime<Utc>>,
-    /// Search query (matches ID, streamer ID, or session ID)
+    /// Literal substring of ID, streamer ID, session ID, or job type; ASCII case-insensitive.
     pub search: Option<String>,
 }
 
@@ -1062,7 +1062,7 @@ pub struct SessionFilterParams {
     pub to_date: Option<DateTime<Utc>>,
     /// Only include active sessions
     pub active_only: Option<bool>,
-    /// Search query (matches title, streamer name, etc.)
+    /// Literal substring of streamer name, stored titles JSON, or session ID; ASCII case-insensitive.
     pub search: Option<String>,
     /// Include sessions that retained zero bytes (transient connection
     /// blips that produced only sub-threshold files, deleted by the

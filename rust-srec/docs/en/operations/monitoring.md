@@ -43,6 +43,24 @@ remain responsive, but sampling can resume only after the operating-system call
 returns. A permanently blocked sampler thread may remain until process exit;
 inspect unavailable network or FUSE mounts on the host.
 
+## SQLite Memory Budget
+
+The standard database pools share a 64 MiB suggested private page-cache budget:
+56 MiB is divided by the configured maximum number of read connections, rounding
+down to whole KiB, and 8 MiB is reserved for the single serialized writer. With
+10 readers, each uses `PRAGMA cache_size = -5734`; the writer uses `-8192`.
+The adaptive read-pool limit remains twice the available CPU count, capped at 10.
+Rust callers of `init_pool_with_size` share the same reader allowance across their
+requested limit; opening the write pool separately uses the reserved writer allowance.
+
+This replaces a separate roughly 64 MiB allowance for every connection. Smaller
+private caches can cause more page reads for large working sets. The existing
+256 MiB `mmap_size` setting remains enabled for file-backed databases, allowing
+reads to use memory-mapped pages and the operating system's file cache. SQLite
+treats `cache_size` as a suggestion; this is not a hard limit on database or process
+memory. Mappings, temporary queries, connection overhead and the recorder's other
+services also contribute to memory use. No new environment variable is required.
+
 ## Logs
 
 In Docker:
