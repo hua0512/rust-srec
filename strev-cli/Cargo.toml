@@ -42,7 +42,7 @@ toml = "1.1"
 
 # Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Utilities (some made optional)
 url = { workspace = true }

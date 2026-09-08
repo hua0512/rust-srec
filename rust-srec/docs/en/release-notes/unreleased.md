@@ -8,6 +8,12 @@
 
   Shutdown cancels delayed ended-session eviction without waiting for its retention interval. API assembly reuses the container's repositories and configuration import service while keeping archive caches local. See [service ownership](../concepts/architecture.md#service-ownership).
 
+## Build Dependencies
+
+- **Compile only the system inventory and logging features in use**
+
+  System inventory now enables CPU, memory and disk support without unused temperature-component, network-interface or user-account inventory features. Unused JSON log formatter features and direct protobuf well-known-type dependencies were removed; protobuf generation still retains its required dependencies. Backend dependency declarations share workspace versions without upgrading the locked packages.
+
 ## Backend Model Cleanup
 
 - **One canonical streamer state and fewer unused Rust interfaces**
