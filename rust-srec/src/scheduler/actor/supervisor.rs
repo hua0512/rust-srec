@@ -391,10 +391,13 @@ impl Supervisor {
                 debug!("Actor {} completed", actor_id);
                 TaskCompletionAction::Completed { actor_id }
             }
-            Err(_) => {
-                // Already handled above
-                TaskCompletionAction::Crashed { actor_id }
+            Err(error) if !error.recoverable => {
+                // Recoverable failures returned from the crash path above. Fatal errors
+                // express a terminal actor decision even if a caller bypassed its run loop.
+                debug!(%actor_id, error = %error, "Actor stopped after terminal error");
+                TaskCompletionAction::Stopped { actor_id }
             }
+            Err(_) => TaskCompletionAction::Crashed { actor_id },
         }
     }
 
@@ -1054,9 +1057,7 @@ mod tests {
         let result = ActorTaskResult::streamer(
             "test-1",
             handle.generation(),
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
-                "test crash",
-            )),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::recoverable("test crash")),
         );
         let action = supervisor.handle_task_completion(result);
 
@@ -1133,9 +1134,7 @@ mod tests {
         let action = supervisor.handle_task_completion(ActorTaskResult::streamer(
             "test-1",
             first.generation(),
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
-                "test crash",
-            )),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::recoverable("test crash")),
         ));
 
         assert!(matches!(action, TaskCompletionAction::Superseded { .. }));
@@ -1249,9 +1248,7 @@ mod tests {
         let result = ActorTaskResult::streamer(
             "test-1",
             handle.generation(),
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
-                "test crash",
-            )),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::recoverable("test crash")),
         );
         supervisor.handle_task_completion(result);
 
@@ -1536,6 +1533,100 @@ mod tests {
         // Give time for actor to stop
         tokio::time::sleep(Duration::from_millis(50)).await;
 
+        token.cancel();
+    }
+    #[tokio::test]
+    async fn fatal_download_message_stops_without_scheduling_restart() {
+        let token = CancellationToken::new();
+        let metadata = create_test_metadata_store();
+        metadata.insert("removed".to_owned(), create_test_metadata("removed"));
+        let mut supervisor = Supervisor::new(token.clone(), metadata.clone());
+        let handle = supervisor
+            .spawn_streamer("removed", create_test_config(), None)
+            .unwrap();
+        metadata.remove("removed");
+        handle
+            .send_priority(StreamerMessage::DownloadEnded(
+                super::super::messages::DownloadEndPolicy::StreamerOffline,
+            ))
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            supervisor.registry_mut().join_next(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+        assert!(matches!(result.outcome, Ok(ActorOutcome::Stopped)));
+        assert!(matches!(
+            supervisor.handle_task_completion(result),
+            TaskCompletionAction::Stopped { .. }
+        ));
+        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert_eq!(supervisor.restart_tracker.total_restarts("removed"), 0);
+        token.cancel();
+    }
+
+    #[tokio::test]
+    async fn permanent_crashes_stop_after_ten_even_when_failure_window_expires() {
+        let token = CancellationToken::new();
+        let metadata = create_test_metadata_store();
+        metadata.insert("panics".to_owned(), create_test_metadata("panics"));
+        let mut supervisor = Supervisor::with_checkers(
+            token.clone(),
+            SupervisorConfig {
+                restart_config: RestartTrackerConfig {
+                    failure_window: Duration::ZERO,
+                    ..RestartTrackerConfig::default()
+                },
+                ..SupervisorConfig::default()
+            },
+            metadata,
+            Arc::new(PanickingStatusChecker),
+            Arc::new(NoOpBatchChecker),
+        );
+        let mut handle = supervisor
+            .spawn_streamer("panics", create_test_config(), None)
+            .unwrap();
+        for failure in 1..=10 {
+            handle.send(StreamerMessage::CheckStatus).await.unwrap();
+            let result = tokio::time::timeout(
+                Duration::from_secs(2),
+                supervisor.registry_mut().join_next(),
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+            let action = supervisor.handle_task_completion(result);
+            assert_eq!(supervisor.restart_tracker.recent_failures("panics"), 0);
+            if failure < 10 {
+                assert!(matches!(
+                    action,
+                    TaskCompletionAction::RestartScheduled { .. }
+                ));
+                assert_eq!(supervisor.process_pending_restarts(), 1);
+                handle = supervisor
+                    .registry()
+                    .get_streamer("panics")
+                    .unwrap()
+                    .clone();
+            } else {
+                assert!(matches!(
+                    action,
+                    TaskCompletionAction::RestartLimitExceeded { .. }
+                ));
+                assert_eq!(supervisor.pending_restart_count(), 0);
+                assert_eq!(supervisor.process_pending_restarts(), 0);
+            }
+        }
+        supervisor.remove_streamer("panics");
+        assert!(
+            supervisor.restart_tracker.should_restart("panics"),
+            "explicit removal resets the crash budget"
+        );
         token.cancel();
     }
 }
