@@ -4,12 +4,9 @@
 //! the configuration structures used by the mesio crate for HLS and FLV
 //! protocol handling.
 
-use flv_fix::FlvPipelineConfig;
-use hls_fix::HlsPipelineConfig;
 use mesio::flv::FlvProtocolConfig;
 use mesio::proxy::{ProxyConfig, ProxyType};
 use mesio::{FlvProtocolBuilder, HlsProtocolBuilder};
-use pipeline_common::config::PipelineConfig;
 use tracing::debug;
 
 use crate::database::models::engine::{
@@ -370,47 +367,6 @@ pub fn build_flv_config(
     builder.get_config()
 }
 
-/// Build PipelineConfig from rust-srec DownloadConfig.
-///
-/// Maps max_file_size, max_duration, and channel_size settings from the download
-/// configuration to the pipeline-common PipelineConfig structure.
-///
-/// If `pipeline_config` is already set on the DownloadConfig, returns a clone of it.
-/// Otherwise, builds a new PipelineConfig from the individual settings.
-pub fn build_pipeline_config(config: &DownloadConfig) -> PipelineConfig {
-    if let Some(ref pipeline_config) = config.pipeline_config {
-        pipeline_config.clone()
-    } else {
-        let mut builder = PipelineConfig::builder()
-            .max_file_size(config.max_segment_size_bytes)
-            .channel_size(64);
-
-        if config.max_segment_duration_secs > 0 {
-            builder = builder.max_duration(std::time::Duration::from_secs(
-                config.max_segment_duration_secs,
-            ));
-        }
-
-        builder.build()
-    }
-}
-
-/// Build HlsPipelineConfig from rust-srec DownloadConfig.
-///
-/// If `hls_pipeline_config` is already set on the DownloadConfig, returns a clone of it.
-/// Otherwise, returns the default HlsPipelineConfig.
-pub fn build_hls_pipeline_config(config: &DownloadConfig) -> HlsPipelineConfig {
-    config.hls_pipeline_config.clone().unwrap_or_default()
-}
-
-/// Build FlvPipelineConfig from rust-srec DownloadConfig.
-///
-/// If `flv_pipeline_config` is already set on the DownloadConfig, returns a clone of it.
-/// Otherwise, returns the default FlvPipelineConfig.
-pub fn build_flv_pipeline_config(config: &DownloadConfig) -> FlvPipelineConfig {
-    config.flv_pipeline_config.clone().unwrap_or_default()
-}
-
 /// Parse a proxy URL string into a ProxyConfig.
 ///
 /// Supports HTTP, HTTPS, and SOCKS5 proxy URLs.
@@ -465,6 +421,9 @@ fn extract_proxy_auth(url: &str) -> Option<mesio::proxy::ProxyAuth> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flv_fix::FlvPipelineConfig;
+    use hls_fix::HlsPipelineConfig;
+    use pipeline_common::config::PipelineConfig;
     use std::path::PathBuf;
 
     use crate::downloader::DownloadProtocol;
@@ -680,7 +639,7 @@ mod tests {
     #[test]
     fn test_build_pipeline_config_default() {
         let config = create_test_download_config();
-        let pipeline_config = build_pipeline_config(&config);
+        let pipeline_config = config.build_pipeline_config();
 
         assert_eq!(pipeline_config.channel_size, 64);
         assert_eq!(pipeline_config.max_file_size, 0);
@@ -691,7 +650,7 @@ mod tests {
         let mut config = create_test_download_config();
         config.max_segment_duration_secs = 3600;
 
-        let pipeline_config = build_pipeline_config(&config);
+        let pipeline_config = config.build_pipeline_config();
 
         assert_eq!(
             pipeline_config.max_duration,
@@ -702,7 +661,7 @@ mod tests {
     #[test]
     fn test_build_hls_pipeline_config_default() {
         let config = create_test_download_config();
-        let hls_pipeline_config = build_hls_pipeline_config(&config);
+        let hls_pipeline_config = config.build_hls_pipeline_config();
 
         // Should return default config - check individual fields
         let default_config = HlsPipelineConfig::default();
@@ -720,7 +679,7 @@ mod tests {
     #[test]
     fn test_build_flv_pipeline_config_default() {
         let config = create_test_download_config();
-        let flv_pipeline_config = build_flv_pipeline_config(&config);
+        let flv_pipeline_config = config.build_flv_pipeline_config();
 
         // Should return default config - check individual fields
         let default_config = FlvPipelineConfig::default();
@@ -736,7 +695,7 @@ mod tests {
         let mut config = create_test_download_config();
         config.max_segment_size_bytes = 1024 * 1024 * 100; // 100 MB
 
-        let pipeline_config = build_pipeline_config(&config);
+        let pipeline_config = config.build_pipeline_config();
 
         assert_eq!(pipeline_config.max_file_size, 1024 * 1024 * 100);
     }
@@ -753,7 +712,7 @@ mod tests {
                 .build(),
         );
 
-        let pipeline_config = build_pipeline_config(&config);
+        let pipeline_config = config.build_pipeline_config();
 
         // Should use the explicit config, not build from individual fields
         assert_eq!(pipeline_config.max_file_size, 500_000_000);
@@ -773,7 +732,7 @@ mod tests {
             segment_limiter: false,
         });
 
-        let hls_pipeline_config = build_hls_pipeline_config(&config);
+        let hls_pipeline_config = config.build_hls_pipeline_config();
 
         assert!(!hls_pipeline_config.defragment);
         assert!(hls_pipeline_config.split_segments);
@@ -790,7 +749,7 @@ mod tests {
                 .build(),
         );
 
-        let flv_pipeline_config = build_flv_pipeline_config(&config);
+        let flv_pipeline_config = config.build_flv_pipeline_config();
 
         assert!(!flv_pipeline_config.duplicate_tag_filtering);
         assert!(flv_pipeline_config.pipe_mode);

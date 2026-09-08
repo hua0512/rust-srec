@@ -255,6 +255,12 @@ dead-letter persistence. Optional browser Web Push delivery is handled by `WebPu
 
 See also: [Notifications](./notifications.md)
 
+## Downloader Rust Interfaces
+
+The download manager keeps event contracts in `downloader::manager::events`, acknowledged delivery in `coordination`, engine configuration in `configuration`, and attempt ownership in `attempt`. These implementation modules remain private; public event imports through `downloader` and internal imports through `downloader::manager` are preserved. Runtime shutdown uses `DownloadManager::shutdown_until`, and the active entry retains its queue slot until removal.
+
+The unused pending-download configuration update API and write-only retry override have been removed, along with `stop_all`, `get_downloads_by_status`, `set_high_priority_extra_slots` and the old process-waiter helpers. Rust integrations should use the supported manager shutdown and snapshot methods, `DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`, and the public `CircuitBreaker` methods. Internal breaker ownership uses `CircuitBreakerManager::get`. Mesio engine diagnostics report the linked crate's `mesio::VERSION`.
+
 ## Key flows
 
 ### Recording lifecycle (end-to-end)
