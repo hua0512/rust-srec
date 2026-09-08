@@ -46,6 +46,14 @@
 
 ## Database Maintenance
 
+- **Default database pages avoid full-table sorting**
+
+  A new startup migration adds creation-time ordering indexes for unfiltered DAG and media-output pages. It removes four unused job timestamp indexes while preserving the indexes used by retention cleanup and duration statistics. Existing records and page ordering are unchanged; creating the new indexes scans those tables during the upgrade.
+
+- **SQLite pools share a bounded cache allowance**
+
+  The standard read and write pools now share a 64 MiB suggested private page-cache budget, with 56 MiB divided among read connections and 8 MiB reserved for the writer. The adaptive pool size and 256 MiB memory-mapping setting are unchanged. This reduces the cache allowance on larger pools; it is not a hard process-memory limit. See [SQLite memory budgeting](../operations/monitoring.md#sqlite-memory-budget).
+
 - **Concurrent database mutations preserve their own results**
 
   Competing media-output deletions adjust session size once, and a failed size update rolls back deletion. Error increments return their own count. Template credential refresh reads and writes under one reserved transaction, preserving configuration edits committed before it.
