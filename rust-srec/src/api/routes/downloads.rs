@@ -355,10 +355,10 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                 }
             }
 
-            // Send heartbeat ping every 30 seconds (Requirement 7.1)
+            // Send heartbeat ping every 30 seconds
             _ = heartbeat_interval.tick() => {
                 if awaiting_pong {
-                    // Client didn't respond to previous Ping - close connection (Requirement 7.3)
+                    // Client didn't respond to previous Ping - close connection
                     debug!("Client failed to respond to Ping, closing connection");
                     break;
                 }

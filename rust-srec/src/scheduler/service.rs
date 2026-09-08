@@ -174,7 +174,7 @@ impl Default for SchedulerConfig {
 ///
 /// # No Periodic Re-scheduling
 ///
-/// Unlike the previous implementation, actors manage their own scheduling internally.
+/// Actors manage their own scheduling internally.
 /// This eliminates the need for periodic bulk re-scheduling operations.
 ///
 /// # Generic Type Parameters

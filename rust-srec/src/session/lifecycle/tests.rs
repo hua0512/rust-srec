@@ -1027,7 +1027,7 @@ async fn api_is_live_tracks_db_through_hysteresis() {
 }
 
 // =========================================================================
-// PR 2 — OfflineClassifier promotion inside on_download_terminal.
+// OfflineClassifier promotion inside on_download_terminal.
 //
 // The unit-level classifier rules live in `session::classifier::tests`.
 // These scenarios assert the *integration* inside `SessionLifecycle`:
@@ -1042,7 +1042,7 @@ async fn api_is_live_tracks_db_through_hysteresis() {
 /// period); the second arrives while the FSM is still in `Hysteresis`,
 /// the classifier hits its threshold, and the session ends authoritatively.
 #[tokio::test]
-async fn pr2_two_consecutive_network_failures_promote() {
+async fn two_consecutive_network_failures_promote() {
     let pool = setup_pool().await;
     // Use the fast hysteresis window so the test isn't pinned to the
     // 80 s default backstop. The classifier itself uses the lifecycle's
@@ -1121,7 +1121,7 @@ async fn pr2_two_consecutive_network_failures_promote() {
 }
 
 #[tokio::test]
-async fn pr2_unknown_mesio_protocol_still_promotes() {
+async fn unknown_mesio_protocol_still_promotes() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool);
     let mut rx = lifecycle.subscribe();
@@ -1182,7 +1182,7 @@ async fn pr2_unknown_mesio_protocol_still_promotes() {
 /// signals, even when two Network failures arrive inside the classifier
 /// window. They should stay on the ambiguous Failed → Hysteresis path.
 #[tokio::test]
-async fn pr2_non_mesio_network_failures_do_not_promote() {
+async fn non_mesio_network_failures_do_not_promote() {
     for engine_type in [EngineType::Ffmpeg, EngineType::Streamlink] {
         let pool = setup_pool().await;
         let lifecycle = make_lifecycle_with_window(pool, Duration::from_secs(60));
@@ -1255,7 +1255,7 @@ async fn pr2_non_mesio_network_failures_do_not_promote() {
 /// `on_segment_completed` resets the classifier's counter so a subsequent
 /// Network failure is treated as the first-in-window again.
 #[tokio::test]
-async fn pr2_on_segment_completed_resets_counter() {
+async fn on_segment_completed_resets_counter() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool, Duration::from_secs(60));
     let mut rx = lifecycle.subscribe();
@@ -1736,7 +1736,7 @@ async fn resume_cancels_timer_and_keeps_session() {
 /// queue-wait state check, web UI) keep seeing `NOT_LIVE` after the
 /// recording has resumed.
 #[tokio::test]
-async fn i3b_resume_restores_streamer_state_live() {
+async fn resume_restores_streamer_state_live() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
     let mut rx = lifecycle.subscribe();
@@ -2922,7 +2922,7 @@ async fn end_for_disable_idempotent_on_second_call() {
 /// old `Ended` snapshot is evicted, disable must target the new current
 /// session rather than retro-updating the retained old one.
 #[tokio::test]
-async fn o4b_end_for_disable_targets_current_session_when_old_ended_is_retained() {
+async fn end_for_disable_targets_current_session_when_old_ended_is_retained() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let mut rx = lifecycle.subscribe();
@@ -3041,7 +3041,7 @@ async fn end_for_disable_loses_cas_to_resume() {
 /// the Ended state and retro-rewrites the audit row's cause to
 /// `user_disabled`. Verifies cause-overwrite-on-CAS-loss behaviour.
 #[tokio::test]
-async fn o5b_end_for_disable_overwrites_cause_when_timer_wins() {
+async fn end_for_disable_overwrites_cause_when_timer_wins() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_fast(pool.clone());
     let mut rx = lifecycle.subscribe();

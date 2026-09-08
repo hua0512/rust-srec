@@ -4,8 +4,6 @@
 //! - Streamer-specific updates go to a single StreamerActor
 //! - Platform updates go to all StreamerActors on that platform
 //! - Global updates go to all actors
-//!
-//! This implements the scheduler-actor-refactoring spec.
 
 use std::collections::HashMap;
 

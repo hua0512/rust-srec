@@ -108,7 +108,7 @@ impl WriterWithCallbacks for hls_fix::HlsWriter {
 // ---------------------------------------------------------------------------
 
 /// Wire up segment-start, segment-complete, and progress callbacks on the
-/// writer.  Replaces 4 identical ~40-line blocks.
+/// writer.
 ///
 /// Callbacks run on a blocking thread; `blocking_send` applies backpressure
 /// rather than unbounded buffering.
@@ -445,8 +445,6 @@ pub(super) struct WriterSettleContext<'a> {
 /// `DownloadStats`.
 ///
 /// `processing_tasks` should be empty for raw-mode calls.
-///
-/// Replaces 4 identical ~40-line match blocks (plus 2 pipeline-await blocks).
 pub(super) async fn handle_writer_result(
     writer_task: tokio::task::JoinHandle<std::result::Result<WriterStats, WriterError>>,
     stream_error: Option<(DownloadFailureKind, String)>,

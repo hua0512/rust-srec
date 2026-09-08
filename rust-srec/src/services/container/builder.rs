@@ -185,7 +185,7 @@ impl ServiceContainer {
                 ),
             );
         // Classifier window/threshold derived from the same scheduler
-        // tunables — see the primary container site for rationale.
+        // tunables so monitor and engine failures share the offline policy.
         let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
             global_config.offline_check_count as u32,
             global_config.offline_check_delay_ms as u64,

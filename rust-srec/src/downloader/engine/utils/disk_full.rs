@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn matches_ffmpeg_enospc_verbatim() {
-        // Exact string ffmpeg prints in the 508 log.
+        // FFmpeg output identifying a full output device.
         assert!(is_disk_full_line(
             "[out#0/segment @ 0x5b7ddc4105c0] Task finished with error code: -28 (No space left on device)"
         ));

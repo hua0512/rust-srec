@@ -53,7 +53,7 @@ impl<T> ApplyUpdate<Option<T>> for Option<T> {
 
 /// Helper macro to apply optional updates from requests.
 macro_rules! apply_updates {
-    // Form 1: With tracker (for Global Config)
+    // Record each supplied field name for the global configuration update log.
     ($target:ident, $source:ident, $tracker:ident; [
         $( $field:ident $(: $transform:expr)? ),* $(,)?
     ]) => {
@@ -62,18 +62,6 @@ macro_rules! apply_updates {
                 let result = apply_updates!(@val val, $($transform)?);
                 $target.$field.apply_update(result);
                 $tracker.push(stringify!($field));
-            }
-        )*
-    };
-
-    // Form 2: Without tracker (Unused but kept for completeness)
-    ($target:ident, $source:ident; [
-        $( $field:ident $(: $transform:expr)? ),* $(,)?
-    ]) => {
-        $(
-            if let Some(val) = $source.$field {
-                let result = apply_updates!(@val val, $($transform)?);
-                $target.$field.apply_update(result);
             }
         )*
     };

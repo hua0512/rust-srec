@@ -677,9 +677,7 @@ pub async fn delete_session(
         .await
         .map_err(ApiError::from)?;
 
-    // Delete session
-    // Note: ON DELETE CASCADE on DB tables should handle media_outputs
-    // danmu_statistics might need manual deletion if not set to CASCADE, but let's assume it handles or we catch error
+    // Foreign-key cascades remove the session's media outputs and danmu statistics.
     session_repository
         .delete_session(&id)
         .await
