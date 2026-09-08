@@ -474,7 +474,7 @@ mod tests {
         let supervisor = TaskSupervisor::new();
 
         assert!(supervisor.spawn_critical("critical panic", async {
-            panic!("test panic");
+            std::panic::resume_unwind(Box::new("test panic"));
             #[expect(
                 unreachable_code,
                 reason = "typed return value follows the intentional panic in this test"
