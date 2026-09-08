@@ -117,7 +117,7 @@ where
         let mut complete = true;
 
         for streamer in streamers {
-            if streamer.state.parse::<StreamerState>().is_err() {
+            if StreamerState::parse(&streamer.state).is_none() {
                 complete = false;
             }
             let mut metadata = StreamerMetadata::from_db_model(&streamer);
