@@ -2,6 +2,16 @@
 
 ## `unreleased`
 
+## Scheduler Recovery
+
+- **Terminal actor decisions no longer trigger crash restarts**
+
+  A removed streamer or another non-recoverable message error now follows the same graceful-stop path as a timer error. Recoverable crashes still restart, but ten consecutive crashes stop automatic recovery even when backoff has aged earlier failures out of its window. Explicit removal/reset restores the budget; see [restart limits](../operations/monitoring.md#scheduler-restart-limits).
+
+- **Shutdown and disable feedback do not invent an offline event**
+
+  Scheduler feedback from shutdown or streamer-disable cleanup now parks local polling without publishing an authoritative Offline observation. This preserves shutdown session recovery and avoids racing the disable workflow's own session closure. Unknown internal stops wait for a real status check; actual streamer-offline feedback still reaches the monitor.
+
 ## Danmu Text
 
 - **Danmu XML and MCP pages preserve valid text**

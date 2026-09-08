@@ -54,6 +54,19 @@ The example Compose file rotates container JSON logs. The unit sets `StandardOut
 
 In both deployments the application also writes its own daily-rotated log files to `LOG_DIR`, which the unit points at `/var/log/rust-srec`. Centralize logs when incident history must survive host loss, and filter access because paths and platform metadata may be sensitive even though credentials are redacted by the application.
 
+## Scheduler Restart Limits
+
+An actor that repeatedly crashes stops restarting after its tenth consecutive
+crash. This count does not expire with the 60-second restart-backoff window;
+ordinary platform-check failures handled inside the actor do not count as actor
+crashes. A removed streamer or another non-recoverable actor decision stops
+without scheduling a restart.
+
+Investigate an `exceeded restart limit` log before restoring monitoring. After
+fixing the cause, disable and re-enable the streamer to remove its old actor
+tracking and start with a fresh crash budget, or restart the service. Waiting
+for the backoff window alone does not restore an exhausted budget.
+
 ## Minimum Alert Set
 
 - Backend liveness failure or restart loop.
