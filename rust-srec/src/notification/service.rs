@@ -677,10 +677,6 @@ impl NotificationService {
                     to_addresses: settings.to_addresses,
                     min_priority,
                     locale: locale.clone(),
-                    batch_window_secs: settings_json
-                        .get("batch_window_secs")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(60),
                 }))
             }
             ChannelType::Telegram => {

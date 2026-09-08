@@ -29,6 +29,8 @@ Discord is therefore a backend capability with a web-interface limitation, not a
 
 ## Configure an External Channel
 
+Email channels reuse SMTP connections for successive messages. Each configuration replacement owns a separate connection pool; deliveries already admitted against the previous configuration retain their original channel. Disabled or priority-filtered messages do not initialize SMTP transport. Email delivery remains immediate: the obsolete `batch_window_secs` setting is ignored in stored JSON and is no longer part of the Rust `EmailConfig` interface.
+
 1. Open **Notifications** and select **Add Channel**.
 2. Choose Webhook, Telegram, Gotify, or Email and enter a recognizable channel name.
 3. Set **Minimum Priority**, message language, and **Enabled**.

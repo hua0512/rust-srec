@@ -89,7 +89,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 rmcp = { version = "3.1.2", features = ["transport-streamable-http-server"] }
 schemars = "1.1"
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
-lettre = { version = "0.11.22", default-features = false, features = ["aws-lc-rs", "builder", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
+lettre = { version = "0.11.22", default-features = false, features = ["aws-lc-rs", "builder", "pool", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
 mimalloc = "0.1.50"
 # "std" enables password-hash's rand_core/getrandom, which auth_service::hash_password
 # needs for `SaltString::generate(&mut OsRng)`.
