@@ -64,7 +64,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
     let (container, _) = fixture().await;
     let mut template = TemplateConfigDbModel::new("refresh-template");
     template.offline_check_count = Some(6);
-    template.offline_check_delay_ms = Some(600);
+    template.offline_check_delay_ms = Some(6000);
     container
         .config_service
         .create_template_config(&template)
@@ -88,7 +88,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
         }
         if index == 3 {
             streamer.streamer_specific_config =
-                Some(r#"{"offline_check_count":7,"offline_check_delay_ms":700}"#.to_owned());
+                Some(r#"{"offline_check_count":7,"offline_check_delay_ms":7000}"#.to_owned());
         }
         SqlxStreamerRepository::new(container.pool.clone(), container.write_pool.clone())
             .create_streamer(&streamer)
@@ -148,7 +148,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
             updated_template.offline_check_count,
             updated_template.offline_check_delay_ms
         ),
-        (8, 600)
+        (8, 6000)
     );
 
     mark_stale(&container);
@@ -158,7 +158,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
         .await
         .unwrap();
     platform.offline_check_count = Some(9);
-    platform.offline_check_delay_ms = Some(900);
+    platform.offline_check_delay_ms = Some(9000);
     container
         .config_service
         .update_platform_config(&platform)
@@ -194,7 +194,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
             updated_platform.offline_check_count,
             updated_platform.offline_check_delay_ms
         ),
-        (9, 900)
+        (9, 9000)
     );
     assert_eq!(
         container
@@ -217,7 +217,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
         .unwrap();
     let mut global = container.config_service.get_global_config().await.unwrap();
     global.offline_check_count = 10;
-    global.offline_check_delay_ms = 1000;
+    global.offline_check_delay_ms = 10000;
     container
         .config_service
         .update_global_config(&global)
@@ -250,7 +250,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
             inherited_global.offline_check_count,
             inherited_global.offline_check_delay_ms
         ),
-        (10, 1000)
+        (10, 10000)
     );
     let overridden = container
         .streamer_manager
@@ -261,7 +261,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
             overridden.offline_check_count,
             overridden.offline_check_delay_ms
         ),
-        (7, 700)
+        (7, 7000)
     );
 
     assert!(
