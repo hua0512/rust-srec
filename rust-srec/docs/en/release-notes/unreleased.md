@@ -8,6 +8,12 @@
 
   Set the optional backend engine field `ffmpeg_path` to choose the FFmpeg process used for Streamlink remuxing. Omitted or null values retain `FFMPEG_PATH` then `ffmpeg` fallback. See [engine configuration](../concepts/engines.md#streamlink-ffmpeg-executable).
 
+## Backend Model Cleanup
+
+- **One canonical streamer state and fewer unused Rust interfaces**
+
+  Database models now use `domain::StreamerState`. Removed unused database batching, configuration coalescing, duplicate session entities, and inactive convenience methods. Rust integrations should follow the [backend interface notes](../concepts/architecture.md#backend-rust-interfaces). REST payloads, recording behavior, state-transition validation and runtime retirement are unchanged.
+
 ## Internal Metrics
 
 - **Monitoring code reflects the available interfaces**
@@ -83,6 +89,10 @@
   Scheduled vacuum checks the download manager's active recordings instead of counting nonexistent download jobs. It defers when recording activity exceeds the configured limit or admission is busy, and holds new starts until admitted vacuum work finishes. Filesystem preflight runs before that gate, so a slow disk-space check does not hold up recording starts. Lightweight retention remains independent.
 
 ## Configuration
+
+- **Large configuration refreshes use bounded parallel lookups**
+
+  Startup and global/platform/template updates refresh up to 16 independent streamers together while preserving event order and per-streamer best-effort behavior. Startup output-root discovery is reused for both health registration and write probes. Configuration precedence, retirement handling and persistent recovery acknowledgements are unchanged. See [configuration refresh](../concepts/configuration.md#hot-reload-cache-and-update-events).
 
 - **Backup imports validate the final account email assignments**
 

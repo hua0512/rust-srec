@@ -80,7 +80,7 @@ pub const ENDED_RETENTION_DEFAULT: Duration = Duration::from_secs(60);
 /// - `streamer_current_sessions` — `streamer_id -> current session_id`.
 ///   This keeps streamer-scoped lookups deterministic while `sessions` also
 ///   retains recently-ended entries for duplicate-event dedupe.
-/// - `classifier` — stateful per-streamer Network-failure log; PR 2 work.
+/// - `classifier` — per-streamer Network-failure window used by `on_download_terminal`.
 pub struct SessionLifecycle {
     repo: Arc<SessionLifecycleRepository>,
     /// Per-engine offline-signal classifier. On every Terminal::Failed,
@@ -611,8 +611,8 @@ impl SessionLifecycle {
     ///   whose state forbids sessions (user disabled/cancelled, fatal)
     ///   yields `SuppressedInactive` — nothing written, nothing broadcast.
     ///
-    ///   No gap-resume rule, no continuation rule, no `hard_ended` cache.
-    ///   The DB's `end_time` is the source of truth.
+    ///   `start_or_resume` uses the DB's `end_time` to decide whether the
+    ///   session can continue or a new session must be created.
     pub async fn on_live_detected(
         &self,
         args: LiveDetectedArgs<'_>,
@@ -1110,8 +1110,8 @@ impl SessionLifecycle {
     }
 
     /// Cancel an active hysteresis timer and transition `Hysteresis →
-    /// Recording`. The session row's `end_time` was never written (DB
-    /// strategy B), so no DB undo is needed. Emits `SessionTransition::Resumed`.
+    /// Recording`. The session row's `end_time` remains unset during
+    /// hysteresis, so no DB undo is needed. Emits `SessionTransition::Resumed`.
     ///
     /// Before claiming the exit, `mark_streamer_live` re-checks the
     /// streamer row's state at the DB serialization point: an inactive row

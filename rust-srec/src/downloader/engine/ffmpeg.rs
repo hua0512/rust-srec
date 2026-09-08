@@ -253,12 +253,8 @@ impl DownloadEngine for FfmpegEngine {
 
     async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
-        // Output directory is now prepared by
-        // `DownloadManager::prepare_output_dir` before this method is called,
-        // so the ffmpeg engine no longer needs to run `ensure_output_dir`
-        // itself. Centralizing that call means the output-root write gate
-        // has a single hook point and error classification runs consistently
-        // for every engine.
+        // `DownloadManager::prepare_output_dir` runs before engine startup,
+        // enforcing the output-root write gate and classifying directory errors.
         let args = self.build_args(&config);
         let segment_mode = config.max_segment_duration_secs > 0;
         let single_output_path = if segment_mode {

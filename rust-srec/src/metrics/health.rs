@@ -28,8 +28,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, warn};
 
-use crate::notification::NotificationEvent;
-
 use self::sampler::SystemSampler;
 
 mod sampler;
@@ -371,8 +369,7 @@ impl HealthChecker {
         }
     }
 
-    /// Disk-warning threshold (used by [`Self::check_disk_space`] and
-    /// [`Self::disk_space_notification`]).
+    /// Disk-warning threshold used by the disk health probes.
     pub fn disk_warning_threshold(&self) -> f64 {
         self.disk_warning_threshold
     }
@@ -618,17 +615,6 @@ impl HealthChecker {
         self.snapshot.store(new_snapshot);
     }
 
-    /// Check disk space and return health status.
-    pub fn check_disk_space(&self, path: &str, available: u64, total: u64) -> ComponentHealth {
-        Self::check_disk_space_with_thresholds(
-            path,
-            available,
-            total,
-            self.disk_warning_threshold,
-            self.disk_critical_threshold,
-        )
-    }
-
     /// Check disk space with explicit warning/critical thresholds.
     pub fn check_disk_space_with_thresholds(
         path: &str,
@@ -731,34 +717,6 @@ impl HealthChecker {
                 lines.join("; ")
             ),
         )
-    }
-
-    /// Generate notification event for disk space issues.
-    pub fn disk_space_notification(
-        &self,
-        path: &str,
-        available: u64,
-        total: u64,
-    ) -> Option<NotificationEvent> {
-        if total == 0 {
-            return None;
-        }
-
-        let used_ratio = 1.0 - (available as f64 / total as f64);
-        let threshold = if used_ratio >= self.disk_critical_threshold {
-            (total as f64 * (1.0 - self.disk_critical_threshold)) as u64
-        } else if used_ratio >= self.disk_warning_threshold {
-            (total as f64 * (1.0 - self.disk_warning_threshold)) as u64
-        } else {
-            return None;
-        };
-
-        Some(NotificationEvent::OutOfSpace {
-            path: path.to_string(),
-            available_bytes: available,
-            threshold_bytes: threshold,
-            timestamp: chrono::Utc::now(),
-        })
     }
 }
 
@@ -1133,8 +1091,13 @@ mod tests {
     #[test]
     fn test_disk_space_check_healthy() {
         let checker = HealthChecker::new();
-        let health =
-            checker.check_disk_space("/data", 50 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
+        let health = HealthChecker::check_disk_space_with_thresholds(
+            "/data",
+            50 * 1024 * 1024 * 1024,
+            100 * 1024 * 1024 * 1024,
+            checker.disk_warning_threshold(),
+            checker.disk_critical_threshold(),
+        );
         assert_eq!(health.status, HealthStatus::Healthy);
     }
 
@@ -1142,8 +1105,13 @@ mod tests {
     fn test_disk_space_check_warning() {
         let checker = HealthChecker::new();
         // 85% used = 15% available
-        let health =
-            checker.check_disk_space("/data", 15 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
+        let health = HealthChecker::check_disk_space_with_thresholds(
+            "/data",
+            15 * 1024 * 1024 * 1024,
+            100 * 1024 * 1024 * 1024,
+            checker.disk_warning_threshold(),
+            checker.disk_critical_threshold(),
+        );
         assert_eq!(health.status, HealthStatus::Degraded);
     }
 
@@ -1151,8 +1119,13 @@ mod tests {
     fn test_disk_space_check_critical() {
         let checker = HealthChecker::new();
         // 97% used = 3% available
-        let health =
-            checker.check_disk_space("/data", 3 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
+        let health = HealthChecker::check_disk_space_with_thresholds(
+            "/data",
+            3 * 1024 * 1024 * 1024,
+            100 * 1024 * 1024 * 1024,
+            checker.disk_warning_threshold(),
+            checker.disk_critical_threshold(),
+        );
         assert_eq!(health.status, HealthStatus::Unhealthy);
     }
 
@@ -1177,7 +1150,7 @@ mod tests {
     #[test]
     fn disk_usage_percent_matches_threshold_ratio() {
         // The percentage the dashboard renders must agree with the status
-        // `check_disk_space` derives from the same available/total pair:
+        // `check_disk_space_with_thresholds` derives from the same available/total pair:
         // 85% used sits above the 0.80 warning threshold, so a bar showing
         // 85% next to a Degraded badge is consistent.
         let available = 15 * 1024 * 1024 * 1024;
@@ -1185,7 +1158,14 @@ mod tests {
         let usage = DiskUsage::new("/rec", "/", available, total);
         let checker = HealthChecker::new();
         assert_eq!(
-            checker.check_disk_space("/rec", available, total).status,
+            HealthChecker::check_disk_space_with_thresholds(
+                "/rec",
+                available,
+                total,
+                checker.disk_warning_threshold(),
+                checker.disk_critical_threshold()
+            )
+            .status,
             HealthStatus::Degraded
         );
         assert!(usage.used_percent >= (checker.disk_warning_threshold() * 100.0) as f32);

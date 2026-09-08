@@ -78,7 +78,7 @@ pub struct PlatformActor {
 }
 
 impl PlatformActor {
-    /// Create a new PlatformActor with no-op batch checker (for testing/backwards compatibility).
+    /// Create a new PlatformActor with a no-op batch checker that returns offline results.
     ///
     /// # Arguments
     ///
@@ -573,8 +573,7 @@ impl PlatformActor {
             .filter_map(|id| self.streamer_metadata.get(id).cloned())
             .collect();
 
-        // If we don't have metadata for all streamers, fall back to simulated results
-        // for those without metadata (backwards compatibility)
+        // Streamers without metadata receive offline fallback results.
         if streamers.len() < streamer_ids.len() {
             trace!(
                 platform_id = %self.platform_id,
@@ -584,7 +583,7 @@ impl PlatformActor {
             );
         }
 
-        // If we have no metadata at all, return simulated results (backwards compatibility)
+        // Without metadata, no real batch check can run; return offline results.
         if streamers.is_empty() {
             let results: Vec<BatchDetectionResult> = streamer_ids
                 .iter()

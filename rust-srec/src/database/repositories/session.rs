@@ -38,7 +38,6 @@ pub trait SessionRepository: Send + Sync {
     ) -> Result<Vec<LiveSessionDbModel>>;
     async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()>;
     async fn end_session(&self, id: &str, end_time: i64) -> Result<()>;
-    async fn resume_session(&self, id: &str) -> Result<()>;
     async fn update_session_titles(&self, id: &str, titles: &str) -> Result<()>;
     async fn delete_session(&self, id: &str) -> Result<()>;
     async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64>;
@@ -419,17 +418,6 @@ impl SessionRepository for SqlxSessionRepository {
             .bind(id)
             .execute(&self.write_pool)
             .await?;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn resume_session(&self, id: &str) -> Result<()> {
-        retry_on_sqlite_busy("resume_session", || async {
-            sqlx::query("UPDATE live_sessions SET end_time = NULL WHERE id = ?")
-                .bind(id)
-                .execute(&self.write_pool)
-                .await?;
             Ok(())
         })
         .await

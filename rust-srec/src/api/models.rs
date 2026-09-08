@@ -325,7 +325,7 @@ pub struct GlobalConfigResponse {
     pub queue_freshness_threshold_ms: u64,
 
     /// Seconds between probes of nvidia-smi for the GPU health monitor
-    /// (issue #555). Hot-reloaded by the monitor on the next tick.
+    /// in `GpuHealthMonitor`. Hot-reloaded by the monitor on the next tick.
     pub gpu_health_probe_interval_secs: u64,
 
     /// Whether the stream proxy may fetch targets on private networks.
@@ -372,7 +372,7 @@ pub struct UpdateGlobalConfigRequest {
     /// Milliseconds a queued download may wait before the pipeline
     /// re-checks the streamer to refresh URLs/headers.
     pub queue_freshness_threshold_ms: Option<serde_json::Value>,
-    /// Seconds between GPU health probes (issue #555). Clamped server-side to
+    /// Seconds between `GpuHealthMonitor` probes. Clamped server-side to
     /// at least 1 second; the UI hint discourages going below 30 s.
     pub gpu_health_probe_interval_secs: Option<serde_json::Value>,
     /// Whether the stream proxy may fetch targets on private networks.

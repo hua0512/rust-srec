@@ -172,7 +172,7 @@ impl Processor for DeleteProcessor {
             ));
         }
 
-        // Preserve the legacy single-input behavior (metadata schema + logs).
+        // Single-input jobs report per-file metadata and deletion logs.
         if let [file_path] = input.inputs.as_slice() {
             let path = Path::new(file_path);
 

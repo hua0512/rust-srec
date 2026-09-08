@@ -193,7 +193,7 @@ impl Processor for DanmakuFactoryProcessor {
     }
 
     fn job_types(&self) -> Vec<&'static str> {
-        // Keep specific names for clarity/back-compat, but also provide a short alias.
+        // All three job type names select the same XML-to-ASS processor.
         vec!["danmaku_factory", "danmu_to_ass", "danmu"]
     }
 

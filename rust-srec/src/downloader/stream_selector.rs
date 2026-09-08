@@ -268,9 +268,7 @@ impl StreamSelector {
     /// Get the CDN preference score (lower is better).
     fn cdn_score(&self, stream: &StreamInfo) -> usize {
         if self.config.preferred_cdns.is_empty() {
-            // If no CDN preference, return 0 (neutral) so it doesn't affect sorting
-            // unless we want to prioritize based on something else?
-            // Actually, existing implementation returned 0 which is correct.
+            // A neutral score leaves ordering to the other stream preferences.
             return 0;
         }
 

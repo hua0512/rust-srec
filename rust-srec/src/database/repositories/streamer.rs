@@ -31,7 +31,6 @@ pub trait StreamerRepository: Send + Sync {
     async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_platform(&self, platform_id: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>>;
-    async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>>;
     async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
     async fn update_streamer_state(&self, id: &str, state: &str) -> Result<()>;
@@ -197,24 +196,6 @@ impl StreamerRepository for SqlxStreamerRepository {
             "SELECT * FROM streamers WHERE template_config_id = ? AND deleted_at IS NULL ORDER BY priority DESC, name",
         )
         .bind(template_id)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(streamers)
-    }
-
-    async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>> {
-        // Active streamers are those not in CANCELLED, FATAL_ERROR, or NOT_FOUND states
-        let now = crate::database::time::now_ms();
-        let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            r#"
-            SELECT * FROM streamers 
-            WHERE state NOT IN ('CANCELLED', 'FATAL_ERROR', 'NOT_FOUND')
-            AND deleted_at IS NULL
-            AND (disabled_until IS NULL OR disabled_until < ?)
-            ORDER BY priority DESC, name
-            "#,
-        )
-        .bind(now)
         .fetch_all(&self.pool)
         .await?;
         Ok(streamers)

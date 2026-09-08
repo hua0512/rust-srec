@@ -160,7 +160,8 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn delete_channel(&self, id: &str) -> Result<()> {
-        // Delete subscriptions first (no CASCADE in schema)
+        // Explicitly remove subscriptions before deleting the channel;
+        // the channel foreign key also provides ON DELETE CASCADE.
         sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
             .bind(id)
             .execute(&self.write_pool)

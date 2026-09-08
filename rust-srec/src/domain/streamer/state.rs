@@ -1,6 +1,5 @@
 //! Streamer state machine.
 
-use crate::Error;
 use serde::{Deserialize, Serialize};
 
 /// Streamer operational states.
@@ -141,18 +140,6 @@ impl StreamerState {
             _ => false,
         }
     }
-
-    /// Attempt to transition to a new state.
-    pub fn transition_to(&self, target: StreamerState) -> Result<StreamerState, Error> {
-        if self.can_transition_to(target) {
-            Ok(target)
-        } else {
-            Err(Error::InvalidStateTransition {
-                from: self.as_str().to_string(),
-                to: target.as_str().to_string(),
-            })
-        }
-    }
 }
 
 impl std::fmt::Display for StreamerState {
@@ -195,19 +182,5 @@ mod tests {
     fn test_invalid_transitions() {
         assert!(!StreamerState::Cancelled.can_transition_to(StreamerState::Live));
         assert!(!StreamerState::NotFound.can_transition_to(StreamerState::Live));
-    }
-
-    #[test]
-    fn test_transition_to() {
-        let state = StreamerState::NotLive;
-        let new_state = state.transition_to(StreamerState::Live).unwrap();
-        assert_eq!(new_state, StreamerState::Live);
-    }
-
-    #[test]
-    fn test_transition_to_error() {
-        let state = StreamerState::Cancelled;
-        let result = state.transition_to(StreamerState::Live);
-        assert!(result.is_err());
     }
 }

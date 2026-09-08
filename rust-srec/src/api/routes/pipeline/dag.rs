@@ -334,7 +334,7 @@ pub async fn list_dags(
         .map_err(ApiError::from)?;
 
     // One `WHERE id IN (...)` query for every streamer on the page. A failed
-    // lookup only blanks the display names, as before.
+    // lookup only blanks the display names.
     let streamer_ids: Vec<String> = dags
         .iter()
         .filter_map(|d| d.streamer_id.clone())

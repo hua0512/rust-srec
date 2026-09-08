@@ -1453,7 +1453,7 @@ mod tests {
     /// `session_ended` audit row with `cause: user_disabled`, and does
     /// NOT touch streamer state or enqueue StreamerOffline.
     #[tokio::test]
-    async fn or1_end_for_disable_atomic_writes() {
+    async fn end_for_disable_atomic_writes() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
@@ -1504,7 +1504,7 @@ mod tests {
     /// call against the same already-ended id is a no-op (returns None),
     /// inserts no second audit row.
     #[tokio::test]
-    async fn or2_end_for_disable_idempotent_on_already_ended_id() {
+    async fn end_for_disable_idempotent_on_already_ended_id() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
