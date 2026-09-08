@@ -205,7 +205,8 @@ async fn producer_panic_is_an_error_instead_of_successful_eof() {
         receiver,
         task: tokio::task::spawn_blocking(move || {
             let _sender = sender;
-            panic!("archive test panic");
+            // Exercise task failure without timing global panic-hook diagnostics.
+            std::panic::resume_unwind(Box::new("archive test panic"));
         }),
         _cancel_on_drop: CancellationToken::new().drop_guard(),
         permit: Some(Arc::new(service.slots.clone().try_acquire_owned().unwrap())),
