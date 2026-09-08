@@ -5,10 +5,11 @@
 //!
 //! # Backoff Algorithm
 //!
-//! - First 3 failures within the failure window: no backoff (immediate restart)
+//! - Failures below the threshold within the failure window: no backoff
 //! - After 3 failures: backoff = base * 2^(failures - 3)
 //! - Backoff is capped at max_backoff
-//! - Failure count resets when the failure window expires
+//! - Only the backoff count ages out; ten consecutive crashes stop automatic restarts
+//! - Explicit clear/remove operations reset the consecutive-crash budget
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -61,6 +62,8 @@ struct RestartHistory {
     failures: Vec<Instant>,
     /// Total restart count (for metrics).
     total_restarts: u64,
+    /// Consecutive crashes since an explicit reset; independent of the backoff window.
+    consecutive_failures: u64,
     /// Last restart time.
     last_restart: Option<Instant>,
 }
@@ -70,6 +73,7 @@ impl RestartHistory {
         Self {
             failures: Vec::new(),
             total_restarts: 0,
+            consecutive_failures: 0,
             last_restart: None,
         }
     }
@@ -81,7 +85,8 @@ impl RestartHistory {
 
         // Add new failure
         self.failures.push(now);
-        self.total_restarts += 1;
+        self.total_restarts = self.total_restarts.saturating_add(1);
+        self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         self.last_restart = Some(now);
 
         self.failures.len()
@@ -98,6 +103,7 @@ impl RestartHistory {
     /// Clear failure history (e.g., after successful operation).
     fn clear_failures(&mut self) {
         self.failures.clear();
+        self.consecutive_failures = 0;
     }
 }
 
@@ -216,11 +222,12 @@ impl RestartTracker {
 
     /// Check if an actor should be restarted.
     ///
-    /// Returns `true` if the actor has not exceeded a reasonable restart limit.
+    /// Returns `true` before the tenth consecutive crash, regardless of backoff age.
+    /// `clear_failures` or `remove` restores the restart budget.
     pub fn should_restart(&self, actor_id: &str) -> bool {
-        let failures = self.recent_failures(actor_id);
-        // Allow restart if under a reasonable limit (e.g., 10 failures in window)
-        failures < 10
+        self.history
+            .get(actor_id)
+            .is_none_or(|history| history.consecutive_failures < 10)
     }
 
     /// Get statistics for all tracked actors.
@@ -447,5 +454,28 @@ mod tests {
         assert_eq!(tracker.calculate_backoff(5), Duration::from_millis(400));
         // failures=6: base * 2^3 = 800ms
         assert_eq!(tracker.calculate_backoff(6), Duration::from_millis(800));
+    }
+    #[test]
+    fn restart_limit_survives_aged_backoff_and_explicit_reset_preserves_metrics() {
+        let mut tracker = RestartTracker::new();
+        for failure in 1..=10 {
+            tracker.record_failure("crashes");
+            // Simulate elapsed backoff without sleeping. Only timestamps age, not the
+            // consecutive failure count that protects against permanent crash loops.
+            for timestamp in &mut tracker.history.get_mut("crashes").unwrap().failures {
+                *timestamp = Instant::now() - DEFAULT_FAILURE_WINDOW - Duration::from_secs(1);
+            }
+            assert_eq!(tracker.recent_failures("crashes"), 0);
+            assert_eq!(tracker.get_backoff("crashes"), Duration::ZERO);
+            assert_eq!(tracker.should_restart("crashes"), failure < 10);
+        }
+        tracker.clear_failures("crashes");
+        assert!(tracker.should_restart("crashes"));
+        assert_eq!(tracker.total_restarts("crashes"), 10);
+        assert_eq!(tracker.record_failure("crashes"), Duration::ZERO);
+        assert_eq!(tracker.total_restarts("crashes"), 11);
+        tracker.remove("crashes");
+        assert!(tracker.should_restart("crashes"));
+        assert_eq!(tracker.total_restarts("crashes"), 0);
     }
 }
