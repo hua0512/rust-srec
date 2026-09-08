@@ -769,8 +769,11 @@ mod tests {
             .expect("marker directory should be readable")
             .collect::<std::io::Result<Vec<_>>>()
             .expect("marker directory entries should be readable");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].path(), path);
+        let mut paths: Vec<_> = entries.into_iter().map(|entry| entry.path()).collect();
+        paths.sort();
+        let mut expected = vec![path, directory.path().join("runtime.dirty.update.lock")];
+        expected.sort();
+        assert_eq!(paths, expected);
     }
 
     #[test]
