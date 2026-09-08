@@ -208,3 +208,30 @@ fn scan_entry_limit_is_checked_after_date_filtering() {
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].filename, "rust-srec.log.2026-09-07");
 }
+
+#[test]
+fn numbered_segments_use_filename_dates_and_preserve_file_selection() {
+    let dir = TempDir::new().unwrap();
+    let names = [
+        "rust-srec.log.2001-01-01",
+        "rust-srec.log.2001-01-01.00000000000000000002",
+        "rust-srec.log.2001-01-01.00000000000000000003",
+    ];
+    for name in names {
+        std::fs::write(dir.path().join(name), b"line\n").unwrap();
+    }
+    let date = chrono::NaiveDate::from_ymd_opt(2001, 1, 1).unwrap();
+    let files = filter_by_range(scan_log_files(dir.path()).unwrap(), Some(date), Some(date));
+    assert_eq!(
+        files
+            .iter()
+            .map(|file| file.filename.as_str())
+            .collect::<Vec<_>>(),
+        names
+    );
+    assert!(files.iter().all(|file| file.date == date));
+    let selected = filter_by_file_name(files, names[1]);
+    let lines = list_log_lines(selected, 0, 10, None).unwrap();
+    assert_eq!(lines.items[0].filename, names[1]);
+    assert_eq!(lines.items[0].text, "line");
+}

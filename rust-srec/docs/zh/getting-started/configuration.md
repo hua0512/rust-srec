@@ -113,6 +113,8 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 | `CONFIG_DIR` | 平台配置文件目录 | `./config` |
 | `OUTPUT_DIR` | 独立后端创建全新数据库时的初始录制文件夹，同时供启动和磁盘空间健康探测监视。在 Docker Compose 中它是宿主机绑定挂载目录，容器内使用 `OUTPUT_DIR=/app/output`。已有数据库设置会保留。 | `./output` |
 | `LOG_DIR` | 日志文件目录。相对路径按进程工作目录解析；随附的系统服务单元会显式设为 `/var/log/rust-srec`，以免日志文件落进状态目录。参见[安装](./installation.md)。 | `./logs` |
+| `LOG_MAX_FILE_BYTES` | 启动时读取的单个托管日志分段字节上限，整数范围 1024 至 1073741824；超大记录截断并添加标记。 | `16777216`（16 MiB） |
+| `LOG_MAX_FILES` | 启动时读取的托管日志分段数量上限，含当前文件，整数范围 2 至 1024。共享 `LOG_DIR` 的实例应保持设置一致；参见[保留上限](../operations/monitoring.md#日志)。 | `16` |
 
 ::: tip 初始录制目录与已保存的录制目录
 独立后端使用 `OUTPUT_DIR` 初始化全新数据库的 `output_folder`，未设置或为空白时使用 `./output`。相对路径按启动工作目录解析并保存为绝对路径。Docker Compose 和 systemd unit 分别提供 `/app/output` 和 `/var/lib/rust-srec/output`。

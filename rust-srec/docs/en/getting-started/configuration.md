@@ -115,6 +115,8 @@ The following environment variables can be configured in your <a :href="withBase
 | `CONFIG_DIR` | Directory for platform configuration files | `./config` |
 | `OUTPUT_DIR` | Initial recording folder when the standalone backend creates a fresh database; also watched by startup and disk-space health probes. Under Docker Compose this is the host bind-mount directory, while the container receives `OUTPUT_DIR=/app/output`. Existing database settings are preserved. | `./output` |
 | `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files do not land inside the state directory. See [Installation](./installation.md). | `./logs` |
+| `LOG_MAX_FILE_BYTES` | Maximum bytes per managed log segment, read at startup; integer from 1024 to 1073741824. Oversized records are truncated with a marker. | `16777216` (16 MiB) |
+| `LOG_MAX_FILES` | Maximum managed log segments including the current file, read at startup; integer from 2 to 1024. Use consistent settings for shared `LOG_DIR`; see [retention limits](../operations/monitoring.md#logs). | `16` |
 
 ::: tip Initial and saved recording directories
 The standalone backend initializes a fresh database's `output_folder` from `OUTPUT_DIR`, using `./output` when unset or blank. It resolves relative paths against the startup working directory and saves an absolute path. Docker Compose and the systemd unit provide `/app/output` and `/var/lib/rust-srec/output`, respectively.

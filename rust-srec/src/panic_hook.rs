@@ -1,15 +1,14 @@
-use chrono::Local;
 use std::{
     backtrace::Backtrace,
-    fs::OpenOptions,
-    io::Write,
     panic::{PanicHookInfo, take_hook},
-    path::{Path, PathBuf},
+    path::Path,
     thread,
 };
 
+use chrono::Local;
+
 /// Installs a global panic hook that logs panics via `tracing` and also appends
-/// a panic record to the current daily log file in `log_dir`.
+/// a panic record through the bounded log store in `log_dir` for abort builds.
 ///
 /// This is intentionally redundant:
 /// - `tracing` integrates with normal logging + websocket log streaming.
@@ -17,6 +16,13 @@ use std::{
 ///   where buffered/background log writers may not flush before abort.
 pub fn install(log_dir: impl AsRef<Path>) {
     let log_dir = log_dir.as_ref().to_path_buf();
+    let emergency_store = match crate::logging::store::LogStore::from_env(log_dir) {
+        Ok(store) => Some(store),
+        Err(error) => {
+            eprintln!("Emergency file logging unavailable: {error}");
+            None
+        }
+    };
     let previous_hook = take_hook();
 
     std::panic::set_hook(Box::new(move |panic_info: &PanicHookInfo<'_>| {
@@ -25,26 +31,19 @@ pub fn install(log_dir: impl AsRef<Path>) {
 
             tracing::error!(target: "rust_srec::panic", "{panic_record}");
 
-            // Best-effort: in `panic = "abort"` builds, append to the current daily log file
-            // (matches `tracing_appender::rolling::daily` naming) because background log writers
-            // may not flush before the process aborts.
-            if cfg!(panic = "abort") {
-                let _ = append_panic_record(&log_dir, &panic_record);
+            // Abort builds cannot rely on the background writer flushing. Never
+            // wait for its ownership here: the panic may have occurred inside it.
+            if cfg!(panic = "abort")
+                && let Some(store) = &emergency_store
+                && let Err(error) = store.try_append_emergency(&format!("{panic_record}\n"))
+            {
+                eprintln!("Emergency file logging failed; panic details follow on stderr: {error}");
             }
         }));
 
         // Preserve the default hook output/backtrace behavior.
         previous_hook(panic_info);
     }));
-}
-
-fn append_panic_record(log_dir: &Path, record: &str) -> std::io::Result<()> {
-    let filename = format!("rust-srec.log.{}", Local::now().format("%Y-%m-%d"));
-    let path = PathBuf::from(log_dir).join(filename);
-
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    writeln!(file, "{record}")?;
-    file.flush()
 }
 
 fn format_panic_record(panic_info: &PanicHookInfo<'_>) -> String {
