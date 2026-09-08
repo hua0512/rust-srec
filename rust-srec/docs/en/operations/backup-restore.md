@@ -17,6 +17,13 @@ The configuration export can contain platform cookies, notification credentials,
 
 In the web interface, open **Settings > Backup & Restore** and download an export. The API equivalents are `GET /api/config/backup/export` and `POST /api/config/backup/import`.
 
+Filter and notification-subscription lookups use batches of up to 500 owners,
+preserving streamer/channel order and each owner's existing child order. If a
+batch read fails, the backend retries those owners individually so healthy
+neighbors remain in the export. As before, an owner whose related-data lookup
+still fails has an empty filter/subscription list; the backend logs the recovery
+and failure counts. Failures to load the main configuration lists still abort the export.
+
 Import supports two modes:
 
 - `merge` updates matching entities and keeps entities absent from the file.

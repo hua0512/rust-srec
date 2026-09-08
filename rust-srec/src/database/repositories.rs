@@ -60,3 +60,14 @@ fn literal_substring_pattern(search: &str) -> String {
     pattern.push('%');
     pattern
 }
+
+/// Stay below SQLite's historical 999-parameter limit while bounding each lookup.
+pub(crate) const LOOKUP_BATCH_SIZE: usize = 500;
+
+pub(crate) fn unique_lookup_ids(ids: &[String]) -> Vec<&str> {
+    let mut seen = std::collections::HashSet::new();
+    ids.iter()
+        .map(String::as_str)
+        .filter(|id| seen.insert(*id))
+        .collect()
+}
