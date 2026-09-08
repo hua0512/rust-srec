@@ -6,6 +6,9 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use tokio_util::task::AbortOnDropHandle;
 
+use crate::database::models::UserDbModel;
+use crate::database::repositories::{SqlxUserRepository, UserRepository};
+
 use super::*;
 
 struct Fixture {
@@ -24,8 +27,12 @@ impl Fixture {
             .await
             .unwrap();
         crate::database::run_migrations(&pool).await.unwrap();
-        sqlx::query("INSERT INTO users(id, username, password_hash, roles) VALUES('push-test', 'push-test', 'unused', '[]')")
-            .execute(&pool).await.unwrap();
+        let mut user = UserDbModel::new("push-test", "unused", Vec::new());
+        user.id = "push-test".into();
+        SqlxUserRepository::new(pool.clone(), pool.clone())
+            .create(&user)
+            .await
+            .unwrap();
         let status = Arc::new(AtomicU16::new(201));
         let hits = Arc::new(AtomicUsize::new(0));
         let (response_status, response_hits) = (status.clone(), hits.clone());
