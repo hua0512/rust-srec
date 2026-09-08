@@ -88,7 +88,7 @@
 
 - **Logging startup and idle behavior are predictable**
 
-  Log-file initialization returns errors instead of panicking, retention runs immediately at cleanup-service startup, redirected console output omits ANSI colors, and live-log formatting is skipped without subscribers. Daily files still have no byte-size cap.
+  Log-file initialization returns errors instead of panicking, retention runs immediately at cleanup-service startup, redirected console output omits ANSI colors, and live-log formatting is skipped without subscribers.
 
 - **Log archives stream within resource limits**
 
