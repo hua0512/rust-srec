@@ -225,6 +225,10 @@
 
 ## API and integrations
 
+- **Job pages and configuration exports batch related lookups**
+
+  Streamer display names, exported filters and notification subscriptions now use deduplicated batches of up to 500 owners instead of one query per owner. Response/export ordering, missing-owner behavior and best-effort handling of related-data failures are preserved; failed batches retry their owners individually. See [configuration exports](../operations/backup-restore.md#configuration-export).
+
 - **API errors and request batches have explicit boundaries**
 
   Internal diagnostics no longer enter ad-hoc API errors. Parse and session-delete batches reject more than 100 items before work begins. Device descriptions are bounded to 256 Unicode characters for new logins, refreshed legacy sessions and diagnostics; credential refresh keeps its relogin indication.

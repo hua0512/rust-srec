@@ -102,6 +102,11 @@ Treat access tokens, refresh tokens, cookies, and platform credentials as secret
 
 Use the generated OpenAPI document for request and response schemas instead of guessing fields from this summary.
 
+Pipeline job pages resolve display names through deduplicated streamer batches,
+with at most 500 IDs per query. Job order and response fields are unchanged.
+Missing streamers still have no display name. A failed batch is retried by owner,
+retaining names that can be read without failing the job page.
+
 ## Errors
 
 API errors use one stable envelope:

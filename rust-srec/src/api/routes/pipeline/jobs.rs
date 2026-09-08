@@ -4,7 +4,6 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use futures::future::join_all;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
@@ -1084,25 +1083,74 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
 
 /// Helper to batch-fetch streamer names for a list of jobs.
 async fn fetch_streamer_names(state: &PipelineRouteState, jobs: &[Job]) -> HashMap<String, String> {
-    // Collect unique streamer IDs
-    let streamer_ids: HashSet<String> = jobs.iter().map(|j| j.streamer_id.clone()).collect();
-
-    // Fetch streamers in parallel
-    let fetches = streamer_ids.into_iter().map(|streamer_id| {
-        let repo = state.streamer_repository.clone();
-        async move {
-            let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
-            (streamer_id, name)
-        }
-    });
-
-    join_all(fetches)
-        .await
-        .into_iter()
-        .filter_map(|(id, name)| name.map(|n| (id, n)))
-        .collect()
+    let repository = &state.streamer_repository;
+    crate::api::batch_lookup::collect(
+        jobs.iter().map(|job| job.streamer_id.clone()),
+        |ids| async move {
+            Ok(repository
+                .get_streamers_by_ids(&ids)
+                .await?
+                .into_iter()
+                .map(|streamer| (streamer.id, streamer.name))
+                .collect())
+        },
+        |id| async move {
+            repository
+                .get_streamer(&id)
+                .await
+                .map(|streamer| streamer.name)
+        },
+    )
+    .await
 }
 
 // ============================================================================
 // Pipeline Preset Handlers (Workflow Sequences)
 // ============================================================================
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+    use std::sync::{Arc, atomic::Ordering};
+
+    #[tokio::test]
+    async fn streamer_names_use_bounded_queries_and_tolerate_missing_or_retiring_owners() {
+        let (pool, queries) = crate::api::batch_lookup::tests::fixture().await;
+        sqlx::query("UPDATE streamers SET deleted_at = 1 WHERE id = 'owner-0002'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        queries.store(0, Ordering::SeqCst);
+        let state = PipelineRouteState {
+            pipeline_manager: Arc::new(crate::pipeline::PipelineManager::new()),
+            streamer_repository: Arc::new(
+                crate::database::repositories::SqlxStreamerRepository::new(
+                    pool.clone(),
+                    pool.clone(),
+                ),
+            ),
+        };
+        let owners = (0..=1000)
+            .rev()
+            .map(|i| format!("owner-{i:04}"))
+            .chain(["missing".to_owned(), "owner-0000".to_owned()]);
+        let jobs: Vec<_> = owners
+            .map(|owner| Job::new("remux", vec![], vec![], owner, "session"))
+            .collect();
+        let names = fetch_streamer_names(&state, &jobs).await;
+        assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
+        assert_eq!(names.len(), 1001);
+        assert_eq!(names["owner-0002"], "Name 2");
+        assert!(!names.contains_key("missing"));
+        for job in &jobs {
+            let expected = job
+                .streamer_id
+                .strip_prefix("owner-")
+                .map(|value| format!("Name {}", value.parse::<u32>().unwrap()));
+            assert_eq!(names.get(&job.streamer_id), expected.as_ref());
+        }
+        assert!(fetch_streamer_names(&state, &[]).await.is_empty());
+        assert_eq!(queries.load(Ordering::SeqCst), 0);
+        pool.close().await;
+    }
+}
