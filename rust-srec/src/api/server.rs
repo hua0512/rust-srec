@@ -71,7 +71,7 @@ impl ApiServerConfig {
 
 use std::sync::Arc;
 
-use crate::api::auth_service::AuthService;
+use crate::api::auth_service::{AuthPrincipal, AuthService};
 use crate::config::ConfigService;
 use crate::credentials::CredentialRefreshService;
 use crate::database::repositories::{
@@ -88,6 +88,13 @@ use crate::metrics::HealthChecker;
 use crate::notification::web_push::WebPushService;
 use crate::pipeline::PipelineManager;
 use crate::streamer::StreamerManager;
+
+/// A one-shot archive capability retains the issuing identity, never its raw credential.
+#[derive(Clone)]
+pub struct LoggingArchiveGrant {
+    pub(crate) expires_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) principal: Option<AuthPrincipal>,
+}
 
 /// Services required by the API router.
 ///
@@ -132,7 +139,7 @@ pub struct ApiServices {
     /// Logging configuration for dynamic log level changes
     pub logging_config: Arc<crate::logging::LoggingConfig>,
     /// Single-use download tokens for log archives.
-    pub logging_download_tokens: Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>,
+    pub logging_download_tokens: Arc<DashMap<String, LoggingArchiveGrant>>,
     /// Shared capacity and streaming archive generation for log downloads.
     pub(crate) logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
     /// Credential refresh service for API-triggered refresh and cookie resolution.

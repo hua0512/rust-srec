@@ -3,7 +3,7 @@
 use axum::{
     Json, Router,
     extract::{FromRef, State},
-    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
 };
@@ -46,24 +46,14 @@ async fn validate_health_auth(
     headers: &HeaderMap,
     state: &HealthRouteState,
 ) -> Result<(), crate::api::error::ApiError> {
-    let Some(auth_service) = &state.auth_service else {
-        return Ok(());
-    };
-
-    let token = headers
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or_else(|| {
-            crate::api::error::ApiError::unauthorized("Missing or invalid Authorization header")
-        })?;
-
-    auth_service
-        .authorize_access_token(token, false)
-        .await
-        .map_err(crate::api::error::ApiError::from)?;
-
-    Ok(())
+    crate::api::auth_request::authorize_request(
+        state.auth_service.as_ref(),
+        headers,
+        None,
+        crate::api::auth_request::AccessPolicy::Read,
+    )
+    .await
+    .map(|_| ())
 }
 
 #[utoipa::path(
@@ -207,6 +197,68 @@ pub async fn idle_check(State(state): State<HealthRouteState>) -> ApiResult<impl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn health_router_accepts_read_keys_and_keeps_liveness_public() {
+        use crate::database::models::ApiKeyAccessLevel;
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt;
+
+        let fixture = crate::api::auth_request::tests::fixture().await;
+        let (key, raw) = fixture
+            .service
+            .create_api_key(
+                &fixture.user_id,
+                "health-read",
+                ApiKeyAccessLevel::ReadOnly,
+                None,
+            )
+            .await
+            .unwrap();
+        let mut state = build_idle_test_state(crate::pipeline::PipelineManager::new());
+        state.auth_service = Some(fixture.service.clone());
+        let app = Router::new()
+            .route("/", get(health_check))
+            .route("/live", get(liveness_check))
+            .with_state(state);
+        for (path, token, expected) in [
+            ("/", None, StatusCode::UNAUTHORIZED),
+            ("/", Some(raw.as_str()), StatusCode::OK),
+            ("/", Some(fixture.access_token.as_str()), StatusCode::OK),
+            ("/live", None, StatusCode::OK),
+            ("/live", Some("invalid"), StatusCode::OK),
+        ] {
+            let mut request = Request::builder().uri(path);
+            if let Some(token) = token {
+                request = request.header("Authorization", format!("Bearer {token}"));
+            }
+            assert_eq!(
+                app.clone()
+                    .oneshot(request.body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+                    .status(),
+                expected
+            );
+        }
+        fixture
+            .service
+            .revoke_api_key(&fixture.user_id, &key.id)
+            .await
+            .unwrap();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header("Authorization", format!("Bearer {raw}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        fixture.pool.close().await;
+    }
 
     fn build_idle_test_state(
         pipeline_manager: crate::pipeline::PipelineManager,

@@ -12,7 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::api::auth_service::{API_KEY_PREFIX, AuthPrincipal, AuthService, CredentialKind};
+use crate::api::auth_service::{API_KEY_PREFIX, AuthService, CredentialKind};
 use crate::api::error::ApiError;
 use crate::database::models::ApiKeyAccessLevel;
 
@@ -35,32 +35,13 @@ impl IntoResponse for AuthLayerError {
     }
 }
 
-/// The raw credential a request presented, before validation.
-enum RequestCredential<'a> {
-    Jwt(&'a str),
-    ApiKey(&'a str),
-}
-
-fn extract_credential<B>(request: &Request<B>) -> Result<RequestCredential<'_>, AuthLayerError> {
-    if let Some(auth_header) = request.headers().get(AUTHORIZATION) {
-        let auth_str = auth_header
-            .to_str()
-            .map_err(|_| AuthLayerError::InvalidFormat)?;
-        let token = auth_str
-            .strip_prefix("Bearer ")
-            .ok_or(AuthLayerError::InvalidFormat)?;
-        // API keys are routed by their `srec_` prefix (`API_KEY_PREFIX`);
-        // anything else is treated as a JWT access token.
-        return Ok(if token.starts_with(API_KEY_PREFIX) {
-            RequestCredential::ApiKey(token)
-        } else {
-            RequestCredential::Jwt(token)
-        });
+fn extract_credential<B>(request: &Request<B>) -> Result<&str, AuthLayerError> {
+    if !request.headers().contains_key(AUTHORIZATION) {
+        return Err(AuthLayerError::MissingToken);
     }
-
-    Err(AuthLayerError::MissingToken)
+    crate::api::auth_request::request_credential(request.headers(), None)
+        .map_err(|_| AuthLayerError::InvalidFormat)
 }
-
 fn has_path_prefix(path: &str, prefix: &str) -> bool {
     path == prefix
         || path
@@ -206,35 +187,23 @@ where
         let mut inner = std::mem::replace(&mut self.inner, clone);
 
         Box::pin(async move {
-            let principal = match extract_credential(&request) {
-                Ok(RequestCredential::Jwt(token)) => {
-                    match auth_service
-                        .authorize_access_token(token, allow_password_remediation)
-                        .await
-                    {
-                        Ok(claims) => AuthPrincipal {
-                            claims,
-                            credential: CredentialKind::Jwt,
-                            access: ApiKeyAccessLevel::Full,
-                        },
-                        Err(error) => return Ok(ApiError::from(error).into_response()),
-                    }
-                }
-                Ok(RequestCredential::ApiKey(key)) => {
-                    // Remediation routes manage the account itself
-                    // (change-password / logout-all); only an interactive
-                    // JWT session may reach them.
-                    if allow_password_remediation {
-                        return Ok(api_key_not_allowed_response());
-                    }
-                    match auth_service.authorize_api_key(key).await {
-                        Ok(principal) => principal,
-                        Err(error) => return Ok(ApiError::from(error).into_response()),
-                    }
-                }
+            let token = match extract_credential(&request) {
+                Ok(token) => token,
                 Err(error) => return Ok(error.into_response()),
             };
-
+            if allow_password_remediation && token.trim().starts_with(API_KEY_PREFIX) {
+                return Ok(api_key_not_allowed_response());
+            }
+            let principal = match auth_service
+                .authorize_credential(token, allow_password_remediation)
+                .await
+            {
+                Ok(principal) => principal,
+                Err(error) => return Ok(ApiError::from(error).into_response()),
+            };
+            if allow_password_remediation && principal.credential == CredentialKind::ApiKey {
+                return Ok(api_key_not_allowed_response());
+            }
             if enforce_read_only_access
                 && principal.access == ApiKeyAccessLevel::ReadOnly
                 && !is_read_only_request_allowed(request.method(), request.uri().path())
@@ -259,7 +228,7 @@ mod tests {
     use tower::{Layer, ServiceExt, service_fn};
 
     use super::*;
-    use crate::api::auth_service::{AuthConfig, AuthService};
+    use crate::api::auth_service::{AuthConfig, AuthPrincipal, AuthService};
     use crate::api::jwt::{Claims, JwtService};
     use crate::database::models::{ApiKeyAccessLevel, RefreshTokenDbModel, UserDbModel};
     use crate::database::repositories::{
@@ -331,6 +300,22 @@ mod tests {
 
     #[async_trait::async_trait]
     impl RefreshTokenRepository for TestRefreshTokenRepository {
+        async fn find_session(
+            &self,
+            user_id: &str,
+            session_id: &str,
+        ) -> crate::Result<Option<crate::database::models::AuthSessionDbModel>> {
+            Ok((session_id == "test-session").then(|| {
+                crate::database::models::AuthSessionDbModel {
+                    id: session_id.to_owned(),
+                    user_id: user_id.to_owned(),
+                    created_at: 0,
+                    expires_at: (chrono::Utc::now() + chrono::Duration::hours(1))
+                        .timestamp_millis(),
+                    revoked_at: None,
+                }
+            }))
+        }
         async fn rotate(
             &self,
             _id: &str,
@@ -488,6 +473,7 @@ mod tests {
         // An hour-old exp clears the 60s leeway Validation::default() applies
         // inside JwtService::validate_token.
         let expired_claims = Claims {
+            sid: Some("test-session".to_owned()),
             sub: user_id.clone(),
             roles: vec!["user".to_string()],
             iss: "test-issuer".to_string(),
@@ -510,8 +496,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
-            .expect("token generation should succeed");
+            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
+            .expect("token generation should succeed")
+            .0;
         // Flip one mid-signature character (still base64url) so validation
         // fails on the signature check rather than on decoding.
         let (head, signature) = token
@@ -543,8 +530,9 @@ mod tests {
         let user_id = user.id.clone();
         let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
-            .expect("token generation should succeed");
+            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
+            .expect("token generation should succeed")
+            .0;
 
         let response = call_layer(
             AuthLayer::new(auth_service),
@@ -563,8 +551,9 @@ mod tests {
         let user_id = user.id.clone();
         let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
-            .expect("token generation should succeed");
+            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
+            .expect("token generation should succeed")
+            .0;
 
         let response = call_layer(
             AuthLayer::new(auth_service),
@@ -591,8 +580,9 @@ mod tests {
         let user_id = user.id.clone();
         let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
         let token = jwt_service
-            .generate_token(&user_id, vec!["user".to_string()])
-            .expect("token generation should succeed");
+            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
+            .expect("token generation should succeed")
+            .0;
 
         let response = call_layer(
             AuthLayer::password_remediation(auth_service),
@@ -607,8 +597,9 @@ mod tests {
     async fn token_for_missing_user_fails_closed() {
         let (auth_service, jwt_service) = test_services(UserLookup::Missing);
         let token = jwt_service
-            .generate_token("deleted-user", vec!["user".to_string()])
-            .expect("token generation should succeed");
+            .generate_session_token("deleted-user", vec!["user".to_string()], "test-session")
+            .expect("token generation should succeed")
+            .0;
 
         let response = call_layer(
             AuthLayer::new(auth_service),

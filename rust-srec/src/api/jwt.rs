@@ -21,6 +21,9 @@ pub struct Claims {
     pub exp: u64,
     /// Issued at timestamp (Unix)
     pub iat: u64,
+    /// Login-session lineage. Legacy unbound JWTs can decode but cannot authorize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sid: Option<String>,
 }
 
 /// JWT service error types.
@@ -107,7 +110,37 @@ impl JwtService {
     ///
     /// # Returns
     /// A JWT token string or an error
+    #[cfg(test)]
     pub fn generate_token(&self, user_id: &str, roles: Vec<String>) -> Result<String, JwtError> {
+        self.issue_token(user_id, roles, None)
+            .map(|(token, _)| token)
+    }
+
+    pub(crate) fn generate_session_token(
+        &self,
+        user_id: &str,
+        roles: Vec<String>,
+        session_id: &str,
+    ) -> Result<(String, u64), JwtError> {
+        self.issue_token(user_id, roles, Some(session_id.to_owned()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn generate_test_token(
+        &self,
+        user_id: &str,
+        roles: Vec<String>,
+    ) -> Result<String, JwtError> {
+        self.generate_session_token(user_id, roles, "test-session")
+            .map(|(token, _)| token)
+    }
+
+    fn issue_token(
+        &self,
+        user_id: &str,
+        roles: Vec<String>,
+        sid: Option<String>,
+    ) -> Result<(String, u64), JwtError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| JwtError::TokenGeneration(e.to_string()))?
@@ -118,11 +151,15 @@ impl JwtService {
             roles,
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
-            exp: now + self.expiration_secs,
+            exp: now.checked_add(self.expiration_secs).ok_or_else(|| {
+                JwtError::TokenGeneration("Token expiration exceeds supported range".to_owned())
+            })?,
             iat: now,
+            sid,
         };
 
         encode(&Header::default(), &claims, &self.encoding_key)
+            .map(|token| (token, claims.exp))
             .map_err(|e| JwtError::TokenGeneration(e.to_string()))
     }
 
@@ -227,6 +264,7 @@ mod tests {
             aud: "test-audience".to_string(),
             exp: now - 3600,
             iat: now - 7200,
+            sid: None,
         };
         let token = encode(&Header::default(), &claims, &service.encoding_key)
             .expect("token encoding should succeed");

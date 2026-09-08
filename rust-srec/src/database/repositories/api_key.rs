@@ -15,6 +15,15 @@ pub trait ApiKeyRepository: Send + Sync {
     /// Find an API key by the SHA-256 hash of its raw value.
     async fn find_by_key_hash(&self, hash: &str) -> Result<Option<ApiKeyDbModel>>;
 
+    /// Direct credential-state lookup for already-authenticated long-lived requests.
+    async fn find_by_id(&self, user_id: &str, key_id: &str) -> Result<Option<ApiKeyDbModel>> {
+        Ok(self
+            .list_by_user(user_id)
+            .await?
+            .into_iter()
+            .find(|key| key.id == key_id))
+    }
+
     /// List all keys (including revoked/expired ones) for a user, newest first.
     async fn list_by_user(&self, user_id: &str) -> Result<Vec<ApiKeyDbModel>>;
 
@@ -42,6 +51,15 @@ impl SqlxApiKeyRepository {
 
 #[async_trait]
 impl ApiKeyRepository for SqlxApiKeyRepository {
+    async fn find_by_id(&self, user_id: &str, key_id: &str) -> Result<Option<ApiKeyDbModel>> {
+        Ok(
+            sqlx::query_as("SELECT * FROM api_keys WHERE id = ? AND user_id = ?")
+                .bind(key_id)
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await?,
+        )
+    }
     async fn create(&self, key: &ApiKeyDbModel) -> Result<()> {
         sqlx::query(
             r#"

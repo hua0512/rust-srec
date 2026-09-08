@@ -55,7 +55,31 @@ curl http://localhost:12555/api/streamers \
 
 ### Refresh and Revoke
 
-`POST /api/auth/refresh` accepts `{"refresh_token":"..."}` and rotates the token pair. Store the newly returned refresh token and discard the old one. `POST /api/auth/logout` accepts the same body and revokes that session; authenticated `POST /api/auth/logout-all` revokes all sessions for the user.
+`POST /api/auth/refresh` accepts `{"refresh_token":"..."}` and rotates the token
+pair within the same login session. Store the replacement refresh token and
+serialize refresh requests, including requests from other tabs. Replaying a
+consumed token normally revokes all of the user's sessions; see [reuse policy](../operations/security.md#refresh-token-rotation).
+
+`POST /api/auth/logout` accepts the same body and revokes only that session's
+access and refresh tokens. You may also send the current session JWT in the
+Authorization header: if the refresh row has already been cleaned up, this lets
+the server revoke the JWT's own session. A supplied header must be valid; an API
+key cannot act as this optional session credential. Authenticated
+`POST /api/auth/logout-all` revokes every session for the user. Password changes
+revoke existing sessions atomically and require a new login; successful
+configuration imports also revoke login sessions and refresh tokens.
+
+After upgrading to session-bound JWTs, old unbound access tokens are rejected.
+Use an existing valid refresh token once to obtain a bound token pair, or sign in
+again. `GET /api/auth/sessions` still lists active refresh-token records: IDs may
+change on rotation, and sessions whose refresh token has expired or been cleaned
+up may be absent even while their access token is valid.
+
+Media, stream proxy, and download/log WebSocket routes use the Authorization
+header first and accept `?token=` only when it is absent. A malformed or invalid
+header never falls back to the query token. Read-only API keys may read health
+details and recorded media; download/log WebSockets, stream proxy, and logging
+configuration/archive routes require full keys. See [API Keys & MCP](./api-keys-mcp.md).
 
 Treat access tokens, refresh tokens, cookies, and platform credentials as secrets. Do not place tokens in logs or source control.
 

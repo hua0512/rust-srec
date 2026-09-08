@@ -270,9 +270,11 @@ mod tests {
                 aud: "rust-srec-api".to_string(),
                 exp: 0,
                 iat: 0,
+                sid: None,
             },
             credential: CredentialKind::ApiKey,
             access,
+            api_key_id: Some("test-key".to_owned()),
         }
     }
 

@@ -315,16 +315,24 @@ impl MaintenanceRepository {
         now_ms: i64,
         cancellation: &CancellationToken,
     ) -> Result<u64> {
-        self.prune_simple(
-            "maintenance_prune_refresh_tokens",
-            "DELETE FROM refresh_tokens WHERE id IN (\
+        let deleted = self
+            .prune_simple(
+                "maintenance_prune_refresh_tokens",
+                "DELETE FROM refresh_tokens WHERE id IN (\
                 SELECT id FROM refresh_tokens WHERE expires_at < ? \
                 ORDER BY expires_at ASC LIMIT ?\
             )",
+                now_ms,
+                cancellation,
+            )
+            .await?;
+        self.prune_simple(
+            "maintenance_prune_auth_sessions",
+            "DELETE FROM auth_sessions WHERE id IN (SELECT id FROM auth_sessions WHERE expires_at < ? ORDER BY expires_at ASC LIMIT ?)",
             now_ms,
             cancellation,
-        )
-        .await
+        ).await?;
+        Ok(deleted)
     }
 
     async fn prune_dead_letters_before(
@@ -1382,6 +1390,7 @@ mod tests {
             database
                 .refresh_token_repository
                 .create(&RefreshTokenDbModel {
+                    session_id: None,
                     id: id.to_string(),
                     user_id: user_id.to_string(),
                     token_hash: format!("hash-{id}"),
@@ -1824,6 +1833,7 @@ mod tests {
         database
             .refresh_token_repository
             .create(&RefreshTokenDbModel {
+                session_id: None,
                 id: "expired-token".to_string(),
                 user_id: "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
                 token_hash: "expired-hash".to_string(),
@@ -1866,6 +1876,7 @@ mod tests {
         database
             .refresh_token_repository
             .create(&RefreshTokenDbModel {
+                session_id: None,
                 id: "startup-expired".to_string(),
                 user_id: "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
                 token_hash: "startup-expired-hash".to_string(),

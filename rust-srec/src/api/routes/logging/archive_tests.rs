@@ -10,11 +10,12 @@ use tower::ServiceExt;
 
 use super::*;
 
-fn archive_router(dir: &TempDir) -> (Router, Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>) {
+fn archive_router(dir: &TempDir) -> (Router, Arc<DashMap<String, LoggingArchiveGrant>>) {
     let tokens = Arc::new(DashMap::new());
     let state = ArchiveRouteState {
         log_dir: dir.path().to_owned(),
         tokens: tokens.clone(),
+        auth_service: None,
         archives: Arc::new(LogArchiveService::new()),
     };
     let router = Router::new()
@@ -25,13 +26,83 @@ fn archive_router(dir: &TempDir) -> (Router, Arc<DashMap<String, chrono::DateTim
 }
 
 #[tokio::test]
+async fn archive_grants_revalidate_the_issuing_session_or_key_and_remain_single_use() {
+    use crate::api::auth_request::{AccessPolicy, authorize_request, tests::fixture};
+    use crate::database::models::ApiKeyAccessLevel;
+    let fixture = fixture().await;
+    let tokens = DashMap::new();
+    let headers = HeaderMap::new();
+    let principal = authorize_request(
+        Some(&fixture.service),
+        &headers,
+        Some(&fixture.access_token),
+        AccessPolicy::Full,
+    )
+    .await
+    .unwrap();
+    let valid = issue_download_token(&tokens, principal.clone())
+        .unwrap()
+        .token;
+    consume_download_token(&tokens, &valid, Some(&fixture.service))
+        .await
+        .unwrap();
+    assert!(
+        consume_download_token(&tokens, &valid, Some(&fixture.service))
+            .await
+            .is_err()
+    );
+    let revoked = issue_download_token(&tokens, principal).unwrap().token;
+    fixture
+        .service
+        .logout(&fixture.refresh_token)
+        .await
+        .unwrap();
+    assert!(
+        consume_download_token(&tokens, &revoked, Some(&fixture.service))
+            .await
+            .is_err()
+    );
+    assert!(!tokens.contains_key(&revoked));
+    let (key, raw) = fixture
+        .service
+        .create_api_key(
+            &fixture.user_id,
+            "archive-full",
+            ApiKeyAccessLevel::Full,
+            None,
+        )
+        .await
+        .unwrap();
+    let principal = authorize_request(
+        Some(&fixture.service),
+        &headers,
+        Some(&raw),
+        AccessPolicy::Full,
+    )
+    .await
+    .unwrap();
+    let revoked = issue_download_token(&tokens, principal).unwrap().token;
+    fixture
+        .service
+        .revoke_api_key(&fixture.user_id, &key.id)
+        .await
+        .unwrap();
+    assert!(
+        consume_download_token(&tokens, &revoked, Some(&fixture.service))
+            .await
+            .is_err()
+    );
+    fixture.pool.close().await;
+}
+
+#[tokio::test]
 async fn archive_route_preserves_headers_dates_names_and_single_use_tokens() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("rust-srec.log.2026-09-06"), b"excluded").unwrap();
     std::fs::write(dir.path().join("rust-srec.log.2026-09-07"), b"included").unwrap();
     std::fs::write(dir.path().join("unrelated.txt"), b"unrelated").unwrap();
     let (router, tokens) = archive_router(&dir);
-    let token = issue_download_token(&tokens).unwrap().token;
+    let token = issue_download_token(&tokens, None).unwrap().token;
     let uri = format!("/archive?token={token}&from=2026-09-07&to=2026-09-07");
     let response = router
         .clone()
@@ -61,7 +132,10 @@ async fn archive_route_rejects_expired_tokens_and_invalid_ranges() {
     let (router, tokens) = archive_router(&dir);
     tokens.insert(
         "expired".into(),
-        chrono::Utc::now() - chrono::Duration::seconds(1),
+        LoggingArchiveGrant {
+            expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+            principal: None,
+        },
     );
     for token in ["expired", "unknown"] {
         let response = router
@@ -76,7 +150,7 @@ async fn archive_route_rejects_expired_tokens_and_invalid_ranges() {
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
-    let token = issue_download_token(&tokens).unwrap().token;
+    let token = issue_download_token(&tokens, None).unwrap().token;
     let response = router
         .oneshot(
             Request::builder()
@@ -98,7 +172,7 @@ async fn download_alias_shares_capacity_and_returns_retry_after() {
     let (router, tokens) = archive_router(&dir);
     let mut responses = Vec::new();
     for index in 0..3 {
-        let token = issue_download_token(&tokens).unwrap().token;
+        let token = issue_download_token(&tokens, None).unwrap().token;
         let path = if index == 0 { "archive" } else { "download" };
         let response = router
             .clone()

@@ -38,6 +38,30 @@ struct ConcurrentReaders {
 
 #[async_trait]
 impl RefreshTokenRepository for ConcurrentReaders {
+    async fn find_session(
+        &self,
+        user_id: &str,
+        session_id: &str,
+    ) -> crate::Result<Option<crate::database::models::AuthSessionDbModel>> {
+        self.inner.find_session(user_id, session_id).await
+    }
+    async fn rotate_session(
+        &self,
+        id: &str,
+        replacement: &RefreshTokenDbModel,
+        expires_at: i64,
+    ) -> crate::Result<RefreshTokenRotation> {
+        self.inner.rotate_session(id, replacement, expires_at).await
+    }
+    async fn revoke_all_for_active_session(
+        &self,
+        user_id: &str,
+        session_id: &str,
+    ) -> crate::Result<()> {
+        self.inner
+            .revoke_all_for_active_session(user_id, session_id)
+            .await
+    }
     async fn create(&self, token: &RefreshTokenDbModel) -> crate::Result<()> {
         self.inner.create(token).await
     }
@@ -368,7 +392,7 @@ async fn rotation_rechecks_expiry_and_revocation_against_database_state() {
             .rotate(&fixture.predecessor.id, &replacement)
             .await
             .unwrap(),
-        RefreshTokenRotation::Revoked { .. }
+        RefreshTokenRotation::SessionRevoked
     ));
     assert_eq!(
         fixture
@@ -383,7 +407,7 @@ async fn rotation_rechecks_expiry_and_revocation_against_database_state() {
 }
 
 #[tokio::test]
-async fn disabled_account_does_not_consume_refresh_token() {
+async fn disabled_account_revokes_refresh_without_issuing_successor() {
     let fixture = Fixture::new(AuthConfig::default(), false).await;
     sqlx::query("UPDATE users SET is_active = 0 WHERE id = ?")
         .bind(&fixture.user.id)
@@ -392,9 +416,9 @@ async fn disabled_account_does_not_consume_refresh_token() {
         .unwrap();
     assert!(matches!(
         fixture.service.refresh_tokens(RAW_TOKEN).await,
-        Err(AuthError::AccountDisabled)
+        Err(AuthError::TokenRevoked)
     ));
-    assert!(!fixture.predecessor().await.is_revoked());
+    assert!(fixture.predecessor().await.is_revoked());
     assert_eq!(fixture.total_tokens().await, 1);
     fixture.pool.close().await;
 }
