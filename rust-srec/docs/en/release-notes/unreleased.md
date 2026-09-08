@@ -2,11 +2,11 @@
 
 ## `unreleased`
 
-## Downloader Interfaces
+## Build Dependencies
 
-- **Mesio diagnostics report the linked library version**
+- **Compile only the system inventory and logging features in use**
 
-  Engine checks now report Mesio's compiled package version instead of a hardcoded historical value. Download manager ownership, event delivery and tests are organized into focused modules, and unused update/process/configuration wrappers are removed. Existing download events and runtime shutdown behavior are preserved; see the [Rust interface notes](../concepts/architecture.md#downloader-rust-interfaces).
+  System inventory now enables CPU, memory and disk support without unused temperature-component, network-interface or user-account inventory features. Unused JSON log formatter features and direct protobuf well-known-type dependencies were removed; protobuf generation still retains its required dependencies. Backend dependency declarations share workspace versions without upgrading the locked packages.
 
 ## Backend Model Cleanup
 
@@ -49,6 +49,12 @@
 - **Slow disk sampling keeps health checks responsive**
 
   System and disk sampling runs on one dedicated thread with bounded waits. A stalled filesystem leaves earlier values marked stale or degraded while other probes continue, without accumulating replacement tasks. Health-checker shutdown can finish even if the operating-system call remains blocked; see [slow filesystem sampling](../operations/monitoring.md#slow-filesystem-sampling).
+
+## Downloader Interfaces
+
+- **Mesio diagnostics report the linked library version**
+
+  Engine checks now report Mesio's compiled package version instead of a hardcoded historical value. Download manager ownership, event delivery and tests are organized into focused modules, and unused update/process/configuration wrappers are removed. Existing download events and runtime shutdown behavior are preserved; see the [Rust interface notes](../concepts/architecture.md#downloader-rust-interfaces).
 
 ## Process Cleanup
 
