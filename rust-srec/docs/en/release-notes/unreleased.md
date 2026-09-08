@@ -26,6 +26,10 @@
 
 ## Process Cleanup
 
+- **Confirmed startup recovery clears earlier runtime debt**
+
+  Recovery now reports partial hydration, pipeline and coordinator failures explicitly and pages through all session segments. Only confirmed recovery clears earlier generation debt, while current ownership remains dirty until clean exit. Cross-process marker transactions prevent stale acknowledgements from overwriting a replacement generation.
+
 - **macOS process cleanup waits for exit confirmation within its deadline**
 
   Forced cleanup now handles a leader that is exiting but not yet waitable when process-group termination returns EPERM. It uses the remaining cleanup budget to confirm exit without reaping, then retries guarded group termination. Unconfirmed cleanup remains an error; Streamlink buffer-draining limits are unchanged.
@@ -50,11 +54,19 @@
 
   The standard read and write pools now share a 64 MiB suggested private page-cache budget, with 56 MiB divided among read connections and 8 MiB reserved for the writer. The adaptive pool size and 256 MiB memory-mapping setting are unchanged. This reduces the cache allowance on larger pools; it is not a hard process-memory limit. See [SQLite memory budgeting](../operations/monitoring.md#sqlite-memory-budget).
 
+- **Concurrent database mutations preserve their own results**
+
+  Competing media-output deletions adjust session size once, and a failed size update rolls back deletion. Error increments return their own count. Template credential refresh reads and writes under one reserved transaction, preserving configuration edits committed before it.
+
 - **Vacuum admission follows actual recording activity**
 
   Scheduled vacuum checks the download manager's active recordings instead of counting nonexistent download jobs. It defers when recording activity exceeds the configured limit or admission is busy, and holds new starts until admitted vacuum work finishes. Filesystem preflight runs before that gate, so a slow disk-space check does not hold up recording starts. Lightweight retention remains independent.
 
 ## Configuration
+
+- **Filters reuse parsed rules and handle timezone boundaries consistently**
+
+  Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Existing omitted timezone defaults remain server-local for time-based rules and UTC for cron; frontend timezone controls are not added.
 
 - **Proxy credentials preserve literal URL characters**
 
@@ -251,6 +263,10 @@
 
 ## API and integrations
 
+- **API errors and request batches have explicit boundaries**
+
+  Internal diagnostics no longer enter ad-hoc API errors. Parse and session-delete batches reject more than 100 items before work begins. Device descriptions are bounded to 256 Unicode characters for new logins, refreshed legacy sessions and diagnostics; credential refresh keeps its relogin indication.
+
 - **Configuration reads are cached coherently and missing entities use typed errors**
 
   Stream proxy and parsing requests reuse a five-second global snapshot, immediately invalidated by application writes and imports. Administrative reads remain authoritative and expired cache entries never hide refresh failures. Platform, template and engine handlers distinguish missing entities from database errors without matching message text.
@@ -280,6 +296,10 @@
   This request stopped the pipeline's steps but left the pipeline itself showing as still processing, for good: it could not be retried, it stayed that way after a restart, and the recording it belonged to never finished post-processing. It now ends the pipeline too, so it can be retried and the recording moves on. Only scripts and integrations calling this request directly were affected — the **Cancel** button in the web interface uses a different one and always worked.
 
 ## Pipeline and uploads
+
+- **Retries retain execution history and previously published files**
+
+  Starting another attempt no longer resets step timings, log counters, file-size metadata or produced-artifact history. Earlier logs are not duplicated, and additional stored execution-metadata fields survive completion and failure updates. The processor runs only after its attempt marker is saved; invalid metadata or a failed write stops processing and reports a failure without replacing the original metadata. Failed retries do not delete files published by earlier attempts; processors retain responsibility for their staged temporary outputs.
 
 - **Retry workflows without leaving cancelled branches stuck**
 

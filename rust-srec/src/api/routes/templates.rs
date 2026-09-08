@@ -161,16 +161,12 @@ pub async fn create_template(
 
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
-            ApiError::internal(format!("Failed to serialize platform_overrides: {e}"))
-        })?),
+        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
         None => None,
     };
     template.engines_override = match request.engines_override {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
-            ApiError::internal(format!("Failed to serialize engines_override: {e}"))
-        })?),
+        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
         None => None,
     };
     template.stream_selection_config = request.stream_selection_config;
@@ -190,7 +186,7 @@ pub async fn create_template(
     config_service
         .create_template_config(&template)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to create template: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(db_model_to_response(&template, 0)))
 }
@@ -219,7 +215,7 @@ pub async fn list_templates(
     let templates = config_service
         .list_template_configs()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list templates: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let total = templates.len() as u64;
 
@@ -325,16 +321,12 @@ pub async fn update_template(
     template.danmu_statistics = request.danmu_statistics;
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
-            ApiError::internal(format!("Failed to serialize platform_overrides: {e}"))
-        })?),
+        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
         None => None,
     };
     template.engines_override = match request.engines_override {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
-            ApiError::internal(format!("Failed to serialize engines_override: {e}"))
-        })?),
+        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
         None => None,
     };
     template.stream_selection_config = request.stream_selection_config;
@@ -354,7 +346,7 @@ pub async fn update_template(
     config_service
         .update_template_config(&template)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to update template: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     info!("Updated template '{}' (id: {})", template.name, id);
 
@@ -416,7 +408,7 @@ pub async fn delete_template(
     config_service
         .delete_template_config(&id)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to delete template: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -496,7 +488,7 @@ pub async fn clone_template(
     config_service
         .create_template_config(&cloned)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to create cloned template: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     info!(
         "Cloned template '{}' (id: {}) to '{}' (id: {})",

@@ -47,8 +47,7 @@ pub fn router() -> Router<AppState> {
 
 /// Convert FilterDbModel to FilterResponse.
 fn model_to_response(model: &FilterDbModel) -> ApiResult<FilterResponse> {
-    let config: Value = serde_json::from_str(&model.config)
-        .map_err(|e| ApiError::internal(format!("Failed to parse filter config: {}", e)))?;
+    let config: Value = serde_json::from_str(&model.config).map_err(ApiError::from)?;
 
     Ok(FilterResponse {
         id: model.id.clone(),

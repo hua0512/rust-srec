@@ -42,7 +42,7 @@ pub struct LoginRequest {
     pub username: String,
     /// Password for authentication
     pub password: String,
-    /// Optional device information for session tracking
+    /// Optional device information for session tracking; stored up to 256 Unicode characters.
     pub device_info: Option<String>,
 }
 

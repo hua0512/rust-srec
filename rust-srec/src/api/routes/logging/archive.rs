@@ -54,7 +54,7 @@ impl LogArchiveService {
             Ok::<_, ApiError>((files, permit))
         })
         .await
-        .map_err(|error| ApiError::internal(format!("Failed to scan log archive: {error}")))??;
+        .map_err(ApiError::from)??;
         Ok(Body::from_stream(ArchiveStream::new(files, permit)))
     }
 }
@@ -161,7 +161,7 @@ fn build_archive_zip(
         // export indefinitely. ZIP64 remains enabled even for initially small log files.
         let mut input = input.take(file.size_bytes);
         zip.start_file(&file.filename, options)
-            .map_err(|error| ApiError::internal(format!("Failed to add zip entry: {error}")))?;
+            .map_err(ApiError::from)?;
         while input.limit() > 0 {
             if cancellation.is_cancelled() {
                 return Err(ApiError::internal("Log archive download cancelled"));
@@ -174,19 +174,12 @@ fn build_archive_zip(
                     "Log file was truncated during archive download",
                 ));
             }
-            zip.write_all(&buffer[..read]).map_err(|error| {
-                ApiError::internal(format!("Failed to write zip entry: {error}"))
-            })?;
+            zip.write_all(&buffer[..read]).map_err(ApiError::from)?;
         }
     }
 
-    let mut output = zip
-        .finish()
-        .map_err(|error| ApiError::internal(format!("Failed to finish zip: {error}")))?
-        .into_inner();
-    output
-        .flush()
-        .map_err(|error| ApiError::internal(format!("Failed to flush zip: {error}")))
+    let mut output = zip.finish().map_err(ApiError::from)?.into_inner();
+    output.flush().map_err(ApiError::from)
 }
 
 #[cfg(test)]

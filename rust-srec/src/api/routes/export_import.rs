@@ -101,15 +101,12 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
 
     let user_exports = if let Some(auth_service) = state.auth_service.as_ref() {
         let user_repo = auth_service.user_repository();
-        let total_users = user_repo
-            .count()
-            .await
-            .map_err(|e| ApiError::internal(format!("Failed to count users: {}", e)))?;
+        let total_users = user_repo.count().await.map_err(ApiError::from)?;
 
         let users = user_repo
             .list(total_users, 0)
             .await
-            .map_err(|e| ApiError::internal(format!("Failed to list users: {}", e)))?;
+            .map_err(ApiError::from)?;
 
         users
             .into_iter()
@@ -137,42 +134,42 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     let global_config = config_service
         .get_global_config()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to get global config: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let templates = config_service
         .list_template_configs()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list templates: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let engines = config_service
         .list_engine_configs()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list engines: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let platforms = config_service
         .list_platform_configs()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list platforms: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let streamers = streamer_repo
         .list_streamers()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list streamers: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let channels = notification_repo
         .list_channels()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list notification channels: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let job_presets = job_preset_repo
         .list_presets()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list job presets: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     let pipeline_presets = pipeline_preset_repo
         .list_pipeline_presets()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list pipeline presets: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     // Build platform ID to name map for streamer export
     let platform_map: HashMap<String, String> = platforms
@@ -349,8 +346,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         users: user_exports,
     };
 
-    let json = serde_json::to_string_pretty(&export)
-        .map_err(|e| ApiError::internal(format!("Failed to serialize export: {}", e)))?;
+    let json = serde_json::to_string_pretty(&export).map_err(ApiError::from)?;
 
     let filename = format!(
         "rust-srec-backup-{}.json",
@@ -395,7 +391,7 @@ pub async fn import_config(
                 ApiError::bad_request(message)
             }
             crate::services::config_import::ConfigurationImportError::Database(error) => {
-                ApiError::internal(format!("Configuration import failed: {error}"))
+                ApiError::from(error)
             }
         })?;
 

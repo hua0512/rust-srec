@@ -117,6 +117,6 @@ pub async fn get_media_content(
 
     match ServeFile::new(path).try_call(req).await {
         Ok(response) => Ok(response.into_response()),
-        Err(e) => Err(ApiError::internal(format!("Failed to serve file: {}", e))),
+        Err(error) => Err(ApiError::from(error)),
     }
 }

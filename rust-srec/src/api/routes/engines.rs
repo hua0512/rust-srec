@@ -85,7 +85,7 @@ pub async fn list_engines(
     let engines = config_service
         .list_engine_configs()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to list engines: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(engines))
 }
@@ -139,7 +139,7 @@ pub async fn create_engine(
     config_service
         .create_engine_config(&engine)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to create engine: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(engine))
 }
@@ -185,7 +185,7 @@ pub async fn update_engine(
     config_service
         .update_engine_config(&engine)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to update engine: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(engine))
 }
@@ -216,7 +216,7 @@ pub async fn delete_engine(
     config_service
         .delete_engine_config(&id)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to delete engine: {}", e)))?;
+        .map_err(ApiError::from)?;
 
     Ok(())
 }
@@ -243,24 +243,23 @@ pub async fn test_engine(
         .await
         .map_err(ApiError::from)?;
 
-    let engine_type = EngineType::parse(&config.engine_type).ok_or_else(|| {
-        ApiError::internal(format!("Invalid engine type: {}", config.engine_type))
-    })?;
+    let engine_type = EngineType::parse(&config.engine_type)
+        .ok_or_else(|| ApiError::internal("Stored engine type is invalid"))?;
 
     let engine: Box<dyn DownloadEngine> = match engine_type {
         EngineType::Ffmpeg => {
-            let engine_config: FfmpegEngineConfig = serde_json::from_str(&config.config)
-                .map_err(|e| ApiError::internal(format!("Invalid ffmpeg config: {}", e)))?;
+            let engine_config: FfmpegEngineConfig =
+                serde_json::from_str(&config.config).map_err(ApiError::from)?;
             Box::new(FfmpegEngine::with_config_async(engine_config).await)
         }
         EngineType::Streamlink => {
-            let engine_config: StreamlinkEngineConfig = serde_json::from_str(&config.config)
-                .map_err(|e| ApiError::internal(format!("Invalid streamlink config: {}", e)))?;
+            let engine_config: StreamlinkEngineConfig =
+                serde_json::from_str(&config.config).map_err(ApiError::from)?;
             Box::new(StreamlinkEngine::with_config_async(engine_config).await)
         }
         EngineType::Mesio => {
-            let engine_config: MesioEngineConfig = serde_json::from_str(&config.config)
-                .map_err(|e| ApiError::internal(format!("Invalid mesio config: {}", e)))?;
+            let engine_config: MesioEngineConfig =
+                serde_json::from_str(&config.config).map_err(ApiError::from)?;
             Box::new(MesioEngine::with_config(engine_config))
         }
     };
