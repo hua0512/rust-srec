@@ -1,5 +1,10 @@
 //! Configuration repository.
 
+mod writes;
+pub(crate) use writes::{
+    delete_engine, import_engine, import_global, import_platform, import_template,
+};
+
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
@@ -90,135 +95,22 @@ impl ConfigRepository for SqlxConfigRepository {
 
     async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         validate_global_retention(config)?;
-        sqlx::query(
-            r#"
-            UPDATE global_config SET
-                output_folder = ?,
-                output_filename_template = ?,
-                output_file_format = ?,
-                min_segment_size_bytes = ?,
-                max_download_duration_secs = ?,
-                max_part_size_bytes = ?,
-                record_danmu = ?,
-                danmu_statistics = ?,
-                max_concurrent_downloads = ?,
-                max_concurrent_uploads = ?,
-                streamer_check_delay_ms = ?,
-                proxy_config = ?,
-                offline_check_delay_ms = ?,
-                offline_check_count = ?,
-                default_download_engine = ?,
-                default_extractor = ?,
-                max_concurrent_cpu_jobs = ?,
-                max_concurrent_io_jobs = ?,
-                job_history_retention_days = ?,
-                notification_event_log_retention_days = ?,
-                pipeline = ?,
-                session_complete_pipeline = ?,
-                paired_segment_pipeline = ?,
-                log_filter_directive = ?,
-                auto_thumbnail = ?,
-                pipeline_cpu_job_timeout_secs = ?,
-                pipeline_io_job_timeout_secs = ?,
-                pipeline_execute_timeout_secs = ?,
-                queue_freshness_threshold_ms = ?,
-                gpu_health_probe_interval_secs = ?,
-                stream_proxy_allow_private_targets = ?
-            WHERE id = ?
-            "#,
+        writes::write_global(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Update,
         )
-        .bind(&config.output_folder)
-        .bind(&config.output_filename_template)
-        .bind(&config.output_file_format)
-        .bind(config.min_segment_size_bytes)
-        .bind(config.max_download_duration_secs)
-        .bind(config.max_part_size_bytes)
-        .bind(config.record_danmu)
-        .bind(&config.danmu_statistics)
-        .bind(config.max_concurrent_downloads)
-        .bind(config.max_concurrent_uploads)
-        .bind(config.streamer_check_delay_ms)
-        .bind(&config.proxy_config)
-        .bind(config.offline_check_delay_ms)
-        .bind(config.offline_check_count)
-        .bind(&config.default_download_engine)
-        .bind(&config.default_extractor)
-        .bind(config.max_concurrent_cpu_jobs)
-        .bind(config.max_concurrent_io_jobs)
-        .bind(config.job_history_retention_days)
-        .bind(config.notification_event_log_retention_days)
-        .bind(&config.pipeline)
-        .bind(&config.session_complete_pipeline)
-        .bind(&config.paired_segment_pipeline)
-        .bind(&config.log_filter_directive)
-        .bind(config.auto_thumbnail)
-        .bind(config.pipeline_cpu_job_timeout_secs)
-        .bind(config.pipeline_io_job_timeout_secs)
-        .bind(config.pipeline_execute_timeout_secs)
-        .bind(config.queue_freshness_threshold_ms)
-        .bind(config.gpu_health_probe_interval_secs)
-        .bind(config.stream_proxy_allow_private_targets)
-        .bind(&config.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         validate_global_retention(config)?;
-        sqlx::query(
-            r#"
-            INSERT INTO global_config (
-                id, output_folder, output_filename_template, output_file_format,
-                min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                record_danmu, danmu_statistics, max_concurrent_downloads, max_concurrent_uploads,
-                streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
-                offline_check_count, default_download_engine, default_extractor, max_concurrent_cpu_jobs,
-                max_concurrent_io_jobs, job_history_retention_days, notification_event_log_retention_days,
-                pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive,
-                auto_thumbnail,
-                pipeline_cpu_job_timeout_secs,
-                pipeline_io_job_timeout_secs,
-                pipeline_execute_timeout_secs,
-                queue_freshness_threshold_ms,
-                gpu_health_probe_interval_secs,
-                stream_proxy_allow_private_targets
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+        writes::write_global(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Insert,
         )
-        .bind(&config.id)
-        .bind(&config.output_folder)
-        .bind(&config.output_filename_template)
-        .bind(&config.output_file_format)
-        .bind(config.min_segment_size_bytes)
-        .bind(config.max_download_duration_secs)
-        .bind(config.max_part_size_bytes)
-        .bind(config.record_danmu)
-        .bind(&config.danmu_statistics)
-        .bind(config.max_concurrent_downloads)
-        .bind(config.max_concurrent_uploads)
-        .bind(config.streamer_check_delay_ms)
-        .bind(&config.proxy_config)
-        .bind(config.offline_check_delay_ms)
-        .bind(config.offline_check_count)
-        .bind(&config.default_download_engine)
-        .bind(&config.default_extractor)
-        .bind(config.max_concurrent_cpu_jobs)
-        .bind(config.max_concurrent_io_jobs)
-        .bind(config.job_history_retention_days)
-        .bind(config.notification_event_log_retention_days)
-        .bind(&config.pipeline)
-        .bind(&config.session_complete_pipeline)
-        .bind(&config.paired_segment_pipeline)
-        .bind(&config.log_filter_directive)
-        .bind(config.auto_thumbnail)
-        .bind(config.pipeline_cpu_job_timeout_secs)
-        .bind(config.pipeline_io_job_timeout_secs)
-        .bind(config.pipeline_execute_timeout_secs)
-        .bind(config.queue_freshness_threshold_ms)
-        .bind(config.gpu_health_probe_interval_secs)
-        .bind(config.stream_proxy_allow_private_targets)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -251,102 +143,21 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO platform_config (
-                id, platform_name, fetch_delay_ms, download_delay_ms,
-                cookies, platform_specific_config, proxy_config, record_danmu, danmu_statistics,
-                output_folder, output_filename_template, download_engine, extractor, stream_selection_config,
-                output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                download_retry_policy, pipeline, session_complete_pipeline, paired_segment_pipeline,
-                offline_check_count, offline_check_delay_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+        writes::write_platform(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Insert,
         )
-        .bind(&config.id)
-        .bind(&config.platform_name)
-        .bind(config.fetch_delay_ms)
-        .bind(config.download_delay_ms)
-        .bind(&config.cookies)
-        .bind(&config.platform_specific_config)
-        .bind(&config.proxy_config)
-        .bind(config.record_danmu)
-        .bind(&config.danmu_statistics)
-        .bind(&config.output_folder)
-        .bind(&config.output_filename_template)
-        .bind(&config.download_engine)
-        .bind(&config.extractor)
-        .bind(&config.stream_selection_config)
-        .bind(&config.output_file_format)
-        .bind(config.min_segment_size_bytes)
-        .bind(config.max_download_duration_secs)
-        .bind(config.max_part_size_bytes)
-        .bind(&config.download_retry_policy)
-        .bind(&config.pipeline)
-        .bind(&config.session_complete_pipeline)
-        .bind(&config.paired_segment_pipeline)
-        .bind(config.offline_check_count)
-        .bind(config.offline_check_delay_ms)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE platform_config SET
-                platform_name = ?,
-                fetch_delay_ms = ?,
-                download_delay_ms = ?,
-                cookies = ?,
-                platform_specific_config = ?,
-                proxy_config = ?,
-                record_danmu = ?,
-                danmu_statistics = ?,
-                output_folder = ?,
-                output_filename_template = ?,
-                download_engine = ?,
-                extractor = ?,
-                stream_selection_config = ?,
-                output_file_format = ?,
-                min_segment_size_bytes = ?,
-                max_download_duration_secs = ?,
-                max_part_size_bytes = ?,
-                download_retry_policy = ?,
-                pipeline = ?,
-                session_complete_pipeline = ?,
-                paired_segment_pipeline = ?,
-                offline_check_count = ?,
-                offline_check_delay_ms = ?
-            WHERE id = ?
-            "#,
+        writes::write_platform(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Update,
         )
-        .bind(&config.platform_name)
-        .bind(config.fetch_delay_ms)
-        .bind(config.download_delay_ms)
-        .bind(&config.cookies)
-        .bind(&config.platform_specific_config)
-        .bind(&config.proxy_config)
-        .bind(config.record_danmu)
-        .bind(&config.danmu_statistics)
-        .bind(&config.output_folder)
-        .bind(&config.output_filename_template)
-        .bind(&config.download_engine)
-        .bind(&config.extractor)
-        .bind(&config.stream_selection_config)
-        .bind(&config.output_file_format)
-        .bind(config.min_segment_size_bytes)
-        .bind(config.max_download_duration_secs)
-        .bind(config.max_part_size_bytes)
-        .bind(&config.download_retry_policy)
-        .bind(&config.pipeline)
-        .bind(&config.session_complete_pipeline)
-        .bind(&config.paired_segment_pipeline)
-        .bind(config.offline_check_count)
-        .bind(config.offline_check_delay_ms)
-        .bind(&config.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -385,106 +196,24 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO template_config (
-                id, name, output_folder, output_filename_template,
-                cookies, output_file_format, min_segment_size_bytes,
-                max_download_duration_secs, max_part_size_bytes, record_danmu, danmu_statistics,
-                platform_overrides, download_retry_policy,
-                download_engine, extractor, engines_override, proxy_config, stream_selection_config,
-                pipeline, session_complete_pipeline, paired_segment_pipeline,
-                offline_check_count, offline_check_delay_ms,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-
-            "#,
+        writes::write_template(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Insert,
+            config.updated_at.timestamp_millis(),
         )
-        .bind(&config.id)
-        .bind(&config.name)
-        .bind(&config.output_folder)
-        .bind(&config.output_filename_template)
-        .bind(&config.cookies)
-        .bind(&config.output_file_format)
-        .bind(config.min_segment_size_bytes)
-        .bind(config.max_download_duration_secs)
-        .bind(config.max_part_size_bytes)
-        .bind(config.record_danmu)
-        .bind(&config.danmu_statistics)
-        .bind(&config.platform_overrides)
-        .bind(&config.download_retry_policy)
-        .bind(&config.download_engine)
-        .bind(&config.extractor)
-        .bind(&config.engines_override)
-        .bind(&config.proxy_config)
-        .bind(&config.stream_selection_config)
-        .bind(&config.pipeline)
-        .bind(&config.session_complete_pipeline)
-        .bind(&config.paired_segment_pipeline)
-        .bind(config.offline_check_count)
-        .bind(config.offline_check_delay_ms)
-        .bind(config.created_at.timestamp_millis())
-        .bind(config.updated_at.timestamp_millis())
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE template_config SET
-                name = ?,
-                output_folder = ?,
-                output_filename_template = ?,
-                cookies = ?,
-                output_file_format = ?,
-                min_segment_size_bytes = ?,
-                max_download_duration_secs = ?,
-                max_part_size_bytes = ?,
-                record_danmu = ?,
-                danmu_statistics = ?,
-                platform_overrides = ?,
-                download_retry_policy = ?,
-                download_engine = ?,
-                extractor = ?,
-                engines_override = ?,
-                proxy_config = ?,
-                stream_selection_config = ?,
-                pipeline = ?,
-                session_complete_pipeline = ?,
-                paired_segment_pipeline = ?,
-                offline_check_count = ?,
-                offline_check_delay_ms = ?,
-                updated_at = ?
-            WHERE id = ?
-            "#,
+        let updated_at = crate::database::time::now_ms();
+        writes::write_template(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Update,
+            updated_at,
         )
-        .bind(&config.name)
-        .bind(&config.output_folder)
-        .bind(&config.output_filename_template)
-        .bind(&config.cookies)
-        .bind(&config.output_file_format)
-        .bind(config.min_segment_size_bytes)
-        .bind(config.max_download_duration_secs)
-        .bind(config.max_part_size_bytes)
-        .bind(config.record_danmu)
-        .bind(&config.danmu_statistics)
-        .bind(&config.platform_overrides)
-        .bind(&config.download_retry_policy)
-        .bind(&config.download_engine)
-        .bind(&config.extractor)
-        .bind(&config.engines_override)
-        .bind(&config.proxy_config)
-        .bind(&config.stream_selection_config)
-        .bind(&config.pipeline)
-        .bind(&config.session_complete_pipeline)
-        .bind(&config.paired_segment_pipeline)
-        .bind(config.offline_check_count)
-        .bind(config.offline_check_delay_ms)
-        .bind(crate::database::time::now_ms())
-        .bind(&config.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -517,45 +246,27 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO engine_configuration (id, name, engine_type, config)
-            VALUES (?, ?, ?, ?)
-            "#,
+        writes::write_engine(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Insert,
         )
-        .bind(&config.id)
-        .bind(&config.name)
-        .bind(&config.engine_type)
-        .bind(&config.config)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE engine_configuration SET
-                name = ?,
-                engine_type = ?,
-                config = ?
-            WHERE id = ?
-            "#,
+        writes::write_engine(
+            &mut *self.write_pool.acquire().await?,
+            config,
+            super::row_write::WriteMode::Update,
         )
-        .bind(&config.name)
-        .bind(&config.engine_type)
-        .bind(&config.config)
-        .bind(&config.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn delete_engine_config(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM engine_configuration WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
+        writes::delete_engine(&mut *self.write_pool.acquire().await?, id).await?;
         Ok(())
     }
 }

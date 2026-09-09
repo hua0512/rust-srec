@@ -1,5 +1,8 @@
 //! Job Preset repository.
 
+mod writes;
+pub(crate) use writes::{import_job_preset, import_pipeline_preset};
+
 use std::sync::Arc;
 
 use crate::Result;
@@ -265,42 +268,25 @@ impl JobPresetRepository for SqliteJobPresetRepository {
     }
 
     async fn create_preset(&self, preset: &JobPreset) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#,
+        writes::write_job_preset(
+            &mut *self.write_pool.acquire().await?,
+            preset,
+            super::row_write::WriteMode::Insert,
+            preset.updated_at.timestamp_millis(),
         )
-        .bind(&preset.id)
-        .bind(&preset.name)
-        .bind(&preset.description)
-        .bind(&preset.category)
-        .bind(&preset.processor)
-        .bind(&preset.config)
-        .bind(preset.created_at.timestamp_millis())
-        .bind(preset.updated_at.timestamp_millis())
-        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
     }
 
     async fn update_preset(&self, preset: &JobPreset) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE job_presets
-            SET name = $1, description = $2, category = $3, processor = $4, config = $5, updated_at = $6
-            WHERE id = $7
-            "#,
+        let updated_at = crate::database::time::now_ms();
+        writes::write_job_preset(
+            &mut *self.write_pool.acquire().await?,
+            preset,
+            super::row_write::WriteMode::Update,
+            updated_at,
         )
-        .bind(&preset.name)
-        .bind(&preset.description)
-        .bind(&preset.category)
-        .bind(&preset.processor)
-        .bind(&preset.config)
-        .bind(crate::database::time::now_ms())
-        .bind(&preset.id)
-        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
@@ -468,40 +454,25 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
     }
 
     async fn create_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#,
+        writes::write_pipeline_preset(
+            &mut *self.write_pool.acquire().await?,
+            preset,
+            super::row_write::WriteMode::Insert,
+            preset.updated_at.timestamp_millis(),
         )
-        .bind(&preset.id)
-        .bind(&preset.name)
-        .bind(&preset.description)
-        .bind(&preset.dag_definition)
-        .bind(&preset.pipeline_type)
-        .bind(preset.created_at.timestamp_millis())
-        .bind(preset.updated_at.timestamp_millis())
-        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
     }
 
     async fn update_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE pipeline_presets
-            SET name = $1, description = $2, dag_definition = $3, pipeline_type = $4, updated_at = $5
-            WHERE id = $6
-            "#,
+        let updated_at = crate::database::time::now_ms();
+        writes::write_pipeline_preset(
+            &mut *self.write_pool.acquire().await?,
+            preset,
+            super::row_write::WriteMode::Update,
+            updated_at,
         )
-        .bind(&preset.name)
-        .bind(&preset.description)
-        .bind(&preset.dag_definition)
-        .bind(&preset.pipeline_type)
-        .bind(crate::database::time::now_ms())
-        .bind(&preset.id)
-        .execute(&*self.write_pool)
         .await?;
 
         Ok(())

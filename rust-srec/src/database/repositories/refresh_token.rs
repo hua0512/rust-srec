@@ -346,3 +346,17 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         Ok(result.0)
     }
 }
+
+/// Import invalidates both access-session authority and legacy refresh tokens in
+/// its existing transaction. This deliberately deletes, rather than revokes, rows.
+pub(crate) async fn invalidate_all_for_import(
+    connection: &mut sqlx::SqliteConnection,
+) -> std::result::Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM auth_sessions")
+        .execute(&mut *connection)
+        .await?;
+    sqlx::query("DELETE FROM refresh_tokens")
+        .execute(connection)
+        .await?;
+    Ok(())
+}

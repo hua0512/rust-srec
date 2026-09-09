@@ -6,6 +6,17 @@ use chrono::Utc;
 use sqlx::SqlitePool;
 use tracing::warn;
 
+use crate::database::repositories::config::import_engine as persist_engine;
+use crate::database::repositories::config::import_global as persist_global;
+use crate::database::repositories::config::import_platform as persist_platform;
+use crate::database::repositories::config::import_template as persist_template;
+use crate::database::repositories::filter::import_filter as persist_filter;
+use crate::database::repositories::notification::import_channel as persist_channel;
+use crate::database::repositories::preset::import_job_preset as persist_job_preset;
+use crate::database::repositories::preset::import_pipeline_preset as persist_pipeline_preset;
+use crate::database::repositories::streamer::import_streamer as persist_streamer;
+use crate::database::repositories::user::import_user as persist_user;
+
 use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::ConfigService;
 use crate::config::backup::{
@@ -878,12 +889,7 @@ async fn apply_import(
     apply_pipeline_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
     apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
 
-    sqlx::query("DELETE FROM auth_sessions")
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM refresh_tokens")
-        .execute(&mut **tx)
-        .await?;
+    crate::database::repositories::refresh_token::invalidate_all_for_import(tx).await?;
 
     Ok((
         changes.stats,
@@ -928,10 +934,7 @@ async fn apply_engines(
             .collect();
         for (name, existing) in &snapshot.engines {
             if !imported.contains(name.as_str()) {
-                sqlx::query("DELETE FROM engine_configuration WHERE id = ?")
-                    .bind(&existing.id)
-                    .execute(&mut **tx)
-                    .await?;
+                crate::database::repositories::config::delete_engine(tx, &existing.id).await?;
                 stats.engines_deleted += 1;
             }
         }
@@ -1050,10 +1053,7 @@ async fn apply_streamers(
             .transpose()?;
         let model = streamer_model(existing, item, platform_id, template_id);
         persist_streamer(tx, &model).await?;
-        sqlx::query("DELETE FROM filters WHERE streamer_id = ?")
-            .bind(&model.id)
-            .execute(&mut **tx)
-            .await?;
+        crate::database::repositories::filter::delete_for_streamer(tx, &model.id).await?;
         for item_filter in &item.filters {
             let filter_type = FilterType::parse(&item_filter.filter_type).ok_or_else(|| {
                 validation_error(format!("Invalid filter type '{}'", item_filter.filter_type))
@@ -1361,17 +1361,14 @@ async fn apply_notification_channels(
             )
         };
         persist_channel(tx, &model).await?;
-        sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
-            .bind(&model.id)
-            .execute(&mut **tx)
-            .await?;
+        crate::database::repositories::notification::delete_subscriptions(tx, &model.id).await?;
         for event in &item.subscriptions {
-            sqlx::query(
-                "INSERT INTO notification_subscription (channel_id, event_name) VALUES (?, ?)",
+            crate::database::repositories::notification::insert_subscription(
+                tx,
+                &model.id,
+                event,
+                crate::database::repositories::notification::SubscriptionInsert::Strict,
             )
-            .bind(&model.id)
-            .bind(event)
-            .execute(&mut **tx)
             .await?;
         }
         if existing.is_some() {
@@ -1391,17 +1388,14 @@ async fn apply_notification_channels(
             if imported.contains(name.as_str()) {
                 continue;
             }
-            sqlx::query("DELETE FROM notification_dead_letter WHERE channel_id = ?")
-                .bind(&existing.id)
-                .execute(&mut **tx)
+            crate::database::repositories::notification::delete_channel_dead_letters(
+                tx,
+                &existing.id,
+            )
+            .await?;
+            crate::database::repositories::notification::delete_subscriptions(tx, &existing.id)
                 .await?;
-            sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
-                .bind(&existing.id)
-                .execute(&mut **tx)
-                .await?;
-            sqlx::query("DELETE FROM notification_channel WHERE id = ?")
-                .bind(&existing.id)
-                .execute(&mut **tx)
+            crate::database::repositories::notification::delete_channel_row(tx, &existing.id)
                 .await?;
             stats.channels_deleted += 1;
         }
@@ -1532,16 +1526,19 @@ async fn apply_users(
     // this import will replace/delete, so swaps and reassignment do not depend on item order.
     // This stays in the import transaction: any later failure restores every original email.
     if replace {
-        sqlx::query("UPDATE users SET email = NULL WHERE email IS NOT NULL")
-            .execute(&mut **tx)
-            .await?;
+        crate::database::repositories::user::release_email_slots(
+            tx,
+            crate::database::repositories::user::EmailSlots::All,
+        )
+        .await?;
     } else {
         for user in &config.users {
             if let Some(existing) = snapshot.users.get(&user.username) {
-                sqlx::query("UPDATE users SET email = NULL WHERE id = ? AND email IS NOT NULL")
-                    .bind(&existing.id)
-                    .execute(&mut **tx)
-                    .await?;
+                crate::database::repositories::user::release_email_slots(
+                    tx,
+                    crate::database::repositories::user::EmailSlots::User(&existing.id),
+                )
+                .await?;
             }
         }
     }
@@ -1586,388 +1583,11 @@ async fn apply_users(
             .collect();
         for (username, existing) in &snapshot.users {
             if !imported.contains(username.as_str()) {
-                sqlx::query("DELETE FROM users WHERE id = ?")
-                    .bind(&existing.id)
-                    .execute(&mut **tx)
-                    .await?;
+                crate::database::repositories::user::delete_user(tx, &existing.id).await?;
                 stats.users_deleted += 1;
             }
         }
     }
-    Ok(())
-}
-
-async fn persist_global(
-    tx: &mut ImmediateTransaction,
-    config: &GlobalConfigDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        UPDATE global_config SET
-            output_folder = ?, output_filename_template = ?, output_file_format = ?,
-            min_segment_size_bytes = ?, max_download_duration_secs = ?, max_part_size_bytes = ?,
-            record_danmu = ?, danmu_statistics = ?, max_concurrent_downloads = ?, max_concurrent_uploads = ?,
-            streamer_check_delay_ms = ?, proxy_config = ?, offline_check_delay_ms = ?,
-            offline_check_count = ?, default_download_engine = ?, max_concurrent_cpu_jobs = ?,
-            max_concurrent_io_jobs = ?, job_history_retention_days = ?,
-            notification_event_log_retention_days = ?, pipeline = ?, session_complete_pipeline = ?,
-            paired_segment_pipeline = ?, log_filter_directive = ?, auto_thumbnail = ?,
-            pipeline_cpu_job_timeout_secs = ?, pipeline_io_job_timeout_secs = ?,
-            pipeline_execute_timeout_secs = ?, queue_freshness_threshold_ms = ?,
-            gpu_health_probe_interval_secs = ?, stream_proxy_allow_private_targets = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(&config.output_folder)
-    .bind(&config.output_filename_template)
-    .bind(&config.output_file_format)
-    .bind(config.min_segment_size_bytes)
-    .bind(config.max_download_duration_secs)
-    .bind(config.max_part_size_bytes)
-    .bind(config.record_danmu)
-    .bind(&config.danmu_statistics)
-    .bind(config.max_concurrent_downloads)
-    .bind(config.max_concurrent_uploads)
-    .bind(config.streamer_check_delay_ms)
-    .bind(&config.proxy_config)
-    .bind(config.offline_check_delay_ms)
-    .bind(config.offline_check_count)
-    .bind(&config.default_download_engine)
-    .bind(config.max_concurrent_cpu_jobs)
-    .bind(config.max_concurrent_io_jobs)
-    .bind(config.job_history_retention_days)
-    .bind(config.notification_event_log_retention_days)
-    .bind(&config.pipeline)
-    .bind(&config.session_complete_pipeline)
-    .bind(&config.paired_segment_pipeline)
-    .bind(&config.log_filter_directive)
-    .bind(config.auto_thumbnail)
-    .bind(config.pipeline_cpu_job_timeout_secs)
-    .bind(config.pipeline_io_job_timeout_secs)
-    .bind(config.pipeline_execute_timeout_secs)
-    .bind(config.queue_freshness_threshold_ms)
-    .bind(config.gpu_health_probe_interval_secs)
-    .bind(config.stream_proxy_allow_private_targets)
-    .bind(&config.id)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_engine(
-    tx: &mut ImmediateTransaction,
-    model: &EngineConfigurationDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO engine_configuration (id, name, engine_type, config)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            engine_type = excluded.engine_type,
-            config = excluded.config
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.name)
-    .bind(&model.engine_type)
-    .bind(&model.config)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_template(
-    tx: &mut ImmediateTransaction,
-    model: &TemplateConfigDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO template_config (
-            id, name, output_folder, output_filename_template, cookies, output_file_format,
-            min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-            record_danmu, danmu_statistics, platform_overrides, download_retry_policy,
-            download_engine, engines_override, proxy_config,
-            stream_selection_config, pipeline, session_complete_pipeline,
-            paired_segment_pipeline, offline_check_count, offline_check_delay_ms,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            output_folder = excluded.output_folder,
-            output_filename_template = excluded.output_filename_template,
-            cookies = excluded.cookies,
-            output_file_format = excluded.output_file_format,
-            min_segment_size_bytes = excluded.min_segment_size_bytes,
-            max_download_duration_secs = excluded.max_download_duration_secs,
-            max_part_size_bytes = excluded.max_part_size_bytes,
-            record_danmu = excluded.record_danmu,
-            danmu_statistics = excluded.danmu_statistics,
-            platform_overrides = excluded.platform_overrides,
-            download_retry_policy = excluded.download_retry_policy,
-            download_engine = excluded.download_engine,
-            engines_override = excluded.engines_override,
-            proxy_config = excluded.proxy_config,
-            stream_selection_config = excluded.stream_selection_config,
-            pipeline = excluded.pipeline,
-            session_complete_pipeline = excluded.session_complete_pipeline,
-            paired_segment_pipeline = excluded.paired_segment_pipeline,
-            offline_check_count = excluded.offline_check_count,
-            offline_check_delay_ms = excluded.offline_check_delay_ms,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.name)
-    .bind(&model.output_folder)
-    .bind(&model.output_filename_template)
-    .bind(&model.cookies)
-    .bind(&model.output_file_format)
-    .bind(model.min_segment_size_bytes)
-    .bind(model.max_download_duration_secs)
-    .bind(model.max_part_size_bytes)
-    .bind(model.record_danmu)
-    .bind(&model.danmu_statistics)
-    .bind(&model.platform_overrides)
-    .bind(&model.download_retry_policy)
-    .bind(&model.download_engine)
-    .bind(&model.engines_override)
-    .bind(&model.proxy_config)
-    .bind(&model.stream_selection_config)
-    .bind(&model.pipeline)
-    .bind(&model.session_complete_pipeline)
-    .bind(&model.paired_segment_pipeline)
-    .bind(model.offline_check_count)
-    .bind(model.offline_check_delay_ms)
-    .bind(model.created_at.timestamp_millis())
-    .bind(model.updated_at.timestamp_millis())
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_platform(
-    tx: &mut ImmediateTransaction,
-    model: &PlatformConfigDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        UPDATE platform_config SET
-            platform_name = ?, fetch_delay_ms = ?, download_delay_ms = ?, cookies = ?,
-            platform_specific_config = ?, proxy_config = ?, record_danmu = ?, danmu_statistics = ?, output_folder = ?,
-            output_filename_template = ?, download_engine = ?, stream_selection_config = ?,
-            output_file_format = ?, min_segment_size_bytes = ?, max_download_duration_secs = ?,
-            max_part_size_bytes = ?, download_retry_policy = ?, pipeline = ?,
-            session_complete_pipeline = ?, paired_segment_pipeline = ?, offline_check_count = ?,
-            offline_check_delay_ms = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(&model.platform_name)
-    .bind(model.fetch_delay_ms)
-    .bind(model.download_delay_ms)
-    .bind(&model.cookies)
-    .bind(&model.platform_specific_config)
-    .bind(&model.proxy_config)
-    .bind(model.record_danmu)
-    .bind(&model.danmu_statistics)
-    .bind(&model.output_folder)
-    .bind(&model.output_filename_template)
-    .bind(&model.download_engine)
-    .bind(&model.stream_selection_config)
-    .bind(&model.output_file_format)
-    .bind(model.min_segment_size_bytes)
-    .bind(model.max_download_duration_secs)
-    .bind(model.max_part_size_bytes)
-    .bind(&model.download_retry_policy)
-    .bind(&model.pipeline)
-    .bind(&model.session_complete_pipeline)
-    .bind(&model.paired_segment_pipeline)
-    .bind(model.offline_check_count)
-    .bind(model.offline_check_delay_ms)
-    .bind(&model.id)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_streamer(
-    tx: &mut ImmediateTransaction,
-    model: &StreamerDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO streamers (
-            id, name, url, platform_config_id, template_config_id, state, priority, avatar,
-            last_live_time, streamer_specific_config, consecutive_error_count, disabled_until,
-            last_error, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            url = excluded.url,
-            platform_config_id = excluded.platform_config_id,
-            template_config_id = excluded.template_config_id,
-            state = excluded.state,
-            priority = excluded.priority,
-            avatar = excluded.avatar,
-            last_live_time = excluded.last_live_time,
-            streamer_specific_config = excluded.streamer_specific_config,
-            consecutive_error_count = excluded.consecutive_error_count,
-            disabled_until = excluded.disabled_until,
-            last_error = excluded.last_error,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.name)
-    .bind(&model.url)
-    .bind(&model.platform_config_id)
-    .bind(&model.template_config_id)
-    .bind(&model.state)
-    .bind(&model.priority)
-    .bind(&model.avatar)
-    .bind(model.last_live_time)
-    .bind(&model.streamer_specific_config)
-    .bind(model.consecutive_error_count)
-    .bind(model.disabled_until)
-    .bind(&model.last_error)
-    .bind(model.created_at)
-    .bind(model.updated_at)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_filter(
-    tx: &mut ImmediateTransaction,
-    model: &FilterDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO filters (id, streamer_id, filter_type, config) VALUES (?, ?, ?, ?)")
-        .bind(&model.id)
-        .bind(&model.streamer_id)
-        .bind(&model.filter_type)
-        .bind(&model.config)
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
-}
-
-async fn persist_channel(
-    tx: &mut ImmediateTransaction,
-    model: &NotificationChannelDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO notification_channel (id, name, channel_type, settings)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            channel_type = excluded.channel_type,
-            settings = excluded.settings
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.name)
-    .bind(&model.channel_type)
-    .bind(&model.settings)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_job_preset(
-    tx: &mut ImmediateTransaction,
-    model: &JobPreset,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO job_presets
-            (id, name, description, category, processor, config, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            description = excluded.description,
-            category = excluded.category,
-            processor = excluded.processor,
-            config = excluded.config,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.name)
-    .bind(&model.description)
-    .bind(&model.category)
-    .bind(&model.processor)
-    .bind(&model.config)
-    .bind(model.created_at.timestamp_millis())
-    .bind(model.updated_at.timestamp_millis())
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_pipeline_preset(
-    tx: &mut ImmediateTransaction,
-    model: &PipelinePreset,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO pipeline_presets
-            (id, name, description, dag_definition, pipeline_type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            description = excluded.description,
-            dag_definition = excluded.dag_definition,
-            pipeline_type = excluded.pipeline_type,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.name)
-    .bind(&model.description)
-    .bind(&model.dag_definition)
-    .bind(&model.pipeline_type)
-    .bind(model.created_at.timestamp_millis())
-    .bind(model.updated_at.timestamp_millis())
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-async fn persist_user(
-    tx: &mut ImmediateTransaction,
-    model: &UserDbModel,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO users (
-            id, username, password_hash, email, roles, is_active,
-            must_change_password, last_login_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            username = excluded.username,
-            password_hash = excluded.password_hash,
-            email = excluded.email,
-            roles = excluded.roles,
-            is_active = excluded.is_active,
-            must_change_password = excluded.must_change_password,
-            last_login_at = excluded.last_login_at,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&model.id)
-    .bind(&model.username)
-    .bind(&model.password_hash)
-    .bind(&model.email)
-    .bind(&model.roles)
-    .bind(model.is_active)
-    .bind(model.must_change_password)
-    .bind(model.last_login_at)
-    .bind(model.created_at)
-    .bind(model.updated_at)
-    .execute(&mut **tx)
-    .await?;
     Ok(())
 }
 

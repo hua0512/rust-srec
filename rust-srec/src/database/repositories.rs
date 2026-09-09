@@ -3,6 +3,8 @@
 //! This module implements the Repository Pattern to abstract all database interactions,
 //! creating a clean and maintainable data access layer.
 
+pub(crate) mod row_write;
+
 pub mod api_key;
 pub mod config;
 pub(crate) mod config_retirement;
@@ -71,3 +73,6 @@ pub(crate) fn unique_lookup_ids(ids: &[String]) -> Vec<&str> {
         .filter(|id| seen.insert(*id))
         .collect()
 }
+
+#[cfg(test)]
+mod import_projection_tests;

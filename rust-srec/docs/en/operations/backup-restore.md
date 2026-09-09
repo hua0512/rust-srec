@@ -69,6 +69,19 @@ With the systemd service the sequence is the same, against the unit's own paths:
 
 Protect `.env`, `/etc/rust-srec/rust-srec.env`, and backup media with the same or stronger controls as the live service. Keep at least one backup outside the host and test its integrity.
 
+## Import Persistence Ownership
+
+Import and ordinary repository writes share the same typed field bindings. Import
+still reserves one SQLite write transaction for all ten configuration domains,
+subscription/filter replacement, email-slot swaps and authentication invalidation.
+Existing IDs and creation times remain stable; caller-selected update times and
+raw JSON are preserved. Extractor settings absent from the backup format retain
+their existing values, and new rows keep the same omitted-column defaults.
+
+Cache invalidation and runtime notifications occur only after commit. A late
+validation or database failure rolls back the import without publishing changes;
+a post-commit reload failure remains a warning about already-committed state.
+
 ## Restore Drill
 
 1. Provision a clean host with enough space and the same pinned Rust-Srec version.

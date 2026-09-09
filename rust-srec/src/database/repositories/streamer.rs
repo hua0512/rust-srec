@@ -1,5 +1,8 @@
 //! Streamer repository.
 
+mod writes;
+pub(crate) use writes::import_streamer;
+
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
@@ -195,32 +198,12 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO streamers (
-                id, name, url, platform_config_id, template_config_id,
-                state, priority, avatar, last_live_time, streamer_specific_config,
-                consecutive_error_count, disabled_until, last_error,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+        let result = writes::write_streamer(
+            &mut *self.write_pool.acquire().await?,
+            streamer,
+            super::row_write::WriteMode::Insert,
+            streamer.updated_at,
         )
-        .bind(&streamer.id)
-        .bind(&streamer.name)
-        .bind(&streamer.url)
-        .bind(&streamer.platform_config_id)
-        .bind(&streamer.template_config_id)
-        .bind(&streamer.state)
-        .bind(&streamer.priority)
-        .bind(&streamer.avatar)
-        .bind(streamer.last_live_time)
-        .bind(&streamer.streamer_specific_config)
-        .bind(streamer.consecutive_error_count)
-        .bind(streamer.disabled_until)
-        .bind(&streamer.last_error)
-        .bind(streamer.created_at)
-        .bind(streamer.updated_at)
-        .execute(&self.write_pool)
         .await;
 
         match result {
@@ -233,40 +216,12 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
-        let result = sqlx::query(
-            r#"
-            UPDATE streamers SET
-                name = ?,
-                url = ?,
-                platform_config_id = ?,
-                template_config_id = ?,
-                state = ?,
-                priority = ?,
-                avatar = ?,
-                last_live_time = ?,
-                streamer_specific_config = ?,
-                consecutive_error_count = ?,
-                disabled_until = ?,
-                last_error = ?,
-                updated_at = ?
-            WHERE id = ?
-            "#,
+        let result = writes::write_streamer(
+            &mut *self.write_pool.acquire().await?,
+            streamer,
+            super::row_write::WriteMode::Update,
+            streamer.updated_at,
         )
-        .bind(&streamer.name)
-        .bind(&streamer.url)
-        .bind(&streamer.platform_config_id)
-        .bind(&streamer.template_config_id)
-        .bind(&streamer.state)
-        .bind(&streamer.priority)
-        .bind(&streamer.avatar)
-        .bind(streamer.last_live_time)
-        .bind(&streamer.streamer_specific_config)
-        .bind(streamer.consecutive_error_count)
-        .bind(streamer.disabled_until)
-        .bind(&streamer.last_error)
-        .bind(streamer.updated_at)
-        .bind(&streamer.id)
-        .execute(&self.write_pool)
         .await;
 
         match result {
