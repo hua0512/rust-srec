@@ -100,6 +100,8 @@
 
 ## Database Maintenance
 
+- Repository row writes now share complete column bindings across job/DAG publication and session/media/segment creation. Conditional status/end guards, timestamps, schema defaults, atomic size accounting and rollback remain owned by their existing callers.
+
 - **Default database pages avoid full-table sorting**
 
   A new startup migration adds creation-time ordering indexes for unfiltered DAG and media-output pages. It removes four unused job timestamp indexes while preserving the indexes used by retention cleanup and duration statistics. Existing records and page ordering are unchanged; creating the new indexes scans those tables during the upgrade.

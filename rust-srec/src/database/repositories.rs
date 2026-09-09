@@ -25,6 +25,9 @@ pub mod tool_credential;
 pub mod upload_record;
 pub mod user;
 
+#[cfg(test)]
+mod write_contract_tests;
+
 pub use api_key::*;
 pub use config::*;
 pub use credential_store::*;

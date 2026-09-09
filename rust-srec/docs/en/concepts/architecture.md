@@ -255,6 +255,19 @@ dead-letter persistence. Optional browser Web Push delivery is handled by `WebPu
 
 See also: [Notifications](./notifications.md)
 
+### Repository row writes
+
+Complete job, DAG, step, session, media-output and segment writes share repository-owned
+column bindings on an existing SQLite connection. Callers retain retry, clock and transaction
+ownership. DAG publication inserts unattached steps before atomically attaching root jobs;
+later materialization keeps its separate active-parent and PENDING/BLOCKED guards.
+
+Raw session creation preserves the supplied model, while lifecycle creation builds an active
+session with its initial title. Raw ending remains unconditional; lifecycle ending only changes
+an active row. Media insertion and session-size accounting commit together, and combined segment
+creation joins that transaction. Standalone segment insertion does not add to the session total.
+Stored millisecond values, nullable lifecycle timestamps and omitted schema defaults are preserved.
+
 ## Downloader Rust Interfaces
 
 The download manager keeps event contracts in `downloader::manager::events`, acknowledged delivery in `coordination`, engine configuration in `configuration`, and attempt ownership in `attempt`. These implementation modules remain private; public event imports through `downloader` and internal imports through `downloader::manager` are preserved. Runtime shutdown uses `DownloadManager::shutdown_until`, and the active entry retains its queue slot until removal.
