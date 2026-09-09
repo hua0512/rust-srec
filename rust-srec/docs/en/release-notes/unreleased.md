@@ -638,6 +638,10 @@
 
 ## Security
 
+- **The web server checks the identifiers it forwards**
+
+  Requests the web interface makes on your behalf now reject an item identifier that is empty, absurdly long, or not text at all, instead of passing it through to the application. Names, search terms and other values that contain slashes, question marks, accents or spaces are escaped correctly, so a request always reaches the item it was meant for. Everyday use is unchanged.
+
 - **Baidu Netdisk login credentials no longer appear in process arguments**
 
   Manual and automatic BaiduPCS-Go logins now use private stdin/config staging. Command history is disabled only in the temporary directory; existing history, unrelated settings and other accounts are preserved. Successful account updates are committed atomically, failures preserve the previous config, and cancellation/timeout cleans up the contained child before releasing account access. See [Baidu Netdisk login](../concepts/pipeline.md#baidu-netdisk-baidupcs) for compatible binaries and storage boundaries.

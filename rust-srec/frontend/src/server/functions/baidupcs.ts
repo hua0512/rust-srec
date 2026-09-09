@@ -1,4 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
 import {
   BaiduPcsLoginRequestSchema,
@@ -19,7 +20,7 @@ import {
 
 export const getBaiduPcsStatus = createServerFn({ method: 'POST' })
   .validator((data: BaiduPcsToolRequest) =>
-    BaiduPcsToolRequestSchema.parse(data),
+    parseInput(BaiduPcsToolRequestSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/tools/baidupcs/status', {
@@ -31,7 +32,7 @@ export const getBaiduPcsStatus = createServerFn({ method: 'POST' })
 
 export const baiduPcsLogin = createServerFn({ method: 'POST' })
   .validator((data: BaiduPcsLoginRequest) =>
-    BaiduPcsLoginRequestSchema.parse(data),
+    parseInput(BaiduPcsLoginRequestSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/tools/baidupcs/login', {
@@ -43,7 +44,7 @@ export const baiduPcsLogin = createServerFn({ method: 'POST' })
 
 export const baiduPcsLogout = createServerFn({ method: 'POST' })
   .validator((data: BaiduPcsToolRequest) =>
-    BaiduPcsToolRequestSchema.parse(data),
+    parseInput(BaiduPcsToolRequestSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/tools/baidupcs/logout', {

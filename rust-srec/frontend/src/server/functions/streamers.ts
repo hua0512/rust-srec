@@ -1,5 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   StreamerSchema,
   CreateStreamerSchema,
@@ -12,6 +14,27 @@ import {
 import { z } from 'zod';
 import { removeEmpty } from '@/lib/format';
 import type { BatchStreamerAction } from '@/api/schemas';
+
+const StreamerFiltersSchema = z.object({
+  page: z.number().optional(),
+  limit: z.number().optional(),
+  search: z.string().optional(),
+  platform: z.string().optional(),
+  template: z.string().optional(),
+  templateUnassigned: z.boolean().optional(),
+  state: z.string().optional(),
+  priority: z.enum(['HIGH', 'NORMAL', 'LOW']).optional(),
+  sortBy: z.enum(['name', 'priority', 'state', 'updated_at']).optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
+});
+
+// `PrioritySchema` carries a schema-level default, and Zod applies a default
+// through `.optional()`. Keeping it here would turn a partial update such as the
+// enable toggle into a priority overwrite, because the backend treats a present
+// `priority` as the new value.
+const StreamerUpdateSchema = UpdateStreamerSchema.extend({
+  priority: PrioritySchema.removeDefault().optional(),
+});
 
 export const listStreamers = createServerFn({ method: 'GET' })
   .validator(
@@ -28,7 +51,7 @@ export const listStreamers = createServerFn({ method: 'GET' })
         sortBy?: 'name' | 'priority' | 'state' | 'updated_at';
         sortDir?: 'asc' | 'desc';
       } = {},
-    ) => d,
+    ) => parseInput(StreamerFiltersSchema, d),
   )
   .handler(async ({ data }) => {
     // Backend endpoint expects query params with offset-based pagination
@@ -62,7 +85,7 @@ export const listStreamers = createServerFn({ method: 'GET' })
 
 export const batchUpdateStreamers = createServerFn({ method: 'POST' })
   .validator((data: { ids: string[]; action: BatchStreamerAction }) =>
-    BatchStreamerRequestSchema.parse(data),
+    parseInput(BatchStreamerRequestSchema, data),
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/streamers/batch', {
@@ -73,14 +96,16 @@ export const batchUpdateStreamers = createServerFn({ method: 'POST' })
   });
 
 export const getStreamer = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/streamers/${id}`);
+    const json = await fetchBackend(backendPath`/streamers/${id}`);
     return StreamerSchema.parse(json);
   });
 
 export const createStreamer = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateStreamerSchema>) => data)
+  .validator((data: z.infer<typeof CreateStreamerSchema>) =>
+    parseInput(CreateStreamerSchema, data),
+  )
   .handler(async ({ data }) => {
     const payload = {
       ...data,
@@ -97,7 +122,10 @@ export const createStreamer = createServerFn({ method: 'POST' })
 
 export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST to support non-GET, commonly patch is used but server fn usually distinguishes mainly GET/POST
   .validator(
-    (d: { id: string; data: z.infer<typeof UpdateStreamerSchema> }) => d,
+    (d: { id: string; data: z.infer<typeof UpdateStreamerSchema> }) => ({
+      id: parseInput(PathIdSchema, d.id),
+      data: parseInput(StreamerUpdateSchema, d.data),
+    }),
   )
   .handler(async ({ data: { id, data } }) => {
     const payload = {
@@ -106,7 +134,7 @@ export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST t
         ? removeEmpty(data.streamer_specific_config)
         : undefined,
     };
-    const json = await fetchBackend(`/streamers/${id}`, {
+    const json = await fetchBackend(backendPath`/streamers/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
@@ -114,19 +142,19 @@ export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST t
   });
 
 export const deleteStreamer = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/streamers/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/streamers/${id}`, { method: 'DELETE' });
   });
 
 export const checkStreamer = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/streamers/${id}/check`, { method: 'POST' });
+    await fetchBackend(backendPath`/streamers/${id}/check`, { method: 'POST' });
   });
 
 export const extractMetadata = createServerFn({ method: 'POST' })
-  .validator((url: string) => url)
+  .validator((url: string) => parseInput(z.url(), url))
   .handler(async ({ data: url }) => {
     const json = await fetchBackend('/streamers/extract-metadata', {
       method: 'POST',
@@ -140,9 +168,9 @@ export const extractMetadata = createServerFn({ method: 'POST' })
  * POST /api/streamers/{id}/clear-error
  */
 export const clearStreamerError = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/streamers/${id}/clear-error`, {
+    const json = await fetchBackend(backendPath`/streamers/${id}/clear-error`, {
       method: 'POST',
     });
     return StreamerSchema.parse(json);
@@ -153,9 +181,12 @@ export const clearStreamerError = createServerFn({ method: 'POST' })
  * PATCH /api/streamers/{id}/priority
  */
 export const updateStreamerPriority = createServerFn({ method: 'POST' })
-  .validator((d: { id: string; priority: z.infer<typeof PrioritySchema> }) => d)
+  .validator((d: { id: string; priority: z.infer<typeof PrioritySchema> }) => ({
+    id: parseInput(PathIdSchema, d.id),
+    priority: parseInput(PrioritySchema, d.priority),
+  }))
   .handler(async ({ data: { id, priority } }) => {
-    const json = await fetchBackend(`/streamers/${id}/priority`, {
+    const json = await fetchBackend(backendPath`/streamers/${id}/priority`, {
       method: 'PATCH',
       body: JSON.stringify({ priority }),
     });
@@ -215,12 +246,15 @@ export type StreamerCheckHistoryEntry = z.infer<
  * Server returns oldest-first so the UI renders left → right = past → now.
  */
 export const getStreamerCheckHistory = createServerFn({ method: 'GET' })
-  .validator((d: { id: string; limit?: number }) => d)
+  .validator((d: { id: string; limit?: number }) => ({
+    id: parseInput(PathIdSchema, d.id),
+    limit: parseInput(z.number().optional(), d.limit),
+  }))
   .handler(async ({ data: { id, limit } }) => {
     const params = new URLSearchParams();
     if (typeof limit === 'number') params.set('limit', String(limit));
-    const qs = params.toString();
-    const url = `/streamers/${id}/check-history${qs ? `?${qs}` : ''}`;
-    const json = await fetchBackend(url);
+    const json = await fetchBackend(
+      withQuery(backendPath`/streamers/${id}/check-history`, params),
+    );
     return StreamerCheckHistoryResponseSchema.parse(json);
   });

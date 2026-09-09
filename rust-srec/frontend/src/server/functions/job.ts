@@ -1,5 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema } from '../backend-path';
 import { JobPresetSchema } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -26,8 +28,38 @@ export interface JobPresetFilters {
   offset?: number;
 }
 
+const JobPresetFiltersSchema = z.object({
+  category: z.string().optional(),
+  processor: z.string().optional(),
+  name: z.string().optional(),
+  search: z.string().optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+});
+
+/** Body shared by the preset create and update endpoints. */
+const JobPresetWriteSchema = z.object({
+  id: PathIdSchema,
+  name: z.string().min(1),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  processor: z.string().min(1),
+  config: z.record(z.string(), z.unknown()),
+});
+
+interface JobPresetWriteInput {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  processor: string;
+  config: Record<string, unknown>;
+}
+
 export const listJobPresets = createServerFn({ method: 'GET' })
-  .validator((d: JobPresetFilters = {}) => d)
+  .validator((d: JobPresetFilters = {}) =>
+    parseInput(JobPresetFiltersSchema, d),
+  )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.category) params.set('category', data.category);
@@ -42,23 +74,14 @@ export const listJobPresets = createServerFn({ method: 'GET' })
   });
 
 export const getJobPreset = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/job/presets/${id}`);
+    const json = await fetchBackend(backendPath`/job/presets/${id}`);
     return JobPresetSchema.parse(json);
   });
 
 export const createJobPreset = createServerFn({ method: 'POST' })
-  .validator(
-    (d: {
-      id: string;
-      name: string;
-      description?: string;
-      category?: string;
-      processor: string;
-      config: Record<string, unknown>;
-    }) => d,
-  )
+  .validator((d: JobPresetWriteInput) => parseInput(JobPresetWriteSchema, d))
   .handler(async ({ data }) => {
     // Stringify config before sending to backend
     const payload = {
@@ -73,16 +96,7 @@ export const createJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const updateJobPreset = createServerFn({ method: 'POST' })
-  .validator(
-    (d: {
-      id: string;
-      name: string;
-      description?: string;
-      category?: string;
-      processor: string;
-      config: Record<string, unknown>;
-    }) => d,
-  )
+  .validator((d: JobPresetWriteInput) => parseInput(JobPresetWriteSchema, d))
   .handler(async ({ data }) => {
     const { id, ...rest } = data;
     // Stringify config before sending to backend
@@ -90,7 +104,7 @@ export const updateJobPreset = createServerFn({ method: 'POST' })
       ...rest,
       config: JSON.stringify(data.config),
     };
-    const json = await fetchBackend(`/job/presets/${id}`, {
+    const json = await fetchBackend(backendPath`/job/presets/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     });
@@ -98,16 +112,19 @@ export const updateJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const deleteJobPreset = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/job/presets/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/job/presets/${id}`, { method: 'DELETE' });
   });
 
 export const cloneJobPreset = createServerFn({ method: 'POST' })
-  .validator((d: { id: string; new_name: string }) => d)
+  .validator((d: { id: string; new_name: string }) => ({
+    id: parseInput(PathIdSchema, d.id),
+    new_name: parseInput(z.string().min(1), d.new_name),
+  }))
   .handler(async ({ data }) => {
     const { id, new_name } = data;
-    const json = await fetchBackend(`/job/presets/${id}/clone`, {
+    const json = await fetchBackend(backendPath`/job/presets/${id}/clone`, {
       method: 'POST',
       body: JSON.stringify({ new_name }),
     });

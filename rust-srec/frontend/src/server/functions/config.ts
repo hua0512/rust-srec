@@ -1,5 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
+import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
+import { backendPath, PathIdSchema } from '../backend-path';
 import {
   GlobalConfigSchema,
   GlobalConfigWriteSchema,
@@ -35,12 +37,13 @@ const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
 });
 
 export const updateGlobalConfig = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof GlobalConfigWriteSchema>) => data)
+  .validator((data: z.infer<typeof GlobalConfigWriteSchema>) =>
+    parseInput(GlobalConfigUpdateSchema, data),
+  )
   .handler(async ({ data }) => {
-    const payload = GlobalConfigUpdateSchema.parse(data);
     await fetchBackend('/config/global', {
       method: 'PATCH',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
   });
 
@@ -53,9 +56,9 @@ export const listPlatformConfigs = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getPlatformConfig = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/config/platforms/${id}`);
+    const json = await fetchBackend(backendPath`/config/platforms/${id}`);
     return PlatformConfigSchema.parse(json);
   });
 
@@ -84,14 +87,18 @@ const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
 
 export const updatePlatformConfig = createServerFn({ method: 'POST' })
   .validator(
-    (d: { id: string; data: Partial<z.infer<typeof PlatformConfigSchema>> }) =>
-      d,
+    (d: {
+      id: string;
+      data: Partial<z.infer<typeof PlatformConfigSchema>>;
+    }) => ({
+      id: parseInput(PathIdSchema, d.id),
+      data: parseInput(PlatformConfigWriteSchema, d.data),
+    }),
   )
   .handler(async ({ data: { id, data } }) => {
-    const payload = PlatformConfigWriteSchema.parse(data);
-    const json = await fetchBackend(`/config/platforms/${id}`, {
+    const json = await fetchBackend(backendPath`/config/platforms/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
     return PlatformConfigSchema.parse(json);
   });
@@ -113,9 +120,9 @@ export const listTemplates = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getTemplate = createServerFn({ method: 'GET' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(`/templates/${id}`);
+    const json = await fetchBackend(backendPath`/templates/${id}`);
     return TemplateSchema.parse(json);
   });
 
@@ -138,7 +145,7 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
 
 export const createTemplate = createServerFn({ method: 'POST' })
   .validator((data: z.input<typeof CreateTemplateRequestSchema>) =>
-    TemplateWriteSchema.parse(data),
+    parseInput(TemplateWriteSchema, data),
   )
   .handler(async ({ data }) => {
     const payload = data;
@@ -152,13 +159,13 @@ export const createTemplate = createServerFn({ method: 'POST' })
 export const updateTemplate = createServerFn({ method: 'POST' })
   .validator(
     (d: { id: string; data: z.input<typeof UpdateTemplateRequestSchema> }) => ({
-      id: z.string().parse(d.id),
-      data: TemplateWriteSchema.parse(d.data),
+      id: parseInput(PathIdSchema, d.id),
+      data: parseInput(TemplateWriteSchema, d.data),
     }),
   )
   .handler(async ({ data: { id, data } }) => {
     const payload = data;
-    const json = await fetchBackend(`/templates/${id}`, {
+    const json = await fetchBackend(backendPath`/templates/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
@@ -166,16 +173,19 @@ export const updateTemplate = createServerFn({ method: 'POST' })
   });
 
 export const deleteTemplate = createServerFn({ method: 'POST' })
-  .validator((id: string) => id)
+  .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(`/templates/${id}`, { method: 'DELETE' });
+    await fetchBackend(backendPath`/templates/${id}`, { method: 'DELETE' });
   });
 
 export const cloneTemplate = createServerFn({ method: 'POST' })
-  .validator((d: { id: string; new_name: string }) => d)
+  .validator((d: { id: string; new_name: string }) => ({
+    id: parseInput(PathIdSchema, d.id),
+    new_name: parseInput(z.string().min(1), d.new_name),
+  }))
   .handler(async ({ data }) => {
     const { id, new_name } = data;
-    const json = await fetchBackend(`/templates/${id}/clone`, {
+    const json = await fetchBackend(backendPath`/templates/${id}/clone`, {
       method: 'POST',
       body: JSON.stringify({ new_name }),
     });
@@ -190,8 +200,15 @@ export const exportConfig = createServerFn({ method: 'GET' }).handler(
   },
 );
 
+const ImportConfigSchema = z.object({
+  config: z.any(),
+  mode: z.enum(['merge', 'replace']),
+});
+
 export const importConfig = createServerFn({ method: 'POST' })
-  .validator((data: { config: any; mode: 'merge' | 'replace' }) => data)
+  .validator((data: { config: any; mode: 'merge' | 'replace' }) =>
+    parseInput(ImportConfigSchema, data),
+  )
   .handler(async ({ data }) => {
     return await fetchBackend('/config/backup/import', {
       method: 'POST',
