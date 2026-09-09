@@ -88,6 +88,42 @@ describe('sessionQueryOptions', () => {
     expect(checkAuthFnMock).toHaveBeenCalledTimes(2);
   });
 
+  it('measures its reuse window from when the check ran, not from the call', async () => {
+    vi.useFakeTimers();
+    try {
+      const queryClient = createQueryClient();
+      checkAuthFnMock.mockResolvedValue(
+        freshSession({
+          token: {
+            access_token: 'access-token',
+            expires_in: Date.now() + 70_000,
+            refresh_expires_in: Date.now() + 600_000,
+          },
+        }),
+      );
+
+      await queryClient.fetchQuery(sessionQueryOptions);
+      // Still inside the window the first check earned, even though the token
+      // is now closer to its renewal than it was.
+      await vi.advanceTimersByTimeAsync(20_000);
+      await queryClient.fetchQuery(sessionQueryOptions);
+
+      expect(checkAuthFnMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails a check straight away instead of retrying behind the guard', async () => {
+    const queryClient = new QueryClient();
+    checkAuthFnMock.mockRejectedValue(new Error('endpoint down'));
+
+    await expect(queryClient.fetchQuery(sessionQueryOptions)).rejects.toThrow(
+      'endpoint down',
+    );
+    expect(checkAuthFnMock).toHaveBeenCalledOnce();
+  });
+
   it('never reuses an unauthenticated result', async () => {
     const queryClient = createQueryClient();
     checkAuthFnMock.mockResolvedValue(null);

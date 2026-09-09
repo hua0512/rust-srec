@@ -184,9 +184,10 @@ pub async fn list_job_logs(
     let pipeline_manager = &state.pipeline_manager;
 
     // Log rows are small and a job keeps up to
-    // MAX_PERSISTED_LOG_ROWS_PER_JOB of them. The job page polls its loaded
-    // pages while the job runs, so each poll costs one round trip per page;
-    // a larger page keeps that to a handful for long-running jobs.
+    // MAX_PERSISTED_LOG_ROWS_PER_JOB of them. While a job runs the job page
+    // re-reads only the page still being appended to, so a larger page means
+    // fewer pages to scroll through and a live view that stays at one round
+    // trip per poll however long the job runs.
     const MAX_LOG_PAGE_SIZE: u32 = 1000;
     let effective_limit = pagination.limit.min(MAX_LOG_PAGE_SIZE);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);

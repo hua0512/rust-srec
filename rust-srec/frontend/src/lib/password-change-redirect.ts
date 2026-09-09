@@ -1,18 +1,28 @@
 import type { AnyRouter } from '@tanstack/react-router';
+import type { QueryClient } from '@tanstack/react-query';
 import type { I18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 
 import { isPasswordChangeRequiredError } from './api-error';
+import { sessionQueryOptions } from '@/api/session';
 
 // Registered by getRouter (router.tsx and router.desktop.tsx) so the
 // QueryCache/MutationCache onError handlers created in
 // integrations/tanstack-query/root-provider can navigate.
-let registered: { router: AnyRouter; i18n: I18n } | null = null;
+let registered: {
+  router: AnyRouter;
+  i18n: I18n;
+  queryClient: QueryClient;
+} | null = null;
 let redirectInFlight = false;
 
-export function registerPasswordChangeRedirect(router: AnyRouter, i18n: I18n) {
-  registered = { router, i18n };
+export function registerPasswordChangeRedirect(
+  router: AnyRouter,
+  i18n: I18n,
+  queryClient: QueryClient,
+) {
+  registered = { router, i18n, queryClient };
 }
 
 /**
@@ -20,6 +30,10 @@ export function registerPasswordChangeRedirect(router: AnyRouter, i18n: I18n) {
  * routes/_public/login.lazy.tsx does: warn, invalidate so the /_authed
  * beforeLoad guard re-reads the session (fetchBackend has already persisted
  * mustChangePassword there), then replace-navigate to /change-password.
+ *
+ * The guard reads the session through the query cache, which may still hold a
+ * fresh-enough result from before the requirement was raised. Marking that
+ * result stale first is what makes the router invalidation actually re-read it.
  */
 export function redirectToChangePasswordOnError(error: unknown) {
   if (!isPasswordChangeRequiredError(error)) return;
@@ -35,6 +49,9 @@ export function redirectToChangePasswordOnError(error: unknown) {
   redirectInFlight = true;
   void (async () => {
     try {
+      await active.queryClient.invalidateQueries({
+        queryKey: sessionQueryOptions.queryKey,
+      });
       await active.router.invalidate();
       toast.warning(active.i18n._(msg`Password change required`));
       await active.router.navigate({ to: '/change-password', replace: true });

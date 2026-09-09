@@ -46,6 +46,12 @@ export function latestLogTotal(data: JobLogPages | undefined): number {
  * sees the rows added since, and so the "is there more" answer comes from a
  * current total rather than the one the page was first loaded with.
  *
+ * Only ever grows the page. A read that came back with fewer rows or a lower
+ * total than what is already held describes an older state of the log — a
+ * response that raced past a newer one — and taking it would drop rows that
+ * are already on screen, permanently once the job is finished and nothing
+ * re-reads.
+ *
  * Returns the input unchanged — same reference, so React re-renders nothing —
  * when the page no longer lines up with what is loaded, or when it carries
  * nothing new.
@@ -62,8 +68,8 @@ export function replaceNewestLogPage(
   // the window it describes is no longer the newest one.
   if (current.offset !== page.offset) return data;
   if (
-    current.total === page.total &&
-    current.items.length === page.items.length
+    page.items.length <= current.items.length &&
+    page.total <= current.total
   ) {
     return data;
   }

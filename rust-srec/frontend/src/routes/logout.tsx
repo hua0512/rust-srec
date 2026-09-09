@@ -1,6 +1,7 @@
 import { redirect, createFileRoute } from '@tanstack/react-router';
 
 import { logoutFn } from '@/server/functions';
+import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 
@@ -17,6 +18,12 @@ export const Route = createFileRoute('/logout')({
     // of results back into the cache that was just emptied.
     await context.queryClient.cancelQueries();
     context.queryClient.clear();
+    // Emptying the cache is not enough on its own: the session query is read
+    // with an `initialData` user, so an absent entry is immediately re-seeded
+    // with the account that just signed out and the authenticated tree would
+    // accept it. Recording an explicit "signed out" instead makes that seed
+    // inert and forces the next navigation to ask the server.
+    context.queryClient.setQueryData(sessionQueryOptions.queryKey, null);
     useDownloadStore.getState().clearAll();
     useUploadStore.getState().clearAll();
 

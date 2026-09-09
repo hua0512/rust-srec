@@ -3,11 +3,14 @@ import { isRedirect } from '@tanstack/react-router';
 
 import { sessionQueryOptions } from '@/api/session';
 import { Route } from '../_authed';
+import { Route as LogoutRoute } from '../logout';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
+const logoutFnMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/server/functions', () => ({
   checkAuthFn: checkAuthFnMock,
+  logoutFn: logoutFnMock,
 }));
 
 type RedirectOptions = { to?: string; search?: { redirect?: string } };
@@ -39,6 +42,30 @@ function runGuard(queryClient: QueryClient, href: string) {
   });
 }
 
+function runLogout(queryClient: QueryClient) {
+  const loader = LogoutRoute.options.loader as (args: {
+    context: { queryClient: QueryClient };
+  }) => Promise<unknown>;
+
+  return loader({ context: { queryClient } });
+}
+
+/**
+ * What WebSocketProvider's `useQuery({ ...sessionQueryOptions, initialData })`
+ * does on every render: seed the session from route context, but only while no
+ * entry exists — an entry holding `null` is still an entry.
+ */
+function seedLikeTheProvider(
+  queryClient: QueryClient,
+  user: ReturnType<typeof session>,
+) {
+  const existing = queryClient
+    .getQueryCache()
+    .find({ queryKey: sessionQueryOptions.queryKey });
+  if (existing) return;
+  queryClient.setQueryData(sessionQueryOptions.queryKey, user);
+}
+
 async function captureRedirect(promise: Promise<unknown>) {
   try {
     await promise;
@@ -55,6 +82,7 @@ describe('/_authed guard', () => {
 
   beforeEach(() => {
     checkAuthFnMock.mockReset();
+    logoutFnMock.mockReset();
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -122,6 +150,22 @@ describe('/_authed guard', () => {
     await runGuard(queryClient, '/streamers');
 
     expect(checkAuthFnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks the server again after signing out, even with a seeded session', async () => {
+    const previous = session();
+    seedLikeTheProvider(queryClient, previous);
+    logoutFnMock.mockResolvedValue(undefined);
+
+    await captureRedirect(runLogout(queryClient));
+    // The provider re-renders while the redirect to /login commits.
+    seedLikeTheProvider(queryClient, previous);
+
+    checkAuthFnMock.mockResolvedValue(null);
+    const options = await captureRedirect(runGuard(queryClient, '/dashboard'));
+
+    expect(options.to).toBe('/login');
+    expect(checkAuthFnMock).toHaveBeenCalledOnce();
   });
 
   it('shares its result with the session query the provider reads', async () => {

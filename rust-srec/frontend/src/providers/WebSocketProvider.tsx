@@ -51,6 +51,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   );
   const isConnectingRef = useRef<boolean>(false);
   const intentionalCloseRef = useRef<boolean>(false);
+  // Reconnects go through a ref so scheduleReconnect stays independent of
+  // connect, which in turn lets connect stay stable across renders.
+  const connectRef = useRef<() => void>(() => {});
 
   // Auth state
   const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
@@ -61,11 +64,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     enabled: typeof window !== 'undefined',
     initialData: routeUser ?? null,
     // The backend authenticates the socket at the handshake and never
-    // re-checks, so an open socket outlives its access token and a hidden tab
-    // needs no renewal to keep receiving events. A token is only wanted again
-    // when a dropped socket has to be reopened, and that retry loop runs until
-    // it succeeds — by which time the tab is back in the foreground and this
-    // check has run. So renewal stays a foreground concern.
+    // re-checks, so an open socket outlives its access token and keeps
+    // delivering events without any renewal. A token is only wanted again when
+    // a dropped socket has to be reopened; this poll is what supplies a usable
+    // one for that, and a renewal that lands while a reconnect is waiting out
+    // its backoff is taken up straight away by the effect below.
     refetchInterval: 60_000,
   });
   const accessToken = sessionData?.token?.access_token;
@@ -76,6 +79,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const accessTokenRef = useRef<string | undefined>(accessToken);
   useEffect(() => {
     accessTokenRef.current = accessToken;
+    // A reconnect already waiting out its backoff would hand the handshake
+    // whichever token it finds when the timer fires. Once a renewed one is in
+    // hand there is nothing left to wait for, so retry with it immediately
+    // rather than let the pending attempt run on a token that has since
+    // expired.
+    if (!accessToken) return;
+    if (!reconnectTimeoutRef.current) return;
+    clearTimeout(reconnectTimeoutRef.current);
+    reconnectTimeoutRef.current = undefined;
+    connectRef.current();
   }, [accessToken]);
 
   // Download store actions
@@ -346,10 +359,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       queryClient,
     ],
   );
-
-  // Reconnects go through a ref so this callback stays independent of connect,
-  // which in turn lets connect stay stable across renders.
-  const connectRef = useRef<() => void>(() => {});
 
   const scheduleReconnect = useCallback(() => {
     const delay = Math.min(

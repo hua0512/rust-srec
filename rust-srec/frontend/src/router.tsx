@@ -45,7 +45,7 @@ export function getRouter() {
     },
   );
 
-  registerPasswordChangeRedirect(router, i18n);
+  registerPasswordChangeRedirect(router, i18n, rqContext.queryClient);
 
   return router;
 }

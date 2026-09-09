@@ -71,10 +71,11 @@ function ChangePasswordPage() {
         ),
       );
 
-      // The tokens this session was built on no longer exist, so drop the
-      // cached session check as well; the `/_authed` guard reads it and would
-      // otherwise wave the next navigation through on a dead session.
-      queryClient.removeQueries({ queryKey: sessionQueryOptions.queryKey });
+      // The tokens this session was built on no longer exist, so the cached
+      // session check has to be replaced with an explicit "signed out". An
+      // entry holding `null` also keeps the provider's `initialData` from
+      // seeding the old user back in, which removing the entry would allow.
+      queryClient.setQueryData(sessionQueryOptions.queryKey, null);
       await router.invalidate();
       void router.navigate({ to: '/login', replace: true });
     } catch (error: any) {

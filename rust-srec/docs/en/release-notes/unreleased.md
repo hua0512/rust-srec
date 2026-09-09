@@ -532,6 +532,10 @@
 
 ## Web interface
 
+- **Signing out now fully forgets the account you were signed in as**
+
+  After signing out, going back in the browser could still show the signed-in pages, and the next person to sign in on the same tab could briefly be treated as the previous account. Signing out now discards the account straight away, so the sign-in screen is the only way back in. In the same way, when an administrator requires you to change your password mid-session, the request now takes effect immediately instead of after a short delay.
+
 - **Download and upload progress stops disappearing and coming back**
 
   Every so often the progress cards vanished and reappeared a moment later, even though nothing had gone wrong with the transfers themselves. That interruption came from a routine sign-in renewal in the background; the live connection now carries on through it, so progress stays on screen without a gap.

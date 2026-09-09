@@ -56,6 +56,14 @@ describe('job log pages', () => {
     expect(replaceNewestLogPage(before, page(0, 40, 40))).toBe(before);
   });
 
+  it('keeps the fuller page when a stale read lands after a newer one', () => {
+    const before = pages(page(0, 1000, 1012), page(1000, 12, 1012));
+
+    // A tail read that was in flight while a later one landed; taking it would
+    // drop rows the reader can already see.
+    expect(replaceNewestLogPage(before, page(1000, 5, 1005))).toBe(before);
+  });
+
   it('discards a read for a window that is no longer the newest one', () => {
     const before = pages(page(0, 1000, 2000), page(1000, 1000, 2000));
 
