@@ -1,17 +1,20 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { redirect } from '@tanstack/react-router';
 import { WebSocketProvider } from '@/providers/WebSocketProvider';
-import { createServerFn } from '@/server/createServerFn';
-import { ensureValidToken } from '@/server/tokenRefresh';
+import { sessionQueryOptions } from '@/api/session';
 import { BrowserNotificationListener } from '@/components/notifications/browser-notification-listener';
 
-export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
-  return await ensureValidToken();
-});
-
 export const Route = createFileRoute('/_authed')({
-  beforeLoad: async ({ location }) => {
-    const user = await fetchUser();
+  // Router runs this on every navigation into the authenticated tree, so the
+  // check goes through the session query rather than straight to the server.
+  // `fetchQuery` returns the cached session while it is fresh and waits for a
+  // new check once it is not, and `sessionQueryOptions` treats an
+  // unauthenticated or about-to-expire result as stale straight away. Moving
+  // between pages therefore reuses one verified session instead of unsealing
+  // the cookie each time, while a first load, a sign-in and an expiry are
+  // still verified before anything renders.
+  beforeLoad: async ({ context, location }) => {
+    const user = await context.queryClient.fetchQuery(sessionQueryOptions);
 
     if (!user && location.pathname !== '/login') {
       // `href` is the pathname plus search and hash, so the filters and page

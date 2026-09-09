@@ -8,26 +8,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { SidebarConfigProvider } from '@/contexts/sidebar-context';
 import { useSidebarConfig } from '@/contexts/sidebar-context';
-import { createServerFn } from '@/server/createServerFn';
-
-// ── server function: read sidebar cookie during SSR ──────────────
-const getSidebarCookie = createServerFn({ method: 'GET' }).handler(async () => {
-  try {
-    const { getRequestHeader } = await import('@tanstack/react-start/server');
-    const raw = getRequestHeader('cookie') ?? '';
-    const match = raw.match(/(?:^|; )sidebar_state=(true|false)/);
-    if (match) return match[1] === 'true';
-  } catch {
-    // outside request context – default to expanded
-  }
-  return true;
-});
+import {
+  SIDEBAR_COOKIE_KEY,
+  SIDEBAR_COOKIE_MAX_AGE_SECONDS,
+  readSidebarCookie,
+} from '@/lib/sidebar-cookie';
 
 export const Route = createFileRoute('/_authed/_dashboard')({
-  beforeLoad: async () => {
-    const sidebarOpen = await getSidebarCookie();
-    return { sidebarOpen };
-  },
   component: DashboardBaseLayout,
 });
 
@@ -37,19 +24,23 @@ export const Route = createFileRoute('/_authed/_dashboard')({
 const SIDEBAR_INIT_SCRIPT = `
 (function(){
   try {
-    var m = document.cookie.match(/(?:^|; )sidebar_state=(true|false)/);
+    var m = document.cookie.match(/(?:^|; )${SIDEBAR_COOKIE_KEY}=(true|false)/);
     if (m) document.documentElement.dataset.sidebarState = m[1];
   } catch(e) {}
 })();
 `;
 
-/** Synchronously read the value stashed by the inline script. */
+/**
+ * Synchronously read the stored state. The inline script above stashes it on
+ * `<html>` during the SSR document parse; the cookie itself is the fallback for
+ * the desktop build, which has no SSR document for that script to run in.
+ */
 function getClientSidebarState(): boolean | undefined {
   if (typeof document === 'undefined') return undefined;
   const v = document.documentElement.dataset.sidebarState;
   if (v === 'true') return true;
   if (v === 'false') return false;
-  return undefined;
+  return readSidebarCookie(document.cookie);
 }
 
 function DashboardBaseLayout() {
@@ -63,19 +54,20 @@ function DashboardBaseLayout() {
 
 function DashboardLayout() {
   const { config } = useSidebarConfig();
-  const { sidebarOpen: ssrSidebarOpen } = Route.useRouteContext();
+  const { sidebar: ssrSidebar } = Route.useRouteContext();
 
-  // First render: use the server-provided value (which read the cookie).
-  // On the client the inline <script> already stashed the same cookie
-  // value onto <html>, so getClientSidebarState() agrees with the server.
+  // First render: use the value the request middleware read from the cookie,
+  // which is what the server rendered. On the client the inline <script> has
+  // already stashed the same cookie value onto <html>, so the two agree and
+  // hydration matches.
   const [sidebarOpen, _setSidebarOpen] = React.useState(
-    () => getClientSidebarState() ?? ssrSidebarOpen,
+    () => getClientSidebarState() ?? ssrSidebar.open,
   );
 
   const setSidebarOpen = React.useCallback((value: boolean) => {
     _setSidebarOpen(value);
     try {
-      document.cookie = `sidebar_state=${value}; path=/; max-age=${60 * 60 * 24 * 7}`;
+      document.cookie = `${SIDEBAR_COOKIE_KEY}=${value}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE_SECONDS}`;
     } catch {
       // ignore
     }
@@ -84,7 +76,7 @@ function DashboardLayout() {
   // One-time reconciliation: if there was no cookie but localStorage has
   // a preference, adopt it and write a cookie for future loads.
   React.useEffect(() => {
-    if (document.documentElement.dataset.sidebarState) return;
+    if (readSidebarCookie(document.cookie) !== undefined) return;
 
     try {
       const raw = localStorage.getItem('sidebar');

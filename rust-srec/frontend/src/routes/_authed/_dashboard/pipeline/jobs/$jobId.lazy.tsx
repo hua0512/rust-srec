@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -15,6 +15,13 @@ import {
   cancelActivePipelineJob,
   deletePipelineJob,
 } from '@/server/functions/pipeline';
+import {
+  flattenLogPages,
+  latestLogTotal,
+  newestLogPageOffset,
+  replaceNewestLogPage,
+  type JobLogPages,
+} from '@/lib/job-log-pages';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
 import { Button } from '@/components/ui/button';
 import {
@@ -68,6 +75,9 @@ export const Route = createLazyFileRoute(
 import { formatDuration } from '@/lib/format';
 import { formatDate } from '@/lib/datetime';
 
+/** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
+const LOG_PAGE_SIZE = 1000;
+
 function JobDetailsPage() {
   const { jobId } = Route.useParams();
   const { i18n } = useLingui();
@@ -87,10 +97,18 @@ function JobDetailsPage() {
     },
   });
 
+  // A finished job cannot change again, so every interval below stops with it.
+  const jobStatus = job?.status;
+  const isJobActive = jobStatus === 'PROCESSING' || jobStatus === 'PENDING';
+  const isJobTerminal =
+    jobStatus === 'COMPLETED' ||
+    jobStatus === 'FAILED' ||
+    jobStatus === 'CANCELLED';
+
   const { data: progressSnapshot } = useQuery({
     queryKey: ['pipeline', 'job', jobId, 'progress'],
     queryFn: () => getPipelineJobProgress({ data: { id: jobId } }),
-    enabled: job?.status === 'PROCESSING',
+    enabled: jobStatus === 'PROCESSING',
     refetchInterval: 1000,
     retry: false, // Don't retry on 404 when no progress is available
     throwOnError: false, // Silently handle errors - progress is optional
@@ -101,10 +119,7 @@ function JobDetailsPage() {
   const { data: uploadsData } = useQuery({
     queryKey: ['pipeline', 'job', jobId, 'uploads'],
     queryFn: () => getPipelineJobUploads({ data: { id: jobId } }),
-    refetchInterval: () => {
-      const status = job?.status;
-      return status === 'PROCESSING' || status === 'PENDING' ? 2000 : false;
-    },
+    refetchInterval: isJobActive ? 2000 : false,
     enabled: !!job,
     throwOnError: false, // The card simply doesn't render without records
   });
@@ -114,20 +129,37 @@ function JobDetailsPage() {
   // turning refetchInterval off does not trigger a final fetch — so the last
   // interval fetch predates the records. Refetch once on the terminal
   // transition so the Uploads card appears without a remount.
-  const jobStatus = job?.status;
   useEffect(() => {
-    if (
-      jobStatus === 'COMPLETED' ||
-      jobStatus === 'FAILED' ||
-      jobStatus === 'CANCELLED'
-    ) {
-      void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'job', jobId, 'uploads'],
-      });
-    }
-  }, [jobStatus, jobId, queryClient]);
+    if (!isJobTerminal) return;
+    void queryClient.invalidateQueries({
+      queryKey: ['pipeline', 'job', jobId, 'uploads'],
+    });
+  }, [isJobTerminal, jobId, queryClient]);
 
-  // Fetch logs separately with infinite scroll
+  const logsQueryKey = useMemo(
+    () => ['pipeline', 'job', jobId, 'logs'],
+    [jobId],
+  );
+
+  // The closing log rows are written as the job finishes, after the last read
+  // below. Read the loaded pages once more for a job that finishes while being
+  // watched; one that was already finished when the page opened has nothing to
+  // catch up on and is left alone.
+  const sawRunningJobRef = useRef(false);
+  useEffect(() => {
+    if (isJobActive) {
+      sawRunningJobRef.current = true;
+      return;
+    }
+    if (!isJobTerminal || !sawRunningJobRef.current) return;
+    sawRunningJobRef.current = false;
+    void queryClient.invalidateQueries({ queryKey: logsQueryKey });
+  }, [isJobActive, isJobTerminal, logsQueryKey, queryClient]);
+
+  // Fetch logs separately with infinite scroll. Deliberately not polled: a
+  // reader who has scrolled back through a long job holds several pages, and
+  // refreshing all of them on a timer re-reads thousands of rows that cannot
+  // have changed. The tail query below keeps the live end current instead.
   const {
     data: logsData,
     fetchNextPage,
@@ -135,25 +167,47 @@ function JobDetailsPage() {
     isFetchingNextPage,
     isLoading: isLogsLoading,
   } = useInfiniteQuery({
-    queryKey: ['pipeline', 'job', jobId, 'logs'],
+    queryKey: logsQueryKey,
     queryFn: ({ pageParam }) =>
       getPipelineJobLogs({
-        data: { id: jobId, limit: 1000, offset: pageParam },
+        data: { id: jobId, limit: LOG_PAGE_SIZE, offset: pageParam },
       }),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
       const nextOffset = lastPage.offset + lastPage.limit;
       return nextOffset < lastPage.total ? nextOffset : undefined;
     },
-    refetchInterval: () => {
-      const status = job?.status;
-      return status === 'PROCESSING' || status === 'PENDING' ? 2000 : false;
-    },
     enabled: !!job,
+    // Log rows are only ever appended, so a page that came back full is final.
+    // Nothing here has to be re-read on a focus or a reconnect; new rows arrive
+    // through the tail query, and the invalidation above still forces a read.
+    staleTime: Infinity,
   });
 
-  const logs = logsData?.pages.flatMap((page) => page.items) || [];
-  const totalLogs = logsData?.pages[0]?.total || 0;
+  // One request per tick, always for the page a running job is still appending
+  // to. Writing it back into the pages above both shows the new rows and
+  // refreshes the total that decides whether another page follows.
+  const tailOffset = newestLogPageOffset(logsData);
+  const { data: logTailPage } = useQuery({
+    queryKey: ['pipeline', 'job', jobId, 'logs', 'tail', tailOffset],
+    queryFn: () =>
+      getPipelineJobLogs({
+        data: { id: jobId, limit: LOG_PAGE_SIZE, offset: tailOffset ?? 0 },
+      }),
+    enabled: isJobActive && tailOffset !== undefined,
+    refetchInterval: 2000,
+    throwOnError: false, // The already-loaded rows stay on screen
+  });
+
+  useEffect(() => {
+    if (!logTailPage) return;
+    queryClient.setQueryData<JobLogPages>(logsQueryKey, (prev) =>
+      replaceNewestLogPage(prev, logTailPage),
+    );
+  }, [logTailPage, logsQueryKey, queryClient]);
+
+  const logs = flattenLogPages(logsData);
+  const totalLogs = latestLogTotal(logsData);
 
   const { ref: loadMoreRef, inView } = useInView();
 

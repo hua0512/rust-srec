@@ -1,7 +1,9 @@
 import { createLazyFileRoute, useRouter } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChangePasswordRequestSchema } from '../../api/schemas';
+import { sessionQueryOptions } from '@/api/session';
 
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
@@ -32,6 +34,7 @@ function ChangePasswordPage() {
   const mustChangePassword = !!user?.mustChangePassword;
   const { i18n } = useLingui();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -68,6 +71,11 @@ function ChangePasswordPage() {
         ),
       );
 
+      // The tokens this session was built on no longer exist, so the cached
+      // session check has to be replaced with an explicit "signed out". An
+      // entry holding `null` also keeps the provider's `initialData` from
+      // seeding the old user back in, which removing the entry would allow.
+      queryClient.setQueryData(sessionQueryOptions.queryKey, null);
       await router.invalidate();
       void router.navigate({ to: '/login', replace: true });
     } catch (error: any) {

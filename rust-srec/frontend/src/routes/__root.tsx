@@ -90,6 +90,8 @@ interface MyRouterContext {
   queryClient: QueryClient;
   i18n: I18n;
   theme: { mode: Mode };
+  /** Seeded per request from the sidebar cookie; see integrations/sidebar. */
+  sidebar: { open: boolean };
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({

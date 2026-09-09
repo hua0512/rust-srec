@@ -257,7 +257,10 @@ function StreamersPage() {
       });
     },
     placeholderData: keepPreviousData,
-    refetchInterval: 5000,
+    // Live download state reaches the cards over the live connection, so this
+    // only has to catch changes made elsewhere: the same relaxed interval the
+    // other list pages use.
+    refetchInterval: 10000,
   });
 
   const streamers = streamersData?.items || [];

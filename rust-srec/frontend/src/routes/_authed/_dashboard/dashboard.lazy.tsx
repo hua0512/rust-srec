@@ -95,22 +95,25 @@ function Dashboard() {
     setMounted(true);
   }, []);
 
+  // Three summaries on one screen, so they share the same relaxed interval the
+  // other overview pages use. Anything that moves second by second — download
+  // and upload progress — arrives over the live connection, not from here.
   const { data: health, isLoading: isHealthLoading } = useQuery({
     queryKey: ['health'],
     queryFn: () => getSystemHealth(),
-    refetchInterval: 5000,
+    refetchInterval: 10000,
   });
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
     queryKey: ['pipeline', 'stats'],
     queryFn: () => getPipelineStats(),
-    refetchInterval: 5000,
+    refetchInterval: 10000,
   });
 
   const { data: streamers, isLoading: isStreamersLoading } = useQuery({
     queryKey: ['streamers', 'active'],
     queryFn: () => listStreamers({ data: { limit: 100, state: 'LIVE' } }),
-    refetchInterval: 5000,
+    refetchInterval: 10000,
   });
 
   const { i18n } = useLingui();
