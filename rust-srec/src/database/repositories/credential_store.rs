@@ -17,6 +17,25 @@ pub struct SqlxCredentialStore {
     write_pool: SqlitePool,
 }
 
+fn validate_json_object(raw: Option<&str>, field: &'static str) -> Result<(), CredentialError> {
+    if let Some(raw) = raw
+        && !serde_json::from_str::<serde_json::Value>(raw)?.is_object()
+    {
+        return Err(CredentialError::Internal(format!(
+            "{field} must be a JSON object"
+        )));
+    }
+    Ok(())
+}
+
+fn require_owner(rows: u64) -> Result<(), CredentialError> {
+    if rows == 0 {
+        Err(CredentialError::NoCredentials)
+    } else {
+        Ok(())
+    }
+}
+
 impl SqlxCredentialStore {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self { pool, write_pool }
@@ -29,7 +48,18 @@ impl SqlxCredentialStore {
     ) -> Result<(), CredentialError> {
         debug!(platform_id = %platform_id, "Updating platform credentials");
 
-        sqlx::query(
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        if credentials.refresh_token.is_some() || credentials.access_token.is_some() {
+            let raw: Option<String> = sqlx::query_scalar(
+                "SELECT platform_specific_config FROM platform_config WHERE id = ?",
+            )
+            .bind(platform_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(CredentialError::NoCredentials)?;
+            validate_json_object(raw.as_deref(), "platform_config.platform_specific_config")?;
+        }
+        let result = sqlx::query(
             r#"
             UPDATE platform_config
             SET cookies = ?
@@ -38,8 +68,9 @@ impl SqlxCredentialStore {
         )
         .bind(&credentials.cookies)
         .bind(platform_id)
-        .execute(&self.write_pool)
+        .execute(&mut *tx)
         .await?;
+        require_owner(result.rows_affected())?;
 
         // Update refresh_token, access_token, and last_cookie_check_* in platform_specific_config JSON.
         if credentials.refresh_token.is_some() || credentials.access_token.is_some() {
@@ -75,9 +106,10 @@ impl SqlxCredentialStore {
                 query = query.bind(bind);
             }
             query = query.bind(platform_id);
-            query.execute(&self.write_pool).await?;
+            require_owner(query.execute(&mut *tx).await?.rows_affected())?;
         }
 
+        tx.commit().await?;
         debug!("Platform credentials updated successfully");
         Ok(())
     }
@@ -95,59 +127,61 @@ impl SqlxCredentialStore {
         // template update cannot be overwritten using an earlier snapshot.
         let mut tx = begin_immediate(&self.write_pool).await?;
 
-        let overrides_to_store =
-            if credentials.refresh_token.is_some() || credentials.access_token.is_some() {
-                let existing_overrides: Option<String> = sqlx::query_scalar(
+        let overrides_to_store = if credentials.refresh_token.is_some()
+            || credentials.access_token.is_some()
+        {
+            let existing_overrides: Option<String> = sqlx::query_scalar(
                     r#"
                 SELECT platform_overrides
                 FROM template_config
-                WHERE id = ?
+                WHERE id = ? AND NOT EXISTS (SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)
                 "#,
                 )
                 .bind(template_id)
-                .fetch_one(&mut *tx)
-                .await?;
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or(CredentialError::NoCredentials)?;
 
-                let mut overrides: serde_json::Value = match existing_overrides.as_deref() {
-                    Some(s) if !s.trim().is_empty() => serde_json::from_str(s)?,
-                    _ => serde_json::Value::Object(serde_json::Map::new()),
-                };
+            let mut overrides: serde_json::Value = match existing_overrides.as_deref() {
+                Some(s) if !s.trim().is_empty() => serde_json::from_str(s)?,
+                _ => serde_json::Value::Object(serde_json::Map::new()),
+            };
 
-                let root = overrides.as_object_mut().ok_or_else(|| {
-                    CredentialError::Internal(
-                        "template_config.platform_overrides must be a JSON object".to_string(),
-                    )
-                })?;
+            let root = overrides.as_object_mut().ok_or_else(|| {
+                CredentialError::Internal(
+                    "template_config.platform_overrides must be a JSON object".to_string(),
+                )
+            })?;
 
-                let entry = root
-                    .entry(platform_name.to_string())
-                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-                let platform_obj = entry.as_object_mut().ok_or_else(|| {
+            let entry = root
+                .entry(platform_name.to_string())
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            let platform_obj = entry.as_object_mut().ok_or_else(|| {
                 CredentialError::Internal(format!(
                     "template_config.platform_overrides['{platform_name}'] must be a JSON object"
                 ))
             })?;
 
-                if let Some(ref token) = credentials.refresh_token {
-                    platform_obj.insert(
-                        "refresh_token".to_string(),
-                        serde_json::Value::String(token.clone()),
-                    );
-                }
-                if let Some(ref token) = credentials.access_token {
-                    platform_obj.insert(
-                        "access_token".to_string(),
-                        serde_json::Value::String(token.clone()),
-                    );
-                }
+            if let Some(ref token) = credentials.refresh_token {
+                platform_obj.insert(
+                    "refresh_token".to_string(),
+                    serde_json::Value::String(token.clone()),
+                );
+            }
+            if let Some(ref token) = credentials.access_token {
+                platform_obj.insert(
+                    "access_token".to_string(),
+                    serde_json::Value::String(token.clone()),
+                );
+            }
 
-                Some(serde_json::to_string(&overrides)?)
-            } else {
-                None
-            };
+            Some(serde_json::to_string(&overrides)?)
+        } else {
+            None
+        };
 
         // Update cookies + (optional) refresh_token atomically.
-        match overrides_to_store {
+        let result = match overrides_to_store {
             Some(overrides_json) => {
                 sqlx::query(
                     r#"
@@ -155,7 +189,7 @@ impl SqlxCredentialStore {
                     SET cookies = ?,
                         platform_overrides = ?,
                         updated_at = ?
-                    WHERE id = ?
+                    WHERE id = ? AND NOT EXISTS (SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)
                     "#,
                 )
                 .bind(&credentials.cookies)
@@ -163,7 +197,7 @@ impl SqlxCredentialStore {
                 .bind(now)
                 .bind(template_id)
                 .execute(&mut *tx)
-                .await?;
+                .await?
             }
             None => {
                 sqlx::query(
@@ -171,16 +205,17 @@ impl SqlxCredentialStore {
                     UPDATE template_config
                     SET cookies = ?,
                         updated_at = ?
-                    WHERE id = ?
+                    WHERE id = ? AND NOT EXISTS (SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)
                     "#,
                 )
                 .bind(&credentials.cookies)
                 .bind(now)
                 .bind(template_id)
                 .execute(&mut *tx)
-                .await?;
+                .await?
             }
-        }
+        };
+        require_owner(result.rows_affected())?;
 
         tx.commit().await?;
         debug!("Template credentials updated successfully");
@@ -195,8 +230,17 @@ impl SqlxCredentialStore {
         debug!(streamer_id = %streamer_id, "Updating streamer credentials");
 
         let now = crate::database::time::now_ms();
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        let raw: Option<String> = sqlx::query_scalar(
+            "SELECT streamer_specific_config FROM streamers WHERE id = ? AND deleted_at IS NULL",
+        )
+        .bind(streamer_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(CredentialError::NoCredentials)?;
+        validate_json_object(raw.as_deref(), "streamers.streamer_specific_config")?;
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE streamers
             SET streamer_specific_config = json_set(
@@ -205,17 +249,18 @@ impl SqlxCredentialStore {
                 ?
             ),
             updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND deleted_at IS NULL
             "#,
         )
         .bind(&credentials.cookies)
         .bind(now)
         .bind(streamer_id)
-        .execute(&self.write_pool)
+        .execute(&mut *tx)
         .await?;
+        require_owner(result.rows_affected())?;
 
         if let Some(ref token) = credentials.refresh_token {
-            sqlx::query(
+            let result = sqlx::query(
                 r#"
                 UPDATE streamers
                 SET streamer_specific_config = json_set(
@@ -223,17 +268,18 @@ impl SqlxCredentialStore {
                     '$.refresh_token',
                     ?
                 )
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 "#,
             )
             .bind(token)
             .bind(streamer_id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
+            require_owner(result.rows_affected())?;
         }
 
         if let Some(ref token) = credentials.access_token {
-            sqlx::query(
+            let result = sqlx::query(
                 r#"
                 UPDATE streamers
                 SET streamer_specific_config = json_set(
@@ -241,15 +287,17 @@ impl SqlxCredentialStore {
                     '$.access_token',
                     ?
                 )
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 "#,
             )
             .bind(token)
             .bind(streamer_id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
+            require_owner(result.rows_affected())?;
         }
 
+        tx.commit().await?;
         debug!("Streamer credentials updated successfully");
         Ok(())
     }
@@ -267,7 +315,7 @@ impl CredentialStore for SqlxCredentialStore {
                 platform_id,
             ),
             CredentialScope::Template { template_id, .. } => (
-                "SELECT cookies, platform_overrides FROM template_config WHERE id = ?",
+                "SELECT cookies, platform_overrides FROM template_config WHERE id = ? AND NOT EXISTS (SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)",
                 template_id,
             ),
             CredentialScope::Streamer { streamer_id, .. } => (
@@ -338,7 +386,16 @@ impl CredentialStore for SqlxCredentialStore {
         // For now, only persist check results at platform level.
         if let CredentialScope::Platform { platform_id, .. } = scope {
             let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            sqlx::query(
+            let mut tx = begin_immediate(&self.write_pool).await?;
+            let raw: Option<String> = sqlx::query_scalar(
+                "SELECT platform_specific_config FROM platform_config WHERE id = ?",
+            )
+            .bind(platform_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(CredentialError::NoCredentials)?;
+            validate_json_object(raw.as_deref(), "platform_config.platform_specific_config")?;
+            let updated = sqlx::query(
                 r#"
                 UPDATE platform_config
                 SET platform_specific_config = json_set(
@@ -356,8 +413,10 @@ impl CredentialStore for SqlxCredentialStore {
             .bind(&today)
             .bind(result)
             .bind(platform_id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
+            require_owner(updated.rows_affected())?;
+            tx.commit().await?;
         }
         Ok(())
     }

@@ -690,6 +690,10 @@
 
 ## Security
 
+- **Credential refresh preserves a complete replacement**
+
+  Cookies and supplied tokens are saved atomically; malformed JSON and late write failures leave previous values intact. Missing or retiring owners reject refresh, and omitted tokens preserve stored values. See [credential storage](../operations/security.md#credential-refresh-storage).
+
 - **The web server checks the identifiers it forwards**
 
   Requests the web interface makes on your behalf now reject an item identifier that is empty, absurdly long, or not text at all, instead of passing it through to the application. Names, search terms and other values that contain slashes, question marks, accents or spaces are escaped correctly, so a request always reaches the item it was meant for. Everyday use is unchanged.

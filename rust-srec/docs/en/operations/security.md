@@ -96,6 +96,19 @@ seconds. Application writes and committed imports invalidate it immediately.
 Out-of-band database edits can take five seconds to become visible; expired
 snapshots are not reused if refresh fails. Administrative reads remain fresh.
 
+## Credential Refresh Storage
+
+Refreshed cookies and supplied tokens are saved together. A failure leaves the
+previous credentials intact; omitted tokens keep their existing values. Platform
+and streamer JSON must contain an object or be unset when refresh modifies it.
+Invalid content fails without partially replacing credentials. Template overrides
+also retain support for initially blank content. Correct invalid configuration
+explicitly instead of relying on refresh to repair it.
+
+Missing or retiring streamer/template owners are not updated. A late credential
+refresh cannot cancel a template's pending deletion. Platform-only cookie updates
+that do not touch token JSON retain their existing opaque-configuration behavior.
+
 ## Secrets and Files
 
 - Restrict `.env`, `DATA_DIR`, `CONFIG_DIR`, `LOG_DIR`, configuration exports, and backup media.
