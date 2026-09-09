@@ -1,0 +1,30 @@
+-- One populated row per timestamp-bearing table; nullable clocks start populated.
+-- 1788784496123 deliberately has subsecond precision.
+INSERT INTO notification_channel (id, name, channel_type, settings) VALUES ('timestamp-contract', 'timestamp-contract', 'webhook', '{}');
+INSERT INTO platform_config (id, platform_name) VALUES ('timestamp-contract', 'timestamp-contract');
+INSERT INTO users (id, username, password_hash, last_login_at, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 'test-hash', 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO streamers (id, name, url, platform_config_id, state, last_live_time, disabled_until, created_at, updated_at, deleted_at) VALUES ('timestamp-contract', 'timestamp-contract', 'https://example.test/timestamp-contract', 'timestamp-contract', 'NOT_LIVE', 1788784496123, 1788784496123, 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO live_sessions (id, streamer_id, start_time, end_time) VALUES ('timestamp-contract', 'timestamp-contract', 1788784496123, 1788784496123);
+INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, started_at, completed_at) VALUES ('timestamp-contract', 'remux', 'PROCESSING', '{}', '{}', 1788784496123, 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO dag_execution (id, dag_definition, total_steps, created_at, updated_at, completed_at) VALUES ('timestamp-contract', '{}', 1, 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO dag_step_execution (id, dag_id, step_id, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 'root', 1788784496123, 1788784496123);
+INSERT INTO api_keys (id, user_id, name, key_hash, key_prefix, access_level, expires_at, last_used_at, created_at, revoked_at) VALUES ('timestamp-contract', 'timestamp-contract', 'timestamp-contract', 'timestamp-key-hash', 'srec_test', 'full', 1788784496123, 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO auth_sessions (id, user_id, created_at, expires_at, revoked_at) VALUES ('timestamp-contract', 'timestamp-contract', 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO refresh_tokens (id, user_id, token_hash, session_id, expires_at, created_at, revoked_at) VALUES ('timestamp-contract', 'timestamp-contract', 'timestamp-token-hash', 'timestamp-contract', 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO danmu_aggregator_state (session_id, version, state, updated_at) VALUES ('timestamp-contract', 1, X'7b7d', 1788784496123);
+INSERT INTO danmu_statistics (id, session_id, total_danmus, start_time, end_time) VALUES ('timestamp-contract', 'timestamp-contract', 1, 1788784496123, 1788784496123);
+INSERT INTO job_execution_logs (id, job_id, entry, created_at) VALUES ('timestamp-contract', 'timestamp-contract', '{}', 1788784496123);
+INSERT INTO job_execution_progress (job_id, kind, progress, updated_at) VALUES ('timestamp-contract', 'test', '{}', 1788784496123);
+INSERT INTO job_presets (id, name, processor, config, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 'remux', '{}', 1788784496123, 1788784496123);
+INSERT INTO media_outputs (id, session_id, file_path, file_type, size_bytes, created_at) VALUES ('timestamp-contract', 'timestamp-contract', 'test.flv', 'video', 1, 1788784496123);
+INSERT INTO monitor_event_outbox (id, streamer_id, event_type, payload, created_at, delivered_at) VALUES (9223372036854775800, 'timestamp-contract', 'test', '{}', 1788784496123, 1788784496123);
+INSERT INTO notification_dead_letter (id, channel_id, event_name, event_payload, error_message, first_attempt_at, last_attempt_at, created_at) VALUES ('timestamp-contract', 'timestamp-contract', 'test', '{}', 'test', 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO notification_event_log (id, event_type, payload, created_at) VALUES ('timestamp-contract', 'test', '{}', 1788784496123);
+INSERT INTO pipeline_presets (id, name, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 1788784496123, 1788784496123);
+INSERT INTO session_events (id, session_id, streamer_id, kind, occurred_at) VALUES (9223372036854775800, 'timestamp-contract', 'timestamp-contract', 'session_started', 1788784496123);
+INSERT INTO session_segments (id, session_id, segment_index, file_path, duration_secs, size_bytes, created_at, completed_at, persisted_at) VALUES ('timestamp-contract', 'timestamp-contract', 0, 'test.flv', 1, 1, 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO streamer_check_history (id, streamer_id, duration_ms, outcome, checked_at) VALUES (9223372036854775800, 'timestamp-contract', 1, 'offline', 1788784496123);
+INSERT INTO template_config (id, name, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 1788784496123, 1788784496123);
+INSERT INTO tool_credentials (tool, account_key, payload, created_at, updated_at) VALUES ('timestamp-contract', 'default', '{}', 1788784496123, 1788784496123);
+INSERT INTO upload_records (id, uploader, local_path, status, created_at, updated_at, completed_at) VALUES ('timestamp-contract', 'test', 'test.flv', 'COMPLETED', 1788784496123, 1788784496123, 1788784496123);
+INSERT INTO web_push_subscription (id, user_id, endpoint, p256dh, auth, created_at, updated_at, next_attempt_at, last_429_at) VALUES ('timestamp-contract', 'timestamp-contract', 'https://example.test/push', 'test', 'test', 1788784496123, 1788784496123, 1788784496123, 1788784496123);
