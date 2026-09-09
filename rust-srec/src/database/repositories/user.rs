@@ -1,5 +1,8 @@
 //! User repository for database operations.
 
+mod writes;
+pub(crate) use writes::{EmailSlots, delete_user, import_user, release_email_slots};
+
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
@@ -61,25 +64,12 @@ impl SqlxUserRepository {
 #[async_trait]
 impl UserRepository for SqlxUserRepository {
     async fn create(&self, user: &UserDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO users (
-                id, username, password_hash, email, roles, is_active,
-                must_change_password, last_login_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+        writes::write_user(
+            &mut *self.write_pool.acquire().await?,
+            user,
+            super::row_write::WriteMode::Insert,
+            user.updated_at,
         )
-        .bind(&user.id)
-        .bind(&user.username)
-        .bind(&user.password_hash)
-        .bind(&user.email)
-        .bind(&user.roles)
-        .bind(user.is_active)
-        .bind(user.must_change_password)
-        .bind(user.last_login_at)
-        .bind(user.created_at)
-        .bind(user.updated_at)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -110,39 +100,18 @@ impl UserRepository for SqlxUserRepository {
 
     async fn update(&self, user: &UserDbModel) -> Result<()> {
         let now = crate::database::time::now_ms();
-        sqlx::query(
-            r#"
-            UPDATE users SET
-                username = ?,
-                password_hash = ?,
-                email = ?,
-                roles = ?,
-                is_active = ?,
-                must_change_password = ?,
-                last_login_at = ?,
-                updated_at = ?
-            WHERE id = ?
-            "#,
+        writes::write_user(
+            &mut *self.write_pool.acquire().await?,
+            user,
+            super::row_write::WriteMode::Update,
+            now,
         )
-        .bind(&user.username)
-        .bind(&user.password_hash)
-        .bind(&user.email)
-        .bind(&user.roles)
-        .bind(user.is_active)
-        .bind(user.must_change_password)
-        .bind(user.last_login_at)
-        .bind(now)
-        .bind(&user.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
+        writes::delete_user(&mut *self.write_pool.acquire().await?, id).await?;
         Ok(())
     }
 

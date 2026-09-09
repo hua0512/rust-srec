@@ -1,5 +1,8 @@
 //! Filter repository.
 
+mod writes;
+pub(crate) use writes::{delete_for_streamer, import_filter};
+
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -98,36 +101,21 @@ impl FilterRepository for SqlxFilterRepository {
     }
 
     async fn create_filter(&self, filter: &FilterDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO filters (id, streamer_id, filter_type, config)
-            VALUES (?, ?, ?, ?)
-            "#,
+        writes::write_filter(
+            &mut *self.write_pool.acquire().await?,
+            filter,
+            super::row_write::WriteMode::Insert,
         )
-        .bind(&filter.id)
-        .bind(&filter.streamer_id)
-        .bind(&filter.filter_type)
-        .bind(&filter.config)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn update_filter(&self, filter: &FilterDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE filters SET
-                streamer_id = ?,
-                filter_type = ?,
-                config = ?
-            WHERE id = ?
-            "#,
+        writes::write_filter(
+            &mut *self.write_pool.acquire().await?,
+            filter,
+            super::row_write::WriteMode::Update,
         )
-        .bind(&filter.streamer_id)
-        .bind(&filter.filter_type)
-        .bind(&filter.config)
-        .bind(&filter.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -141,10 +129,7 @@ impl FilterRepository for SqlxFilterRepository {
     }
 
     async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM filters WHERE streamer_id = ?")
-            .bind(streamer_id)
-            .execute(&self.write_pool)
-            .await?;
+        writes::delete_for_streamer(&mut *self.write_pool.acquire().await?, streamer_id).await?;
         Ok(())
     }
 }

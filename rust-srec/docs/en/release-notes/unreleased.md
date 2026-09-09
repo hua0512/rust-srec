@@ -120,6 +120,10 @@
 
 ## Configuration
 
+- **Import and repository writes share complete field bindings**
+
+  All ten import domains and their replacement/invalidation writes now use repository-owned persistence. IDs, timestamps, omitted fields, JSON and transaction boundaries retain their existing contracts; cache/runtime publication remains after commit. See [import persistence](../operations/backup-restore.md#import-persistence-ownership).
+
 - **Large configuration refreshes use bounded parallel lookups**
 
   Startup and global/platform/template updates refresh up to 16 independent streamers together while preserving event order and per-streamer best-effort behavior. Startup output-root discovery is reused for both health registration and write probes. Configuration precedence, retirement handling and persistent recovery acknowledgements are unchanged. See [configuration refresh](../concepts/configuration.md#hot-reload-cache-and-update-events).

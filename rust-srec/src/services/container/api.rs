@@ -14,6 +14,8 @@ use crate::database::repositories::{
 use super::ServiceContainer;
 
 #[cfg(test)]
+mod import_contract_tests;
+#[cfg(test)]
 mod ownership_tests;
 #[cfg(test)]
 mod response_contract_tests;

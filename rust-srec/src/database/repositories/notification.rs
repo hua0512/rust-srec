@@ -1,5 +1,11 @@
 //! Notification repository.
 
+mod writes;
+pub(crate) use writes::{
+    SubscriptionInsert, delete_channel_dead_letters, delete_channel_row, delete_subscriptions,
+    import_channel, insert_subscription,
+};
+
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -125,36 +131,21 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn create_channel(&self, channel: &NotificationChannelDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO notification_channel (id, name, channel_type, settings)
-            VALUES (?, ?, ?, ?)
-            "#,
+        writes::write_channel(
+            &mut *self.write_pool.acquire().await?,
+            channel,
+            super::row_write::WriteMode::Insert,
         )
-        .bind(&channel.id)
-        .bind(&channel.name)
-        .bind(&channel.channel_type)
-        .bind(&channel.settings)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
 
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE notification_channel SET
-                name = ?,
-                channel_type = ?,
-                settings = ?
-            WHERE id = ?
-            "#,
+        writes::write_channel(
+            &mut *self.write_pool.acquire().await?,
+            channel,
+            super::row_write::WriteMode::Update,
         )
-        .bind(&channel.name)
-        .bind(&channel.channel_type)
-        .bind(&channel.settings)
-        .bind(&channel.id)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -162,15 +153,9 @@ impl NotificationRepository for SqlxNotificationRepository {
     async fn delete_channel(&self, id: &str) -> Result<()> {
         // Explicitly remove subscriptions before deleting the channel;
         // the channel foreign key also provides ON DELETE CASCADE.
-        sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
+        writes::delete_subscriptions(&mut *self.write_pool.acquire().await?, id).await?;
 
-        sqlx::query("DELETE FROM notification_channel WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
+        writes::delete_channel_row(&mut *self.write_pool.acquire().await?, id).await?;
         Ok(())
     }
 
@@ -203,15 +188,12 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn subscribe(&self, channel_id: &str, event_name: &str) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT OR IGNORE INTO notification_subscription (channel_id, event_name)
-            VALUES (?, ?)
-            "#,
+        writes::insert_subscription(
+            &mut *self.write_pool.acquire().await?,
+            channel_id,
+            event_name,
+            writes::SubscriptionInsert::IgnoreDuplicate,
         )
-        .bind(channel_id)
-        .bind(event_name)
-        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -228,10 +210,7 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn unsubscribe_all(&self, channel_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
-            .bind(channel_id)
-            .execute(&self.write_pool)
-            .await?;
+        writes::delete_subscriptions(&mut *self.write_pool.acquire().await?, channel_id).await?;
         Ok(())
     }
 
