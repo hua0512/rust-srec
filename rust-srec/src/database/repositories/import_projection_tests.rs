@@ -159,7 +159,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
                 let mut reset = expected.clone();
                 for (key, value) in serde_json::to_value(&seed).unwrap().as_object().unwrap() {
                     // These nullable columns have populated constructor defaults.
-                    let nullable_default = matches!(key.as_str(), "consecutive_error_count" | "dag_definition" | "pipeline_type");
+                    let nullable_default = matches!(key.as_str(), "consecutive_error_count" | "dag_definition");
                     if (value.is_null() || nullable_default) && key != "deleted_at" { reset[key] = Value::Null; }
                 }
                 let reset_model: $ty = serde_json::from_value(reset.clone()).unwrap();
