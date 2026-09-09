@@ -368,6 +368,17 @@ impl DownloadManager {
         engine_key: EngineKey,
         slot: SlotGuard,
     ) -> Result<String> {
+        let (started_feedback, terminal_feedback) = self
+            .events
+            .reserve_feedback(&config.streamer_id)
+            .map_err(|_| {
+                if let Some(feedback) = self.events.feedback.get() {
+                    feedback.request_recheck(&config.streamer_id);
+                }
+                crate::Error::SchedulerFeedbackBusy {
+                    streamer_id: config.streamer_id.clone(),
+                }
+            })?;
         let active_slot = slot.into_active();
         Self::seed_session_segment_index(
             &self.session_segment_indices,
@@ -945,7 +956,7 @@ impl DownloadManager {
             }
 
             finalizer.release_active();
-            terminal_events.observe(terminal_event);
+            terminal_events.observe_reserved(terminal_event, terminal_feedback);
             let outcome = if lifecycle_errors.is_empty() {
                 Ok(())
             } else {
@@ -968,8 +979,8 @@ impl DownloadManager {
             download_id.clone(),
             move || {
                 admitted_active_downloads.insert(admitted_download_id, active_download);
-                started_events.publish(DownloadManagerEvent::Progress(
-                    DownloadProgressEvent::DownloadStarted {
+                started_events.observe_reserved(
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
                         download_id: started_download_id,
                         streamer_id: started_streamer_id,
                         streamer_name: started_streamer_name,
@@ -977,8 +988,9 @@ impl DownloadManager {
                         engine_type,
                         cdn_host,
                         download_url: started_url,
-                    },
-                ));
+                    }),
+                    started_feedback,
+                );
             },
             attempt_task,
         );

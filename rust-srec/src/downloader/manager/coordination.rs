@@ -1,6 +1,6 @@
 //! Acknowledged event delivery and observer broadcasts.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use parking_lot::Mutex;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -8,9 +8,18 @@ use tracing::debug;
 
 use super::DownloadManagerEvent;
 
+#[derive(Debug, thiserror::Error)]
+pub(super) enum PublicationError {
+    #[error("scheduler feedback capacity is full; retry admission")]
+    FeedbackBusy,
+    #[error("{0}")]
+    Coordination(String),
+}
+
 #[derive(Clone)]
 pub(super) struct DownloadEventPublisher {
     observer_tx: broadcast::Sender<DownloadManagerEvent>,
+    pub(super) feedback: Arc<OnceLock<Arc<crate::scheduler::feedback::SchedulerFeedback>>>,
     pub(super) coordination_tx: Option<DownloadCoordinationSender>,
 }
 
@@ -20,6 +29,7 @@ impl DownloadEventPublisher {
         coordination_tx: Option<DownloadCoordinationSender>,
     ) -> Self {
         Self {
+            feedback: Arc::new(OnceLock::new()),
             observer_tx,
             coordination_tx,
         }
@@ -42,9 +52,22 @@ impl DownloadEventPublisher {
     pub(super) async fn publish_and_wait(
         &self,
         event: DownloadManagerEvent,
-    ) -> std::result::Result<(), String> {
-        self.coordinate_and_wait(&event).await?;
-        self.observe(event);
+    ) -> std::result::Result<(), PublicationError> {
+        let permit = if let Some(feedback) = self.feedback.get()
+            && !feedback.monitoring_stopped()
+            && matches!(event, DownloadManagerEvent::Terminal(_))
+        {
+            Some(feedback.reserve(event.streamer_id()).map_err(|_| {
+                feedback.request_recheck(event.streamer_id());
+                PublicationError::FeedbackBusy
+            })?)
+        } else {
+            None
+        };
+        self.coordinate_and_wait(&event)
+            .await
+            .map_err(PublicationError::Coordination)?;
+        self.observe_reserved(event, permit);
         Ok(())
     }
 
@@ -59,6 +82,37 @@ impl DownloadEventPublisher {
             Some(sender) => sender.publish(event.clone()).wait().await,
             None => Ok(()),
         }
+    }
+
+    pub(super) fn reserve_feedback(
+        &self,
+        id: &str,
+    ) -> Result<
+        (
+            Option<crate::scheduler::feedback::FeedbackPermit>,
+            Option<crate::scheduler::feedback::FeedbackPermit>,
+        ),
+        String,
+    > {
+        match self.feedback.get() {
+            Some(feedback) if !feedback.monitoring_stopped() => feedback
+                .reserve_attempt(id)
+                .map(|(started, ended)| (Some(started), Some(ended))),
+            _ => Ok((None, None)),
+        }
+    }
+
+    pub(super) fn observe_reserved(
+        &self,
+        event: DownloadManagerEvent,
+        permit: Option<crate::scheduler::feedback::FeedbackPermit>,
+    ) -> bool {
+        if let (Some(feedback), Some(permit)) = (self.feedback.get(), permit) {
+            // Application stays owned by the dispatcher even if this optional
+            // observation receipt is dropped by the producer.
+            drop(feedback.publish_reserved(&event, permit));
+        }
+        self.observe(event)
     }
 
     pub(super) fn observe(&self, event: DownloadManagerEvent) -> bool {

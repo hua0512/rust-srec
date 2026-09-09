@@ -78,6 +78,7 @@ enum RestartMetadata {
 /// - Restart with exponential backoff
 /// - Graceful shutdown coordination
 pub struct Supervisor {
+    feedback: Option<Arc<crate::scheduler::feedback::SchedulerFeedback>>,
     /// Actor registry.
     registry: ActorRegistry,
     /// Restart tracker.
@@ -147,6 +148,7 @@ impl Supervisor {
         batch_checker: Arc<dyn BatchChecker>,
     ) -> Self {
         Self {
+            feedback: None,
             registry: ActorRegistry::new(cancellation_token.clone()),
             restart_tracker: RestartTracker::with_config(config.restart_config.clone()),
             config,
@@ -184,6 +186,13 @@ impl Supervisor {
     ///
     /// The actor receives a reference to the shared metadata store and fetches
     /// fresh metadata on-demand, eliminating state drift.
+    pub(crate) fn set_feedback(
+        &mut self,
+        feedback: Arc<crate::scheduler::feedback::SchedulerFeedback>,
+    ) {
+        self.feedback = Some(feedback);
+    }
+
     pub fn spawn_streamer(
         &mut self,
         streamer_id: impl Into<String>,
@@ -198,7 +207,7 @@ impl Supervisor {
 
         // Create actor with priority channel support and injected status checker
         // Actor receives a reference to the shared metadata store
-        let (actor, handle) = if let Some(ref platform_sender) = platform_actor {
+        let (mut actor, handle) = if let Some(ref platform_sender) = platform_actor {
             StreamerActor::with_priority_and_platform(
                 id.clone(),
                 self.metadata_store.clone(),
@@ -216,6 +225,14 @@ impl Supervisor {
                 self.status_checker.clone(),
             )
         };
+
+        if let Some((download, session)) = self
+            .feedback
+            .as_ref()
+            .and_then(|feedback| feedback.active_download(&id))
+        {
+            actor.seed_active_download(download, session);
+        }
 
         // Cache config for potential restart (metadata is in shared store)
         self.streamer_configs.insert(id.clone(), config);
@@ -449,6 +466,12 @@ impl Supervisor {
         }
 
         restarted
+    }
+
+    pub(crate) fn has_pending_streamer_restart(&self, streamer_id: &str) -> bool {
+        self.pending_restarts
+            .iter()
+            .any(|restart| restart.actor_type == "streamer" && restart.actor_id == streamer_id)
     }
 
     pub(crate) fn due_streamer_restart_ids(&self, now: tokio::time::Instant) -> Vec<String> {

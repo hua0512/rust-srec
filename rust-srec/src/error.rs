@@ -9,6 +9,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Application-wide error type.
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Scheduler feedback capacity is busy for {streamer_id}; retry startup")]
+    SchedulerFeedbackBusy { streamer_id: String },
     #[error("Database error: {0}")]
     DatabaseSqlx(#[from] sqlx::Error),
 

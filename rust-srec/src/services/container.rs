@@ -472,7 +472,6 @@ impl ServiceContainer {
             self.scheduler.lock().take().ok_or_else(|| {
                 crate::Error::Other("scheduler has already been started".to_string())
             })?;
-        scheduler.set_download_receiver(self.download_manager.subscribe());
 
         if !self
             .task_supervisor

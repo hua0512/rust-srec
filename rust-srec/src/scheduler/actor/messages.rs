@@ -18,6 +18,15 @@ use crate::streamer::StreamerMetadata;
 /// Messages that can be sent to a StreamerActor.
 #[derive(Debug)]
 pub enum StreamerMessage {
+    /// Retained scheduler feedback; application is acknowledged independently of admission.
+    LifecycleFeedback(Box<crate::scheduler::feedback::LifecycleEnvelope>),
+    /// Latest resolved configuration retained across mailbox pressure.
+    RetainedConfig {
+        config: crate::scheduler::feedback::DesiredConfig,
+        applied: oneshot::Sender<()>,
+    },
+    /// Retry local recording admission after feedback capacity becomes available.
+    RetryAdmission,
     /// Trigger a status check.
     CheckStatus,
     /// Update configuration.

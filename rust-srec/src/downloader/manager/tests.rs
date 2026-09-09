@@ -1704,3 +1704,5 @@ async fn coordination_shutdown_rejects_events_behind_marker() {
         DownloadCoordinationReceipt::Unavailable
     ));
 }
+
+mod feedback;

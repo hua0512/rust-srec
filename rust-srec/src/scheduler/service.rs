@@ -9,7 +9,7 @@
 //! - StreamerActors manage their own timing and state
 //! - PlatformActors coordinate batch detection for batch-capable platforms
 //! - The Scheduler acts as a supervisor, spawning and monitoring actors
-//! - ConfigRouter delivers configuration updates to appropriate actors
+//! - Owned configuration work resolves revisions and retains updates for actor delivery
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +17,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use futures::{StreamExt, stream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
@@ -34,10 +33,9 @@ use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ActorRemoval, ConfigRouter, ConfigScope, DownloadEndPolicy, MonitorBatchChecker,
-    MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage, RoutingPlan,
-    ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
-    TaskCompletionAction,
+    ActorHandle, ActorRemoval, DownloadEndPolicy, MonitorBatchChecker, MonitorStatusChecker,
+    PlatformConfig, PlatformMapping, PlatformMessage, ShutdownReport, StreamerConfig,
+    StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
 };
 
 /// Work only the scheduler's event loop can do, requested from another task.
@@ -209,11 +207,14 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     platform_handles: HashMap<String, ActorHandle<PlatformMessage>>,
     /// Broadcast receiver for download events (direct subscription).
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
+    feedback: Arc<super::feedback::SchedulerFeedback>,
+    reliable_feedback: bool,
+    configuration: configuration::ConfigurationWork,
     /// Throttle map for forwarding download heartbeats to streamer actors.
     download_heartbeat_last_sent: DashMap<String, Instant>,
 }
 
-fn download_end_policy_for_stop(cause: DownloadStopCause) -> DownloadEndPolicy {
+pub(super) fn download_end_policy_for_stop(cause: DownloadStopCause) -> DownloadEndPolicy {
     match cause {
         DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
         DownloadStopCause::StreamerOffline => DownloadEndPolicy::StreamerOffline,
@@ -318,6 +319,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
+            feedback: super::feedback::SchedulerFeedback::new(),
+            reliable_feedback: false,
+            configuration: configuration::ConfigurationWork::default(),
             download_heartbeat_last_sent: DashMap::new(),
         }
     }
@@ -456,6 +460,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
+            feedback: super::feedback::SchedulerFeedback::new(),
+            reliable_feedback: false,
+            configuration: configuration::ConfigurationWork::default(),
             download_heartbeat_last_sent: DashMap::new(),
         }
     }
@@ -487,6 +494,24 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Set the download event receiver.
     ///
     /// This should be called before `run()` to enable download event handling.
+    /// Connect recording lifecycle ownership and the lossy progress observer.
+    /// Wire once before starting this scheduler or admitting recordings.
+    pub fn connect_download_manager(
+        &mut self,
+        manager: &crate::downloader::DownloadManager,
+    ) -> Result<()> {
+        manager.set_scheduler_feedback(self.reliable_feedback())?;
+        self.set_download_receiver(manager.subscribe());
+        Ok(())
+    }
+
+    pub(crate) fn reliable_feedback(&mut self) -> Arc<super::feedback::SchedulerFeedback> {
+        self.reliable_feedback = true;
+        self.supervisor.set_feedback(self.feedback.clone());
+        self.feedback.clone()
+    }
+
+    /// Attach a compatibility observer; use `connect_download_manager` for reliable lifecycle delivery.
     pub fn set_download_receiver(&mut self, receiver: broadcast::Receiver<DownloadManagerEvent>) {
         self.download_event_rx = Some(receiver);
     }
@@ -536,43 +561,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
-    async fn refresh_timing_config_from_db(&mut self) -> Result<bool> {
-        let Some(repo) = &self.config_repo else {
-            return Ok(false);
-        };
-
-        let global = repo.get_global_config().await?;
-        let next = SchedulerConfig {
-            check_interval_ms: global.streamer_check_delay_ms as u64,
-            offline_check_interval_ms: global.offline_check_delay_ms as u64,
-            offline_check_count: global.offline_check_count as u32,
-            supervisor_config: self.config.supervisor_config.clone(),
-        };
-
-        if next.check_interval_ms == self.config.check_interval_ms
-            && next.offline_check_interval_ms == self.config.offline_check_interval_ms
-            && next.offline_check_count == self.config.offline_check_count
-        {
-            return Ok(false);
-        }
-
-        info!(
-            "Scheduler timing config updated: check_interval_ms {}->{}; offline_check_interval_ms {}->{}; offline_check_count {}->{}",
-            self.config.check_interval_ms,
-            next.check_interval_ms,
-            self.config.offline_check_interval_ms,
-            next.offline_check_interval_ms,
-            self.config.offline_check_count,
-            next.offline_check_count,
-        );
-
-        self.config.check_interval_ms = next.check_interval_ms;
-        self.config.offline_check_interval_ms = next.offline_check_interval_ms;
-        self.config.offline_check_count = next.offline_check_count;
-
-        Ok(true)
-    }
-
     /// Check if a platform supports batch detection.
     ///
     /// No platform has a batch API implementation
@@ -604,7 +592,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.loop_running.store(true, Ordering::Release);
 
         // Initial actor spawning for all active streamers
-        self.spawn_initial_actors().await?;
+        self.queue_reconciliation();
+        self.pump_configuration();
         self.publish_stats();
 
         info!(
@@ -613,9 +602,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             self.supervisor.registry().platform_count()
         );
 
+        let mut feedback_failure = None;
         loop {
             // Calculate next restart time for pending restarts
             let next_restart = self.supervisor.next_restart_time();
+            let next_configuration = self.next_configuration_time();
+            let feedback = self.feedback.clone();
 
             tokio::select! {
                 // Handle cancellation
@@ -628,10 +620,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 event = config_receiver.recv() => {
                     match event {
                         Ok(event) => {
-                            self.handle_config_event(event).await;
+                            self.queue_configuration(event);
                         }
                         Err(broadcast::error::RecvError::Lagged(n)) => {
-                            warn!("Scheduler lagged {} config events", n);
+                            warn!("Scheduler lagged {} config events; reconciling current state", n);
+                            self.queue_configuration(ConfigUpdateEvent::GlobalUpdated);
                         }
                         Err(broadcast::error::RecvError::Closed) => {
                             warn!("Config event channel closed");
@@ -667,8 +660,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     if let Some(join_result) = result {
                         match join_result {
                             Ok(task_result) => {
+                                let streamer = task_result.actor_type == "streamer";
                                 let action = self.supervisor.handle_task_completion(task_result);
-                                self.handle_task_completion_action(action);
+                                self.handle_task_completion_action(action, streamer);
                             }
                             Err(e) => {
                                 // `ActorRegistry::spawn_streamer` runs the actor
@@ -705,18 +699,32 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     }
                 }
 
+                result = self.configuration.jobs.join_next(), if !self.configuration.jobs.is_empty() => {
+                    if let Some(result) = result { self.finish_configuration(result); }
+                }
+                _ = Self::wait_for_restart(next_configuration) => self.pump_configuration(),
+                failure = feedback.failure() => {
+                    self.cancellation_token.cancel();
+                    error!(%failure, "Reliable scheduler feedback failed");
+                    feedback_failure = Some(failure);
+                    break;
+                }
+
                 // Process pending restarts
                 _ = Self::wait_for_restart(next_restart) => {
-                    let restarted = self.process_pending_restarts().await;
-                    if restarted > 0 {
-                        debug!("Processed {} pending restarts", restarted);
-                    }
+                    self.queue_due_restarts();
                 }
             }
+            self.feedback
+                .update_targets(self.supervisor.registry().streamer_handles_map());
+            self.pump_configuration();
             self.publish_stats();
         }
 
         self.loop_running.store(false, Ordering::Release);
+        self.configuration.jobs.abort_all();
+        while self.configuration.jobs.join_next().await.is_some() {}
+        self.feedback.shutdown().await;
 
         // Graceful shutdown
         let report = self.shutdown().await;
@@ -726,7 +734,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             report.graceful_stops, report.forced_terminations
         );
 
-        Ok(())
+        match feedback_failure.or_else(|| self.configuration.failure.take()) {
+            Some(error) => Err(crate::Error::Other(error)),
+            None => Ok(()),
+        }
     }
 
     /// Answer a `SchedulerCommand`. Must not await: the loop is not reaping
@@ -750,34 +761,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
+    #[cfg(test)]
     async fn process_pending_restarts(&mut self) -> usize {
-        // Keep the cutoff fixed while resolving; later-due actors must not bypass this pass.
-        let due_at = tokio::time::Instant::now();
-        if self.config_resolver.is_some() {
-            let scheduler = &*self;
-            let resolved = stream::iter(self.supervisor.due_streamer_restart_ids(due_at))
-                .map(|id| async move {
-                    let config = scheduler.build_streamer_config(&id).await;
-                    (id, config)
-                })
-                .buffered(8)
-                .collect::<Vec<_>>()
-                .await;
-            if self.cancellation_token.is_cancelled() {
-                return 0;
-            }
-            for (id, config) in resolved {
-                match config {
-                    Ok(config) => self.supervisor.update_streamer_restart_config(&id, config),
-                    Err(error) => {
-                        warn!(streamer_id = %id, %error, "Deferring actor restart until current configuration can be resolved");
-                        self.supervisor
-                            .defer_streamer_restart(&id, Duration::from_secs(5));
-                    }
-                }
-            }
-        }
-        self.supervisor.process_pending_restarts_at(due_at)
+        let before = self.supervisor.registry().streamer_count();
+        self.queue_due_restarts();
+        self.drain_configuration().await;
+        self.supervisor
+            .registry()
+            .streamer_count()
+            .saturating_sub(before)
     }
 
     /// Wait for the next actor task completion, or wait indefinitely if no tasks pending.
@@ -791,39 +783,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             // No tasks to wait for - wait indefinitely until other events occur
             std::future::pending().await
         }
-    }
-
-    /// Spawn initial actors for all active streamers.
-    ///
-    /// Uses `get_all_active` so streamers still inside their `disabled_until`
-    /// error backoff also get an actor; the actor's `initiate_check` guard
-    /// defers the first real check until the backoff expires, which keeps
-    /// them monitored once it does.
-    async fn spawn_initial_actors(&mut self) -> Result<()> {
-        let streamers = self.streamer_manager.get_all_active();
-        info!("Spawning actors for {} streamers", streamers.len());
-
-        // First, spawn platform actors for batch-capable platforms
-        let mut platforms_needed: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
-        for streamer in &streamers {
-            if self.is_batch_capable_platform(&streamer.platform_config_id) {
-                platforms_needed.insert(streamer.platform_config_id.clone());
-            }
-        }
-
-        for platform_id in platforms_needed {
-            self.spawn_platform_actor(&platform_id)?;
-        }
-
-        // Then spawn streamer actors
-        for streamer in streamers {
-            if let Err(e) = self.spawn_streamer_actor(streamer).await {
-                warn!("Failed to spawn streamer actor: {}", e);
-            }
-        }
-
-        Ok(())
     }
 
     /// Spawn a platform actor for batch coordination.
@@ -854,7 +813,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Spawn a streamer actor.
     async fn spawn_streamer_actor(&mut self, metadata: StreamerMetadata) -> Result<()> {
         let streamer_id = metadata.id.clone();
-        let platform_id = metadata.platform_config_id.clone();
 
         if self.supervisor.registry().has_streamer(&streamer_id) {
             debug!("Streamer actor {} already exists", streamer_id);
@@ -862,6 +820,16 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
 
         let config = self.create_streamer_config(&metadata).await?;
+        self.spawn_streamer_resolved(metadata, config)
+    }
+
+    fn spawn_streamer_resolved(
+        &mut self,
+        metadata: StreamerMetadata,
+        config: StreamerConfig,
+    ) -> Result<()> {
+        let streamer_id = metadata.id.clone();
+        let platform_id = metadata.platform_config_id.clone();
 
         // Get platform actor sender if on batch-capable platform
         let platform_sender = if config.batch_capable {
@@ -886,6 +854,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             .spawn_streamer(&streamer_id, config, platform_sender)
         {
             Ok(_handle) => {
+                self.feedback.activate(&streamer_id);
+                self.feedback
+                    .update_targets(self.supervisor.registry().streamer_handles_map());
                 debug!("Spawned streamer actor: {}", streamer_id);
                 Ok(())
             }
@@ -900,234 +871,26 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
-    /// Handle a configuration update event using ConfigRouter.
+    #[cfg(test)]
     async fn handle_config_event(&mut self, event: ConfigUpdateEvent) {
-        debug!("Handling config event: {}", event.description());
-
-        // Handle event-specific side effects and early returns first.
-        match &event {
-            ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
-                // Filters can affect OutOfSchedule smart-wake hints. Force a fresh check soon so
-                // the StreamerActor picks up the new filter behavior immediately.
-                if let Some(handle) = self.supervisor.registry().get_streamer(streamer_id)
-                    && let Err(error) = handle.send(StreamerMessage::CheckStatus).await
-                {
-                    debug!(streamer_id, %error, "Streamer actor stopped before forced check");
-                }
-            }
-            ConfigUpdateEvent::GlobalUpdated => match self.refresh_timing_config_from_db().await {
-                Ok(true) => {}
-                Ok(false) if self.config_resolver.is_none() => {
-                    // Avoid broadcasting config updates to every actor if global changes don't
-                    // affect scheduler timing (e.g., log filter changes).
-                    return;
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    warn!("Failed to refresh scheduler timing config: {}", error);
-                    return;
-                }
-            },
-            ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
-                if self.remove_streamer(streamer_id) {
-                    info!("Removed actor for deleted streamer: {}", streamer_id);
-                }
-                return;
-            }
-            ConfigUpdateEvent::StreamerStateSyncedFromDb {
-                streamer_id,
-                is_active,
-            } => {
-                self.handle_state_sync(streamer_id, *is_active).await;
-                return;
-            }
-            _ => {}
-        }
-
-        let scope = ConfigScope::from_event(&event);
-
-        // Ensure actor state/platform mapping for streamer-scoped updates.
-        if let ConfigScope::Streamer(streamer_id) = &scope
-            && !self.ensure_streamer_actor_state(streamer_id).await
-        {
-            return;
-        }
-
-        // Snapshot semantics: compute once, update restart caches, then deliver.
-        //
-        // Note: we intentionally keep the router borrows scoped to avoid holding an immutable
-        // borrow of self.supervisor across the restart-cache mutation.
-        let (streamer_ids, platform_ids) = {
-            let registry = self.supervisor.registry();
-            let router = ConfigRouter::new(
-                registry.streamer_handles_map(),
-                registry.platform_handles_map(),
-                &self.platform_mapping,
-            );
-            router.target_ids(&scope)
-        };
-        let scheduler = &*self;
-        let resolved = stream::iter(streamer_ids)
-            .map(|id| async move {
-                let config = scheduler.build_streamer_config(&id).await;
-                (id, config)
-            })
-            .buffered(8)
-            .collect::<Vec<_>>()
-            .await;
-        let mut plan = RoutingPlan {
-            platforms: platform_ids
-                .into_iter()
-                .map(|id| {
-                    let config = self.create_platform_config(&id);
-                    (id, config)
-                })
-                .collect(),
-            streamers: Vec::new(),
-        };
-        for (id, result) in resolved {
-            match result {
-                Ok(config) => plan.streamers.push((id, config)),
-                Err(error) => {
-                    warn!(streamer_id = %id, %error, "Keeping previous actor timing after configuration resolution failed")
-                }
-            }
-        }
-
-        self.update_restart_cache_from_plan(&plan);
-
-        let result = {
-            let registry = self.supervisor.registry();
-            let router = ConfigRouter::new(
-                registry.streamer_handles_map(),
-                registry.platform_handles_map(),
-                &self.platform_mapping,
-            );
-            router.deliver_plan(plan).await
-        };
-
-        if !result.all_succeeded() {
-            warn!(
-                "Config routing had {} failures: {:?}",
-                result.failed, result.failed_actors
-            );
-        } else {
-            debug!("Config update delivered to {} actors", result.delivered);
-        }
-    }
-
-    async fn build_streamer_config(&self, streamer_id: &str) -> Result<StreamerConfig> {
-        let metadata = self
-            .streamer_manager
-            .get_streamer(streamer_id)
-            .ok_or_else(|| crate::Error::not_found("Streamer", streamer_id))?;
-        self.create_streamer_config(&metadata).await
-    }
-
-    async fn ensure_streamer_actor_state(&mut self, streamer_id: &str) -> bool {
-        let Some(metadata) = self.streamer_manager.get_streamer(streamer_id) else {
-            // Streamer not found - might have been deleted, remove actor if exists
-            if self.remove_streamer(streamer_id) {
-                info!("Removed actor for unknown streamer: {}", streamer_id);
-            } else {
-                debug!("Streamer {} not found in manager", streamer_id);
-            }
-            return false;
-        };
-
-        // Keep platform mapping consistent with the latest metadata.
-        self.platform_mapping
-            .register(streamer_id, &metadata.platform_config_id);
-
-        // Ensure platform actor exists if the streamer is on a batch-capable platform.
-        if self.is_batch_capable_platform(&metadata.platform_config_id)
-            && let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id)
-        {
-            warn!(
-                "Failed to ensure platform actor for {}: {}",
-                metadata.platform_config_id, e
-            );
-        }
-
-        if metadata.is_active() {
-            if !self.supervisor.registry().has_streamer(streamer_id) {
-                info!(
-                    "Spawning missing actor for active streamer: {}",
-                    streamer_id
-                );
-                if let Err(e) = self.spawn_streamer_actor(metadata).await {
-                    warn!("Failed to spawn actor for {}: {}", streamer_id, e);
-                }
-            }
-            true
-        } else {
-            // Streamer is inactive (disabled, cancelled, etc.) - remove actor if exists.
-            if self.supervisor.registry().has_streamer(streamer_id) {
-                if self.remove_streamer(streamer_id) {
-                    info!(
-                        "Removed actor for inactive streamer {} (state: {})",
-                        streamer_id, metadata.state
-                    );
-                }
-            } else {
-                debug!(
-                    "Streamer {} is inactive ({}), no actor to remove",
-                    streamer_id, metadata.state
-                );
-            }
-            false
-        }
-    }
-
-    // NOTE: restart cache update now uses a Router-generated RoutingPlan to preserve
-    // snapshot semantics and avoid recomputing configs after any awaited sends.
-
-    fn update_restart_cache_from_plan(&mut self, plan: &RoutingPlan) {
-        for (streamer_id, cfg) in &plan.streamers {
-            self.supervisor
-                .update_streamer_restart_config(streamer_id, cfg.clone());
-        }
-        for (platform_id, cfg) in &plan.platforms {
-            self.supervisor
-                .update_platform_restart_config(platform_id, cfg.clone());
-        }
-    }
-
-    async fn handle_state_sync(&mut self, streamer_id: &str, is_active: bool) {
-        if is_active {
-            // Streamer became active - spawn actor if missing.
-            if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id)
-                && !self.supervisor.registry().has_streamer(streamer_id)
-            {
-                // Ensure platform actor exists for batch-capable platforms.
-                if self.is_batch_capable_platform(&metadata.platform_config_id)
-                    && let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id)
-                {
-                    warn!(
-                        platform_id = %metadata.platform_config_id,
-                        error = %e,
-                        "Failed to spawn platform actor during state sync"
-                    );
-                }
-
-                info!(
-                    "Spawning actor for newly active streamer: {} (state: {})",
-                    streamer_id, metadata.state
-                );
-                if let Err(e) = self.spawn_streamer_actor(metadata).await {
-                    warn!("Failed to spawn actor for {}: {}", streamer_id, e);
-                }
-            }
-        } else {
-            // Streamer became inactive - remove actor if exists.
-            if self.remove_streamer(streamer_id) {
-                info!("Removed actor for inactive streamer: {}", streamer_id);
-            }
-        }
+        self.queue_configuration(event);
+        self.drain_configuration().await;
     }
 
     /// Process a download event (internal).
     async fn process_download_event(&self, event: DownloadManagerEvent) {
+        if self.reliable_feedback
+            && !matches!(
+                event,
+                DownloadManagerEvent::Progress(
+                    DownloadProgressEvent::Progress { .. }
+                        | DownloadProgressEvent::SegmentStarted { .. }
+                        | DownloadProgressEvent::SegmentCompleted { .. }
+                )
+            )
+        {
+            return;
+        }
         const HEARTBEAT_THROTTLE: Duration = Duration::from_secs(30);
 
         let send_to_actor = |streamer_id: String, msg: StreamerMessage| async move {
@@ -1136,7 +899,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 streamer_id, msg
             );
             if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
-                if let Err(e) = handle.send(msg).await {
+                if let Err(e) = handle.try_send(msg) {
                     warn!(
                         "Failed to send download message to actor {}: {}",
                         streamer_id, e
@@ -1240,7 +1003,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,
                 };
-                if should_send {
+                if should_send
+                    && (!self.reliable_feedback
+                        || self.feedback.is_current_download(
+                            &streamer_id,
+                            &download_id,
+                            &session_id,
+                        ))
+                {
                     self.download_heartbeat_last_sent
                         .insert(streamer_id.clone(), now);
                     send_to_actor(
@@ -1270,7 +1040,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,
                 };
-                if should_send {
+                if should_send
+                    && (!self.reliable_feedback
+                        || self.feedback.is_current_download(
+                            &streamer_id,
+                            &download_id,
+                            &session_id,
+                        ))
+                {
                     self.download_heartbeat_last_sent
                         .insert(streamer_id.clone(), now);
                     send_to_actor(
@@ -1289,15 +1066,24 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Handle task completion action from supervisor.
-    fn handle_task_completion_action(&self, action: TaskCompletionAction) {
+    fn handle_task_completion_action(&self, action: TaskCompletionAction, streamer: bool) {
         match action {
             TaskCompletionAction::Stopped { actor_id } => {
+                if streamer {
+                    self.feedback.retire(&actor_id);
+                }
                 debug!("Actor {} stopped gracefully", actor_id);
             }
             TaskCompletionAction::Cancelled { actor_id } => {
+                if streamer {
+                    self.feedback.retire(&actor_id);
+                }
                 debug!("Actor {} was cancelled", actor_id);
             }
             TaskCompletionAction::Completed { actor_id } => {
+                if streamer {
+                    self.feedback.retire(&actor_id);
+                }
                 debug!("Actor {} completed", actor_id);
             }
             TaskCompletionAction::Crashed { actor_id } => {
@@ -1313,9 +1099,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 );
             }
             TaskCompletionAction::RestartFailed { actor_id, reason } => {
+                if streamer {
+                    self.feedback.unavailable(&actor_id);
+                }
                 error!("Actor {} restart failed: {}", actor_id, reason);
             }
             TaskCompletionAction::RestartLimitExceeded { actor_id } => {
+                if streamer {
+                    self.feedback.unavailable(&actor_id);
+                }
                 error!("Actor {} exceeded restart limit", actor_id);
             }
         }
@@ -1347,6 +1139,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// This stops and removes the StreamerActor for the streamer.
     pub fn remove_streamer(&mut self, streamer_id: &str) -> bool {
+        self.invalidate_configuration(streamer_id);
+        self.feedback.retire(streamer_id);
         self.platform_mapping.unregister(streamer_id);
         self.supervisor.remove_streamer(streamer_id)
     }
@@ -1365,6 +1159,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// callers go through `SchedulerHandle::remove_streamer_awaitable`, which has
     /// the loop build the receipt and awaits it on the caller's task.
     pub fn remove_streamer_awaitable(&mut self, streamer_id: &str) -> ActorRemoval {
+        self.invalidate_configuration(streamer_id);
+        self.feedback.retire(streamer_id);
         self.platform_mapping.unregister(streamer_id);
         self.supervisor.remove_streamer_awaitable(streamer_id)
     }
@@ -1383,7 +1179,7 @@ mod tests {
     use chrono::Utc;
 
     /// A scheduler whose actors use `NoOpStatusChecker`, with `streamer_ids`
-    /// already in the shared metadata store so `spawn_initial_actors` gives each
+    /// already in the shared metadata store so initial reconciliation gives each
     /// of them an actor.
     ///
     /// The repository is real but unused by this path: nothing here applies a
@@ -1452,7 +1248,9 @@ mod tests {
     async fn removal_once_running(handle: &SchedulerHandle, streamer_id: &str) -> ActorRemoval {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if let Some(removal) = handle.remove_streamer_awaitable(streamer_id).await {
+                if handle.stats().streamer_count > 0
+                    && let Some(removal) = handle.remove_streamer_awaitable(streamer_id).await
+                {
                     return removal;
                 }
                 tokio::task::yield_now().await;
@@ -1576,3 +1374,14 @@ mod tests {
 
 #[cfg(test)]
 mod config_tests;
+
+mod configuration;
+
+impl<R: StreamerRepository + Send + Sync + 'static> Drop for Scheduler<R> {
+    fn drop(&mut self) {
+        self.feedback.stop_monitoring();
+    }
+}
+
+#[cfg(test)]
+mod reliability_tests;

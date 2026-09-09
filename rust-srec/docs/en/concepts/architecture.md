@@ -350,6 +350,14 @@ Streamer actors use in-memory scheduling state and the database-backed metadata 
 
 The unused `StreamerManager::record_error` and `StreamerRepository::record_streamer_error` methods are also removed. Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache coordination remains shared across existing services.
 
+### Reliable lifecycle feedback
+
+Recording startup and terminal scheduling feedback use an owned lane, separate from progress broadcasts and persistence acknowledgements. The container wires it during construction; Rust embedders use `Scheduler::connect_download_manager` before starting either service. Each admitted attempt reserves capacity for Started and Terminal before it starts. Admission never waits for the actor to apply a message; terminal feedback is published after the recording slot is released. Actor generations and recording identities fence delayed messages, and a replacement starts with the recording owner's current identity.
+
+The lane retains at most 32 lifecycle envelopes per streamer. Its global budget is 1,024 backlog envelopes plus twice the highest configured total recording concurrency, including high-priority extra slots. Increases grow that budget; decreases preserve outstanding reservations. Full admission returns the retryable `SchedulerFeedbackBusy` error and retains a local recheck request without declaring the streamer offline or disabled. An owned recovery worker coalesces requests while waiting for both capacity pools, leaving lifecycle application free to release reservations; it retries only after capacity recovers. Actor retirement and shutdown cancel this wait. Shared payloads and reservation ownership remain attached while an old actor generation still holds an application message.
+
+Configuration resolution uses at most eight owned workers. Revisions and actor generations reject stale results; the latest desired configuration survives mailbox pressure, and lagged configuration broadcasts trigger reconciliation. Progress remains lossy and throttled. Shutdown stops monitoring before recording drains; remaining feedback receives an explicit stopped/retired/unavailable disposition, and the recording drain also joins the feedback owner.
+
 ## Event-driven communication
 
 Most cross-service coordination happens via Tokio `broadcast` channels.

@@ -328,6 +328,17 @@ impl DownloadManager {
         manager
     }
 
+    pub(crate) fn set_scheduler_feedback(
+        &self,
+        feedback: Arc<crate::scheduler::feedback::SchedulerFeedback>,
+    ) -> Result<()> {
+        feedback.ensure_attempt_capacity(self.total_concurrent_slots());
+        self.events
+            .feedback
+            .set(feedback)
+            .map_err(|_| crate::Error::Other("scheduler feedback is already configured".to_owned()))
+    }
+
     pub(crate) fn with_coordination_sender(mut self, sender: DownloadCoordinationSender) -> Self {
         self.events.coordination_tx = Some(sender);
         self
@@ -912,6 +923,10 @@ impl DownloadManager {
             config.max_concurrent_downloads = limit;
         }
 
+        if let Some(feedback) = self.events.feedback.get() {
+            feedback
+                .ensure_attempt_capacity(limit.saturating_add(self.high_priority_extra_slots()));
+        }
         self.queue.set_normal_capacity(limit)
     }
 
@@ -987,6 +1002,7 @@ impl DownloadManager {
         retry_after_secs: Option<u64>,
         kind: DownloadRejectedKind,
     ) -> Result<()> {
+        let feedback_streamer_id = streamer_id.clone();
         self.events
             .publish_and_wait(DownloadManagerEvent::Terminal(
                 DownloadTerminalEvent::Rejected {
@@ -999,7 +1015,16 @@ impl DownloadManager {
                 },
             ))
             .await
-            .map_err(crate::Error::Other)
+            .map_err(|error| match error {
+                coordination::PublicationError::FeedbackBusy => {
+                    crate::Error::SchedulerFeedbackBusy {
+                        streamer_id: feedback_streamer_id,
+                    }
+                }
+                coordination::PublicationError::Coordination(message) => {
+                    crate::Error::Other(message)
+                }
+            })
     }
 
     async fn begin_operation(&self) -> Result<tokio::sync::RwLockReadGuard<'_, ()>> {
@@ -1115,6 +1140,10 @@ impl DownloadManager {
                 }
             };
 
+        if let Some(feedback) = self.events.feedback.get() {
+            feedback.shutdown().await;
+        }
+
         DownloadShutdownReport {
             stopped_download_ids,
             deadline_exceeded_download_ids: attempt_report.deadline_exceeded_download_ids,
@@ -1137,7 +1166,11 @@ impl DownloadManager {
     pub(crate) async fn abort_attempts(&self, deadline: tokio::time::Instant) -> Vec<String> {
         self.accepting_operations.store(false, Ordering::Release);
         self.queue.shutdown();
-        self.attempts.abort_running(deadline).await
+        let downloads = self.attempts.abort_running(deadline).await;
+        if let Some(feedback) = self.events.feedback.get() {
+            feedback.abort(deadline).await;
+        }
+        downloads
     }
 }
 
