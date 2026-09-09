@@ -49,7 +49,7 @@ msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "“{0}”将立即失效。此操作无法撤销。"
 
-#: src/components/logging/log-viewer.tsx:517
+#: src/components/logging/log-viewer.tsx:515
 msgid "(+{pausedCount} paused)"
 msgstr "（+{pausedCount} 条已暂停）"
 
@@ -80,7 +80,7 @@ msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, other {# 项可选}}"
 
 #. placeholder {0}: field.value.length
-#: src/components/config/shared/network-settings-card.tsx:220
+#: src/components/config/shared/network-settings-card.tsx:215
 msgid "{0, plural, one {# char} other {# chars}}"
 msgstr "{0, plural, other {# 个字符}}"
 
@@ -155,7 +155,7 @@ msgstr "{0, plural, other {个文件}}"
 
 #. placeholder {0}: filteredLogs.length
 #. placeholder {1}: logs.length
-#: src/components/logging/log-viewer.tsx:512
+#: src/components/logging/log-viewer.tsx:510
 msgid "{0} / {1, plural, one {# entry} other {# entries}}"
 msgstr "{0} / {1, plural, other {# 条}}"
 
@@ -166,7 +166,7 @@ msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:237
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:250
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
@@ -326,7 +326,7 @@ msgstr "404"
 msgid "44100"
 msgstr "44100"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:34
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:37
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
@@ -346,7 +346,7 @@ msgstr "90 天"
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:585
+#: src/components/pipeline/workflows/step-config-dialog.tsx:594
 msgid "A unique ID used by other steps to reference this one."
 msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 
@@ -405,7 +405,7 @@ msgstr "正在录制"
 msgid "Active Recordings"
 msgstr "正在录制"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:224
+#: src/components/config/shared/danmu-statistics-card.tsx:226
 msgid "Activity resolution (seconds)"
 msgstr "活跃度精度（秒）"
 
@@ -433,15 +433,15 @@ msgstr "添加主播"
 msgid "Add an engine"
 msgstr "添加引擎"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:135
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:137
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "添加覆盖项以自定义特定平台的行为。"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:136
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:138
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:744
+#: src/components/pipeline/workflows/step-config-dialog.tsx:753
 msgid "Add anyway"
 msgstr "仍然添加"
 
@@ -501,8 +501,8 @@ msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。
 msgid "Add module..."
 msgstr "添加模块..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:95
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:100
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
 msgid "Add Override"
 msgstr "添加覆盖项"
 
@@ -514,7 +514,7 @@ msgstr "添加参数"
 msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
 
-#: src/components/config/shared/retry-policy-form.tsx:132
+#: src/components/config/shared/retry-policy-form.tsx:133
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "为重试延迟添加随机性，避免“惊群”。"
 
@@ -612,7 +612,7 @@ msgctxt "day-of-week preset"
 msgid "All"
 msgstr "全部"
 
-#: src/components/logging/log-viewer.tsx:460
+#: src/components/logging/log-viewer.tsx:458
 msgid "All Levels"
 msgstr "所有级别"
 
@@ -645,7 +645,7 @@ msgstr "允许私有网络流代理目标"
 msgid "Also delete files from disk"
 msgstr "同时从磁盘删除文件"
 
-#: src/components/config/shared/output-settings-card.tsx:230
+#: src/components/config/shared/output-settings-card.tsx:225
 msgid "Always use Streamlink"
 msgstr "始终使用 Streamlink"
 
@@ -683,15 +683,15 @@ msgstr "API 密钥已吊销"
 msgid "API Keys"
 msgstr "API 密钥"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:102
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:158
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:66
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
 msgid "API Settings"
 msgstr "API 设置"
 
@@ -775,7 +775,7 @@ msgstr "用于处理/编码的参数"
 msgid "Artist"
 msgstr "艺术家"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:87
 #: src/components/pipeline/presets/preset-templates.ts:98
 #: src/components/pipeline/presets/processors/registry.ts:123
 msgid "ASS Burn-in"
@@ -794,11 +794,11 @@ msgstr "分配模板"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
 msgid "Attempt to get the highest original quality available."
 msgstr "尝试获取可用的最高原画质量。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:64
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:66
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
@@ -821,7 +821,7 @@ msgstr "音频编码"
 msgid "Audio codec change"
 msgstr "音频编码变化"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-templates.ts:50
 msgid "Audio Extract"
 msgstr "提取音频"
@@ -831,9 +831,9 @@ msgid "Audio Extraction"
 msgstr "音频提取"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:521
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:111
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:130
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:131
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:116
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:135
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:136
 msgid "Audio only"
 msgstr "仅音频"
 
@@ -853,9 +853,9 @@ msgstr "音频设置"
 msgid "Auth Type"
 msgstr "认证类型"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:29
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:30
-#: src/components/config/shared/network-settings-card.tsx:162
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:34
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:32
+#: src/components/config/shared/network-settings-card.tsx:157
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "认证"
@@ -880,20 +880,20 @@ msgstr "自动重新登录"
 msgid "Auto Thumbnail"
 msgstr "自动封面"
 
-#: src/components/config/shared/network-settings-card.tsx:287
+#: src/components/config/shared/network-settings-card.tsx:282
 msgid "Auto-Refresh"
 msgstr "自动刷新"
 
-#: src/components/logging/log-viewer.tsx:476
+#: src/components/logging/log-viewer.tsx:474
 msgid "Auto-scroll disabled"
 msgstr "已关闭自动滚动"
 
-#: src/components/logging/log-viewer.tsx:475
+#: src/components/logging/log-viewer.tsx:473
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:123
-#: src/components/streamers/config/streamer-identity-fields.tsx:128
+#: src/components/streamers/config/streamer-identity-fields.tsx:125
+#: src/components/streamers/config/streamer-identity-fields.tsx:130
 msgid "Autofill name from URL"
 msgstr "从 URL 自动填充名称"
 
@@ -901,7 +901,7 @@ msgstr "从 URL 自动填充名称"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
 
-#: src/components/config/shared/output-settings-card.tsx:227
+#: src/components/config/shared/output-settings-card.tsx:222
 msgid "Automatic (match the site)"
 msgstr "自动（按站点匹配）"
 
@@ -952,7 +952,7 @@ msgstr "返回链接"
 msgid "Back to Pipeline Jobs"
 msgstr "返回处理任务列表"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:130
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:133
 msgid "Back to presets"
 msgstr "返回预设列表"
 
@@ -976,7 +976,7 @@ msgstr "后端：{backendLabel}"
 msgid "Background"
 msgstr "后台"
 
-#: src/components/config/shared/network-settings-card.tsx:302
+#: src/components/config/shared/network-settings-card.tsx:297
 msgid "Background refresh enabled"
 msgstr "后台刷新已启用"
 
@@ -984,7 +984,7 @@ msgstr "后台刷新已启用"
 msgid "Backjump Threshold"
 msgstr "回跳阈值"
 
-#: src/components/config/shared/retry-policy-form.tsx:72
+#: src/components/config/shared/retry-policy-form.tsx:73
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
@@ -999,7 +999,7 @@ msgstr "备份"
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-templates.ts:41
 msgid "Baidu Netdisk"
 msgstr "百度网盘"
@@ -1146,11 +1146,11 @@ msgstr "已阻止"
 msgid "Blocked by browser"
 msgstr "被浏览器阻止"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:37
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
 msgid "Blu-ray (400)"
 msgstr "蓝光 (400)"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
 msgid "Blu-ray Dolby (401)"
 msgstr "蓝光杜比 (401)"
 
@@ -1245,8 +1245,8 @@ msgstr "缓存"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:97
 #: src/components/pipeline/presets/preset-card.tsx:152
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:678
-#: src/components/pipeline/workflows/step-config-dialog.tsx:736
+#: src/components/pipeline/workflows/step-config-dialog.tsx:687
+#: src/components/pipeline/workflows/step-config-dialog.tsx:745
 #: src/components/pipeline/workflows/workflow-card.tsx:119
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:235
@@ -1295,15 +1295,15 @@ msgstr "已取消处理管道中的 {0} 个步骤"
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "限制整体传输带宽（rclone --bwlimit）。"
 
-#: src/components/config/shared/record-danmu-card.tsx:64
+#: src/components/config/shared/record-danmu-card.tsx:67
 msgid "Capture Mode"
 msgstr "采集模式"
 
-#: src/components/config/shared/record-danmu-card.tsx:49
+#: src/components/config/shared/record-danmu-card.tsx:52
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:97
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1316,7 +1316,7 @@ msgid "Case Insensitive"
 msgstr "不区分大小写"
 
 #: src/components/notifications/events/payload-preview.tsx:65
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:251
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
 msgid "Category"
 msgstr "分类"
 
@@ -1383,7 +1383,7 @@ msgstr "个渠道"
 msgid "Channels"
 msgstr "声道"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:192
+#: src/components/config/shared/danmu-statistics-card.tsx:195
 msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 msgstr "关闭后仍会录制弹幕文件，只是不再计算和保存包含观众昵称的场次统计摘要。"
 
@@ -1392,7 +1392,7 @@ msgstr "关闭后仍会录制弹幕文件，只是不再计算和保存包含观
 msgid "Chat ID"
 msgstr "聊天 ID"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:233
+#: src/components/config/shared/danmu-statistics-card.tsx:235
 msgid "Chatters tracked"
 msgstr "跟踪发言人数"
 
@@ -1471,7 +1471,7 @@ msgstr "选择你的显示语言"
 msgid "Cleanup"
 msgstr "清理"
 
-#: src/components/logging/log-viewer.tsx:435
+#: src/components/logging/log-viewer.tsx:433
 #: src/components/notifications/desktop-channel-dialog.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:244
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:615
@@ -1491,11 +1491,11 @@ msgstr "清除选择"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:145
 msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 msgstr "用于流认证签名的客户端平台类型。不同平台使用不同的签名方式。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:118
 msgid "Client Type (ctype)"
 msgstr "客户端类型 (ctype)"
 
@@ -1543,7 +1543,7 @@ msgstr "收起侧边栏"
 msgid "Collapsible"
 msgstr "折叠方式"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:189
+#: src/components/config/shared/danmu-statistics-card.tsx:192
 msgid "Collect statistics"
 msgstr "收集统计"
 
@@ -1610,7 +1610,7 @@ msgid "Compress video for storage, upload to cloud, then delete local file to sa
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 msgid "Compression"
 msgstr "压缩"
 
@@ -1665,7 +1665,7 @@ msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
 #: src/components/notifications/channel-form.tsx:439
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:46
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:52
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
 #: src/components/pipeline/workflows/workflow-editor.tsx:224
 #: src/lib/menu-list.ts:119
@@ -1764,7 +1764,7 @@ msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
 #: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:397
+#: src/components/logging/log-viewer.tsx:395
 msgid "Connected"
 msgstr "已连接"
 
@@ -1788,7 +1788,7 @@ msgstr "连接状态：{statusLabel}"
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
-#: src/components/config/shared/offline-check-card.tsx:115
+#: src/components/config/shared/offline-check-card.tsx:110
 msgid "Consecutive failed checks needed to confirm offline."
 msgstr "确认离线所需的连续失败检查次数。"
 
@@ -1825,7 +1825,7 @@ msgstr "使用 DanmakuFactory 将弹幕 XML（Bilibili 格式）转换为 .ass �
 msgid "Cookie string"
 msgstr "Cookie 字符串"
 
-#: src/components/config/shared/network-settings-card.tsx:213
+#: src/components/config/shared/network-settings-card.tsx:208
 #: src/components/player/url-input-form.tsx:203
 #: src/components/player/url-input-form.tsx:297
 msgid "Cookies"
@@ -1835,7 +1835,7 @@ msgstr "Cookie"
 msgid "Cookies (recommended)"
 msgstr "Cookie（推荐）"
 
-#: src/components/config/shared/network-settings-card.tsx:296
+#: src/components/config/shared/network-settings-card.tsx:291
 msgid "Cookies Only"
 msgstr "仅 Cookie"
 
@@ -1851,7 +1851,7 @@ msgstr "已复制！"
 msgid "copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:62
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:68
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Copy"
 msgstr "复制"
@@ -1865,7 +1865,7 @@ msgstr "复制（直通）"
 msgid "Copy (Stream Copy)"
 msgstr "复制（流复制）"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:68
 #: src/components/pipeline/presets/processors/registry.ts:93
 #: src/components/pipeline/presets/processors/registry.ts:98
 #: src/components/pipeline/presets/processors/registry.ts:133
@@ -1933,7 +1933,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "Could not load presets: {0}"
 msgstr "无法加载预设：{0}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:456
+#: src/components/pipeline/workflows/step-config-dialog.tsx:465
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
@@ -1947,7 +1947,7 @@ msgstr "无法显示该文件：{message}"
 msgid "Count"
 msgstr "次数"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:234
+#: src/components/config/shared/danmu-statistics-card.tsx:236
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "当一场直播的不同发言人数少于此值时，计数保持精确。范围 64–8192。"
 
@@ -2100,7 +2100,7 @@ msgstr "凭据刷新失败"
 msgid "Credential refreshed"
 msgstr "凭据已刷新"
 
-#: src/components/config/shared/network-settings-card.tsx:250
+#: src/components/config/shared/network-settings-card.tsx:245
 msgid "Credential Source Status"
 msgstr "凭据来源状态"
 
@@ -2112,7 +2112,7 @@ msgstr "凭据会交给服务器上的 BaiduPCS-Go 处理，登录会话保存�
 msgid "Credentials could not be stored for automatic re-login"
 msgstr "凭据保存失败，无法自动重新登录"
 
-#: src/components/config/shared/network-settings-card.tsx:133
+#: src/components/config/shared/network-settings-card.tsx:130
 msgid "Credentials refreshed successfully"
 msgstr "凭据刷新成功"
 
@@ -2120,7 +2120,7 @@ msgstr "凭据刷新成功"
 msgid "Credentials remembered for automatic re-login"
 msgstr "已保存凭据，可自动重新登录"
 
-#: src/components/config/shared/network-settings-card.tsx:361
+#: src/components/config/shared/network-settings-card.tsx:356
 msgid "Credentials saved successfully"
 msgstr "凭据保存成功"
 
@@ -2222,7 +2222,7 @@ msgstr "自定义导入主题已激活。"
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:119
 msgid "Custom rate"
 msgstr "自定义画质值"
 
@@ -2234,7 +2234,7 @@ msgstr "自定义标签"
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:84
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:86
 msgid "Customize specific engine settings for this template."
 msgstr "为此模板自定义特定的引擎设置。"
 
@@ -2246,7 +2246,7 @@ msgstr "自定义应用主题和侧边栏布局。"
 msgid "Cutoff"
 msgstr "阈值"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:539
+#: src/components/pipeline/workflows/step-config-dialog.tsx:548
 msgid "DAG Configuration"
 msgstr "DAG 配置"
 
@@ -2259,7 +2259,7 @@ msgstr "DAG 图"
 msgid "Danmaku"
 msgstr "弹幕"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
 #: src/components/pipeline/presets/preset-templates.ts:88
 #: src/components/pipeline/presets/processors/registry.ts:118
 msgid "Danmaku to ASS"
@@ -2277,7 +2277,7 @@ msgstr "DanmakuFactory"
 msgid "Danmu"
 msgstr "弹幕"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:253
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:255
 msgid "Danmu Control"
 msgstr "弹幕控制"
 
@@ -2285,7 +2285,7 @@ msgstr "弹幕控制"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:171
+#: src/components/config/shared/danmu-statistics-card.tsx:174
 #: src/components/sessions/danmu-stats-panel.tsx:172
 #: src/components/sessions/overview-tab.tsx:249
 msgid "Danmu Statistics"
@@ -2365,16 +2365,16 @@ msgstr "默认"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:328
 #: src/components/config/engines/forms/mesio-hls-form.tsx:509
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:84
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:136
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:90
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:101
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
 msgid "Default"
 msgstr "默认"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:32
 msgid "Default Douyu quality"
 msgstr "斗鱼默认画质"
 
@@ -2386,11 +2386,11 @@ msgstr "默认引擎"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:117
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:122
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:58
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -2410,11 +2410,11 @@ msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原�
 msgid "Default: {value}"
 msgstr "默认值：{value}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:55
 msgid "Default: Dolby Vision (30000)"
 msgstr "默认：杜比视界 (30000)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:542
+#: src/components/pipeline/workflows/step-config-dialog.tsx:551
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 
@@ -2455,7 +2455,7 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:106
 #: src/components/pipeline/outputs/output-batch-action-bar.tsx:62
 #: src/components/pipeline/outputs/output-card.tsx:252
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-card.tsx:135
 #: src/components/pipeline/presets/preset-card.tsx:158
 #: src/components/pipeline/presets/preset-templates.ts:74
@@ -2549,7 +2549,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:711
+#: src/components/pipeline/workflows/step-config-dialog.tsx:720
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
@@ -2600,7 +2600,7 @@ msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全
 msgid "Delivery Policy"
 msgstr "投递策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:593
+#: src/components/pipeline/workflows/step-config-dialog.tsx:602
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
@@ -2608,12 +2608,12 @@ msgstr "依赖于（前辈节点）"
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
 #: src/components/pipeline/workflows/workflow-editor.tsx:254
 msgid "Description"
 msgstr "描述"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:300
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:303
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
@@ -2662,7 +2662,7 @@ msgstr "目标根目录"
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:691
+#: src/components/pipeline/workflows/step-config-dialog.tsx:700
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
@@ -2670,15 +2670,15 @@ msgstr "分离并编辑"
 msgid "Detailed health checks for internal services and resources."
 msgstr "内部服务与资源的详细健康检查。"
 
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:49
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:55
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:177
+#: src/components/streamers/config/streamer-identity-fields.tsx:179
 msgid "Detecting…"
 msgstr "识别中…"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:204
+#: src/components/streamers/config/streamer-identity-fields.tsx:206
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "根据链接自动识别，并自动应用该平台的设置。"
 
@@ -2713,7 +2713,7 @@ msgid "Disable selected"
 msgstr "禁用所选"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
-#: src/components/config/shared/record-danmu-card.tsx:102
+#: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:50
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
@@ -2723,7 +2723,7 @@ msgid "Disabled"
 msgstr "已禁用"
 
 #: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:402
+#: src/components/logging/log-viewer.tsx:400
 msgid "Disconnected"
 msgstr "已断开"
 
@@ -2740,7 +2740,7 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:36
 msgid "Dolby Vision (30000)"
 msgstr "杜比视界 (30000)"
 
@@ -2754,19 +2754,19 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:92
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:44
 msgid "Douyu HD rate"
 msgstr "斗鱼高清画质值"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:50
 msgid "Douyu SD or low rate"
 msgstr "斗鱼标清或低清画质值"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:38
 msgid "Douyu UHD rate"
 msgstr "斗鱼超清画质值"
 
@@ -2796,11 +2796,11 @@ msgstr "下载备份"
 msgid "Download Concurrency"
 msgstr "下载并发数"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:82
+#: src/components/config/platforms/tabs/general-tab.tsx:84
 msgid "Download Delay"
 msgstr "录制延迟"
 
-#: src/components/config/shared/output-settings-card.tsx:167
+#: src/components/config/shared/output-settings-card.tsx:162
 msgid "Download Engine"
 msgstr "录制引擎"
 
@@ -2818,7 +2818,7 @@ msgstr "下载失败：{0}"
 msgid "Download Manager"
 msgstr "下载管理"
 
-#: src/components/config/shared/network-settings-card.tsx:328
+#: src/components/config/shared/network-settings-card.tsx:323
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
@@ -2938,15 +2938,15 @@ msgstr "例如 高质量 Streamlink"
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:101
+#: src/components/streamers/config/streamer-identity-fields.tsx:103
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:232
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:235
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:567
+#: src/components/pipeline/workflows/step-config-dialog.tsx:576
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
@@ -2992,7 +2992,7 @@ msgstr "编辑工作流：{0}"
 msgid "Editing Mode"
 msgstr "编辑模式"
 
-#: src/components/config/shared/network-settings-card.tsx:267
+#: src/components/config/shared/network-settings-card.tsx:262
 msgid "Effective Scope"
 msgstr "生效范围"
 
@@ -3034,7 +3034,7 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enable selected"
 msgstr "启用所选"
 
-#: src/components/config/shared/record-danmu-card.tsx:99
+#: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:103
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
@@ -3108,7 +3108,7 @@ msgstr "引擎已删除"
 msgid "Engine Name"
 msgstr "引擎名称"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:81
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:83
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
@@ -3143,7 +3143,7 @@ msgstr "英语（国际）"
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:194
+#: src/components/streamers/config/streamer-identity-fields.tsx:196
 msgid "Enter a URL above"
 msgstr "请在上方输入链接"
 
@@ -3268,7 +3268,7 @@ msgstr "排除模式"
 msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:98
+#: src/components/config/shared/danmu-statistics-card.tsx:101
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "在内置列表之外，额外从高频词图表中排除的词。每行一个。"
 
@@ -3277,7 +3277,7 @@ msgid "Execute"
 msgstr "执行"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:24
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
 #: src/components/pipeline/presets/processors/registry.ts:113
 msgid "Execute Command"
 msgstr "执行命令"
@@ -3317,12 +3317,12 @@ msgstr "退出选择模式"
 msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:60
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:54
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:182
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -3335,7 +3335,7 @@ msgstr "已过期"
 msgid "Expires"
 msgstr "过期时间"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:241
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:243
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "用于所有请求的显式 TTWID Cookie 值。"
 
@@ -3386,14 +3386,14 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:64
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:69
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:42
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:46
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:28
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:48
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:30
 msgid "Extraction Settings"
 msgstr "提取设置"
 
@@ -3658,7 +3658,7 @@ msgstr "处理所选主播失败"
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "查询 BaiduPCS-Go 状态失败。"
 
-#: src/components/config/shared/network-settings-card.tsx:145
+#: src/components/config/shared/network-settings-card.tsx:141
 msgid "Failed to refresh credentials"
 msgstr "刷新凭据失败"
 
@@ -3713,7 +3713,7 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:175
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:176
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
@@ -3784,7 +3784,7 @@ msgstr "致命："
 msgid "Fetch"
 msgstr "获取"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:50
+#: src/components/config/platforms/tabs/general-tab.tsx:54
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
@@ -3834,7 +3834,7 @@ msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "文件名模式（例如 thumb.jpg）"
 
 #: src/components/config/global/file-config-card.tsx:73
-#: src/components/config/shared/output-settings-card.tsx:95
+#: src/components/config/shared/output-settings-card.tsx:98
 msgid "Filename Template"
 msgstr "文件名模板"
 
@@ -3866,7 +3866,7 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:125
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:130
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
@@ -3965,13 +3965,13 @@ msgstr "强制 IPv4（默认：关闭）"
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:54
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:165
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:170
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
@@ -3979,15 +3979,15 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:168
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:173
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
-#: src/components/config/shared/output-settings-card.tsx:152
+#: src/components/config/shared/output-settings-card.tsx:149
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:268
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:281
 msgid "Form"
 msgstr "表单"
 
@@ -4006,7 +4006,7 @@ msgstr "帧率（FPS）"
 msgid "Free space on the disks recordings are written to."
 msgstr "录像写入的各磁盘的剩余空间。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:218
+#: src/components/config/shared/danmu-statistics-card.tsx:220
 msgid "Frequent words to keep"
 msgstr "保留高频词数量"
 
@@ -4058,7 +4058,7 @@ msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
 #: src/components/config/platforms/platform-editor.tsx:220
-#: src/components/config/templates/tabs/platform-override-card.tsx:63
+#: src/components/config/templates/tabs/platform-override-card.tsx:77
 #: src/components/config/templates/template-editor.tsx:277
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:329
@@ -4113,7 +4113,7 @@ msgstr "正在生成二维码..."
 msgid "Gift items"
 msgstr "礼物数"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:199
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:201
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:43
@@ -4128,14 +4128,14 @@ msgstr "全局缓冲区大小"
 msgid "Global Configuration"
 msgstr "全局配置"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:63
-#: src/components/config/platforms/tabs/general-tab.tsx:95
-#: src/components/config/shared/limits-card.tsx:64
-#: src/components/config/shared/limits-card.tsx:92
-#: src/components/config/shared/limits-card.tsx:118
-#: src/components/config/shared/output-settings-card.tsx:143
+#: src/components/config/platforms/tabs/general-tab.tsx:67
+#: src/components/config/platforms/tabs/general-tab.tsx:97
+#: src/components/config/shared/limits-card.tsx:67
+#: src/components/config/shared/limits-card.tsx:91
+#: src/components/config/shared/limits-card.tsx:115
+#: src/components/config/shared/output-settings-card.tsx:140
 #: src/components/config/shared/proxy-settings-card.tsx:309
-#: src/components/config/shared/record-danmu-card.tsx:96
+#: src/components/config/shared/record-danmu-card.tsx:97
 msgid "Global Default"
 msgstr "全局默认"
 
@@ -4209,7 +4209,7 @@ msgstr "优雅停止超时"
 msgid "Graph"
 msgstr "图表"
 
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:71
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:77
 msgid "H.264"
 msgstr "H.264"
 
@@ -4225,11 +4225,11 @@ msgstr "H2 保活（毫秒）"
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:43
 msgid "HD"
 msgstr "高清"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "HD (150)"
 msgstr "高清 (150)"
 
@@ -4362,7 +4362,7 @@ msgstr "{hour} 点"
 msgid "Hours"
 msgstr "小时"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:174
+#: src/components/config/shared/danmu-statistics-card.tsx:177
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
 
@@ -4378,11 +4378,11 @@ msgstr "流水线步骤在被取消前允许运行的时长。这些值在工作
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "解密/处理后的分段在缓存中保留的时间。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:213
+#: src/components/config/shared/danmu-statistics-card.tsx:215
 msgid "How many appear in the ranking. 1–500."
 msgstr "排行榜中显示的数量。范围 1–500。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:219
+#: src/components/config/shared/danmu-statistics-card.tsx:221
 msgid "How many appear in the word chart. 1–500."
 msgstr "词频图表中显示的数量。范围 1–500。"
 
@@ -4418,7 +4418,7 @@ msgstr "轮询 nvidia-smi 以确认 GPU 仍可访问的频率。"
 msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问权限(NVIDIA Container Toolkit 在 cgroup v2 主机上的已知问题)。仅在系统中存在 nvidia-smi 时启用,否则不会注册 GPU 行。默认 30 秒。修改会在下一次探测时生效,无需重启。不建议设置低于 30 秒。"
 
-#: src/components/config/shared/output-settings-card.tsx:235
+#: src/components/config/shared/output-settings-card.tsx:230
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "获取直播地址的方式。当某个站点失效时可切换为 Streamlink，该方式需要已安装 Streamlink 工具。"
 
@@ -4426,7 +4426,7 @@ msgstr "获取直播地址的方式。当某个站点失效时可切换为 Strea
 msgid "How to pair video files with .ass subtitles"
 msgstr "如何将视频文件与 .ass 字幕配对"
 
-#: src/components/config/shared/network-settings-card.tsx:235
+#: src/components/config/shared/network-settings-card.tsx:230
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
 msgstr "用于认证的 HTTP cookie。刷新时会自动更新。"
 
@@ -4470,7 +4470,7 @@ msgstr "https://gotify.example.com"
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:76
+#: src/components/streamers/config/streamer-identity-fields.tsx:78
 msgid "https://twitch.tv/..."
 msgstr "https://twitch.tv/..."
 
@@ -4482,7 +4482,7 @@ msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 msgid "Icon"
 msgstr "图标"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:201
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:204
 msgid "ID"
 msgstr "ID"
 
@@ -4518,7 +4518,7 @@ msgstr "忽略高于此比特率的流。"
 msgid "Ignore streams below this bitrate."
 msgstr "忽略低于此比特率的流。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:79
+#: src/components/config/shared/danmu-statistics-card.tsx:82
 msgid "Ignored words"
 msgstr "忽略的词"
 
@@ -4576,15 +4576,15 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:51
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:39
-#: src/components/config/shared/offline-check-card.tsx:78
-#: src/components/config/shared/offline-check-card.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
+#: src/components/config/shared/offline-check-card.tsx:77
+#: src/components/config/shared/offline-check-card.tsx:105
 msgid "Inherited"
 msgstr "继承自上层"
 
-#: src/components/config/shared/output-settings-card.tsx:184
-#: src/components/config/shared/output-settings-card.tsx:224
+#: src/components/config/shared/output-settings-card.tsx:179
+#: src/components/config/shared/output-settings-card.tsx:219
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
@@ -4592,7 +4592,7 @@ msgstr "继承/默认"
 msgid "INITIAL"
 msgstr "初始"
 
-#: src/components/config/shared/retry-policy-form.tsx:96
+#: src/components/config/shared/retry-policy-form.tsx:97
 msgid "Initial Delay (ms)"
 msgstr "初始延迟（ms）"
 
@@ -4654,11 +4654,11 @@ msgstr "内部"
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:68
+#: src/components/config/platforms/tabs/general-tab.tsx:72
 msgid "Interval between checks."
 msgstr "检查间隔。"
 
-#: src/components/config/shared/offline-check-card.tsx:83
+#: src/components/config/shared/offline-check-card.tsx:82
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
@@ -4666,7 +4666,7 @@ msgstr "离线检查之间的间隔。"
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:163
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:176
 msgid "Invalid JSON: {error}"
 msgstr "JSON 格式有误：{error}"
 
@@ -4678,11 +4678,11 @@ msgstr "IO 任务"
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:211
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:213
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
-#: src/components/config/shared/retry-policy-form.tsx:130
+#: src/components/config/shared/retry-policy-form.tsx:131
 msgid "Jitter"
 msgstr "抖动"
 
@@ -4746,7 +4746,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:284
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
 msgid "JSON"
 msgstr "JSON"
 
@@ -4866,7 +4866,7 @@ msgstr "浅色"
 msgid "Limits"
 msgstr "限制"
 
-#: src/components/config/shared/limits-card.tsx:38
+#: src/components/config/shared/limits-card.tsx:42
 msgid "Limits & Validation"
 msgstr "限制与校验"
 
@@ -4919,7 +4919,7 @@ msgid "Live Refresh Interval (ms)"
 msgstr "直播刷新间隔 (ms)"
 
 #. placeholder {0}: i18n._(template.label)
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:32
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:38
 msgid "Loaded template: {0}"
 msgstr "已加载模板：{0}"
 
@@ -4931,7 +4931,7 @@ msgstr "加载中"
 msgid "Loading Danmu"
 msgstr "正在加载弹幕"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:47
+#: src/components/config/shared/pipeline-tabs-section.tsx:54
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
@@ -5019,7 +5019,7 @@ msgstr "日志"
 msgid "Logging configuration updated"
 msgstr "日志配置已更新"
 
-#: src/components/logging/log-viewer.tsx:523
+#: src/components/logging/log-viewer.tsx:521
 msgid "Logging paused"
 msgstr "日志已暂停"
 
@@ -5059,7 +5059,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "低"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Low (80)"
 msgstr "流畅 (80)"
 
@@ -5071,7 +5071,7 @@ msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
 msgid "Lowest (0)"
 msgstr "最低画质 (0)"
 
@@ -5093,15 +5093,15 @@ msgstr "主程序"
 msgid "Maintenance"
 msgstr "维护"
 
-#: src/components/config/shared/network-settings-card.tsx:165
+#: src/components/config/shared/network-settings-card.tsx:160
 msgid "Manage credentials and session cookies."
 msgstr "管理凭据和会话 Cookie。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:246
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:259
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
-#: src/components/config/shared/output-settings-card.tsx:53
+#: src/components/config/shared/output-settings-card.tsx:57
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
@@ -5125,7 +5125,7 @@ msgstr "管理你监控的主播及录制"
 msgid "Manifest (Pair by Order)"
 msgstr "清单（按顺序配对）"
 
-#: src/components/config/shared/network-settings-card.tsx:304
+#: src/components/config/shared/network-settings-card.tsx:299
 msgid "Manual update required"
 msgstr "需要手动更新"
 
@@ -5162,7 +5162,7 @@ msgstr "最大字节数"
 msgid "Max CPU Jobs"
 msgstr "最大 CPU 任务数"
 
-#: src/components/config/shared/retry-policy-form.tsx:113
+#: src/components/config/shared/retry-policy-form.tsx:114
 msgid "Max Delay (ms)"
 msgstr "最大延迟（ms）"
 
@@ -5172,7 +5172,7 @@ msgid "Max Downloads"
 msgstr "最大并发录制数"
 
 #: src/components/config/global/resource-limits-card.tsx:52
-#: src/components/config/shared/limits-card.tsx:57
+#: src/components/config/shared/limits-card.tsx:60
 msgid "Max Duration"
 msgstr "最大时长"
 
@@ -5201,12 +5201,12 @@ msgstr "最大密钥重试次数"
 msgid "Max Key Retry Delay (ms)"
 msgstr "最大密钥重试延迟（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:169
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:174
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "元数据获取的最大重试次数。"
 
 #: src/components/config/global/resource-limits-card.tsx:74
-#: src/components/config/shared/limits-card.tsx:111
+#: src/components/config/shared/limits-card.tsx:108
 msgid "Max Part Size"
 msgstr "最大分片大小"
 
@@ -5222,7 +5222,7 @@ msgstr "最高质量缩略图"
 msgid "Max Refresh Retries"
 msgstr "最大刷新重试次数"
 
-#: src/components/config/shared/retry-policy-form.tsx:52
+#: src/components/config/shared/retry-policy-form.tsx:53
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:365
 msgid "Max Retries"
@@ -5265,7 +5265,7 @@ msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 msgid "Maximum number of concurrent segment downloads."
 msgstr "分段下载的最大并发数。"
 
-#: src/components/config/shared/retry-policy-form.tsx:66
+#: src/components/config/shared/retry-policy-form.tsx:67
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
@@ -5317,7 +5317,7 @@ msgid "Messages"
 msgstr "消息数"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
 #: src/components/pipeline/presets/preset-templates.ts:81
 msgid "Metadata"
 msgstr "元数据"
@@ -5351,11 +5351,11 @@ msgid "Min Priority"
 msgstr "最低优先级"
 
 #: src/components/config/global/resource-limits-card.tsx:33
-#: src/components/config/shared/limits-card.tsx:85
+#: src/components/config/shared/limits-card.tsx:84
 msgid "Min Segment Size"
 msgstr "最小分段大小"
 
-#: src/components/config/shared/limits-card.tsx:97
+#: src/components/config/shared/limits-card.tsx:96
 msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
@@ -5368,7 +5368,7 @@ msgstr "最低优先级"
 msgid "Mins"
 msgstr "分钟"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:82
 msgid "Mint Integrity Token"
 msgstr "签发完整性 token"
 
@@ -5451,7 +5451,7 @@ msgstr "将文件移动到其他位置，并移除原始文件。"
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
 msgid "MP"
 msgstr "MP"
 
@@ -5479,7 +5479,7 @@ msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
-#: src/components/config/shared/retry-policy-form.tsx:90
+#: src/components/config/shared/retry-policy-form.tsx:91
 msgid "Multiplier for exponential backoff."
 msgstr "指数退避的倍率。"
 
@@ -5496,9 +5496,9 @@ msgid "My Template"
 msgstr "我的模板"
 
 #: src/components/notifications/channel-form.tsx:382
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:227
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:234
-#: src/components/streamers/config/streamer-identity-fields.tsx:95
+#: src/components/streamers/config/streamer-identity-fields.tsx:97
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
 msgid "Name"
@@ -5540,7 +5540,7 @@ msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:116
 msgid "Network & Content"
 msgstr "网络与内容"
 
@@ -5620,7 +5620,7 @@ msgstr "未检测到更改"
 msgid "No configuration available for this processor."
 msgstr "此处理器没有可用配置。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:515
+#: src/components/pipeline/workflows/step-config-dialog.tsx:524
 msgid "No configuration form available for this processor."
 msgstr "此处理器没有可用的配置表单。"
 
@@ -5628,7 +5628,7 @@ msgstr "此处理器没有可用的配置表单。"
 msgid "No configuration."
 msgstr "无配置。"
 
-#: src/components/config/shared/network-settings-card.tsx:312
+#: src/components/config/shared/network-settings-card.tsx:307
 msgid "No credentials found."
 msgstr "未找到凭据。"
 
@@ -5648,7 +5648,7 @@ msgstr "暂无描述。"
 msgid "No detailed error message available"
 msgstr "没有可用的详细错误信息"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:103
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:105
 msgid "No engines found."
 msgstr "未找到引擎。"
 
@@ -5703,7 +5703,7 @@ msgstr "未找到日志文件"
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
-#: src/components/logging/log-viewer.tsx:494
+#: src/components/logging/log-viewer.tsx:492
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
@@ -5727,7 +5727,7 @@ msgstr "未添加元数据标签"
 msgid "No modules configured"
 msgstr "未配置模块"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:648
+#: src/components/pipeline/workflows/step-config-dialog.tsx:657
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
@@ -5739,7 +5739,7 @@ msgstr "未生成输出"
 msgid "No outputs found"
 msgstr "未找到媒体文件"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:133
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:135
 msgid "No overrides configured"
 msgstr "未配置覆盖项"
 
@@ -5755,15 +5755,15 @@ msgstr "未发现处理管道 DAG。"
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:108
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:110
 msgid "No platform found."
 msgstr "未找到平台。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:134
 msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:200
+#: src/components/streamers/config/streamer-identity-fields.tsx:202
 #: src/components/streamers/streamer-editor.tsx:132
 msgid "No platform recognizes this link, so it cannot be recorded."
 msgstr "无法识别该链接所属的平台，因此无法录制。"
@@ -5784,7 +5784,7 @@ msgstr "响应中未找到可播放的流"
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:473
+#: src/components/pipeline/workflows/step-config-dialog.tsx:482
 msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 msgstr "没有名为 <0>{presetName}</0> 的预设。如果存在同名的处理器，此步骤会以其默认设置运行该处理器；否则管道将无法启动。请将此步骤指向一个现有预设，即可在这里查看和编辑它的设置。"
 
@@ -5805,7 +5805,7 @@ msgstr "未生成预览"
 msgid "No recent sessions found."
 msgstr "未找到最近的录制会话。"
 
-#: src/components/config/shared/network-settings-card.tsx:140
+#: src/components/config/shared/network-settings-card.tsx:137
 msgid "No refresh needed or not supported"
 msgstr "无需刷新或不支持"
 
@@ -5817,7 +5817,7 @@ msgstr "没有找到结果"
 msgid "No running pipelines selected"
 msgstr "未选择运行中的流水线"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:310
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -5992,8 +5992,8 @@ msgstr "在数据库中保留已完成、失败或已取消的任务及工作流
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:84
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:95
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
@@ -6025,7 +6025,7 @@ msgstr "NVENC HEVC 快速"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
@@ -6050,11 +6050,11 @@ msgstr "离线"
 
 #: src/components/config/global/network-system-card.tsx:93
 #: src/components/config/global/network-system-card.tsx:96
-#: src/components/config/shared/offline-check-card.tsx:43
+#: src/components/config/shared/offline-check-card.tsx:46
 msgid "Offline Check"
 msgstr "离线检查"
 
-#: src/components/config/shared/offline-check-card.tsx:65
+#: src/components/config/shared/offline-check-card.tsx:64
 msgid "Offline Check Interval"
 msgstr "离线检查间隔"
 
@@ -6063,7 +6063,7 @@ msgid "Offline Detection"
 msgstr "离线检测"
 
 #: src/components/config/global/network-system-card.tsx:125
-#: src/components/config/shared/offline-check-card.tsx:99
+#: src/components/config/shared/offline-check-card.tsx:94
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
 
@@ -6079,7 +6079,7 @@ msgstr "偏移一致性检查"
 msgid "OK"
 msgstr "正常"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:84
+#: src/components/config/shared/danmu-statistics-card.tsx:87
 msgid "One word per line"
 msgstr "每行一个词"
 
@@ -6115,7 +6115,7 @@ msgstr "打开菜单"
 msgid "Open navigation menu"
 msgstr "打开导航菜单"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:178
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:183
 msgid "Open quality options"
 msgstr "打开画质选项"
 
@@ -6142,7 +6142,7 @@ msgstr "优化流头部"
 msgid "Optional"
 msgstr "可选"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:301
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:304
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
@@ -6155,11 +6155,11 @@ msgstr "选项"
 msgid "Order this streamer is checked in."
 msgstr "该主播的检查优先顺序。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:35
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
 msgid "Original (10000)"
 msgstr "原画 (10000)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:26
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:31
 msgid "Original / Blu-ray"
 msgstr "原画 / 蓝光"
 
@@ -6196,7 +6196,7 @@ msgstr "已删除产物及其文件"
 msgid "Output Arguments"
 msgstr "输出参数"
 
-#: src/components/config/shared/output-settings-card.tsx:50
+#: src/components/config/shared/output-settings-card.tsx:54
 msgid "Output Configuration"
 msgstr "输出配置"
 
@@ -6209,7 +6209,7 @@ msgid "Output Detection"
 msgstr "输出检测"
 
 #: src/components/config/global/file-config-card.tsx:54
-#: src/components/config/shared/output-settings-card.tsx:66
+#: src/components/config/shared/output-settings-card.tsx:70
 msgid "Output Folder"
 msgstr "输出文件夹"
 
@@ -6217,7 +6217,7 @@ msgstr "输出文件夹"
 msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
-#: src/components/config/shared/output-settings-card.tsx:126
+#: src/components/config/shared/output-settings-card.tsx:125
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:484
 msgid "Output Format"
 msgstr "输出格式"
@@ -6262,15 +6262,15 @@ msgstr "总体健康"
 msgid "Overall system status"
 msgstr "整体系统状态"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:88
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:90
 msgid "Override configuration (paths, delays, etc.) for specific platforms."
 msgstr "为特定平台覆盖配置（路径、延迟等）。"
 
-#: src/components/config/shared/output-settings-card.tsx:107
+#: src/components/config/shared/output-settings-card.tsx:110
 msgid "Override filename template."
 msgstr "覆盖文件名模板。"
 
-#: src/components/config/shared/record-danmu-card.tsx:67
+#: src/components/config/shared/record-danmu-card.tsx:70
 msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
@@ -6278,11 +6278,11 @@ msgstr "覆盖全局默认值。"
 msgid "Override global defaults for this streamer."
 msgstr "为该主播覆盖全局默认设置。"
 
-#: src/components/config/shared/offline-check-card.tsx:46
+#: src/components/config/shared/offline-check-card.tsx:49
 msgid "Override how aggressively the scheduler confirms a stream has ended."
 msgstr "覆盖调度器确认直播结束的激进程度。"
 
-#: src/components/config/shared/output-settings-card.tsx:78
+#: src/components/config/shared/output-settings-card.tsx:82
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
@@ -6329,20 +6329,20 @@ msgstr "页码"
 msgid "pagination"
 msgstr "分页"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:110
+#: src/components/config/shared/pipeline-tabs-section.tsx:117
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:224
+#: src/components/config/shared/pipeline-tabs-section.tsx:231
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:107
+#: src/components/config/shared/pipeline-tabs-section.tsx:114
 msgid "Paired Segment"
 msgstr "配对分段"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:118
-#: src/components/config/shared/pipeline-tabs-section.tsx:201
+#: src/components/config/shared/pipeline-tabs-section.tsx:125
+#: src/components/config/shared/pipeline-tabs-section.tsx:208
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -6385,7 +6385,7 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:73
 #: src/components/config/shared/proxy-settings-card.tsx:204
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
@@ -6404,10 +6404,10 @@ msgstr "请修改密码"
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:49
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:77
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:113
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:51
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:118
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:53
 msgid "Password..."
 msgstr "密码…"
 
@@ -6435,7 +6435,7 @@ msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变
 msgid "Path Variables"
 msgstr "路径变量"
 
-#: src/components/logging/log-viewer.tsx:429
+#: src/components/logging/log-viewer.tsx:427
 msgid "Pause"
 msgstr "暂停"
 
@@ -6480,16 +6480,16 @@ msgstr "单文件带宽限制帮助"
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:76
+#: src/components/config/shared/pipeline-tabs-section.tsx:83
 msgid "Per-segment"
 msgstr "逐段"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:87
-#: src/components/config/shared/pipeline-tabs-section.tsx:177
+#: src/components/config/shared/pipeline-tabs-section.tsx:94
+#: src/components/config/shared/pipeline-tabs-section.tsx:184
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:207
 msgid "Per-Streamer"
 msgstr "按主播"
 
@@ -6619,7 +6619,7 @@ msgid "pipelines"
 msgstr "处理管道"
 
 #: src/components/notifications/events/payload-preview.tsx:67
-#: src/components/streamers/config/streamer-identity-fields.tsx:167
+#: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:519
 msgid "Platform"
 msgstr "平台"
@@ -6640,19 +6640,19 @@ msgstr "平台名称"
 msgid "Platform not found"
 msgstr "未找到平台"
 
-#: src/components/streamers/config/streamer-configuration.tsx:50
+#: src/components/streamers/config/streamer-configuration.tsx:51
 msgid "Platform options"
 msgstr "平台选项"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:122
+#: src/components/config/templates/tabs/platform-override-card.tsx:136
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:87
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:242
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:255
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -6763,7 +6763,7 @@ msgstr "优先使用清单"
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:61
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
@@ -6779,7 +6779,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:83
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -6807,7 +6807,7 @@ msgstr "预设创建成功"
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:136
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:139
 msgid "Preset Details"
 msgstr "预设详情"
 
@@ -6955,7 +6955,7 @@ msgid "Processing nodes"
 msgstr "处理节点"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1682
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:155
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Processor"
 msgstr "处理器"
 
@@ -6979,12 +6979,12 @@ msgstr "进度"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:31
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:35
 msgid "Protection Settings"
 msgstr "保护设置"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:59
 msgid "Protocol Settings"
 msgstr "协议设置"
 
@@ -7010,7 +7010,7 @@ msgstr "代理 URL"
 msgid "QR code expired"
 msgstr "二维码已过期"
 
-#: src/components/config/shared/network-settings-card.tsx:180
+#: src/components/config/shared/network-settings-card.tsx:175
 msgid "QR Login"
 msgstr "扫码登录"
 
@@ -7027,11 +7027,11 @@ msgstr "质量（qscale）"
 msgid "Quality Control"
 msgstr "质量控制"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:88
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:90
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:159
 msgid "Quality Settings"
 msgstr "画质设置"
 
@@ -7081,11 +7081,11 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:162
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
 #: src/components/pipeline/presets/preset-templates.ts:32
 msgid "Rclone"
 msgstr "Rclone"
@@ -7141,7 +7141,7 @@ msgstr "准备观看"
 msgid "Real-time"
 msgstr "实时"
 
-#: src/components/logging/log-viewer.tsx:384
+#: src/components/logging/log-viewer.tsx:382
 msgid "Real-Time Logs"
 msgstr "实时日志"
 
@@ -7183,7 +7183,7 @@ msgid "Recommended: 8388608 (8 MiB)"
 msgstr "推荐：8388608 (8 MiB)"
 
 #: src/components/config/global/file-config-card.tsx:29
-#: src/components/config/shared/record-danmu-card.tsx:46
+#: src/components/config/shared/record-danmu-card.tsx:49
 msgid "Record Danmu"
 msgstr "录制弹幕"
 
@@ -7235,14 +7235,14 @@ msgstr "恢复中"
 msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
-#: src/components/config/shared/network-settings-card.tsx:199
+#: src/components/config/shared/network-settings-card.tsx:194
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:397
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:604
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:141
 msgid "Refresh"
 msgstr "刷新"
 
-#: src/components/config/shared/network-settings-card.tsx:138
+#: src/components/config/shared/network-settings-card.tsx:135
 msgid "Refresh failed: Manual login required"
 msgstr "刷新失败：需要手动登录"
 
@@ -7276,7 +7276,7 @@ msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:147
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:165
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:167
 msgid "Remove"
 msgstr "移除"
 
@@ -7305,7 +7305,7 @@ msgstr "移除请求头"
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:139
+#: src/components/config/templates/tabs/platform-override-card.tsx:153
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
@@ -7333,7 +7333,7 @@ msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本
 msgid "Remux"
 msgstr "重封装"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
 #: src/components/pipeline/presets/preset-templates.ts:5
 #: src/components/pipeline/presets/processors/registry.ts:63
 msgid "Remux / Transcode"
@@ -7401,7 +7401,7 @@ msgstr "替换管道步骤"
 msgid "Replace Step"
 msgstr "替换步骤"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:129
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:134
 msgid "Request AAC audio without a video track."
 msgstr "请求不含视频轨的 AAC 音频。"
 
@@ -7413,12 +7413,12 @@ msgstr "请求超时时长"
 msgid "Require Subtitles"
 msgstr "需要字幕"
 
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:57
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:131
-#: src/components/config/shared/pipeline-tabs-section.tsx:210
+#: src/components/config/shared/pipeline-tabs-section.tsx:138
+#: src/components/config/shared/pipeline-tabs-section.tsx:217
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -7467,7 +7467,7 @@ msgstr "从备份文件恢复"
 msgid "Restore password"
 msgstr "重置密码"
 
-#: src/components/logging/log-viewer.tsx:424
+#: src/components/logging/log-viewer.tsx:422
 msgid "Resume"
 msgstr "继续"
 
@@ -7587,23 +7587,23 @@ msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:180
+#: src/components/config/shared/pipeline-tabs-section.tsx:187
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:238
+#: src/components/config/shared/pipeline-tabs-section.tsx:245
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:160
+#: src/components/config/shared/pipeline-tabs-section.tsx:167
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:125
+#: src/components/config/shared/pipeline-tabs-section.tsx:132
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:205
+#: src/components/config/shared/pipeline-tabs-section.tsx:212
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -7665,7 +7665,7 @@ msgstr "星期六"
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:272
 #: src/components/notifications/channel-form.tsx:460
-#: src/components/shared/save-fab.tsx:99
+#: src/components/shared/save-fab.tsx:100
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
 msgstr "保存更改"
@@ -7674,7 +7674,7 @@ msgstr "保存更改"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:699
+#: src/components/pipeline/workflows/step-config-dialog.tsx:708
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "保存更改"
@@ -7683,7 +7683,7 @@ msgstr "保存更改"
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:709
+#: src/components/pipeline/workflows/step-config-dialog.tsx:718
 msgid "Save with incomplete delete checks?"
 msgstr "删除检查尚未完成，仍要保存吗？"
 
@@ -7692,7 +7692,7 @@ msgid "Save Workflow"
 msgstr "保存工作流"
 
 #: src/components/filters/FilterDialog.tsx:269
-#: src/components/shared/save-fab.tsx:97
+#: src/components/shared/save-fab.tsx:98
 msgid "Saving"
 msgstr "保存中"
 
@@ -7746,7 +7746,7 @@ msgstr "脚本"
 msgid "Scrolling"
 msgstr "滚动弹幕"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:49
 msgid "SD / Low"
 msgstr "标清 / 低清"
 
@@ -7758,7 +7758,7 @@ msgstr "按名称或描述搜索..."
 msgid "Search comments..."
 msgstr "搜索弹幕…"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:100
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:102
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
@@ -7770,7 +7770,7 @@ msgstr "搜索事件..."
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
-#: src/components/logging/log-viewer.tsx:445
+#: src/components/logging/log-viewer.tsx:443
 msgid "Search logs..."
 msgstr "搜索日志..."
 
@@ -7778,7 +7778,7 @@ msgstr "搜索日志..."
 msgid "Search outputs..."
 msgstr "搜索媒体文件..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:107
 msgid "Search platform..."
 msgstr "搜索平台…"
 
@@ -7827,11 +7827,11 @@ msgstr "secret"
 msgid "Secs"
 msgstr "秒"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:176
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
 msgid "Security & Identity"
 msgstr "安全与身份"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:79
+#: src/components/config/shared/pipeline-tabs-section.tsx:86
 msgid "Segment"
 msgstr "分段"
 
@@ -7865,11 +7865,11 @@ msgstr "选择"
 msgid "Select a default engine"
 msgstr "选择默认引擎"
 
-#: src/components/config/shared/output-settings-card.tsx:137
+#: src/components/config/shared/output-settings-card.tsx:135
 msgid "Select a format"
 msgstr "选择格式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "选择预设或输入斗鱼画质值。仅音频会请求不含视频的 AAC。"
 
@@ -7894,23 +7894,23 @@ msgstr "选择主播"
 msgid "Select All"
 msgstr "全选"
 
-#: src/components/config/shared/output-settings-card.tsx:178
+#: src/components/config/shared/output-settings-card.tsx:173
 msgid "Select an engine"
 msgstr "选择引擎"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
 msgid "Select API Mode"
 msgstr "选择 API 模式"
 
-#: src/components/config/shared/record-danmu-card.tsx:90
+#: src/components/config/shared/record-danmu-card.tsx:92
 msgid "Select behavior"
 msgstr "选择行为"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:266
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:269
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:127
 msgid "Select Client Type"
 msgstr "选择客户端类型"
 
@@ -7947,7 +7947,7 @@ msgstr "选择格式"
 msgid "Select operation"
 msgstr "选择操作"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:184
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:189
 msgid "Select or type a rate"
 msgstr "选择或输入画质值"
 
@@ -7996,17 +7996,17 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:117
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:120
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:656
+#: src/components/pipeline/workflows/step-config-dialog.tsx:665
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:236
 #: src/components/notifications/channel-form.tsx:413
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:173
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
 msgid "Select type"
 msgstr "选择类型"
 
@@ -8023,7 +8023,7 @@ msgstr "已选择"
 msgid "Selected stream"
 msgstr "已选择的流"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:85
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启；仅在你所在网络签发失败时关闭。"
 
@@ -8040,7 +8040,7 @@ msgstr "服务器未配置"
 msgid "Server URL"
 msgstr "服务器地址"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:146
+#: src/components/config/shared/pipeline-tabs-section.tsx:153
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "会话"
@@ -8049,16 +8049,16 @@ msgstr "会话"
 msgid "Session {sessionLabel}"
 msgstr "会话 {sessionLabel}"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:143
+#: src/components/config/shared/pipeline-tabs-section.tsx:150
 msgid "Session Complete"
 msgstr "会话完成"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:154
-#: src/components/config/shared/pipeline-tabs-section.tsx:235
+#: src/components/config/shared/pipeline-tabs-section.tsx:161
+#: src/components/config/shared/pipeline-tabs-section.tsx:242
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:254
+#: src/components/config/shared/pipeline-tabs-section.tsx:261
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -8130,7 +8130,7 @@ msgstr "会话缩略图"
 msgid "Sessions"
 msgstr "录制会话"
 
-#: src/components/config/shared/limits-card.tsx:41
+#: src/components/config/shared/limits-card.tsx:45
 msgid "Set constraints on downloads."
 msgstr "设置录制限制。"
 
@@ -8156,7 +8156,7 @@ msgstr "设置"
 msgid "Settings updated"
 msgstr "配置已更新"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:171
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:172
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -8257,7 +8257,7 @@ msgstr "达到时长后跳过"
 msgid "Skip existing files (default)"
 msgstr "跳过已存在的文件（默认）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -8281,7 +8281,7 @@ msgstr "SMTP 主机"
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:716
+#: src/components/pipeline/workflows/step-config-dialog.tsx:725
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结果，仍要保存吗？"
 
@@ -8289,8 +8289,8 @@ msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结
 msgid "Something went wrong!"
 msgstr "发生错误！"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:52
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:81
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:86
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
 
@@ -8307,15 +8307,15 @@ msgid "Space Saver"
 msgstr "空间节省"
 
 #: src/components/config/platforms/platform-editor.tsx:230
-#: src/components/config/templates/tabs/platform-override-card.tsx:69
+#: src/components/config/templates/tabs/platform-override-card.tsx:83
 msgid "Specific"
 msgstr "特定"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:230
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:232
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:74
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:76
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
@@ -8324,11 +8324,11 @@ msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 msgid "Speed"
 msgstr "速度"
 
-#: src/components/config/shared/limits-card.tsx:69
+#: src/components/config/shared/limits-card.tsx:72
 msgid "Split after duration."
 msgstr "按时长分割。"
 
-#: src/components/config/shared/limits-card.tsx:123
+#: src/components/config/shared/limits-card.tsx:120
 msgid "Split after size."
 msgstr "按大小分割。"
 
@@ -8400,15 +8400,15 @@ msgstr "主文件名（文件名匹配）"
 msgid "Step Configuration"
 msgstr "步骤配置"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:578
+#: src/components/pipeline/workflows/step-config-dialog.tsx:587
 msgid "Step ID is required."
 msgstr "步骤 ID 不能为空。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:580
+#: src/components/pipeline/workflows/step-config-dialog.tsx:589
 msgid "Step ID must be unique."
 msgstr "步骤 ID 必须唯一。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:553
+#: src/components/pipeline/workflows/step-config-dialog.tsx:562
 msgid "Step Identifier (Unique)"
 msgstr "步骤标识符（唯一）"
 
@@ -8444,11 +8444,11 @@ msgstr "将这些凭据保存在服务器上（明文，与平台 Cookie 相同�
 msgid "Stream Archive"
 msgstr "直播归档"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:62
+#: src/components/streamers/config/streamer-identity-fields.tsx:64
 msgid "Stream Details"
 msgstr "流详情"
 
-#: src/components/config/shared/output-settings-card.tsx:209
+#: src/components/config/shared/output-settings-card.tsx:204
 msgid "Stream lookup"
 msgstr "地址获取方式"
 
@@ -8477,10 +8477,10 @@ msgstr "流选项"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:41
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:95
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:104
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:100
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:109
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:45
 msgid "Stream Password"
 msgstr "直播密码"
 
@@ -8647,7 +8647,7 @@ msgstr "成功处理 {0} 个主播"
 msgid "Sunday"
 msgstr "星期日"
 
-#: src/components/config/shared/network-settings-card.tsx:292
+#: src/components/config/shared/network-settings-card.tsx:287
 msgid "Supported"
 msgstr "支持"
 
@@ -8814,7 +8814,7 @@ msgstr "配置已成功处理。以下是更改摘要："
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:82
+#: src/components/streamers/config/streamer-identity-fields.tsx:84
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
@@ -8866,7 +8866,7 @@ msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:721
+#: src/components/pipeline/workflows/step-config-dialog.tsx:730
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的结果文件，而不是原始录制文件。若要在转码后删除原始文件，请在转码步骤上启用“成功后移除输入”。仍要添加此删除步骤吗？"
 
@@ -8882,11 +8882,11 @@ msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果
 msgid "This filter's settings could not be read."
 msgstr "无法读取该过滤器的设置。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:310
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:313
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:91
+#: src/components/config/shared/pipeline-tabs-section.tsx:98
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -8959,7 +8959,7 @@ msgstr "吞吐量"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/lib/media-file-type.ts:46
 msgid "Thumbnail"
@@ -9003,7 +9003,7 @@ msgstr "按时间段调度"
 msgid "Timeline"
 msgstr "时间线"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:225
+#: src/components/config/shared/danmu-statistics-card.tsx:227
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
@@ -9039,7 +9039,7 @@ msgstr "时间戳"
 msgid "Timezone"
 msgstr "时区"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:39
+#: src/components/config/platforms/tabs/general-tab.tsx:43
 msgid "Timing & Delays"
 msgstr "时间与延迟"
 
@@ -9072,7 +9072,7 @@ msgstr "收件人地址"
 msgid "Today"
 msgstr "今天"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:110
+#: src/components/config/templates/tabs/platform-override-card.tsx:124
 msgid "Toggle"
 msgstr "切换"
 
@@ -9088,7 +9088,7 @@ msgstr "令牌"
 msgid "Tool Location"
 msgstr "工具位置"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:212
+#: src/components/config/shared/danmu-statistics-card.tsx:214
 msgid "Top chatters to keep"
 msgstr "保留活跃发言人数量"
 
@@ -9182,19 +9182,19 @@ msgstr "瞬时错误"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:156
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:128
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:133
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:88
+#: src/components/config/shared/pipeline-tabs-section.tsx:95
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:156
+#: src/components/config/shared/pipeline-tabs-section.tsx:163
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -9254,7 +9254,7 @@ msgstr "应用关闭时触发。"
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:120
+#: src/components/config/shared/pipeline-tabs-section.tsx:127
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -9301,7 +9301,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:186
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
@@ -9313,7 +9313,7 @@ msgstr "星期二"
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:55
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
@@ -9337,11 +9337,11 @@ msgstr "输入内容..."
 msgid "UI: {UI_BUILD}"
 msgstr "界面：{UI_BUILD}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
 msgid "Ultra (250)"
 msgstr "超清 (250)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:32
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:37
 msgid "Ultra HD"
 msgstr "超清"
 
@@ -9378,7 +9378,7 @@ msgstr "Unix 时间戳"
 msgid "Unknown"
 msgstr "未知"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:158
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
 
@@ -9409,7 +9409,7 @@ msgstr "不限"
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:189
+#: src/components/streamers/config/streamer-identity-fields.tsx:191
 msgid "Unsupported link"
 msgstr "不支持的链接"
 
@@ -9511,7 +9511,7 @@ msgid "Uptime <0>{0}</0>"
 msgstr "运行时间 <0>{0}</0>"
 
 #: src/components/notifications/channel-card.tsx:144
-#: src/components/streamers/config/streamer-identity-fields.tsx:71
+#: src/components/streamers/config/streamer-identity-fields.tsx:73
 #: src/components/streamers/progress-indicator.tsx:152
 msgid "URL"
 msgstr "URL"
@@ -9528,7 +9528,7 @@ msgstr "使用 <0>-movflags +faststart</0>"
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:124
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 
@@ -9559,7 +9559,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/shared/proxy-settings-card.tsx:185
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
@@ -9668,7 +9668,7 @@ msgstr "查看"
 msgid "View All"
 msgstr "查看全部"
 
-#: src/components/logging/log-viewer.tsx:408
+#: src/components/logging/log-viewer.tsx:406
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "实时查看应用日志。日志最多保留最近 {MAX_LOG_ENTRIES, plural, other {# 条}}。"
 
@@ -9708,11 +9708,11 @@ msgstr "等待"
 msgid "Wait indefinitely"
 msgstr "无限等待"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:100
+#: src/components/config/platforms/tabs/general-tab.tsx:102
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/logging/log-viewer.tsx:498
+#: src/components/logging/log-viewer.tsx:496
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
@@ -9728,7 +9728,7 @@ msgstr "处理队列过长时发出警告。"
 msgid "Watch"
 msgstr "观看"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:76
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
 msgid "WEB"
 msgstr "WEB"
 
@@ -9799,7 +9799,7 @@ msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-s
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "启用后，每个点播分段都必须在该超时内完成。"
 
-#: src/components/config/shared/output-settings-card.tsx:194
+#: src/components/config/shared/output-settings-card.tsx:189
 msgid "Which tool downloads the stream once its URL is known."
 msgstr "获取到地址后，用哪个工具下载直播流。"
 
@@ -9852,7 +9852,7 @@ msgstr "工作流"
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:88
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:93
 msgid "WUP"
 msgstr "WUP"
 
@@ -9869,7 +9869,7 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/components/streamers/streamer-editor.tsx:107
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:188
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "有未保存的更改，确定要离开吗？"
 
