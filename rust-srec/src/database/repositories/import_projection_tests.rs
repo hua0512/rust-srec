@@ -103,7 +103,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
             sqlx::query("INSERT INTO template_config(id,name) VALUES (?,?)")
                 .bind(format!("projection-ref-template-{number}")).bind(format!("reference-template-{number}"))
                 .execute(&pool).await.unwrap();
-            sqlx::query("INSERT INTO streamers(id,name,url,platform_config_id) VALUES (?,?,?,'platform-huya')")
+            sqlx::query("INSERT INTO streamers(id,name,url,platform_config_id,state) VALUES (?,?,?,'platform-huya','NOT_LIVE')")
                 .bind(format!("projection-ref-streamer-{number}")).bind(format!("reference-streamer-{number}"))
                 .bind(format!("https://example.com/reference-{number}")).execute(&pool).await.unwrap();
         }
