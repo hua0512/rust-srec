@@ -1,4 +1,5 @@
 use super::*;
+use crate::downloader::engine::SegmentEvent;
 use std::io::Write;
 use std::path::Path;
 

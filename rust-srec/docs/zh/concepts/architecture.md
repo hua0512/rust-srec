@@ -254,6 +254,23 @@ Telegram / Webhook 通道，包含重试、熔断与 dead-letter 持久化。可
 
 已移除未使用的下载中配置更新 API、只写不读的重试覆盖字段，以及 `stop_all`、`get_downloads_by_status`、`set_high_priority_extra_slots` 和旧进程等待辅助函数。Rust 集成应使用受支持的管理器关闭与快照方法、`DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`，以及公开的 `CircuitBreaker` 方法。内部熔断器管理通过 `CircuitBreakerManager::get` 获取实例。Mesio 引擎诊断现在报告所链接库的 `mesio::VERSION`。
 
+### FFmpeg 录制事件
+
+直接 FFmpeg 录制与 Streamlink 重封装共享分片标识、时长与字节累计、进度采样、
+输出错误分类及最终事件发布。文件系统字节缓存只属于当前分片：切换分片后，
+在新分片的元数据采样成功前使用解析出的进度字节数。每个活动分片的文件系统
+采样仍以 500 毫秒为间隔节流。
+
+标准错误 EOF 不代表最终文件已经关闭。跟踪器等待进程所有者报告退出结果后，
+才检查并发布最终分片；无法确认清理完成时不发布该分片完成事件。输出 I/O 错误
+仍先于终止失败事件发布；仅当标准错误尚未识别输出错误时，退出码 228 才提供
+磁盘已满的回退分类。
+
+辅助任务收尾会跨超时保留已完成的等待结果，在无法确认清理时中止并等待未完成
+任务，确认清理成功后则允许最终事件正常发布。FFmpeg 的标准输入停止命令与
+Streamlink 的生产者、管道和受控子进程关闭策略仍分别保留。这不扩大 Streamlink
+内部缓冲区排空或隐藏 Windows 进程协作停止的保证。
+
 ## 关键流程
 
 ### 录制生命周期（端到端）

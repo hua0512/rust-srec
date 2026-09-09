@@ -96,6 +96,8 @@ pub(crate) struct RecordingFixture {
     path: std::path::PathBuf,
     graceful: bool,
     pub(crate) unconfirmed: bool,
+    contract: Option<super::recording_contracts::ContractCase>,
+    pipeline: bool,
 }
 
 impl RecordingFixture {
@@ -104,7 +106,35 @@ impl RecordingFixture {
             path: dir.join("final.ts"),
             graceful: matches!(case, StopCase::Graceful),
             unconfirmed: matches!(case, StopCase::Unconfirmed),
+            contract: None,
+            pipeline: false,
         }
+    }
+
+    pub(crate) fn contract(
+        dir: &Path,
+        case: super::recording_contracts::ContractCase,
+        pipeline: bool,
+    ) -> Self {
+        Self {
+            path: dir.join("final.ts"),
+            graceful: false,
+            unconfirmed: false,
+            contract: Some(case),
+            pipeline,
+        }
+    }
+
+    pub(crate) async fn inject_wait_failure(&self) -> std::io::Result<()> {
+        if matches!(
+            self.contract,
+            Some(super::recording_contracts::ContractCase::WaitFailure)
+        ) {
+            super::recording_contracts::wait_for_file(&self.path.with_file_name("wait-ready"))
+                .await;
+            return Err(std::io::Error::other("injected recording wait failure"));
+        }
+        Ok(())
     }
 
     pub(crate) fn command(&self, streamlink: bool) -> tokio::process::Command {
@@ -126,6 +156,12 @@ impl RecordingFixture {
                     "stubborn"
                 },
             );
+        if let Some(case) = self.contract {
+            command.env("SREC_RECORDING_CONTRACT", case.name()).env(
+                "SREC_RECORDING_PIPELINE",
+                if self.pipeline { "1" } else { "0" },
+            );
+        }
         command
     }
 }
@@ -139,6 +175,9 @@ fn recording_child() {
         return;
     };
     let mode = std::env::var("SREC_RECORDING_TEST_MODE").unwrap();
+    if let Ok(case) = std::env::var("SREC_RECORDING_CONTRACT") {
+        super::recording_contracts::recording_contract_child(Path::new(&path), &mode, &case);
+    }
     if mode != "source" {
         // This must finish before announcing the segment: an unread stdout pipe
         // would fill here and make the parent fail its bounded startup wait.

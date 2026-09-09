@@ -72,6 +72,10 @@
 
 ## Downloader Interfaces
 
+- **FFmpeg segment progress and finalization share one implementation**
+
+  Direct FFmpeg and Streamlink remuxing now use the same segment tracker. Rotated segments no longer reuse a previous file's byte-sample state, and timed-out auxiliary settlement retains already-joined task results. Final files still wait for confirmed process settlement; output-error and exit-228 precedence remain intact. See [FFmpeg recording events](../concepts/architecture.md#ffmpeg-recording-events).
+
 - **Mesio diagnostics report the linked library version**
 
   Engine checks now report Mesio's compiled package version instead of a hardcoded historical value. Download manager ownership, event delivery and tests are organized into focused modules, and unused update/process/configuration wrappers are removed. Existing download events and runtime shutdown behavior are preserved; see the [Rust interface notes](../concepts/architecture.md#downloader-rust-interfaces).

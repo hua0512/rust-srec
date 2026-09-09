@@ -5,7 +5,6 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use pipeline_common::expand_filename_template;
 use process_utils::ContainedChild;
@@ -16,12 +15,11 @@ use tracing::{debug, error, info, warn};
 
 use super::traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError,
-    EngineType, IoErrorKindSer, SegmentEvent, SegmentInfo,
+    EngineType,
 };
 use super::utils::{
-    OutputRecordReader, PROCESS_CLEANUP_TIMEOUT, TASK_SETTLEMENT_TIMEOUT, is_segment_start,
-    observe_segment_event_send, output_io_error_kind, parse_opened_path, parse_progress,
-    redact_process_args,
+    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit, redact_process_args,
+    settle_engine_tasks,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
 
@@ -258,6 +256,15 @@ enum StreamlinkPipelineExit {
         kind: DownloadFailureKind,
         message: String,
     },
+}
+
+impl From<StreamlinkPipelineExit> for RecordingExit {
+    fn from(exit: StreamlinkPipelineExit) -> Self {
+        match exit {
+            StreamlinkPipelineExit::Ffmpeg(code) => Self::Status(code),
+            StreamlinkPipelineExit::Failed { kind, message } => Self::Failed { kind, message },
+        }
+    }
 }
 
 impl StreamlinkPipelineExit {
@@ -615,6 +622,8 @@ impl DownloadEngine for StreamlinkEngine {
             .fixture
             .as_ref()
             .is_some_and(|fixture| fixture.unconfirmed);
+        #[cfg(test)]
+        let wait_fixture = self.fixture.clone();
         let process_task = AbortOnDropHandle::new(tokio::spawn(async move {
             // Resolved per use rather than once here: `set_stop_deadline` runs
             // when the stop is requested, which is after this task starts, so a
@@ -650,7 +659,16 @@ impl DownloadEngine for StreamlinkEngine {
                     }
                     (apply_pipe_failure(outcome, process_pipe_failure.lock().clone()), streamlink_confirmed && ffmpeg_confirmed)
                 }
-                streamlink_result = streamlink.wait() => {
+                streamlink_result = async {
+                    #[cfg(test)]
+                    if let Some(fixture) = &wait_fixture {
+                        fixture.inject_wait_failure().await.map_err(|source| process_utils::ContainmentError::Io {
+                            operation: "wait for streamlink fixture",
+                            source,
+                        })?;
+                    }
+                    streamlink.wait().await
+                } => {
                     let (streamlink_failure, streamlink_confirmed) = match streamlink_result {
                         Ok(status) if status.success() => (None, true),
                         Ok(status) => (Some(StreamlinkPipelineExit::Failed {
@@ -796,7 +814,6 @@ impl DownloadEngine for StreamlinkEngine {
             (cleanup_confirmed, cleanup_error)
         }));
 
-        let event_tx = handle.event_tx.clone();
         let streamer_id = config.streamer_id.clone();
 
         // Spawn task to pipe streamlink stdout to ffmpeg stdin
@@ -884,458 +901,28 @@ impl DownloadEngine for StreamlinkEngine {
         }));
 
         // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status
-        let event_tx_clone = event_tx.clone();
-        let streamer_id_clone = streamer_id.clone();
-        let output_dir_clone = config.output_dir.clone();
-        let event_forced_settlement = forced_settlement.clone();
-        let event_task = AbortOnDropHandle::new(tokio::spawn(async move {
-            let mut reader = OutputRecordReader::new(ffmpeg_stderr);
-            let mut active_segment: Option<(u32, PathBuf, f64, DateTime<Utc>)> = None;
-            let mut next_segment_index = 0u32;
-            let mut segments_completed = 0u32;
-            let mut total_bytes = 0u64;
-            let mut total_duration = 0.0f64;
-            // Preserve the output failure through process exit without reporting it twice.
-            let mut output_io_kind = None;
-            let mut bytes_completed = 0u64;
-            let mut media_duration_offset_secs = 0.0f64;
-            let mut media_duration_total_secs = 0.0f64;
-            let mut cached_active_segment_bytes = 0u64;
-            let mut has_active_segment_fs_bytes = false;
-            let mut last_active_segment_stat_at = Instant::now();
-            let mut last_progress_snapshot: Option<(u64, f64, f64)> = None;
-            let mut cleanup_unconfirmed = false;
-
-            if let Some(path) = single_output_path {
-                let index = 0u32;
-                next_segment_index = 1;
-                let started_at = Utc::now();
-                active_segment = Some((index, path.clone(), 0.0, started_at));
-                observe_segment_event_send(
-                    event_tx_clone
-                        .send(SegmentEvent::SegmentStarted {
-                            path,
-                            sequence: index,
-                            started_at,
-                        })
-                        .await,
-                    &streamer_id_clone,
-                );
-            }
-
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = event_forced_settlement.cancelled() => {
-                        cleanup_unconfirmed = true;
-                        warn!(
-                            streamer_id = %streamer_id_clone,
-                            "Stopping FFmpeg stderr processing after unconfirmed Streamlink pipeline cleanup"
-                        );
-                        break;
-                    }
-                    record_result = reader.next_record() => {
-                        match record_result {
-                            Ok(Some(line)) => {
-                                // Check for segment completion using shared utility
-                                if segment_mode
-                                    && is_segment_start(&line)
-                                    && let Some(path) = parse_opened_path(&line)
-                                {
-                                        // Complete the previous segment when a new one starts.
-                                        if let Some((index, path, started_media_at, started_at)) = active_segment.take() {
-                                            let size_bytes = tokio::fs::metadata(&path)
-                                                .await
-                                                .map(|m| m.len())
-                                                .unwrap_or(0);
-                                            let duration_secs =
-                                                (media_duration_total_secs - started_media_at).max(0.0);
-                                            segments_completed = segments_completed.saturating_add(1);
-                                            bytes_completed = bytes_completed.saturating_add(size_bytes);
-                                            media_duration_offset_secs += duration_secs;
-                                            media_duration_total_secs = media_duration_offset_secs;
-                                            total_bytes = bytes_completed;
-                                            total_duration = media_duration_offset_secs;
-                                            cached_active_segment_bytes = 0;
-                                            observe_segment_event_send(
-                                                event_tx_clone
-                                                    .send(SegmentEvent::SegmentCompleted(SegmentInfo {
-                                                        path,
-                                                        duration_secs,
-                                                        size_bytes,
-                                                        index,
-                                                        started_at: Some(started_at),
-                                                        completed_at: Utc::now(),
-                                                        split_reason_code: None,
-                                                        split_reason_details_json: None,
-                                                    }))
-                                                    .await,
-                                                &streamer_id_clone,
-                                            );
-                                        }
-
-                                        let index = next_segment_index;
-                                        next_segment_index = next_segment_index.saturating_add(1);
-                                        let started_at = Utc::now();
-                                        active_segment = Some((
-                                            index,
-                                            path.clone(),
-                                            media_duration_total_secs,
-                                            started_at,
-                                        ));
-
-                                        observe_segment_event_send(
-                                            event_tx_clone
-                                                .send(SegmentEvent::SegmentStarted {
-                                                    path,
-                                                    sequence: index,
-                                                    started_at,
-                                                })
-                                                .await,
-                                            &streamer_id_clone,
-                                        );
-                                        debug!(
-                                            "Segment {} started for {}",
-                                            index, streamer_id_clone
-                                        );
-                                    }
-
-                                // Parse progress using shared utility
-                                if let Some(mut progress) = parse_progress(&line) {
-                                    let elapsed_secs = started_instant.elapsed().as_secs_f64();
-
-                                    let segment_media_secs = progress.media_duration_secs;
-                                    if segment_mode {
-                                        media_duration_total_secs =
-                                            media_duration_offset_secs + segment_media_secs;
-                                    } else {
-                                        media_duration_total_secs = segment_media_secs;
-                                    }
-
-                                    // Prefer filesystem-backed byte counts since FFmpeg's `size=`
-                                    // can reset or be absent when segmenting.
-                                    let mut bytes_total = progress.bytes_downloaded;
-                                    if let Some((_, path, _, _)) = active_segment.as_ref() {
-                                        let now = Instant::now();
-                                        if now.duration_since(last_active_segment_stat_at)
-                                            >= Duration::from_millis(500)
-                                        {
-                                            let path = path.clone();
-                                            if let Ok(meta) = tokio::fs::metadata(&path).await {
-                                                cached_active_segment_bytes = meta.len();
-                                                has_active_segment_fs_bytes = true;
-                                            }
-                                            last_active_segment_stat_at = now;
-                                        }
-
-                                        let fs_total = if segment_mode {
-                                            bytes_completed.saturating_add(cached_active_segment_bytes)
-                                        } else {
-                                            cached_active_segment_bytes
-                                        };
-                                        let parsed_total = if segment_mode {
-                                            bytes_completed.saturating_add(progress.bytes_downloaded)
-                                        } else {
-                                            progress.bytes_downloaded
-                                        };
-                                        bytes_total = if has_active_segment_fs_bytes {
-                                            fs_total
-                                        } else {
-                                            parsed_total
-                                        };
-                                    } else if segment_mode {
-                                        bytes_total = bytes_completed.saturating_add(bytes_total);
-                                    }
-
-                                    total_bytes = bytes_total;
-                                    total_duration = media_duration_total_secs;
-
-                                    progress.bytes_downloaded = bytes_total;
-                                    progress.duration_secs = elapsed_secs;
-                                    progress.media_duration_secs = media_duration_total_secs;
-                                    progress.segments_completed = segments_completed;
-                                    progress.current_segment = active_segment
-                                        .as_ref()
-                                        .map(|(_, p, _, _)| p.to_string_lossy().to_string());
-
-                                    progress.speed_bytes_per_sec = last_progress_snapshot
-                                        .and_then(|(prev_bytes, prev_elapsed, _)| {
-                                            let dt = elapsed_secs - prev_elapsed;
-                                            (dt > 0.0).then_some(
-                                                ((bytes_total.saturating_sub(prev_bytes)) as f64 / dt) as u64,
-                                            )
-                                        })
-                                        .unwrap_or(0);
-                                    progress.playback_ratio = last_progress_snapshot
-                                        .and_then(|(_, prev_elapsed, prev_media)| {
-                                            let dt = elapsed_secs - prev_elapsed;
-                                            (dt > 0.0)
-                                                .then_some((media_duration_total_secs - prev_media) / dt)
-                                        })
-                                        .unwrap_or(0.0);
-                                    last_progress_snapshot =
-                                        Some((bytes_total, elapsed_secs, media_duration_total_secs));
-
-                                    observe_segment_event_send(
-                                        event_tx_clone.send(SegmentEvent::Progress(progress)).await,
-                                        &streamer_id_clone,
-                                    );
-                                }
-
-                                // Detect mid-stream disk-full. Same pattern as
-                                // ffmpeg.rs — see the matching block there
-                                // for the rationale. Streamlink feeds stderr
-                                // from the spawned ffmpeg process, so the
-                                // same signatures apply.
-                                if output_io_kind.is_none() && let Some(io_kind) = output_io_error_kind(&line) {
-                                    output_io_kind = Some(io_kind);
-                                    warn!(
-                                        streamer_id = %streamer_id_clone,
-                                        output_dir = %output_dir_clone.display(),
-                                        "Streamlink+FFmpeg signalled output I/O failure; notifying the output-root gate"
-                                    );
-                                    observe_segment_event_send(
-                                        event_tx_clone
-                                            .send(SegmentEvent::OutputIoError {
-                                                output_dir: output_dir_clone.clone(),
-                                                io_kind,
-                                                detail: format!("streamlink+ffmpeg: {}", line),
-                                            })
-                                            .await,
-                                        &streamer_id_clone,
-                                    );
-                                }
-                            }
-                            Ok(None) => {
-                                debug!("FFmpeg process ended for {}", streamer_id_clone);
-                                break;
-                            }
-                            Err(e) => {
-                                error!("Error reading ffmpeg stderr: {}", e);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Wait for the process owner before inspecting or publishing the
-            // final path. Stderr EOF can race process settlement, so observing
-            // EOF alone does not prove the pipeline released the file.
-            let pipeline_exit = match exit_rx.await {
-                Ok(pipeline_exit) => pipeline_exit,
-                Err(_) => {
-                    cleanup_unconfirmed = true;
-                    StreamlinkPipelineExit::Failed {
-                        kind: DownloadFailureKind::ProcessExit { code: None },
-                        message: "Streamlink process waiter stopped without an exit result"
-                            .to_string(),
-                    }
-                }
-            };
-            cleanup_unconfirmed |= event_forced_settlement.is_cancelled();
-
-            // Do not publish a segment while the process pipeline may still be
-            // writing it. The failed process settlement is reported below as
-            // the terminal outcome instead.
-            if !cleanup_unconfirmed
-                && let Some((index, path, started_media_at, started_at)) = active_segment.take()
-            {
-                let size_bytes = tokio::fs::metadata(&path)
-                    .await
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                let duration_secs = (media_duration_total_secs - started_media_at).max(0.0);
-                segments_completed = segments_completed.saturating_add(1);
-                bytes_completed = bytes_completed.saturating_add(size_bytes);
-                total_bytes = bytes_completed;
-                if segment_mode {
-                    media_duration_offset_secs += duration_secs;
-                    total_duration = media_duration_offset_secs;
-                } else {
-                    total_duration = media_duration_total_secs;
-                }
-                observe_segment_event_send(
-                    event_tx_clone
-                        .send(SegmentEvent::SegmentCompleted(SegmentInfo {
-                            path,
-                            duration_secs,
-                            size_bytes,
-                            index,
-                            started_at: Some(started_at),
-                            completed_at: Utc::now(),
-                            split_reason_code: None,
-                            split_reason_details_json: None,
-                        }))
-                        .await,
-                    &streamer_id_clone,
-                );
-            }
-
-            match pipeline_exit {
-                StreamlinkPipelineExit::Ffmpeg(Some(0)) if output_io_kind.is_none() => {
-                    // Exit code 0 — same caveat as ffmpeg: the subprocess
-                    // exited cleanly but that doesn't prove the upstream
-                    // stream is over. SessionLifecycle treats
-                    // SubprocessExitZero as ambiguous → hysteresis.
-                    observe_segment_event_send(
-                        event_tx_clone
-                            .send(SegmentEvent::DownloadCompleted {
-                                total_bytes,
-                                total_duration_secs: total_duration,
-                                total_segments: segments_completed,
-                                engine_signal:
-                                    crate::downloader::EngineEndSignal::SubprocessExitZero,
-                            })
-                            .await,
-                        &streamer_id_clone,
-                    );
-                }
-                StreamlinkPipelineExit::Ffmpeg(Some(code)) => {
-                    // Fallback output failure for exit code 228 if we
-                    // didn't already catch it from stderr. Mirrors ffmpeg.rs.
-                    if code == 228 && output_io_kind.is_none() {
-                        output_io_kind = Some(IoErrorKindSer::StorageFull);
-                        warn!(
-                            streamer_id = %streamer_id_clone,
-                            output_dir = %output_dir_clone.display(),
-                            "Streamlink+FFmpeg exited with code 228; assuming disk-full"
-                        );
-                        observe_segment_event_send(
-                            event_tx_clone
-                                .send(SegmentEvent::OutputIoError {
-                                    output_dir: output_dir_clone.clone(),
-                                    io_kind: IoErrorKindSer::StorageFull,
-                                    detail: "streamlink+ffmpeg exit 228 (I/O error, likely ENOSPC)"
-                                        .to_string(),
-                                })
-                                .await,
-                            &streamer_id_clone,
-                        );
-                    }
-
-                    // Non-zero exit code - failure
-                    observe_segment_event_send(
-                        event_tx_clone
-                            .send(SegmentEvent::DownloadFailed {
-                                kind: output_io_kind.map_or(
-                                    DownloadFailureKind::ProcessExit { code: Some(code) },
-                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
-                                        io_kind,
-                                    },
-                                ),
-                                message: format!("Streamlink/FFmpeg exited with code {}", code),
-                            })
-                            .await,
-                        &streamer_id_clone,
-                    );
-                }
-                StreamlinkPipelineExit::Ffmpeg(None) => {
-                    observe_segment_event_send(
-                        event_tx_clone
-                            .send(SegmentEvent::DownloadFailed {
-                                kind: output_io_kind.map_or(
-                                    DownloadFailureKind::ProcessExit { code: None },
-                                    |io_kind| DownloadFailureKind::OutputRootUnavailable {
-                                        io_kind,
-                                    },
-                                ),
-                                message: "Streamlink/FFmpeg exited without an exit code"
-                                    .to_string(),
-                            })
-                            .await,
-                        &streamer_id_clone,
-                    );
-                }
-                StreamlinkPipelineExit::Failed { kind, message } => {
-                    observe_segment_event_send(
-                        event_tx_clone
-                            .send(SegmentEvent::DownloadFailed {
-                                kind: output_io_kind.map_or(kind, |io_kind| {
-                                    DownloadFailureKind::OutputRootUnavailable { io_kind }
-                                }),
-                                message,
-                            })
-                            .await,
-                        &streamer_id_clone,
-                    );
-                }
-            }
-        }));
-
-        let process_result = process_task.await;
-        let cleanup_confirmed = process_result
-            .as_ref()
-            .map(|(confirmed, _)| *confirmed)
-            .unwrap_or(false);
-        if !cleanup_confirmed {
-            forced_settlement.cancel();
-        }
-
-        let mut pipe_task = pipe_task;
-        let mut streamlink_stderr_task = streamlink_stderr_task;
-        let mut event_task = event_task;
-        let (auxiliary_results, settlement_timed_out) = if cleanup_confirmed {
-            (
-                tokio::join!(pipe_task, streamlink_stderr_task, event_task),
-                false,
-            )
-        } else {
-            match tokio::time::timeout(TASK_SETTLEMENT_TIMEOUT, async {
-                tokio::join!(&mut pipe_task, &mut streamlink_stderr_task, &mut event_task,)
-            })
-            .await
-            {
-                Ok(results) => (results, false),
-                Err(_) => {
-                    pipe_task.abort();
-                    streamlink_stderr_task.abort();
-                    event_task.abort();
-                    (
-                        tokio::join!(pipe_task, streamlink_stderr_task, event_task),
-                        true,
-                    )
-                }
-            }
+        let events = FfmpegEvents {
+            source: FfmpegSource::Streamlink,
+            segment_mode,
+            single_output_path,
+            started_instant,
+            streamer_id,
+            output_dir: config.output_dir.clone(),
+            event_tx: handle.event_tx.clone(),
+            forced_settlement: forced_settlement.clone(),
         };
-
-        let mut task_errors = Vec::new();
-        match process_result {
-            Ok((true, _)) => {}
-            Ok((false, cleanup_error)) => task_errors.push(format!(
-                "process cleanup was not confirmed: {}",
-                cleanup_error.unwrap_or_else(|| "unknown cleanup failure".to_string())
-            )),
-            Err(error) => task_errors.push(format!("process waiter task failed: {error}")),
-        }
-        if settlement_timed_out {
-            task_errors.push(format!(
-                "auxiliary tasks did not settle within {}s after unconfirmed process cleanup",
-                TASK_SETTLEMENT_TIMEOUT.as_secs()
-            ));
-        }
-        for (task, result) in [
-            ("stdout pipe", auxiliary_results.0),
-            ("stderr monitor", auxiliary_results.1),
-            ("event reader", auxiliary_results.2),
-        ] {
-            if let Err(error) = result
-                && !(settlement_timed_out && error.is_cancelled())
-            {
-                task_errors.push(format!("{task} task failed: {error}"));
-            }
-        }
-        if !task_errors.is_empty() {
-            return Err(EngineStartError::new(
-                DownloadFailureKind::Other,
-                format!(
-                    "Streamlink task settlement failed: {}",
-                    task_errors.join("; ")
-                ),
-            ));
-        }
-
-        Ok(())
+        let event_task = AbortOnDropHandle::new(tokio::spawn(events.run(ffmpeg_stderr, exit_rx)));
+        settle_engine_tasks(
+            process_task,
+            forced_settlement,
+            FfmpegSource::Streamlink,
+            vec![
+                ("stdout pipe", pipe_task),
+                ("stderr monitor", streamlink_stderr_task),
+                ("event reader", event_task),
+            ],
+        )
+        .await
     }
 
     fn is_available(&self) -> bool {
@@ -1544,6 +1131,23 @@ mod tests {
                 shutdown_fixture: None,
             };
             assert_recording_stop(engine, fixture, case).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn recording_segment_contracts() {
+        use super::super::utils::recording_contracts::{ContractCase, assert_recording_contract};
+        use super::super::utils::test_support::RecordingFixture;
+        for case in ContractCase::ALL {
+            let directory = tempfile::tempdir().unwrap();
+            let engine = StreamlinkEngine {
+                config: StreamlinkEngineConfig::default(),
+                ffmpeg_path: "unused-fixture".into(),
+                version: None,
+                fixture: Some(RecordingFixture::contract(directory.path(), case, true)),
+                shutdown_fixture: None,
+            };
+            assert_recording_contract(engine, directory.path(), case).await;
         }
     }
 

@@ -274,6 +274,26 @@ The download manager keeps event contracts in `downloader::manager::events`, ack
 
 The unused pending-download configuration update API and write-only retry override have been removed, along with `stop_all`, `get_downloads_by_status`, `set_high_priority_extra_slots` and the old process-waiter helpers. Rust integrations should use the supported manager shutdown and snapshot methods, `DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`, and the public `CircuitBreaker` methods. Internal breaker ownership uses `CircuitBreakerManager::get`. Mesio engine diagnostics report the linked crate's `mesio::VERSION`.
 
+### FFmpeg recording events
+
+Direct FFmpeg and Streamlink remuxing share segment identity, duration/byte totals,
+progress sampling, output-error classification and final event publication. The
+filesystem byte cache belongs to one segment: after rotation, parsed progress is
+used until that segment has a successful metadata sample. Filesystem sampling
+remains throttled to 500 ms per active segment.
+
+Stderr EOF does not prove the final file is closed. The tracker waits for the
+process owner's exit result before inspecting and publishing the final segment;
+unconfirmed cleanup suppresses that completion. Output-I/O errors remain ordered
+before terminal failure, and exit 228 supplies a disk-full fallback only when
+stderr has not already identified the output error.
+
+Auxiliary settlement retains completed task results across timeout, aborts and
+joins unfinished tasks after unconfirmed cleanup, and lets confirmed cleanup
+finish its final events. FFmpeg's stdin stop command and Streamlink's producer,
+pipe and contained-child shutdown policies remain separate. This does not extend
+Streamlink's internal-buffer draining or hidden-Windows cooperative-stop guarantees.
+
 ## Key flows
 
 ### Recording lifecycle (end-to-end)
