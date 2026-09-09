@@ -33,7 +33,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { getMediaDownloadUrl, getMediaUrl } from '@/lib/url';
+import { getMediaDownloadUrl, getMediaUrl, isSameOriginUrl } from '@/lib/url';
 import { isTauriRuntime, revealItemInDir } from '@/utils/tauri';
 import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
@@ -205,8 +205,30 @@ function SessionDetailPage() {
       return;
     }
 
-    saveAs(url, filename);
-    toast.success(i18n._(msg`Download started`));
+    if (isSameOriginUrl(url)) {
+      saveAs(url, filename);
+      toast.success(i18n._(msg`Download started`));
+      return;
+    }
+
+    // Cross-origin the anchor's `download` attribute is ignored, so the click
+    // is a top-level navigation: the attachment header makes the browser save
+    // the reply, but an error reply (expired token, file gone) would replace
+    // the page with its JSON body. A HEAD request settles that first.
+    toast.promise(
+      async () => {
+        const response = await fetch(url, { method: 'HEAD' });
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        saveAs(url, filename);
+      },
+      {
+        loading: i18n._(msg`Preparing download...`),
+        success: i18n._(msg`Download started`),
+        error: (error: Error) => i18n._(msg`Download failed: ${error.message}`),
+      },
+    );
   };
 
   if (isSessionLoading) {

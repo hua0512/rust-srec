@@ -341,7 +341,7 @@
 
 - **Media files can be requested as a download**
 
-  Requesting a media file can now ask for it to be delivered as a download named after the recording, rather than shown in the browser.
+  Adding `download=1` to a media content request delivers the file as a download named after the recording, rather than showing it in the browser.
 
 - **Creation responses and OpenAPI match the running API**
 

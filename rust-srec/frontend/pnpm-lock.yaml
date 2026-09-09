@@ -105,7 +105,7 @@ importers:
         specifier: 2.11.1
         version: 2.11.1
       '@tauri-apps/plugin-opener':
-        specifier: ^2.5.5
+        specifier: 2.5.5
         version: 2.5.5
       '@xyflow/react':
         specifier: ^12.11.6

@@ -296,9 +296,9 @@ mod tests {
         sessions.create_session(&session).await.unwrap();
 
         let directory = tempfile::tempdir().unwrap();
-        // A name that exercises both header forms: non-ASCII needs `filename*`, and the
-        // quote would otherwise close the quoted `filename`.
-        let file_path = directory.path().join("récording \"one\".mp4");
+        // Non-ASCII exercises the `filename*` form; the name stays legal on every
+        // platform the suite runs on.
+        let file_path = directory.path().join("récording one.mp4");
         tokio::fs::write(&file_path, b"payload").await.unwrap();
         let output = MediaOutputDbModel::new(
             &session.id,
@@ -366,6 +366,14 @@ mod tests {
         assert_eq!(
             attachment_disposition(r"C:\output\clip.mp4", "abc"),
             "attachment; filename=\"clip.mp4\"; filename*=UTF-8''clip.mp4"
+        );
+    }
+
+    #[test]
+    fn attachment_disposition_strips_characters_that_would_break_the_header() {
+        assert_eq!(
+            attachment_disposition("/output/r\"ec\tord\ning.mp4", "abc"),
+            "attachment; filename=\"recording.mp4\"; filename*=UTF-8''recording.mp4"
         );
     }
 }
