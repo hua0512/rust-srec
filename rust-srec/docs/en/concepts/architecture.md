@@ -106,6 +106,22 @@ Startup logs retain database/configuration I/O, engine discovery, awaited initia
 
 ## Core components (what each one actually does)
 
+### `RuntimeCoordinator` (recording startup and cancellation)
+
+The coordinator binds download startup and danmu collection to the session that caused them.
+An Offline event naming an older session stops only that session's work; it cannot select a
+successor by streamer ID. Disable and out-of-schedule events also cancel startup that has
+registered its session token but has not entered the download queue yet.
+
+Startup observes cancellation during configuration, preflight, queue acquisition, freshness
+checks and final admission. Cancelled work releases its reservation and does not start danmu.
+Danmu setup and predecessor handoff also observe session cancellation. Once a collector is
+registered, cancellation waits for its owned cleanup instead of abandoning the readiness wait.
+A resumed Started transition needs both an active lifecycle session and its download payload.
+Queue waits strictly greater than the freshness threshold refresh URLs, headers and extras
+together. Equality uses cached media with the short-wait state guard; missing/offline results
+dequeue, while checker errors preserve the cached media fallback.
+
 ### `ConfigService` (configuration + hot reload)
 
 `ConfigService` is the configuration control plane. It loads and merges a 4-level hierarchy:

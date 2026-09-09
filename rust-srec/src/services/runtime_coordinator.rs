@@ -91,6 +91,8 @@ struct StreamerWorkStopped {
 
 /// Coordinates required side effects for configuration, monitor, and session events.
 pub(crate) struct RuntimeCoordinator {
+    #[cfg(test)]
+    freshness_check: Option<Arc<dyn contract_tests::FreshnessCheck>>,
     download_manager: Arc<DownloadManager>,
     streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     config_service: Arc<RuntimeConfigService>,
@@ -146,6 +148,8 @@ impl RuntimeCoordinator {
             scheduler_handle,
         } = dependencies;
         Self {
+            #[cfg(test)]
+            freshness_check: None,
             download_manager,
             streamer_manager,
             config_service,
@@ -159,6 +163,17 @@ impl RuntimeCoordinator {
             task_supervisor,
             scheduler_handle,
         }
+    }
+
+    async fn check_startup_freshness(
+        &self,
+        metadata: &crate::streamer::StreamerMetadata,
+    ) -> crate::Result<crate::monitor::LiveStatus> {
+        #[cfg(test)]
+        if let Some(checker) = &self.freshness_check {
+            return checker.check(metadata).await;
+        }
+        self.stream_monitor.check_streamer(metadata).await
     }
 
     pub(crate) async fn refresh_metadata_offline_checks(
@@ -429,9 +444,12 @@ impl RuntimeCoordinator {
                     self.session_cancels.cancel(session_id);
                 }
 
-                let danmu_session_id = session_id
-                    .filter(|session_id| self.danmu_service.is_collecting(session_id))
-                    .or_else(|| self.danmu_service.get_session_by_streamer(&streamer_id));
+                // An explicitly identified old session must never fall back to
+                // a successor that now happens to own this streamer.
+                let danmu_session_id = match session_id.as_ref() {
+                    Some(id) => self.danmu_service.is_collecting(id).then(|| id.clone()),
+                    None => self.danmu_service.get_session_by_streamer(&streamer_id),
+                };
                 if let Some(session_id) = danmu_session_id
                     && let Err(error) = self.danmu_service.stop_collection(&session_id).await
                 {
@@ -442,18 +460,28 @@ impl RuntimeCoordinator {
                     );
                 }
 
-                if let Some(download) = self.download_manager.get_download_by_streamer(&streamer_id)
-                    && let Err(error) = self.download_manager.request_stop_download(
+                for download in self
+                    .download_manager
+                    .get_active_downloads()
+                    .into_iter()
+                    .filter(|download| {
+                        download.streamer_id == streamer_id
+                            && session_id
+                                .as_ref()
+                                .is_none_or(|id| download.session_id == *id)
+                    })
+                {
+                    if let Err(error) = self.download_manager.request_stop_download(
                         &download.id,
                         crate::downloader::DownloadStopCause::StreamerOffline,
-                    )
-                {
-                    warn!(
+                    ) {
+                        warn!(
                         streamer_id,
                         download_id = %download.id,
                         error = %error,
                         "Failed to stop download for offline streamer"
-                    );
+                        );
+                    }
                 }
             }
             MonitorEvent::StateChanged {
@@ -467,6 +495,15 @@ impl RuntimeCoordinator {
                     streamer_id,
                     streamer_name, "Streamer left its schedule window; stopping active work"
                 );
+
+                // A pipeline resolving config or preflight owns its token before
+                // it appears in either the queue or active-download snapshots.
+                if let Some(session_id) = self
+                    .session_lifecycle
+                    .current_session_id_for_streamer(&streamer_id)
+                {
+                    self.session_cancels.cancel(&session_id);
+                }
 
                 for pending in self.download_manager.snapshot_pending() {
                     if pending.streamer_id == streamer_id {
@@ -574,3 +611,6 @@ impl RuntimeCoordinator {
 
 #[cfg(test)]
 mod config_refresh_tests;
+
+#[cfg(test)]
+mod contract_tests;

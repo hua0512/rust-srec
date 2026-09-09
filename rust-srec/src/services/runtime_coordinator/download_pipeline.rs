@@ -62,8 +62,8 @@ impl Drop for PipelineReservationGuard<'_> {
 /// 4. **Freshness re-check** — when the wait was non-trivial
 ///    (`waited_ms > queue_freshness_threshold_ms()`), refetches the
 ///    live state via `StreamMonitor::check_streamer`; on
-///    Offline / Filtered / Error, drops the slot and exits without
-///    starting the engine. Below the threshold, only does a cheap
+///    Offline / Filtered, drops the slot and exits without starting
+///    the engine; checker errors retain cached media. Below the threshold, only does a cheap
 ///    state re-check via the streamer manager.
 /// 5. **Start engine** — calls `start_with_slot`, which moves the
 ///    slot into the active downloads map and emits `DownloadStarted`.
@@ -89,7 +89,6 @@ pub(super) async fn run_live_download_pipeline(
         streamer_manager,
         config_service,
         danmu_service,
-        stream_monitor,
         session_repository,
         session_cancels,
         pending_pipelines,
@@ -211,7 +210,12 @@ pub(super) async fn run_live_download_pipeline(
         .as_ref()
         .is_some_and(|s| s.priority == Priority::High);
     // Load merged config for this streamer.
-    let merged_config = match config_service.get_config_for_streamer(&streamer_id).await {
+    let resolved_config = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return,
+        config = config_service.get_config_for_streamer(&streamer_id) => config,
+    };
+    let merged_config = match resolved_config {
         Ok(config) => config,
         Err(e) => {
             warn!(
@@ -246,7 +250,12 @@ pub(super) async fn run_live_download_pipeline(
         engine_id: Some(merged_config.download_engine.clone()),
         engines_override: merged_config.engines_override.clone(),
     };
-    let engine = match download_manager.preflight(preflight_req).await {
+    let preflight = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return,
+        engine = download_manager.preflight(preflight_req) => engine,
+    };
+    let engine = match preflight {
         Ok(e) => e,
         Err(e) => {
             warn!("Preflight failed for streamer {}: {}", streamer_id, e);
@@ -302,7 +311,15 @@ pub(super) async fn run_live_download_pipeline(
         // Re-fetch via the monitor's deduped, rate-limited check.
         let metadata_for_check = streamer_manager.get_streamer(&streamer_id);
         if let Some(meta) = metadata_for_check {
-            match stream_monitor.check_streamer(&meta).await {
+            let fresh = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
+                    return;
+                }
+                fresh = coordinator.check_startup_freshness(&meta) => fresh,
+            };
+            match fresh {
                 Ok(crate::monitor::LiveStatus::Live {
                     streams: fresh_streams,
                     media_headers: fresh_headers,
@@ -402,10 +419,15 @@ pub(super) async fn run_live_download_pipeline(
     let best_stream = &streams[0];
     let stream_format = best_stream.stream_format.as_str();
     let media_format = best_stream.media_format.as_str();
-    let initial_segment_index = match session_repository
-        .next_session_segment_index(&session_id)
-        .await
-    {
+    let next_index = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
+            return;
+        }
+        index = session_repository.next_session_segment_index(&session_id) => index,
+    };
+    let initial_segment_index = match next_index {
         Ok(index) => index,
         Err(e) => {
             warn!(
@@ -541,25 +563,29 @@ pub(super) async fn run_live_download_pipeline(
     // there's no engine to interleave danmu with — opening a danmu
     // socket for a stream we're not recording would leak a platform
     // connection.
-    if started && merged_config.record_danmu {
+    if started && !cancel.is_cancelled() && merged_config.record_danmu {
         match danmu_service
-            .start_collection(CollectionSpec {
-                session_id: session_id.clone(),
-                streamer_id: streamer_id.clone(),
-                streamer_url,
-                cookies,
-                extras: media_extras,
-                statistics: danmu_statistics,
-            })
+            .start_collection_cancellable(
+                CollectionSpec {
+                    session_id: session_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                    streamer_url,
+                    cookies,
+                    extras: media_extras,
+                    statistics: danmu_statistics,
+                },
+                &cancel,
+            )
             .await
         {
-            Ok(handle) => {
+            Ok(Some(handle)) => {
                 info!(
                     "Started danmu collection for session {} (streamer: {})",
                     handle.session_id(),
                     streamer_id
                 );
             }
+            Ok(None) => debug!(%session_id, "Danmu startup cancelled and contained"),
             Err(e) => {
                 warn!(
                     "Failed to start danmu collection for streamer {}: {}",

@@ -599,7 +599,14 @@ impl DownloadManager {
         req: AcquireRequest,
         cancel: CancellationToken,
     ) -> Result<SlotGuard> {
-        let _operation = self.begin_operation().await?;
+        // Maintenance may hold admission before the queue owns this request.
+        // Cancel here without dropping the later queue acquire, which owns its
+        // queued/dequeued event pair and waiter cleanup.
+        let _operation = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(crate::Error::Other("download acquire cancelled".to_owned())),
+            operation = self.begin_operation() => operation?,
+        };
         let events_for_queue = self.events.clone();
         // Captured by the on_queued closure so the abort-emit branch
         // below can tell whether `DownloadQueued` actually fired
