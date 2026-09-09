@@ -1,6 +1,6 @@
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import type { ReactElement } from 'react';
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
   FormControl,
   FormDescription,

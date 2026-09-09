@@ -11,7 +11,6 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useForm } from 'react-hook-form';
-import type { Resolver } from 'react-hook-form';
 import {
   useMemo,
   useCallback,
@@ -142,7 +141,8 @@ function GlobalConfigForm({
 }: {
   config: z.infer<typeof GlobalConfigFormSchema>;
 }) {
-  type GlobalConfigFormValues = z.infer<typeof GlobalConfigFormSchema>;
+  type GlobalConfigFormInput = z.input<typeof GlobalConfigFormSchema>;
+  type GlobalConfigFormValues = z.output<typeof GlobalConfigFormSchema>;
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
 
@@ -157,13 +157,10 @@ function GlobalConfigForm({
     [config],
   );
 
-  const form = useForm<GlobalConfigFormValues>({
-    // The schema fills several fields in with defaults, so its input type makes them
-    // optional while the form binds the parsed shape; the resolver is stated against the
-    // latter.
-    resolver: zodResolver(
-      GlobalConfigFormSchema,
-    ) as Resolver<GlobalConfigFormValues>,
+  // The schema fills several fields in with defaults, so its input type leaves them
+  // optional while submit handlers receive the parsed shape.
+  const form = useForm<GlobalConfigFormInput, unknown, GlobalConfigFormValues>({
+    resolver: zodResolver(GlobalConfigFormSchema),
     defaultValues,
     values: defaultValues,
     reValidateMode: 'onBlur',
