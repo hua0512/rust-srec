@@ -534,7 +534,7 @@
 
 - **Saved settings no longer pick up values you never chose**
 
-  Saving a streamer or template with Douyin-specific overrides used to fill in the options you left unset, so they stopped following the platform settings; those options now stay unset and keep inheriting. Saving from the web interface also no longer carries along stray values for global settings you did not change.
+  Saving a streamer with Douyin-specific overrides used to fill in the options you left unset, so they stopped following the platform settings; those options now stay unset and keep inheriting. The Douyin platform page also shows what each option does by default instead of showing untouched options as off.
 
 - **Signing out now fully forgets the account you were signed in as**
 

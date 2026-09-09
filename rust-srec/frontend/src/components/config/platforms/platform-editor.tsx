@@ -32,13 +32,15 @@ export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
  *
  * This page edits the base layer rather than an override of it, so an option the stored
  * configuration leaves out is shown as what the extractor will do rather than as "off".
+ * A platform that has never been saved stores no configuration at all, and its page
+ * shows the same fallbacks.
  */
 function displayedPlatformOptions(
   platform: z.infer<typeof PlatformConfigSchema>,
 ): z.infer<typeof PlatformConfigSchema>['platform_specific_config'] {
   const stored = platform.platform_specific_config;
-  if (platform.name.toLowerCase() !== 'douyin' || !stored) return stored;
-  return { ...DOUYIN_CONFIG_DISPLAY_DEFAULTS, ...stored };
+  if (platform.name.toLowerCase() !== 'douyin') return stored;
+  return { ...DOUYIN_CONFIG_DISPLAY_DEFAULTS, ...(stored ?? {}) };
 }
 
 interface PlatformEditorProps {
