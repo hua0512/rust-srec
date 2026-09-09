@@ -63,8 +63,9 @@ function ConfigTheme() {
   const [importModalOpen, setImportModalOpen] = React.useState(false);
 
   // What a brand variable computes to depends on the active preset (or the
-  // imported theme) and on which of the light/dark blocks applies. The color
-  // pickers re-read the document whenever this changes.
+  // imported theme), on which of the light/dark blocks applies, and on the
+  // overrides, since an imported theme may define one variable in terms of
+  // another. The color pickers re-read the document whenever this changes.
   const importedThemeId = React.useMemo(
     () =>
       themeSettings.importedTheme
@@ -72,7 +73,11 @@ function ConfigTheme() {
         : 'none',
     [themeSettings.importedTheme],
   );
-  const themeKey = `${themeSettings.base}:${themeSettings.preset}:${importedThemeId}:${resolvedMode}`;
+  const overridesId = React.useMemo(
+    () => JSON.stringify(themeSettings.overrides),
+    [themeSettings.overrides],
+  );
+  const themeKey = `${themeSettings.base}:${themeSettings.preset}:${importedThemeId}:${resolvedMode}:${overridesId}`;
 
   const handleReset = () => {
     themeSettings.reset();

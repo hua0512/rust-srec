@@ -40,7 +40,7 @@ function displayedPlatformOptions(
 ): z.infer<typeof PlatformConfigSchema>['platform_specific_config'] {
   const stored = platform.platform_specific_config;
   if (platform.name.toLowerCase() !== 'douyin') return stored;
-  return { ...DOUYIN_CONFIG_DISPLAY_DEFAULTS, ...(stored ?? {}) };
+  return { ...DOUYIN_CONFIG_DISPLAY_DEFAULTS, ...stored };
 }
 
 interface PlatformEditorProps {

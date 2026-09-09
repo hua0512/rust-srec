@@ -534,7 +534,7 @@
 
 - **Theme colour swatches match the theme you just picked**
 
-  On the theme page, the colour swatches and their values used to keep showing the previous theme after switching presets or between light and dark. They now update with your choice, and the page no longer flashes when it first loads.
+  On the theme page, the colour swatches and their values used to keep showing the previous theme after switching presets or between light and dark. They now update with your choice, and they show the current theme's colours after a full page reload.
 
 - **The live log view keeps up with heavy log output**
 
