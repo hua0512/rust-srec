@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, ReactNode } from 'react';
+import { useCallback, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import {
   useQuery,
@@ -21,16 +21,12 @@ import {
   UnsubscribeRequestSchema,
   EventType,
 } from '@/api/proto/gen/download_progress_pb.js';
-import { buildWebSocketUrl } from '@/lib/url';
+import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
 import { WebSocketContext } from './WebSocketContext';
 import {
   StreamerCheckHistoryEntrySchema,
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
-
-// Reconnection constants
-const WS_RECONNECT_BASE_DELAY = 1000;
-const WS_RECONNECT_MAX_DELAY = 30000;
 
 export async function handleUploadTerminal(
   queryClient: QueryClient,
@@ -44,17 +40,6 @@ export async function handleUploadTerminal(
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectAttemptRef = useRef<number>(0);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const isConnectingRef = useRef<boolean>(false);
-  const intentionalCloseRef = useRef<boolean>(false);
-  // Reconnects go through a ref so scheduleReconnect stays independent of
-  // connect, which in turn lets connect stay stable across renders.
-  const connectRef = useRef<() => void>(() => {});
-
   // Auth state
   const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
     user?: any;
@@ -63,33 +48,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ...sessionQueryOptions,
     enabled: typeof window !== 'undefined',
     initialData: routeUser ?? null,
-    // The backend authenticates the socket at the handshake and never
-    // re-checks, so an open socket outlives its access token and keeps
-    // delivering events without any renewal. A token is only wanted again when
-    // a dropped socket has to be reopened; this poll is what supplies a usable
-    // one for that, and a renewal that lands while a reconnect is waiting out
-    // its backoff is taken up straight away by the effect below.
+    // An open socket keeps the credentials it was opened with, and the backend
+    // closes it once those expire, so renewing the token does not touch the
+    // socket. A token is only wanted again when a dropped socket has to be
+    // reopened; this poll is what supplies a usable one for that, and a
+    // renewal that lands while a reconnect is waiting out its backoff is taken
+    // up straight away.
     refetchInterval: 60_000,
   });
   const accessToken = sessionData?.token?.access_token;
-  const isAuthenticated = !!accessToken;
-
-  // Read by connect() instead of captured, so renewing the access token does
-  // not change the connect callback and therefore does not restart the socket.
-  const accessTokenRef = useRef<string | undefined>(accessToken);
-  useEffect(() => {
-    accessTokenRef.current = accessToken;
-    // A reconnect already waiting out its backoff would hand the handshake
-    // whichever token it finds when the timer fires. Once a renewed one is in
-    // hand there is nothing left to wait for, so retry with it immediately
-    // rather than let the pending attempt run on a token that has since
-    // expired.
-    if (!accessToken) return;
-    if (!reconnectTimeoutRef.current) return;
-    clearTimeout(reconnectTimeoutRef.current);
-    reconnectTimeoutRef.current = undefined;
-    connectRef.current();
-  }, [accessToken]);
 
   // Download store actions
   const setSnapshot = useDownloadStore((state) => state.setSnapshot);
@@ -360,105 +327,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const scheduleReconnect = useCallback(() => {
-    const delay = Math.min(
-      WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
-      WS_RECONNECT_MAX_DELAY,
-    );
-    reconnectAttemptRef.current++;
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      connectRef.current();
-    }, delay);
-  }, []);
-
-  // Deliberately free of the access token: the socket is authenticated once at
-  // the handshake, so a renewed token is only needed by the next connect
-  // attempt and is read from the ref at that point.
-  const connect = useCallback(() => {
-    const token = accessTokenRef.current;
-    if (!token) return;
-    if (typeof window === 'undefined') return;
-    if (isConnectingRef.current) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = undefined;
-    }
-    intentionalCloseRef.current = false;
-    isConnectingRef.current = true;
-    setConnectionStatus('connecting');
-
-    const wsUrl = buildWebSocketUrl(token);
-    if (import.meta.env.DEV) {
-      console.debug('[WS] Connecting to', wsUrl);
-    }
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
-
-    ws.onopen = () => {
-      if (wsRef.current !== ws) {
-        ws.close();
-        return;
-      }
-      console.debug('[WS] Connected');
-      isConnectingRef.current = false;
-      setConnectionStatus('connected');
-      reconnectAttemptRef.current = 0;
-
-      // Explicitly Clear any filters to ensure we receive everything
-      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'unsubscribe', value: unsubscribeReq },
-      });
-      ws.send(toBinary(ClientMessageSchema, clientMessage));
-    };
-
-    ws.onmessage = (event) => {
-      if (wsRef.current === ws) handleMessage(event);
-    };
-
-    ws.onclose = (event) => {
-      if (wsRef.current !== ws) return;
-
-      if (import.meta.env.DEV) {
-        console.debug('[WS] Close', {
-          code: event.code,
-          reason: event.reason,
-          wasClean: event.wasClean,
-        });
-      }
-      console.debug('[WS] Disconnected');
-      isConnectingRef.current = false;
-      setConnectionStatus('disconnected');
-      wsRef.current = null;
-
-      if (!intentionalCloseRef.current && accessTokenRef.current) {
-        scheduleReconnect();
-      }
-    };
-
-    ws.onerror = (event) => {
-      if (wsRef.current !== ws) return;
-
-      if (import.meta.env.DEV) {
-        console.error('[WS] Connection error', event);
-      } else {
-        console.error('[WS] Connection error');
-      }
-      isConnectingRef.current = false;
-      setConnectionStatus('error');
-    };
-
-    wsRef.current = ws;
-  }, [handleMessage, scheduleReconnect, setConnectionStatus]);
-
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
-
   /**
    * Ends the session's live view: signed out, or the provider unmounting. This
    * is the only path that empties the stores. A reconnect must not come through
@@ -466,59 +334,49 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
    * them first would blank the cards for the length of the handshake for no
    * reason.
    */
-  const disconnect = useCallback(() => {
-    intentionalCloseRef.current = true;
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = undefined;
-    }
-
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    isConnectingRef.current = false;
+  const handleDisconnect = useCallback(() => {
     clearAll();
     // Uploads live in their own store and have to be emptied separately.
     clearAllUploads();
   }, [clearAll, clearAllUploads]);
 
-  // Connection lifecycle. Keyed on whether there is a session at all, not on
-  // the token itself: renewing the access token leaves the open socket alone.
-  useEffect(() => {
-    if (isAuthenticated) {
-      connect();
-    } else {
-      disconnect();
-    }
+  const { send } = useAuthedWebSocket({
+    accessToken,
+    onMessage: handleMessage,
+    onOpen: (ws) => {
+      // Explicitly Clear any filters to ensure we receive everything
+      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
+      const clientMessage = create(ClientMessageSchema, {
+        action: { case: 'unsubscribe', value: unsubscribeReq },
+      });
+      ws.send(toBinary(ClientMessageSchema, clientMessage));
+    },
+    onStatusChange: setConnectionStatus,
+    onDisconnect: handleDisconnect,
+  });
 
-    return () => {
-      disconnect();
-    };
-  }, [isAuthenticated, connect, disconnect]);
+  const subscribe = useCallback(
+    (streamerId: string) => {
+      const subscribeReq = create(SubscribeRequestSchema, { streamerId });
+      const clientMessage = create(ClientMessageSchema, {
+        action: { case: 'subscribe', value: subscribeReq },
+      });
+      send(toBinary(ClientMessageSchema, clientMessage));
+    },
+    [send],
+  );
 
-  const subscribe = useCallback((streamerId: string) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const subscribeReq = create(SubscribeRequestSchema, { streamerId });
-    const clientMessage = create(ClientMessageSchema, {
-      action: { case: 'subscribe', value: subscribeReq },
-    });
-    ws.send(toBinary(ClientMessageSchema, clientMessage));
-  }, []);
-
-  const unsubscribe = useCallback((_streamerId: string) => {
-    // Protocol unsubscribe is global (clears filter).
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const unsubscribeReq = create(UnsubscribeRequestSchema, {});
-    const clientMessage = create(ClientMessageSchema, {
-      action: { case: 'unsubscribe', value: unsubscribeReq },
-    });
-    ws.send(toBinary(ClientMessageSchema, clientMessage));
-  }, []);
+  const unsubscribe = useCallback(
+    (_streamerId: string) => {
+      // Protocol unsubscribe is global (clears filter).
+      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
+      const clientMessage = create(ClientMessageSchema, {
+        action: { case: 'unsubscribe', value: unsubscribeReq },
+      });
+      send(toBinary(ClientMessageSchema, clientMessage));
+    },
+    [send],
+  );
 
   return (
     <WebSocketContext.Provider

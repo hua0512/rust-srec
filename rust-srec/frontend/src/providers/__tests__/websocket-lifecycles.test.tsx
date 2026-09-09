@@ -220,7 +220,7 @@ describe('WebSocket lifecycle ownership', () => {
     expect(MockWebSocket.instances).toHaveLength(2);
   });
 
-  it('ignores a stale log socket close after token rotation', async () => {
+  it('keeps the log socket open across a token rotation and reopens it once after a drop', async () => {
     const queryClient = createQueryClient();
     const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
     render(
@@ -231,12 +231,22 @@ describe('WebSocket lifecycle ownership', () => {
       </QueryClientProvider>,
     );
 
-    const staleSocket = MockWebSocket.instances[0];
+    const firstSocket = MockWebSocket.instances[0];
+    act(() => firstSocket.emitOpen());
     await rotateToken(queryClient);
-    expect(MockWebSocket.instances).toHaveLength(2);
+
+    // Same rule as the provider socket: the handshake already authenticated it.
+    expect(MockWebSocket.instances).toHaveLength(1);
 
     act(() => {
-      staleSocket.emitClose();
+      firstSocket.emitClose();
+      vi.advanceTimersByTime(WS_RECONNECT_WINDOW_MS);
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(MockWebSocket.instances[1].url).toContain('token-b');
+
+    act(() => {
+      firstSocket.emitClose();
       vi.advanceTimersByTime(WS_RECONNECT_WINDOW_MS);
     });
 

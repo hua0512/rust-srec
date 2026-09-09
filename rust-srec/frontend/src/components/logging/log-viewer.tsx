@@ -1,7 +1,7 @@
 /**
  * Real-time log viewer component that consumes the log streaming WebSocket.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
@@ -48,11 +48,20 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { buildWebSocketUrl } from '@/lib/url';
+import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 
 const MAX_LOG_ENTRIES = 500;
-const WS_RECONNECT_BASE_DELAY = 1000;
-const WS_RECONNECT_MAX_DELAY = 30000;
+
+/**
+ * At DEBUG/TRACE volume frames arrive far faster than the list can usefully
+ * repaint, so they are collected in a ref and handed to React on this cadence:
+ * one state update per window instead of one per frame, which keeps the cost of
+ * a frame independent of how many rows are on screen. A timer rather than an
+ * animation frame, so a backgrounded tab still drains its buffer instead of
+ * growing it until the tab is looked at again.
+ */
+const LOG_FLUSH_INTERVAL_MS = 50;
 
 /** Get human-readable log level name */
 function getLogLevelName(level: LogLevel): string {
@@ -133,24 +142,95 @@ function getLevelBadgeColor(level: LogLevel): string {
 
 type FilterLevel = 'all' | 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
+/** Lowest level each filter keeps; higher levels always pass. */
+const FILTER_LEVEL_FLOOR: Record<FilterLevel, LogLevel> = {
+  all: LogLevel.UNSPECIFIED,
+  trace: LogLevel.TRACE,
+  debug: LogLevel.DEBUG,
+  info: LogLevel.INFO,
+  warn: LogLevel.WARN,
+  error: LogLevel.ERROR,
+};
+
+function formatTime(timestampMs: bigint): string {
+  const date = new Date(Number(timestampMs));
+  return date.toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+}
+
+/** Keeps the newest entries once the list is over its cap. */
+function capToLimit(entries: DisplayLogEvent[]): DisplayLogEvent[] {
+  return entries.length > MAX_LOG_ENTRIES
+    ? entries.slice(-MAX_LOG_ENTRIES)
+    : entries;
+}
+
+/**
+ * A single log line. Memoized on the entry, which never changes once decoded,
+ * so appending new lines leaves the rows already on screen untouched.
+ */
+const LogRow = memo(function LogRow({
+  log,
+  animate,
+}: {
+  log: DisplayLogEvent;
+  animate: boolean;
+}) {
+  return (
+    <motion.div
+      initial={animate ? { opacity: 0, x: -10 } : false}
+      animate={animate ? { opacity: 1, x: 0 } : undefined}
+      transition={{ duration: 0.1 }}
+      className={cn(
+        'flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors',
+        getLevelBgColor(log.level),
+      )}
+    >
+      <span className="text-muted-foreground shrink-0 w-21.25">
+        {formatTime(log.timestampMs)}
+      </span>
+      <Badge
+        variant="outline"
+        className={cn(
+          'text-[9px] uppercase font-medium shrink-0 px-1.5 py-0',
+          getLevelBadgeColor(log.level),
+        )}
+      >
+        {getLevelIcon(log.level)}
+        <span className="ml-1">{getLogLevelName(log.level)}</span>
+      </Badge>
+      <span className="text-primary/80 shrink-0 max-w-37.5 truncate">
+        {log.target}
+      </span>
+      <span className="text-foreground/90 break-all flex-1">{log.message}</span>
+    </motion.div>
+  );
+});
+
 export function LogViewer() {
   const { i18n } = useLingui();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [logs, setLogs] = useState<DisplayLogEvent[]>([]);
   const [isPaused, setIsPaused] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
   const [pausedCount, setPausedCount] = useState(0);
   const [filterLevel, setFilterLevel] = useState<FilterLevel>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectAttemptRef = useRef(0);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const disposedRef = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logIdRef = useRef(0);
+  const pendingLogsRef = useRef<DisplayLogEvent[]>([]);
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  // Read by the socket handler, which must see a pause the moment it is
+  // requested rather than on the next render.
+  const isPausedRef = useRef(false);
   const pausedLogsRef = useRef<DisplayLogEvent[]>([]);
 
   const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
@@ -163,7 +243,28 @@ export function LogViewer() {
   });
   const accessToken = sessionData?.token?.access_token;
 
-  // Handle WebSocket message
+  const cancelFlush = useCallback(() => {
+    if (flushTimeoutRef.current !== undefined) {
+      clearTimeout(flushTimeoutRef.current);
+      flushTimeoutRef.current = undefined;
+    }
+  }, []);
+
+  /** Moves everything buffered since the last window into the view. */
+  const flushPending = useCallback(() => {
+    flushTimeoutRef.current = undefined;
+    const pending = pendingLogsRef.current;
+    if (pending.length === 0) return;
+    pendingLogsRef.current = [];
+
+    if (isPausedRef.current) {
+      pausedLogsRef.current = capToLimit(pausedLogsRef.current.concat(pending));
+      setPausedCount(pausedLogsRef.current.length);
+      return;
+    }
+    setLogs((prev) => capToLimit(prev.concat(pending)));
+  }, []);
+
   const handleMessage = useCallback(
     (event: MessageEvent) => {
       try {
@@ -179,114 +280,44 @@ export function LogViewer() {
             id: logIdRef.current++,
           };
 
-          if (isPaused) {
-            pausedLogsRef.current.push(logEvent);
-            // Limit paused buffer too
-            if (pausedLogsRef.current.length > MAX_LOG_ENTRIES) {
-              pausedLogsRef.current =
-                pausedLogsRef.current.slice(-MAX_LOG_ENTRIES);
-            }
-            setPausedCount(pausedLogsRef.current.length);
-          } else {
-            setLogs((prev) => {
-              const newLogs = [...prev, logEvent];
-              return newLogs.length > MAX_LOG_ENTRIES
-                ? newLogs.slice(-MAX_LOG_ENTRIES)
-                : newLogs;
-            });
+          pendingLogsRef.current.push(logEvent);
+          // Nothing beyond a full screenful can ever be shown, so the buffer
+          // stays bounded even if a burst outruns the flush window.
+          if (pendingLogsRef.current.length > MAX_LOG_ENTRIES) {
+            pendingLogsRef.current =
+              pendingLogsRef.current.slice(-MAX_LOG_ENTRIES);
+          }
+          if (flushTimeoutRef.current === undefined) {
+            flushTimeoutRef.current = setTimeout(
+              flushPending,
+              LOG_FLUSH_INTERVAL_MS,
+            );
           }
         }
       } catch (error) {
         console.error('Failed to decode log message:', error);
       }
     },
-    [isPaused],
+    [flushPending],
   );
 
-  const handleMessageRef = useRef(handleMessage);
+  const { status } = useAuthedWebSocket({
+    accessToken,
+    path: '/logging/stream',
+    debugLabel: 'LOG WS',
+    onMessage: handleMessage,
+  });
+  const isConnected = status === 'connected';
+
+  // Drop whatever is still buffered when the viewer goes away; it has nowhere
+  // left to be shown.
   useEffect(() => {
-    handleMessageRef.current = handleMessage;
-  }, [handleMessage]);
-
-  // Connect to WebSocket
-  const connect = useCallback(() => {
-    if (!accessToken) return;
-    if (typeof window === 'undefined') return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = undefined;
-    }
-    disposedRef.current = false;
-
-    const wsUrl = buildWebSocketUrl(accessToken, '/logging/stream');
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
-
-    ws.onopen = () => {
-      if (wsRef.current !== ws) {
-        ws.close();
-        return;
-      }
-      setIsConnected(true);
-      reconnectAttemptRef.current = 0;
+    return () => {
+      cancelFlush();
+      pendingLogsRef.current = [];
+      pausedLogsRef.current = [];
     };
-
-    ws.onmessage = (event) => {
-      if (wsRef.current === ws) handleMessageRef.current(event);
-    };
-
-    ws.onclose = () => {
-      if (wsRef.current !== ws) return;
-
-      setIsConnected(false);
-      wsRef.current = null;
-
-      if (!disposedRef.current && accessToken) {
-        const delay = Math.min(
-          WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
-          WS_RECONNECT_MAX_DELAY,
-        );
-        reconnectAttemptRef.current++;
-        reconnectTimeoutRef.current = setTimeout(connect, delay);
-      }
-    };
-
-    ws.onerror = (event) => {
-      if (wsRef.current !== ws) return;
-
-      if (import.meta.env.DEV) {
-        console.error('[LOG WS] Connection error', event);
-      }
-      setIsConnected(false);
-    };
-
-    wsRef.current = ws;
-  }, [accessToken]);
-
-  // Disconnect
-  const disconnect = useCallback(() => {
-    disposedRef.current = true;
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = undefined;
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    setIsConnected(false);
-  }, []);
-
-  // Connection lifecycle
-  useEffect(() => {
-    if (accessToken) {
-      connect();
-    }
-    return () => disconnect();
-  }, [accessToken, connect, disconnect]);
+  }, [cancelFlush]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -297,46 +328,41 @@ export function LogViewer() {
 
   // Handle pause/resume
   const togglePause = useCallback(() => {
-    if (isPaused) {
+    if (isPausedRef.current) {
       // Resume: add paused logs
-      setLogs((prev) => {
-        const combined = [...prev, ...pausedLogsRef.current];
-        pausedLogsRef.current = [];
-        return combined.length > MAX_LOG_ENTRIES
-          ? combined.slice(-MAX_LOG_ENTRIES)
-          : combined;
-      });
+      const buffered = pausedLogsRef.current;
+      pausedLogsRef.current = [];
+      isPausedRef.current = false;
+      setLogs((prev) => capToLimit(prev.concat(buffered)));
       setPausedCount(0);
+      setIsPaused(false);
+      return;
     }
-    setIsPaused(!isPaused);
-  }, [isPaused]);
+    // Frames that arrived before the pause belong to the live view, so they go
+    // in before the buffer starts holding anything back.
+    cancelFlush();
+    flushPending();
+    isPausedRef.current = true;
+    setIsPaused(true);
+  }, [cancelFlush, flushPending]);
 
   // Clear logs
   const clearLogs = useCallback(() => {
-    setLogs([]);
+    cancelFlush();
+    pendingLogsRef.current = [];
     pausedLogsRef.current = [];
+    setLogs([]);
     setPausedCount(0);
-  }, []);
+  }, [cancelFlush]);
 
   // Filter logs - memoized to avoid recalculating on every render
   const filteredLogs = useMemo(() => {
+    const floor = FILTER_LEVEL_FLOOR[filterLevel];
+    const query = searchQuery.toLowerCase();
     return logs.filter((log) => {
-      // Level filter
-      if (filterLevel !== 'all') {
-        const levelMap: Record<FilterLevel, LogLevel> = {
-          all: LogLevel.UNSPECIFIED,
-          trace: LogLevel.TRACE,
-          debug: LogLevel.DEBUG,
-          info: LogLevel.INFO,
-          warn: LogLevel.WARN,
-          error: LogLevel.ERROR,
-        };
-        if (log.level < levelMap[filterLevel]) return false;
-      }
+      if (filterLevel !== 'all' && log.level < floor) return false;
 
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
+      if (query) {
         return (
           log.target.toLowerCase().includes(query) ||
           log.message.toLowerCase().includes(query)
@@ -346,18 +372,6 @@ export function LogViewer() {
       return true;
     });
   }, [logs, filterLevel, searchQuery]);
-
-  // Format timestamp - memoized function
-  const formatTime = useCallback((timestampMs: bigint) => {
-    const date = new Date(Number(timestampMs));
-    return date.toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      fractionalSecondDigits: 3,
-    });
-  }, []);
 
   return (
     <Card className="border-border/40 bg-linear-to-b from-card to-card/80 shadow-lg">
@@ -487,36 +501,7 @@ export function LogViewer() {
             </div>
           ) : (
             filteredLogs.map((log) => (
-              <motion.div
-                key={log.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.1 }}
-                className={cn(
-                  'flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors',
-                  getLevelBgColor(log.level),
-                )}
-              >
-                <span className="text-muted-foreground shrink-0 w-21.25">
-                  {formatTime(log.timestampMs)}
-                </span>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'text-[9px] uppercase font-medium shrink-0 px-1.5 py-0',
-                    getLevelBadgeColor(log.level),
-                  )}
-                >
-                  {getLevelIcon(log.level)}
-                  <span className="ml-1">{getLogLevelName(log.level)}</span>
-                </Badge>
-                <span className="text-primary/80 shrink-0 max-w-37.5 truncate">
-                  {log.target}
-                </span>
-                <span className="text-foreground/90 break-all flex-1">
-                  {log.message}
-                </span>
-              </motion.div>
+              <LogRow key={log.id} log={log} animate={!prefersReducedMotion} />
             ))
           )}
         </div>
