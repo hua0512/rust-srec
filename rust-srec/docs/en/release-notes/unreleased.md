@@ -534,7 +534,7 @@
 
 - **The live log view keeps up with heavy log output**
 
-  With logging turned up, the live log page could stutter or fall behind as lines poured in. New lines are now collected and painted in small batches, so the page stays responsive no matter how fast the output is. The live view also reconnects and picks up a renewed sign-in the same way the rest of the app does, so it no longer drops out on its own after being left open.
+  With logging turned up, the live log page could stutter or fall behind as lines poured in. New lines are now collected and painted in small batches, so the page stays responsive no matter how fast the output is. The live view also reconnects and picks up a renewed sign-in the same way the rest of the app does.
 
 - **Saved settings no longer pick up values you never chose**
 

@@ -41,7 +41,7 @@ export interface AuthedWebSocket {
   status: WebSocketStatus;
   /** Sends on the open socket; a no-op while there is none. */
   send: (data: string | Blob | BufferSource) => void;
-  /** Closes for good: no reconnect follows until the token changes. */
+  /** Closes for good: no reconnect follows until the session ends and a new one begins. */
   disconnect: () => void;
 }
 
@@ -113,9 +113,9 @@ export function useAuthedWebSocket(
     }, delay);
   }, []);
 
-  // Deliberately free of the access token: the socket is authenticated once at
-  // the handshake, so a renewed token is only needed by the next connect
-  // attempt and is read from the ref at that point.
+  // Deliberately free of the access token: an open socket keeps the
+  // credentials it was opened with, so a renewed token is only needed by the
+  // next connect attempt and is read from the ref at that point.
   const connect = useCallback(() => {
     const token = accessTokenRef.current;
     if (!token) return;
@@ -197,6 +197,15 @@ export function useAuthedWebSocket(
   }, [connect]);
 
   const disconnect = useCallback(() => {
+    // The lifecycle effect's cleanup and its next run both land here when a
+    // session ends; the second call finds nothing open and nothing pending.
+    if (
+      intentionalCloseRef.current &&
+      !wsRef.current &&
+      !reconnectTimeoutRef.current
+    ) {
+      return;
+    }
     intentionalCloseRef.current = true;
 
     if (reconnectTimeoutRef.current) {

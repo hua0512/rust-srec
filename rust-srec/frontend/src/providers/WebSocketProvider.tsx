@@ -48,12 +48,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ...sessionQueryOptions,
     enabled: typeof window !== 'undefined',
     initialData: routeUser ?? null,
-    // The backend authenticates the socket at the handshake and never
-    // re-checks, so an open socket outlives its access token and keeps
-    // delivering events without any renewal. A token is only wanted again when
-    // a dropped socket has to be reopened; this poll is what supplies a usable
-    // one for that, and a renewal that lands while a reconnect is waiting out
-    // its backoff is taken up straight away.
+    // An open socket keeps the credentials it was opened with, and the backend
+    // closes it once those expire, so renewing the token does not touch the
+    // socket. A token is only wanted again when a dropped socket has to be
+    // reopened; this poll is what supplies a usable one for that, and a
+    // renewal that lands while a reconnect is waiting out its backoff is taken
+    // up straight away.
     refetchInterval: 60_000,
   });
   const accessToken = sessionData?.token?.access_token;

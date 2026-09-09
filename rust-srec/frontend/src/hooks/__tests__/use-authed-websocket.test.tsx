@@ -38,6 +38,10 @@ class MockWebSocket {
     this.readyState = MockWebSocket.CLOSED;
     this.onclose?.(new CloseEvent('close'));
   }
+
+  emitMessage(data: string) {
+    this.onmessage?.(new MessageEvent('message', { data }));
+  }
 }
 
 interface HarnessProps {
@@ -166,7 +170,7 @@ describe('useAuthedWebSocket', () => {
     expect(socket.closed).toBe(false);
   });
 
-  it('closes for good when the session ends and reports the intent once', () => {
+  it('closes for good when the session ends and reports it once', () => {
     const onDisconnect = vi.fn();
     const { rerender } = render(
       <Harness accessToken="token-a" onDisconnect={onDisconnect} />,
@@ -179,7 +183,7 @@ describe('useAuthedWebSocket', () => {
     });
 
     expect(socket.closed).toBe(true);
-    expect(onDisconnect).toHaveBeenCalled();
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
 
     // An intentional close does not schedule a reconnect.
     act(() => {
@@ -217,6 +221,7 @@ describe('useAuthedWebSocket', () => {
     expect(MockWebSocket.instances).toHaveLength(2);
 
     act(() => {
+      staleSocket.emitMessage('late frame');
       staleSocket.emitClose();
       vi.advanceTimersByTime(MAX_DELAY_MS);
     });
