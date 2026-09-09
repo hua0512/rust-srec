@@ -126,7 +126,7 @@ msgstr "{0, plural, one {# Preset Available} other {# Presets Available}}"
 
 #. placeholder {0}: timelineGroups.length
 #. placeholder {1}: outputs.length
-#: src/components/sessions/recordings-tab.tsx:500
+#: src/components/sessions/recordings-tab.tsx:514
 msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 msgstr "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 
@@ -1180,7 +1180,7 @@ msgstr "Bottom Fixed"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
-#: src/components/sessions/recordings-tab.tsx:251
+#: src/components/sessions/recordings-tab.tsx:265
 msgid "Break"
 msgstr "Break"
 
@@ -1936,6 +1936,10 @@ msgstr "Could not load presets: {0}"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:456
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:193
+msgid "Could not show the file: {message}"
+msgstr "Could not show the file: {message}"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:351
 #: src/components/config/engines/forms/mesio-hls-form.tsx:396
@@ -2723,7 +2727,7 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
-#: src/components/sessions/recordings-tab.tsx:262
+#: src/components/sessions/recordings-tab.tsx:276
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "Discontinuity"
@@ -2766,7 +2770,7 @@ msgstr "Douyu SD or low rate"
 msgid "Douyu UHD rate"
 msgstr "Douyu UHD rate"
 
-#: src/components/sessions/recordings-tab.tsx:178
+#: src/components/sessions/recordings-tab.tsx:190
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
@@ -2804,11 +2808,6 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
-#. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:225
-msgid "Download failed: {0}"
-msgstr "Download failed: {0}"
-
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:298
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:356
 msgid "Download Manager"
@@ -2818,8 +2817,7 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:203
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:224
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:205
 msgid "Download started"
 msgstr "Download started"
 
@@ -3195,7 +3193,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:258
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:236
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -4145,7 +4143,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:288
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:266
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:244
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -4658,7 +4656,7 @@ msgstr "Interval between checks."
 msgid "Interval between offline checks."
 msgstr "Interval between offline checks."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:200
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
@@ -4734,7 +4732,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:344
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:322
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -5040,7 +5038,7 @@ msgstr "Long-lived credentials for programmatic access to the REST API and the b
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/sessions/recordings-tab.tsx:270
+#: src/components/sessions/recordings-tab.tsx:284
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
@@ -5288,11 +5286,11 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:415
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:393
 msgid "Media Player"
 msgstr "Media Player"
 
-#: src/components/sessions/recordings-tab.tsx:497
+#: src/components/sessions/recordings-tab.tsx:511
 msgid "Media Timeline"
 msgstr "Media Timeline"
 
@@ -5707,7 +5705,7 @@ msgstr "No logs to display"
 msgid "No matching events found"
 msgstr "No matching events found"
 
-#: src/components/sessions/recordings-tab.tsx:515
+#: src/components/sessions/recordings-tab.tsx:529
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
@@ -6282,7 +6280,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:313
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:291
 msgid "Overview"
 msgstr "Overview"
 
@@ -6668,7 +6666,7 @@ msgstr "platforms"
 msgid "Platforms"
 msgstr "Platforms"
 
-#: src/components/sessions/recordings-tab.tsx:204
+#: src/components/sessions/recordings-tab.tsx:218
 msgid "Play"
 msgstr "Play"
 
@@ -6778,10 +6776,6 @@ msgstr "Preferred Qualities"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:80
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
-
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
-msgid "Preparing download..."
-msgstr "Preparing download..."
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:128
 msgid "Preserve Paths"
@@ -7218,7 +7212,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:310
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -8095,7 +8089,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:239
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -8172,6 +8166,10 @@ msgstr "Show all {0}"
 #: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "Show download details"
+
+#: src/components/sessions/recordings-tab.tsx:186
+msgid "Show in folder"
+msgstr "Show in folder"
 
 #: src/components/sessions/danmu-stats-panel.tsx:576
 msgid "Show less"
@@ -8332,7 +8330,7 @@ msgstr "Split on any raw header change. Safe but may cause extra files."
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "Split only on codec configuration changes. Reduces false splits."
 
-#: src/components/sessions/recordings-tab.tsx:128
+#: src/components/sessions/recordings-tab.tsx:130
 msgid "Split Reason: {formattedReason}"
 msgstr "Split Reason: {formattedReason}"
 
@@ -8991,7 +8989,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:477
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:319
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:297
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -9664,7 +9662,7 @@ msgstr "View All"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 
-#: src/components/sessions/recordings-tab.tsx:191
+#: src/components/sessions/recordings-tab.tsx:205
 msgid "View Danmu"
 msgstr "View Danmu"
 

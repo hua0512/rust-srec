@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { isSameOriginUrl, safeRedirectPath } from '../url';
+import { getMediaDownloadUrl, isSameOriginUrl, safeRedirectPath } from '../url';
 
 // jsdom serves the tests from http://localhost:3000 by default.
 describe('isSameOriginUrl', () => {
@@ -59,5 +59,35 @@ describe('safeRedirectPath', () => {
     expect(safeRedirectPath('/\t/evil.example')).toBeNull();
     expect(safeRedirectPath('/\n/evil.example')).toBeNull();
     expect(safeRedirectPath('/\r/evil.example')).toBeNull();
+  });
+});
+
+describe('getMediaDownloadUrl', () => {
+  afterEach(() => {
+    delete (globalThis as { __RUST_SREC_BACKEND_URL__?: unknown })
+      .__RUST_SREC_BACKEND_URL__;
+  });
+
+  it('leaves a same-origin URL to the anchor download attribute', () => {
+    expect(getMediaDownloadUrl('abc', 'tok')).toBe(
+      '/api/media/abc/content?token=tok',
+    );
+  });
+
+  // An absolute API base — the desktop build and any split deployment — puts
+  // the media route on another origin, where only the attachment header makes
+  // the browser save the response instead of navigating to it.
+  it('asks for an attachment when the media route is cross-origin', () => {
+    (
+      globalThis as { __RUST_SREC_BACKEND_URL__?: unknown }
+    ).__RUST_SREC_BACKEND_URL__ = 'http://127.0.0.1:12555';
+
+    expect(getMediaDownloadUrl('abc', 'tok')).toBe(
+      'http://127.0.0.1:12555/api/media/abc/content?token=tok&download=1',
+    );
+  });
+
+  it('escapes the output id', () => {
+    expect(getMediaDownloadUrl('a/b')).toBe('/api/media/a%2Fb/content');
   });
 });

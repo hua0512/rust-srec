@@ -126,7 +126,7 @@ msgstr "{0, plural, other {# 个可用预设}}"
 
 #. placeholder {0}: timelineGroups.length
 #. placeholder {1}: outputs.length
-#: src/components/sessions/recordings-tab.tsx:500
+#: src/components/sessions/recordings-tab.tsx:514
 msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 msgstr "{0, plural, other {# 个分段}}（{1, plural, other {# 个文件}}）"
 
@@ -1180,7 +1180,7 @@ msgstr "底部固定"
 msgid "Brand Colors"
 msgstr "品牌颜色"
 
-#: src/components/sessions/recordings-tab.tsx:251
+#: src/components/sessions/recordings-tab.tsx:265
 msgid "Break"
 msgstr "中断"
 
@@ -1936,6 +1936,10 @@ msgstr "无法加载预设：{0}"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:456
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:193
+msgid "Could not show the file: {message}"
+msgstr "无法显示该文件：{message}"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:351
 #: src/components/config/engines/forms/mesio-hls-form.tsx:396
@@ -2723,7 +2727,7 @@ msgstr "已禁用"
 msgid "Disconnected"
 msgstr "已断开"
 
-#: src/components/sessions/recordings-tab.tsx:262
+#: src/components/sessions/recordings-tab.tsx:276
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "不连续"
@@ -2766,7 +2770,7 @@ msgstr "斗鱼标清或低清画质值"
 msgid "Douyu UHD rate"
 msgstr "斗鱼超清画质值"
 
-#: src/components/sessions/recordings-tab.tsx:178
+#: src/components/sessions/recordings-tab.tsx:190
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "下载"
@@ -2804,11 +2808,6 @@ msgstr "录制引擎"
 msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
-#. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:225
-msgid "Download failed: {0}"
-msgstr "下载失败：{0}"
-
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:298
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:356
 msgid "Download Manager"
@@ -2818,8 +2817,7 @@ msgstr "下载管理"
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:203
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:224
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:205
 msgid "Download started"
 msgstr "下载已开始"
 
@@ -3195,7 +3193,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:258
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:236
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -4145,7 +4143,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:288
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:266
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:244
 msgid "Go Back"
 msgstr "返回"
 
@@ -4658,7 +4656,7 @@ msgstr "检查间隔。"
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:200
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
@@ -4734,7 +4732,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:344
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:322
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -5040,7 +5038,7 @@ msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期
 msgid "Loop Protection"
 msgstr "循环保护"
 
-#: src/components/sessions/recordings-tab.tsx:270
+#: src/components/sessions/recordings-tab.tsx:284
 msgid "Lossless Split"
 msgstr "无损分割"
 
@@ -5288,11 +5286,11 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:415
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:393
 msgid "Media Player"
 msgstr "媒体播放器"
 
-#: src/components/sessions/recordings-tab.tsx:497
+#: src/components/sessions/recordings-tab.tsx:511
 msgid "Media Timeline"
 msgstr "媒体时间线"
 
@@ -5707,7 +5705,7 @@ msgstr "暂无日志可显示"
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
-#: src/components/sessions/recordings-tab.tsx:515
+#: src/components/sessions/recordings-tab.tsx:529
 msgid "No media outputs generated yet."
 msgstr "尚未生成媒体输出。"
 
@@ -6282,7 +6280,7 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:313
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:291
 msgid "Overview"
 msgstr "概览"
 
@@ -6668,7 +6666,7 @@ msgstr "平台"
 msgid "Platforms"
 msgstr "平台"
 
-#: src/components/sessions/recordings-tab.tsx:204
+#: src/components/sessions/recordings-tab.tsx:218
 msgid "Play"
 msgstr "播放"
 
@@ -6778,10 +6776,6 @@ msgstr "首选画质"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:80
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
-
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
-msgid "Preparing download..."
-msgstr "正在准备下载……"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:128
 msgid "Preserve Paths"
@@ -7218,7 +7212,7 @@ msgstr "录制已开始"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:310
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -8095,7 +8089,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:239
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -8172,6 +8166,10 @@ msgstr "显示全部 {0} 位"
 #: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "显示录制下载详情"
+
+#: src/components/sessions/recordings-tab.tsx:186
+msgid "Show in folder"
+msgstr "在文件夹中显示"
 
 #: src/components/sessions/danmu-stats-panel.tsx:576
 msgid "Show less"
@@ -8332,7 +8330,7 @@ msgstr "在任意原始头变更时分割。安全但可能产生额外文件。
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "仅在编解码器配置变更时分割。减少误分割。"
 
-#: src/components/sessions/recordings-tab.tsx:128
+#: src/components/sessions/recordings-tab.tsx:130
 msgid "Split Reason: {formattedReason}"
 msgstr "分割原因：{formattedReason}"
 
@@ -8991,7 +8989,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:477
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:319
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:297
 msgid "Timeline"
 msgstr "时间线"
 
@@ -9664,7 +9662,7 @@ msgstr "查看全部"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "实时查看应用日志。日志最多保留最近 {MAX_LOG_ENTRIES, plural, other {# 条}}。"
 
-#: src/components/sessions/recordings-tab.tsx:191
+#: src/components/sessions/recordings-tab.tsx:205
 msgid "View Danmu"
 msgstr "查看弹幕"
 

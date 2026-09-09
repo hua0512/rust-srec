@@ -339,6 +339,10 @@
 
 ## API and integrations
 
+- **Media files can be requested as a download**
+
+  Requesting a media file can now ask for it to be delivered as a download named after the recording, rather than shown in the browser.
+
 - **Creation responses and OpenAPI match the running API**
 
   Resource creation and template/job-preset cloning now return the documented 201 status with the same JSON bodies. OpenAPI includes session segments, template cloning and all four browser Web Push operations. Job summaries report unavailable progress as `null` instead of a fabricated zero; the dedicated progress endpoint still returns actual snapshots when available. See [response contracts](../api/index.md#creation-responses-and-job-progress).
@@ -531,6 +535,10 @@
   This template/streamer setting never had any effect — statistics have always counted every message. The field has been removed from the REST API (`/api/templates`) and the database; existing configurations are cleaned up automatically, and older exports that still contain the field import fine.
 
 ## Web interface
+
+- **Downloading a recording saves it straight to disk**
+
+  When the web interface talks to the application on another address, downloading a recording used to load the whole file into the browser first, so a long recording could take a long time to start and could exhaust the browser's memory. The download now goes straight to disk as it arrives. In the desktop app the recording is already on your computer, so the button shows it in its folder instead of making a second copy.
 
 - **Theme colour swatches match the theme you just picked**
 

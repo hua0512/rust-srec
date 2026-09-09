@@ -50,6 +50,7 @@
     "@tanstack/react-start": "1.168.34",
     "@tanstack/router-plugin": "1.168.23",
     "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-opener": "^2.5.5",
     "@xyflow/react": "^12.11.6",
     "artplayer": "^5.4.0",
     "class-variance-authority": "^0.7.1",

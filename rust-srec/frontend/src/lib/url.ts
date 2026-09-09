@@ -67,6 +67,32 @@ export function getMediaUrl(
 }
 
 /**
+ * Build the URL that saves a media output to disk.
+ *
+ * Same-origin an anchor's `download` attribute is enough, so the plain media URL
+ * is returned. Cross-origin the attribute is ignored, and the request instead
+ * asks the media route for `Content-Disposition: attachment`: the browser then
+ * streams the response to disk without navigating away and without the
+ * application ever holding the file — a recording can run to several gigabytes.
+ *
+ * Returns `null` when no URL can be built.
+ */
+export function getMediaDownloadUrl(
+  outputId: string,
+  token?: string,
+): string | null {
+  const url = getMediaUrl(
+    `/api/media/${encodeURIComponent(outputId)}/content`,
+    token,
+  );
+  if (!url || isSameOriginUrl(url)) {
+    return url;
+  }
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}download=1`;
+}
+
+/**
  * Build the WebSocket URL with JWT token as query parameter.
  * @param accessToken - JWT access token
  * @param endpoint - WebSocket endpoint path (default: /downloads/ws)
@@ -105,13 +131,11 @@ export function buildWebSocketUrl(
 /**
  * True when `url` resolves to the page's own origin.
  *
- * An anchor's `download` attribute is honoured only for a same-origin URL, and
- * the backend's media route serves the file with no `Content-Disposition`.
- * Clicking a cross-origin media link is therefore an ordinary top-level
- * navigation that replaces the application with the raw file — which is what
- * the desktop build and any deployment with an absolute API base would do,
- * because `getMediaUrl` returns the backend's own origin there. Callers use
- * this to decide whether the browser can be left to stream the download.
+ * An anchor's `download` attribute is honoured only for a same-origin URL. A
+ * cross-origin media link is otherwise an ordinary top-level navigation that
+ * replaces the application with the raw file — which is what the desktop build
+ * and any deployment with an absolute API base would do, because `getMediaUrl`
+ * returns the backend's own origin there.
  *
  * Returns `false` off the browser and for a URL that cannot be resolved.
  */
