@@ -33,7 +33,8 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { getMediaUrl, isSameOriginUrl } from '@/lib/url';
+import { getMediaDownloadUrl, getMediaUrl, isSameOriginUrl } from '@/lib/url';
+import { isTauriRuntime, revealItemInDir } from '@/utils/tauri';
 import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
 import { isNotFoundError } from '@/lib/api-error';
@@ -61,7 +62,11 @@ const PlayerCard = React.lazy(() =>
 
 const SESSION_TIMELINE_PAGE_SIZE = 100;
 
-/** Ask the browser to save `href` under `filename` without leaving the page. */
+/**
+ * Ask the browser to save `href` without leaving the page. `filename` only
+ * applies to a same-origin URL; elsewhere the response's own
+ * `Content-Disposition` names the file.
+ */
 function saveAs(href: string, filename: string) {
   const anchor = document.createElement('a');
   anchor.href = href;
@@ -176,23 +181,25 @@ function SessionDetailPage() {
 
   const { i18n } = useLingui();
 
-  // `getMediaUrl` appends the media token to the query string, and the backend
-  // accepts it there, so neither branch below adds an Authorization header:
-  // the token travels one way only.
+  // In the desktop build the recording is already on this machine, so it is
+  // pointed at in the file manager rather than copied anywhere.
   //
-  // Same-origin, an anchor with `download` hands the transfer to the browser,
-  // which streams it to disk — the only workable option for a recording that
-  // can run to several gigabytes. Cross-origin the attribute is ignored and
-  // the media route sends no `Content-Disposition`, so the click would simply
-  // navigate away from the application and display the file; there the
-  // response has to be fetched and offered as an object URL, which does hold
-  // it in memory. That is the desktop build, where the backend lives on its
-  // own origin, and any deployment configured with an absolute API base.
-  const handleDownload = (outputId: string, filename: string) => {
-    const url = getMediaUrl(
-      `/api/media/${outputId}/content`,
-      user?.token?.access_token,
-    );
+  // On the web the browser does the transfer: `getMediaDownloadUrl` yields a URL
+  // the anchor below streams straight to disk, and the media token travels in
+  // its query string — the backend accepts it there, so no Authorization header
+  // is involved.
+  const handleDownload = (output: MediaOutput) => {
+    const filename = output.file_path.split(/[/\\]/).pop() || 'video';
+
+    if (isTauriRuntime()) {
+      revealItemInDir(output.file_path).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error(i18n._(msg`Could not show the file: ${message}`));
+      });
+      return;
+    }
+
+    const url = getMediaDownloadUrl(output.id, user?.token?.access_token);
     if (!url) {
       toast.error(i18n._(msg`Invalid download URL`));
       return;
@@ -204,20 +211,17 @@ function SessionDetailPage() {
       return;
     }
 
+    // Cross-origin the anchor's `download` attribute is ignored, so the click
+    // is a top-level navigation: the attachment header makes the browser save
+    // the reply, but an error reply (expired token, file gone) would replace
+    // the page with its JSON body. A HEAD request settles that first.
     toast.promise(
       async () => {
-        const response = await fetch(url);
+        const response = await fetch(url, { method: 'HEAD' });
         if (!response.ok) {
           throw new Error(`${response.status} ${response.statusText}`);
         }
-        const objectUrl = URL.createObjectURL(await response.blob());
-        saveAs(objectUrl, filename);
-        // The object URL has to outlive the moment the browser starts the
-        // download: WebKit — the desktop webview, which is precisely what
-        // takes this branch — aborts a download whose blob URL was revoked
-        // before its navigation began. Released on a timer instead, long
-        // enough that the transfer has certainly started.
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        saveAs(url, filename);
       },
       {
         loading: i18n._(msg`Preparing download...`),

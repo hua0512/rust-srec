@@ -11,6 +11,7 @@ import { formatBytes, formatDuration } from '@/lib/format';
 import {
   FileVideo,
   Download,
+  FolderOpen,
   Play,
   Video,
   MessageSquare,
@@ -31,6 +32,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatDate } from '@/lib/datetime';
+import { isTauriRuntime } from '@/utils/tauri';
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -55,7 +57,7 @@ interface RecordingsTabProps {
   outputs: MediaOutput[];
   segments?: SessionSegment[];
   isSegmentsLoading?: boolean;
-  onDownload: (id: string, name: string) => void;
+  onDownload: (output: MediaOutput) => void;
   onPlay: (output: MediaOutput) => void;
 }
 
@@ -143,11 +145,14 @@ const OutputRow = memo(function OutputRow({
   onPlay,
 }: {
   output: MediaOutput;
-  onDownload: (id: string, name: string) => void;
+  onDownload: (output: MediaOutput) => void;
   onPlay: (output: MediaOutput) => void;
 }) {
   const { i18n } = useLingui();
   const fileName = output.file_path.split('/').pop();
+  // The desktop build owns the file already, so its action points at it on disk
+  // instead of transferring a copy.
+  const isDesktop = isTauriRuntime();
   // `format` is a media file type (VIDEO, DANMU_XML, ...), not an extension.
   const typeMeta = getMediaFileTypeMeta(output.format);
   const TypeIcon = typeMeta.icon;
@@ -173,9 +178,18 @@ const OutputRow = memo(function OutputRow({
           variant="outline"
           size="sm"
           className="h-7 text-[10px]"
-          onClick={() => onDownload(output.id, fileName || 'video')}
+          onClick={() => onDownload(output)}
         >
-          <Download className="mr-1.5 h-3 w-3" /> <Trans>Download</Trans>
+          {isDesktop ? (
+            <>
+              <FolderOpen className="mr-1.5 h-3 w-3" />{' '}
+              <Trans>Show in folder</Trans>
+            </>
+          ) : (
+            <>
+              <Download className="mr-1.5 h-3 w-3" /> <Trans>Download</Trans>
+            </>
+          )}
         </Button>
         {output.format === 'DANMU_XML' && (
           <Button
@@ -219,7 +233,7 @@ const TimelineNode = memo(function TimelineNode({
   group: TimelineGroup;
   index: number;
   isSegmentsLoading?: boolean;
-  onDownload: (id: string, name: string) => void;
+  onDownload: (output: MediaOutput) => void;
   onPlay: (output: MediaOutput) => void;
 }) {
   const { i18n } = useLingui();

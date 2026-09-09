@@ -49,7 +49,7 @@ msgstr "\"{0}\" will be removed. Streamers using it fall back to the default eng
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "\"{0}\" will stop working immediately. This cannot be undone."
 
-#: src/components/logging/log-viewer.tsx:517
+#: src/components/logging/log-viewer.tsx:515
 msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
@@ -80,7 +80,7 @@ msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, one {# available} other {# available}}"
 
 #. placeholder {0}: field.value.length
-#: src/components/config/shared/network-settings-card.tsx:220
+#: src/components/config/shared/network-settings-card.tsx:215
 msgid "{0, plural, one {# char} other {# chars}}"
 msgstr "{0, plural, one {# char} other {# chars}}"
 
@@ -126,7 +126,7 @@ msgstr "{0, plural, one {# Preset Available} other {# Presets Available}}"
 
 #. placeholder {0}: timelineGroups.length
 #. placeholder {1}: outputs.length
-#: src/components/sessions/recordings-tab.tsx:500
+#: src/components/sessions/recordings-tab.tsx:514
 msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 msgstr "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 
@@ -155,7 +155,7 @@ msgstr "{0, plural, one {file} other {files}}"
 
 #. placeholder {0}: filteredLogs.length
 #. placeholder {1}: logs.length
-#: src/components/logging/log-viewer.tsx:512
+#: src/components/logging/log-viewer.tsx:510
 msgid "{0} / {1, plural, one {# entry} other {# entries}}"
 msgstr "{0} / {1, plural, one {# entry} other {# entries}}"
 
@@ -166,7 +166,7 @@ msgid "{0} at {1}"
 msgstr "{0} at {1}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:237
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:250
 msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
@@ -326,7 +326,7 @@ msgstr "404"
 msgid "44100"
 msgstr "44100"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:34
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:37
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
@@ -346,7 +346,7 @@ msgstr "90 days"
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:585
+#: src/components/pipeline/workflows/step-config-dialog.tsx:594
 msgid "A unique ID used by other steps to reference this one."
 msgstr "A unique ID used by other steps to reference this one."
 
@@ -405,7 +405,7 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:224
+#: src/components/config/shared/danmu-statistics-card.tsx:226
 msgid "Activity resolution (seconds)"
 msgstr "Activity resolution (seconds)"
 
@@ -433,15 +433,15 @@ msgstr "Add a streamer"
 msgid "Add an engine"
 msgstr "Add an engine"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:135
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:137
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "Add an override to customize behavior for specific platforms."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:136
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:138
 msgid "Add an override to customize engine behavior for this template."
 msgstr "Add an override to customize engine behavior for this template."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:744
+#: src/components/pipeline/workflows/step-config-dialog.tsx:753
 msgid "Add anyway"
 msgstr "Add anyway"
 
@@ -501,8 +501,8 @@ msgstr "Add metadata tags (title, artist, date) to the video file."
 msgid "Add module..."
 msgstr "Add module..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:95
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:100
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
 msgid "Add Override"
 msgstr "Add Override"
 
@@ -514,7 +514,7 @@ msgstr "Add parameter"
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
 
-#: src/components/config/shared/retry-policy-form.tsx:132
+#: src/components/config/shared/retry-policy-form.tsx:133
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "Add randomness to retry delays to prevent thundering herd."
 
@@ -612,7 +612,7 @@ msgctxt "day-of-week preset"
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:460
+#: src/components/logging/log-viewer.tsx:458
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -645,7 +645,7 @@ msgstr "Allow Private Stream Proxy Targets"
 msgid "Also delete files from disk"
 msgstr "Also delete files from disk"
 
-#: src/components/config/shared/output-settings-card.tsx:230
+#: src/components/config/shared/output-settings-card.tsx:225
 msgid "Always use Streamlink"
 msgstr "Always use Streamlink"
 
@@ -683,15 +683,15 @@ msgstr "API key revoked"
 msgid "API Keys"
 msgstr "API Keys"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:102
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:158
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:66
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
 msgid "API Settings"
 msgstr "API Settings"
 
@@ -775,7 +775,7 @@ msgstr "Args used for processing/encoding"
 msgid "Artist"
 msgstr "Artist"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:87
 #: src/components/pipeline/presets/preset-templates.ts:98
 #: src/components/pipeline/presets/processors/registry.ts:123
 msgid "ASS Burn-in"
@@ -794,11 +794,11 @@ msgstr "Assign template"
 msgid "At least one input path is required"
 msgstr "At least one input path is required"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
 msgid "Attempt to get the highest original quality available."
 msgstr "Attempt to get the highest original quality available."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:64
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:66
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
@@ -821,7 +821,7 @@ msgstr "Audio Codec"
 msgid "Audio codec change"
 msgstr "Audio codec change"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-templates.ts:50
 msgid "Audio Extract"
 msgstr "Audio Extract"
@@ -831,9 +831,9 @@ msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:521
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:111
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:130
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:131
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:116
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:135
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:136
 msgid "Audio only"
 msgstr "Audio only"
 
@@ -853,9 +853,9 @@ msgstr "Audio Settings"
 msgid "Auth Type"
 msgstr "Auth Type"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:29
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:30
-#: src/components/config/shared/network-settings-card.tsx:162
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:34
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:32
+#: src/components/config/shared/network-settings-card.tsx:157
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "Authentication"
@@ -880,20 +880,20 @@ msgstr "Auto re-login"
 msgid "Auto Thumbnail"
 msgstr "Auto Thumbnail"
 
-#: src/components/config/shared/network-settings-card.tsx:287
+#: src/components/config/shared/network-settings-card.tsx:282
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:476
+#: src/components/logging/log-viewer.tsx:474
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:475
+#: src/components/logging/log-viewer.tsx:473
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:123
-#: src/components/streamers/config/streamer-identity-fields.tsx:128
+#: src/components/streamers/config/streamer-identity-fields.tsx:125
+#: src/components/streamers/config/streamer-identity-fields.tsx:130
 msgid "Autofill name from URL"
 msgstr "Autofill name from URL"
 
@@ -901,7 +901,7 @@ msgstr "Autofill name from URL"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "Automate your stream recordings with ease and reliability."
 
-#: src/components/config/shared/output-settings-card.tsx:227
+#: src/components/config/shared/output-settings-card.tsx:222
 msgid "Automatic (match the site)"
 msgstr "Automatic (match the site)"
 
@@ -952,7 +952,7 @@ msgstr "Back to link"
 msgid "Back to Pipeline Jobs"
 msgstr "Back to Pipeline Jobs"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:130
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:133
 msgid "Back to presets"
 msgstr "Back to presets"
 
@@ -976,7 +976,7 @@ msgstr "Backend: {backendLabel}"
 msgid "Background"
 msgstr "Background"
 
-#: src/components/config/shared/network-settings-card.tsx:302
+#: src/components/config/shared/network-settings-card.tsx:297
 msgid "Background refresh enabled"
 msgstr "Background refresh enabled"
 
@@ -984,7 +984,7 @@ msgstr "Background refresh enabled"
 msgid "Backjump Threshold"
 msgstr "Backjump Threshold"
 
-#: src/components/config/shared/retry-policy-form.tsx:72
+#: src/components/config/shared/retry-policy-form.tsx:73
 msgid "Backoff Multiplier"
 msgstr "Backoff Multiplier"
 
@@ -999,7 +999,7 @@ msgstr "Backup"
 msgid "Backup & Restore"
 msgstr "Backup & Restore"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-templates.ts:41
 msgid "Baidu Netdisk"
 msgstr "Baidu Netdisk"
@@ -1146,11 +1146,11 @@ msgstr "Blocked"
 msgid "Blocked by browser"
 msgstr "Blocked by browser"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:37
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
 msgid "Blu-ray (400)"
 msgstr "Blu-ray (400)"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
 msgid "Blu-ray Dolby (401)"
 msgstr "Blu-ray Dolby (401)"
 
@@ -1180,7 +1180,7 @@ msgstr "Bottom Fixed"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
-#: src/components/sessions/recordings-tab.tsx:251
+#: src/components/sessions/recordings-tab.tsx:265
 msgid "Break"
 msgstr "Break"
 
@@ -1245,8 +1245,8 @@ msgstr "Cache"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:97
 #: src/components/pipeline/presets/preset-card.tsx:152
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:678
-#: src/components/pipeline/workflows/step-config-dialog.tsx:736
+#: src/components/pipeline/workflows/step-config-dialog.tsx:687
+#: src/components/pipeline/workflows/step-config-dialog.tsx:745
 #: src/components/pipeline/workflows/workflow-card.tsx:119
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:235
@@ -1295,15 +1295,15 @@ msgstr "Cancelled {0} steps in pipeline"
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "Caps overall transfer bandwidth (rclone --bwlimit)."
 
-#: src/components/config/shared/record-danmu-card.tsx:64
+#: src/components/config/shared/record-danmu-card.tsx:67
 msgid "Capture Mode"
 msgstr "Capture Mode"
 
-#: src/components/config/shared/record-danmu-card.tsx:49
+#: src/components/config/shared/record-danmu-card.tsx:52
 msgid "Capture real-time comments and chat messages if available."
 msgstr "Capture real-time comments and chat messages if available."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:97
 msgid "Capture separate stream data."
 msgstr "Capture separate stream data."
 
@@ -1316,7 +1316,7 @@ msgid "Case Insensitive"
 msgstr "Case Insensitive"
 
 #: src/components/notifications/events/payload-preview.tsx:65
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:251
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
 msgid "Category"
 msgstr "Category"
 
@@ -1383,7 +1383,7 @@ msgstr "channels"
 msgid "Channels"
 msgstr "Channels"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:192
+#: src/components/config/shared/danmu-statistics-card.tsx:195
 msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 msgstr "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 
@@ -1392,7 +1392,7 @@ msgstr "Chat files are still recorded when this is off; only the per-session sum
 msgid "Chat ID"
 msgstr "Chat ID"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:233
+#: src/components/config/shared/danmu-statistics-card.tsx:235
 msgid "Chatters tracked"
 msgstr "Chatters tracked"
 
@@ -1471,7 +1471,7 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:435
+#: src/components/logging/log-viewer.tsx:433
 #: src/components/notifications/desktop-channel-dialog.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:244
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:615
@@ -1491,11 +1491,11 @@ msgstr "Clear selection"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:145
 msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 msgstr "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:118
 msgid "Client Type (ctype)"
 msgstr "Client Type (ctype)"
 
@@ -1543,7 +1543,7 @@ msgstr "Collapse sidebar"
 msgid "Collapsible"
 msgstr "Collapsible"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:189
+#: src/components/config/shared/danmu-statistics-card.tsx:192
 msgid "Collect statistics"
 msgstr "Collect statistics"
 
@@ -1610,7 +1610,7 @@ msgid "Compress video for storage, upload to cloud, then delete local file to sa
 msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 msgid "Compression"
 msgstr "Compression"
 
@@ -1665,7 +1665,7 @@ msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
 #: src/components/notifications/channel-form.tsx:439
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:46
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:52
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
 #: src/components/pipeline/workflows/workflow-editor.tsx:224
 #: src/lib/menu-list.ts:119
@@ -1764,7 +1764,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:397
+#: src/components/logging/log-viewer.tsx:395
 msgid "Connected"
 msgstr "Connected"
 
@@ -1788,7 +1788,7 @@ msgstr "Connection status: {statusLabel}"
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
-#: src/components/config/shared/offline-check-card.tsx:115
+#: src/components/config/shared/offline-check-card.tsx:110
 msgid "Consecutive failed checks needed to confirm offline."
 msgstr "Consecutive failed checks needed to confirm offline."
 
@@ -1825,7 +1825,7 @@ msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFact
 msgid "Cookie string"
 msgstr "Cookie string"
 
-#: src/components/config/shared/network-settings-card.tsx:213
+#: src/components/config/shared/network-settings-card.tsx:208
 #: src/components/player/url-input-form.tsx:203
 #: src/components/player/url-input-form.tsx:297
 msgid "Cookies"
@@ -1835,7 +1835,7 @@ msgstr "Cookies"
 msgid "Cookies (recommended)"
 msgstr "Cookies (recommended)"
 
-#: src/components/config/shared/network-settings-card.tsx:296
+#: src/components/config/shared/network-settings-card.tsx:291
 msgid "Cookies Only"
 msgstr "Cookies Only"
 
@@ -1851,7 +1851,7 @@ msgstr "Copied!"
 msgid "copy"
 msgstr "copy"
 
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:62
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:68
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Copy"
 msgstr "Copy"
@@ -1865,7 +1865,7 @@ msgstr "Copy (Passthrough)"
 msgid "Copy (Stream Copy)"
 msgstr "Copy (Stream Copy)"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:68
 #: src/components/pipeline/presets/processors/registry.ts:93
 #: src/components/pipeline/presets/processors/registry.ts:98
 #: src/components/pipeline/presets/processors/registry.ts:133
@@ -1933,9 +1933,13 @@ msgstr "Could not connect to the server. Please check your connection."
 msgid "Could not load presets: {0}"
 msgstr "Could not load presets: {0}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:456
+#: src/components/pipeline/workflows/step-config-dialog.tsx:465
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
+msgid "Could not show the file: {message}"
+msgstr "Could not show the file: {message}"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:351
 #: src/components/config/engines/forms/mesio-hls-form.tsx:396
@@ -1943,7 +1947,7 @@ msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is 
 msgid "Count"
 msgstr "Count"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:234
+#: src/components/config/shared/danmu-statistics-card.tsx:236
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 
@@ -2096,7 +2100,7 @@ msgstr "Credential refresh failed"
 msgid "Credential refreshed"
 msgstr "Credential refreshed"
 
-#: src/components/config/shared/network-settings-card.tsx:250
+#: src/components/config/shared/network-settings-card.tsx:245
 msgid "Credential Source Status"
 msgstr "Credential Source Status"
 
@@ -2108,7 +2112,7 @@ msgstr "Credentials are handed to BaiduPCS-Go on the server; the login session p
 msgid "Credentials could not be stored for automatic re-login"
 msgstr "Credentials could not be stored for automatic re-login"
 
-#: src/components/config/shared/network-settings-card.tsx:133
+#: src/components/config/shared/network-settings-card.tsx:130
 msgid "Credentials refreshed successfully"
 msgstr "Credentials refreshed successfully"
 
@@ -2116,7 +2120,7 @@ msgstr "Credentials refreshed successfully"
 msgid "Credentials remembered for automatic re-login"
 msgstr "Credentials remembered for automatic re-login"
 
-#: src/components/config/shared/network-settings-card.tsx:361
+#: src/components/config/shared/network-settings-card.tsx:356
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
 
@@ -2218,7 +2222,7 @@ msgstr "Custom imported theme is active."
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:119
 msgid "Custom rate"
 msgstr "Custom rate"
 
@@ -2230,7 +2234,7 @@ msgstr "Custom Tags"
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:84
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:86
 msgid "Customize specific engine settings for this template."
 msgstr "Customize specific engine settings for this template."
 
@@ -2242,7 +2246,7 @@ msgstr "Customize the application theme and sidebar layout."
 msgid "Cutoff"
 msgstr "Cutoff"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:539
+#: src/components/pipeline/workflows/step-config-dialog.tsx:548
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
@@ -2255,7 +2259,7 @@ msgstr "DAG Graph"
 msgid "Danmaku"
 msgstr "Danmaku"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
 #: src/components/pipeline/presets/preset-templates.ts:88
 #: src/components/pipeline/presets/processors/registry.ts:118
 msgid "Danmaku to ASS"
@@ -2273,7 +2277,7 @@ msgstr "DanmakuFactory"
 msgid "Danmu"
 msgstr "Danmu"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:253
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:255
 msgid "Danmu Control"
 msgstr "Danmu Control"
 
@@ -2281,7 +2285,7 @@ msgstr "Danmu Control"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:171
+#: src/components/config/shared/danmu-statistics-card.tsx:174
 #: src/components/sessions/danmu-stats-panel.tsx:172
 #: src/components/sessions/overview-tab.tsx:249
 msgid "Danmu Statistics"
@@ -2361,16 +2365,16 @@ msgstr "default"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:328
 #: src/components/config/engines/forms/mesio-hls-form.tsx:509
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:84
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:136
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:90
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:101
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
 msgid "Default"
 msgstr "Default"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:32
 msgid "Default Douyu quality"
 msgstr "Default Douyu quality"
 
@@ -2382,11 +2386,11 @@ msgstr "Default Engine"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:117
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:122
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:58
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 
@@ -2406,11 +2410,11 @@ msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resol
 msgid "Default: {value}"
 msgstr "Default: {value}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:55
 msgid "Default: Dolby Vision (30000)"
 msgstr "Default: Dolby Vision (30000)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:542
+#: src/components/pipeline/workflows/step-config-dialog.tsx:551
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
@@ -2451,7 +2455,7 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:106
 #: src/components/pipeline/outputs/output-batch-action-bar.tsx:62
 #: src/components/pipeline/outputs/output-card.tsx:252
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-card.tsx:135
 #: src/components/pipeline/presets/preset-card.tsx:158
 #: src/components/pipeline/presets/preset-templates.ts:74
@@ -2545,7 +2549,7 @@ msgstr "Delete Source XML"
 msgid "Delete Template"
 msgstr "Delete Template"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:711
+#: src/components/pipeline/workflows/step-config-dialog.tsx:720
 msgid "Delete the converted result?"
 msgstr "Delete the converted result?"
 
@@ -2596,7 +2600,7 @@ msgstr "Deletes the files produced by the previous step. Safe after an Upload st
 msgid "Delivery Policy"
 msgstr "Delivery Policy"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:593
+#: src/components/pipeline/workflows/step-config-dialog.tsx:602
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
@@ -2604,12 +2608,12 @@ msgstr "Depends On (Ancestors)"
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
 #: src/components/pipeline/workflows/workflow-editor.tsx:254
 msgid "Description"
 msgstr "Description"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:300
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:303
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
@@ -2658,7 +2662,7 @@ msgstr "Destination Root"
 msgid "Destination Root help"
 msgstr "Destination Root help"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:691
+#: src/components/pipeline/workflows/step-config-dialog.tsx:700
 msgid "Detach & Edit"
 msgstr "Detach & Edit"
 
@@ -2666,15 +2670,15 @@ msgstr "Detach & Edit"
 msgid "Detailed health checks for internal services and resources."
 msgstr "Detailed health checks for internal services and resources."
 
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:49
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:55
 msgid "Detailed processor settings"
 msgstr "Detailed processor settings"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:177
+#: src/components/streamers/config/streamer-identity-fields.tsx:179
 msgid "Detecting…"
 msgstr "Detecting…"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:204
+#: src/components/streamers/config/streamer-identity-fields.tsx:206
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "Determined from the URL. Platform settings apply automatically."
 
@@ -2709,7 +2713,7 @@ msgid "Disable selected"
 msgstr "Disable selected"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
-#: src/components/config/shared/record-danmu-card.tsx:102
+#: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:50
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
@@ -2719,11 +2723,11 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:402
+#: src/components/logging/log-viewer.tsx:400
 msgid "Disconnected"
 msgstr "Disconnected"
 
-#: src/components/sessions/recordings-tab.tsx:262
+#: src/components/sessions/recordings-tab.tsx:276
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "Discontinuity"
@@ -2736,7 +2740,7 @@ msgstr "Disk"
 msgid "Disk Space"
 msgstr "Disk Space"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:36
 msgid "Dolby Vision (30000)"
 msgstr "Dolby Vision (30000)"
 
@@ -2750,23 +2754,23 @@ msgstr "Done"
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:92
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
 msgid "Double Screen Data"
 msgstr "Double Screen Data"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:44
 msgid "Douyu HD rate"
 msgstr "Douyu HD rate"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:50
 msgid "Douyu SD or low rate"
 msgstr "Douyu SD or low rate"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:38
 msgid "Douyu UHD rate"
 msgstr "Douyu UHD rate"
 
-#: src/components/sessions/recordings-tab.tsx:178
+#: src/components/sessions/recordings-tab.tsx:190
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
@@ -2792,11 +2796,11 @@ msgstr "Download Backup"
 msgid "Download Concurrency"
 msgstr "Download Concurrency"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:82
+#: src/components/config/platforms/tabs/general-tab.tsx:84
 msgid "Download Delay"
 msgstr "Download Delay"
 
-#: src/components/config/shared/output-settings-card.tsx:167
+#: src/components/config/shared/output-settings-card.tsx:162
 msgid "Download Engine"
 msgstr "Download Engine"
 
@@ -2805,7 +2809,7 @@ msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:225
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:229
 msgid "Download failed: {0}"
 msgstr "Download failed: {0}"
 
@@ -2814,12 +2818,12 @@ msgstr "Download failed: {0}"
 msgid "Download Manager"
 msgstr "Download Manager"
 
-#: src/components/config/shared/network-settings-card.tsx:328
+#: src/components/config/shared/network-settings-card.tsx:323
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:203
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:224
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:210
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:228
 msgid "Download started"
 msgstr "Download started"
 
@@ -2934,15 +2938,15 @@ msgstr "e.g. High Quality Streamlink"
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:101
+#: src/components/streamers/config/streamer-identity-fields.tsx:103
 msgid "e.g. My Favorite Streamer"
 msgstr "e.g. My Favorite Streamer"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:232
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:235
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:567
+#: src/components/pipeline/workflows/step-config-dialog.tsx:576
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
@@ -2988,7 +2992,7 @@ msgstr "Edit Workflow: {0}"
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
-#: src/components/config/shared/network-settings-card.tsx:267
+#: src/components/config/shared/network-settings-card.tsx:262
 msgid "Effective Scope"
 msgstr "Effective Scope"
 
@@ -3030,7 +3034,7 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 msgid "Enable selected"
 msgstr "Enable selected"
 
-#: src/components/config/shared/record-danmu-card.tsx:99
+#: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:103
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
@@ -3104,7 +3108,7 @@ msgstr "Engine deleted"
 msgid "Engine Name"
 msgstr "Engine Name"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:81
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:83
 msgid "Engine Overrides"
 msgstr "Engine Overrides"
 
@@ -3139,7 +3143,7 @@ msgstr "English (International)"
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:194
+#: src/components/streamers/config/streamer-identity-fields.tsx:196
 msgid "Enter a URL above"
 msgstr "Enter a URL above"
 
@@ -3195,7 +3199,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:258
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:262
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -3264,7 +3268,7 @@ msgstr "Exclude Patterns"
 msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:98
+#: src/components/config/shared/danmu-statistics-card.tsx:101
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 
@@ -3273,7 +3277,7 @@ msgid "Execute"
 msgstr "Execute"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:24
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
 #: src/components/pipeline/presets/processors/registry.ts:113
 msgid "Execute Command"
 msgstr "Execute Command"
@@ -3313,12 +3317,12 @@ msgstr "Exit selection mode"
 msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:60
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:54
 msgid "Experimental"
 msgstr "Experimental"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:182
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
@@ -3331,7 +3335,7 @@ msgstr "Expired"
 msgid "Expires"
 msgstr "Expires"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:241
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:243
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "Explicit TTWID cookie value to use for all requests."
 
@@ -3382,14 +3386,14 @@ msgstr "Extract high-quality audio for podcast distribution and upload."
 msgid "Extract MP3"
 msgstr "Extract MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:64
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:69
 msgid "Extraction API Mode"
 msgstr "Extraction API Mode"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:59
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:42
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:46
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:28
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:48
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:30
 msgid "Extraction Settings"
 msgstr "Extraction Settings"
 
@@ -3654,7 +3658,7 @@ msgstr "Failed to process selected streamers"
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "Failed to query BaiduPCS-Go status."
 
-#: src/components/config/shared/network-settings-card.tsx:145
+#: src/components/config/shared/network-settings-card.tsx:141
 msgid "Failed to refresh credentials"
 msgstr "Failed to refresh credentials"
 
@@ -3709,7 +3713,7 @@ msgstr "Failed to update preset: {0}"
 msgid "Failed to update priority"
 msgstr "Failed to update priority"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:175
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:176
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
@@ -3780,7 +3784,7 @@ msgstr "Fatal:"
 msgid "Fetch"
 msgstr "Fetch"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:50
+#: src/components/config/platforms/tabs/general-tab.tsx:54
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
@@ -3830,7 +3834,7 @@ msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "Filename pattern (e.g., thumb.jpg)"
 
 #: src/components/config/global/file-config-card.tsx:73
-#: src/components/config/shared/output-settings-card.tsx:95
+#: src/components/config/shared/output-settings-card.tsx:98
 msgid "Filename Template"
 msgstr "Filename Template"
 
@@ -3862,7 +3866,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:125
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:130
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -3961,13 +3965,13 @@ msgstr "Force IPv4 (Default: Off)"
 msgid "Force IPv6 (Default: Off)"
 msgstr "Force IPv6 (Default: Off)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
 msgid "Force Mobile API"
 msgstr "Force Mobile API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:54
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:165
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:170
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
 msgstr "Force Origin Quality"
 
@@ -3975,15 +3979,15 @@ msgstr "Force Origin Quality"
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:168
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:173
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "Force requesting the highest origin quality available (Direct stream)."
 
-#: src/components/config/shared/output-settings-card.tsx:152
+#: src/components/config/shared/output-settings-card.tsx:149
 msgid "Force specific output format."
 msgstr "Force specific output format."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:268
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:281
 msgid "Form"
 msgstr "Form"
 
@@ -4002,7 +4006,7 @@ msgstr "Framerate (FPS)"
 msgid "Free space on the disks recordings are written to."
 msgstr "Free space on the disks recordings are written to."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:218
+#: src/components/config/shared/danmu-statistics-card.tsx:220
 msgid "Frequent words to keep"
 msgstr "Frequent words to keep"
 
@@ -4054,7 +4058,7 @@ msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
 #: src/components/config/platforms/platform-editor.tsx:220
-#: src/components/config/templates/tabs/platform-override-card.tsx:63
+#: src/components/config/templates/tabs/platform-override-card.tsx:77
 #: src/components/config/templates/template-editor.tsx:277
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:329
@@ -4109,7 +4113,7 @@ msgstr "Generating QR code..."
 msgid "Gift items"
 msgstr "Gift items"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:199
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:201
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:43
@@ -4124,14 +4128,14 @@ msgstr "Global Buffer Size"
 msgid "Global Configuration"
 msgstr "Global Configuration"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:63
-#: src/components/config/platforms/tabs/general-tab.tsx:95
-#: src/components/config/shared/limits-card.tsx:64
-#: src/components/config/shared/limits-card.tsx:92
-#: src/components/config/shared/limits-card.tsx:118
-#: src/components/config/shared/output-settings-card.tsx:143
+#: src/components/config/platforms/tabs/general-tab.tsx:67
+#: src/components/config/platforms/tabs/general-tab.tsx:97
+#: src/components/config/shared/limits-card.tsx:67
+#: src/components/config/shared/limits-card.tsx:91
+#: src/components/config/shared/limits-card.tsx:115
+#: src/components/config/shared/output-settings-card.tsx:140
 #: src/components/config/shared/proxy-settings-card.tsx:309
-#: src/components/config/shared/record-danmu-card.tsx:96
+#: src/components/config/shared/record-danmu-card.tsx:97
 msgid "Global Default"
 msgstr "Global Default"
 
@@ -4145,7 +4149,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:288
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:266
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:270
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -4205,7 +4209,7 @@ msgstr "Graceful Stop Timeout"
 msgid "Graph"
 msgstr "Graph"
 
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:71
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:77
 msgid "H.264"
 msgstr "H.264"
 
@@ -4221,11 +4225,11 @@ msgstr "H2 Keep-Alive (ms)"
 msgid "Hardware Acceleration"
 msgstr "Hardware Acceleration"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:43
 msgid "HD"
 msgstr "HD"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "HD (150)"
 msgstr "HD (150)"
 
@@ -4358,7 +4362,7 @@ msgstr "Hour {hour}"
 msgid "Hours"
 msgstr "Hours"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:174
+#: src/components/config/shared/danmu-statistics-card.tsx:177
 msgid "How chat activity is summarised on the session page."
 msgstr "How chat activity is summarised on the session page."
 
@@ -4374,11 +4378,11 @@ msgstr "How long a pipeline step may run before it is cancelled. These are read 
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "How long to keep decrypted/processed segments in cache."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:213
+#: src/components/config/shared/danmu-statistics-card.tsx:215
 msgid "How many appear in the ranking. 1–500."
 msgstr "How many appear in the ranking. 1–500."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:219
+#: src/components/config/shared/danmu-statistics-card.tsx:221
 msgid "How many appear in the word chart. 1–500."
 msgstr "How many appear in the word chart. 1–500."
 
@@ -4414,7 +4418,7 @@ msgstr "How often nvidia-smi is polled to confirm the GPU is still reachable."
 msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 
-#: src/components/config/shared/output-settings-card.tsx:235
+#: src/components/config/shared/output-settings-card.tsx:230
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 
@@ -4422,7 +4426,7 @@ msgstr "How the stream address is found. Switch to Streamlink when a site stops 
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
 
-#: src/components/config/shared/network-settings-card.tsx:235
+#: src/components/config/shared/network-settings-card.tsx:230
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
 msgstr "HTTP cookies for authentication. These are automatically updated when refreshed."
 
@@ -4466,7 +4470,7 @@ msgstr "https://gotify.example.com"
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:76
+#: src/components/streamers/config/streamer-identity-fields.tsx:78
 msgid "https://twitch.tv/..."
 msgstr "https://twitch.tv/..."
 
@@ -4478,7 +4482,7 @@ msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgid "Icon"
 msgstr "Icon"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:201
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:204
 msgid "ID"
 msgstr "ID"
 
@@ -4514,7 +4518,7 @@ msgstr "Ignore streams above this bitrate."
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:79
+#: src/components/config/shared/danmu-statistics-card.tsx:82
 msgid "Ignored words"
 msgstr "Ignored words"
 
@@ -4572,15 +4576,15 @@ msgstr "Include Keywords"
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:51
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:39
-#: src/components/config/shared/offline-check-card.tsx:78
-#: src/components/config/shared/offline-check-card.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
+#: src/components/config/shared/offline-check-card.tsx:77
+#: src/components/config/shared/offline-check-card.tsx:105
 msgid "Inherited"
 msgstr "Inherited"
 
-#: src/components/config/shared/output-settings-card.tsx:184
-#: src/components/config/shared/output-settings-card.tsx:224
+#: src/components/config/shared/output-settings-card.tsx:179
+#: src/components/config/shared/output-settings-card.tsx:219
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
 
@@ -4588,7 +4592,7 @@ msgstr "Inherited / Default"
 msgid "INITIAL"
 msgstr "INITIAL"
 
-#: src/components/config/shared/retry-policy-form.tsx:96
+#: src/components/config/shared/retry-policy-form.tsx:97
 msgid "Initial Delay (ms)"
 msgstr "Initial Delay (ms)"
 
@@ -4650,19 +4654,19 @@ msgstr "Internal"
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 
-#: src/components/config/platforms/tabs/general-tab.tsx:68
+#: src/components/config/platforms/tabs/general-tab.tsx:72
 msgid "Interval between checks."
 msgstr "Interval between checks."
 
-#: src/components/config/shared/offline-check-card.tsx:83
+#: src/components/config/shared/offline-check-card.tsx:82
 msgid "Interval between offline checks."
 msgstr "Interval between offline checks."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:204
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:163
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:176
 msgid "Invalid JSON: {error}"
 msgstr "Invalid JSON: {error}"
 
@@ -4674,11 +4678,11 @@ msgstr "IO Job"
 msgid "IO Job Timeout"
 msgstr "IO Job Timeout"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:211
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:213
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "Isolation level for tracking identifiers. Global is usually best."
 
-#: src/components/config/shared/retry-policy-form.tsx:130
+#: src/components/config/shared/retry-policy-form.tsx:131
 msgid "Jitter"
 msgstr "Jitter"
 
@@ -4734,7 +4738,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:344
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:348
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -4742,7 +4746,7 @@ msgstr "Jobs"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "Jobs will appear here when recordings are processed."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:284
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
 msgid "JSON"
 msgstr "JSON"
 
@@ -4862,7 +4866,7 @@ msgstr "Light"
 msgid "Limits"
 msgstr "Limits"
 
-#: src/components/config/shared/limits-card.tsx:38
+#: src/components/config/shared/limits-card.tsx:42
 msgid "Limits & Validation"
 msgstr "Limits & Validation"
 
@@ -4915,7 +4919,7 @@ msgid "Live Refresh Interval (ms)"
 msgstr "Live Refresh Interval (ms)"
 
 #. placeholder {0}: i18n._(template.label)
-#: src/components/pipeline/presets/editor/preset-config-form.tsx:32
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:38
 msgid "Loaded template: {0}"
 msgstr "Loaded template: {0}"
 
@@ -4927,7 +4931,7 @@ msgstr "Loading"
 msgid "Loading Danmu"
 msgstr "Loading Danmu"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:47
+#: src/components/config/shared/pipeline-tabs-section.tsx:54
 msgid "Loading editor components..."
 msgstr "Loading editor components..."
 
@@ -5015,7 +5019,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:523
+#: src/components/logging/log-viewer.tsx:521
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -5040,7 +5044,7 @@ msgstr "Long-lived credentials for programmatic access to the REST API and the b
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/sessions/recordings-tab.tsx:270
+#: src/components/sessions/recordings-tab.tsx:284
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
@@ -5055,7 +5059,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "Low"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Low (80)"
 msgstr "Low (80)"
 
@@ -5067,7 +5071,7 @@ msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. M
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
 msgid "Lowest (0)"
 msgstr "Lowest (0)"
 
@@ -5089,15 +5093,15 @@ msgstr "Main application"
 msgid "Maintenance"
 msgstr "Maintenance"
 
-#: src/components/config/shared/network-settings-card.tsx:165
+#: src/components/config/shared/network-settings-card.tsx:160
 msgid "Manage credentials and session cookies."
 msgstr "Manage credentials and session cookies."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:246
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:259
 msgid "Manage specialized extraction and identification options."
 msgstr "Manage specialized extraction and identification options."
 
-#: src/components/config/shared/output-settings-card.tsx:53
+#: src/components/config/shared/output-settings-card.tsx:57
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
@@ -5121,7 +5125,7 @@ msgstr "Manage your monitored channels and downloads"
 msgid "Manifest (Pair by Order)"
 msgstr "Manifest (Pair by Order)"
 
-#: src/components/config/shared/network-settings-card.tsx:304
+#: src/components/config/shared/network-settings-card.tsx:299
 msgid "Manual update required"
 msgstr "Manual update required"
 
@@ -5158,7 +5162,7 @@ msgstr "Max Bytes"
 msgid "Max CPU Jobs"
 msgstr "Max CPU Jobs"
 
-#: src/components/config/shared/retry-policy-form.tsx:113
+#: src/components/config/shared/retry-policy-form.tsx:114
 msgid "Max Delay (ms)"
 msgstr "Max Delay (ms)"
 
@@ -5168,7 +5172,7 @@ msgid "Max Downloads"
 msgstr "Max Downloads"
 
 #: src/components/config/global/resource-limits-card.tsx:52
-#: src/components/config/shared/limits-card.tsx:57
+#: src/components/config/shared/limits-card.tsx:60
 msgid "Max Duration"
 msgstr "Max Duration"
 
@@ -5197,12 +5201,12 @@ msgstr "Max Key Retries"
 msgid "Max Key Retry Delay (ms)"
 msgstr "Max Key Retry Delay (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:169
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:174
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "Max number of retry attempts for metadata fetching."
 
 #: src/components/config/global/resource-limits-card.tsx:74
-#: src/components/config/shared/limits-card.tsx:111
+#: src/components/config/shared/limits-card.tsx:108
 msgid "Max Part Size"
 msgstr "Max Part Size"
 
@@ -5218,7 +5222,7 @@ msgstr "Max Quality Thumbnail"
 msgid "Max Refresh Retries"
 msgstr "Max Refresh Retries"
 
-#: src/components/config/shared/retry-policy-form.tsx:52
+#: src/components/config/shared/retry-policy-form.tsx:53
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:365
 msgid "Max Retries"
@@ -5261,7 +5265,7 @@ msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgid "Maximum number of concurrent segment downloads."
 msgstr "Maximum number of concurrent segment downloads."
 
-#: src/components/config/shared/retry-policy-form.tsx:66
+#: src/components/config/shared/retry-policy-form.tsx:67
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
 
@@ -5288,11 +5292,11 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:415
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:419
 msgid "Media Player"
 msgstr "Media Player"
 
-#: src/components/sessions/recordings-tab.tsx:497
+#: src/components/sessions/recordings-tab.tsx:511
 msgid "Media Timeline"
 msgstr "Media Timeline"
 
@@ -5313,7 +5317,7 @@ msgid "Messages"
 msgstr "Messages"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
 #: src/components/pipeline/presets/preset-templates.ts:81
 msgid "Metadata"
 msgstr "Metadata"
@@ -5347,11 +5351,11 @@ msgid "Min Priority"
 msgstr "Min Priority"
 
 #: src/components/config/global/resource-limits-card.tsx:33
-#: src/components/config/shared/limits-card.tsx:85
+#: src/components/config/shared/limits-card.tsx:84
 msgid "Min Segment Size"
 msgstr "Min Segment Size"
 
-#: src/components/config/shared/limits-card.tsx:97
+#: src/components/config/shared/limits-card.tsx:96
 msgid "Min size to keep."
 msgstr "Min size to keep."
 
@@ -5364,7 +5368,7 @@ msgstr "Minimum Priority"
 msgid "Mins"
 msgstr "Mins"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:82
 msgid "Mint Integrity Token"
 msgstr "Mint Integrity Token"
 
@@ -5447,7 +5451,7 @@ msgstr "Move the file to another location. Removes the original file."
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
 msgid "MP"
 msgstr "MP"
 
@@ -5475,7 +5479,7 @@ msgstr "Multi-thread upload only helps on large files; on small ones the splitti
 msgid "Multimedia Archive"
 msgstr "Multimedia Archive"
 
-#: src/components/config/shared/retry-policy-form.tsx:90
+#: src/components/config/shared/retry-policy-form.tsx:91
 msgid "Multiplier for exponential backoff."
 msgstr "Multiplier for exponential backoff."
 
@@ -5492,9 +5496,9 @@ msgid "My Template"
 msgstr "My Template"
 
 #: src/components/notifications/channel-form.tsx:382
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:227
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:234
-#: src/components/streamers/config/streamer-identity-fields.tsx:95
+#: src/components/streamers/config/streamer-identity-fields.tsx:97
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
 msgid "Name"
@@ -5536,7 +5540,7 @@ msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and tim
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:116
 msgid "Network & Content"
 msgstr "Network & Content"
 
@@ -5616,7 +5620,7 @@ msgstr "No changes detected"
 msgid "No configuration available for this processor."
 msgstr "No configuration available for this processor."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:515
+#: src/components/pipeline/workflows/step-config-dialog.tsx:524
 msgid "No configuration form available for this processor."
 msgstr "No configuration form available for this processor."
 
@@ -5624,7 +5628,7 @@ msgstr "No configuration form available for this processor."
 msgid "No configuration."
 msgstr "No configuration."
 
-#: src/components/config/shared/network-settings-card.tsx:312
+#: src/components/config/shared/network-settings-card.tsx:307
 msgid "No credentials found."
 msgstr "No credentials found."
 
@@ -5644,7 +5648,7 @@ msgstr "No description."
 msgid "No detailed error message available"
 msgstr "No detailed error message available"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:103
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:105
 msgid "No engines found."
 msgstr "No engines found."
 
@@ -5699,7 +5703,7 @@ msgstr "No log files found"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:494
+#: src/components/logging/log-viewer.tsx:492
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -5707,7 +5711,7 @@ msgstr "No logs to display"
 msgid "No matching events found"
 msgstr "No matching events found"
 
-#: src/components/sessions/recordings-tab.tsx:515
+#: src/components/sessions/recordings-tab.tsx:529
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
@@ -5723,7 +5727,7 @@ msgstr "No metadata tags added"
 msgid "No modules configured"
 msgstr "No modules configured"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:648
+#: src/components/pipeline/workflows/step-config-dialog.tsx:657
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
@@ -5735,7 +5739,7 @@ msgstr "No output generated"
 msgid "No outputs found"
 msgstr "No outputs found"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:133
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:135
 msgid "No overrides configured"
 msgstr "No overrides configured"
 
@@ -5751,15 +5755,15 @@ msgstr "No pipeline DAGs found."
 msgid "No pipeline jobs yet"
 msgstr "No pipeline jobs yet"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:108
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:110
 msgid "No platform found."
 msgstr "No platform found."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:134
 msgid "No platform overrides configured"
 msgstr "No platform overrides configured"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:200
+#: src/components/streamers/config/streamer-identity-fields.tsx:202
 #: src/components/streamers/streamer-editor.tsx:132
 msgid "No platform recognizes this link, so it cannot be recorded."
 msgstr "No platform recognizes this link, so it cannot be recorded."
@@ -5780,7 +5784,7 @@ msgstr "No playable stream found in response"
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:473
+#: src/components/pipeline/workflows/step-config-dialog.tsx:482
 msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 msgstr "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 
@@ -5801,7 +5805,7 @@ msgstr "No preview generated"
 msgid "No recent sessions found."
 msgstr "No recent sessions found."
 
-#: src/components/config/shared/network-settings-card.tsx:140
+#: src/components/config/shared/network-settings-card.tsx:137
 msgid "No refresh needed or not supported"
 msgstr "No refresh needed or not supported"
 
@@ -5813,7 +5817,7 @@ msgstr "No results found"
 msgid "No running pipelines selected"
 msgstr "No running pipelines selected"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:310
 msgid "No specialized options available for this platform."
 msgstr "No specialized options available for this platform."
 
@@ -5988,8 +5992,8 @@ msgstr "Number of days to keep completed, failed, or cancelled jobs and workflow
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:84
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:95
 msgid "Numeric Room IDs Only"
 msgstr "Numeric Room IDs Only"
 
@@ -6021,7 +6025,7 @@ msgstr "NVENC HEVC Fast"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC High Quality"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
 msgstr "OAuth Token"
 
@@ -6046,11 +6050,11 @@ msgstr "OFFLINE"
 
 #: src/components/config/global/network-system-card.tsx:93
 #: src/components/config/global/network-system-card.tsx:96
-#: src/components/config/shared/offline-check-card.tsx:43
+#: src/components/config/shared/offline-check-card.tsx:46
 msgid "Offline Check"
 msgstr "Offline Check"
 
-#: src/components/config/shared/offline-check-card.tsx:65
+#: src/components/config/shared/offline-check-card.tsx:64
 msgid "Offline Check Interval"
 msgstr "Offline Check Interval"
 
@@ -6059,7 +6063,7 @@ msgid "Offline Detection"
 msgstr "Offline Detection"
 
 #: src/components/config/global/network-system-card.tsx:125
-#: src/components/config/shared/offline-check-card.tsx:99
+#: src/components/config/shared/offline-check-card.tsx:94
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
 
@@ -6075,7 +6079,7 @@ msgstr "Offset Consistency Check"
 msgid "OK"
 msgstr "OK"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:84
+#: src/components/config/shared/danmu-statistics-card.tsx:87
 msgid "One word per line"
 msgstr "One word per line"
 
@@ -6111,7 +6115,7 @@ msgstr "Open menu"
 msgid "Open navigation menu"
 msgstr "Open navigation menu"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:178
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:183
 msgid "Open quality options"
 msgstr "Open quality options"
 
@@ -6138,7 +6142,7 @@ msgstr "Optimize Stream Headers"
 msgid "Optional"
 msgstr "Optional"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:301
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:304
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
@@ -6151,11 +6155,11 @@ msgstr "Options"
 msgid "Order this streamer is checked in."
 msgstr "Order this streamer is checked in."
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:35
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
 msgid "Original (10000)"
 msgstr "Original (10000)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:26
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:31
 msgid "Original / Blu-ray"
 msgstr "Original / Blu-ray"
 
@@ -6192,7 +6196,7 @@ msgstr "Output and its file deleted"
 msgid "Output Arguments"
 msgstr "Output Arguments"
 
-#: src/components/config/shared/output-settings-card.tsx:50
+#: src/components/config/shared/output-settings-card.tsx:54
 msgid "Output Configuration"
 msgstr "Output Configuration"
 
@@ -6205,7 +6209,7 @@ msgid "Output Detection"
 msgstr "Output Detection"
 
 #: src/components/config/global/file-config-card.tsx:54
-#: src/components/config/shared/output-settings-card.tsx:66
+#: src/components/config/shared/output-settings-card.tsx:70
 msgid "Output Folder"
 msgstr "Output Folder"
 
@@ -6213,7 +6217,7 @@ msgstr "Output Folder"
 msgid "Output folder unavailable"
 msgstr "Output folder unavailable"
 
-#: src/components/config/shared/output-settings-card.tsx:126
+#: src/components/config/shared/output-settings-card.tsx:125
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:484
 msgid "Output Format"
 msgstr "Output Format"
@@ -6258,15 +6262,15 @@ msgstr "Overall Health"
 msgid "Overall system status"
 msgstr "Overall system status"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:88
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:90
 msgid "Override configuration (paths, delays, etc.) for specific platforms."
 msgstr "Override configuration (paths, delays, etc.) for specific platforms."
 
-#: src/components/config/shared/output-settings-card.tsx:107
+#: src/components/config/shared/output-settings-card.tsx:110
 msgid "Override filename template."
 msgstr "Override filename template."
 
-#: src/components/config/shared/record-danmu-card.tsx:67
+#: src/components/config/shared/record-danmu-card.tsx:70
 msgid "Override global default."
 msgstr "Override global default."
 
@@ -6274,15 +6278,15 @@ msgstr "Override global default."
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
-#: src/components/config/shared/offline-check-card.tsx:46
+#: src/components/config/shared/offline-check-card.tsx:49
 msgid "Override how aggressively the scheduler confirms a stream has ended."
 msgstr "Override how aggressively the scheduler confirms a stream has ended."
 
-#: src/components/config/shared/output-settings-card.tsx:78
+#: src/components/config/shared/output-settings-card.tsx:82
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:313
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:317
 msgid "Overview"
 msgstr "Overview"
 
@@ -6325,20 +6329,20 @@ msgstr "Page"
 msgid "pagination"
 msgstr "pagination"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:110
+#: src/components/config/shared/pipeline-tabs-section.tsx:117
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:224
+#: src/components/config/shared/pipeline-tabs-section.tsx:231
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:107
+#: src/components/config/shared/pipeline-tabs-section.tsx:114
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:118
-#: src/components/config/shared/pipeline-tabs-section.tsx:201
+#: src/components/config/shared/pipeline-tabs-section.tsx:125
+#: src/components/config/shared/pipeline-tabs-section.tsx:208
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -6381,7 +6385,7 @@ msgstr "Parsing..."
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:73
 #: src/components/config/shared/proxy-settings-card.tsx:204
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
@@ -6400,10 +6404,10 @@ msgstr "Password change required"
 msgid "Password changed successfully. Please login with your new password."
 msgstr "Password changed successfully. Please login with your new password."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:49
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:77
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:113
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:51
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:118
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:53
 msgid "Password..."
 msgstr "Password..."
 
@@ -6431,7 +6435,7 @@ msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PA
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:429
+#: src/components/logging/log-viewer.tsx:427
 msgid "Pause"
 msgstr "Pause"
 
@@ -6476,16 +6480,16 @@ msgstr "Per-File Bandwidth Limit help"
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:76
+#: src/components/config/shared/pipeline-tabs-section.tsx:83
 msgid "Per-segment"
 msgstr "Per-segment"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:87
-#: src/components/config/shared/pipeline-tabs-section.tsx:177
+#: src/components/config/shared/pipeline-tabs-section.tsx:94
+#: src/components/config/shared/pipeline-tabs-section.tsx:184
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:207
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
@@ -6615,7 +6619,7 @@ msgid "pipelines"
 msgstr "pipelines"
 
 #: src/components/notifications/events/payload-preview.tsx:67
-#: src/components/streamers/config/streamer-identity-fields.tsx:167
+#: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:519
 msgid "Platform"
 msgstr "Platform"
@@ -6636,19 +6640,19 @@ msgstr "Platform name"
 msgid "Platform not found"
 msgstr "Platform not found"
 
-#: src/components/streamers/config/streamer-configuration.tsx:50
+#: src/components/streamers/config/streamer-configuration.tsx:51
 msgid "Platform options"
 msgstr "Platform options"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:122
+#: src/components/config/templates/tabs/platform-override-card.tsx:136
 msgid "Platform Override Settings"
 msgstr "Platform Override Settings"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:87
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:242
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:255
 msgid "Platform Specific Configuration"
 msgstr "Platform Specific Configuration"
 
@@ -6668,7 +6672,7 @@ msgstr "platforms"
 msgid "Platforms"
 msgstr "Platforms"
 
-#: src/components/sessions/recordings-tab.tsx:204
+#: src/components/sessions/recordings-tab.tsx:218
 msgid "Play"
 msgstr "Play"
 
@@ -6759,7 +6763,7 @@ msgstr "Prefer Manifest"
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:61
 msgid "Preferred CDN"
 msgstr "Preferred CDN"
 
@@ -6775,11 +6779,11 @@ msgstr "Preferred Formats"
 msgid "Preferred Qualities"
 msgstr "Preferred Qualities"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:83
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:227
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
@@ -6803,7 +6807,7 @@ msgstr "Preset created successfully"
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:136
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:139
 msgid "Preset Details"
 msgstr "Preset Details"
 
@@ -6951,7 +6955,7 @@ msgid "Processing nodes"
 msgstr "Processing nodes"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1682
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:155
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Processor"
 msgstr "Processor"
 
@@ -6975,12 +6979,12 @@ msgstr "Progress"
 msgid "Progress:"
 msgstr "Progress:"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:31
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:35
 msgid "Protection Settings"
 msgstr "Protection Settings"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:59
 msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
@@ -7006,7 +7010,7 @@ msgstr "Proxy URL"
 msgid "QR code expired"
 msgstr "QR code expired"
 
-#: src/components/config/shared/network-settings-card.tsx:180
+#: src/components/config/shared/network-settings-card.tsx:175
 msgid "QR Login"
 msgstr "QR Login"
 
@@ -7023,11 +7027,11 @@ msgstr "Quality (qscale)"
 msgid "Quality Control"
 msgstr "Quality Control"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:88
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:90
 msgid "Quality Rate"
 msgstr "Quality Rate"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:159
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
@@ -7077,11 +7081,11 @@ msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 
 msgid "Ratio"
 msgstr "Ratio"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:149
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:162
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
 #: src/components/pipeline/presets/preset-templates.ts:32
 msgid "Rclone"
 msgstr "Rclone"
@@ -7137,7 +7141,7 @@ msgstr "Ready to Watch"
 msgid "Real-time"
 msgstr "Real-time"
 
-#: src/components/logging/log-viewer.tsx:384
+#: src/components/logging/log-viewer.tsx:382
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -7179,7 +7183,7 @@ msgid "Recommended: 8388608 (8 MiB)"
 msgstr "Recommended: 8388608 (8 MiB)"
 
 #: src/components/config/global/file-config-card.tsx:29
-#: src/components/config/shared/record-danmu-card.tsx:46
+#: src/components/config/shared/record-danmu-card.tsx:49
 msgid "Record Danmu"
 msgstr "Record Danmu"
 
@@ -7218,7 +7222,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:336
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -7231,14 +7235,14 @@ msgstr "Recovering"
 msgid "Refine and sort streamers"
 msgstr "Refine and sort streamers"
 
-#: src/components/config/shared/network-settings-card.tsx:199
+#: src/components/config/shared/network-settings-card.tsx:194
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:397
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:604
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:141
 msgid "Refresh"
 msgstr "Refresh"
 
-#: src/components/config/shared/network-settings-card.tsx:138
+#: src/components/config/shared/network-settings-card.tsx:135
 msgid "Refresh failed: Manual login required"
 msgstr "Refresh failed: Manual login required"
 
@@ -7272,7 +7276,7 @@ msgid "Remember for automatic re-login"
 msgstr "Remember for automatic re-login"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:147
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:165
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:167
 msgid "Remove"
 msgstr "Remove"
 
@@ -7301,7 +7305,7 @@ msgstr "Remove header"
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:139
+#: src/components/config/templates/tabs/platform-override-card.tsx:153
 msgid "Remove platform override"
 msgstr "Remove platform override"
 
@@ -7329,7 +7333,7 @@ msgstr "Removes each local file once its upload (or skip) is confirmed. The loca
 msgid "Remux"
 msgstr "Remux"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
 #: src/components/pipeline/presets/preset-templates.ts:5
 #: src/components/pipeline/presets/processors/registry.ts:63
 msgid "Remux / Transcode"
@@ -7397,7 +7401,7 @@ msgstr "Replace Pipeline Step"
 msgid "Replace Step"
 msgstr "Replace Step"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:129
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:134
 msgid "Request AAC audio without a video track."
 msgstr "Request AAC audio without a video track."
 
@@ -7409,12 +7413,12 @@ msgstr "Request timeout duration"
 msgid "Require Subtitles"
 msgstr "Require Subtitles"
 
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:57
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:131
-#: src/components/config/shared/pipeline-tabs-section.tsx:210
+#: src/components/config/shared/pipeline-tabs-section.tsx:138
+#: src/components/config/shared/pipeline-tabs-section.tsx:217
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -7463,7 +7467,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:424
+#: src/components/logging/log-viewer.tsx:422
 msgid "Resume"
 msgstr "Resume"
 
@@ -7583,23 +7587,23 @@ msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:180
+#: src/components/config/shared/pipeline-tabs-section.tsx:187
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:238
+#: src/components/config/shared/pipeline-tabs-section.tsx:245
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:160
+#: src/components/config/shared/pipeline-tabs-section.tsx:167
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:125
+#: src/components/config/shared/pipeline-tabs-section.tsx:132
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:205
+#: src/components/config/shared/pipeline-tabs-section.tsx:212
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
@@ -7661,7 +7665,7 @@ msgstr "Saturday"
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:272
 #: src/components/notifications/channel-form.tsx:460
-#: src/components/shared/save-fab.tsx:99
+#: src/components/shared/save-fab.tsx:100
 #: src/components/streamers/streamer-editor.tsx:312
 msgid "Save changes"
 msgstr "Save changes"
@@ -7670,7 +7674,7 @@ msgstr "Save changes"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:699
+#: src/components/pipeline/workflows/step-config-dialog.tsx:708
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "Save Changes"
@@ -7679,7 +7683,7 @@ msgstr "Save Changes"
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:709
+#: src/components/pipeline/workflows/step-config-dialog.tsx:718
 msgid "Save with incomplete delete checks?"
 msgstr "Save with incomplete delete checks?"
 
@@ -7688,7 +7692,7 @@ msgid "Save Workflow"
 msgstr "Save Workflow"
 
 #: src/components/filters/FilterDialog.tsx:269
-#: src/components/shared/save-fab.tsx:97
+#: src/components/shared/save-fab.tsx:98
 msgid "Saving"
 msgstr "Saving"
 
@@ -7742,7 +7746,7 @@ msgstr "Script"
 msgid "Scrolling"
 msgstr "Scrolling"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:49
 msgid "SD / Low"
 msgstr "SD / Low"
 
@@ -7754,7 +7758,7 @@ msgstr "Search by name or description..."
 msgid "Search comments..."
 msgstr "Search comments..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:100
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:102
 msgid "Search engines..."
 msgstr "Search engines..."
 
@@ -7766,7 +7770,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:445
+#: src/components/logging/log-viewer.tsx:443
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -7774,7 +7778,7 @@ msgstr "Search logs..."
 msgid "Search outputs..."
 msgstr "Search outputs..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:107
 msgid "Search platform..."
 msgstr "Search platform..."
 
@@ -7823,11 +7827,11 @@ msgstr "secret"
 msgid "Secs"
 msgstr "Secs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:176
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
 msgid "Security & Identity"
 msgstr "Security & Identity"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:79
+#: src/components/config/shared/pipeline-tabs-section.tsx:86
 msgid "Segment"
 msgstr "Segment"
 
@@ -7861,11 +7865,11 @@ msgstr "Select"
 msgid "Select a default engine"
 msgstr "Select a default engine"
 
-#: src/components/config/shared/output-settings-card.tsx:137
+#: src/components/config/shared/output-settings-card.tsx:135
 msgid "Select a format"
 msgstr "Select a format"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 
@@ -7890,23 +7894,23 @@ msgstr "Select a streamer"
 msgid "Select All"
 msgstr "Select All"
 
-#: src/components/config/shared/output-settings-card.tsx:178
+#: src/components/config/shared/output-settings-card.tsx:173
 msgid "Select an engine"
 msgstr "Select an engine"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
 msgid "Select API Mode"
 msgstr "Select API Mode"
 
-#: src/components/config/shared/record-danmu-card.tsx:90
+#: src/components/config/shared/record-danmu-card.tsx:92
 msgid "Select behavior"
 msgstr "Select behavior"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:266
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:269
 msgid "Select category"
 msgstr "Select category"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:127
 msgid "Select Client Type"
 msgstr "Select Client Type"
 
@@ -7943,7 +7947,7 @@ msgstr "Select format"
 msgid "Select operation"
 msgstr "Select operation"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:184
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:189
 msgid "Select or type a rate"
 msgstr "Select or type a rate"
 
@@ -7992,17 +7996,17 @@ msgstr "Select the days required for this filter to apply."
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:117
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:120
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "Select the highest quality level you want to attempt capturing."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:656
+#: src/components/pipeline/workflows/step-config-dialog.tsx:665
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:236
 #: src/components/notifications/channel-form.tsx:413
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:173
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
 msgid "Select type"
 msgstr "Select type"
 
@@ -8019,7 +8023,7 @@ msgstr "Selected"
 msgid "Selected stream"
 msgstr "Selected stream"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:85
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 
@@ -8036,7 +8040,7 @@ msgstr "Server not configured"
 msgid "Server URL"
 msgstr "Server URL"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:146
+#: src/components/config/shared/pipeline-tabs-section.tsx:153
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "Session"
@@ -8045,16 +8049,16 @@ msgstr "Session"
 msgid "Session {sessionLabel}"
 msgstr "Session {sessionLabel}"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:143
+#: src/components/config/shared/pipeline-tabs-section.tsx:150
 msgid "Session Complete"
 msgstr "Session Complete"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:154
-#: src/components/config/shared/pipeline-tabs-section.tsx:235
+#: src/components/config/shared/pipeline-tabs-section.tsx:161
+#: src/components/config/shared/pipeline-tabs-section.tsx:242
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:254
+#: src/components/config/shared/pipeline-tabs-section.tsx:261
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -8095,7 +8099,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:265
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -8126,7 +8130,7 @@ msgstr "Session thumbnail"
 msgid "Sessions"
 msgstr "Sessions"
 
-#: src/components/config/shared/limits-card.tsx:41
+#: src/components/config/shared/limits-card.tsx:45
 msgid "Set constraints on downloads."
 msgstr "Set constraints on downloads."
 
@@ -8152,7 +8156,7 @@ msgstr "Settings"
 msgid "Settings updated"
 msgstr "Settings updated"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:171
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:172
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
@@ -8172,6 +8176,10 @@ msgstr "Show all {0}"
 #: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "Show download details"
+
+#: src/components/sessions/recordings-tab.tsx:186
+msgid "Show in folder"
+msgstr "Show in folder"
 
 #: src/components/sessions/danmu-stats-panel.tsx:576
 msgid "Show less"
@@ -8249,7 +8257,7 @@ msgstr "Skip after duration"
 msgid "Skip existing files (default)"
 msgstr "Skip existing files (default)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
 
@@ -8273,7 +8281,7 @@ msgstr "SMTP Host"
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:716
+#: src/components/pipeline/workflows/step-config-dialog.tsx:725
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 msgstr "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 
@@ -8281,8 +8289,8 @@ msgstr "Some referenced presets could not be resolved. This step may delete a co
 msgid "Something went wrong!"
 msgstr "Something went wrong!"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:52
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:81
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:86
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 
@@ -8299,15 +8307,15 @@ msgid "Space Saver"
 msgstr "Space Saver"
 
 #: src/components/config/platforms/platform-editor.tsx:230
-#: src/components/config/templates/tabs/platform-override-card.tsx:69
+#: src/components/config/templates/tabs/platform-override-card.tsx:83
 msgid "Specific"
 msgstr "Specific"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:230
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:232
 msgid "Specific TTWID Cookie"
 msgstr "Specific TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:74
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:76
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
@@ -8316,11 +8324,11 @@ msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgid "Speed"
 msgstr "Speed"
 
-#: src/components/config/shared/limits-card.tsx:69
+#: src/components/config/shared/limits-card.tsx:72
 msgid "Split after duration."
 msgstr "Split after duration."
 
-#: src/components/config/shared/limits-card.tsx:123
+#: src/components/config/shared/limits-card.tsx:120
 msgid "Split after size."
 msgstr "Split after size."
 
@@ -8332,7 +8340,7 @@ msgstr "Split on any raw header change. Safe but may cause extra files."
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "Split only on codec configuration changes. Reduces false splits."
 
-#: src/components/sessions/recordings-tab.tsx:128
+#: src/components/sessions/recordings-tab.tsx:130
 msgid "Split Reason: {formattedReason}"
 msgstr "Split Reason: {formattedReason}"
 
@@ -8392,15 +8400,15 @@ msgstr "Stem (Filename Match)"
 msgid "Step Configuration"
 msgstr "Step Configuration"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:578
+#: src/components/pipeline/workflows/step-config-dialog.tsx:587
 msgid "Step ID is required."
 msgstr "Step ID is required."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:580
+#: src/components/pipeline/workflows/step-config-dialog.tsx:589
 msgid "Step ID must be unique."
 msgstr "Step ID must be unique."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:553
+#: src/components/pipeline/workflows/step-config-dialog.tsx:562
 msgid "Step Identifier (Unique)"
 msgstr "Step Identifier (Unique)"
 
@@ -8436,11 +8444,11 @@ msgstr "Stores these credentials on the server (plaintext, like platform cookies
 msgid "Stream Archive"
 msgstr "Stream Archive"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:62
+#: src/components/streamers/config/streamer-identity-fields.tsx:64
 msgid "Stream Details"
 msgstr "Stream Details"
 
-#: src/components/config/shared/output-settings-card.tsx:209
+#: src/components/config/shared/output-settings-card.tsx:204
 msgid "Stream lookup"
 msgstr "Stream lookup"
 
@@ -8469,10 +8477,10 @@ msgstr "Stream Options"
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:41
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:95
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:104
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:100
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:109
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:45
 msgid "Stream Password"
 msgstr "Stream Password"
 
@@ -8639,7 +8647,7 @@ msgstr "Successfully processed {0} streamers"
 msgid "Sunday"
 msgstr "Sunday"
 
-#: src/components/config/shared/network-settings-card.tsx:292
+#: src/components/config/shared/network-settings-card.tsx:287
 msgid "Supported"
 msgstr "Supported"
 
@@ -8806,7 +8814,7 @@ msgstr "The configuration has been successfully processed. Here is a summary of 
 msgid "The configuration matches existing data"
 msgstr "The configuration matches existing data"
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:82
+#: src/components/streamers/config/streamer-identity-fields.tsx:84
 msgid "The direct link to the channel or stream."
 msgstr "The direct link to the channel or stream."
 
@@ -8858,7 +8866,7 @@ msgstr "These settings only apply to the desktop app. The server will still deli
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:721
+#: src/components/pipeline/workflows/step-config-dialog.tsx:730
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 
@@ -8874,11 +8882,11 @@ msgstr "This filter activates only during the window highlighted on the timeline
 msgid "This filter's settings could not be read."
 msgstr "This filter's settings could not be read."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:310
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:313
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:91
+#: src/components/config/shared/pipeline-tabs-section.tsx:98
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -8951,7 +8959,7 @@ msgstr "Throughput"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/lib/media-file-type.ts:46
 msgid "Thumbnail"
@@ -8991,11 +8999,11 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:477
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:319
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:323
 msgid "Timeline"
 msgstr "Timeline"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:225
+#: src/components/config/shared/danmu-statistics-card.tsx:227
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "Timeline granularity. Very long streams are automatically coarsened past a point."
 
@@ -9031,7 +9039,7 @@ msgstr "Timestamp"
 msgid "Timezone"
 msgstr "Timezone"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:39
+#: src/components/config/platforms/tabs/general-tab.tsx:43
 msgid "Timing & Delays"
 msgstr "Timing & Delays"
 
@@ -9064,7 +9072,7 @@ msgstr "To Addresses"
 msgid "Today"
 msgstr "Today"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:110
+#: src/components/config/templates/tabs/platform-override-card.tsx:124
 msgid "Toggle"
 msgstr "Toggle"
 
@@ -9080,7 +9088,7 @@ msgstr "Token"
 msgid "Tool Location"
 msgstr "Tool Location"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:212
+#: src/components/config/shared/danmu-statistics-card.tsx:214
 msgid "Top chatters to keep"
 msgstr "Top chatters to keep"
 
@@ -9174,19 +9182,19 @@ msgstr "Transient error"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:156
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:128
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:133
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:88
+#: src/components/config/shared/pipeline-tabs-section.tsx:95
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:156
+#: src/components/config/shared/pipeline-tabs-section.tsx:163
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -9246,7 +9254,7 @@ msgstr "Triggered when the application shuts down."
 msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:120
+#: src/components/config/shared/pipeline-tabs-section.tsx:127
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
@@ -9293,7 +9301,7 @@ msgstr "Try again"
 msgid "Try Again"
 msgstr "Try Again"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:186
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
 
@@ -9305,7 +9313,7 @@ msgstr "Tuesday"
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:55
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "Twitch OAuth token for subscriber-only and high-quality streams."
 
@@ -9329,11 +9337,11 @@ msgstr "Type something..."
 msgid "UI: {UI_BUILD}"
 msgstr "UI: {UI_BUILD}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
 msgid "Ultra (250)"
 msgstr "Ultra (250)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:32
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:37
 msgid "Ultra HD"
 msgstr "Ultra HD"
 
@@ -9370,7 +9378,7 @@ msgstr "Unix timestamp"
 msgid "Unknown"
 msgstr "Unknown"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:158
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
@@ -9401,7 +9409,7 @@ msgstr "Unlimited"
 msgid "Unrecognised event kind."
 msgstr "Unrecognised event kind."
 
-#: src/components/streamers/config/streamer-identity-fields.tsx:189
+#: src/components/streamers/config/streamer-identity-fields.tsx:191
 msgid "Unsupported link"
 msgstr "Unsupported link"
 
@@ -9503,7 +9511,7 @@ msgid "Uptime <0>{0}</0>"
 msgstr "Uptime <0>{0}</0>"
 
 #: src/components/notifications/channel-card.tsx:144
-#: src/components/streamers/config/streamer-identity-fields.tsx:71
+#: src/components/streamers/config/streamer-identity-fields.tsx:73
 #: src/components/streamers/progress-indicator.tsx:152
 msgid "URL"
 msgstr "URL"
@@ -9520,7 +9528,7 @@ msgstr "Use <0>-movflags +faststart</0>"
 msgid "Use danmu_inputs from job manifest"
 msgstr "Use danmu_inputs from job manifest"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:124
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
@@ -9551,7 +9559,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "User Disabled"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/shared/proxy-settings-card.tsx:185
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
@@ -9660,11 +9668,11 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:408
+#: src/components/logging/log-viewer.tsx:406
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 
-#: src/components/sessions/recordings-tab.tsx:191
+#: src/components/sessions/recordings-tab.tsx:205
 msgid "View Danmu"
 msgstr "View Danmu"
 
@@ -9700,11 +9708,11 @@ msgstr "Wait"
 msgid "Wait indefinitely"
 msgstr "Wait indefinitely"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:100
+#: src/components/config/platforms/tabs/general-tab.tsx:102
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:498
+#: src/components/logging/log-viewer.tsx:496
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 
@@ -9720,7 +9728,7 @@ msgstr "Warning when the processing queue gets too long."
 msgid "Watch"
 msgstr "Watch"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:76
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
 msgid "WEB"
 msgstr "WEB"
 
@@ -9791,7 +9799,7 @@ msgstr "When a recording has been waiting in the concurrency queue longer than t
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "When enabled, each VOD segment must complete within this timeout."
 
-#: src/components/config/shared/output-settings-card.tsx:194
+#: src/components/config/shared/output-settings-card.tsx:189
 msgid "Which tool downloads the stream once its URL is known."
 msgstr "Which tool downloads the stream once its URL is known."
 
@@ -9844,7 +9852,7 @@ msgstr "Workflows"
 msgid "Write Timeout (ms)"
 msgstr "Write Timeout (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:88
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:93
 msgid "WUP"
 msgstr "WUP"
 
@@ -9861,7 +9869,7 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/components/streamers/streamer-editor.tsx:107
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:188
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "You have unsaved changes. Leave without saving?"
 
