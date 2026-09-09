@@ -1,7 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
-import { backendPath, PathIdSchema } from '../backend-path';
+import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import { JobPresetSchema } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -69,7 +69,7 @@ export const listJobPresets = createServerFn({ method: 'GET' })
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
-    const json = await fetchBackend(`/job/presets?${params.toString()}`);
+    const json = await fetchBackend(withQuery('/job/presets', params));
     return PresetListResponseSchema.parse(json);
   });
 

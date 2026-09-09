@@ -22,18 +22,36 @@ export const HuyaConfigSchema = z
   })
   .strict();
 
-// Douyin platform-specific configuration
+// Douyin platform-specific configuration.
+//
+// Every field is optional with no schema default: this shape is also an override layer on a
+// streamer or template, where an absent key means "inherit" and a present one wins over the
+// platform row. A schema default would turn any save into an override of every option.
 export const DouyinConfigSchema = z
   .object({
-    force_origin_quality: z.boolean().default(false).nullable().optional(),
-    double_screen: z.boolean().default(true).nullable().optional(),
-    ttwid_management_mode: z.string().default('global').nullable().optional(),
+    force_origin_quality: z.boolean().nullable().optional(),
+    double_screen: z.boolean().nullable().optional(),
+    ttwid_management_mode: z.string().nullable().optional(),
     ttwid: z.string().nullable().optional(),
-    force_mobile_api: z.boolean().default(false).nullable().optional(),
-    skip_interactive_games: z.boolean().default(true).nullable().optional(),
+    force_mobile_api: z.boolean().nullable().optional(),
+    skip_interactive_games: z.boolean().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
+
+/**
+ * What the extractor assumes for a Douyin option that no configuration layer sets.
+ *
+ * Mirrors the extractor's own fallbacks so the platform editor can show the effective value
+ * instead of an unset switch. Display only: the override layers leave an unset option absent.
+ */
+export const DOUYIN_CONFIG_DISPLAY_DEFAULTS = {
+  force_origin_quality: false,
+  double_screen: true,
+  ttwid_management_mode: 'global',
+  force_mobile_api: false,
+  skip_interactive_games: true,
+} as const;
 
 // Bilibili platform-specific configuration
 export const BilibiliConfigSchema = z

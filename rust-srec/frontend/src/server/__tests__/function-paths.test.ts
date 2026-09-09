@@ -1,5 +1,5 @@
 import { revokeApiKey } from '../functions/apiKeys';
-import { getTemplate } from '../functions/config';
+import { getTemplate, updateGlobalConfig } from '../functions/config';
 import { getTemplateCredentialSource } from '../functions/credentials';
 import { getEngine } from '../functions/engines';
 import { createFilter, deleteFilter, updateFilter } from '../functions/filters';
@@ -10,9 +10,14 @@ import {
   createPipelinePreset,
   deletePipelineOutput,
   getPipelineJob,
+  listPipelinePresets,
 } from '../functions/pipeline';
 import { getSession } from '../functions/sessions';
-import { getStreamer, updateStreamer } from '../functions/streamers';
+import {
+  getStreamer,
+  updateStreamer,
+  updateStreamerPriority,
+} from '../functions/streamers';
 
 const fetchBackendMock = vi.hoisted(() => vi.fn());
 
@@ -52,6 +57,35 @@ async function requestedBody(invoke: () => Promise<unknown>): Promise<string> {
 }
 
 const ID = '0f6b2f7e-6c2f-4c1a-9e3f-2f0a1b8c7d55';
+
+/** Every required global setting, with the two boolean toggles deliberately left out. */
+function globalConfigWithoutToggles() {
+  return {
+    output_folder: '/records',
+    output_filename_template: '{streamer}',
+    output_file_format: 'flv',
+    min_segment_size_bytes: 1,
+    max_download_duration_secs: 1,
+    max_part_size_bytes: 1,
+    record_danmu: true,
+    max_concurrent_downloads: 1,
+    max_concurrent_uploads: 1,
+    streamer_check_delay_ms: 1000,
+    offline_check_delay_ms: 1000,
+    offline_check_count: 1,
+    default_download_engine: 'ffmpeg',
+    max_concurrent_cpu_jobs: 1,
+    max_concurrent_io_jobs: 1,
+    job_history_retention_days: 30,
+    notification_event_log_retention_days: 30,
+    log_filter_directive: 'info',
+    pipeline_cpu_job_timeout_secs: 1,
+    pipeline_io_job_timeout_secs: 1,
+    pipeline_execute_timeout_secs: 1,
+    queue_freshness_threshold_ms: 0,
+    gpu_health_probe_interval_secs: 1,
+  };
+}
 
 describe('server function request paths', () => {
   it.each([
@@ -109,6 +143,22 @@ describe('server function request paths', () => {
     );
   });
 
+  it('lists pipeline presets without a query string when unfiltered', async () => {
+    await expect(requestedPath(() => listPipelinePresets())).resolves.toBe(
+      '/pipeline/presets',
+    );
+  });
+
+  it('lists pipeline presets with the filters it was given', async () => {
+    await expect(
+      requestedPath(() =>
+        listPipelinePresets({
+          data: { search: 'remux', limit: 10, offset: 0 },
+        }),
+      ),
+    ).resolves.toBe('/pipeline/presets?search=remux&limit=10&offset=0');
+  });
+
   it('keeps a template lookup scoped when no platform is given', async () => {
     await expect(
       requestedPath(() => getTemplateCredentialSource({ data: { id: ID } })),
@@ -151,6 +201,14 @@ describe('server function identifier validation', () => {
     fetchBackendMock.mockClear();
     await expectNoRequest(() =>
       deleteFilter({ data: { streamerId: ID, filterId: '' } }),
+    );
+  });
+
+  it('rejects a priority update with no priority', async () => {
+    await expectNoRequest(() =>
+      updateStreamerPriority({
+        data: { id: ID, priority: undefined as never },
+      }),
     );
   });
 
@@ -204,6 +262,32 @@ describe('server function request bodies', () => {
         updateStreamer({ data: { id: ID, data: { enabled: true } } }),
       ),
     ).resolves.toBe('{"enabled":true}');
+  });
+
+  it('forwards only the Douyin option a streamer override sets', async () => {
+    await expect(
+      requestedBody(() =>
+        updateStreamer({
+          data: {
+            id: ID,
+            data: {
+              streamer_specific_config: { platform_extras: { ttwid: 'x' } },
+            },
+          },
+        }),
+      ),
+    ).resolves.toBe(
+      '{"streamer_specific_config":{"platform_extras":{"ttwid":"x"}}}',
+    );
+  });
+
+  it('leaves settings out of a global config update that omits them', async () => {
+    const body = await requestedBody(() =>
+      updateGlobalConfig({ data: globalConfigWithoutToggles() }),
+    );
+    const sent = JSON.parse(body);
+    expect(sent).not.toHaveProperty('auto_thumbnail');
+    expect(sent).not.toHaveProperty('stream_proxy_allow_private_targets');
   });
 
   it('preserves an explicit streamer priority', async () => {
