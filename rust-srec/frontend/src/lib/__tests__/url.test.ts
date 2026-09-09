@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getMediaDownloadUrl, isSameOriginUrl, safeRedirectPath } from '../url';
 
@@ -63,7 +63,16 @@ describe('safeRedirectPath', () => {
 });
 
 describe('getMediaDownloadUrl', () => {
+  // The same-origin cases need a relative API base; a developer's `.env` or
+  // shell may point the build at another origin.
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_BASE_URL', '');
+    vi.stubEnv('API_BASE_URL', '');
+    vi.stubEnv('BACKEND_URL', '');
+  });
+
   afterEach(() => {
+    vi.unstubAllEnvs();
     delete (globalThis as { __RUST_SREC_BACKEND_URL__?: unknown })
       .__RUST_SREC_BACKEND_URL__;
   });
