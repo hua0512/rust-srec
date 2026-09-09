@@ -1,19 +1,10 @@
-import { useState, memo } from 'react';
-import { Plus, Layout, List, Share2 } from 'lucide-react';
+import { memo } from 'react';
+import { Plus } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { StepLibrary } from '@/components/pipeline/workflows/step-library';
-import { StepsList } from '@/components/pipeline/workflows/steps-list';
-import { StepConfigDialog } from '@/components/pipeline/workflows/step-config-dialog';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PipelineStep, DagStepDefinition } from '@/api/schemas';
-import { WorkflowFlowEditor } from '@/components/pipeline/workflows/flow-editor/workflow-flow-editor';
-import {
-  createStepId,
-  removeStep,
-  replaceStep,
-  updateStep,
-} from '@/components/pipeline/workflows/step-operations';
+import { DagStepDefinition } from '@/api/schemas';
+import { useWorkflowSteps } from '@/components/pipeline/workflows/use-workflow-steps';
+import { WorkflowStructurePanel } from '@/components/pipeline/workflows/workflow-structure-panel';
 
 interface PipelineWorkflowEditorProps {
   steps: DagStepDefinition[];
@@ -22,169 +13,25 @@ interface PipelineWorkflowEditorProps {
 
 export const PipelineWorkflowEditor = memo(
   ({ steps, onChange }: PipelineWorkflowEditorProps) => {
-    const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
-    const [editingIndex, setEditingIndex] = useState<number | null>(null);
-    const [libraryOpen, setLibraryOpen] = useState(false);
-    const [replacingStepId, setReplacingStepId] = useState<string | null>(null);
-
-    const handleAddStep = (step: PipelineStep) => {
-      const newNode: DagStepDefinition = {
-        id: createStepId(step, steps),
-        step: step,
-        depends_on: steps.length > 0 ? [steps[steps.length - 1].id] : [],
-      };
-      onChange([...steps, newNode]);
-    };
-
-    const handleSelectStep = (step: PipelineStep) => {
-      if (replacingStepId === null) {
-        handleAddStep(step);
-        return;
-      }
-
-      const replacementIndex = steps.findIndex(
-        (candidate) => candidate.id === replacingStepId,
-      );
-      if (replacementIndex === -1) return;
-
-      onChange(replaceStep(steps, replacementIndex, step));
-      setLibraryOpen(false);
-      setReplacingStepId(null);
-    };
-
-    const handleReplaceStep = (id: string) => {
-      setReplacingStepId(id);
-      setLibraryOpen(true);
-    };
-
-    const handleUpdateStep = (index: number, newStep: DagStepDefinition) => {
-      onChange(updateStep(steps, index, newStep));
-    };
-
-    const handleEditStepById = (id: string) => {
-      const index = steps.findIndex((s) => s.id === id);
-      if (index !== -1) {
-        setEditingIndex(index);
-      }
-    };
-
-    const handleRemoveStep = (index: number) => {
-      const step = steps[index];
-      if (step) onChange(removeStep(steps, step.id));
-    };
-
-    const handleRemoveStepById = (id: string) => {
-      onChange(removeStep(steps, id));
-    };
+    const controller = useWorkflowSteps({ steps, onChange });
 
     return (
-      <div className="flex flex-col space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Layout className="h-4 w-4 text-primary" />
-            </div>
-            <h3 className="text-sm font-semibold tracking-tight">
-              <Trans>Pipeline Structure</Trans>
-            </h3>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <Tabs
-              value={viewMode}
-              onValueChange={(v) => setViewMode(v as any)}
-              className="h-8"
-            >
-              <TabsList className="grid w-full grid-cols-2 h-8 p-1">
-                <TabsTrigger value="list" className="h-6 px-3">
-                  <List className="h-3 w-3 sm:mr-2" />
-                  <span className="text-[10px] hidden sm:inline">
-                    <Trans>List</Trans>
-                  </span>
-                  <span className="text-[10px] sm:hidden">
-                    <Trans>List</Trans>
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="graph" className="h-6 px-3">
-                  <Share2 className="h-3 w-3 sm:mr-2" />
-                  <span className="text-[10px] hidden sm:inline">
-                    <Trans>Graph</Trans>
-                  </span>
-                  <span className="text-[10px] sm:hidden">
-                    <Trans>Graph</Trans>
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            <StepLibrary
-              onAddStep={handleSelectStep}
-              currentSteps={steps.map((s) => {
-                if (typeof s.step === 'string') return s.step;
-                const anyStep = s.step as any;
-                if (anyStep.type === 'inline') return anyStep.processor;
-                return anyStep.name || '';
-              })}
-              open={libraryOpen}
-              onOpenChange={(open) => {
-                setLibraryOpen(open);
-                if (!open) setReplacingStepId(null);
-              }}
-              selectionMode={replacingStepId === null ? 'add' : 'replace'}
-              trigger={
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="gap-2 bg-background/50 border-input border hover:bg-accent/50 transition-all shadow-sm flex-1 sm:flex-none justify-center whitespace-nowrap"
-                >
-                  <Plus className="h-4 w-4" />
-                  <Trans>Add Step</Trans>
-                </Button>
-              }
-            />
-          </div>
-        </div>
-
-        <div className="h-[400px] sm:h-[500px] border rounded-lg overflow-hidden bg-background/50 relative">
-          {viewMode === 'list' ? (
-            <div className="h-full min-h-0 overflow-y-auto overscroll-contain p-4">
-              <StepsList
-                steps={steps}
-                onReorder={onChange}
-                onRemove={handleRemoveStep}
-                onUpdate={handleUpdateStep}
-                onEdit={setEditingIndex}
-                onReplace={(index) => {
-                  const step = steps[index];
-                  if (step) handleReplaceStep(step.id);
-                }}
-              />
-            </div>
-          ) : (
-            <WorkflowFlowEditor
-              steps={steps}
-              onUpdateSteps={onChange}
-              onEditStep={handleEditStepById}
-              onRemoveStep={handleRemoveStepById}
-              onReplaceStep={handleReplaceStep}
-            />
-          )}
-        </div>
-
-        <StepConfigDialog
-          open={editingIndex !== null}
-          onOpenChange={(open) => !open && setEditingIndex(null)}
-          dagStep={editingIndex !== null ? steps[editingIndex] : null}
-          onSave={(data) => {
-            if (editingIndex !== null) {
-              handleUpdateStep(editingIndex, data);
-              setEditingIndex(null);
-            }
-          }}
-          allSteps={steps}
-          currentStepIndex={editingIndex ?? -1}
-        />
-      </div>
+      <WorkflowStructurePanel
+        controller={controller}
+        variant="embedded"
+        className="flex flex-col space-y-4"
+        libraryTrigger={
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="gap-2 bg-background/50 border-input border hover:bg-accent/50 transition-all shadow-sm flex-1 sm:flex-none justify-center whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" />
+            <Trans>Add Step</Trans>
+          </Button>
+        }
+      />
     );
   },
 );

@@ -49,7 +49,7 @@ msgstr "\"{0}\" will be removed. Streamers using it fall back to the default eng
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "\"{0}\" will stop working immediately. This cannot be undone."
 
-#: src/components/logging/log-viewer.tsx:532
+#: src/components/logging/log-viewer.tsx:517
 msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
@@ -155,7 +155,7 @@ msgstr "{0, plural, one {file} other {files}}"
 
 #. placeholder {0}: filteredLogs.length
 #. placeholder {1}: logs.length
-#: src/components/logging/log-viewer.tsx:527
+#: src/components/logging/log-viewer.tsx:512
 msgid "{0} / {1, plural, one {# entry} other {# entries}}"
 msgstr "{0} / {1, plural, one {# entry} other {# entries}}"
 
@@ -522,7 +522,7 @@ msgstr "Add randomness to retry delays to prevent thundering herd."
 msgid "Add rclone argument"
 msgstr "Add rclone argument"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:141
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:31
 msgid "Add Step"
 msgstr "Add Step"
 
@@ -612,7 +612,7 @@ msgctxt "day-of-week preset"
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:446
+#: src/components/logging/log-viewer.tsx:460
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -884,11 +884,11 @@ msgstr "Auto Thumbnail"
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:462
+#: src/components/logging/log-viewer.tsx:476
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:461
+#: src/components/logging/log-viewer.tsx:475
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -929,7 +929,7 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:152
+#: src/components/config/platforms/platform-editor.tsx:172
 #: src/components/config/templates/template-editor.tsx:223
 #: src/components/config/templates/template-editor.tsx:226
 msgid "Back"
@@ -964,7 +964,7 @@ msgstr "Back to Sessions"
 msgid "Back to streamers"
 msgstr "Back to streamers"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:242
+#: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Back to workflows"
 msgstr "Back to workflows"
 
@@ -1333,16 +1333,16 @@ msgstr "CDN"
 #: src/components/layout/site-header.tsx:34
 #: src/components/sidebar/navbar.tsx:28
 #: src/components/sidebar/user-menu.tsx:128
-#: src/routes/_authed/change-password.lazy.tsx:130
-#: src/routes/_authed/change-password.lazy.tsx:277
+#: src/routes/_authed/change-password.lazy.tsx:131
+#: src/routes/_authed/change-password.lazy.tsx:278
 msgid "Change Password"
 msgstr "Change Password"
 
-#: src/routes/_authed/change-password.lazy.tsx:128
+#: src/routes/_authed/change-password.lazy.tsx:129
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/routes/_authed/change-password.lazy.tsx:275
+#: src/routes/_authed/change-password.lazy.tsx:276
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
@@ -1471,7 +1471,7 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:421
+#: src/components/logging/log-viewer.tsx:435
 #: src/components/notifications/desktop-channel-dialog.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:615
@@ -1667,7 +1667,7 @@ msgstr "Config Path (Optional)"
 #: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
-#: src/components/pipeline/workflows/workflow-editor.tsx:309
+#: src/components/pipeline/workflows/workflow-editor.tsx:224
 #: src/lib/menu-list.ts:119
 msgid "Configuration"
 msgstr "Configuration"
@@ -1743,11 +1743,11 @@ msgstr "Configured Events"
 msgid "Confirm Import"
 msgstr "Confirm Import"
 
-#: src/routes/_authed/change-password.lazy.tsx:237
+#: src/routes/_authed/change-password.lazy.tsx:238
 msgid "Confirm new password"
 msgstr "Confirm new password"
 
-#: src/routes/_authed/change-password.lazy.tsx:231
+#: src/routes/_authed/change-password.lazy.tsx:232
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
@@ -1764,7 +1764,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:383
+#: src/components/logging/log-viewer.tsx:397
 msgid "Connected"
 msgstr "Connected"
 
@@ -2171,11 +2171,11 @@ msgstr "Cron Expression"
 msgid "Current Filter Directive"
 msgstr "Current Filter Directive"
 
-#: src/routes/_authed/change-password.lazy.tsx:151
+#: src/routes/_authed/change-password.lazy.tsx:152
 msgid "Current password"
 msgstr "Current password"
 
-#: src/routes/_authed/change-password.lazy.tsx:145
+#: src/routes/_authed/change-password.lazy.tsx:146
 msgid "Current Password"
 msgstr "Current Password"
 
@@ -2600,12 +2600,12 @@ msgstr "Delivery Policy"
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:344
+#: src/components/pipeline/workflows/workflow-editor.tsx:259
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
-#: src/components/pipeline/workflows/workflow-editor.tsx:339
+#: src/components/pipeline/workflows/workflow-editor.tsx:254
 msgid "Description"
 msgstr "Description"
 
@@ -2617,7 +2617,7 @@ msgstr "Description is managed by the system"
 msgid "Deselect All"
 msgstr "Deselect All"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:255
+#: src/components/pipeline/workflows/workflow-editor.tsx:170
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
@@ -2719,7 +2719,7 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:388
+#: src/components/logging/log-viewer.tsx:402
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -2946,7 +2946,7 @@ msgstr "e.g. Remux to H.264"
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:323
+#: src/components/pipeline/workflows/workflow-editor.tsx:238
 msgid "e.g., Standard Processing"
 msgstr "e.g., Standard Processing"
 
@@ -3433,7 +3433,7 @@ msgstr "Failed to cancel job"
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
 
-#: src/routes/_authed/change-password.lazy.tsx:81
+#: src/routes/_authed/change-password.lazy.tsx:82
 msgid "Failed to change password"
 msgstr "Failed to change password"
 
@@ -4053,7 +4053,7 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:200
+#: src/components/config/platforms/platform-editor.tsx:220
 #: src/components/config/templates/tabs/platform-override-card.tsx:63
 #: src/components/config/templates/template-editor.tsx:277
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
@@ -4201,9 +4201,7 @@ msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail gene
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:110
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:113
-#: src/components/pipeline/workflows/workflow-editor.tsx:398
+#: src/components/pipeline/workflows/workflow-structure-panel.tsx:142
 msgid "Graph"
 msgstr "Graph"
 
@@ -4261,9 +4259,9 @@ msgstr "Healthy"
 msgid "Height"
 msgstr "Height"
 
-#: src/routes/_authed/change-password.lazy.tsx:171
-#: src/routes/_authed/change-password.lazy.tsx:213
-#: src/routes/_authed/change-password.lazy.tsx:257
+#: src/routes/_authed/change-password.lazy.tsx:172
+#: src/routes/_authed/change-password.lazy.tsx:214
+#: src/routes/_authed/change-password.lazy.tsx:258
 #: src/routes/_public/login.lazy.tsx:215
 msgid "Hide password"
 msgstr "Hide password"
@@ -4872,9 +4870,7 @@ msgstr "Limits & Validation"
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "Limits each individual file's transfer rate rather than the overall total."
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:101
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:104
-#: src/components/pipeline/workflows/workflow-editor.tsx:392
+#: src/components/pipeline/workflows/workflow-structure-panel.tsx:129
 msgid "List"
 msgstr "List"
 
@@ -5019,7 +5015,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:538
+#: src/components/logging/log-viewer.tsx:523
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -5497,7 +5493,7 @@ msgstr "My Template"
 
 #: src/components/notifications/channel-form.tsx:382
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:227
-#: src/components/pipeline/workflows/workflow-editor.tsx:319
+#: src/components/pipeline/workflows/workflow-editor.tsx:234
 #: src/components/streamers/config/streamer-identity-fields.tsx:95
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
@@ -5567,11 +5563,11 @@ msgstr "NEW"
 msgid "New notification channel"
 msgstr "New notification channel"
 
-#: src/routes/_authed/change-password.lazy.tsx:189
+#: src/routes/_authed/change-password.lazy.tsx:190
 msgid "New Password"
 msgstr "New Password"
 
-#: src/routes/_authed/change-password.lazy.tsx:195
+#: src/routes/_authed/change-password.lazy.tsx:196
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
 
@@ -5653,7 +5649,7 @@ msgid "No engines found."
 msgstr "No engines found."
 
 #. placeholder {0}: result.max_depth
-#: src/components/pipeline/workflows/workflow-editor.tsx:194
+#: src/components/pipeline/workflows/workflow-editor.tsx:109
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
@@ -5703,7 +5699,7 @@ msgstr "No log files found"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:480
+#: src/components/logging/log-viewer.tsx:494
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -6395,7 +6391,7 @@ msgstr "Passthrough Inputs"
 msgid "Password"
 msgstr "Password"
 
-#: src/lib/password-change-redirect.ts:39
+#: src/lib/password-change-redirect.ts:56
 #: src/routes/_public/login.lazy.tsx:60
 msgid "Password change required"
 msgstr "Password change required"
@@ -6435,7 +6431,7 @@ msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PA
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:415
+#: src/components/logging/log-viewer.tsx:429
 msgid "Pause"
 msgstr "Pause"
 
@@ -6556,7 +6552,7 @@ msgstr "Pipeline is already completed or cancelled"
 msgid "Pipeline is empty."
 msgstr "Pipeline is empty."
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:192
+#: src/components/pipeline/workflows/workflow-editor.tsx:107
 msgid "Pipeline is valid"
 msgstr "Pipeline is valid"
 
@@ -6573,7 +6569,7 @@ msgstr "Pipeline Jobs"
 msgid "Pipeline Manager"
 msgstr "Pipeline Manager"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:178
+#: src/components/pipeline/workflows/workflow-editor.tsx:93
 msgid "Pipeline must have at least one step"
 msgstr "Pipeline must have at least one step"
 
@@ -6606,8 +6602,7 @@ msgstr "Pipeline started"
 msgid "Pipeline Statistics"
 msgstr "Pipeline Statistics"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:88
-#: src/components/pipeline/workflows/workflow-editor.tsx:379
+#: src/components/pipeline/workflows/workflow-structure-panel.tsx:97
 msgid "Pipeline Structure"
 msgstr "Pipeline Structure"
 
@@ -6712,7 +6707,7 @@ msgstr "Please enter a valid URL"
 msgid "Please enter at least one URL"
 msgstr "Please enter at least one URL"
 
-#: src/routes/_authed/change-password.lazy.tsx:134
+#: src/routes/_authed/change-password.lazy.tsx:135
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
@@ -7142,7 +7137,7 @@ msgstr "Ready to Watch"
 msgid "Real-time"
 msgstr "Real-time"
 
-#: src/components/logging/log-viewer.tsx:370
+#: src/components/logging/log-viewer.tsx:384
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -7468,7 +7463,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:410
+#: src/components/logging/log-viewer.tsx:424
 msgid "Resume"
 msgstr "Resume"
 
@@ -7671,7 +7666,7 @@ msgstr "Saturday"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:170
+#: src/components/config/platforms/platform-editor.tsx:190
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
@@ -7688,7 +7683,7 @@ msgstr "Save settings to a JSON file"
 msgid "Save with incomplete delete checks?"
 msgstr "Save with incomplete delete checks?"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:284
+#: src/components/pipeline/workflows/workflow-editor.tsx:199
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
@@ -7697,9 +7692,9 @@ msgstr "Save Workflow"
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:168
+#: src/components/config/platforms/platform-editor.tsx:188
 #: src/components/config/templates/template-editor.tsx:243
-#: src/components/pipeline/workflows/workflow-editor.tsx:282
+#: src/components/pipeline/workflows/workflow-editor.tsx:197
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
 msgstr "Saving..."
@@ -7771,7 +7766,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:431
+#: src/components/logging/log-viewer.tsx:445
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -8182,9 +8177,9 @@ msgstr "Show download details"
 msgid "Show less"
 msgstr "Show less"
 
-#: src/routes/_authed/change-password.lazy.tsx:173
-#: src/routes/_authed/change-password.lazy.tsx:215
-#: src/routes/_authed/change-password.lazy.tsx:259
+#: src/routes/_authed/change-password.lazy.tsx:174
+#: src/routes/_authed/change-password.lazy.tsx:216
+#: src/routes/_authed/change-password.lazy.tsx:260
 #: src/routes/_public/login.lazy.tsx:217
 msgid "Show password"
 msgstr "Show password"
@@ -8303,7 +8298,7 @@ msgstr "Source"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:210
+#: src/components/config/platforms/platform-editor.tsx:230
 #: src/components/config/templates/tabs/platform-override-card.tsx:69
 msgid "Specific"
 msgstr "Specific"
@@ -9579,15 +9574,15 @@ msgstr "Users"
 msgid "UTC"
 msgstr "UTC"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:273
+#: src/components/pipeline/workflows/workflow-editor.tsx:188
 msgid "Validate"
 msgstr "Validate"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:199
+#: src/components/pipeline/workflows/workflow-editor.tsx:114
 msgid "Validation Failed"
 msgstr "Validation Failed"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:225
+#: src/components/pipeline/workflows/workflow-editor.tsx:140
 msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
 
@@ -9665,7 +9660,7 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:394
+#: src/components/logging/log-viewer.tsx:408
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 
@@ -9709,7 +9704,7 @@ msgstr "Wait indefinitely"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:484
+#: src/components/logging/log-viewer.tsx:498
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 
