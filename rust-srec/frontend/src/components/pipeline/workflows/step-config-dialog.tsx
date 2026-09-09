@@ -490,7 +490,13 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                   {processorDef ? (
                     <Form {...form} key={formValuesJson}>
                       <form
-                        onSubmit={form.handleSubmit(handleSubmit)}
+                        onSubmit={(event) => {
+                          // The dialog renders through a portal, yet in the React tree it still
+                          // sits inside whatever form embeds the workflow editor. Without this,
+                          // saving a step here would also submit that surrounding form.
+                          event.stopPropagation();
+                          void form.handleSubmit(handleSubmit)(event);
+                        }}
                         className="contents"
                       >
                         <Suspense

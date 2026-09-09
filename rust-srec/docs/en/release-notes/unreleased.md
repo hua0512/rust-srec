@@ -532,10 +532,6 @@
 
 ## Web interface
 
-- **Older pipelines that name a preset directly stay editable**
-
-  A pipeline saved in the older short form, where a step is written as just the name of the preset it runs, is now read as a preset step everywhere. Such a step shows its name and can be configured, replaced or removed in the workflow editor the same way it already could in the pipeline settings editor.
-
 - **Theme colour swatches match the theme you just picked**
 
   On the theme page, the colour swatches and their values used to keep showing the previous theme after switching presets or between light and dark. They now update with your choice, and they show the current theme's colours after a full page reload.

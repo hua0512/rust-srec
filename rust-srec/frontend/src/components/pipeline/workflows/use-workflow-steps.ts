@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import {
   createStepId,
@@ -13,7 +13,7 @@ interface UseWorkflowStepsOptions {
 }
 
 export interface WorkflowStepsController {
-  /** Steps with legacy shorthand references normalized, ready to render and to edit. */
+  /** The steps handed in by the caller, in render order. */
   steps: DagStepDefinition[];
   /** Preset, workflow and processor names the step library marks as already used. */
   usedStepNames: string[];
@@ -37,23 +37,6 @@ export interface WorkflowStepsController {
   reorder: (steps: DagStepDefinition[]) => void;
 }
 
-/**
- * A DAG definition written before step types were tagged stores a step as the bare name of the
- * preset it runs. Reading it as a preset reference keeps such a definition editable instead of
- * rendering it as a nameless step.
- */
-function normalizeStep(step: DagStepDefinition): DagStepDefinition {
-  return typeof step.step === 'string'
-    ? { ...step, step: { type: 'preset', name: step.step } }
-    : step;
-}
-
-function normalizeSteps(steps: DagStepDefinition[]): DagStepDefinition[] {
-  return steps.some((step) => typeof step.step === 'string')
-    ? steps.map(normalizeStep)
-    : steps;
-}
-
 function stepName(step: PipelineStep): string {
   return step.type === 'inline' ? step.processor : step.name;
 }
@@ -64,14 +47,13 @@ function stepName(step: PipelineStep): string {
  * with the caller, which decides where they are stored.
  */
 export function useWorkflowSteps({
-  steps: rawSteps,
+  steps,
   onChange,
 }: UseWorkflowStepsOptions): WorkflowStepsController {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [replacingStepId, setReplacingStepId] = useState<string | null>(null);
 
-  const steps = useMemo(() => normalizeSteps(rawSteps), [rawSteps]);
   const usedStepNames = useMemo(
     () => steps.map((step) => stepName(step.step)),
     [steps],
@@ -157,6 +139,12 @@ export function useWorkflowSteps({
   );
 
   const closeEditor = useCallback(() => setEditingIndex(null), []);
+
+  // A step can disappear while its dialog is open. Dropping the index as well keeps a later
+  // addition at the same position from reopening the dialog on an unrelated step.
+  useEffect(() => {
+    if (editingIndex !== null && !steps[editingIndex]) setEditingIndex(null);
+  }, [editingIndex, steps]);
 
   const saveEditedStep = useCallback(
     (step: DagStepDefinition) => {

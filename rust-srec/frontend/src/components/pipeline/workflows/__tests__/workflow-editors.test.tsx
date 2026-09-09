@@ -31,6 +31,38 @@ const initialSteps: DagStepDefinition[] = [
   },
 ];
 
+const inlineSteps: DagStepDefinition[] = [
+  {
+    id: 'run',
+    depends_on: [],
+    step: { type: 'inline', processor: 'execute', config: { command: 'echo' } },
+  },
+];
+
+function renderTree(node: React.ReactNode) {
+  return render(
+    <I18nProvider i18n={i18n}>
+      <QueryClientProvider client={new QueryClient()}>
+        {node}
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
+}
+
+/** Edits the inline step's command, then submits the dialog's own form as Enter would. */
+async function editStepAndSubmitTheDialogForm() {
+  fireEvent.click(screen.getAllByTitle('Configure Step')[0]);
+  fireEvent.change(await screen.findByLabelText('Command'), {
+    target: { value: 'echo edited' },
+  });
+  const dialogForm = document.querySelector('[role="dialog"] form');
+  expect(dialogForm).not.toBeNull();
+  fireEvent.submit(dialogForm!);
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+  );
+}
+
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
     observe() {}
@@ -90,5 +122,57 @@ describe.each(['workflow', 'pipeline'] as const)('%s editor', (kind) => {
       { ...initialSteps[1], depends_on: ['renamed'] },
       { ...initialSteps[2], depends_on: ['renamed', 'second'] },
     ]);
+  });
+});
+
+describe('step dialog submit', () => {
+  it('saves the step without submitting the workflow form around it', async () => {
+    const onSubmit = vi.fn();
+    renderTree(
+      <WorkflowEditor
+        title="Edit workflow"
+        initialData={{
+          id: 'workflow',
+          name: 'Test',
+          description: '',
+          dag: { name: 'Test', steps: inlineSteps },
+          created_at: '',
+          updated_at: '',
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await editStepAndSubmitTheDialogForm();
+
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Workflow' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].steps[0].step.config.command).toBe(
+      'echo edited',
+    );
+  });
+
+  it('saves the step without submitting the settings form around it', async () => {
+    const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    function Settings() {
+      const [steps, setSteps] = useState(inlineSteps);
+      return (
+        <form onSubmit={onSubmit}>
+          <PipelineWorkflowEditor steps={steps} onChange={setSteps} />
+          <div data-testid="command">
+            {(steps[0].step as { config: { command: string } }).config.command}
+          </div>
+        </form>
+      );
+    }
+    renderTree(<Settings />);
+
+    await editStepAndSubmitTheDialogForm();
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('command')).toHaveTextContent('echo edited');
   });
 });

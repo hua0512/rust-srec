@@ -346,7 +346,7 @@ msgstr "90 days"
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:579
+#: src/components/pipeline/workflows/step-config-dialog.tsx:585
 msgid "A unique ID used by other steps to reference this one."
 msgstr "A unique ID used by other steps to reference this one."
 
@@ -379,7 +379,7 @@ msgstr "Access level"
 msgid "Account Not Found"
 msgstr "Account Not Found"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:492
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:510
 msgid "Action"
 msgstr "Action"
 
@@ -441,7 +441,7 @@ msgstr "Add an override to customize behavior for specific platforms."
 msgid "Add an override to customize engine behavior for this template."
 msgstr "Add an override to customize engine behavior for this template."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:738
+#: src/components/pipeline/workflows/step-config-dialog.tsx:744
 msgid "Add anyway"
 msgstr "Add anyway"
 
@@ -547,11 +547,11 @@ msgstr "Additional arguments appended to the command."
 msgid "Adjust rate based on target duration"
 msgstr "Adjust rate based on target duration"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:282
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:300
 msgid "Adjust sidebar style and behavior."
 msgstr "Adjust sidebar style and behavior."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:254
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:272
 msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
@@ -1154,7 +1154,7 @@ msgstr "Blu-ray (400)"
 msgid "Blu-ray Dolby (401)"
 msgstr "Blu-ray Dolby (401)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:271
 msgid "Border Radius"
 msgstr "Border Radius"
 
@@ -1176,7 +1176,7 @@ msgstr "both directions at 10 MiB/s"
 msgid "Bottom Fixed"
 msgstr "Bottom Fixed"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:235
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:252
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
@@ -1245,8 +1245,8 @@ msgstr "Cache"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:97
 #: src/components/pipeline/presets/preset-card.tsx:152
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:672
-#: src/components/pipeline/workflows/step-config-dialog.tsx:730
+#: src/components/pipeline/workflows/step-config-dialog.tsx:678
+#: src/components/pipeline/workflows/step-config-dialog.tsx:736
 #: src/components/pipeline/workflows/workflow-card.tsx:119
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:235
@@ -1473,7 +1473,7 @@ msgstr "Cleanup"
 
 #: src/components/logging/log-viewer.tsx:435
 #: src/components/notifications/desktop-channel-dialog.tsx:182
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:244
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:615
 msgid "Clear"
 msgstr "Clear"
@@ -1539,7 +1539,7 @@ msgstr "Codec"
 msgid "Collapse sidebar"
 msgstr "Collapse sidebar"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:325
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:343
 msgid "Collapsible"
 msgstr "Collapsible"
 
@@ -2210,7 +2210,7 @@ msgstr "Custom Header"
 msgid "Custom Headers"
 msgstr "Custom Headers"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:216
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:233
 msgid "Custom imported theme is active."
 msgstr "Custom imported theme is active."
 
@@ -2234,7 +2234,7 @@ msgstr "Custom User-Agent string (Optional)"
 msgid "Customize specific engine settings for this template."
 msgstr "Customize specific engine settings for this template."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:94
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:111
 msgid "Customize the application theme and sidebar layout."
 msgstr "Customize the application theme and sidebar layout."
 
@@ -2242,7 +2242,7 @@ msgstr "Customize the application theme and sidebar layout."
 msgid "Cutoff"
 msgstr "Cutoff"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:533
+#: src/components/pipeline/workflows/step-config-dialog.tsx:539
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
@@ -2304,7 +2304,7 @@ msgstr "Danmu/min"
 msgid "Danmus"
 msgstr "Danmus"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:118
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:135
 msgid "Dark"
 msgstr "Dark"
 
@@ -2365,7 +2365,7 @@ msgstr "default"
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:309
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
 msgid "Default"
 msgstr "Default"
@@ -2410,7 +2410,7 @@ msgstr "Default: {value}"
 msgid "Default: Dolby Vision (30000)"
 msgstr "Default: Dolby Vision (30000)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:536
+#: src/components/pipeline/workflows/step-config-dialog.tsx:542
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
@@ -2545,7 +2545,7 @@ msgstr "Delete Source XML"
 msgid "Delete Template"
 msgstr "Delete Template"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:705
+#: src/components/pipeline/workflows/step-config-dialog.tsx:711
 msgid "Delete the converted result?"
 msgstr "Delete the converted result?"
 
@@ -2596,7 +2596,7 @@ msgstr "Deletes the files produced by the previous step. Safe after an Upload st
 msgid "Delivery Policy"
 msgstr "Delivery Policy"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:587
+#: src/components/pipeline/workflows/step-config-dialog.tsx:593
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
@@ -2658,7 +2658,7 @@ msgstr "Destination Root"
 msgid "Destination Root help"
 msgstr "Destination Root help"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:685
+#: src/components/pipeline/workflows/step-config-dialog.tsx:691
 msgid "Detach & Edit"
 msgstr "Detach & Edit"
 
@@ -2942,7 +2942,7 @@ msgstr "e.g. My Favorite Streamer"
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:561
+#: src/components/pipeline/workflows/step-config-dialog.tsx:567
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
@@ -3901,7 +3901,7 @@ msgstr "Filtered:"
 msgid "Filters"
 msgstr "Filters"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:236
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Fine tune brand and surface colors."
 msgstr "Fine tune brand and surface colors."
 
@@ -3925,7 +3925,7 @@ msgstr "Fix FLV Streams"
 msgid "Fix HLS Discontinuities"
 msgstr "Fix HLS Discontinuities"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:329
 msgid "Floating"
 msgstr "Floating"
 
@@ -4474,7 +4474,7 @@ msgstr "https://twitch.tv/..."
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:330
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:348
 msgid "Icon"
 msgstr "Icon"
 
@@ -4522,7 +4522,7 @@ msgstr "Ignored words"
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:176
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:193
 msgid "Import"
 msgstr "Import"
 
@@ -4604,7 +4604,7 @@ msgstr "inline"
 msgid "Inline: {stepName}"
 msgstr "Inline: {stepName}"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:506
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:524
 msgid "Input"
 msgstr "Input"
 
@@ -4624,7 +4624,7 @@ msgstr "Input Path"
 msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:313
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 msgid "Inset"
 msgstr "Inset"
 
@@ -4838,7 +4838,7 @@ msgstr "Leave empty for stream copy"
 msgid "Leave this off to only remove the records and keep the files where they are."
 msgstr "Leave this off to only remove the records and keep the files where they are."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:374
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:392
 msgid "Left"
 msgstr "Left"
 
@@ -4854,7 +4854,7 @@ msgstr "Level"
 msgid "libx264"
 msgstr "libx264"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:117
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:134
 msgid "Light"
 msgstr "Light"
 
@@ -4906,7 +4906,7 @@ msgstr "Live Polling"
 msgid "Live polling notifications enabled"
 msgstr "Live polling notifications enabled"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:413
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:431
 msgid "Live Preview"
 msgstr "Live Preview"
 
@@ -5616,7 +5616,7 @@ msgstr "No changes detected"
 msgid "No configuration available for this processor."
 msgstr "No configuration available for this processor."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:509
+#: src/components/pipeline/workflows/step-config-dialog.tsx:515
 msgid "No configuration form available for this processor."
 msgstr "No configuration form available for this processor."
 
@@ -5723,7 +5723,7 @@ msgstr "No metadata tags added"
 msgid "No modules configured"
 msgstr "No modules configured"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:642
+#: src/components/pipeline/workflows/step-config-dialog.tsx:648
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
@@ -5869,7 +5869,7 @@ msgstr "No workflows yet"
 
 #: src/components/notifications/forms/webhook-form.tsx:214
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:871
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:349
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:462
 msgid "None"
 msgstr "None"
@@ -6025,7 +6025,7 @@ msgstr "NVENC HEVC High Quality"
 msgid "OAuth Token"
 msgstr "OAuth Token"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:329
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:347
 msgid "Off Canvas"
 msgstr "Off Canvas"
 
@@ -6071,7 +6071,7 @@ msgstr "Offload Decryption (Default: On)"
 msgid "Offset Consistency Check"
 msgstr "Offset Consistency Check"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:482
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:500
 msgid "OK"
 msgstr "OK"
 
@@ -6499,7 +6499,7 @@ msgstr "Performance"
 msgid "Permission required"
 msgstr "Permission required"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:159
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:176
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
@@ -6739,7 +6739,7 @@ msgstr "Pool Idle Timeout (ms)"
 msgid "Port"
 msgstr "Port"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:370
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:388
 msgid "Position"
 msgstr "Position"
 
@@ -6861,11 +6861,11 @@ msgstr "Previous"
 msgid "Previous Title"
 msgstr "Previous Title"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:486
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:504
 msgid "Primary"
 msgstr "Primary"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:513
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:531
 msgid "Primary Action"
 msgstr "Primary Action"
 
@@ -7060,7 +7060,7 @@ msgstr "Quick Share"
 msgid "RAM utilization"
 msgstr "RAM utilization"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:192
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:209
 msgid "Random"
 msgstr "Random"
 
@@ -7419,7 +7419,7 @@ msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:369
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:105
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:122
 msgid "Reset"
 msgstr "Reset"
 
@@ -7555,7 +7555,7 @@ msgstr "Revoke API key?"
 msgid "Revoked"
 msgstr "Revoked"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:375
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:393
 msgid "Right"
 msgstr "Right"
 
@@ -7567,7 +7567,7 @@ msgstr "Route traffic through an intermediate server"
 msgid "Rows per page"
 msgstr "Rows per page"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:495
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:513
 msgid "Run"
 msgstr "Run"
 
@@ -7670,7 +7670,7 @@ msgstr "Save changes"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:693
+#: src/components/pipeline/workflows/step-config-dialog.tsx:699
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "Save Changes"
@@ -7679,7 +7679,7 @@ msgstr "Save Changes"
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:703
+#: src/components/pipeline/workflows/step-config-dialog.tsx:709
 msgid "Save with incomplete delete checks?"
 msgstr "Save with incomplete delete checks?"
 
@@ -7810,8 +7810,8 @@ msgstr "Search workflows..."
 msgid "Second (00-59)"
 msgstr "Second (00-59)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:499
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:516
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:517
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:534
 msgid "Secondary"
 msgstr "Secondary"
 
@@ -7996,7 +7996,7 @@ msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "Select the highest quality level you want to attempt capturing."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:650
+#: src/components/pipeline/workflows/step-config-dialog.tsx:656
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
@@ -8006,7 +8006,7 @@ msgstr "Select the steps that must complete successfully before this step runs."
 msgid "Select type"
 msgstr "Select type"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:112
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:129
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
 
@@ -8156,7 +8156,7 @@ msgstr "Settings updated"
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:166
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:183
 msgid "Shadcn UI Theme Presets"
 msgstr "Shadcn UI Theme Presets"
 
@@ -8188,7 +8188,7 @@ msgstr "Show password"
 msgid "Shows notifications while the application tab is open by polling recent events."
 msgstr "Shows notifications while the application tab is open by polling recent events."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:281
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:299
 msgid "Sidebar Layout"
 msgstr "Sidebar Layout"
 
@@ -8273,7 +8273,7 @@ msgstr "SMTP Host"
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:710
+#: src/components/pipeline/workflows/step-config-dialog.tsx:716
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 msgstr "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 
@@ -8376,7 +8376,7 @@ msgid "State"
 msgstr "State"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:181
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:479
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:497
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:450
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:151
@@ -8392,15 +8392,15 @@ msgstr "Stem (Filename Match)"
 msgid "Step Configuration"
 msgstr "Step Configuration"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:572
+#: src/components/pipeline/workflows/step-config-dialog.tsx:578
 msgid "Step ID is required."
 msgstr "Step ID is required."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:574
+#: src/components/pipeline/workflows/step-config-dialog.tsx:580
 msgid "Step ID must be unique."
 msgstr "Step ID must be unique."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:547
+#: src/components/pipeline/workflows/step-config-dialog.tsx:553
 msgid "Step Identifier (Unique)"
 msgstr "Step Identifier (Unique)"
 
@@ -8672,7 +8672,7 @@ msgstr "Sync"
 
 #: src/components/layout/site-header.tsx:40
 #: src/components/sidebar/navbar.tsx:34
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:122
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:139
 msgid "System"
 msgstr "System"
 
@@ -8837,15 +8837,15 @@ msgstr "The underlying tool used for downloading."
 #: src/components/layout/site-header.tsx:45
 #: src/components/sidebar/navbar.tsx:39
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:79
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:91
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:108
 msgid "Theme"
 msgstr "Theme"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:111
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:128
 msgid "Theme Mode"
 msgstr "Theme Mode"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:157
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:174
 msgid "Theme Preset"
 msgstr "Theme Preset"
 
@@ -8858,7 +8858,7 @@ msgstr "These settings only apply to the desktop app. The server will still deli
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:715
+#: src/components/pipeline/workflows/step-config-dialog.tsx:721
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 
@@ -9321,7 +9321,7 @@ msgstr "Twitch Proxy Playlist Exclude"
 msgid "Type"
 msgstr "Type"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:526
 msgid "Type something..."
 msgstr "Type something..."
 
@@ -9593,7 +9593,7 @@ msgstr "Validation service unavailable"
 msgid "Value"
 msgstr "Value"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:288
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:306
 msgid "Variant"
 msgstr "Variant"
 

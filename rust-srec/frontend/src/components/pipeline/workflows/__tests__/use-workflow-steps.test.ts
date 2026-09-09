@@ -24,35 +24,24 @@ const steps: DagStepDefinition[] = [
 
 function setup(initialSteps: DagStepDefinition[] = steps) {
   const onChange = vi.fn();
-  const { result } = renderHook(() =>
-    useWorkflowSteps({ steps: initialSteps, onChange }),
+  const { rerender, result } = renderHook(
+    (props: { steps: DagStepDefinition[] }) =>
+      useWorkflowSteps({ steps: props.steps, onChange }),
+    { initialProps: { steps: initialSteps } },
   );
-  return { onChange, result };
+  return { onChange, rerender, result };
 }
 
 describe('useWorkflowSteps', () => {
-  it('reads a bare step name as a preset reference', () => {
-    const { result } = setup([
-      { id: 'legacy', step: 'remux' as never, depends_on: [] },
-      ...steps,
-    ]);
+  it('passes the caller steps through and names each of them', () => {
+    const { result } = setup();
 
-    expect(result.current.steps[0].step).toEqual({
-      type: 'preset',
-      name: 'remux',
-    });
+    expect(result.current.steps).toBe(steps);
     expect(result.current.usedStepNames).toEqual([
-      'remux',
       'download',
       'remux',
       'upload',
     ]);
-  });
-
-  it('keeps the step array identity when nothing needs normalizing', () => {
-    const { result } = setup();
-
-    expect(result.current.steps).toBe(steps);
   });
 
   it('appends a selected step after the last one', () => {
@@ -137,5 +126,43 @@ describe('useWorkflowSteps', () => {
     act(() => result.current.editStepById('missing'));
 
     expect(result.current.editingStep).toBeNull();
+  });
+
+  it('opens the dialog on a step given by index and closes it again', () => {
+    const { onChange, result } = setup();
+
+    act(() => result.current.editStep(2));
+    expect(result.current.editingStep).toBe(steps[2]);
+    expect(result.current.editingIndex).toBe(2);
+
+    act(() => result.current.closeEditor());
+
+    expect(result.current.editingStep).toBeNull();
+    expect(result.current.editingIndex).toBe(-1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('hands a reordered step array straight to the caller', () => {
+    const { onChange, result } = setup();
+    const reordered = [steps[1], steps[0], steps[2]];
+
+    act(() => result.current.reorder(reordered));
+
+    expect(onChange).toHaveBeenCalledWith(reordered);
+  });
+
+  it('closes the editor when the edited step is removed and does not reopen it', () => {
+    const { rerender, result } = setup();
+
+    act(() => result.current.editStep(2));
+    rerender({ steps: steps.slice(0, 2) });
+
+    expect(result.current.editingStep).toBeNull();
+    expect(result.current.editingIndex).toBe(-1);
+
+    rerender({ steps });
+
+    expect(result.current.editingStep).toBeNull();
+    expect(result.current.editingIndex).toBe(-1);
   });
 });
