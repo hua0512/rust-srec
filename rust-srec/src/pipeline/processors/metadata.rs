@@ -175,30 +175,13 @@ impl MetadataProcessor {
         &self,
         input_path: &str,
         config: &MetadataConfig,
-        processor_input: &ProcessorInput,
+        output_override: Option<&str>,
     ) -> String {
-        // Priority: config.output_path > processor_input.outputs > generated from input
-        if let Some(ref output) = config.output_path {
-            return output.clone();
-        }
-
-        if let Some(output) = processor_input.outputs.first() {
-            return output.clone();
-        }
-
-        // Generate output path from input path (add _meta suffix)
-        let input = Path::new(input_path);
-        let stem = input
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        let extension = input.extension().and_then(|s| s.to_str()).unwrap_or("mp4");
-        let parent = input.parent().unwrap_or(Path::new("."));
-
-        parent
-            .join(format!("{}_meta.{}", stem, extension))
-            .to_string_lossy()
-            .to_string()
+        super::planning::choose_output(config.output_path.as_deref(), output_override, || {
+            let path = Path::new(input_path);
+            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("mp4");
+            super::planning::sibling_output(path, "output", "_meta", extension)
+        })
     }
 
     /// Check if the input file format supports metadata embedding.
@@ -237,32 +220,20 @@ impl MetadataProcessor {
                 "Input file format does not support metadata embedding, passing through: {}",
                 input_path
             ));
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.to_string()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "unsupported_format",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.to_string(),
-                    "format does not support metadata embedding".to_string(),
-                )],
-                ..Default::default()
-            });
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "format does not support metadata embedding",
+                "unsupported_format",
+                duration,
+                Vec::new(),
+            ));
         }
 
-        let mut dummy_input = ProcessorInput::default();
-        if let Some(output_override) = output_override.filter(|s| !s.is_empty()) {
-            dummy_input.outputs = vec![output_override.to_string()];
-        }
-
-        // Determine output path
-        let output_path = self.determine_output_path(input_path, config, &dummy_input);
+        let output_path = self.determine_output_path(
+            input_path,
+            config,
+            output_override.filter(|s| !s.is_empty()),
+        );
 
         if Path::new(input_path) == Path::new(&output_path) {
             return Err(crate::Error::PipelineError(format!(
@@ -370,6 +341,27 @@ impl MetadataProcessor {
     }
 }
 
+struct MetadataProcessorItem<'a> {
+    processor: &'a MetadataProcessor,
+    config: &'a MetadataConfig,
+    ctx: &'a ProcessorContext,
+}
+
+#[async_trait]
+impl super::media_driver::MediaItem for MetadataProcessorItem<'_> {
+    type Publication = super::media_driver::StagedPublication;
+    async fn process(
+        &self,
+        input: &str,
+        output: Option<&str>,
+        publication: &mut Self::Publication,
+    ) -> Result<ProcessorOutput> {
+        self.processor
+            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .await
+    }
+}
+
 impl Default for MetadataProcessor {
     fn default() -> Self {
         Self::new()
@@ -406,48 +398,27 @@ impl Processor for MetadataProcessor {
                 "No input file specified for metadata embedding".to_owned(),
             ));
         }
-        let mut batch = OutputBatch::new(&input.inputs);
-        let mut output = if input.inputs.len() == 1 {
-            self.process_one(
-                &input.inputs[0],
-                input.outputs.first().map(String::as_str),
-                &config,
+        if input.inputs.len() > 1 && config.output_path.is_some() {
+            return Err(crate::Error::PipelineError("metadata: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_owned()));
+        }
+        let plan = super::planning::OutputPlan::unary_or_mapped(&input.inputs, &input.outputs)
+            .map_err(|_| crate::Error::PipelineError(format!("metadata batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})", input.inputs.len(), input.outputs.len())))?;
+        let is_batch = plan.is_batch();
+        let mut output = super::media_driver::run_media(
+            plan,
+            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            &MetadataProcessorItem {
+                processor: self,
+                config: &config,
                 ctx,
-                &mut batch,
-            )
-            .await?
-        } else {
-            if config.output_path.is_some() {
-                return Err(crate::Error::PipelineError(
-                    "metadata: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_owned()
-                ));
-            }
-            if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
-                return Err(crate::Error::PipelineError(format!(
-                    "metadata batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
-                    input.inputs.len(),
-                    input.outputs.len()
-                )));
-            }
-            let mut output = ProcessorOutput::default();
-            for (idx, input_path) in input.inputs.iter().enumerate() {
-                let one = self
-                    .process_one(
-                        input_path,
-                        input.outputs.get(idx).map(String::as_str),
-                        &config,
-                        ctx,
-                        &mut batch,
-                    )
-                    .await?;
-                super::outputs::accumulate_media_output(&mut output, one);
-            }
+            },
+        )
+        .await?;
+        if is_batch {
             output.metadata = Some(serde_json::json!({
                 "batch": true, "inputs": input.inputs.len(), "input_removed": config.remove_input_on_success,
             }).to_string());
-            output
-        };
-        batch.commit().await?;
+        }
 
         // Source deletion is only allowed after every output has been published.
         if config.remove_input_on_success {
@@ -717,7 +688,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/input.mp4", &config, &input);
+        let output = processor.determine_output_path(
+            "/input.mp4",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert_eq!(output, "/custom/output.mp4");
     }
 
@@ -734,7 +709,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/input.mp4", &config, &input);
+        let output = processor.determine_output_path(
+            "/input.mp4",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert_eq!(output, "/processor/output.mp4");
     }
 
@@ -751,7 +730,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/path/to/video.mp4", &config, &input);
+        let output = processor.determine_output_path(
+            "/path/to/video.mp4",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert!(output.contains("video_meta.mp4"));
     }
 
@@ -768,7 +751,11 @@ mod tests {
             ..Default::default()
         };
 
-        let output = processor.determine_output_path("/path/to/video.mkv", &config, &input);
+        let output = processor.determine_output_path(
+            "/path/to/video.mkv",
+            &config,
+            input.outputs.first().map(String::as_str),
+        );
         assert!(output.contains("video_meta.mkv"));
     }
 

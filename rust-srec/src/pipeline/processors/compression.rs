@@ -257,32 +257,19 @@ impl CompressionProcessor {
         config: &CompressionConfig,
         processor_input: &ProcessorInput,
     ) -> String {
-        // Priority: config.output_path > processor_input.outputs > generated from first input
-        if let Some(ref output) = config.output_path {
-            return output.clone();
-        }
-
-        if let Some(output) = processor_input.outputs.first() {
-            return output.clone();
-        }
-
-        // Generate output path from first input path
-        if let Some(first_input) = inputs.first() {
-            let input = Path::new(first_input);
-            let stem = input
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("archive");
-            let parent = input.parent().unwrap_or(Path::new("."));
-
-            return parent
-                .join(format!("{}.{}", stem, config.format.extension()))
-                .to_string_lossy()
-                .to_string();
-        }
-
-        // Fallback
-        format!("archive.{}", config.format.extension())
+        super::planning::choose_output(
+            config.output_path.as_deref(),
+            processor_input.outputs.first().map(String::as_str),
+            || match inputs.first() {
+                Some(first) => super::planning::sibling_output(
+                    Path::new(first),
+                    "archive",
+                    "",
+                    config.format.extension(),
+                ),
+                None => format!("archive.{}", config.format.extension()),
+            },
+        )
     }
 
     /// Create a ZIP archive from the input files.

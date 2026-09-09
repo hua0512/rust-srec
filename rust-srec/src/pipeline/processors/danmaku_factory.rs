@@ -256,20 +256,16 @@ impl Processor for DanmakuFactoryProcessor {
         }
 
         // Batch output mapping contract applies to selected XML inputs.
-        let ass_outputs: Vec<String> = if input.outputs.is_empty() {
-            xml_inputs
-                .iter()
-                .map(|p| Self::default_ass_output_for_xml(p))
-                .collect()
-        } else if input.outputs.len() == xml_count {
-            input.outputs.clone()
-        } else {
-            return Err(crate::Error::PipelineError(format!(
-                "danmaku_factory batch job requires outputs to be empty or have the same length as selected XML inputs (xml_inputs={}, outputs={})",
-                xml_count,
-                input.outputs.len()
-            )));
-        };
+        let plan = super::planning::OutputPlan::selected(&xml_inputs, &input.outputs)
+            .map_err(|_| crate::Error::PipelineError(format!("danmaku_factory batch job requires outputs to be empty or have the same length as selected XML inputs (xml_inputs={}, outputs={})", xml_count, input.outputs.len())))?;
+        let ass_outputs: Vec<String> = plan
+            .items()
+            .map(|(xml, output)| {
+                output
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| Self::default_ass_output_for_xml(xml))
+            })
+            .collect();
 
         let binary = Self::resolve_binary_path(&config);
         let mut items_produced = Vec::new();

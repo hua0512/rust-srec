@@ -329,13 +329,27 @@ outputs, with the cleanup limits described above.
 
 ### Processor Result Contracts
 
-Media processors share command-error selection and batch result accumulation.
-Batch results retain input order for outputs, skipped/succeeded inputs and logs;
-each processor still owns output naming, publication, rollback and source deletion.
-Transfer processors capture source sizes before an upload can remove them and
-only treat a positively confirmed missing source as already consumed. An I/O
-error leaves that input pending. These shared helpers do not unify remux and ASS
-path-identity rules or processor-specific skip metadata.
+Media processors share output planning, sequential execution and single-file skip
+result construction. Unary audio, metadata, thumbnail and remux jobs use the first
+output override; their batch jobs require one override per input or none. ASS and
+DanmakuFactory instead map strictly against selected video/XML inputs. Naming and
+empty-string policies remain processor-specific.
+
+Audio, metadata and thumbnail use staged publication through the shared driver.
+ASS retains its artifact-matching loop and the same staged publication. Remux's
+adapter publishes each successful item immediately: a later explicit error removes
+earlier outputs best-effort, while cancellation retains already-published outputs.
+Source deletion remains after successful publication, and skipped sources remain.
+Outputs, succeeded/skipped inputs and logs retain their input order and existing
+metadata shapes.
+
+Path mechanisms share filesystem resolution while preserving separate policies:
+ASS command spelling remains lexical; remux resolves existing relative command
+paths and uses best-effort, Windows/macOS case-folded comparisons. Staged output
+validation checks native identity (including hard links), resolves nonexistent
+leaves through their parents, and propagates I/O errors. Transfer processors still
+capture sizes before sources can be consumed and treat only confirmed absence as
+an earlier completed transfer.
 
 ### Cancelling a Running Pipeline
 

@@ -9,10 +9,13 @@ mod danmaku_factory;
 mod delete;
 mod execute;
 mod inputs;
+mod media_driver;
 mod metadata;
 #[cfg(test)]
 mod output_tests;
 mod outputs;
+mod paths;
+mod planning;
 mod rclone;
 mod remux;
 #[cfg(test)]

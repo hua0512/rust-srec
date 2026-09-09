@@ -11,54 +11,7 @@ use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput
 use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
 use crate::Result;
 
-/// Helper to ensure path is absolute.
-/// If file exists, uses canonicalize.
-/// If not (e.g. new output), uses current_dir + path.
-async fn make_absolute(path: &str) -> String {
-    let path_obj = Path::new(path);
-    if path_obj.is_absolute() {
-        return path.to_string();
-    }
-
-    if let Ok(true) = tokio::fs::try_exists(path_obj).await
-        && let Ok(abs) = tokio::fs::canonicalize(path_obj).await
-    {
-        return abs.to_string_lossy().into_owned();
-    }
-
-    if let Ok(Ok(cwd)) = tokio::task::spawn_blocking(std::env::current_dir).await {
-        return cwd.join(path_obj).to_string_lossy().into_owned();
-    }
-
-    path.to_string()
-}
-
-/// Reduce `path` to a form two spellings of the same file share, for use with
-/// [`RemuxProcessor::paths_equal`].
-///
-/// Only the comparison keys go through this; `make_absolute` still produces what is handed to
-/// ffmpeg, because `canonicalize` rewrites Windows paths into the `\\?\` verbatim form that
-/// not every tool accepts. Resolution goes through the parent directory so an output path that
-/// does not exist yet — the usual case, since the output is about to be written — still
-/// collapses symlinked and `..`-relative directories onto the same key as its input.
-async fn comparison_key(path: &str) -> String {
-    let path_obj = Path::new(path);
-
-    if let Ok(resolved) = tokio::fs::canonicalize(path_obj).await {
-        return resolved.to_string_lossy().into_owned();
-    }
-
-    if let (Some(parent), Some(file_name)) = (path_obj.parent(), path_obj.file_name())
-        && let Ok(resolved_parent) = tokio::fs::canonicalize(parent).await
-    {
-        return resolved_parent
-            .join(file_name)
-            .to_string_lossy()
-            .into_owned();
-    }
-
-    make_absolute(path).await
-}
+use super::paths::{remux_command_path as make_absolute, remux_comparison_key as comparison_key};
 
 /// Video codec options.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -535,19 +488,6 @@ impl RemuxProcessor {
         args
     }
 
-    /// Whether two [`comparison_key`] results name the same file.
-    ///
-    /// Case-folded wherever the default filesystem is case-insensitive (Windows, and APFS/HFS+
-    /// on macOS): there, `clip.MP4` and `clip.mp4` are one file, and treating them as two makes
-    /// the in-place guards below miss.
-    fn paths_equal(a: &str, b: &str) -> bool {
-        if cfg!(any(windows, target_os = "macos")) {
-            a.eq_ignore_ascii_case(b)
-        } else {
-            a == b
-        }
-    }
-
     async fn determine_output_path_for_input(
         input_path: &str,
         config: &RemuxConfig,
@@ -557,7 +497,11 @@ impl RemuxProcessor {
 
         if let Some(out) = output_override.filter(|s| !s.is_empty()) {
             let out_abs = comparison_key(out).await;
-            if Self::paths_equal(&input_abs, &out_abs) {
+            if super::paths::spelling_equal(
+                &input_abs,
+                &out_abs,
+                super::paths::CasePolicy::WindowsAndMacOs,
+            ) {
                 return Err(crate::Error::PipelineError(
                     "Remux output path must not be the same as the input path (use a different output or omit outputs for an auto-generated path)".to_string(),
                 ));
@@ -585,7 +529,11 @@ impl RemuxProcessor {
         let candidate_abs = comparison_key(&candidate).await;
 
         // Avoid in-place remux (ffmpeg cannot safely write to the same path it's reading from).
-        if Self::paths_equal(&input_abs, &candidate_abs) {
+        if super::paths::spelling_equal(
+            &input_abs,
+            &candidate_abs,
+            super::paths::CasePolicy::WindowsAndMacOs,
+        ) {
             return Ok(parent
                 .join(format!("{}_remux.{}", file_stem, ext))
                 .to_string_lossy()
@@ -630,23 +578,13 @@ impl RemuxProcessor {
                 "Input file is not a supported media format for remuxing, passing through: {}",
                 input_path
             ));
-            return Ok(ProcessorOutput {
-                outputs: vec![input_path.to_string()],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "unsupported_media_format",
-                        "input": input_path,
-                    })
-                    .to_string(),
-                ),
-                skipped_inputs: vec![(
-                    input_path.to_string(),
-                    "not a supported media format for remuxing".to_string(),
-                )],
-                ..Default::default()
-            });
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "not a supported media format for remuxing",
+                "unsupported_media_format",
+                duration,
+                Vec::new(),
+            ));
         }
 
         // Determine output path: use provided output or generate one dynamically.
@@ -722,9 +660,10 @@ impl RemuxProcessor {
         // resolve fully. If they name one file, `promote_remux_output` has already replaced
         // the input with the remuxed result and deleting it would destroy that result.
         let output_replaced_input = remove_input_on_success
-            && Self::paths_equal(
+            && super::paths::spelling_equal(
                 &comparison_key(input_path).await,
                 &comparison_key(output_path).await,
+                super::paths::CasePolicy::WindowsAndMacOs,
             );
         if remove_input_on_success {
             if output_replaced_input {
@@ -786,6 +725,28 @@ impl RemuxProcessor {
     }
 }
 
+struct RemuxProcessorItem<'a> {
+    processor: &'a RemuxProcessor,
+    config: &'a RemuxConfig,
+    ctx: &'a ProcessorContext,
+    remove_input: bool,
+}
+
+#[async_trait]
+impl super::media_driver::MediaItem for RemuxProcessorItem<'_> {
+    type Publication = super::media_driver::IncrementalPublication;
+    async fn process(
+        &self,
+        input: &str,
+        output: Option<&str>,
+        _publication: &mut Self::Publication,
+    ) -> Result<ProcessorOutput> {
+        self.processor
+            .process_one(input, output, self.config, self.ctx, self.remove_input)
+            .await
+    }
+}
+
 impl Default for RemuxProcessor {
     fn default() -> Self {
         Self::new()
@@ -824,79 +785,36 @@ impl Processor for RemuxProcessor {
             ));
         }
 
-        if input.inputs.len() == 1 {
-            let input_path = input.inputs[0].as_str();
-            let output_override = input.outputs.first().map(|s| s.as_str());
-            return self
-                .process_one(
-                    input_path,
-                    output_override,
-                    &config,
-                    ctx,
-                    config.remove_input_on_success,
-                )
-                .await;
+        let plan = super::planning::OutputPlan::unary_or_mapped(&input.inputs, &input.outputs)
+            .map_err(|_| crate::Error::PipelineError(format!("Remux batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})", input.inputs.len(), input.outputs.len())))?;
+        let is_batch = plan.is_batch();
+        let output = super::media_driver::run_media(
+            plan,
+            super::media_driver::IncrementalPublication,
+            &RemuxProcessorItem {
+                processor: self,
+                config: &config,
+                ctx,
+                remove_input: !is_batch && config.remove_input_on_success,
+            },
+        )
+        .await?;
+        if !is_batch {
+            return Ok(output);
         }
-
-        // Batch mode: map remux over each input.
-        // Output mapping contract:
-        // - if `outputs` is empty: generate output next to each input
-        // - if `outputs.len() == inputs.len()`: map by index
-        // - otherwise: error (ambiguous)
-        if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
-            return Err(crate::Error::PipelineError(format!(
-                "Remux batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
-                input.inputs.len(),
-                input.outputs.len()
-            )));
-        }
-
-        let mut outputs = Vec::with_capacity(input.inputs.len());
-        let mut items_produced = Vec::new();
-        let mut skipped_inputs = Vec::new();
-        let mut succeeded_inputs = Vec::new();
-        let mut logs = Vec::new();
-        let mut duration_secs = 0.0;
-
-        // Keep input files until *all* remuxes succeed, then optionally remove them at the end.
-        for (idx, input_path) in input.inputs.iter().enumerate() {
-            let output_override = input
-                .outputs
-                .get(idx)
-                .map(|s| s.as_str())
-                .filter(|s| !s.is_empty());
-
-            match self
-                .process_one(input_path, output_override, &config, ctx, false)
-                .await
-            {
-                Ok(one) => {
-                    duration_secs += one.duration_secs;
-                    outputs.extend(one.outputs);
-                    items_produced.extend(one.items_produced);
-                    skipped_inputs.extend(one.skipped_inputs);
-                    succeeded_inputs.extend(one.succeeded_inputs);
-                    logs.extend(one.logs);
-                }
-                Err(e) => {
-                    // Best-effort cleanup of any produced outputs in this batch to avoid leaving partial artifacts.
-                    for produced in &items_produced {
-                        if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
-                            warn!(
-                                path = %produced,
-                                error = %cleanup_error,
-                                "Failed to remove remux output after batch failure"
-                            );
-                        }
-                    }
-                    return Err(e);
-                }
-            }
-        }
+        let ProcessorOutput {
+            outputs,
+            duration_secs,
+            items_produced,
+            succeeded_inputs,
+            skipped_inputs,
+            mut logs,
+            ..
+        } = output;
 
         let mut removed_inputs = 0usize;
         if config.remove_input_on_success {
-            // An input the remux wrote back over (see `paths_equal` in process_one) is now the
+            // An input the remux wrote back over (see the identity check in process_one) is now the
             // output itself, so removing it would delete the result.
             let mut output_keys = Vec::with_capacity(outputs.len());
             for output in &outputs {
@@ -906,10 +824,13 @@ impl Processor for RemuxProcessor {
             // Only remove inputs that were actually remuxed. Skipped inputs should never be removed.
             for input_path in &succeeded_inputs {
                 let input_key = comparison_key(input_path).await;
-                if output_keys
-                    .iter()
-                    .any(|output_key| Self::paths_equal(&input_key, output_key))
-                {
+                if output_keys.iter().any(|output_key| {
+                    super::paths::spelling_equal(
+                        &input_key,
+                        output_key,
+                        super::paths::CasePolicy::WindowsAndMacOs,
+                    )
+                }) {
                     let msg = format!(
                         "Not removing input {input_path}: it is the same file as a remux output"
                     );
