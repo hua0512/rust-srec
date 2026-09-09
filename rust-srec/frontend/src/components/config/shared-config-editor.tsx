@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { useMemo } from 'react';
-import { UseFormReturn, FieldValues } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { EngineConfig } from '@/api/schemas';
 import { Trans } from '@lingui/react/macro';
@@ -23,20 +23,20 @@ import { NetworkSettingsCard } from './shared/network-settings-card';
 import { ProxySettingsCard } from './shared/proxy-settings-card';
 import type { CredentialSaveScope } from '@/server/functions/credentials';
 
-export interface SharedConfigPaths {
-  streamSelection: string;
-  cookies: string;
-  proxy: string;
-  retryPolicy: string;
+export interface SharedConfigPaths<T extends FieldValues> {
+  streamSelection: Path<T>;
+  cookies: Path<T>;
+  proxy: Path<T>;
+  retryPolicy: Path<T>;
   // Output settings base path (folder, template, format, engine)
   output: string;
   // Limit settings base path (duration, sizes)
   limits: string;
   // Danmu settings base path (record_danmu)
   danmu: string;
-  pipeline: string;
-  sessionCompletePipeline?: string;
-  pairedSegmentPipeline?: string;
+  pipeline: Path<T>;
+  sessionCompletePipeline?: Path<T>;
+  pairedSegmentPipeline?: Path<T>;
   // Per-platform / per-template / per-streamer overrides for the
   // offline-confirmation cadence. Omit to skip the card entirely.
   offlineCheck?: string;
@@ -59,7 +59,7 @@ export interface ExtraTab {
 
 export interface SharedConfigEditorProps<T extends FieldValues> {
   form: UseFormReturn<T>;
-  paths: SharedConfigPaths;
+  paths: SharedConfigPaths<T>;
   engines?: EngineConfig[];
   availableTabs?: ConfigTabType[];
   defaultTab?: string;

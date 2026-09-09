@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { ProxyConfigObjectSchema } from '@/api/schemas';
 import { Input } from '@/components/ui/input';
@@ -44,7 +44,7 @@ type ProxyConfig = z.infer<typeof ProxyConfigObjectSchema>;
 
 export interface ProxyConfigSettingsProps {
   value: string | ProxyConfig | null | undefined;
-  onChange: (value: any) => void;
+  onChange: (value: string | ProxyConfig | null) => void;
   outputFormat?: 'json' | 'object';
 }
 
@@ -227,17 +227,17 @@ export function ProxyConfigSettings({
 
 // --- Wrapper Component (Exported) ---
 
-interface ProxySettingsCardProps {
-  form: UseFormReturn<any>;
-  name: string;
+interface ProxySettingsCardProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  name: Path<TFieldValues>;
   proxyMode?: 'json' | 'object';
 }
 
-export function ProxySettingsCard({
+export function ProxySettingsCard<TFieldValues extends FieldValues>({
   form,
   name,
   proxyMode = 'object',
-}: ProxySettingsCardProps) {
+}: ProxySettingsCardProps<TFieldValues>) {
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
       <CardHeader className="pb-3 px-6 pt-6">

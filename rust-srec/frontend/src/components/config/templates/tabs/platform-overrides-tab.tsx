@@ -1,4 +1,5 @@
-import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { listPlatformConfigs, listEngines } from '@/server/functions';
 import { Button } from '@/components/ui/button';
@@ -29,9 +30,10 @@ import {
 } from '@/components/ui/card';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import type { TemplateFormValues } from '../template-editor';
 
 interface PlatformOverridesTabProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<TemplateFormValues>;
 }
 
 export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {

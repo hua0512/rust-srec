@@ -8,23 +8,27 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { Shield } from 'lucide-react';
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, UseFormReturn } from 'react-hook-form';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { memo } from 'react';
 import {
   CONFIG_DESCRIPTION,
   CONFIG_INPUT,
   ConfigFieldLabel,
 } from './config-field';
+import { configPath } from './form-path';
+import { genericMemo } from '@/lib/generic-component';
 
-interface LimitsCardProps {
-  form: UseFormReturn<any>;
+interface LimitsCardProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
   basePath?: string;
 }
 
-export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
+function LimitsCardImpl<TFieldValues extends FieldValues>({
+  form,
+  basePath,
+}: LimitsCardProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
@@ -46,11 +50,10 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
       <CardContent className="grid grid-cols-1 gap-6 sm:grid-cols-2 2xl:grid-cols-3">
         <FormField
           control={form.control}
-          name={
-            basePath
-              ? `${basePath}.max_download_duration_secs`
-              : 'max_download_duration_secs'
-          }
+          name={configPath<TFieldValues>(
+            basePath,
+            'max_download_duration_secs',
+          )}
           render={({ field }) => (
             <FormItem className="space-y-2">
               <ConfigFieldLabel>
@@ -74,11 +77,7 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
         />
         <FormField
           control={form.control}
-          name={
-            basePath
-              ? `${basePath}.min_segment_size_bytes`
-              : 'min_segment_size_bytes'
-          }
+          name={configPath<TFieldValues>(basePath, 'min_segment_size_bytes')}
           render={({ field }) => (
             <FormItem className="space-y-2">
               <ConfigFieldLabel>
@@ -102,9 +101,7 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
         />
         <FormField
           control={form.control}
-          name={
-            basePath ? `${basePath}.max_part_size_bytes` : 'max_part_size_bytes'
-          }
+          name={configPath<TFieldValues>(basePath, 'max_part_size_bytes')}
           render={({ field }) => (
             <FormItem className="space-y-2">
               <ConfigFieldLabel>
@@ -129,6 +126,6 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
       </CardContent>
     </Card>
   );
-});
+}
 
-LimitsCard.displayName = 'LimitsCard';
+export const LimitsCard = genericMemo(LimitsCardImpl, 'LimitsCard');

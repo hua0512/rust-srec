@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -19,7 +19,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Clapperboard } from 'lucide-react';
-import { Template } from '@/api/schemas';
+import { Template, StreamerFormValues } from '@/api/schemas';
 import {
   CONFIG_DESCRIPTION,
   CONFIG_SELECT_CONTENT,
@@ -29,7 +29,7 @@ import {
 } from '@/components/config/shared/config-field';
 
 interface StreamerRecordingFieldsProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<StreamerFormValues>;
   templates?: Template[];
 }
 

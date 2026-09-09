@@ -4,10 +4,12 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
 import { NumberInput } from '../number-input';
 
+type Values = { retries?: number };
+
 function renderInput(initial?: number) {
-  let form!: UseFormReturn<any>;
+  let form!: UseFormReturn<Values>;
   function Harness() {
-    form = useForm<any>({ defaultValues: { retries: initial } });
+    form = useForm<Values>({ defaultValues: { retries: initial } });
     return (
       <Form {...form}>
         <FormField

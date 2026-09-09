@@ -141,7 +141,8 @@ function GlobalConfigForm({
 }: {
   config: z.infer<typeof GlobalConfigFormSchema>;
 }) {
-  type GlobalConfigFormValues = z.infer<typeof GlobalConfigFormSchema>;
+  type GlobalConfigFormInput = z.input<typeof GlobalConfigFormSchema>;
+  type GlobalConfigFormValues = z.output<typeof GlobalConfigFormSchema>;
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
 
@@ -156,10 +157,10 @@ function GlobalConfigForm({
     [config],
   );
 
-  const form = useForm<GlobalConfigFormValues>({
-    // Work around a react-hook-form resolver type incompatibility (often caused by
-    // `exactOptionalPropertyTypes` + resolver type definitions).
-    resolver: zodResolver(GlobalConfigFormSchema) as any,
+  // The schema fills several fields in with defaults, so its input type leaves them
+  // optional while submit handlers receive the parsed shape.
+  const form = useForm<GlobalConfigFormInput, unknown, GlobalConfigFormValues>({
+    resolver: zodResolver(GlobalConfigFormSchema),
     defaultValues,
     values: defaultValues,
     reValidateMode: 'onBlur',

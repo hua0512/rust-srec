@@ -1,13 +1,14 @@
-import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { Boxes } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { EngineConfig } from '@/api/schemas';
+import { EngineConfig, StreamerFormValues } from '@/api/schemas';
 import { SharedConfigEditor } from '../../config/shared-config-editor';
 import { PlatformSpecificTab } from '../../config/platforms/tabs/platform-specific-tab';
 import { usePlatformDetection } from '@/hooks/use-platform-detection';
 
 interface StreamerConfigurationProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<StreamerFormValues>;
   engines?: EngineConfig[];
   streamerId?: string;
   credentialPlatformNameHint?: string;

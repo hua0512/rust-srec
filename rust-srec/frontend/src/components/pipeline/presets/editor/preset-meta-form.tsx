@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormField,
@@ -49,10 +49,13 @@ import {
   PRESET_CATEGORY_NAMES,
 } from '../default-presets-i18n';
 import { useLingui } from '@lingui/react';
+import type { JobPreset } from '@/api/schemas';
+import type { PresetFormValues } from '../preset-editor';
 
 interface PresetMetaFormProps {
-  form: UseFormReturn<any>;
-  initialData?: any;
+  form: UseFormReturn<PresetFormValues>;
+  /** The preset being edited; absent when creating one. */
+  initialData?: JobPreset | null;
   title: React.ReactNode;
   isUpdating: boolean;
 }
@@ -93,7 +96,7 @@ export function PresetMetaForm({
   const { i18n } = useLingui();
   const currentProcessor = form.watch('processor');
   const currentId = form.watch('id');
-  const isDefault = isUpdating && currentId && isDefaultPreset(currentId);
+  const isDefault = isUpdating && !!currentId && isDefaultPreset(currentId);
   // Find selected option to get label and icon safely
   const selectedOption = PROCESSOR_OPTIONS.find(
     (opt) => opt.id === currentProcessor,

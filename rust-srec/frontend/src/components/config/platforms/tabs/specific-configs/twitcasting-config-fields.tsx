@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -14,16 +14,18 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface TwitcastingConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface TwitcastingConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function TwitcastingConfigFields({
+export function TwitcastingConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
-}: TwitcastingConfigFieldsProps) {
+}: TwitcastingConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-12">
@@ -36,7 +38,7 @@ export function TwitcastingConfigFields({
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.password`}
+            name={configPath<TFieldValues>(fieldName, 'password')}
             render={({ field }) => (
               <FormItem className="space-y-4">
                 <ConfigFieldLabel accent="indigo">

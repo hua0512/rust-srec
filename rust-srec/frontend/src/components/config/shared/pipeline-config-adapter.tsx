@@ -1,12 +1,15 @@
-import { memo, useCallback, useMemo, useRef } from 'react';
-import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useCallback, useMemo, useRef } from 'react';
+import { useWatch } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { PipelineWorkflowEditor } from '@/components/pipeline/workflows/pipeline-workflow-editor';
 import { DagStepDefinition, DagPipelineDefinition } from '@/api/schemas';
+import { genericMemo } from '@/lib/generic-component';
+import { setConfigValue } from './form-path';
 
-interface PipelineConfigAdapterProps {
-  form: UseFormReturn<any>;
+interface PipelineConfigAdapterProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
   /** Field holding the DAG definition. */
-  name: string;
+  name: Path<TFieldValues>;
   /** `json` fields keep the DAG as a serialized string; `object` fields hold it as-is. */
   mode?: 'json' | 'object';
   /** Name stored inside the DAG definition when steps are written back. */
@@ -52,60 +55,61 @@ function readSteps(value: unknown): DagStepDefinition[] {
  * a partial one whose fields cannot tell `null` apart from "field omitted", so a `null` there
  * would leave the stored pipeline untouched; those fields send an empty DAG definition instead.
  */
-export const PipelineConfigAdapter = memo(
-  ({
-    form,
-    name,
-    mode = 'object',
-    dagName = 'pipeline',
-    emptyValue = 'null',
-  }: PipelineConfigAdapterProps) => {
-    const fieldValue = useWatch({ control: form.control, name });
-    const lastEmitted = useRef<{
-      serialized: string;
-      steps: DagStepDefinition[];
-    } | null>(null);
+function PipelineConfigAdapterImpl<TFieldValues extends FieldValues>({
+  form,
+  name,
+  mode = 'object',
+  dagName = 'pipeline',
+  emptyValue = 'null',
+}: PipelineConfigAdapterProps<TFieldValues>) {
+  const fieldValue = useWatch({ control: form.control, name });
+  const lastEmitted = useRef<{
+    serialized: string;
+    steps: DagStepDefinition[];
+  } | null>(null);
 
-    const steps = useMemo(() => {
-      const nextSteps = readSteps(fieldValue);
-      const emitted = lastEmitted.current;
-      // A `json` field parses back into new objects on every edit, and an `object` field can be
-      // rewritten with equal contents. Reusing the emitted array in those cases lets the editor
-      // keep its own step identities; only a genuinely different value replaces them.
-      return emitted && JSON.stringify(nextSteps) === emitted.serialized
-        ? emitted.steps
-        : nextSteps;
-    }, [fieldValue]);
+  const steps = useMemo(() => {
+    const nextSteps = readSteps(fieldValue);
+    const emitted = lastEmitted.current;
+    // A `json` field parses back into new objects on every edit, and an `object` field can be
+    // rewritten with equal contents. Reusing the emitted array in those cases lets the editor
+    // keep its own step identities; only a genuinely different value replaces them.
+    return emitted && JSON.stringify(nextSteps) === emitted.serialized
+      ? emitted.steps
+      : nextSteps;
+  }, [fieldValue]);
 
-    const handleChange = useCallback(
-      (nextSteps: DagStepDefinition[]) => {
-        lastEmitted.current = {
-          serialized: JSON.stringify(nextSteps),
-          steps: nextSteps,
-        };
+  const handleChange = useCallback(
+    (nextSteps: DagStepDefinition[]) => {
+      lastEmitted.current = {
+        serialized: JSON.stringify(nextSteps),
+        steps: nextSteps,
+      };
 
-        const dagConfig: DagPipelineDefinition = {
-          name: dagName,
-          steps: nextSteps,
-        };
-        const value =
-          nextSteps.length === 0 && emptyValue === 'null'
-            ? null
-            : mode === 'json'
-              ? JSON.stringify(dagConfig)
-              : dagConfig;
+      const dagConfig: DagPipelineDefinition = {
+        name: dagName,
+        steps: nextSteps,
+      };
+      const value =
+        nextSteps.length === 0 && emptyValue === 'null'
+          ? null
+          : mode === 'json'
+            ? JSON.stringify(dagConfig)
+            : dagConfig;
 
-        form.setValue(name, value, {
-          shouldDirty: true,
-          shouldTouch: true,
-          shouldValidate: true,
-        });
-      },
-      [dagName, emptyValue, form, mode, name],
-    );
+      setConfigValue(form, name, value, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [dagName, emptyValue, form, mode, name],
+  );
 
-    return <PipelineWorkflowEditor steps={steps} onChange={handleChange} />;
-  },
+  return <PipelineWorkflowEditor steps={steps} onChange={handleChange} />;
+}
+
+export const PipelineConfigAdapter = genericMemo(
+  PipelineConfigAdapterImpl,
+  'PipelineConfigAdapter',
 );
-
-PipelineConfigAdapter.displayName = 'PipelineConfigAdapter';

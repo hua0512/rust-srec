@@ -8,122 +8,119 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { Timer } from 'lucide-react';
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, UseFormReturn } from 'react-hook-form';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { Input } from '@/components/ui/input';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { memo } from 'react';
 import {
   CONFIG_DESCRIPTION,
   CONFIG_INPUT,
   ConfigFieldLabel,
 } from './config-field';
+import { configPath } from './form-path';
+import { genericMemo } from '@/lib/generic-component';
 
-interface OfflineCheckCardProps {
-  form: UseFormReturn<any>;
+interface OfflineCheckCardProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
   basePath?: string;
 }
 
 // Per-platform / per-template / per-streamer overrides for the
 // offline-confirmation cadence. Empty input → null = "inherit from parent".
 // Server floors enforce count >= 1, delay_ms >= 1000.
-export const OfflineCheckCard = memo(
-  ({ form, basePath }: OfflineCheckCardProps) => {
-    const { i18n } = useLingui();
-    return (
-      <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
-              <Timer className="w-5 h-5" />
-            </div>
-            <div className="space-y-1">
-              <CardTitle className="text-lg">
-                <Trans>Offline Check</Trans>
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                <Trans>
-                  Override how aggressively the scheduler confirms a stream has
-                  ended.
-                </Trans>
-              </p>
-            </div>
+function OfflineCheckCardImpl<TFieldValues extends FieldValues>({
+  form,
+  basePath,
+}: OfflineCheckCardProps<TFieldValues>) {
+  const { i18n } = useLingui();
+  return (
+    <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
+            <Timer className="w-5 h-5" />
           </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <FormField
-            control={form.control}
-            name={
-              basePath
-                ? `${basePath}.offline_check_delay_ms`
-                : 'offline_check_delay_ms'
-            }
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel>
-                  <Trans>Offline Check Interval</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <InputWithUnit
-                    unitType="duration"
-                    value={
-                      field.value !== null && field.value !== undefined
-                        ? Number(field.value) / 1000
-                        : null
-                    }
-                    onChange={(val) =>
-                      field.onChange(val !== null ? val * 1000 : null)
-                    }
-                    placeholder={i18n._(msg`Inherited`)}
-                    className={CONFIG_INPUT}
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>Interval between offline checks.</Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name={
-              basePath
-                ? `${basePath}.offline_check_count`
-                : 'offline_check_count'
-            }
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel>
-                  <Trans>Offline Detection Count</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={field.value ?? ''}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      field.onChange(v === '' ? null : Number(v));
-                    }}
-                    placeholder={i18n._(msg`Inherited`)}
-                    className={CONFIG_INPUT}
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    Consecutive failed checks needed to confirm offline.
-                  </Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </CardContent>
-      </Card>
-    );
-  },
-);
+          <div className="space-y-1">
+            <CardTitle className="text-lg">
+              <Trans>Offline Check</Trans>
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              <Trans>
+                Override how aggressively the scheduler confirms a stream has
+                ended.
+              </Trans>
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <FormField
+          control={form.control}
+          name={configPath<TFieldValues>(basePath, 'offline_check_delay_ms')}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Offline Check Interval</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <InputWithUnit
+                  unitType="duration"
+                  value={
+                    field.value !== null && field.value !== undefined
+                      ? Number(field.value) / 1000
+                      : null
+                  }
+                  onChange={(val) =>
+                    field.onChange(val !== null ? val * 1000 : null)
+                  }
+                  placeholder={i18n._(msg`Inherited`)}
+                  className={CONFIG_INPUT}
+                />
+              </FormControl>
+              <FormDescription className={CONFIG_DESCRIPTION}>
+                <Trans>Interval between offline checks.</Trans>
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name={configPath<TFieldValues>(basePath, 'offline_check_count')}
+          render={({ field }) => (
+            <FormItem className="space-y-2">
+              <ConfigFieldLabel>
+                <Trans>Offline Detection Count</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  min={1}
+                  value={field.value ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    field.onChange(v === '' ? null : Number(v));
+                  }}
+                  placeholder={i18n._(msg`Inherited`)}
+                  className={CONFIG_INPUT}
+                />
+              </FormControl>
+              <FormDescription className={CONFIG_DESCRIPTION}>
+                <Trans>
+                  Consecutive failed checks needed to confirm offline.
+                </Trans>
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </CardContent>
+    </Card>
+  );
+}
 
-OfflineCheckCard.displayName = 'OfflineCheckCard';
+export const OfflineCheckCard = genericMemo(
+  OfflineCheckCardImpl,
+  'OfflineCheckCard',
+);

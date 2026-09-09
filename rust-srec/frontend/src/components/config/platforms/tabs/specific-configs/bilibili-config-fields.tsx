@@ -1,4 +1,5 @@
-import { get, UseFormReturn } from 'react-hook-form';
+import { get } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -21,10 +22,12 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface BilibiliConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface BilibiliConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
   inherited?: boolean;
 }
 
@@ -41,11 +44,11 @@ const QUALITY_OPTIONS = [
   { code: 0, label: msg`Lowest (0)` },
 ];
 
-export function BilibiliConfigFields({
+export function BilibiliConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
   inherited = false,
-}: BilibiliConfigFieldsProps) {
+}: BilibiliConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   const defaultLabel = inherited
     ? i18n._(msg`Inherited`)
@@ -69,7 +72,7 @@ export function BilibiliConfigFields({
               ) ?? 'unset'
             }
             control={form.control}
-            name={`${fieldName}.quality`}
+            name={configPath<TFieldValues>(fieldName, 'quality')}
             render={({ field }) => {
               const selected = QUALITY_OPTIONS.find(
                 (option) => option.code === field.value,
@@ -126,7 +129,10 @@ export function BilibiliConfigFields({
 
           <EndStreamOnDanmuCloseField
             form={form}
-            name={`${fieldName}.end_stream_on_danmu_stream_closed`}
+            name={configPath<TFieldValues>(
+              fieldName,
+              'end_stream_on_danmu_stream_closed',
+            )}
           />
         </div>
       </section>

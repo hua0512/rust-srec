@@ -1,7 +1,8 @@
 import { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Loader2, Save } from 'lucide-react';
-import { Control, useFormContext, useFormState } from 'react-hook-form';
+import { useFormContext, useFormState } from 'react-hook-form';
+import type { Control, FieldValues } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { cn } from '@/lib/utils';
@@ -14,13 +15,13 @@ import { Trans } from '@lingui/react/macro';
  */
 export const FAB_ANCHOR = 'fixed bottom-6 right-6 z-50';
 
-interface SaveFabProps {
+interface SaveFabProps<TFieldValues extends FieldValues = FieldValues> {
   isSaving: boolean;
   /** Submits this form by id. Falls back to `onSubmit` when absent. */
   formId?: string;
   onSubmit?: () => void;
   /** Supply when rendering outside a `FormProvider`. */
-  control?: Control<any>;
+  control?: Control<TFieldValues>;
   /** Stay mounted while the form is clean, instead of appearing on first edit. */
   alwaysVisible?: boolean;
   /** Defaults to "Save changes". */
@@ -35,7 +36,7 @@ interface SaveFabProps {
  * One implementation so the button's size, shape and press feedback stay identical wherever it
  * appears; the pages differ only in whether it waits for a change before showing itself.
  */
-function Fab({
+function Fab<TFieldValues extends FieldValues>({
   isSaving,
   formId,
   onSubmit,
@@ -43,7 +44,7 @@ function Fab({
   alwaysVisible,
   label,
   className,
-}: SaveFabProps & { control: Control<any> }) {
+}: SaveFabProps<TFieldValues> & { control: Control<TFieldValues> }) {
   const { isDirty } = useFormState({ control });
   const reducedMotion = usePrefersReducedMotion();
   const visible = isDirty || isSaving || alwaysVisible;
@@ -105,8 +106,11 @@ function Fab({
   );
 }
 
-export function SaveFab({ control: propControl, ...props }: SaveFabProps) {
-  const formContext = useFormContext();
+export function SaveFab<TFieldValues extends FieldValues = FieldValues>({
+  control: propControl,
+  ...props
+}: SaveFabProps<TFieldValues>) {
+  const formContext = useFormContext<TFieldValues>();
   const control = propControl ?? formContext?.control;
   if (!control) return null;
   return <Fab {...props} control={control} />;

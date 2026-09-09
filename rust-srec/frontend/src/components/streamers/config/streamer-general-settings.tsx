@@ -1,11 +1,11 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { Separator } from '@/components/ui/separator';
-import { Template } from '@/api/schemas';
+import { Template, StreamerFormValues } from '@/api/schemas';
 import { StreamerIdentityFields } from './streamer-identity-fields';
 import { StreamerRecordingFields } from './streamer-recording-fields';
 
 interface StreamerGeneralSettingsProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<StreamerFormValues>;
   templates?: Template[];
   onAutofillName?: () => void;
   isAutofilling?: boolean;

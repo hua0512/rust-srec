@@ -1,7 +1,7 @@
 import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useForm, type UseFormReturn } from 'react-hook-form';
+import { useForm, type Path, type UseFormReturn } from 'react-hook-form';
 
 import type { DagStepDefinition } from '@/api/schemas';
 
@@ -24,7 +24,17 @@ vi.mock('@/components/pipeline/workflows/pipeline-workflow-editor', () => ({
 
 import { PipelineTabsSection } from '../pipeline-tabs-section';
 
-type Values = { pipeline: unknown };
+type Values = {
+  pipeline: unknown;
+  paired_segment_pipeline: unknown;
+  session_complete_pipeline: unknown;
+};
+
+type PipelineNames = {
+  perSegment: Path<Values>;
+  paired?: Path<Values>;
+  session?: Path<Values>;
+};
 
 const INITIAL = {
   name: 'pipeline',
@@ -35,7 +45,7 @@ function renderSection({
   names,
   dagNames,
 }: {
-  names: { perSegment: string; paired?: string; session?: string };
+  names: PipelineNames;
   dagNames?: { perSegment?: string; paired?: string; session?: string };
 }) {
   const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
@@ -57,7 +67,7 @@ function renderSection({
   return { value: () => form.getValues('pipeline') };
 }
 
-const ALL_NAMES = {
+const ALL_NAMES: PipelineNames = {
   perSegment: 'pipeline',
   paired: 'paired_segment_pipeline',
   session: 'session_complete_pipeline',

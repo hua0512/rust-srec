@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -12,16 +12,18 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface TwitchConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface TwitchConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function TwitchConfigFields({
+export function TwitchConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
-}: TwitchConfigFieldsProps) {
+}: TwitchConfigFieldsProps<TFieldValues>) {
   return (
     <div className="space-y-12">
       {/* Authentication Section */}
@@ -33,7 +35,7 @@ export function TwitchConfigFields({
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.oauth_token`}
+            name={configPath<TFieldValues>(fieldName, 'oauth_token')}
             render={({ field }) => (
               <FormItem className="space-y-4">
                 <ConfigFieldLabel accent="indigo">

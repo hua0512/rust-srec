@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -16,13 +16,18 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface BigoConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface BigoConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function BigoConfigFields({ form, fieldName }: BigoConfigFieldsProps) {
+export function BigoConfigFields<TFieldValues extends FieldValues>({
+  form,
+  fieldName,
+}: BigoConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-12">
@@ -34,7 +39,7 @@ export function BigoConfigFields({ form, fieldName }: BigoConfigFieldsProps) {
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.stream_password`}
+            name={configPath<TFieldValues>(fieldName, 'stream_password')}
             render={({ field }) => (
               <FormItem className="space-y-4">
                 <ConfigFieldLabel accent="sky">
@@ -69,7 +74,7 @@ export function BigoConfigFields({ form, fieldName }: BigoConfigFieldsProps) {
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.mint_token`}
+            name={configPath<TFieldValues>(fieldName, 'mint_token')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-background/40 px-4 py-3">
                 <div className="space-y-1 pr-4">

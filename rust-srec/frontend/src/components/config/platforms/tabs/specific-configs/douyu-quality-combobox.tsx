@@ -1,5 +1,6 @@
 import { type ComponentPropsWithoutRef } from 'react';
-import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
@@ -7,13 +8,17 @@ import {
   EditableCombobox,
   type EditableComboboxOption,
 } from '@/components/ui/editable-combobox';
+import {
+  configPath,
+  setConfigValue,
+} from '@/components/config/shared/form-path';
 
-interface DouyuQualityComboboxProps extends Omit<
-  ComponentPropsWithoutRef<'div'>,
-  'onChange'
-> {
-  fieldName: string;
-  form: UseFormReturn<any>;
+interface DouyuQualityComboboxProps<
+  TFieldValues extends FieldValues,
+> extends Omit<ComponentPropsWithoutRef<'div'>, 'onChange'> {
+  /** Path to the object holding Douyu's options. */
+  fieldName: Path<TFieldValues>;
+  form: UseFormReturn<TFieldValues>;
   onChange: (value: number) => void;
   value: unknown;
 }
@@ -89,15 +94,15 @@ function parseQualityInput(value: string) {
   return null;
 }
 
-export function DouyuQualityCombobox({
+export function DouyuQualityCombobox<TFieldValues extends FieldValues>({
   fieldName,
   form,
   onChange,
   value,
   ...comboboxProps
-}: DouyuQualityComboboxProps) {
+}: DouyuQualityComboboxProps<TFieldValues>) {
   const { i18n } = useLingui();
-  const onlyAudioPath = `${fieldName}.only_audio`;
+  const onlyAudioPath = configPath<TFieldValues>(fieldName, 'only_audio');
   // A field-level subscription: toggling audio-only re-renders this combobox, not the component
   // that owns `useForm`.
   const onlyAudio = !!useWatch({ control: form.control, name: onlyAudioPath });
@@ -115,12 +120,12 @@ export function DouyuQualityCombobox({
 
   const applyRate = (nextRate: number) => {
     onChange(nextRate);
-    form.setValue(onlyAudioPath, false, { shouldDirty: true });
+    setConfigValue(form, onlyAudioPath, false, { shouldDirty: true });
   };
 
   const applyAudioOnly = () => {
     onChange(0);
-    form.setValue(onlyAudioPath, true, { shouldDirty: true });
+    setConfigValue(form, onlyAudioPath, true, { shouldDirty: true });
   };
 
   const options: EditableComboboxOption[] = [

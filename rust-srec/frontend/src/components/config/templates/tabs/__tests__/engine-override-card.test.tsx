@@ -6,11 +6,13 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { Form } from '@/components/ui/form';
 import { EngineOverrideCard } from '../engine-override-card';
 
+type Values = { engines_override?: Record<string, unknown> };
+
 function renderCard(onRemove: () => void) {
-  let form!: UseFormReturn<any>;
+  let form!: UseFormReturn<Values>;
 
   function Harness() {
-    form = useForm<any>({ defaultValues: {} });
+    form = useForm<Values>({ defaultValues: {} });
     return (
       <Form {...form}>
         <EngineOverrideCard

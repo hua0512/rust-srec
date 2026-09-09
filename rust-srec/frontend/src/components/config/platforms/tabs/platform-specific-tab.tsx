@@ -1,4 +1,6 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
+import type { ReactElement } from 'react';
+import type { z } from 'zod';
 import {
   FormControl,
   FormDescription,
@@ -32,8 +34,9 @@ import { TikTokConfigFields } from './specific-configs/tiktok-config-fields';
 import { TwitcastingConfigFields } from './specific-configs/twitcasting-config-fields';
 import { SoopConfigFields } from './specific-configs/soop-config-fields';
 import { BigoConfigFields } from './specific-configs/bigo-config-fields';
+import { configPath } from '@/components/config/shared/form-path';
 
-const PLATFORM_SCHEMAS: Record<string, any> = {
+const PLATFORM_SCHEMAS: Record<string, z.ZodType> = {
   huya: HuyaConfigSchema,
   douyin: DouyinConfigSchema,
   bilibili: BilibiliConfigSchema,
@@ -45,7 +48,17 @@ const PLATFORM_SCHEMAS: Record<string, any> = {
   bigo: BigoConfigSchema,
 };
 
-const SPECIFIC_CONFIG_COMPONENTS: Record<string, any> = {
+/**
+ * A per-platform field group. Each one renders the options stored under
+ * `fieldName`, so they are interchangeable from this tab's point of view.
+ */
+type PlatformConfigFields = <TFieldValues extends FieldValues>(props: {
+  form: UseFormReturn<TFieldValues>;
+  fieldName: Path<TFieldValues>;
+  inherited?: boolean;
+}) => ReactElement;
+
+const SPECIFIC_CONFIG_COMPONENTS: Record<string, PlatformConfigFields> = {
   huya: HuyaConfigFields,
   douyin: DouyinConfigFields,
   bilibili: BilibiliConfigFields,
@@ -82,15 +95,15 @@ function identityOf(value: unknown): string {
  * the form value is only adopted when it differs from what this editor last
  * emitted — a config load or a form reset, never a keystroke.
  */
-function RawJsonEditor({
+function RawJsonEditor<TFieldValues extends FieldValues>({
   form,
   fieldName,
   platformName,
   value,
   onChange,
 }: {
-  form: UseFormReturn<any>;
-  fieldName: string;
+  form: UseFormReturn<TFieldValues>;
+  fieldName: Path<TFieldValues>;
   platformName?: string;
   value: unknown;
   onChange: (value: unknown) => void;
@@ -176,8 +189,8 @@ function RawJsonEditor({
   );
 }
 
-interface PlatformSpecificTabProps {
-  form: UseFormReturn<any>;
+interface PlatformSpecificTabProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
   basePath?: string;
   platformName?: string;
   /**
@@ -189,14 +202,14 @@ interface PlatformSpecificTabProps {
   inherited?: boolean;
 }
 
-export function PlatformSpecificTab({
+export function PlatformSpecificTab<TFieldValues extends FieldValues>({
   form,
   basePath,
   platformName,
   field: fieldKey = 'platform_specific_config',
   inherited = false,
-}: PlatformSpecificTabProps) {
-  const fieldName = basePath ? `${basePath}.${fieldKey}` : fieldKey;
+}: PlatformSpecificTabProps<TFieldValues>) {
+  const fieldName = configPath<TFieldValues>(basePath, fieldKey);
 
   const [viewMode, setViewMode] = useState<'form' | 'json'>('form');
 

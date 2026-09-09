@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -17,20 +17,22 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
 import { NumberInput } from '@/components/ui/number-input';
 
-interface DouyuConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface DouyuConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
   inherited?: boolean;
 }
 
-export function DouyuConfigFields({
+export function DouyuConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
   inherited = false,
-}: DouyuConfigFieldsProps) {
+}: DouyuConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   const defaultPlaceholder = useDefaultPlaceholder();
   // A template or streamer layer leaves a blank field to the layer above it;
@@ -50,7 +52,7 @@ export function DouyuConfigFields({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={form.control}
-              name={`${fieldName}.cdn`}
+              name={configPath<TFieldValues>(fieldName, 'cdn')}
               render={({ field }) => (
                 <FormItem>
                   <div className="flex items-center gap-2 mb-3">
@@ -81,7 +83,7 @@ export function DouyuConfigFields({
             />
             <FormField
               control={form.control}
-              name={`${fieldName}.rate`}
+              name={configPath<TFieldValues>(fieldName, 'rate')}
               render={({ field }) => (
                 <FormItem>
                   <ConfigFieldLabel accent="indigo" className="mb-3">
@@ -117,7 +119,10 @@ export function DouyuConfigFields({
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.disable_interactive_game`}
+            name={configPath<TFieldValues>(
+              fieldName,
+              'disable_interactive_game',
+            )}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
                 <div className="space-y-0.5">
@@ -144,7 +149,7 @@ export function DouyuConfigFields({
 
           <FormField
             control={form.control}
-            name={`${fieldName}.request_retries`}
+            name={configPath<TFieldValues>(fieldName, 'request_retries')}
             render={({ field }) => (
               <FormItem>
                 <div className="flex items-center gap-2 mb-3">

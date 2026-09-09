@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
@@ -29,9 +30,10 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
+import type { TemplateFormValues } from '../template-editor';
 
 interface EngineOverridesTabProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<TemplateFormValues>;
 }
 
 export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
