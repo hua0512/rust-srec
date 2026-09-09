@@ -130,6 +130,11 @@ impl IntoResponse for ApiError {
 impl From<Error> for ApiError {
     fn from(err: Error) -> Self {
         match err {
+            Error::SchedulerFeedbackBusy { .. } => ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SCHEDULER_FEEDBACK_BUSY",
+                "Scheduler feedback capacity is busy; retry recording admission",
+            ),
             Error::Serialization(error) => ApiError::from(error),
             Error::NotFound { entity_type, id } => {
                 ApiError::not_found(format!("{} with id '{}' not found", entity_type, id))
@@ -270,6 +275,16 @@ pub type ApiResult<T> = Result<T, ApiError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feedback_capacity_is_reported_as_retryable_without_exposing_streamer_identity() {
+        let error = ApiError::from(Error::SchedulerFeedbackBusy {
+            streamer_id: "private-streamer".to_owned(),
+        });
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.code, "SCHEDULER_FEEDBACK_BUSY");
+        assert!(!error.message.contains("private-streamer"));
+    }
 
     #[test]
     fn internal_sources_do_not_reach_error_responses_but_validation_stays_actionable() {

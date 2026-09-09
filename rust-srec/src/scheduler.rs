@@ -30,3 +30,5 @@ pub use actor::{
 
 // Scheduler service
 pub use service::{Scheduler, SchedulerConfig, SchedulerHandle};
+
+pub(crate) mod feedback;

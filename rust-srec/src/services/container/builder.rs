@@ -407,7 +407,7 @@ impl ServiceContainer {
             wire_check_history_pipeline(&pool, &write_pool, &cancellation_token, &task_supervisor);
 
         // Create scheduler with StreamMonitor for real status checking
-        let scheduler = Scheduler::with_monitor_history_and_config(
+        let mut scheduler = Scheduler::with_monitor_history_and_config(
             streamer_manager.clone(),
             event_broadcaster.clone(),
             stream_monitor.clone(),
@@ -416,6 +416,7 @@ impl ServiceContainer {
             cancellation_token.child_token(),
         )
         .with_config_repo(config_repo.clone());
+        scheduler.connect_download_manager(&download_manager)?;
         let scheduler_handle = scheduler.handle();
         let scheduler = parking_lot::Mutex::new(Some(scheduler));
 

@@ -224,6 +224,17 @@ impl<M> ActorHandle<M> {
         }
     }
 
+    pub(crate) async fn send_reliable(&self, message: M) -> Result<(), SendError> {
+        tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => Err(SendError::ActorStopped),
+            permit = self.sender.reserve() => {
+                permit.map_err(|_| SendError::ActorStopped)?.send(message);
+                Ok(())
+            }
+        }
+    }
+
     /// Send a high-priority message.
     ///
     /// If a priority channel is configured, the message is sent through it.

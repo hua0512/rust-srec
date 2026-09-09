@@ -28,6 +28,10 @@
 
 ## Scheduler Recovery
 
+- **Busy actors and configuration reloads retain lifecycle feedback**
+
+  Started and terminal feedback have reserved, bounded ownership separate from progress broadcasts. Saturated mailboxes retain delivery; stale generations and superseded attempts cannot overwrite current scheduling. Configuration resolution is bounded and keeps the latest desired update. Admission overload requests a retry without fabricating Offline; see [reliable feedback](../concepts/architecture.md#reliable-lifecycle-feedback).
+
 - **Large error counts preserve the one-hour backoff cap**
 
   Error backoff bounds the exponent before arithmetic can overflow. Dormant actor state-file APIs and the unused streamer error writer are removed; runtime recovery, batch detection and terminal actor decisions are preserved. Rust integrations should follow the [scheduler interface notes](../concepts/architecture.md#scheduler-state-and-backoff).

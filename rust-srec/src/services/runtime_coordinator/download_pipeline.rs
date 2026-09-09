@@ -522,6 +522,10 @@ pub(super) async fn run_live_download_pipeline(
             debug!(%streamer_id, "Download startup cancelled while waiting for admission");
             false
         }
+        Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+            info!(%streamer_id, "Recording admission deferred until scheduler feedback capacity recovers");
+            false
+        }
         Err(e) => {
             warn!(
                 "Failed to start download for streamer {}: {}",

@@ -87,6 +87,9 @@ impl ActorError {
 /// Instead of storing metadata locally (which can drift), the actor fetches
 /// fresh metadata from the shared metadata store on each check.
 pub struct StreamerActor {
+    feedback_sequence: u64,
+    config_revision: u64,
+    current_download: Option<(String, String)>,
     /// Actor identifier (streamer ID).
     id: String,
     /// Mailbox for receiving normal-priority messages.
@@ -160,6 +163,9 @@ impl StreamerActor {
         let metrics = ActorMetrics::new(&streamer_id, DEFAULT_MAILBOX_CAPACITY);
 
         let actor = Self {
+            feedback_sequence: 0,
+            config_revision: 0,
+            current_download: None,
             id: streamer_id,
             mailbox: rx,
             priority_mailbox: None,
@@ -210,6 +216,9 @@ impl StreamerActor {
         let metrics = ActorMetrics::new(&streamer_id, DEFAULT_MAILBOX_CAPACITY);
 
         let actor = Self {
+            feedback_sequence: 0,
+            config_revision: 0,
+            current_download: None,
             id: streamer_id,
             mailbox: rx,
             priority_mailbox: Some(priority_rx),
@@ -818,6 +827,49 @@ impl StreamerActor {
     /// Returns `true` if the actor should stop.
     async fn handle_message(&mut self, msg: StreamerMessage) -> Result<bool, ActorError> {
         match msg {
+            StreamerMessage::LifecycleFeedback(envelope) => {
+                use crate::scheduler::feedback::FeedbackDisposition;
+                let result = if self.cancellation_token.is_cancelled() {
+                    Ok(FeedbackDisposition::Retired)
+                } else if envelope.sequence <= self.feedback_sequence
+                    || envelope
+                        .current_epoch
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        != envelope.epoch
+                {
+                    Ok(FeedbackDisposition::Superseded)
+                } else {
+                    self.apply_lifecycle_feedback(
+                        envelope.sequence,
+                        envelope.event.as_ref().clone(),
+                    )
+                    .await
+                };
+                let reply = match &result {
+                    Ok(disposition) => Ok(*disposition),
+                    Err(error) if !error.recoverable => Ok(FeedbackDisposition::Retired),
+                    Err(error) => Err(error.to_string()),
+                };
+                drop(envelope.lease);
+                let _ = envelope.applied.send(reply);
+                result?;
+                Ok(false)
+            }
+            StreamerMessage::RetainedConfig { config, applied } => {
+                if config.revision > self.config_revision {
+                    self.handle_config_update(config.config).await?;
+                    self.config_revision = config.revision;
+                }
+                let _ = applied.send(());
+                Ok(false)
+            }
+            StreamerMessage::RetryAdmission => {
+                if self.current_download.is_none() {
+                    self.state.streamer_state = StreamerState::NotLive;
+                    self.state.schedule_immediate_check();
+                }
+                Ok(false)
+            }
             StreamerMessage::CheckStatus => {
                 self.handle_check_status().await?;
                 Ok(false)
@@ -847,6 +899,7 @@ impl StreamerActor {
                 Ok(false)
             }
             StreamerMessage::DownloadEnded(reason) => {
+                self.current_download = None;
                 self.handle_download_ended(reason).await?;
                 Ok(false)
             }
@@ -1016,6 +1069,91 @@ impl StreamerActor {
         Ok(())
     }
 
+    async fn apply_lifecycle_feedback(
+        &mut self,
+        sequence: u64,
+        event: crate::downloader::DownloadManagerEvent,
+    ) -> Result<crate::scheduler::feedback::FeedbackDisposition, ActorError> {
+        use crate::downloader::{
+            DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent,
+        };
+        use crate::scheduler::feedback::FeedbackDisposition;
+        match event {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
+                download_id,
+                session_id,
+                ..
+            }) => {
+                self.current_download = Some((download_id.clone(), session_id.clone()));
+                self.handle_download_started(download_id, session_id)
+                    .await?;
+            }
+            DownloadManagerEvent::Terminal(terminal) => {
+                if self
+                    .current_download
+                    .as_ref()
+                    .is_some_and(|(download, session)| {
+                        terminal.download_id() != Some(download.as_str())
+                            || terminal.session_id() != session
+                    })
+                {
+                    self.feedback_sequence = sequence;
+                    return Ok(FeedbackDisposition::Superseded);
+                }
+                let policy = match terminal {
+                    DownloadTerminalEvent::Completed { stop_cause, .. } => stop_cause
+                        .map(crate::scheduler::service::download_end_policy_for_stop)
+                        .unwrap_or(DownloadEndPolicy::Completed),
+                    DownloadTerminalEvent::Cancelled { cause, .. } => {
+                        crate::scheduler::service::download_end_policy_for_stop(cause)
+                    }
+                    DownloadTerminalEvent::Failed { error, .. } => {
+                        DownloadEndPolicy::SegmentFailed(error)
+                    }
+                    DownloadTerminalEvent::Rejected {
+                        reason,
+                        retry_after_secs,
+                        session_id,
+                        kind,
+                        ..
+                    } => {
+                        let retry_after_secs = retry_after_secs.unwrap_or(60);
+                        match kind {
+                            crate::downloader::DownloadRejectedKind::CircuitBreaker => {
+                                DownloadEndPolicy::CircuitBreakerBlocked {
+                                    reason,
+                                    retry_after_secs,
+                                    session_id,
+                                }
+                            }
+                            crate::downloader::DownloadRejectedKind::OutputRootUnavailable {
+                                path,
+                                io_kind,
+                            } => DownloadEndPolicy::OutputRootBlocked {
+                                path,
+                                io_kind,
+                                retry_after_secs,
+                                session_id,
+                            },
+                            crate::downloader::DownloadRejectedKind::StreamerBackoff => {
+                                DownloadEndPolicy::StreamerBackoffBlocked {
+                                    reason,
+                                    retry_after_secs,
+                                    session_id,
+                                }
+                            }
+                        }
+                    }
+                };
+                self.current_download = None;
+                self.handle_download_ended(policy).await?;
+            }
+            _ => return Ok(FeedbackDisposition::Superseded),
+        }
+        self.feedback_sequence = sequence;
+        Ok(FeedbackDisposition::Applied)
+    }
+
     /// Handle DownloadStarted message - pause status checking while a download is active.
     async fn handle_download_started(
         &mut self,
@@ -1027,6 +1165,16 @@ impl StreamerActor {
             self.id, download_id, session_id
         );
 
+        self.seed_active_download(download_id, session_id);
+
+        Ok(())
+    }
+
+    /// Initialize a replacement from the recording owner's current identity.
+    /// This is a snapshot, not a replay of completed session side effects.
+    pub(super) fn seed_active_download(&mut self, download_id: String, session_id: String) {
+        self.current_download = Some((download_id, session_id));
+
         // Pause checks by switching to Live scheduling behavior.
         // This is primarily for externally orchestrated downloads where the actor
         // might not have just observed a Live check result.
@@ -1035,8 +1183,6 @@ impl StreamerActor {
         self.state.last_download_activity_at = Some(Instant::now());
         self.state
             .schedule_next_check(&self.config, self.get_error_count());
-
-        Ok(())
     }
 
     fn handle_download_heartbeat(
@@ -1045,6 +1191,13 @@ impl StreamerActor {
         session_id: String,
         progress: Option<crate::downloader::engine::DownloadProgress>,
     ) {
+        if self
+            .current_download
+            .as_ref()
+            .is_none_or(|current| current.0 != download_id || current.1 != session_id)
+        {
+            return;
+        }
         // Heartbeats are intentionally lightweight; they are used only to avoid triggering
         // platform extraction while a download is actively making progress.
         self.state.last_download_activity_at = Some(Instant::now());
@@ -2821,6 +2974,129 @@ mod tests {
             );
             assert_eq!(actor.state.hysteresis.offline_count(), 1);
             assert!(actor.state.next_check.is_some());
+        }
+    }
+    #[tokio::test]
+    async fn reliable_feedback_maps_all_terminal_and_rejection_categories() {
+        use crate::downloader::engine::EngineType;
+        use crate::downloader::{
+            DownloadFailureKind, DownloadManagerEvent, DownloadProtocol, DownloadRejectedKind,
+            DownloadTerminalEvent, EngineEndSignal,
+        };
+        use crate::scheduler::feedback::FeedbackDisposition;
+        let completed = |cause| DownloadTerminalEvent::Completed {
+            download_id: "d".to_owned(),
+            streamer_id: "test-streamer".to_owned(),
+            streamer_name: "Test".to_owned(),
+            session_id: "s".to_owned(),
+            total_bytes: 1,
+            total_duration_secs: 1.0,
+            total_segments: 1,
+            file_path: None,
+            engine_signal: EngineEndSignal::CleanDisconnect,
+            stop_cause: cause,
+        };
+        let rejected = |kind| DownloadTerminalEvent::Rejected {
+            streamer_id: "test-streamer".to_owned(),
+            streamer_name: "Test".to_owned(),
+            session_id: "s".to_owned(),
+            reason: "fixture".to_owned(),
+            retry_after_secs: Some(60),
+            kind,
+        };
+        let mut cases = vec![
+            (completed(None), StreamerState::NotLive, true),
+            (
+                completed(Some(DownloadStopCause::OutOfSchedule)),
+                StreamerState::OutOfSchedule,
+                true,
+            ),
+            (
+                completed(Some(DownloadStopCause::Shutdown)),
+                StreamerState::NotLive,
+                false,
+            ),
+            (
+                rejected(DownloadRejectedKind::CircuitBreaker),
+                StreamerState::TemporalDisabled,
+                true,
+            ),
+            (
+                rejected(DownloadRejectedKind::OutputRootUnavailable {
+                    path: "/recordings".into(),
+                    io_kind: crate::downloader::IoErrorKindSer::StorageFull,
+                }),
+                StreamerState::OutOfSpace,
+                true,
+            ),
+            (
+                rejected(DownloadRejectedKind::StreamerBackoff),
+                StreamerState::TemporalDisabled,
+                true,
+            ),
+            (
+                DownloadTerminalEvent::Failed {
+                    download_id: "d".to_owned(),
+                    streamer_id: "test-streamer".to_owned(),
+                    streamer_name: "Test".to_owned(),
+                    session_id: "s".to_owned(),
+                    engine_type: EngineType::Ffmpeg,
+                    protocol: DownloadProtocol::Flv,
+                    kind: DownloadFailureKind::Other,
+                    error: "fixture".to_owned(),
+                    recoverable: true,
+                },
+                StreamerState::NotLive,
+                true,
+            ),
+        ];
+        for cause in [
+            DownloadStopCause::Shutdown,
+            DownloadStopCause::StreamerDisabled,
+            DownloadStopCause::StreamerOffline,
+            DownloadStopCause::DanmuStreamClosed,
+            DownloadStopCause::OutOfSchedule,
+            DownloadStopCause::Other("fixture".to_owned()),
+            DownloadStopCause::User,
+        ] {
+            let scheduled = !matches!(
+                cause,
+                DownloadStopCause::Shutdown | DownloadStopCause::StreamerDisabled
+            );
+            let expected = if matches!(cause, DownloadStopCause::OutOfSchedule) {
+                StreamerState::OutOfSchedule
+            } else {
+                StreamerState::NotLive
+            };
+            cases.push((
+                DownloadTerminalEvent::Cancelled {
+                    download_id: "d".to_owned(),
+                    streamer_id: "test-streamer".to_owned(),
+                    streamer_name: "Test".to_owned(),
+                    session_id: "s".to_owned(),
+                    cause,
+                },
+                expected,
+                scheduled,
+            ));
+        }
+        for (terminal, expected, scheduled) in cases {
+            let (mut actor, _handle) = StreamerActor::new(
+                "test-streamer".to_owned(),
+                create_test_metadata_store(),
+                create_test_config(),
+                CancellationToken::new(),
+                create_noop_checker(),
+            );
+            assert_eq!(
+                actor
+                    .apply_lifecycle_feedback(1, DownloadManagerEvent::Terminal(terminal))
+                    .await
+                    .unwrap(),
+                FeedbackDisposition::Applied
+            );
+            assert_eq!(actor.state.streamer_state, expected);
+            assert_eq!(actor.state.next_check.is_some(), scheduled);
         }
     }
 }
