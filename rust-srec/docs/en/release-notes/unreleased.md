@@ -532,6 +532,10 @@
 
 ## Web interface
 
+- **Theme colour swatches match the theme you just picked**
+
+  On the theme page, the colour swatches and their values used to keep showing the previous theme after switching presets or between light and dark. They now update with your choice, and the page no longer flashes when it first loads.
+
 - **The live log view keeps up with heavy log output**
 
   With logging turned up, the live log page could stutter or fall behind as lines poured in. New lines are now collected and painted in small batches, so the page stays responsive no matter how fast the output is. The live view also reconnects and picks up a renewed sign-in the same way the rest of the app does.

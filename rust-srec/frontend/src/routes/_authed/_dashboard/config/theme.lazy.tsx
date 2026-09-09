@@ -40,7 +40,7 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/config/theme')({
 
 function ConfigTheme() {
   const { i18n } = useLingui();
-  const { mode } = useTheme();
+  const { mode, resolvedMode } = useTheme();
   const { setModeWithReveal } = useCircularTransition();
   const { config: sidebarConfig, updateConfig: updateSidebarConfig } =
     useSidebarConfig();
@@ -61,6 +61,18 @@ function ConfigTheme() {
   );
 
   const [importModalOpen, setImportModalOpen] = React.useState(false);
+
+  // What a brand variable computes to depends on the active preset (or the
+  // imported theme) and on which of the light/dark blocks applies. The color
+  // pickers re-read the document whenever this changes.
+  const importedThemeId = React.useMemo(
+    () =>
+      themeSettings.importedTheme
+        ? JSON.stringify(themeSettings.importedTheme)
+        : 'none',
+    [themeSettings.importedTheme],
+  );
+  const themeKey = `${themeSettings.base}:${themeSettings.preset}:${importedThemeId}:${resolvedMode}`;
 
   const handleReset = () => {
     themeSettings.reset();
@@ -243,6 +255,7 @@ function ConfigTheme() {
                     label={color.name}
                     cssVar={color.cssVar}
                     value={themeSettings.overrides[color.cssVar.slice(2)] || ''}
+                    themeKey={themeKey}
                     onChange={themeSettings.setOverride}
                   />
                 ))}
