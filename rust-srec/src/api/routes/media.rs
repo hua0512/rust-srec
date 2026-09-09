@@ -206,7 +206,7 @@ mod tests {
     };
     use axum::{
         body::Body,
-        http::{Request, StatusCode},
+        http::{Method, Request, StatusCode},
     };
     use tower::ServiceExt;
 
@@ -316,42 +316,37 @@ mod tests {
             .route("/{id}/content", get(get_media_content))
             .with_state(state);
 
-        for (query, expected) in [
-            ("", None),
-            ("&download=0", None),
-            (
-                "&download=1",
-                Some(
-                    "attachment; filename=\"r_cording one.mp4\"; \
-                     filename*=UTF-8''r%C3%A9cording%20one.mp4",
-                ),
-            ),
-            (
-                "&download=true",
-                Some(
-                    "attachment; filename=\"r_cording one.mp4\"; \
-                     filename*=UTF-8''r%C3%A9cording%20one.mp4",
-                ),
-            ),
+        const ATTACHMENT: &str = "attachment; filename=\"r_cording one.mp4\"; \
+                                  filename*=UTF-8''r%C3%A9cording%20one.mp4";
+        // The web interface checks a cross-origin download with HEAD before it
+        // hands the GET to the browser, so both methods must agree on the header.
+        for (method, query, expected) in [
+            (Method::GET, "", None),
+            (Method::GET, "&download=0", None),
+            (Method::GET, "&download=1", Some(ATTACHMENT)),
+            (Method::GET, "&download=true", Some(ATTACHMENT)),
+            (Method::HEAD, "", None),
+            (Method::HEAD, "&download=1", Some(ATTACHMENT)),
         ] {
             let response = app
                 .clone()
                 .oneshot(
                     Request::builder()
+                        .method(method.clone())
                         .uri(format!("/{}/content?token={raw}{query}", output.id))
                         .body(Body::empty())
                         .unwrap(),
                 )
                 .await
                 .unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.status(), StatusCode::OK, "{method} {query:?}");
             assert_eq!(
                 response
                     .headers()
                     .get(CONTENT_DISPOSITION)
                     .map(|value| value.to_str().unwrap()),
                 expected,
-                "query {query:?}"
+                "{method} {query:?}"
             );
         }
         fixture.pool.close().await;
