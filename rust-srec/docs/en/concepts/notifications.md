@@ -50,11 +50,15 @@ Priorities use a 0-10 numeric scale in the API and UI settings:
 | High | 8 | Download error/rejection, pipeline failure, credential refresh failure, Baidu Netdisk re-login failure |
 | Critical | 10 | Fatal error, output path inaccessible, out of space, invalid credential |
 
+All five external channels apply the same enabled/priority policy. Their test action sends a Normal-priority startup event through that policy: a disabled channel or a minimum above Normal suppresses the test too. Email configurations constructed with the Rust defaults start at High; set an appropriate minimum when testing.
+
 A channel filters events below its minimum. The API also accepts the legacy labels `low`, `normal`, `high`, and `critical` where documented; `info` is not a valid priority.
 
 ## Language
 
 Each external channel can follow the server language or override it with `en` or `zh-CN`. `RUST_SREC_LOCALE` sets the default for backend-rendered messages. This is independent of the language selected by a user in the web interface.
+
+For each delivery attempt, the backend reads the server language once and shares rendered title/body text between channels using the same effective language. A retry takes a new language snapshot. Channel-specific escaping, email MIME parts and Telegram entities are applied afterward.
 
 ## Telegram Formatting
 
@@ -106,3 +110,14 @@ Web Push clears persisted throttling state on successful delivery, including the
 first HTTP attempt. Stale-subscription deletion is reported only after SQLite
 confirms it. Both normal and abbreviated JSON payloads must fit the byte limit;
 oversized metadata fails before an HTTP request is sent.
+
+## Backend Notification Interfaces
+
+Channel registry/reload operations, source-event mappings, delivery/retries and the
+Web Push queue/worker each have a dedicated module. The public event catalog and
+localized rendering methods remain available through `notification::events`.
+Custom Rust channels can keep implementing `NotificationChannel::send`; the new
+optional `send_rendered` method receives a `RenderedEvent` for integrations that
+want to reuse the shared title/body. Direct built-in sends use the same filtering
+and payload construction as queued delivery. The default `test` method follows
+normal delivery filtering.

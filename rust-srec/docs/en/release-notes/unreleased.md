@@ -214,6 +214,14 @@
 
 ## Notifications
 
+- **Shared channel policy and consistent language within a delivery attempt**
+
+  External channels share enabled/priority filtering and the default startup test.
+  Recipients using the same language reuse rendered title/body text within each
+  delivery attempt. Registry reloads, listener mappings, retries and Web Push worker
+  ownership remain separate; existing custom Rust channel implementations remain
+  supported. See [notification interfaces](../concepts/notifications.md#backend-notification-interfaces).
+
 - **Bounded queues and consistent Web Push persistence**
 
   Ordinary channel admission now enforces capacity atomically and cancels evicted retries. Breaker cooldowns preserve attempt accounting. First-attempt Web Push success clears stored backoff, failed stale-subscription deletion is not reported as successful, and abbreviated payloads also enforce their byte cap. See [delivery contracts](../concepts/notifications.md#queue-and-web-push-delivery).

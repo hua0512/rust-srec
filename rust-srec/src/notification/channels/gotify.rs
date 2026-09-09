@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::NotificationChannel;
 use super::http::{HttpDelivery, RetryPolicy};
+use super::{NotificationChannel, send_direct};
 use crate::Result;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
+use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
 
 /// Gotify channel configuration.
 #[derive(Clone, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ pub struct GotifyConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See `notification::service::parse_channel_locale`.
+    /// See [`NotificationEvent::title_for`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
     /// Request timeout in seconds.
@@ -98,10 +98,24 @@ impl GotifyChannel {
     }
 
     /// Build the Gotify message payload.
+    #[cfg(test)]
     fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
+        let locale = self
+            .config
+            .locale
+            .clone()
+            .unwrap_or_else(crate::i18n::current_locale);
+        self.build_rendered_payload(event, &RenderedEvent::new(event, &locale))
+    }
+
+    fn build_rendered_payload(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> serde_json::Value {
         json!({
-            "title": event.title_for(self.config.locale.as_deref()),
-            "message": event.description_for(self.config.locale.as_deref()),
+            "title": rendered.title,
+            "message": rendered.description,
             "priority": event.priority().as_int(),
         })
     }
@@ -119,23 +133,28 @@ impl NotificationChannel for GotifyChannel {
             && !self.config.app_token.is_empty()
     }
 
+    fn locale(&self) -> Option<&str> {
+        self.config.locale.as_deref()
+    }
+
+    fn min_priority(&self) -> NotificationPriority {
+        self.config.min_priority
+    }
+
     async fn send(&self, event: &NotificationEvent) -> Result<()> {
-        if !self.is_enabled() {
+        send_direct(self, event).await
+    }
+
+    async fn send_rendered(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> Result<()> {
+        if !self.accepts(event) {
             return Ok(());
         }
 
-        // Check priority filter
-        if event.priority() < self.config.min_priority {
-            debug!(
-                "Skipping Gotify notification for {} (priority {} < {})",
-                event.event_type(),
-                event.priority(),
-                self.config.min_priority
-            );
-            return Ok(());
-        }
-
-        let payload = self.build_payload(event);
+        let payload = self.build_rendered_payload(event, rendered);
 
         let request = self
             .http
@@ -146,14 +165,6 @@ impl NotificationChannel for GotifyChannel {
 
         debug!("Gotify notification sent: {}", event.event_type());
         Ok(())
-    }
-
-    async fn test(&self) -> Result<()> {
-        let test_event = NotificationEvent::SystemStartup {
-            version: "test".to_string(),
-            timestamp: chrono::Utc::now(),
-        };
-        self.send(&test_event).await
     }
 }
 
@@ -197,5 +208,31 @@ mod tests {
         assert!(payload["title"].as_str().is_some());
         assert!(payload["message"].as_str().is_some());
         assert_eq!(payload["priority"], 5); // Normal = 5
+    }
+
+    #[test]
+    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
+        let event = NotificationEvent::SystemStartup {
+            version: "<test>&😀".into(),
+            timestamp: chrono::Utc::now(),
+        };
+        for locale in ["en", "zh-CN"] {
+            let channel = GotifyChannel::new(GotifyConfig {
+                locale: Some(locale.into()),
+                ..Default::default()
+            });
+            let rendered = RenderedEvent::new(&event, locale);
+            assert_eq!(
+                channel.build_payload(&event),
+                channel.build_rendered_payload(&event, &rendered)
+            );
+            let supplied = RenderedEvent {
+                title: "unique title 😀".into(),
+                description: "unique body <>&".into(),
+            };
+            let payload = channel.build_rendered_payload(&event, &supplied);
+            assert_eq!(payload["title"], supplied.title);
+            assert_eq!(payload["message"], supplied.description);
+        }
     }
 }
