@@ -3,6 +3,8 @@
 //! The StreamMonitor coordinates live status detection, filter evaluation,
 //! and state updates for streamers.
 
+use crate::streamer::state_store::{StateChange, StatePublication};
+use futures::future::BoxFuture;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,14 +18,12 @@ use tokio_util::time::DelayQueue;
 use tracing::{debug, info, trace, warn};
 
 use crate::credentials::CredentialRefreshService;
-use crate::database::ImmediateTransaction;
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository,
     SessionTxOps, StreamerRepository, StreamerTxOps,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::domain::StreamerState;
-use crate::domain::filter::Filter;
 use crate::streamer::{
     StreamerManager, StreamerMetadata, download_failure_threshold, manager::ReloadPublish,
 };
@@ -134,7 +134,8 @@ pub struct StreamMonitor<
     /// Streamer manager for state updates.
     streamer_manager: Arc<StreamerManager<SR>>,
     /// Filter repository for loading filters.
-    filter_repo: Arc<FR>,
+    filter_store: Arc<crate::database::filter_store::FilterStore>,
+    _filter_repository: std::marker::PhantomData<FR>,
     /// Session repository for session management.
     session_repo: Arc<SSR>,
     /// Config service for resolving streamer configuration.
@@ -182,17 +183,9 @@ pub(crate) struct LiveStatusDetails {
     pub media_extras: Option<std::collections::HashMap<String, String>>,
 }
 
-/// Bring `StreamerManager`'s metadata cache back in step with the `streamers` row after a write
-/// that went around the manager, naming the write in `context`.
-///
-/// `StreamerManager::partial_update_streamer` rebuilds the whole row from that cache, so a column
-/// written by `StreamerTxOps` or by `CredentialStore::update_credentials` — which rewrites
-/// `streamer_specific_config` with its own SQL — is lost on the next streamer edit unless the
-/// cache is reloaded. A failed reload leaves the row correct and the cache stale until the next
-/// reload, so it is logged rather than propagated to a caller that has already committed.
-///
-/// Free function rather than a method so callers inside `async move` closures that only captured
-/// an `Arc<StreamerManager<SR>>` clone can use it too.
+/// Reconcile legacy/custom repository integrations that do not participate in
+/// the committed streamer writer. Concrete runtime repositories publish their
+/// complete rows before releasing the writer lease and do not use this readback.
 async fn reload_streamer_metadata<SR>(
     streamer_manager: &StreamerManager<SR>,
     streamer_id: &str,
@@ -222,8 +215,35 @@ impl<
         self.config_service.clone()
     }
 
+    async fn write_state<T, F>(&self, label: &'static str, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: for<'c> FnOnce(&'c mut sqlx::SqliteConnection) -> BoxFuture<'c, Result<StateChange<T>>>
+            + Clone
+            + Send
+            + 'static,
+    {
+        let state = if let Some(state) = self.streamer_manager.committed_state() {
+            state
+        } else {
+            self.streamer_manager.state_store_with_writer(Arc::new(
+                crate::database::CommittedWriter::new(
+                    self.write_pool.clone(),
+                    self._task_supervisor.clone(),
+                )?,
+            ))
+        };
+        state.writer.require_same_pool(&self.write_pool)?;
+        retry_on_sqlite_busy(label, || {
+            state.transaction(label, StatePublication::StateOnly, operation.clone())
+        })
+        .await
+    }
+
     async fn reload_streamer_cache(&self, streamer_id: &str, context: &str) {
-        reload_streamer_metadata(&self.streamer_manager, streamer_id, context).await;
+        if self.streamer_manager.committed_state().is_none() {
+            reload_streamer_metadata(&self.streamer_manager, streamer_id, context).await;
+        }
     }
 
     fn notify_outbox(&self) {
@@ -284,6 +304,9 @@ impl<
         session_lifecycle: Arc<crate::session::SessionLifecycle>,
         runtime: StreamMonitorRuntimeConfig,
     ) -> Self {
+        if let Some(state) = streamer_manager.committed_state() {
+            session_lifecycle.bind_committed_streamers(state);
+        }
         let StreamMonitorRuntimeConfig {
             monitor: config,
             required_event_sender,
@@ -346,9 +369,11 @@ impl<
         let (cleanup_tx, cleanup_rx) = mpsc::channel::<String>(4096);
         let in_flight = Arc::new(DashMap::new());
 
+        let filter_store = config_service.filter_store_for(filter_repo);
         let monitor = Self {
             streamer_manager,
-            filter_repo,
+            filter_store,
+            _filter_repository: std::marker::PhantomData,
             session_repo,
             config_service,
             detector,
@@ -398,6 +423,9 @@ impl<
 
     /// Set the credential refresh service for automatic cookie refresh.
     pub fn set_credential_service(&mut self, service: Arc<CredentialRefreshService<CR>>) {
+        if let Some(state) = self.streamer_manager.committed_state() {
+            service.bind_committed_streamers(state);
+        }
         self.credential_service = Some(service);
     }
 
@@ -475,16 +503,6 @@ impl<
         });
     }
 
-    /// Start an immediate transaction to prevent locking issues.
-    async fn begin_immediate(&self) -> Result<ImmediateTransaction> {
-        retry_on_sqlite_busy("monitor_begin_immediate", || async {
-            crate::database::begin_immediate(&self.write_pool)
-                .await
-                .map_err(Into::into)
-        })
-        .await
-    }
-
     /// Check the status of a single streamer.
     ///
     /// This method deduplicates concurrent requests for the same streamer.
@@ -529,11 +547,10 @@ impl<
 
         // Clone what we need for the async closure
         let rate_limiter = self.rate_limiter.clone();
-        let filter_repo = self.filter_repo.clone();
+        let filter_store = self.filter_store.clone();
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
         let credential_service = self.credential_service.clone();
-        let streamer_manager = self.streamer_manager.clone();
         let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
         let platform_id = streamer.platform();
@@ -555,22 +572,7 @@ impl<
 
                 let check = async {
                     // Load filters for this streamer
-                    let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
-                    let filters: Vec<Filter> = filter_models
-                        .into_iter()
-                        .filter_map(|model| match Filter::try_from(&model) {
-                            Ok(filter) => Some(filter),
-                            Err(error) => {
-                                warn!(
-                                    filter_id = %model.id,
-                                    filter_type = %model.filter_type,
-                                    error = %error,
-                                    "Skipping invalid streamer filter"
-                                );
-                                None
-                            }
-                        })
-                        .collect();
+                    let filters = filter_store.get(streamer_id).await?;
 
                     // Get resolved context (merged config + credential source provenance).
                     let context = config_service.get_context_for_streamer(streamer_id).await?;
@@ -589,18 +591,8 @@ impl<
                                 match &source.scope {
                                     crate::credentials::CredentialScope::Streamer { .. } => {
                                         config_service.invalidate_streamer(streamer_id);
-                                        // The refresh wrote `streamer_specific_config` directly,
-                                        // so the manager's cached copy still holds the rotated-away
-                                        // credentials. This runs inside the future `check_streamer`
-                                        // hands to `tokio::time::timeout`, so a budget expiry
-                                        // between the refresh and this reload leaves the cache
-                                        // stale until something else reloads the streamer.
-                                        reload_streamer_metadata(
-                                            &streamer_manager,
-                                            streamer_id,
-                                            "credential refresh",
-                                        )
-                                        .await;
+                                        // The committed credential store already published
+                                        // the updated row; only the merged config needs invalidation.
                                     }
                                     crate::credentials::CredentialScope::Template {
                                         template_id,
@@ -787,12 +779,8 @@ impl<
                                             ..
                                         } => {
                                             self.config_service.invalidate_streamer(&streamer.id);
-                                            // `persist_session_cookies` wrote
-                                            // `streamer_specific_config` directly, so the manager's
-                                            // cached copy still holds the previous session cookies.
-                                            // `handle_live` below reloads as well; this call is
-                                            // what covers the path where `on_live_detected`
-                                            // returns Err before reaching that reload.
+                                            // Custom repositories may still need reconciliation;
+                                            // the concrete committed store needs no second query.
                                             self.reload_streamer_cache(
                                                 &streamer.id,
                                                 "session cookie persist",
@@ -1057,20 +1045,28 @@ impl<
                 streamer.name, streamer.consecutive_error_count
             );
 
-            let mut tx = self.begin_immediate().await?;
+            let streamer = streamer.clone();
+            self.write_state("monitor clear errors", move |tx| {
+                Box::pin(async move {
+                    let mut committed_row = None;
+                    if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
+                        return Ok(StateChange::row((), committed_row));
+                    }
 
-            // Clear error state: reset consecutive_error_count, disabled_until, last_error
-            StreamerTxOps::clear_error_state(&mut tx, &streamer.id).await?;
+                    // Clear error state: reset consecutive_error_count, disabled_until, last_error
+                    committed_row =
+                        StreamerTxOps::clear_error_state_row(&mut *tx, &streamer.id).await?;
 
-            // If was TemporalDisabled, also set state back to NOT_LIVE
-            if streamer.state == StreamerState::TemporalDisabled {
-                StreamerTxOps::set_offline(&mut tx, &streamer.id).await?;
-            }
+                    // If was TemporalDisabled, also set state back to NOT_LIVE
+                    if streamer.state == StreamerState::TemporalDisabled {
+                        committed_row =
+                            StreamerTxOps::set_offline_row(&mut *tx, &streamer.id).await?;
+                    }
 
-            tx.commit().await?;
-
-            self.reload_streamer_cache(&streamer.id, "clearing error state")
-                .await;
+                    Ok(StateChange::row((), committed_row))
+                })
+            })
+            .await?;
         }
 
         Ok(())
@@ -1151,26 +1147,34 @@ impl<
 
         let now = chrono::Utc::now();
 
-        let mut tx = self.begin_immediate().await?;
+        let streamer = streamer.clone();
+        self.write_state("monitor handle_filtered", move |tx| {
+            Box::pin(async move {
+                let mut committed_row = None;
+                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
+                    return Ok(StateChange::row((), committed_row));
+                }
 
-        StreamerTxOps::update_state(&mut tx, &streamer.id, &new_state.to_string()).await?;
+                committed_row =
+                    StreamerTxOps::update_state_row(&mut *tx, &streamer.id, &new_state.to_string())
+                        .await?;
 
-        // Enqueue a state change event (non-notifying) so consumers see the same ordering/guarantees
-        // as live/offline/fatal transitions.
-        let event = MonitorEvent::StateChanged {
-            streamer_id: streamer.id.clone(),
-            streamer_name: streamer.name.clone(),
-            old_state: streamer.state,
-            new_state,
-            reason: state_change_reason,
-            timestamp: now,
-        };
-        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+                // Enqueue a state change event (non-notifying) so consumers see the same ordering/guarantees
+                // as live/offline/fatal transitions.
+                let event = MonitorEvent::StateChanged {
+                    streamer_id: streamer.id.clone(),
+                    streamer_name: streamer.name.clone(),
+                    old_state: streamer.state,
+                    new_state,
+                    reason: state_change_reason,
+                    timestamp: now,
+                };
+                MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
 
-        tx.commit().await?;
-
-        self.reload_streamer_cache(&streamer.id, "state update")
-            .await;
+                Ok(StateChange::row((), committed_row))
+            })
+        })
+        .await?;
         self.notify_outbox();
 
         Ok(())
@@ -1194,35 +1198,47 @@ impl<
 
         let now = chrono::Utc::now();
 
-        let mut tx = self.begin_immediate().await?;
+        let streamer = streamer.clone();
+        let reason = reason.to_owned();
+        self.write_state("monitor handle_fatal_error", move |tx| {
+            Box::pin(async move {
+                let mut committed_row = None;
+                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
+                    return Ok(StateChange::row((), committed_row));
+                }
 
-        SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
+                SessionTxOps::end_active_session(&mut *tx, &streamer.id, now).await?;
 
-        // Update state to the fatal error state and persist the reason
-        StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string(), reason)
-            .await?;
+                // Update state to the fatal error state and persist the reason
+                committed_row = StreamerTxOps::set_fatal_error_row(
+                    &mut *tx,
+                    &streamer.id,
+                    &new_state.to_string(),
+                    &reason,
+                )
+                .await?;
 
-        // Determine the fatal error type from the state
-        let error_type = match new_state {
-            StreamerState::NotFound => FatalErrorType::NotFound,
-            _ => FatalErrorType::Banned, // Default to Banned for other fatal errors
-        };
+                // Determine the fatal error type from the state
+                let error_type = match new_state {
+                    StreamerState::NotFound => FatalErrorType::NotFound,
+                    _ => FatalErrorType::Banned, // Default to Banned for other fatal errors
+                };
 
-        // Emit fatal error event via outbox.
-        let event = MonitorEvent::FatalError {
-            streamer_id: streamer.id.clone(),
-            streamer_name: streamer.name.clone(),
-            error_type,
-            message: reason.to_string(),
-            new_state,
-            timestamp: now,
-        };
-        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+                // Emit fatal error event via outbox.
+                let event = MonitorEvent::FatalError {
+                    streamer_id: streamer.id.clone(),
+                    streamer_name: streamer.name.clone(),
+                    error_type,
+                    message: reason.to_string(),
+                    new_state,
+                    timestamp: now,
+                };
+                MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
 
-        tx.commit().await?;
-
-        self.reload_streamer_cache(&streamer.id, "state update")
-            .await;
+                Ok(StateChange::row((), committed_row))
+            })
+        })
+        .await?;
         self.notify_outbox();
 
         Ok(())
@@ -1253,43 +1269,56 @@ impl<
 
         let now = chrono::Utc::now();
 
-        let mut tx = self.begin_immediate().await?;
+        let streamer = streamer.clone();
+        let error = error.to_owned();
+        let manager = self.streamer_manager.clone();
+        self.write_state("monitor handle_error", move |tx| {
+            Box::pin(async move {
+                let mut committed_row = None;
+                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
+                    return Ok(StateChange::row((), committed_row));
+                }
 
-        let new_error_count = StreamerTxOps::increment_error(&mut tx, &streamer.id, error).await?;
-        let backoff_threshold = download_failure_threshold(streamer.offline_check_count);
+                let new_error_count =
+                    StreamerTxOps::increment_error_row(&mut *tx, &streamer.id, &error)
+                        .await?
+                        .consecutive_error_count
+                        .unwrap_or(0);
+                let backoff_threshold = download_failure_threshold(streamer.offline_check_count);
 
-        let disabled_until = self
-            .streamer_manager
-            .disabled_until_for_error_count(new_error_count, streamer.offline_check_count);
+                let disabled_until = manager
+                    .disabled_until_for_error_count(new_error_count, streamer.offline_check_count);
 
-        StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, disabled_until).await?;
+                committed_row =
+                    StreamerTxOps::set_disabled_until_row(&mut *tx, &streamer.id, disabled_until)
+                        .await?;
 
-        if let Some(until) = disabled_until {
-            info!(
-                streamer_id = %streamer.id,
-                streamer_name = %streamer.name,
-                until = %until,
-                consecutive_errors = new_error_count,
-                backoff_threshold,
-                "temporarily disabled (error backoff)"
-            );
-        }
+                if let Some(until) = disabled_until {
+                    info!(
+                        streamer_id = %streamer.id,
+                        streamer_name = %streamer.name,
+                        until = %until,
+                        consecutive_errors = new_error_count,
+                        backoff_threshold,
+                        "temporarily disabled (error backoff)"
+                    );
+                }
 
-        // Emit transient error event via outbox so DB + event are consistent.
-        let event = MonitorEvent::TransientError {
-            streamer_id: streamer.id.clone(),
-            streamer_name: streamer.name.clone(),
-            error_message: error.to_string(),
-            consecutive_errors: new_error_count,
-            backoff_threshold,
-            timestamp: now,
-        };
-        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+                // Emit transient error event via outbox so DB + event are consistent.
+                let event = MonitorEvent::TransientError {
+                    streamer_id: streamer.id.clone(),
+                    streamer_name: streamer.name.clone(),
+                    error_message: error.clone(),
+                    consecutive_errors: new_error_count,
+                    backoff_threshold,
+                    timestamp: now,
+                };
+                MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
 
-        tx.commit().await?;
-
-        self.reload_streamer_cache(&streamer.id, "state update")
-            .await;
+                Ok(StateChange::row((), committed_row))
+            })
+        })
+        .await?;
         self.notify_outbox();
 
         Ok(())
@@ -1335,28 +1364,46 @@ impl<
             "temporarily disabled (infra block)"
         );
 
-        let mut tx = self.begin_immediate().await?;
+        let streamer = streamer.clone();
+        self.write_state("monitor set_infra_blocked", move |tx| {
+            Box::pin(async move {
+                let mut committed_row = None;
+                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
+                    return Ok(StateChange::row((), committed_row));
+                }
 
-        // set_disabled_until writes state = TEMPORAL_DISABLED by default. For
-        // reasons that require a different state (e.g. OutOfSpace for the
-        // gate) we override with an explicit update_state call in the same tx.
-        StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, Some(disabled_until)).await?;
-        if target_state != StreamerState::TemporalDisabled {
-            StreamerTxOps::update_state(&mut tx, &streamer.id, &target_state.to_string()).await?;
-        }
+                // set_disabled_until writes state = TEMPORAL_DISABLED by default. For
+                // reasons that require a different state (e.g. OutOfSpace for the
+                // gate) we override with an explicit update_state call in the same tx.
+                committed_row = StreamerTxOps::set_disabled_until_row(
+                    &mut *tx,
+                    &streamer.id,
+                    Some(disabled_until),
+                )
+                .await?;
+                if target_state != StreamerState::TemporalDisabled {
+                    committed_row = StreamerTxOps::update_state_row(
+                        &mut *tx,
+                        &streamer.id,
+                        &target_state.to_string(),
+                    )
+                    .await?;
+                }
 
-        // For reasons that carry a distinctive last_error marker (used later
-        // by the gate's recovery hook to filter which streamers to reset),
-        // write it now. Circuit breaker blocks leave last_error alone so any
-        // recent legitimate error text is preserved.
-        if let Some(msg) = last_error_update {
-            StreamerTxOps::update_last_error(&mut tx, &streamer.id, Some(&msg)).await?;
-        }
+                // For reasons that carry a distinctive last_error marker (used later
+                // by the gate's recovery hook to filter which streamers to reset),
+                // write it now. Circuit breaker blocks leave last_error alone so any
+                // recent legitimate error text is preserved.
+                if let Some(msg) = last_error_update {
+                    committed_row =
+                        StreamerTxOps::update_last_error_row(&mut *tx, &streamer.id, Some(&msg))
+                            .await?;
+                }
 
-        tx.commit().await?;
-
-        self.reload_streamer_cache(&streamer.id, "infra block")
-            .await;
+                Ok(StateChange::row((), committed_row))
+            })
+        })
+        .await?;
 
         Ok(())
     }
@@ -1617,6 +1664,200 @@ mod tests {
     use crate::database::{init_pool_with_size, run_migrations};
     use crate::session::{SessionEventPayload, TerminalCauseDto};
     use crate::streamer::StreamerManager;
+
+    #[tokio::test]
+    async fn committed_admin_authority_wins_over_checks_waiting_with_stale_cache() {
+        use crate::database::committed_writer::{CommitPhase, CommitTestGate};
+        use crate::database::repositories::SessionLifecycleRepository;
+        use crate::streamer::manager::StreamerUpdateParams;
+        for retired in [false, true] {
+            let pool = setup_monitor_test_db().await;
+            let mut model = StreamerDbModel::new(
+                "Authority",
+                "https://example.test/authority",
+                "platform-huya",
+            );
+            model.id = "authority".into();
+            SqlxStreamerRepository::new(pool.clone(), pool.clone())
+                .create_streamer(&model)
+                .await
+                .unwrap();
+            let monitor = Arc::new(build_test_monitor(&pool).await);
+            let stale = monitor.streamer_manager.get_streamer("authority").unwrap();
+            let state = monitor.streamer_manager.committed_state().unwrap();
+            let gate = Arc::new(CommitTestGate::default());
+            state
+                .writer
+                .set_commit_gate(CommitPhase::AfterCommit, Some(gate.clone()));
+            let manager = monitor.streamer_manager.clone();
+            let admin = tokio::spawn(async move {
+                if retired {
+                    manager.mark_deleting("authority").await.map(|_| ())
+                } else {
+                    manager
+                        .partial_update_streamer(StreamerUpdateParams {
+                            id: "authority".into(),
+                            name: None,
+                            url: None,
+                            platform_config_id: None,
+                            template_config_id: None,
+                            priority: None,
+                            state: Some(StreamerState::Disabled),
+                            streamer_specific_config: None,
+                        })
+                        .await
+                        .map(|_| ())
+                }
+            });
+            tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
+                .await
+                .unwrap();
+            assert!(
+                monitor
+                    .streamer_manager
+                    .get_streamer_snapshot("authority")
+                    .unwrap()
+                    .is_active()
+            );
+            state.writer.set_commit_gate(CommitPhase::AfterCommit, None);
+            let lifecycle =
+                SessionLifecycleRepository::new(pool.clone()).with_committed_state(state);
+            let mut error_write = Box::pin(monitor.handle_error(&stale, "late check error"));
+            let mut live_write =
+                Box::pin(lifecycle.mark_streamer_live("authority", chrono::Utc::now()));
+            // Both operations start while the cache still shows the pre-commit
+            // active row, then wait for the administrator's retained writer lease.
+            assert!(futures::poll!(&mut error_write).is_pending());
+            assert!(futures::poll!(&mut live_write).is_pending());
+            gate.release.notify_one();
+            admin.await.unwrap().unwrap();
+            tokio::time::timeout(Duration::from_secs(2), error_write)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_secs(2), live_write)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .is_some()
+            );
+            let row = SqlxStreamerRepository::new(pool.clone(), pool.clone())
+                .get_streamer("authority")
+                .await
+                .unwrap();
+            assert_eq!(row.consecutive_error_count, Some(0));
+            assert_eq!(row.deleted_at.is_some(), retired);
+            assert!(
+                !monitor
+                    .streamer_manager
+                    .get_streamer_snapshot("authority")
+                    .unwrap()
+                    .is_active()
+            );
+            assert!(outbox_events(&pool).await.is_empty());
+            monitor.stop();
+        }
+    }
+
+    #[tokio::test]
+    async fn mismatched_monitor_pool_cannot_mutate_another_committed_owner() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "pool-mismatch", StreamerState::Live, 0, None).await;
+        let mut monitor = build_test_monitor(&pool).await;
+        let before = monitor
+            .streamer_manager
+            .get_streamer_snapshot("pool-mismatch")
+            .unwrap();
+        let other = setup_monitor_test_db().await;
+        insert_streamer(&other, "pool-mismatch", StreamerState::Disabled, 5, None).await;
+        monitor.write_pool = other.clone();
+
+        let error = monitor
+            .handle_error(&before, "must not reach either database")
+            .await
+            .unwrap_err();
+        assert!(matches!(error, crate::Error::Configuration(_)));
+        let after = monitor
+            .streamer_manager
+            .get_streamer_snapshot("pool-mismatch")
+            .unwrap();
+        assert!(Arc::ptr_eq(&before, &after));
+        assert_eq!(
+            get_streamer(&pool, "pool-mismatch")
+                .await
+                .consecutive_error_count,
+            Some(0)
+        );
+        let other_row = get_streamer(&other, "pool-mismatch").await;
+        assert_eq!(other_row.consecutive_error_count, Some(5));
+        assert_eq!(other_row.state, StreamerState::Disabled.to_string());
+        assert!(
+            MonitorOutboxOps::fetch_undelivered(&pool, 100)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            MonitorOutboxOps::fetch_undelivered(&other, 100)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn monitor_and_configuration_share_empty_filter_snapshots_and_invalidation() {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let pool = setup_monitor_test_db().await;
+            insert_streamer(&pool, "snapshot-owner", StreamerState::NotLive, 0, None).await;
+            let monitor = build_test_monitor(&pool).await;
+            let empty = monitor.filter_store.get("snapshot-owner").await.unwrap();
+            assert!(empty.is_empty());
+            let connection = pool.acquire().await.unwrap();
+            let repeated = tokio::time::timeout(
+                Duration::from_millis(100),
+                monitor.filter_store.get("snapshot-owner"),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(
+                Arc::ptr_eq(&empty, &repeated),
+                "a repeated monitor check must not need the held SQL connection"
+            );
+            drop(connection);
+            let repository = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
+            assert!(Arc::ptr_eq(
+                &monitor.filter_store,
+                &monitor.config_service.filter_store_for(repository.clone())
+            ));
+            repository
+                .create_filter(&crate::database::models::FilterDbModel::new(
+                    "snapshot-owner",
+                    crate::database::models::FilterType::Keyword,
+                    r#"{"include":["allowed"],"exclude":[]}"#,
+                ))
+                .await
+                .unwrap();
+            monitor
+                .config_service
+                .notify_streamer_filters_updated("snapshot-owner");
+            let updated = monitor.filter_store.get("snapshot-owner").await.unwrap();
+            assert_eq!(updated.len(), 1);
+            assert!(
+                empty.is_empty(),
+                "an already running check retains its old immutable snapshot"
+            );
+            monitor.stop();
+            monitor
+                ._task_supervisor
+                .shutdown(Duration::from_secs(1))
+                .await;
+        })
+        .await
+        .expect("monitor snapshot wiring must remain shared and bounded");
+    }
 
     async fn setup_monitor_test_db() -> SqlitePool {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
@@ -2583,14 +2824,8 @@ mod tests {
         monitor.stop();
     }
 
-    /// `persist_session_cookies` stores the session cookies an extract minted through
-    /// `CredentialStore::update_credentials`, which rewrites `streamer_specific_config` with its
-    /// own SQL, so the manager's metadata cache has to carry them before the next streamer edit
-    /// rebuilds the row from it.
-    ///
-    /// On this path both the reload next to `persist_session_cookies` and `handle_live`'s own
-    /// `reload_streamer_cache` satisfy that, so the test covers the outcome rather than isolating
-    /// either call.
+    /// Session-cookie persistence and later admin patches share committed rows,
+    /// preserving both the refreshed credentials and unrelated configuration.
     #[tokio::test]
     async fn session_cookies_from_extract_survive_a_later_streamer_edit() {
         let pool = setup_monitor_test_db().await;

@@ -16,7 +16,6 @@ use crate::credentials::{
     CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
 };
 use crate::domain::ProxyConfig;
-use crate::streamer::manager::ReloadPublish;
 use crate::utils::json::{self, JsonContext};
 
 #[derive(Clone)]
@@ -179,29 +178,15 @@ async fn resolve_extractor_config_for_url(
                 }
 
                 if !has_explicit_cookies && let Some(source) = context.credential_source.as_ref() {
+                    if let Some(owner) = state.streamer_manager.committed_state() {
+                        credential_service.bind_committed_streamers(owner);
+                    }
                     match credential_service.check_and_refresh_source(source).await {
                         Ok(Some(new_cookies)) => {
                             resolved.cookies = Some(new_cookies);
                             match &source.scope {
                                 CredentialScope::Streamer { .. } => {
                                     config_service.invalidate_streamer(&streamer.id);
-                                    // The refresh wrote `streamer_specific_config` directly, so
-                                    // the manager's cached copy — the row
-                                    // `StreamerManager::partial_update_streamer` rebuilds on the
-                                    // next streamer edit — still holds the previous credentials.
-                                    // The refreshed row is already durable, so a failed reload is
-                                    // logged rather than failing the parse.
-                                    if let Err(error) = state
-                                        .streamer_manager
-                                        .reload_from_repo(&streamer.id, ReloadPublish::StateOnly)
-                                        .await
-                                    {
-                                        warn!(
-                                            %error,
-                                            streamer_id = %streamer.id,
-                                            "Failed to reload streamer after credential refresh; cache may be stale"
-                                        );
-                                    }
                                 }
                                 CredentialScope::Template { template_id, .. } => {
                                     if let Err(error) =

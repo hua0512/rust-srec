@@ -19,9 +19,10 @@ async fn scheduler(ids: &[&str]) -> Scheduler<SqlxStreamerRepository> {
     for id in ids {
         let mut row = StreamerDbModel::new(*id, "https://example.com/live", "platform");
         row.id = (*id).to_owned();
-        manager
-            .metadata_store()
-            .insert((*id).to_owned(), StreamerMetadata::from_db_model(&row));
+        manager.metadata_store().insert(
+            (*id).to_owned(),
+            Arc::new(StreamerMetadata::from_db_model(&row)),
+        );
     }
     Scheduler::with_full_config(
         manager,
@@ -297,12 +298,14 @@ async fn replacement_generation_and_state_sync_invalidate_inflight_configuration
                 .generation(),
             old
         );
-        scheduler
-            .streamer_manager
-            .metadata_store()
-            .get_mut("disabled")
-            .unwrap()
-            .state = crate::domain::StreamerState::Disabled;
+        Arc::make_mut(
+            &mut scheduler
+                .streamer_manager
+                .metadata_store()
+                .get_mut("disabled")
+                .unwrap(),
+        )
+        .state = crate::domain::StreamerState::Disabled;
         scheduler.queue_configuration(ConfigUpdateEvent::StreamerStateSyncedFromDb {
             streamer_id: "disabled".to_owned(),
             is_active: true,

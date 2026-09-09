@@ -8,7 +8,7 @@
 //! - ConfigResolver: Uses builder to resolve config, fetches from repositories
 //! - ConfigService: Uses resolver + adds caching and event broadcasting
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::trace;
@@ -81,6 +81,7 @@ where
     cache: ConfigCache,
     broadcaster: ConfigEventBroadcaster,
     global_cache: GlobalConfigCache,
+    filter_store: OnceLock<Arc<crate::database::filter_store::FilterStore>>,
 }
 
 impl<C, S> ConfigService<C, S>
@@ -124,6 +125,36 @@ where
             cache,
             broadcaster,
             global_cache: GlobalConfigCache::default(),
+            filter_store: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn with_filter_store(
+        self,
+        store: Arc<crate::database::filter_store::FilterStore>,
+    ) -> Self {
+        self.filter_store.get_or_init(|| store);
+        self
+    }
+
+    pub(crate) fn filter_store_for(
+        &self,
+        repository: Arc<dyn crate::database::repositories::FilterRepository>,
+    ) -> Arc<crate::database::filter_store::FilterStore> {
+        self.filter_store
+            .get_or_init(|| Arc::new(crate::database::filter_store::FilterStore::new(repository)))
+            .clone()
+    }
+
+    pub(crate) fn invalidate_filter_snapshots(&self, streamer_id: &str) {
+        if let Some(store) = self.filter_store.get() {
+            store.invalidate(streamer_id);
+        }
+    }
+
+    pub(crate) fn invalidate_all_filter_snapshots(&self) {
+        if let Some(store) = self.filter_store.get() {
+            store.invalidate_all();
         }
     }
 
@@ -158,6 +189,7 @@ where
     pub async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         self.config_repo.update_global_config(config).await?;
         self.global_cache.invalidate();
+        self.invalidate_all_filter_snapshots();
 
         // Invalidate all cached configs since global affects everything
         self.cache.invalidate_all();
@@ -509,6 +541,7 @@ where
         // Filters are stored separately from merged config, but changes should still invalidate
         // streamer config and trigger a scheduler re-check (OutOfSchedule smart-wake).
         self.invalidate_streamer(streamer_id);
+        self.invalidate_filter_snapshots(streamer_id);
         self.broadcaster
             .publish(ConfigUpdateEvent::StreamerFiltersUpdated {
                 streamer_id: streamer_id.to_string(),
@@ -518,6 +551,7 @@ where
     pub(crate) fn notify_import_committed(&self) {
         self.global_cache.invalidate();
         self.cache.invalidate_all();
+        self.invalidate_all_filter_snapshots();
         self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
     }
 

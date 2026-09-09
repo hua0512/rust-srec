@@ -1210,7 +1210,7 @@ mod tests {
         for id in streamer_ids {
             store.insert(
                 (*id).to_string(),
-                StreamerMetadata {
+                Arc::new(StreamerMetadata {
                     id: (*id).to_string(),
                     name: format!("Test {id}"),
                     url: format!("https://twitch.tv/{id}"),
@@ -1229,7 +1229,7 @@ mod tests {
                     created_at: Utc::now(),
                     deleted_at: None,
                     updated_at: Utc::now(),
-                },
+                }),
             );
         }
 

@@ -351,6 +351,17 @@ For the runtime behavior and how these updates route through the system, see:
 
 ## Filter Timezones and Boundaries
 
+Monitor checks share immutable filter snapshots, including empty results. Up to 1,024
+streamers are cached and at most 16 repository loads run concurrently; concurrent checks
+for one streamer share one load. A load times out after 10 seconds. Filter order and invalid-row
+skipping remain unchanged, and cancellation or failure releases waiting checks.
+
+Successful filter edits invalidate the shared snapshot before scheduling a recheck. Imports,
+streamer deletion and global/lag reconciliation invalidate affected snapshots too. A check that
+already holds a snapshot finishes with that version; a retired load cannot publish over an
+invalidation. External SQL or writers outside the shared runtime may remain unseen for the
+30-second cache TTL; the first subsequent check refreshes expired data.
+
 Backend `TIME_BASED` filter JSON accepts an optional IANA `timezone`, for example
 `"Europe/Madrid"`. Matching and next-start/next-stop use that zone consistently.
 An overnight interval belongs to its starting weekday. During a repeated clock

@@ -749,13 +749,15 @@ async fn resumed_started_requires_active_session_payload_and_resume_flag() {
                     .await
                     .unwrap();
             }
-            fixture
-                .coordinator
-                .streamer_manager
-                .metadata_store()
-                .get_mut(STREAMER)
-                .unwrap()
-                .state = StreamerState::NotLive;
+            Arc::make_mut(
+                &mut fixture
+                    .coordinator
+                    .streamer_manager
+                    .metadata_store()
+                    .get_mut(STREAMER)
+                    .unwrap(),
+            )
+            .state = StreamerState::NotLive;
             fixture
                 .coordinator
                 .handle_session_transition(SessionTransition::Started {
@@ -818,13 +820,15 @@ async fn short_queue_rechecks_missing_disabled_and_out_of_schedule_without_a_sto
             let pipeline = spawned_pipeline(&fixture, &session, false);
             let mut events = fixture.queued().await;
             if let Some(state) = state {
-                fixture
-                    .coordinator
-                    .streamer_manager
-                    .metadata_store()
-                    .get_mut(STREAMER)
-                    .unwrap()
-                    .state = state;
+                Arc::make_mut(
+                    &mut fixture
+                        .coordinator
+                        .streamer_manager
+                        .metadata_store()
+                        .get_mut(STREAMER)
+                        .unwrap(),
+                )
+                .state = state;
             } else {
                 fixture
                     .coordinator
@@ -908,6 +912,7 @@ async fn hysteresis_uses_resolved_window_or_fallback_and_abort_preserves_open_se
             let expected = if resolved {
                 let store = fixture.coordinator.streamer_manager.metadata_store();
                 let mut metadata = store.get_mut(STREAMER).unwrap();
+                let metadata = Arc::make_mut(metadata.value_mut());
                 metadata.offline_check_count = 2;
                 metadata.offline_check_delay_ms = 1_000;
                 Duration::from_secs(3)

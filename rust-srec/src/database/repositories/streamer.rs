@@ -1,7 +1,10 @@
 //! Streamer repository.
 
+mod committed;
 mod writes;
-pub(crate) use writes::import_streamer;
+use crate::streamer::CommittedStreamerState;
+use std::sync::Arc;
+pub(crate) use writes::import_streamer_row;
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
@@ -14,6 +17,37 @@ use chrono::{DateTime, Utc};
 /// Streamer repository trait.
 #[async_trait]
 pub trait StreamerRepository: Send + Sync {
+    async fn create_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
+        self.create_streamer(row).await
+    }
+    async fn update_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
+        self.update_streamer(row).await
+    }
+    async fn patch_streamer_for_manager(
+        &self,
+        patch: crate::streamer::manager::StreamerUpdateParams,
+    ) -> Result<StreamerDbModel> {
+        self.patch_streamer(patch).await
+    }
+
+    fn committed_state(&self) -> Option<Arc<CommittedStreamerState>> {
+        None
+    }
+    fn bind_committed_state(
+        &self,
+        _broadcaster: crate::config::ConfigEventBroadcaster,
+    ) -> Option<Arc<CommittedStreamerState>> {
+        self.committed_state()
+    }
+    async fn patch_streamer(
+        &self,
+        patch: crate::streamer::manager::StreamerUpdateParams,
+    ) -> Result<StreamerDbModel> {
+        let mut model = self.get_streamer(&patch.id).await?;
+        committed::apply_patch(&mut model, patch);
+        self.update_streamer(&model).await?;
+        Ok(model)
+    }
     async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel>;
     async fn get_streamers_by_ids(&self, ids: &[String]) -> Result<Vec<StreamerDbModel>> {
         let mut streamers = Vec::new();
@@ -83,29 +117,136 @@ pub(crate) async fn mark_streamer_deleted<'e, E>(
 where
     E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
 {
-    let result =
-        sqlx::query("UPDATE streamers SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL")
-            .bind(now_ms)
-            .bind(id)
-            .execute(executor)
-            .await?;
-    Ok(result.rows_affected() > 0)
+    Ok(mark_streamer_deleted_row(executor, id, now_ms)
+        .await?
+        .is_some())
+}
+
+pub(crate) async fn mark_streamer_deleted_row<'e, E>(
+    executor: E,
+    id: &str,
+    now_ms: i64,
+) -> std::result::Result<Option<StreamerDbModel>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    sqlx::query_as(
+        "UPDATE streamers SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING *",
+    )
+    .bind(now_ms)
+    .bind(id)
+    .fetch_optional(executor)
+    .await
 }
 
 /// SQLx implementation of StreamerRepository.
 pub struct SqlxStreamerRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
+    committed_state: std::sync::OnceLock<Arc<CommittedStreamerState>>,
 }
 
 impl SqlxStreamerRepository {
+    fn mutation_owner(&self) -> Result<Option<Arc<CommittedStreamerState>>> {
+        let state = self.committed_state.get().cloned();
+        if let Some(state) = &state {
+            state.writer.require_same_pool(&self.write_pool)?;
+        }
+        Ok(state)
+    }
+
+    pub(crate) fn with_committed_state(self, state: Arc<CommittedStreamerState>) -> Self {
+        self.committed_state.get_or_init(|| state);
+        self
+    }
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
-        Self { pool, write_pool }
+        Self {
+            pool,
+            write_pool,
+            committed_state: std::sync::OnceLock::new(),
+        }
     }
 }
 
 #[async_trait]
 impl StreamerRepository for SqlxStreamerRepository {
+    async fn create_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write_for_manager(
+                store,
+                row.id.clone(),
+                committed::Mutation::Insert(row.clone()),
+            )
+            .await
+            .map(|_| ());
+        }
+        self.create_streamer(row).await
+    }
+    async fn update_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write_for_manager(
+                store,
+                row.id.clone(),
+                committed::Mutation::Update(row.clone()),
+            )
+            .await
+            .map(|_| ());
+        }
+        self.update_streamer(row).await
+    }
+    async fn patch_streamer_for_manager(
+        &self,
+        patch: crate::streamer::manager::StreamerUpdateParams,
+    ) -> Result<StreamerDbModel> {
+        if let Some(store) = self.mutation_owner()? {
+            let id = patch.id.clone();
+            return committed::write_for_manager(
+                store,
+                id.clone(),
+                committed::Mutation::Patch(patch),
+            )
+            .await?
+            .ok_or_else(|| Error::not_found("Streamer", id));
+        }
+        self.patch_streamer(patch).await
+    }
+
+    fn committed_state(&self) -> Option<Arc<CommittedStreamerState>> {
+        self.committed_state.get().cloned()
+    }
+    fn bind_committed_state(
+        &self,
+        broadcaster: crate::config::ConfigEventBroadcaster,
+    ) -> Option<Arc<CommittedStreamerState>> {
+        Some(
+            self.committed_state
+                .get_or_init(|| {
+                    Arc::new(CommittedStreamerState::new(
+                        Arc::new(crate::database::CommittedWriter::for_invalidation(
+                            self.write_pool.clone(),
+                            Arc::new(crate::utils::task_supervisor::TaskSupervisor::new()),
+                        )),
+                        broadcaster,
+                    ))
+                })
+                .clone(),
+        )
+    }
+    async fn patch_streamer(
+        &self,
+        patch: crate::streamer::manager::StreamerUpdateParams,
+    ) -> Result<StreamerDbModel> {
+        if let Some(store) = self.mutation_owner()? {
+            let id = patch.id.clone();
+            return committed::write(store.clone(), id.clone(), committed::Mutation::Patch(patch))
+                .await?
+                .ok_or_else(|| Error::not_found("Streamer", id));
+        }
+        let mut model = self.get_streamer(&patch.id).await?;
+        committed::apply_patch(&mut model, patch);
+        self.update_streamer(&model).await?;
+        Ok(model)
+    }
     async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel> {
         sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?")
             .bind(id)
@@ -198,6 +339,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                streamer.id.clone(),
+                committed::Mutation::Insert(streamer.clone()),
+            )
+            .await
+            .map(|_| ());
+        }
+
         let result = writes::write_streamer(
             &mut *self.write_pool.acquire().await?,
             streamer,
@@ -216,6 +367,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                streamer.id.clone(),
+                committed::Mutation::Update(streamer.clone()),
+            )
+            .await
+            .map(|_| ());
+        }
+
         let result = writes::write_streamer(
             &mut *self.write_pool.acquire().await?,
             streamer,
@@ -234,6 +395,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn update_streamer_state(&self, id: &str, state: &str) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::State(state.to_owned()),
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query("UPDATE streamers SET state = ? WHERE id = ?")
             .bind(state)
             .bind(id)
@@ -243,6 +414,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn update_streamer_priority(&self, id: &str, priority: &str) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::Priority(priority.to_owned()),
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query("UPDATE streamers SET priority = ? WHERE id = ?")
             .bind(priority)
             .bind(id)
@@ -252,6 +433,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn increment_error_count(&self, id: &str) -> Result<i32> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::IncrementErrors,
+            )
+            .await
+            .map(|row| row.and_then(|row| row.consecutive_error_count).unwrap_or(0));
+        }
+
         let count = sqlx::query_scalar(
             "UPDATE streamers SET consecutive_error_count = COALESCE(consecutive_error_count, 0) + 1 WHERE id = ? RETURNING consecutive_error_count",
         )
@@ -263,6 +454,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn reset_error_count(&self, id: &str) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::ResetErrors,
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query(
             "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?",
         )
@@ -273,6 +474,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::DisabledUntil(until),
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = ?")
             .bind(until)
             .bind(id)
@@ -282,6 +493,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::LastLive(time),
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query("UPDATE streamers SET last_live_time = ? WHERE id = ?")
             .bind(time)
             .bind(id)
@@ -291,6 +512,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::Avatar(avatar_url.map(str::to_owned)),
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query("UPDATE streamers SET avatar = ? WHERE id = ?")
             .bind(avatar_url)
             .bind(id)
@@ -300,11 +531,31 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn mark_streamer_deleted(&self, id: &str) -> Result<bool> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::MarkDeleted(crate::database::time::now_ms()),
+            )
+            .await
+            .map(|row| row.is_some());
+        }
+
         let mut conn = self.write_pool.acquire().await?;
         Ok(mark_streamer_deleted(&mut *conn, id, crate::database::time::now_ms()).await?)
     }
 
     async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::DeleteMarked,
+            )
+            .await
+            .map(|row| row.is_some());
+        }
+
         let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
         let result = sqlx::query("DELETE FROM streamers WHERE id = ? AND deleted_at IS NOT NULL")
             .bind(id)
@@ -325,6 +576,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::ClearErrors,
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query(
             "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = 'NOT_LIVE' WHERE id = ?",
         )
@@ -335,6 +596,16 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn clear_streamer_last_error(&self, id: &str) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::ClearLastError,
+            )
+            .await
+            .map(|_| ());
+        }
+
         sqlx::query("UPDATE streamers SET last_error = NULL WHERE id = ?")
             .bind(id)
             .execute(&self.write_pool)
@@ -347,6 +618,16 @@ impl StreamerRepository for SqlxStreamerRepository {
         id: &str,
         last_live_time: Option<DateTime<Utc>>,
     ) -> Result<()> {
+        if let Some(store) = self.mutation_owner()? {
+            return committed::write(
+                store.clone(),
+                id.to_owned(),
+                committed::Mutation::Success(last_live_time.map(|time| time.timestamp_millis())),
+            )
+            .await
+            .map(|_| ());
+        }
+
         if let Some(time) = last_live_time {
             let time_ms = time.timestamp_millis();
             sqlx::query(

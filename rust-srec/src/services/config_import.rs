@@ -14,7 +14,11 @@ use crate::database::repositories::filter::import_filter as persist_filter;
 use crate::database::repositories::notification::import_channel as persist_channel;
 use crate::database::repositories::preset::import_job_preset as persist_job_preset;
 use crate::database::repositories::preset::import_pipeline_preset as persist_pipeline_preset;
-use crate::database::repositories::streamer::import_streamer as persist_streamer;
+use crate::database::repositories::streamer::import_streamer_row as persist_streamer_row;
+#[cfg(test)]
+use crate::database::repositories::streamer::{
+    import_streamer_row as persist_streamer, mark_streamer_deleted,
+};
 use crate::database::repositories::user::import_user as persist_user;
 
 use crate::api::auth_service::MAX_USERNAME_LENGTH;
@@ -23,6 +27,8 @@ use crate::config::backup::{
     ConfigExport, ImportMode, ImportStats, NotificationChannelExport, PipelinePresetExport,
 };
 use crate::credentials::{CredentialRefreshService, CredentialScope};
+#[cfg(test)]
+use crate::database::begin_immediate;
 use crate::database::models::{
     ChannelType, EngineConfigurationDbModel, EngineType, FilterDbModel, FilterType,
     GlobalConfigDbModel, JobPreset, NotificationChannelDbModel, PipelinePreset,
@@ -31,14 +37,13 @@ use crate::database::models::{
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     config_retirement::{RetiredConfigKind, delete_or_defer},
-    streamer::{SqlxStreamerRepository, mark_streamer_deleted},
+    streamer::{SqlxStreamerRepository, mark_streamer_deleted_row},
 };
-use crate::database::{ImmediateTransaction, begin_immediate};
 use crate::domain::StreamerState;
 use crate::notification::NotificationService;
 use crate::services::runtime_coordinator::{OBSERVE_RETIREMENT, RuntimeCoordinator};
 use crate::streamer::StreamerManager;
-use crate::streamer::manager::ReloadPublish;
+use crate::streamer::state_store::{StateChange, StatePublication};
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamerManager = StreamerManager<SqlxStreamerRepository>;
@@ -67,10 +72,44 @@ struct StreamerImportDiff {
     /// Rows `apply_streamers` stamped with `streamers.deleted_at` (replace mode
     /// only); each is retired and reaped through `RuntimeCoordinator`.
     marked_deleted: Vec<String>,
+    rows: Vec<StreamerDbModel>,
+    state_changed: HashSet<String>,
 }
 
+impl From<crate::Error> for ConfigurationImportError {
+    fn from(error: crate::Error) -> Self {
+        match error {
+            crate::Error::DatabaseSqlx(error) => Self::Database(error),
+            error => Self::Database(sqlx::Error::Protocol(error.to_string())),
+        }
+    }
+}
+
+impl StreamerImportDiff {
+    fn record_row(&mut self, previous: Option<&StreamerDbModel>, row: StreamerDbModel) {
+        let next = crate::streamer::StreamerMetadata::from_db_model(&row);
+        let changed = previous.is_none_or(|previous| {
+            let previous = crate::streamer::StreamerMetadata::from_db_model(previous);
+            previous.state != next.state || previous.is_active() != next.is_active()
+        });
+        if changed {
+            self.state_changed.insert(row.id.clone());
+        }
+        self.rows.push(row);
+    }
+}
+
+struct CommittedImport {
+    stats: ImportStats,
+    invalidated_credentials: Vec<CredentialScope>,
+    streamers: StreamerImportDiff,
+    retained_definitions: i64,
+}
+
+#[derive(Clone)]
 pub(crate) struct ConfigurationImportService {
     write_pool: SqlitePool,
+    admission: Arc<tokio::sync::Semaphore>,
     config_service: Arc<RuntimeConfigService>,
     streamer_manager: Arc<RuntimeStreamerManager>,
     notification_service: Arc<NotificationService>,
@@ -89,6 +128,7 @@ impl ConfigurationImportService {
     ) -> Self {
         Self {
             write_pool,
+            admission: Arc::new(tokio::sync::Semaphore::new(1)),
             config_service,
             streamer_manager,
             notification_service,
@@ -104,18 +144,77 @@ impl ConfigurationImportService {
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
 
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let snapshot = ImportSnapshot::load(&mut tx).await?;
-        snapshot.validate_references(&config, mode)?;
+        let state = self.streamer_manager.committed_state().ok_or_else(|| {
+            ConfigurationImportError::from(crate::Error::Configuration(
+                "Import requires the committed streamer state owner".to_owned(),
+            ))
+        })?;
+        state.writer.require_serialized()?;
+        state.writer.require_same_pool(&self.write_pool)?;
+        let permit = self
+            .admission
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|error| {
+                ConfigurationImportError::from(crate::Error::Other(error.to_string()))
+            })?;
+        let cache = state.cache.clone();
+        let config_service = self.config_service.clone();
+        let service = self.clone();
+        state
+            .writer
+            .transaction_with_completion(
+                "configuration import",
+                move |tx| {
+                    Box::pin(async move {
+                        let snapshot = ImportSnapshot::load(tx).await?;
+                        snapshot.validate_references(&config, mode)?;
+                        let (stats, invalidated_credentials, streamers) =
+                            apply_import(tx, &snapshot, &config, mode).await?;
+                        let retained_definitions =
+                            sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
+                                .fetch_one(tx)
+                                .await?;
+                        Ok(CommittedImport {
+                            stats,
+                            invalidated_credentials,
+                            streamers,
+                            retained_definitions,
+                        })
+                    })
+                },
+                move |committed| {
+                    cache.apply(
+                        &StateChange {
+                            value: (),
+                            rows: committed.streamers.rows.clone(),
+                            removed: Vec::new(),
+                        },
+                        StatePublication::Silent,
+                    );
+                    config_service.invalidate_all_filter_snapshots();
+                },
+                move |committed| {
+                    Box::pin(async move {
+                        let _permit = permit;
+                        service.finish_import(committed).await
+                    })
+                },
+            )
+            .await
+    }
 
-        let (stats, invalidated_credentials, streamers) =
-            apply_import(&mut tx, &snapshot, &config, mode).await?;
-        let retained_definitions: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
-                .fetch_one(&mut *tx)
-                .await?;
-        tx.commit().await?;
-
+    async fn finish_import(
+        &self,
+        committed: CommittedImport,
+    ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
+        let CommittedImport {
+            stats,
+            invalidated_credentials,
+            streamers,
+            retained_definitions,
+        } = committed;
         for scope in invalidated_credentials {
             self.credential_service.invalidate(&scope);
         }
@@ -127,16 +226,15 @@ impl ConfigurationImportService {
             ));
         }
 
-        // Announce the `deleted_at` markers the transaction committed before
-        // touching anything else: `StreamerManager::note_deleted` is what turns
-        // `StreamerMetadata::is_active` false, and until it runs the scheduler
-        // would keep checking a streamer the bundle removed.
+        // Rows are already visible in the cache. Announce retirement before
+        // other runtime effects, using the current snapshot if another writer
+        // committed after this import released its database lease.
         for streamer_id in &streamers.marked_deleted {
-            if let Err(error) = self.streamer_manager.note_deleted(streamer_id).await {
-                warnings.push(format!(
-                    "streamer '{streamer_id}' removal reload failed: {error}"
-                ));
-            }
+            self.streamer_manager.publish_imported(
+                streamer_id,
+                streamers.state_changed.contains(streamer_id),
+                false,
+            );
         }
 
         // Bring the in-memory row and the scheduler's actor in line with what
@@ -147,15 +245,11 @@ impl ConfigurationImportService {
         // live streamer to `NotLive` and restart recordings the bundle never
         // mentioned.
         for streamer_id in &streamers.upserted {
-            if let Err(error) = self
-                .streamer_manager
-                .reload_from_repo(streamer_id, ReloadPublish::MetadataUpdated)
-                .await
-            {
-                warnings.push(format!(
-                    "streamer '{streamer_id}' runtime reload failed: {error}"
-                ));
-            }
+            self.streamer_manager.publish_imported(
+                streamer_id,
+                streamers.state_changed.contains(streamer_id),
+                true,
+            );
         }
 
         // Stops each removed streamer's actor, download and session, and removes
@@ -211,27 +305,27 @@ struct ImportSnapshot {
 }
 
 impl ImportSnapshot {
-    async fn load(tx: &mut ImmediateTransaction) -> Result<Self, sqlx::Error> {
+    async fn load(tx: &mut sqlx::SqliteConnection) -> Result<Self, sqlx::Error> {
         let global = sqlx::query_as::<_, GlobalConfigDbModel>(
             "SELECT * FROM global_config ORDER BY rowid LIMIT 1",
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *tx)
         .await?;
         let engines =
             sqlx::query_as::<_, EngineConfigurationDbModel>("SELECT * FROM engine_configuration")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *tx)
                 .await?
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
         let templates = sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *tx)
             .await?
             .into_iter()
             .map(|model| (model.name.clone(), model))
             .collect();
         let platforms = sqlx::query_as::<_, PlatformConfigDbModel>("SELECT * FROM platform_config")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *tx)
             .await?
             .into_iter()
             .map(|model| (model.platform_name.clone(), model))
@@ -241,7 +335,7 @@ impl ImportSnapshot {
         // bundle a streamer the reaper is about to remove.
         for model in
             sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE deleted_at IS NULL")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *tx)
                 .await?
         {
             streamers
@@ -258,33 +352,33 @@ impl ImportSnapshot {
         let retiring_streamer_urls = sqlx::query_scalar::<_, String>(
             "SELECT url FROM streamers WHERE deleted_at IS NOT NULL",
         )
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut *tx)
         .await?
         .into_iter()
         .map(|url| url.to_ascii_lowercase())
         .collect();
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *tx)
                 .await?
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
         let job_presets = sqlx::query_as::<_, JobPreset>("SELECT * FROM job_presets")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *tx)
             .await?
             .into_iter()
             .map(|model| (model.name.clone(), model))
             .collect();
         let pipeline_presets =
             sqlx::query_as::<_, PipelinePreset>("SELECT * FROM pipeline_presets")
-                .fetch_all(&mut **tx)
+                .fetch_all(&mut *tx)
                 .await?
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
         let users = sqlx::query_as::<_, UserDbModel>("SELECT * FROM users")
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *tx)
             .await?
             .into_iter()
             .map(|model| (model.username.clone(), model))
@@ -858,7 +952,7 @@ struct ImportChanges {
 }
 
 async fn apply_import(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     mode: ImportMode,
@@ -899,7 +993,7 @@ async fn apply_import(
 }
 
 async fn apply_engines(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -950,7 +1044,7 @@ async fn apply_engines(
 /// deferred to delete_unimported_templates, which must run after
 /// apply_streamers.
 async fn apply_templates(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -990,7 +1084,7 @@ async fn apply_templates(
 /// create or delete platform rows; validate_references already rejected
 /// bundle platforms absent from the snapshot.
 async fn apply_platforms(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     changes: &mut ImportChanges,
@@ -1019,7 +1113,7 @@ async fn apply_platforms(
 }
 
 async fn apply_streamers(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -1052,7 +1146,9 @@ async fn apply_streamers(
             })
             .transpose()?;
         let model = streamer_model(existing, item, platform_id, template_id);
-        persist_streamer(tx, &model).await?;
+        if let Some(row) = persist_streamer_row(tx, &model).await? {
+            changes.streamers.record_row(existing, row);
+        }
         crate::database::repositories::filter::delete_for_streamer(tx, &model.id).await?;
         for item_filter in &item.filters {
             let filter_type = FilterType::parse(&item_filter.filter_type).ok_or_else(|| {
@@ -1102,7 +1198,9 @@ async fn apply_streamers(
                 // may run the `DELETE` once they have stopped. Marking inside
                 // this transaction is what makes a rejected import stop
                 // nothing.
-                mark_streamer_deleted(&mut **tx, &existing.id, now).await?;
+                if let Some(row) = mark_streamer_deleted_row(&mut *tx, &existing.id, now).await? {
+                    changes.streamers.record_row(Some(existing), row);
+                }
                 changes
                     .invalidated_credentials
                     .push(CredentialScope::Streamer {
@@ -1122,7 +1220,7 @@ async fn apply_streamers(
 /// rewrites each retained row's template_config_id. Definitions still used by
 /// retiring streamers stay available until their post-processing settles.
 async fn delete_unimported_templates(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -1332,7 +1430,7 @@ fn db_json(value: serde_json::Value) -> String {
 }
 
 async fn apply_notification_channels(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -1404,7 +1502,7 @@ async fn apply_notification_channels(
 }
 
 async fn apply_job_presets(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -1445,7 +1543,7 @@ async fn apply_job_presets(
 }
 
 async fn apply_pipeline_presets(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
@@ -1512,7 +1610,7 @@ async fn apply_pipeline_presets(
 }
 
 async fn apply_users(
-    tx: &mut ImmediateTransaction,
+    tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,

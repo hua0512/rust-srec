@@ -54,10 +54,7 @@ impl RowWrite {
         Ok(())
     }
 
-    pub(super) async fn execute(
-        self,
-        connection: &mut SqliteConnection,
-    ) -> Result<(), sqlx::Error> {
+    fn statement(self) -> (String, SqliteArguments) {
         let sql = match self.mutation {
             Mutation::Update => {
                 let assignments = self
@@ -95,9 +92,31 @@ impl RowWrite {
                 sql
             }
         };
-        sqlx::query_with::<Sqlite, _>(sqlx::AssertSqlSafe(sql), self.arguments)
+        (sql, self.arguments)
+    }
+
+    pub(super) async fn execute(
+        self,
+        connection: &mut SqliteConnection,
+    ) -> Result<(), sqlx::Error> {
+        let (sql, arguments) = self.statement();
+        sqlx::query_with::<Sqlite, _>(sqlx::AssertSqlSafe(sql), arguments)
             .execute(connection)
             .await?;
         Ok(())
+    }
+
+    pub(super) async fn fetch_optional<T>(
+        self,
+        connection: &mut SqliteConnection,
+    ) -> Result<Option<T>, sqlx::Error>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin,
+    {
+        let (mut sql, arguments) = self.statement();
+        sql.push_str(" RETURNING *");
+        sqlx::query_as_with::<Sqlite, T, _>(sqlx::AssertSqlSafe(sql), arguments)
+            .fetch_optional(connection)
+            .await
     }
 }

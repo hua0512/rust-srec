@@ -27,8 +27,8 @@ const ABORT_REAP_WINDOW: Duration = Duration::from_secs(5);
 ///
 /// The cooperative drain may keep containing owned work after
 /// `cooperative_deadline`, but at `force_deadline` it is dropped and the
-/// remaining supervised tasks are aborted. All abort/reap work shares
-/// `hard_deadline`; no phase extends the caller's hard bound.
+/// remaining disposable tasks are aborted. Database commits retain their owner
+/// if they cannot settle by `hard_deadline`; no phase extends that hard bound.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ServiceShutdownSchedule {
     cooperative_deadline: tokio::time::Instant,
@@ -100,13 +100,14 @@ impl ServiceContainer {
     /// process that enforces a wall-clock deadline and force-kills the process
     /// tree. Embedders that run the container in-process call
     /// this instead: before `hard_cap` expires the phased drain is dropped and
-    /// the remaining work is aborted, so each attempt/job future is dropped and
-    /// the ffmpeg/streamlink child it owns through `kill_on_drop` is killed
+    /// recording and background work is aborted, so each attempt/job future is
+    /// dropped and the ffmpeg/streamlink child it owns through `kill_on_drop` is killed
     /// rather than orphaned by a later `std::process::exit`.
     ///
     /// Returns `Err` naming what was still running when the cap fired. On that
-    /// path the database pools are left open, matching the quiescence gate in
-    /// the cooperative shutdown path; the caller is expected to exit the
+    /// path unfinished database commits remain supervised and their pools are
+    /// left open, matching the cooperative shutdown quiescence gate; the caller
+    /// is expected to exit the
     /// process. `ABORT_REAP_WINDOW` is reserved inside `hard_cap`, so this
     /// method does not add a second timeout after the caller's deadline.
     pub async fn shutdown_with_hard_cap(
@@ -143,12 +144,27 @@ impl ServiceContainer {
             aborted_timers,
             aborted_pipeline_tasks,
             aborted_background_tasks,
+            committed_writes_drained,
         ) = tokio::join!(
             self.download_manager.abort_attempts(schedule.hard_deadline),
             self.danmu_service.abort_collections(schedule.hard_deadline),
             self.session_lifecycle.abort_timers(schedule.hard_deadline),
             self.pipeline_manager.abort(schedule.hard_deadline),
             self.task_supervisor.abort_all(schedule.hard_deadline),
+            async {
+                // A timed-out retained drain leaves its tasks owned in place.
+                // Never abort COMMIT or postcommit publication.
+                tokio::time::timeout_at(
+                    schedule.hard_deadline,
+                    self.committed_write_supervisor.drain_retained(
+                        schedule
+                            .hard_deadline
+                            .saturating_duration_since(tokio::time::Instant::now()),
+                    ),
+                )
+                .await
+                .is_ok()
+            },
         );
 
         warn!(
@@ -157,11 +173,17 @@ impl ServiceContainer {
             hysteresis_timers = aborted_timers,
             pipeline_tasks = aborted_pipeline_tasks,
             background_tasks = aborted_background_tasks,
+            committed_writes_drained,
             "Aborted supervised work after the shutdown force deadline"
         );
 
+        let committed_status = if committed_writes_drained {
+            "committed writes drained"
+        } else {
+            "unfinished committed writes remain supervised"
+        };
         Err(crate::Error::Other(format!(
-            "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {} danmu collection(s) {aborted_collections:?}, {aborted_timers} hysteresis timer(s), {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; database pools were left open",
+            "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {} danmu collection(s) {aborted_collections:?}, {aborted_timers} hysteresis timer(s), {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; {committed_status}; database pools were left open",
             aborted_downloads.len(),
             aborted_collections.len()
         )))
@@ -282,6 +304,17 @@ impl ServiceContainer {
             debug!("Danmu coordination handler was not started; skipping its shutdown barrier");
         }
 
+        // Imports own runtime completion after releasing the writer, including
+        // session retirement. Drain them while lifecycle admission and required
+        // transition consumers are still open. Late writes are then rejected.
+        if !self
+            .committed_write_supervisor
+            .drain_retained(deadline.saturating_duration_since(tokio::time::Instant::now()))
+            .await
+        {
+            overruns.push("committed database writes exceeded the graceful deadline".into());
+        }
+
         let lifecycle_report = self.session_lifecycle.shutdown_until(deadline).await;
         if lifecycle_report.forced_timer_count > 0 {
             warn!(
@@ -344,7 +377,7 @@ impl ServiceContainer {
             overruns.push(message);
         }
 
-        // `TaskSupervisor::shutdown` has joined the required consumers by now,
+        // Both committed writes and required consumers have been joined by now,
         // so nothing can still be mid-write. An undrained marker means one of
         // them stopped without acknowledging, and leaving the pools open keeps
         // the last observed state visible to the operator who has to reconcile

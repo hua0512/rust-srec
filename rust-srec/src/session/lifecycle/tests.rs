@@ -8,6 +8,8 @@ use crate::database::{init_pool_with_size, run_migrations};
 use crate::monitor::MonitorEvent;
 use sqlx::SqlitePool;
 
+mod committed_ownership;
+
 const STREAMER_ID: &str = "test-streamer";
 
 #[tokio::test]

@@ -118,7 +118,7 @@ pub struct StreamerActor {
     /// timer. Cleared on the next successful check.
     live_watchdog_backoff_until: Option<Instant>,
     /// Shared metadata store for fetching fresh streamer data.
-    metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+    metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
     /// Configuration.
     config: StreamerConfig,
     /// Cancellation token.
@@ -144,7 +144,7 @@ impl StreamerActor {
     /// * `status_checker` - Status checker for performing actual status checks
     pub fn new(
         streamer_id: String,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
         status_checker: Arc<dyn StatusChecker>,
@@ -191,7 +191,7 @@ impl StreamerActor {
     /// even under backpressure.
     pub fn with_priority_channel(
         streamer_id: String,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
         status_checker: Arc<dyn StatusChecker>,
@@ -240,7 +240,7 @@ impl StreamerActor {
     /// Create a new StreamerActor with priority channel and platform actor.
     pub fn with_priority_and_platform(
         streamer_id: String,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
         platform_actor: mpsc::Sender<PlatformMessage>,
@@ -280,8 +280,10 @@ impl StreamerActor {
     /// Get the current streamer metadata from the shared store.
     ///
     /// Returns None if the streamer has been removed from the store.
-    fn get_metadata(&self) -> Option<StreamerMetadata> {
-        self.metadata_store.get(&self.id).map(|r| r.clone())
+    fn get_metadata(&self) -> Option<Arc<StreamerMetadata>> {
+        self.metadata_store
+            .get(&self.id)
+            .map(|r| Arc::clone(r.value()))
     }
 
     /// Get the current error count from metadata, defaulting to 0 if not found.
@@ -1598,10 +1600,10 @@ mod tests {
         }
     }
 
-    fn create_test_metadata_store() -> Arc<DashMap<String, StreamerMetadata>> {
+    fn create_test_metadata_store() -> Arc<DashMap<String, Arc<StreamerMetadata>>> {
         let store = Arc::new(DashMap::new());
         let metadata = create_test_metadata();
-        store.insert(metadata.id.clone(), metadata);
+        store.insert(metadata.id.clone(), Arc::new(metadata));
         store
     }
 
@@ -1804,7 +1806,7 @@ mod tests {
     async fn initial_reconciliation_keeps_known_live_offline_grace_period() {
         for batch in [false, true] {
             let store = create_test_metadata_store();
-            store.get_mut("test-streamer").unwrap().state = StreamerState::Live;
+            Arc::make_mut(&mut store.get_mut("test-streamer").unwrap()).state = StreamerState::Live;
             let checker = Arc::new(SequenceStatusChecker::new(
                 (0..3)
                     .map(|_| {
@@ -2268,7 +2270,7 @@ mod tests {
 
         // Simulate user cancelled download
         if let Some(mut entry) = metadata_store_for_update.get_mut("test-streamer") {
-            entry.state = StreamerState::Cancelled;
+            Arc::make_mut(&mut entry).state = StreamerState::Cancelled;
         }
         let result = actor
             .handle_download_ended(super::super::messages::DownloadEndPolicy::UserCancelled)

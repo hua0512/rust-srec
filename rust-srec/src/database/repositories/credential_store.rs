@@ -2,8 +2,12 @@
 //!
 //! This is the database-backed persistence implementation for the credentials subsystem.
 
+use crate::database::models::StreamerDbModel;
+use crate::streamer::CommittedStreamerState;
+use crate::streamer::state_store::{StateChange, StatePublication};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use std::sync::{Arc, OnceLock};
 use tracing::{debug, instrument};
 
 use crate::credentials::{
@@ -15,6 +19,7 @@ use crate::database::begin_immediate;
 pub struct SqlxCredentialStore {
     pool: SqlitePool,
     write_pool: SqlitePool,
+    committed_state: OnceLock<Arc<CommittedStreamerState>>,
 }
 
 fn validate_json_object(raw: Option<&str>, field: &'static str) -> Result<(), CredentialError> {
@@ -38,7 +43,11 @@ fn require_owner(rows: u64) -> Result<(), CredentialError> {
 
 impl SqlxCredentialStore {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
-        Self { pool, write_pool }
+        Self {
+            pool,
+            write_pool,
+            committed_state: OnceLock::new(),
+        }
     }
 
     async fn update_platform_credentials(
@@ -227,10 +236,46 @@ impl SqlxCredentialStore {
         streamer_id: &str,
         credentials: &RefreshedCredentials,
     ) -> Result<(), CredentialError> {
+        let now = crate::database::time::now_ms();
+        if let Some(state) = self.committed_state.get() {
+            state.writer.require_serialized()?;
+            state.writer.require_same_pool(&self.write_pool)?;
+            let id = streamer_id.to_owned();
+            let credentials = credentials.clone();
+            let cache = state.cache.clone();
+            return state
+                .writer
+                .transaction_with_error(
+                    "streamer credentials",
+                    move |tx| {
+                        Box::pin(async move {
+                            Self::update_streamer_in_connection(tx, &id, &credentials, now).await
+                        })
+                    },
+                    move |row| {
+                        cache.apply(
+                            &StateChange::row((), Some(row.clone())),
+                            StatePublication::Silent,
+                        )
+                    },
+                )
+                .await
+                .map(|_| ());
+        }
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        Self::update_streamer_in_connection(&mut tx, streamer_id, credentials, now).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn update_streamer_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        streamer_id: &str,
+        credentials: &RefreshedCredentials,
+        now: i64,
+    ) -> Result<StreamerDbModel, CredentialError> {
         debug!(streamer_id = %streamer_id, "Updating streamer credentials");
 
-        let now = crate::database::time::now_ms();
-        let mut tx = begin_immediate(&self.write_pool).await?;
         let raw: Option<String> = sqlx::query_scalar(
             "SELECT streamer_specific_config FROM streamers WHERE id = ? AND deleted_at IS NULL",
         )
@@ -240,7 +285,7 @@ impl SqlxCredentialStore {
         .ok_or(CredentialError::NoCredentials)?;
         validate_json_object(raw.as_deref(), "streamers.streamer_specific_config")?;
 
-        let result = sqlx::query(
+        let mut row = sqlx::query_as::<_, StreamerDbModel>(
             r#"
             UPDATE streamers
             SET streamer_specific_config = json_set(
@@ -249,18 +294,18 @@ impl SqlxCredentialStore {
                 ?
             ),
             updated_at = ?
-            WHERE id = ? AND deleted_at IS NULL
+            WHERE id = ? AND deleted_at IS NULL RETURNING *
             "#,
         )
         .bind(&credentials.cookies)
         .bind(now)
         .bind(streamer_id)
-        .execute(&mut *tx)
-        .await?;
-        require_owner(result.rows_affected())?;
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(CredentialError::NoCredentials)?;
 
         if let Some(ref token) = credentials.refresh_token {
-            let result = sqlx::query(
+            row = sqlx::query_as::<_, StreamerDbModel>(
                 r#"
                 UPDATE streamers
                 SET streamer_specific_config = json_set(
@@ -268,18 +313,18 @@ impl SqlxCredentialStore {
                     '$.refresh_token',
                     ?
                 )
-                WHERE id = ? AND deleted_at IS NULL
+                WHERE id = ? AND deleted_at IS NULL RETURNING *
                 "#,
             )
             .bind(token)
             .bind(streamer_id)
-            .execute(&mut *tx)
-            .await?;
-            require_owner(result.rows_affected())?;
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(CredentialError::NoCredentials)?;
         }
 
         if let Some(ref token) = credentials.access_token {
-            let result = sqlx::query(
+            row = sqlx::query_as::<_, StreamerDbModel>(
                 r#"
                 UPDATE streamers
                 SET streamer_specific_config = json_set(
@@ -287,24 +332,26 @@ impl SqlxCredentialStore {
                     '$.access_token',
                     ?
                 )
-                WHERE id = ? AND deleted_at IS NULL
+                WHERE id = ? AND deleted_at IS NULL RETURNING *
                 "#,
             )
             .bind(token)
             .bind(streamer_id)
-            .execute(&mut *tx)
-            .await?;
-            require_owner(result.rows_affected())?;
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(CredentialError::NoCredentials)?;
         }
 
-        tx.commit().await?;
         debug!("Streamer credentials updated successfully");
-        Ok(())
+        Ok(row)
     }
 }
 
 #[async_trait]
 impl CredentialStore for SqlxCredentialStore {
+    fn bind_committed_streamers(&self, state: Arc<CommittedStreamerState>) {
+        self.committed_state.get_or_init(|| state);
+    }
     async fn reload_source(
         &self,
         source: &CredentialSource,

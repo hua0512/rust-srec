@@ -794,10 +794,10 @@ mod tests {
         }
     }
 
-    fn create_test_metadata_store(id: &str) -> Arc<DashMap<String, StreamerMetadata>> {
+    fn create_test_metadata_store(id: &str) -> Arc<DashMap<String, Arc<StreamerMetadata>>> {
         let store = Arc::new(DashMap::new());
         let metadata = create_test_metadata(id);
-        store.insert(id.to_string(), metadata);
+        store.insert(id.to_string(), Arc::new(metadata));
         store
     }
 
@@ -923,7 +923,7 @@ mod tests {
         for i in 0..3 {
             let id = format!("test-{}", i);
             let metadata = create_test_metadata(&id);
-            metadata_store.insert(id.clone(), metadata);
+            metadata_store.insert(id.clone(), Arc::new(metadata));
 
             let config = create_test_config();
             let (actor, handle) = StreamerActor::new(

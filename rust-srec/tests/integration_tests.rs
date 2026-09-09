@@ -3,11 +3,11 @@
 //! These tests use a real SQLite database (in-memory) to verify
 //! repository operations work correctly with the actual schema.
 
-use rust_srec::database::{DbPool, init_pool, run_migrations};
+use rust_srec::database::{DbPool, init_pool, init_pool_with_size, run_migrations};
 
-/// Helper to create a test database pool with migrations applied.
+/// This suite uses one pool for reads and writes, so keep its writer serialized.
 async fn setup_test_db() -> DbPool {
-    let pool = init_pool("sqlite::memory:")
+    let pool = init_pool_with_size("sqlite::memory:", 1)
         .await
         .expect("Failed to create test pool");
 

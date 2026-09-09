@@ -37,6 +37,13 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
 }
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
+    pub(crate) fn bind_committed_streamers(
+        &self,
+        state: Arc<crate::streamer::CommittedStreamerState>,
+    ) {
+        self.store.bind_committed_streamers(state);
+    }
+
     /// Create a new credential refresh service.
     pub fn new(resolver: Arc<CredentialResolver<R>>, store: Arc<dyn CredentialStore>) -> Self {
         Self {

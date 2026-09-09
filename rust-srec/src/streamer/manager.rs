@@ -15,6 +15,7 @@ use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::{Priority, StreamerState};
 
 use super::metadata::{StreamerMetadata, download_failure_threshold};
+use super::state_store::{CommittedStreamerState, StateChange, StatePublication, StreamerCache};
 
 /// Base backoff duration (doubles with each error).
 const BASE_BACKOFF_SECS: u64 = 60;
@@ -31,7 +32,9 @@ where
     R: StreamerRepository + Send + Sync,
 {
     /// In-memory metadata store.
-    metadata: Arc<DashMap<String, StreamerMetadata>>,
+    metadata: Arc<DashMap<String, Arc<StreamerMetadata>>>,
+    cache: Arc<StreamerCache>,
+    committed: Option<Arc<CommittedStreamerState>>,
     /// Lowercased URL index for fast lookups.
     url_index: Arc<DashMap<String, String>>,
     /// Streamer repository for persistence.
@@ -57,6 +60,7 @@ pub enum ReloadPublish {
 }
 
 /// Parameters for partially updating a streamer.
+#[derive(Clone)]
 pub struct StreamerUpdateParams {
     pub id: String,
     pub name: Option<String>,
@@ -75,9 +79,16 @@ where
 {
     /// Create a new StreamerManager.
     pub fn new(repo: Arc<R>, broadcaster: ConfigEventBroadcaster) -> Self {
+        let committed = repo.bind_committed_state(broadcaster.clone());
+        let cache = committed
+            .as_ref()
+            .map(|state| state.cache.clone())
+            .unwrap_or_else(|| Arc::new(StreamerCache::new(broadcaster.clone())));
         Self {
-            metadata: Arc::new(DashMap::new()),
-            url_index: Arc::new(DashMap::new()),
+            metadata: cache.metadata.clone(),
+            url_index: cache.urls.clone(),
+            cache,
+            committed,
             repo,
             broadcaster,
         }
@@ -108,6 +119,43 @@ where
     /// Hydrate best-effort scheduling state while reporting whether every
     /// persisted restart-state repair was confirmed.
     pub(crate) async fn hydrate_with_recovery_status(&self) -> Result<(usize, bool)> {
+        if let Some(store) = &self.committed {
+            return store
+                .transaction("hydrate streamer cache", StatePublication::Silent, |tx| {
+                    Box::pin(async move {
+                        let rows = sqlx::query_as::<_, crate::database::models::StreamerDbModel>(
+                            "SELECT * FROM streamers ORDER BY priority DESC, name",
+                        )
+                        .fetch_all(&mut *tx)
+                        .await?;
+                        let complete = rows
+                            .iter()
+                            .all(|row| StreamerState::parse(&row.state).is_some());
+                        let mut committed = Vec::with_capacity(rows.len());
+                        for row in rows {
+                            if row.state == StreamerState::Live.to_string() {
+                                if let Some(row) =
+                                    crate::database::repositories::StreamerTxOps::set_offline_row(
+                                        &mut *tx, &row.id,
+                                    )
+                                    .await?
+                                {
+                                    committed.push(row);
+                                }
+                            } else {
+                                committed.push(row);
+                            }
+                        }
+                        Ok(StateChange {
+                            value: (committed.len(), complete),
+                            rows: committed,
+                            removed: Vec::new(),
+                        })
+                    })
+                })
+                .await;
+        }
+
         info!("Hydrating streamer metadata from database");
 
         let streamers = self.repo.list_all_streamers().await?;
@@ -148,7 +196,8 @@ where
                 }
             }
 
-            self.metadata.insert(metadata.id.clone(), metadata);
+            self.metadata
+                .insert(metadata.id.clone(), Arc::new(metadata));
         }
 
         self.url_index.clear();
@@ -178,10 +227,14 @@ where
 
         // Convert to DB model and persist
         let db_model = self.metadata_to_db_model(&metadata);
-        self.repo.create_streamer(&db_model).await?;
+        self.repo.create_streamer_for_manager(&db_model).await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
-        self.metadata.insert(metadata.id.clone(), metadata.clone());
+        self.metadata
+            .insert(metadata.id.clone(), Arc::new(metadata.clone()));
         self.url_index
             .insert(metadata.url.to_lowercase(), metadata.id.clone());
 
@@ -204,9 +257,13 @@ where
         self.repo
             .update_streamer_priority(id, &priority.to_string())
             .await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.priority = priority;
         }
 
@@ -222,9 +279,13 @@ where
 
         // Persist to database
         self.repo.clear_streamer_error_state(id).await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
             entry.last_error = None;
@@ -242,8 +303,12 @@ where
         debug!("Clearing last_error for streamer {}", id);
 
         self.repo.clear_streamer_last_error(id).await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         if let Some(mut entry) = self.metadata.get_mut(id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.last_error = None;
         }
 
@@ -260,9 +325,13 @@ where
         self.repo
             .update_streamer_state(id, &state.to_string())
             .await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.state = state;
         }
 
@@ -300,6 +369,19 @@ where
         id: &str,
         publish: ReloadPublish,
     ) -> Result<Option<StreamerMetadata>> {
+        if let Some(state) = &self.committed {
+            state
+                .reload(
+                    id,
+                    if publish == ReloadPublish::MetadataUpdated {
+                        StatePublication::Metadata
+                    } else {
+                        StatePublication::StateOnly
+                    },
+                )
+                .await?;
+            return Ok(self.get_streamer(id));
+        }
         // Preserve resolved runtime-only configuration, which is not stored
         // on the streamer row being reloaded.
         let old_state = self.metadata.get(id).map(|e| {
@@ -330,7 +412,8 @@ where
                     self.url_index.remove(old_url);
                 }
                 self.url_index.insert(new_url, id.to_string());
-                self.metadata.insert(id.to_string(), metadata.clone());
+                self.metadata
+                    .insert(id.to_string(), Arc::new(metadata.clone()));
 
                 // Only emit event if state or active status actually changed
                 let should_emit = match &old_state {
@@ -409,9 +492,13 @@ where
 
         // Persist to database
         self.repo.update_avatar(id, avatar_url.as_deref()).await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.avatar_url = avatar_url;
         }
 
@@ -441,7 +528,10 @@ where
 
         // Convert to DB model and persist
         let db_model = self.metadata_to_db_model(&metadata);
-        self.repo.update_streamer(&db_model).await?;
+        self.repo.update_streamer_for_manager(&db_model).await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
         if let Some(old) = self.metadata.get(&metadata.id) {
@@ -452,7 +542,8 @@ where
             }
             self.url_index.insert(new_url, metadata.id.clone());
         }
-        self.metadata.insert(metadata.id.clone(), metadata.clone());
+        self.metadata
+            .insert(metadata.id.clone(), Arc::new(metadata.clone()));
 
         // Broadcast event
         self.broadcaster
@@ -480,74 +571,20 @@ where
         &self,
         params: StreamerUpdateParams,
     ) -> Result<StreamerMetadata> {
-        let StreamerUpdateParams {
-            id,
-            name,
-            url,
-            platform_config_id,
-            template_config_id,
-            priority,
-            state,
-            streamer_specific_config,
-        } = params;
-        debug!("Partially updating streamer: {}", id);
-
-        // Get current metadata
-        let mut metadata = self
-            .metadata
-            .get(&id)
-            .map(|entry| entry.clone())
-            .ok_or_else(|| crate::Error::not_found("Streamer", id.clone()))?;
-
-        // Apply updates
-        if let Some(new_name) = name {
-            metadata.name = new_name;
+        let id = params.id.clone();
+        let model = self.repo.patch_streamer_for_manager(params).await?;
+        if self.committed.is_none() {
+            self.cache
+                .apply(&StateChange::row((), Some(model)), StatePublication::Silent);
         }
-        if let Some(new_url) = url {
-            let old_url = metadata.url.to_lowercase();
-            let new_url_lower = new_url.to_lowercase();
-            if old_url != new_url_lower {
-                self.url_index.remove(&old_url);
-                self.url_index.insert(new_url_lower, id.clone());
-            }
-            metadata.url = new_url;
+        if self.committed.is_none() {
+            self.broadcaster
+                .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
+                    streamer_id: id.clone(),
+                });
         }
-        if let Some(new_platform) = platform_config_id {
-            metadata.platform_config_id = new_platform;
-        }
-        if let Some(new_template) = template_config_id {
-            metadata.template_config_id = new_template;
-        }
-        if let Some(new_priority) = priority {
-            metadata.priority = new_priority;
-        }
-        if let Some(new_state) = state {
-            metadata.state = new_state;
-
-            // A user-initiated disable retires the error bookkeeping accumulated by
-            // monitoring failures, so re-enabling the streamer starts from a clean slate.
-            if new_state == StreamerState::Disabled {
-                metadata.clear_error_tracking();
-            }
-        }
-        if let Some(new_config) = streamer_specific_config {
-            metadata.streamer_specific_config = new_config;
-        }
-
-        // Convert to DB model and persist
-        let db_model = self.metadata_to_db_model(&metadata);
-        self.repo.update_streamer(&db_model).await?;
-
-        // Update in-memory cache
-        self.metadata.insert(id.to_string(), metadata.clone());
-
-        // Broadcast event
-        self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
-                streamer_id: id.to_string(),
-            });
-
-        Ok(metadata)
+        self.get_streamer(&id)
+            .ok_or_else(|| crate::Error::not_found("Streamer", id))
     }
 
     /// Mark a streamer deleted, so every runtime owner stands down before the
@@ -568,6 +605,9 @@ where
             return Ok(None);
         }
 
+        if self.committed.is_some() {
+            return Ok(self.get_streamer(id));
+        }
         info!("Marked streamer {} deleted; retiring its runtime work", id);
         self.reload_from_repo(id, ReloadPublish::StateOnly).await
     }
@@ -591,6 +631,9 @@ where
     /// `Ok(false)` when the row was already reaped.
     pub async fn reap_deleted(&self, id: &str) -> Result<bool> {
         let reaped = self.repo.delete_marked_streamer(id).await?;
+        if self.committed.is_some() {
+            return Ok(reaped);
+        }
 
         if let Some((_, entry)) = self.metadata.remove(id) {
             self.url_index.remove(&entry.url.to_lowercase());
@@ -619,7 +662,7 @@ where
         self.metadata
             .iter()
             .filter(|entry| entry.is_deleted())
-            .map(|entry| entry.value().clone())
+            .map(|entry| entry.value().as_ref().clone())
             .collect()
     }
 
@@ -631,7 +674,9 @@ where
     /// overrides flow into both the StreamerActor's `StreamerConfig` and the
     /// SessionLifecycle's hysteresis backstop without an extra DB hit.
     pub fn apply_resolved_config(&self, streamer_id: &str, merged: &crate::config::MergedConfig) {
+        let _publication = self.cache.publication.write();
         if let Some(mut entry) = self.metadata.get_mut(streamer_id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.apply_resolved_config(merged);
         }
     }
@@ -646,8 +691,56 @@ where
     /// at all. Callers acting on the user's behalf reject
     /// [`StreamerMetadata::is_deleted`] themselves; the bulk queries below
     /// already do.
+    pub fn get_streamer_snapshot(&self, id: &str) -> Option<Arc<StreamerMetadata>> {
+        self.metadata.get(id).map(|entry| entry.value().clone())
+    }
+
+    /// Import publishes its notifications after releasing the database lease.
+    /// Read the current snapshot under the same short publication lock so an
+    /// intervening write cannot receive an older active/inactive payload.
+    pub(crate) fn publish_imported(
+        &self,
+        id: &str,
+        state_changed: bool,
+        metadata_changed: bool,
+    ) -> Option<StreamerMetadata> {
+        let _publication = self.cache.publication.read();
+        let metadata = self.get_streamer(id)?;
+        if state_changed {
+            self.broadcaster
+                .publish(ConfigUpdateEvent::StreamerStateSyncedFromDb {
+                    streamer_id: id.to_owned(),
+                    is_active: metadata.is_active(),
+                });
+        }
+        if metadata_changed {
+            self.broadcaster
+                .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
+                    streamer_id: id.to_owned(),
+                });
+        }
+        Some(metadata)
+    }
+
+    pub(crate) fn committed_state(&self) -> Option<Arc<CommittedStreamerState>> {
+        self.committed.clone()
+    }
+    pub(crate) fn state_store_with_writer(
+        &self,
+        writer: Arc<crate::database::CommittedWriter>,
+    ) -> Arc<CommittedStreamerState> {
+        self.committed.clone().unwrap_or_else(|| {
+            Arc::new(CommittedStreamerState::with_cache(
+                writer,
+                self.cache.clone(),
+            ))
+        })
+    }
+
     pub fn get_streamer(&self, id: &str) -> Option<StreamerMetadata> {
-        self.metadata.get(id).map(|entry| entry.clone())
+        self.metadata
+            .get(id)
+            .map(|entry| entry.value().as_ref().clone())
     }
 
     /// Get streamer metadata by URL (case-insensitive).
@@ -655,6 +748,7 @@ where
     /// Includes a streamer marked deleted, so the URL a pending retirement still
     /// holds resolves to the row that holds it rather than to nothing.
     pub fn get_streamer_by_url(&self, url: &str) -> Option<StreamerMetadata> {
+        let _publication = self.cache.publication.read();
         let url_lower = url.to_lowercase();
         let id = self.url_index.get(&url_lower)?;
         self.get_streamer(id.value())
@@ -676,7 +770,7 @@ where
         self.metadata
             .iter()
             .filter(|entry| !entry.is_deleted() && predicate(entry.value()))
-            .map(|entry| entry.value().clone())
+            .map(|entry| entry.value().as_ref().clone())
             .collect()
     }
 
@@ -762,9 +856,13 @@ where
         self.repo
             .record_streamer_success(id, last_live_time)
             .await?;
+        if self.committed.is_some() {
+            return Ok(());
+        }
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
+            let entry = Arc::make_mut(entry.value_mut());
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
             entry.last_error = None;
@@ -822,7 +920,7 @@ where
     /// This is useful for actors that need direct read access to streamer metadata
     /// without going through the manager's methods. The returned Arc can be cloned
     /// and shared with actors for efficient metadata lookups.
-    pub fn metadata_store(&self) -> Arc<DashMap<String, StreamerMetadata>> {
+    pub fn metadata_store(&self) -> Arc<DashMap<String, Arc<StreamerMetadata>>> {
         self.metadata.clone()
     }
 
@@ -1364,7 +1462,8 @@ mod tests {
         manager.hydrate().await.unwrap();
 
         {
-            let mut metadata = manager.metadata.get_mut("s1").unwrap();
+            let mut entry = manager.metadata.get_mut("s1").unwrap();
+            let metadata = Arc::make_mut(entry.value_mut());
             metadata.offline_check_count = 7;
             metadata.offline_check_delay_ms = 45_000;
         }
@@ -1445,7 +1544,7 @@ mod tests {
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
-        manager.metadata.get_mut("s1").unwrap().offline_check_count = 2;
+        Arc::make_mut(manager.metadata.get_mut("s1").unwrap().value_mut()).offline_check_count = 2;
 
         let before = manager.get_streamer("s1").unwrap();
         assert_eq!(before.consecutive_error_count, 2);
@@ -1469,7 +1568,7 @@ mod tests {
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
-        manager.metadata.get_mut("s1").unwrap().offline_check_count = 2;
+        Arc::make_mut(manager.metadata.get_mut("s1").unwrap().value_mut()).offline_check_count = 2;
 
         assert!(manager.is_disabled("s1"));
 
@@ -1488,7 +1587,7 @@ mod tests {
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
-        manager.metadata.get_mut("s1").unwrap().offline_check_count = 2;
+        Arc::make_mut(manager.metadata.get_mut("s1").unwrap().value_mut()).offline_check_count = 2;
 
         manager
             .update_state("s1", StreamerState::TemporalDisabled)

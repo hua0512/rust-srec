@@ -2,7 +2,9 @@
 
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::Poll;
 use std::time::Duration;
 
 use futures::FutureExt;
@@ -12,6 +14,10 @@ use tokio::task::JoinSet;
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
+
+tokio::task_local! {
+    static RETAINED_COMPLETION_OWNER: Arc<()>;
+}
 
 /// The first fatal background-task failure observed by the runtime.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +105,7 @@ pub(crate) struct TaskSupervisor {
     tasks: Mutex<JoinSet<&'static str>>,
     cancellation_token: CancellationToken,
     failure_tx: watch::Sender<Option<RuntimeFailure>>,
+    retained_completion_owner: Option<Arc<()>>,
 }
 
 impl Default for TaskSupervisor {
@@ -119,33 +126,89 @@ impl TaskSupervisor {
             tasks: Mutex::new(JoinSet::new()),
             cancellation_token,
             failure_tx,
+            retained_completion_owner: None,
+        }
+    }
+
+    /// Committed operations may spawn further writes during runtime completion.
+    /// Use drain_retained for this owner; aborting it can abandon a COMMIT.
+    pub(crate) fn for_committed_work() -> Self {
+        Self {
+            retained_completion_owner: Some(Arc::new(())),
+            ..Self::new()
         }
     }
 
     /// Spawns `task` under supervisor ownership.
     ///
     /// Returns `false` if shutdown has already started and the task was rejected.
+    /// A committed-work owner still admits nested work from its own completion.
     pub(crate) fn spawn<F>(&self, name: &'static str, task: F) -> bool
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        if !self.accepting.load(Ordering::Acquire) {
+        let completing_owned_work = self
+            .retained_completion_owner
+            .as_ref()
+            .is_some_and(|owner| {
+                RETAINED_COMPLETION_OWNER
+                    .try_with(|current| Arc::ptr_eq(current, owner))
+                    .unwrap_or(false)
+            });
+        if !self.accepting.load(Ordering::Acquire) && !completing_owned_work {
             warn!(task = name, "Rejecting background task during shutdown");
             return false;
         }
 
         let mut tasks = self.tasks.lock();
-        if !self.accepting.load(Ordering::Acquire) {
+        if !self.accepting.load(Ordering::Acquire) && !completing_owned_work {
             warn!(task = name, "Rejecting background task during shutdown");
             return false;
         }
 
         Self::reap_finished(&mut tasks);
+        let retained_owner = self.retained_completion_owner.clone();
         tasks.spawn(async move {
-            task.await;
+            if let Some(owner) = retained_owner {
+                RETAINED_COMPLETION_OWNER.scope(owner, task).await;
+            } else {
+                task.await;
+            }
             name
         });
         true
+    }
+
+    /// Fence new callers and drain committed work, including nested completion
+    /// writes admitted by its own tasks. Poll the JoinSet in place so those
+    /// tasks can spawn while draining, and a dropped drain retains ownership.
+    /// As with shutdown, the timeout reports an overrun but still contains work;
+    /// hard-cap callers must wrap this future in their absolute deadline.
+    pub(crate) async fn drain_retained(&self, timeout: Duration) -> bool {
+        self.accepting.store(false, Ordering::Release);
+        let mut drain = std::pin::pin!(std::future::poll_fn(|cx| {
+            let mut tasks = self.tasks.lock();
+            loop {
+                match tasks.poll_join_next(cx) {
+                    Poll::Ready(Some(Ok(name))) => debug!(task = name, "Committed task stopped"),
+                    Poll::Ready(Some(Err(error))) => {
+                        warn!(%error, "Committed task failed while draining")
+                    }
+                    Poll::Ready(None) => return Poll::Ready(()),
+                    Poll::Pending => return Poll::Pending,
+                }
+            }
+        }));
+        if timeout_at(Instant::now() + timeout, &mut drain)
+            .await
+            .is_ok()
+        {
+            true
+        } else {
+            warn!("Committed task grace period exceeded; awaiting containment");
+            drain.await;
+            false
+        }
     }
 
     /// Spawns a task whose unexpected exit makes the runtime unhealthy.
