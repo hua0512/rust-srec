@@ -141,7 +141,7 @@ importers:
         specifier: ^1.8.2
         version: 1.8.2
       nitro:
-        specifier: latest
+        specifier: 3.0.260903-beta
         version: 3.0.260903-beta
       qrcode.react:
         specifier: ^4.2.0

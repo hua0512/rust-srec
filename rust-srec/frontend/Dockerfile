@@ -27,10 +27,13 @@ FROM node:26-alpine
 
 WORKDIR /app
 
-# Install Nginx and gettext (for envsubst)
-RUN apk add --no-cache nginx gettext tzdata
+# nginx fronts the container, gettext supplies envsubst for the nginx
+# template, tzdata backs the TZ variable, and su-exec lets the entrypoint drop
+# the SSR server to an unprivileged account without a supervisor.
+RUN apk add --no-cache nginx gettext tzdata su-exec
 
-# Copy built assets
+# Copy built assets. They stay root-owned and world-readable: the SSR server
+# runs as `node` and only ever reads them, so it cannot rewrite its own code.
 COPY --from=builder /app/.output ./.output
 
 # Copy nginx configuration template

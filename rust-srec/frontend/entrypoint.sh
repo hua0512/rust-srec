@@ -22,9 +22,17 @@ mkdir -p /run/nginx
 # We only substitute BACKEND_URL to avoid breaking other nginx variables like $host
 envsubst '${BACKEND_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/http.d/default.conf
 
-# Start Nginx in background
+# Start Nginx in background. It keeps root because it binds port 80 and writes
+# /run/nginx; its master process drops the workers that handle request data to
+# the unprivileged `nginx` account by itself.
 nginx
 
-# Start Node.js server
-# We use exec so that the node process receives signals
-exec node .output/server/index.mjs
+# Start the Node.js SSR server as the unprivileged `node` account. Nothing it
+# does needs root, and running it that way leaves it unable to modify its own
+# bundle in /app/.output or the rendered nginx configuration. Everything above
+# needs root and has already run by this point.
+#
+# su-exec switches to the account, points HOME at its home directory, and then
+# replaces itself with node, so node still ends up as PID 1 and the container's
+# stop signal reaches it directly.
+exec su-exec node node .output/server/index.mjs

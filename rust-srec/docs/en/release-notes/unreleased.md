@@ -676,6 +676,10 @@
 
 ## Deployment
 
+- **The web container runs unprivileged, sends browser security headers, and keeps live views connected**
+
+  The web interface container starts its application server under an ordinary account instead of `root`, so a flaw there cannot rewrite the container's own files. Every response, error pages included, now carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, and `Referrer-Policy: strict-origin-when-cross-origin`; if the reverse proxy in front of it already adds these, keep them in one place only. Live progress and log views were cut off after a minute in which the backend sent nothing; an idle connection is now held for an hour, so a quiet system no longer causes constant reconnects. Building the image yourself also no longer picks up a local database file left in the web source folder.
+
 - **The sign-in cookie is protected automatically behind an HTTPS reverse proxy**
 
   When the web interface is published through a reverse proxy that terminates HTTPS, the cookie that keeps you signed in was only marked HTTPS-only if you set `COOKIE_SECURE=true` by hand; otherwise the browser was willing to send it over plain HTTP as well. The scheme reported by the proxy now reaches the app intact, so the cookie is marked HTTPS-only on its own. Plain-HTTP installs on a home or office network keep working as before, and `COOKIE_SECURE` still overrides the automatic choice in either direction. If a production install is still reached over plain HTTP, a warning is logged once to point this out.
