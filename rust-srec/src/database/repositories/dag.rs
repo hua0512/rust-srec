@@ -1,5 +1,7 @@
 //! DAG (Directed Acyclic Graph) repository for pipeline execution.
 
+mod writes;
+
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
@@ -189,32 +191,8 @@ impl DagRepository for SqlxDagRepository {
     // ========================================================================
 
     async fn create_dag(&self, dag: &DagExecutionDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO dag_execution (
-                id, dag_definition, status, streamer_id, session_id, segment_index, segment_source,
-                created_at, updated_at, completed_at, error,
-                total_steps, completed_steps, failed_steps
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&dag.id)
-        .bind(&dag.dag_definition)
-        .bind(&dag.status)
-        .bind(&dag.streamer_id)
-        .bind(&dag.session_id)
-        .bind(dag.segment_index)
-        .bind(&dag.segment_source)
-        .bind(dag.created_at)
-        .bind(dag.updated_at)
-        .bind(dag.completed_at)
-        .bind(&dag.error)
-        .bind(dag.total_steps)
-        .bind(dag.completed_steps)
-        .bind(dag.failed_steps)
-        .execute(&self.write_pool)
-        .await?;
+        let mut connection = self.write_pool.acquire().await?;
+        writes::insert_dag(&mut connection, dag).await?;
         Ok(())
     }
 
@@ -227,32 +205,7 @@ impl DagRepository for SqlxDagRepository {
         retry_on_sqlite_busy("publish_dag", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            sqlx::query(
-                r#"
-                INSERT INTO dag_execution (
-                    id, dag_definition, status, streamer_id, session_id, segment_index,
-                    segment_source, created_at, updated_at, completed_at, error,
-                    total_steps, completed_steps, failed_steps
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&dag.id)
-            .bind(&dag.dag_definition)
-            .bind(&dag.status)
-            .bind(&dag.streamer_id)
-            .bind(&dag.session_id)
-            .bind(dag.segment_index)
-            .bind(&dag.segment_source)
-            .bind(dag.created_at)
-            .bind(dag.updated_at)
-            .bind(dag.completed_at)
-            .bind(&dag.error)
-            .bind(dag.total_steps)
-            .bind(dag.completed_steps)
-            .bind(dag.failed_steps)
-            .execute(&mut *tx)
-            .await?;
+            writes::insert_dag(&mut tx, dag).await?;
 
             for step in steps {
                 let published_status = if step.job_id.is_some() {
@@ -260,63 +213,18 @@ impl DagRepository for SqlxDagRepository {
                 } else {
                     step.status.as_str()
                 };
-                sqlx::query(
-                    r#"
-                    INSERT INTO dag_step_execution (
-                        id, dag_id, step_id, job_id, status,
-                        depends_on_step_ids, outputs, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)
-                    "#,
+                writes::insert_step(
+                    &mut tx,
+                    step,
+                    writes::InsertState::Unattached {
+                        status: published_status,
+                    },
                 )
-                .bind(&step.id)
-                .bind(&step.dag_id)
-                .bind(&step.step_id)
-                .bind(published_status)
-                .bind(&step.depends_on_step_ids)
-                .bind(&step.outputs)
-                .bind(step.created_at)
-                .bind(step.updated_at)
-                .execute(&mut *tx)
                 .await?;
             }
 
             for job in root_jobs {
-                sqlx::query(
-                    r#"
-                    INSERT INTO job (
-                        id, job_type, status, config, state, created_at, updated_at,
-                        input, outputs, priority, streamer_id, session_id,
-                        started_at, completed_at, error, retry_count,
-                        pipeline_id, execution_info, duration_secs, queue_wait_secs,
-                        dag_step_execution_id
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&job.id)
-                .bind(&job.job_type)
-                .bind(&job.status)
-                .bind(&job.config)
-                .bind(&job.state)
-                .bind(job.created_at)
-                .bind(job.updated_at)
-                .bind(&job.input)
-                .bind(&job.outputs)
-                .bind(job.priority)
-                .bind(&job.streamer_id)
-                .bind(&job.session_id)
-                .bind(job.started_at)
-                .bind(job.completed_at)
-                .bind(&job.error)
-                .bind(job.retry_count)
-                .bind(&job.pipeline_id)
-                .bind(&job.execution_info)
-                .bind(job.duration_secs)
-                .bind(job.queue_wait_secs)
-                .bind(&job.dag_step_execution_id)
-                .execute(&mut *tx)
-                .await?;
+                super::job::writes::insert_job(&mut tx, job).await?;
 
                 let Some(step_id) = job.dag_step_execution_id.as_deref() else {
                     return Err(Error::Validation(format!(
@@ -505,26 +413,8 @@ impl DagRepository for SqlxDagRepository {
     // ========================================================================
 
     async fn create_step(&self, step: &DagStepExecutionDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO dag_step_execution (
-                id, dag_id, step_id, job_id, status,
-                depends_on_step_ids, outputs, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&step.id)
-        .bind(&step.dag_id)
-        .bind(&step.step_id)
-        .bind(&step.job_id)
-        .bind(&step.status)
-        .bind(&step.depends_on_step_ids)
-        .bind(&step.outputs)
-        .bind(step.created_at)
-        .bind(step.updated_at)
-        .execute(&self.write_pool)
-        .await?;
+        let mut connection = self.write_pool.acquire().await?;
+        writes::insert_step(&mut connection, step, writes::InsertState::Stored).await?;
         Ok(())
     }
 
@@ -536,26 +426,7 @@ impl DagRepository for SqlxDagRepository {
         let mut tx = begin_immediate(&self.write_pool).await?;
 
         for step in steps {
-            sqlx::query(
-                r#"
-                INSERT INTO dag_step_execution (
-                    id, dag_id, step_id, job_id, status,
-                    depends_on_step_ids, outputs, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&step.id)
-            .bind(&step.dag_id)
-            .bind(&step.step_id)
-            .bind(&step.job_id)
-            .bind(&step.status)
-            .bind(&step.depends_on_step_ids)
-            .bind(&step.outputs)
-            .bind(step.created_at)
-            .bind(step.updated_at)
-            .execute(&mut *tx)
-            .await?;
+            writes::insert_step(&mut tx, step, writes::InsertState::Stored).await?;
         }
 
         tx.commit().await?;
@@ -706,41 +577,7 @@ impl DagRepository for SqlxDagRepository {
         retry_on_sqlite_busy("create_job_for_step", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            sqlx::query(
-                r#"
-                INSERT INTO job (
-                    id, job_type, status, config, state, created_at, updated_at,
-                    input, outputs, priority, streamer_id, session_id,
-                    started_at, completed_at, error, retry_count,
-                    pipeline_id, execution_info, duration_secs, queue_wait_secs,
-                    dag_step_execution_id
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&job.id)
-            .bind(&job.job_type)
-            .bind(&job.status)
-            .bind(&job.config)
-            .bind(&job.state)
-            .bind(job.created_at)
-            .bind(job.updated_at)
-            .bind(&job.input)
-            .bind(&job.outputs)
-            .bind(job.priority)
-            .bind(&job.streamer_id)
-            .bind(&job.session_id)
-            .bind(job.started_at)
-            .bind(job.completed_at)
-            .bind(&job.error)
-            .bind(job.retry_count)
-            .bind(&job.pipeline_id)
-            .bind(&job.execution_info)
-            .bind(job.duration_secs)
-            .bind(job.queue_wait_secs)
-            .bind(&job.dag_step_execution_id)
-            .execute(&mut *tx)
-            .await?;
+            super::job::writes::insert_job(&mut tx, job).await?;
 
             let now = crate::database::time::now_ms();
             let attached = sqlx::query(

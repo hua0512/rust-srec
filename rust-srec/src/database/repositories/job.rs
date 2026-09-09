@@ -1,5 +1,7 @@
 //! Job repository.
 
+pub(super) mod writes;
+
 use crate::database::begin_immediate;
 use crate::database::models::{
     JobCounts, JobDbModel, JobExecutionLogDbModel, JobExecutionProgressDbModel, JobFilters,
@@ -281,41 +283,8 @@ impl JobRepository for SqlxJobRepository {
 
     async fn create_job(&self, job: &JobDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_job", || async {
-            sqlx::query(
-                r#"
-                INSERT INTO job (
-                    id, job_type, status, config, state, created_at, updated_at,
-                    input, outputs, priority, streamer_id, session_id,
-                    started_at, completed_at, error, retry_count,
-                     pipeline_id, execution_info,
-                    duration_secs, queue_wait_secs, dag_step_execution_id
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&job.id)
-            .bind(&job.job_type)
-            .bind(&job.status)
-            .bind(&job.config)
-            .bind(&job.state)
-            .bind(job.created_at)
-            .bind(job.updated_at)
-            .bind(&job.input)
-            .bind(&job.outputs)
-            .bind(job.priority)
-            .bind(&job.streamer_id)
-            .bind(&job.session_id)
-            .bind(job.started_at)
-            .bind(job.completed_at)
-            .bind(&job.error)
-            .bind(job.retry_count)
-            .bind(&job.pipeline_id)
-            .bind(&job.execution_info)
-            .bind(job.duration_secs)
-            .bind(job.queue_wait_secs)
-            .bind(&job.dag_step_execution_id)
-            .execute(&self.write_pool)
-            .await?;
+            let mut connection = self.write_pool.acquire().await?;
+            writes::insert_job(&mut connection, job).await?;
             Ok(())
         })
         .await
@@ -612,53 +581,8 @@ impl JobRepository for SqlxJobRepository {
     async fn update_job(&self, job: &JobDbModel) -> Result<()> {
         retry_on_sqlite_busy("update_job", || async {
             let now = crate::database::time::now_ms();
-            sqlx::query(
-                r#"
-                UPDATE job SET
-                    job_type = ?,
-                    status = ?,
-                    config = ?,
-                    state = ?,
-                    updated_at = ?,
-                    input = ?,
-                    outputs = ?,
-                    priority = ?,
-                    streamer_id = ?,
-                    session_id = ?,
-                    started_at = ?,
-                    completed_at = ?,
-                    error = ?,
-                    retry_count = ?,
-                    pipeline_id = ?,
-                    execution_info = ?,
-                    duration_secs = ?,
-                    queue_wait_secs = ?,
-                    dag_step_execution_id = ?
-                WHERE id = ?
-                "#,
-            )
-            .bind(&job.job_type)
-            .bind(&job.status)
-            .bind(&job.config)
-            .bind(&job.state)
-            .bind(now)
-            .bind(&job.input)
-            .bind(&job.outputs)
-            .bind(job.priority)
-            .bind(&job.streamer_id)
-            .bind(&job.session_id)
-            .bind(job.started_at)
-            .bind(job.completed_at)
-            .bind(&job.error)
-            .bind(job.retry_count)
-            .bind(&job.pipeline_id)
-            .bind(&job.execution_info)
-            .bind(job.duration_secs)
-            .bind(job.queue_wait_secs)
-            .bind(&job.dag_step_execution_id)
-            .bind(&job.id)
-            .execute(&self.write_pool)
-            .await?;
+            let mut connection = self.write_pool.acquire().await?;
+            writes::update_job(&mut connection, job, now, writes::UpdateCondition::Any).await?;
             Ok(())
         })
         .await
@@ -671,56 +595,14 @@ impl JobRepository for SqlxJobRepository {
     ) -> Result<u64> {
         retry_on_sqlite_busy("update_job_if_status", || async {
             let now = crate::database::time::now_ms();
-            let res = sqlx::query(
-                r#"
-                UPDATE job SET
-                    job_type = ?,
-                    status = ?,
-                    config = ?,
-                    state = ?,
-                    updated_at = ?,
-                    input = ?,
-                    outputs = ?,
-                    priority = ?,
-                    streamer_id = ?,
-                    session_id = ?,
-                    started_at = ?,
-                    completed_at = ?,
-                    error = ?,
-                    retry_count = ?,
-                    pipeline_id = ?,
-                    execution_info = ?,
-                    duration_secs = ?,
-                    queue_wait_secs = ?,
-                    dag_step_execution_id = ?
-                WHERE id = ? AND status = ?
-                "#,
+            let mut connection = self.write_pool.acquire().await?;
+            writes::update_job(
+                &mut connection,
+                job,
+                now,
+                writes::UpdateCondition::Status(expected_status),
             )
-            .bind(&job.job_type)
-            .bind(&job.status)
-            .bind(&job.config)
-            .bind(&job.state)
-            .bind(now)
-            .bind(&job.input)
-            .bind(&job.outputs)
-            .bind(job.priority)
-            .bind(&job.streamer_id)
-            .bind(&job.session_id)
-            .bind(job.started_at)
-            .bind(job.completed_at)
-            .bind(&job.error)
-            .bind(job.retry_count)
-            .bind(&job.pipeline_id)
-            .bind(&job.execution_info)
-            .bind(job.duration_secs)
-            .bind(job.queue_wait_secs)
-            .bind(&job.dag_step_execution_id)
-            .bind(&job.id)
-            .bind(expected_status.as_str())
-            .execute(&self.write_pool)
-            .await?;
-
-            Ok(res.rows_affected())
+            .await
         })
         .await
     }

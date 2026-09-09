@@ -383,21 +383,8 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_session", || async {
-            sqlx::query(
-                r#"
-                INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, titles, total_size_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&session.id)
-            .bind(&session.streamer_id)
-            .bind(&session.streamer_name)
-            .bind(session.start_time)
-            .bind(session.end_time)
-            .bind(&session.titles)
-            .bind(session.total_size_bytes)
-            .execute(&self.write_pool)
-            .await?;
+            let mut connection = self.write_pool.acquire().await?;
+            super::session_tx::writes::insert_session(&mut connection, session).await?;
             Ok(())
         })
         .await
@@ -405,18 +392,13 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn end_session(&self, id: &str, end_time: i64) -> Result<()> {
         retry_on_sqlite_busy("end_session", || async {
-            sqlx::query(
-                r#"
-                UPDATE live_sessions 
-                SET end_time = ?,
-                    total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM media_outputs WHERE session_id = ?)
-                WHERE id = ?
-                "#,
+            let mut connection = self.write_pool.acquire().await?;
+            super::session_tx::writes::end_session(
+                &mut connection,
+                id,
+                end_time,
+                super::session_tx::writes::EndCondition::Any,
             )
-            .bind(end_time)
-            .bind(id)
-            .bind(id)
-            .execute(&self.write_pool)
             .await?;
             Ok(())
         })
@@ -515,30 +497,7 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_media_output", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            sqlx::query(
-                r#"
-                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&output.id)
-            .bind(&output.session_id)
-            .bind(&output.parent_media_output_id)
-            .bind(&output.file_path)
-            .bind(&output.file_type)
-            .bind(output.size_bytes)
-            .bind(output.created_at)
-            .execute(&mut *tx)
-            .await?;
-
-            // Update session total size
-            sqlx::query(
-                "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
-            )
-            .bind(output.size_bytes)
-            .bind(&output.session_id)
-            .execute(&mut *tx)
-            .await?;
+            super::session_tx::writes::insert_media_output(&mut tx, output).await?;
 
             tx.commit().await?;
             Ok(())
@@ -560,60 +519,9 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_segment_output", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            sqlx::query(
-                r#"
-                INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&output.id)
-            .bind(&output.session_id)
-            .bind(&output.parent_media_output_id)
-            .bind(&output.file_path)
-            .bind(&output.file_type)
-            .bind(output.size_bytes)
-            .bind(output.created_at)
-            .execute(&mut *tx)
-            .await?;
+            super::session_tx::writes::insert_media_output(&mut tx, output).await?;
 
-            sqlx::query(
-                "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
-            )
-            .bind(output.size_bytes)
-            .bind(&output.session_id)
-            .execute(&mut *tx)
-            .await?;
-
-            sqlx::query(
-                r#"
-                INSERT INTO session_segments (
-                    id,
-                    session_id,
-                    segment_index,
-                    file_path,
-                    duration_secs,
-                    size_bytes,
-                    split_reason_code,
-                    split_reason_details_json,
-                    created_at,
-                    completed_at,
-                    persisted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&segment.id)
-            .bind(&segment.session_id)
-            .bind(segment.segment_index)
-            .bind(&segment.file_path)
-            .bind(segment.duration_secs)
-            .bind(segment.size_bytes)
-            .bind(&segment.split_reason_code)
-            .bind(&segment.split_reason_details_json)
-            .bind(segment.created_at)
-            .bind(segment.completed_at)
-            .bind(segment.persisted_at)
-            .execute(&mut *tx)
-            .await?;
+            super::session_tx::writes::insert_segment(&mut tx, segment).await?;
 
             tx.commit().await?;
             Ok(())
@@ -625,36 +533,7 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("create_session_segment", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            sqlx::query(
-                r#"
-                INSERT INTO session_segments (
-                    id,
-                    session_id,
-                    segment_index,
-                    file_path,
-                    duration_secs,
-                    size_bytes,
-                    split_reason_code,
-                    split_reason_details_json,
-                    created_at,
-                    completed_at,
-                    persisted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&segment.id)
-            .bind(&segment.session_id)
-            .bind(segment.segment_index)
-            .bind(&segment.file_path)
-            .bind(segment.duration_secs)
-            .bind(segment.size_bytes)
-            .bind(&segment.split_reason_code)
-            .bind(&segment.split_reason_details_json)
-            .bind(segment.created_at)
-            .bind(segment.completed_at)
-            .bind(segment.persisted_at)
-            .execute(&mut *tx)
-            .await?;
+            super::session_tx::writes::insert_segment(&mut tx, segment).await?;
 
             tx.commit().await?;
             Ok(())
@@ -727,7 +606,6 @@ impl SessionRepository for SqlxSessionRepository {
             .await?
             .ok_or_else(|| Error::not_found("MediaOutput", id))?;
 
-            // Update session total size
             sqlx::query(
                 "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
             )

@@ -11,6 +11,8 @@ use tracing::warn;
 use crate::Result;
 use crate::database::models::{LiveSessionDbModel, TitleEntry};
 
+pub(super) mod writes;
+
 /// Transactional operations for live sessions.
 ///
 /// These methods operate within an existing transaction and do NOT commit.
@@ -68,21 +70,16 @@ impl SessionTxOps {
         }];
         let titles_json = serde_json::to_string(&initial_titles)?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, titles, total_size_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(session_id)
-        .bind(streamer_id)
-        .bind(streamer_name)
-        .bind(start_time.timestamp_millis())
-        .bind(Option::<i64>::None)
-        .bind(Some(titles_json))
-        .bind(0_i64)
-        .execute(tx)
-        .await?;
+        let session = LiveSessionDbModel {
+            id: session_id.to_owned(),
+            streamer_id: Some(streamer_id.to_owned()),
+            streamer_name: Some(streamer_name.to_owned()),
+            start_time: start_time.timestamp_millis(),
+            end_time: None,
+            titles: Some(titles_json),
+            total_size_bytes: 0,
+        };
+        writes::insert_session(tx, &session).await?;
 
         Ok(())
     }
@@ -93,21 +90,13 @@ impl SessionTxOps {
         session_id: &str,
         end_time: DateTime<Utc>,
     ) -> Result<u64> {
-        let result = sqlx::query(
-            r#"
-            UPDATE live_sessions
-            SET end_time = ?,
-                total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM media_outputs WHERE session_id = ?)
-            WHERE id = ? AND end_time IS NULL
-            "#,
+        writes::end_session(
+            tx,
+            session_id,
+            end_time.timestamp_millis(),
+            writes::EndCondition::ActiveOnly,
         )
-        .bind(end_time.timestamp_millis())
-        .bind(session_id)
-        .bind(session_id)
-        .execute(tx)
-        .await?;
-
-        Ok(result.rows_affected())
+        .await
     }
 
     /// End the active session for a streamer (if any).
