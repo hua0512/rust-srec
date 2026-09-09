@@ -14,6 +14,8 @@ mod telegram;
 mod webhook;
 
 #[cfg(test)]
+mod policy_tests;
+#[cfg(test)]
 mod redaction_tests;
 
 pub use discord::{DiscordChannel, DiscordConfig};
@@ -25,7 +27,7 @@ pub use webhook::{WebhookAuth, WebhookChannel, WebhookConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use super::events::NotificationEvent;
+use super::events::{NotificationEvent, NotificationPriority, RenderedEvent};
 use crate::Result;
 
 /// Trait for notification channels.
@@ -41,7 +43,47 @@ pub trait NotificationChannel: Send + Sync {
     async fn send(&self, event: &NotificationEvent) -> Result<()>;
 
     /// Test the channel configuration.
-    async fn test(&self) -> Result<()>;
+    async fn test(&self) -> Result<()> {
+        self.send(&NotificationEvent::SystemStartup {
+            version: "test".to_string(),
+            timestamp: chrono::Utc::now(),
+        })
+        .await
+    }
+
+    /// The channel's configured locale; unset follows the delivery pass snapshot.
+    fn locale(&self) -> Option<&str> {
+        None
+    }
+
+    /// Default preserves external implementations that own their filtering in send.
+    fn min_priority(&self) -> NotificationPriority {
+        NotificationPriority::Low
+    }
+
+    /// Shared built-in filtering, including transport-specific readiness.
+    fn accepts(&self, event: &NotificationEvent) -> bool {
+        if !self.is_enabled() {
+            return false;
+        }
+        if event.priority() < self.min_priority() {
+            tracing::debug!(channel = self.channel_type(), event_type = event.event_type(),
+                priority = %event.priority(), min_priority = %self.min_priority(),
+                "Skipping notification below channel priority");
+            return false;
+        }
+        true
+    }
+
+    /// Built-ins consume shared text; external channels keep their existing send
+    /// implementation without having to adopt this optional rendering interface.
+    async fn send_rendered(
+        &self,
+        event: &NotificationEvent,
+        _rendered: &RenderedEvent,
+    ) -> Result<()> {
+        self.send(event).await
+    }
 }
 
 /// Channel configuration wrapper.
@@ -104,4 +146,18 @@ impl ChannelConfig {
             Self::Webhook(c) => c.name.as_deref(),
         }
     }
+}
+
+/// Direct sends use the same filtering and payload path as service deliveries.
+async fn send_direct(channel: &dyn NotificationChannel, event: &NotificationEvent) -> Result<()> {
+    if !channel.accepts(event) {
+        return Ok(());
+    }
+    let locale = channel
+        .locale()
+        .map(str::to_owned)
+        .unwrap_or_else(crate::i18n::current_locale);
+    channel
+        .send_rendered(event, &RenderedEvent::new(event, &locale))
+        .await
 }

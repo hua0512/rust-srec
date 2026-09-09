@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::NotificationChannel;
 use super::http::{HttpDelivery, RetryPolicy};
+use super::{NotificationChannel, send_direct};
 use crate::Result;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
+use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
 
 /// Webhook channel configuration.
 #[derive(Clone, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct WebhookConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See `notification::service::parse_channel_locale`.
+    /// See [`NotificationEvent::title_for`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
     /// Request timeout in seconds.
@@ -184,13 +184,27 @@ impl WebhookChannel {
     }
 
     /// Build the JSON payload.
+    #[cfg(test)]
     fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
+        let locale = self
+            .config
+            .locale
+            .clone()
+            .unwrap_or_else(crate::i18n::current_locale);
+        self.build_rendered_payload(event, &RenderedEvent::new(event, &locale))
+    }
+
+    fn build_rendered_payload(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> serde_json::Value {
         json!({
             "event_type": event.event_type(),
             "priority": event.priority().as_int(),
             "priority_label": event.priority().to_string(),
-            "title": event.title_for(self.config.locale.as_deref()),
-            "description": event.description_for(self.config.locale.as_deref()),
+            "title": rendered.title,
+            "description": rendered.description,
             "timestamp": event.timestamp().to_rfc3339(),
             "streamer_id": event.streamer_id(),
             "data": event
@@ -208,23 +222,28 @@ impl NotificationChannel for WebhookChannel {
         self.config.enabled && !self.config.url.is_empty()
     }
 
+    fn locale(&self) -> Option<&str> {
+        self.config.locale.as_deref()
+    }
+
+    fn min_priority(&self) -> NotificationPriority {
+        self.config.min_priority
+    }
+
     async fn send(&self, event: &NotificationEvent) -> Result<()> {
-        if !self.is_enabled() {
+        send_direct(self, event).await
+    }
+
+    async fn send_rendered(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> Result<()> {
+        if !self.accepts(event) {
             return Ok(());
         }
 
-        // Check priority filter
-        if event.priority() < self.config.min_priority {
-            debug!(
-                "Skipping webhook notification for {} (priority {} < {})",
-                event.event_type(),
-                event.priority(),
-                self.config.min_priority
-            );
-            return Ok(());
-        }
-
-        let payload = self.build_payload(event);
+        let payload = self.build_rendered_payload(event, rendered);
         let headers = self.build_headers();
 
         let mut request = match self.config.method.to_uppercase().as_str() {
@@ -244,14 +263,6 @@ impl NotificationChannel for WebhookChannel {
 
         debug!("Webhook notification sent: {}", event.event_type());
         Ok(())
-    }
-
-    async fn test(&self) -> Result<()> {
-        let test_event = NotificationEvent::SystemStartup {
-            version: "test".to_string(),
-            timestamp: chrono::Utc::now(),
-        };
-        self.send(&test_event).await
     }
 }
 
@@ -300,5 +311,32 @@ mod tests {
         let headers = channel.build_headers();
 
         assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
+    }
+
+    #[test]
+    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
+        let event = NotificationEvent::SystemStartup {
+            version: "<test>&😀".into(),
+            timestamp: chrono::Utc::now(),
+        };
+        for locale in ["en", "zh-CN"] {
+            let channel = WebhookChannel::new(WebhookConfig {
+                locale: Some(locale.into()),
+                ..Default::default()
+            });
+            let rendered = RenderedEvent::new(&event, locale);
+            assert_eq!(
+                channel.build_payload(&event),
+                channel.build_rendered_payload(&event, &rendered)
+            );
+            let supplied = RenderedEvent {
+                title: "unique title 😀".into(),
+                description: "unique body <>&".into(),
+            };
+            let payload = channel.build_rendered_payload(&event, &supplied);
+            assert_eq!(payload["title"], supplied.title);
+            assert_eq!(payload["description"], supplied.description);
+            assert_eq!(payload["data"], serde_json::to_value(&event).unwrap());
+        }
     }
 }

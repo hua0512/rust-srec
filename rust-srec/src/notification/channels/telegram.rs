@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::NotificationChannel;
 use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
+use super::{NotificationChannel, send_direct};
 use crate::Result;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
+use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
 
 /// Conservative text budget in UTF-16 units (Telegram entity offsets use this unit).
 const TELEGRAM_MESSAGE_LIMIT: usize = 4096;
@@ -42,7 +42,7 @@ pub struct TelegramConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See `notification::service::parse_channel_locale`.
+    /// See [`NotificationEvent::title_for`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
 }
@@ -98,7 +98,21 @@ impl TelegramChannel {
 
     /// Build literal text plus entities, which Telegram accepts instead of parse_mode.
     /// https://core.telegram.org/bots/api#sendmessage
+    #[cfg(test)]
     fn build_payload(&self, event: &NotificationEvent) -> Result<serde_json::Value> {
+        let locale = self
+            .config
+            .locale
+            .clone()
+            .unwrap_or_else(crate::i18n::current_locale);
+        self.build_rendered_payload(event, &RenderedEvent::new(event, &locale))
+    }
+
+    fn build_rendered_payload(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> Result<serde_json::Value> {
         let formatted = if self.config.parse_mode.is_empty() {
             false
         } else if ["HTML", "Markdown", "MarkdownV2"]
@@ -118,8 +132,8 @@ impl TelegramChannel {
             NotificationPriority::Critical => "\u{1f6a8}",   // 🚨
         };
 
-        let title = event.title_for(self.config.locale.as_deref());
-        let description = event.description_for(self.config.locale.as_deref());
+        let title = &rendered.title;
+        let description = &rendered.description;
         let priority = event.priority().to_string();
         let event_type = event.event_type().to_string();
 
@@ -172,36 +186,33 @@ impl NotificationChannel for TelegramChannel {
         self.config.enabled && !self.config.bot_token.is_empty() && !self.config.chat_id.is_empty()
     }
 
+    fn locale(&self) -> Option<&str> {
+        self.config.locale.as_deref()
+    }
+
+    fn min_priority(&self) -> NotificationPriority {
+        self.config.min_priority
+    }
+
     async fn send(&self, event: &NotificationEvent) -> Result<()> {
-        if !self.is_enabled() {
+        send_direct(self, event).await
+    }
+
+    async fn send_rendered(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> Result<()> {
+        if !self.accepts(event) {
             return Ok(());
         }
 
-        // Check priority filter
-        if event.priority() < self.config.min_priority {
-            debug!(
-                "Skipping Telegram notification for {} (priority {} < {})",
-                event.event_type(),
-                event.priority(),
-                self.config.min_priority
-            );
-            return Ok(());
-        }
-
-        let payload = self.build_payload(event)?;
+        let payload = self.build_rendered_payload(event, rendered)?;
 
         self.send_with_retry(&payload).await?;
 
         debug!("Telegram notification sent: {}", event.event_type());
         Ok(())
-    }
-
-    async fn test(&self) -> Result<()> {
-        let test_event = NotificationEvent::SystemStartup {
-            version: "test".to_string(),
-            timestamp: chrono::Utc::now(),
-        };
-        self.send(&test_event).await
     }
 }
 
@@ -367,5 +378,32 @@ mod tests {
         let (text, retained) = truncate_message(&"😀".repeat(3000), TELEGRAM_MESSAGE_LIMIT);
         assert!(text.ends_with(TRUNCATION_SUFFIX));
         assert_eq!(retained % 2, 0, "no surrogate pair is split");
+    }
+
+    #[test]
+    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
+        let event = NotificationEvent::SystemStartup {
+            version: "<test>&😀".into(),
+            timestamp: chrono::Utc::now(),
+        };
+        for locale in ["en", "zh-CN"] {
+            let channel = TelegramChannel::new(TelegramConfig {
+                locale: Some(locale.into()),
+                ..Default::default()
+            });
+            let rendered = RenderedEvent::new(&event, locale);
+            assert_eq!(
+                channel.build_payload(&event).unwrap(),
+                channel.build_rendered_payload(&event, &rendered).unwrap()
+            );
+            let supplied = RenderedEvent {
+                title: "unique title 😀".into(),
+                description: "unique body <>&".into(),
+            };
+            let payload = channel.build_rendered_payload(&event, &supplied).unwrap();
+            let text = payload["text"].as_str().unwrap();
+            assert!(text.contains(&supplied.title));
+            assert!(text.contains(&supplied.description));
+        }
     }
 }

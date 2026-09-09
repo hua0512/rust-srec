@@ -10,6 +10,7 @@ use tracing::{debug, warn};
 
 use crate::database::models::notification::NotificationDeadLetterDbModel;
 use crate::database::repositories::NotificationRepository;
+use crate::notification::events::RenderCache;
 use crate::utils::task_supervisor::TaskSupervisor;
 
 use super::{
@@ -140,6 +141,7 @@ impl NotificationService {
             None => return,
         };
         let mut circuit_blocked = false;
+        let mut rendered = RenderCache::new();
 
         for channel in channels {
             // Borrow the key for the map lookups below; it is only
@@ -161,7 +163,12 @@ impl NotificationService {
                 continue;
             }
 
-            match channel.channel.send(&pending_snapshot.event).await {
+            let text = rendered.get(&pending_snapshot.event, channel.channel.locale());
+            match channel
+                .channel
+                .send_rendered(&pending_snapshot.event, &text)
+                .await
+            {
                 Ok(()) => {
                     channel.breaker.lock().record_success();
                     if let Some(mut pending) = pending_queue.get_mut(&id)

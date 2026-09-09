@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use tracing::debug;
 
-use super::NotificationChannel;
+use super::{NotificationChannel, send_direct};
 use crate::Result;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
+use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
 
 #[cfg(test)]
 mod smtp_tests;
@@ -47,7 +47,7 @@ pub struct EmailConfig {
     #[serde(default = "default_email_priority")]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See `notification::service::parse_channel_locale`.
+    /// See [`NotificationEvent::title_for`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
 }
@@ -125,6 +125,7 @@ impl EmailChannel {
         }
     }
 
+    #[cfg(test)]
     fn render(&self, event: &NotificationEvent) -> EmailContent {
         // Resolve the process locale once so every MIME part uses one language.
         let locale = self
@@ -200,9 +201,29 @@ impl EmailChannel {
         )
     }
 
+    #[cfg(test)]
     fn build_message(&self, event: &NotificationEvent) -> Result<Message> {
+        let locale = self
+            .config
+            .locale
+            .clone()
+            .unwrap_or_else(crate::i18n::current_locale);
+        self.build_rendered_message(event, &RenderedEvent::new(event, &locale))
+    }
+
+    fn build_rendered_message(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> Result<Message> {
         let from = parse_mailbox(&self.config.from_address, "sender")?;
-        let content = self.render(event);
+        let content = EmailContent {
+            title: rendered.title.clone(),
+            description: rendered.description.clone(),
+            priority: event.priority(),
+            event_type: event.event_type(),
+            timestamp: event.timestamp().to_rfc3339(),
+        };
         let mut builder = Message::builder()
             .from(from)
             .subject(self.build_subject(&content));
@@ -275,23 +296,28 @@ impl NotificationChannel for EmailChannel {
             && !self.config.to_addresses.is_empty()
     }
 
+    fn locale(&self) -> Option<&str> {
+        self.config.locale.as_deref()
+    }
+
+    fn min_priority(&self) -> NotificationPriority {
+        self.config.min_priority
+    }
+
     async fn send(&self, event: &NotificationEvent) -> Result<()> {
-        if !self.is_enabled() {
+        send_direct(self, event).await
+    }
+
+    async fn send_rendered(
+        &self,
+        event: &NotificationEvent,
+        rendered: &RenderedEvent,
+    ) -> Result<()> {
+        if !self.accepts(event) {
             return Ok(());
         }
 
-        // Check priority filter
-        if event.priority() < self.config.min_priority {
-            debug!(
-                "Skipping email notification for {} (priority {} < {})",
-                event.event_type(),
-                event.priority(),
-                self.config.min_priority
-            );
-            return Ok(());
-        }
-
-        let message = self.build_message(event)?;
+        let message = self.build_rendered_message(event, rendered)?;
         let transport = self
             .transport
             .get_or_try_init(|| async { self.build_transport() })
@@ -305,14 +331,6 @@ impl NotificationChannel for EmailChannel {
             "Email notification delivered"
         );
         Ok(())
-    }
-
-    async fn test(&self) -> Result<()> {
-        let test_event = NotificationEvent::SystemStartup {
-            version: "test".to_string(),
-            timestamp: chrono::Utc::now(),
-        };
-        self.send(&test_event).await
     }
 }
 
@@ -424,5 +442,37 @@ mod tests {
             .build_transport()
             .expect_err("partial credentials must be rejected");
         assert!(error.to_string().contains("username and password"));
+    }
+
+    #[test]
+    fn rendered_email_preserves_localized_mime_content_and_escapes_supplied_text() {
+        let event = NotificationEvent::SystemStartup {
+            version: "contract".into(),
+            timestamp: chrono::Utc::now(),
+        };
+        for locale in ["en", "zh-CN"] {
+            let channel = EmailChannel::new(EmailConfig {
+                from_address: "sender@example.test".into(),
+                to_addresses: vec!["receiver@example.test".into()],
+                locale: Some(locale.into()),
+                ..Default::default()
+            });
+            let rendered = RenderedEvent::new(&event, locale);
+            let content = channel.render(&event);
+            assert_eq!(
+                (rendered.title, rendered.description),
+                (content.title, content.description)
+            );
+            let supplied = RenderedEvent {
+                title: "Unique title".into(),
+                description: "Unique <body> & text".into(),
+            };
+            let message = channel.build_rendered_message(&event, &supplied).unwrap();
+            let formatted = String::from_utf8(message.formatted()).unwrap();
+            assert!(formatted.contains("Subject: [rust-srec] Unique title"));
+            assert!(formatted.contains("multipart/alternative"));
+            assert!(formatted.contains("Unique <body> & text"));
+            assert!(formatted.contains("Unique &lt;body&gt; &amp; text"));
+        }
     }
 }
