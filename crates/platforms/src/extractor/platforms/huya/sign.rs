@@ -87,7 +87,7 @@ impl HuyaPlatform {
             | HuyaPlatform::MiniApp
             | HuyaPlatform::Wap => String::from("13.1.0"),
             HuyaPlatform::TvHuyaNftv => String::from("2.6.10"),
-            HuyaPlatform::HuyaPcExe => String::from("7090002"),
+            HuyaPlatform::HuyaPcExe => String::from("7100004"),
             _ => String::from("0.0.0"),
         };
 

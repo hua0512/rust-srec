@@ -18,7 +18,7 @@ impl Huya {
     // WUP User-Agent for Huya
     pub(super) fn get_wup_ua() -> String {
         let ua = crate::extractor::platforms::huya::sign::HuyaPlatform::HuyaPcExe.generate_ua();
-        format!("HYSDK(Windows,30000002)_APP({})_SDK(trans&2.35.0.5996)", ua)
+        format!("HYSDK(Windows,30000002)_APP({})_SDK(trans&2.40.0.6448)", ua)
     }
 
     // /// Get living info via WUP using presenter UID
