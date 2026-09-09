@@ -252,7 +252,7 @@ fn scan_log_files_matching(
     for entry in entries {
         let entry = entry.map_err(ApiError::from)?;
         let path = entry.path();
-        if !path.is_file() {
+        if !entry.file_type().map_err(ApiError::from)?.is_file() {
             continue;
         }
 
@@ -268,18 +268,14 @@ fn scan_log_files_matching(
         let meta = std::fs::metadata(&path).map_err(ApiError::from)?;
         let size_bytes = meta.len();
 
-        let date = if let Some(suffix) = filename.strip_prefix("rust-srec.log.") {
-            chrono::NaiveDate::parse_from_str(suffix, "%Y-%m-%d").ok()
-        } else {
-            None
-        }
-        .or_else(|| {
-            meta.modified().ok().map(|t| {
-                let dt: chrono::DateTime<chrono::Utc> = t.into();
-                dt.date_naive()
+        let date = crate::logging::store::managed_log_date(&filename)
+            .or_else(|| {
+                meta.modified().ok().map(|t| {
+                    let dt: chrono::DateTime<chrono::Utc> = t.into();
+                    dt.date_naive()
+                })
             })
-        })
-        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+            .unwrap_or_else(|| chrono::Utc::now().date_naive());
 
         let file = LogFileInternal {
             date,

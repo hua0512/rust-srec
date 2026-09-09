@@ -3,7 +3,7 @@
 //! This module provides:
 //! - Runtime log level changes via `tracing_subscriber::reload`
 //! - Broadcast channel for real-time log streaming to WebSocket clients
-//! - Log file retention cleanup (deletes logs older than 7 days)
+//! - Coordinated file byte/count limits and seven-day maximum log age
 //! - Local timezone timestamps for logs
 
 use std::io::IsTerminal;
@@ -28,11 +28,11 @@ use tracing_subscriber::{
 use crate::database::repositories::{ConfigRepository, StreamerRepository};
 use crate::utils::fs;
 
+pub(crate) mod store;
+use store::{LogStore, LogWriter};
+
 /// Default log filter directive.
 pub const DEFAULT_LOG_FILTER: &str = "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info";
-
-/// Log retention period in days.
-const LOG_RETENTION_DAYS: i64 = 7;
 
 /// Broadcast channel capacity for log events.
 const LOG_BROADCAST_CAPACITY: usize = 1024;
@@ -68,6 +68,7 @@ pub struct LoggingConfig {
     handle: FilterHandle,
     log_tx: broadcast::Sender<LogEvent>,
     log_dir: PathBuf,
+    store: Arc<LogStore>,
 }
 
 impl LoggingConfig {
@@ -77,15 +78,22 @@ impl LoggingConfig {
     ) -> (Self, reload::Layer<EnvFilter, tracing_subscriber::Registry>) {
         let (layer, handle) = reload::Layer::new(EnvFilter::new("info"));
         let (sender, _) = broadcast::channel(LOG_BROADCAST_CAPACITY);
-        (Self::new(handle, sender, log_dir), layer)
+        let store = Arc::new(LogStore::new(log_dir.clone(), Default::default()));
+        (Self::new(handle, sender, log_dir, store), layer)
     }
 
     /// Create a new logging configuration.
-    fn new(handle: FilterHandle, log_tx: broadcast::Sender<LogEvent>, log_dir: PathBuf) -> Self {
+    fn new(
+        handle: FilterHandle,
+        log_tx: broadcast::Sender<LogEvent>,
+        log_dir: PathBuf,
+        store: Arc<LogStore>,
+    ) -> Self {
         Self {
             handle,
             log_tx,
             log_dir,
+            store,
         }
     }
 
@@ -151,14 +159,18 @@ impl LoggingConfig {
             }
             // Cleanup also runs on startup so frequent restarts cannot prevent
             // retention from ever taking effect.
-            tokio::select! {
-                biased;
-                _ = cancel_token.cancelled() => break,
-                result = cleanup_old_logs(&self.log_dir, LOG_RETENTION_DAYS) => {
-                    if let Err(error) = result {
-                        warn!(%error, "Failed to cleanup old logs");
-                    }
-                }
+            // Reconciliation can prune files. Once admitted, keep its blocking
+            // work owned through cancellation instead of leaving deletion running
+            // after the supervised cleanup task reports that it has stopped.
+            match tokio::task::spawn_blocking({
+                let store = self.store.clone();
+                move || store.reconcile(Utc::now())
+            })
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => eprintln!("Failed to maintain log retention: {error}"),
+                Err(error) => eprintln!("Log retention task failed: {error}"),
             }
             tokio::select! {
                 _ = cancel_token.cancelled() => {
@@ -194,55 +206,6 @@ impl LoggingConfig {
             Err(e) => warn!("Failed to load persisted log filter: {}", e),
         }
     }
-}
-
-/// Delete log files older than the specified number of days.
-async fn cleanup_old_logs(log_dir: &Path, retention_days: i64) -> std::io::Result<()> {
-    let cutoff = Utc::now() - chrono::Duration::days(retention_days);
-    let cutoff_ts = cutoff.timestamp();
-
-    let mut entries = tokio::fs::read_dir(log_dir).await?;
-    let mut deleted_count = 0;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-
-        // Only process log files
-        if !entry.file_type().await?.is_file() {
-            continue;
-        }
-
-        let filename = match path.file_name().and_then(|n| n.to_str()) {
-            Some(name) if name.starts_with("rust-srec.log.") => name,
-            _ => continue,
-        };
-
-        // Extract date from filename (rust-srec.log.YYYY-MM-DD)
-        let date_str = filename.strip_prefix("rust-srec.log.").unwrap_or("");
-
-        // Parse the date
-        if let Ok(file_date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let file_ts = file_date
-                .and_hms_opt(0, 0, 0)
-                .map(|dt| dt.and_utc().timestamp())
-                .unwrap_or(0);
-
-            if file_ts < cutoff_ts {
-                if let Err(e) = tokio::fs::remove_file(&path).await {
-                    warn!(path = %path.display(), error = %e, "Failed to delete old log file");
-                } else {
-                    deleted_count += 1;
-                    debug!(path = %path.display(), "Deleted old log file");
-                }
-            }
-        }
-    }
-
-    if deleted_count > 0 {
-        info!(count = deleted_count, "Cleaned up old log files");
-    }
-
-    Ok(())
 }
 
 /// Custom layer that broadcasts log events.
@@ -310,8 +273,9 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
     // Create log directory if it doesn't exist
     fs::ensure_dir_all_sync_with_op("creating log directory", &log_path)?;
 
-    // Create file appender with daily rotation
+    // File coordination and rotation run on the nonblocking writer's worker.
     let file_appender = build_file_appender(&log_path)?;
+    let store = file_appender.0.clone();
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Create reloadable filter
@@ -343,25 +307,17 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
             crate::Error::Other(format!("Failed to set global default subscriber: {}", e))
         })?;
 
-    let config = Arc::new(LoggingConfig::new(filter_handle, log_tx, log_path));
+    let config = Arc::new(LoggingConfig::new(filter_handle, log_tx, log_path, store));
 
     Ok((config, guard))
 }
 
-fn build_file_appender(
-    log_path: &Path,
-) -> crate::Result<tracing_appender::rolling::RollingFileAppender> {
-    tracing_appender::rolling::RollingFileAppender::builder()
-        .rotation(tracing_appender::rolling::Rotation::DAILY)
-        .filename_prefix("rust-srec.log")
-        .build(log_path)
-        .map_err(|error| {
-            crate::Error::io_path(
-                "opening rotating log file",
-                log_path,
-                std::io::Error::other(error),
-            )
-        })
+fn build_file_appender(log_path: &Path) -> crate::Result<LogWriter> {
+    let store = Arc::new(LogStore::from_env(log_path.to_path_buf())?);
+    store
+        .initialize()
+        .map_err(|error| crate::Error::io_path("opening rotating log file", log_path, error))?;
+    Ok(LogWriter(store))
 }
 
 /// Available logging modules for documentation/API responses.
@@ -388,9 +344,7 @@ mod tests {
     #[test]
     fn appender_open_failure_returns_path_error() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir
-            .path()
-            .join(format!("rust-srec.log.{}", Utc::now().format("%Y-%m-%d")));
+        let path = dir.path().join(".rust-srec.log.lock");
         std::fs::create_dir(&path).unwrap();
         let result = init_logging(dir.path().to_str().unwrap());
         assert!(matches!(
@@ -446,7 +400,8 @@ mod tests {
         let (_, handle) =
             reload::Layer::<EnvFilter, tracing_subscriber::Registry>::new(EnvFilter::new("info"));
         let (tx, _) = broadcast::channel(4);
-        let config = LoggingConfig::new(handle, tx, dir.path().to_owned());
+        let store = Arc::new(LogStore::new(dir.path().to_owned(), Default::default()));
+        let config = LoggingConfig::new(handle, tx, dir.path().to_owned(), store);
         let cancel = CancellationToken::new();
         let cleanup = config.run_retention_cleanup(cancel.clone());
         let verify = async {

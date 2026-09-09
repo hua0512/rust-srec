@@ -90,9 +90,34 @@ The example Compose file rotates container JSON logs. The unit sets `StandardOut
 
 In both deployments the application also writes its own daily-rotated log files to `LOG_DIR`, which the unit points at `/var/log/rust-srec`. Centralize logs when incident history must survive host loss, and filter access because paths and platform metadata may be sensitive even though credentials are redacted by the application.
 
-Application retention runs when the cleanup service starts and then daily,
-removing recognized dated log files older than seven days. It does not currently
-bound bytes per file. File initialization failures return a startup error.
+Application files rotate at UTC date changes and before a write exceeds
+`LOG_MAX_FILE_BYTES` (16 MiB by default). `LOG_MAX_FILES` defaults to 16 and includes
+the current segment. Oldest managed segments are removed to make room, so seven
+days is a maximum age, not a guaranteed retention window. Startup and daily
+cleanup also remove expired or oversized legacy segments. Oversized individual
+records retain a UTF-8 prefix and a truncation marker; stderr reports cumulative
+truncation and write-failure counts at increasing intervals.
+
+Legacy `rust-srec.log.YYYY-MM-DD` files remain readable and can be appended while
+they fit. New segments use `rust-srec.log.YYYY-MM-DD.<20-digit sequence>`. Listing,
+date filters and archives use the filename's UTC date for both forms. Rotation
+never truncates existing files. Archives retain their scanned-length snapshot;
+if retention removes a selected file before it is opened, the download fails
+explicitly rather than silently omitting that file.
+
+Independent instances may share `LOG_DIR`: a short file lock coordinates each
+append, rotation and cleanup. Keep their limits consistent. With matching limits,
+successful maintenance bounds managed named files to 16 × 16 MiB by default;
+unrelated names, symlinks, filesystem overhead and deleted files still held open
+by readers are outside that bound. Do not remove `.rust-srec.log.lock` while any
+instance is running; it also stores the rotation counter. Uncoordinated external
+writers or older application versions sharing the directory cannot honor these
+limits. If capacity cannot be reclaimed, file writes fail instead of exceeding
+the limits; console and live logging remain independent. The nonblocking producer
+queue is retained. Emergency panic writes in abort builds try the same ownership
+without waiting and fall back to stderr on failure.
+
+Invalid limit settings or file initialization failures return a startup error.
 Console colors are enabled only when stdout is a terminal, and live-log event
 formatting is skipped when no client is subscribed.
 

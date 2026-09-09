@@ -84,9 +84,11 @@
 
 ## Logging
 
+- Application log files now have byte and count limits (16 MiB × 16 files by default), with coordinated rotation for instances sharing a directory. Seven-day age cleanup, numbered-file date filters and archive snapshots remain supported. Oversized records are marked as truncated; failed reclamation and emergency panic writes cannot bypass the limits. See [log retention](../operations/monitoring.md#logs).
+
 - **Logging startup and idle behavior are predictable**
 
-  Log-file initialization returns errors instead of panicking, retention runs immediately at cleanup-service startup, redirected console output omits ANSI colors, and live-log formatting is skipped without subscribers. Daily files still have no byte-size cap.
+  Log-file initialization returns errors instead of panicking, retention runs immediately at cleanup-service startup, redirected console output omits ANSI colors, and live-log formatting is skipped without subscribers.
 
 - **Log archives stream within resource limits**
 

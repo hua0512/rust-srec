@@ -19,6 +19,28 @@ fn log_file(dir: &TempDir, contents: &[u8]) -> LogFileInternal {
 }
 
 #[test]
+fn numbered_log_segments_keep_names_and_scanned_lengths_in_zip() {
+    let dir = TempDir::new().unwrap();
+    let name = "rust-srec.log.2001-01-01.00000000000000000001";
+    let path = dir.path().join(name);
+    std::fs::write(&path, b"first\n").unwrap();
+    let files = super::super::scan_log_files_matching(dir.path(), |_| true, 10).unwrap();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .unwrap()
+        .write_all(b"later\n")
+        .unwrap();
+    let mut bytes = Vec::new();
+    build_archive_zip(&files, &mut bytes, &CancellationToken::new()).unwrap();
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut entry = archive.by_name(name).unwrap();
+    let mut text = String::new();
+    entry.read_to_string(&mut text).unwrap();
+    assert_eq!(text, "first\n");
+}
+
+#[test]
 fn streaming_zip_is_readable_and_uses_zip64_local_headers() {
     let dir = TempDir::new().unwrap();
     let file = log_file(&dir, b"first line\nsecond line\n");
