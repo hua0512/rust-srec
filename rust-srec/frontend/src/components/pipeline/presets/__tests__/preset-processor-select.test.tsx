@@ -6,7 +6,9 @@ import type { PropsWithChildren } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
+import type { JobPreset } from '@/api/schemas';
 import { PresetMetaForm } from '../editor/preset-meta-form';
+import type { PresetFormValues } from '../preset-editor';
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: PropsWithChildren) => <a href="#">{children}</a>,
@@ -18,19 +20,21 @@ vi.mock('motion/react', () => ({
   },
 }));
 
-interface PresetValues {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  processor: string;
-  config: Record<string, unknown>;
-}
-
 const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
+const EXISTING_PRESET: JobPreset = {
+  id: 'preset-default-metadata',
+  name: 'add_metadata',
+  description: 'Add metadata',
+  category: 'metadata',
+  processor: 'metadata',
+  config: { title: 'Example' },
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
 function PresetMetaFormHarness() {
-  const form = useForm<PresetValues>({
+  const form = useForm<PresetFormValues>({
     defaultValues: {
       id: '',
       name: '',
@@ -59,7 +63,7 @@ function PresetMetaFormHarness() {
         <form>
           <PresetMetaForm
             form={form}
-            initialData={{ id: 'preset-default-metadata' }}
+            initialData={EXISTING_PRESET}
             title="Edit preset"
             isUpdating={false}
           />

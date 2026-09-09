@@ -4,7 +4,12 @@ import { Trans } from '@lingui/react/macro';
 import { PRESET_TEMPLATES } from '../preset-templates';
 import { ProcessorConfigManager } from '../processors/processor-config-manager';
 import { motion } from 'motion/react';
-import { UseFormReturn } from 'react-hook-form';
+import type {
+  Control,
+  FieldValues,
+  UseFormRegister,
+  UseFormReturn,
+} from 'react-hook-form';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -15,9 +20,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import type { PresetFormValues } from '../preset-editor';
 
 interface PresetConfigFormProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<PresetFormValues>;
   currentProcessor: string;
 }
 
@@ -101,8 +107,12 @@ export function PresetConfigForm({
         <CardContent className="p-6 md:p-8">
           <ProcessorConfigManager
             processorType={currentProcessor}
-            control={form.control}
-            register={form.register}
+            // Each processor form in the registry is typed against its own config object and
+            // addresses it relative to `pathPrefix`. That relation between a prefix and the
+            // surrounding form is not expressible here, so the control crosses the boundary
+            // under the base form type.
+            control={form.control as unknown as Control<FieldValues>}
+            register={form.register as unknown as UseFormRegister<FieldValues>}
             pathPrefix="config"
           />
         </CardContent>

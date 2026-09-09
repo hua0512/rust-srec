@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -23,6 +23,7 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
 const HUYA_PLATFORM_LABELS: Record<
   (typeof HuyaPlatformValues)[number],
@@ -39,12 +40,16 @@ const HUYA_PLATFORM_LABELS: Record<
   random: 'Random',
 };
 
-interface HuyaConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface HuyaConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
+export function HuyaConfigFields<TFieldValues extends FieldValues>({
+  form,
+  fieldName,
+}: HuyaConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-12">
@@ -57,7 +62,7 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
         <div className="space-y-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.api_mode`}
+            name={configPath<TFieldValues>(fieldName, 'api_mode')}
             render={({ field }) => (
               <FormItem>
                 <ConfigFieldLabel accent="indigo" className="mb-3">
@@ -106,7 +111,7 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
 
           <FormField
             control={form.control}
-            name={`${fieldName}.platform`}
+            name={configPath<TFieldValues>(fieldName, 'platform')}
             render={({ field }) => (
               <FormItem>
                 <ConfigFieldLabel accent="indigo" className="mb-3">
@@ -157,7 +162,7 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.force_origin_quality`}
+            name={configPath<TFieldValues>(fieldName, 'force_origin_quality')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-2xl border bg-muted/5 p-5 transition-all hover:bg-muted/10 border-border/50">
                 <div className="space-y-1.5 pr-4">

@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -9,15 +9,15 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
 
-interface EndStreamOnDanmuCloseFieldProps {
-  form: UseFormReturn<any>;
-  name: string;
+interface EndStreamOnDanmuCloseFieldProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  name: Path<TFieldValues>;
 }
 
-export function EndStreamOnDanmuCloseField({
+export function EndStreamOnDanmuCloseField<TFieldValues extends FieldValues>({
   form,
   name,
-}: EndStreamOnDanmuCloseFieldProps) {
+}: EndStreamOnDanmuCloseFieldProps<TFieldValues>) {
   return (
     <FormField
       control={form.control}

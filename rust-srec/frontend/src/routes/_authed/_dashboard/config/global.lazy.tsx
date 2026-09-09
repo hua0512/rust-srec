@@ -11,6 +11,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useForm } from 'react-hook-form';
+import type { Resolver } from 'react-hook-form';
 import {
   useMemo,
   useCallback,
@@ -157,9 +158,12 @@ function GlobalConfigForm({
   );
 
   const form = useForm<GlobalConfigFormValues>({
-    // Work around a react-hook-form resolver type incompatibility (often caused by
-    // `exactOptionalPropertyTypes` + resolver type definitions).
-    resolver: zodResolver(GlobalConfigFormSchema) as any,
+    // The schema fills several fields in with defaults, so its input type makes them
+    // optional while the form binds the parsed shape; the resolver is stated against the
+    // latter.
+    resolver: zodResolver(
+      GlobalConfigFormSchema,
+    ) as Resolver<GlobalConfigFormValues>,
     defaultValues,
     values: defaultValues,
     reValidateMode: 'onBlur',

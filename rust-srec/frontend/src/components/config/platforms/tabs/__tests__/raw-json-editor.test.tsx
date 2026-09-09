@@ -6,10 +6,12 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { Form } from '@/components/ui/form';
 import { PlatformSpecificTab } from '../platform-specific-tab';
 
+type Values = { platform_specific_config: unknown };
+
 function renderEditor(initial?: Record<string, unknown>) {
-  let form!: UseFormReturn<any>;
+  let form!: UseFormReturn<Values>;
   function Harness() {
-    form = useForm<any>({
+    form = useForm<Values>({
       defaultValues: { platform_specific_config: initial },
     });
     return (

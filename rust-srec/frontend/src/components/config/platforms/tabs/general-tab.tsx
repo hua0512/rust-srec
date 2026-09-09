@@ -11,20 +11,24 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Clock } from 'lucide-react';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, UseFormReturn } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CONFIG_INPUT } from '@/components/config/shared/config-field';
 import {
   CONFIG_DESCRIPTION,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface GeneralTabProps {
-  form: UseFormReturn<any>;
+interface GeneralTabProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
   basePath?: string;
 }
 
-export function GeneralTab({ form, basePath }: GeneralTabProps) {
+export function GeneralTab<TFieldValues extends FieldValues>({
+  form,
+  basePath,
+}: GeneralTabProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
     <div className="grid gap-6">
@@ -43,7 +47,7 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <FormField
             control={form.control}
-            name={basePath ? `${basePath}.fetch_delay_ms` : 'fetch_delay_ms'}
+            name={configPath<TFieldValues>(basePath, 'fetch_delay_ms')}
             render={({ field }) => (
               <FormItem className="space-y-2">
                 <ConfigFieldLabel>
@@ -73,9 +77,7 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
           />
           <FormField
             control={form.control}
-            name={
-              basePath ? `${basePath}.download_delay_ms` : 'download_delay_ms'
-            }
+            name={configPath<TFieldValues>(basePath, 'download_delay_ms')}
             render={({ field }) => (
               <FormItem className="space-y-2">
                 <ConfigFieldLabel>

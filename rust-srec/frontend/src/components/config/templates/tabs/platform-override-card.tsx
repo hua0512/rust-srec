@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import {
   Trash2,
@@ -25,10 +25,12 @@ import {
   SharedConfigPaths,
   ExtraTab,
 } from '../../shared-config-editor';
+import { configPath } from '../../shared/form-path';
+import type { TemplateFormValues } from '../template-editor';
 
 interface PlatformOverrideCardProps {
   platformName: string;
-  form: UseFormReturn<any>;
+  form: UseFormReturn<TemplateFormValues>;
   onRemove: () => void;
   engines?: EngineConfig[];
 }
@@ -44,17 +46,29 @@ export function PlatformOverrideCard({
   // Dynamic base path for this override
   const basePath = `platform_overrides.${platformName}`;
 
-  const paths: SharedConfigPaths = {
-    streamSelection: `${basePath}.stream_selection_config`,
-    cookies: `${basePath}.cookies`,
-    proxy: `${basePath}.proxy_config`,
-    retryPolicy: `${basePath}.download_retry_policy`,
+  const paths: SharedConfigPaths<TemplateFormValues> = {
+    streamSelection: configPath<TemplateFormValues>(
+      basePath,
+      'stream_selection_config',
+    ),
+    cookies: configPath<TemplateFormValues>(basePath, 'cookies'),
+    proxy: configPath<TemplateFormValues>(basePath, 'proxy_config'),
+    retryPolicy: configPath<TemplateFormValues>(
+      basePath,
+      'download_retry_policy',
+    ),
     output: basePath, // Output settings are flat on the config object (output_folder, etc.)
     limits: basePath, // Limits are flat
     danmu: basePath, // record_danmu is flat
-    pipeline: `${basePath}.pipeline`,
-    sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
-    pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,
+    pipeline: configPath<TemplateFormValues>(basePath, 'pipeline'),
+    sessionCompletePipeline: configPath<TemplateFormValues>(
+      basePath,
+      'session_complete_pipeline',
+    ),
+    pairedSegmentPipeline: configPath<TemplateFormValues>(
+      basePath,
+      'paired_segment_pipeline',
+    ),
   };
 
   const extraTabs: ExtraTab[] = [

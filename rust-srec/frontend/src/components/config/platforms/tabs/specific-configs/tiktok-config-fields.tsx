@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -10,16 +10,18 @@ import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
 import { Zap } from 'lucide-react';
 import { ConfigSectionHeading } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface TikTokConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface TikTokConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function TikTokConfigFields({
+export function TikTokConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
-}: TikTokConfigFieldsProps) {
+}: TikTokConfigFieldsProps<TFieldValues>) {
   return (
     <div className="space-y-12">
       {/* Extraction Settings Section */}
@@ -31,7 +33,7 @@ export function TikTokConfigFields({
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.force_origin_quality`}
+            name={configPath<TFieldValues>(fieldName, 'force_origin_quality')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-2xl border bg-muted/5 p-5 transition-all hover:bg-muted/10 border-border/50">
                 <div className="space-y-1.5 pr-4">

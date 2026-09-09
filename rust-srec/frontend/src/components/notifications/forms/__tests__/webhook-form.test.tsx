@@ -6,10 +6,12 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { Form } from '@/components/ui/form';
 import { WebhookForm } from '../webhook-form';
 
+type Values = { settings: Record<string, unknown> };
+
 function renderForm(headers: Array<[string, string]>) {
-  let form!: UseFormReturn<any>;
+  let form!: UseFormReturn<Values>;
   function Harness() {
-    form = useForm<any>({
+    form = useForm<Values>({
       defaultValues: {
         settings: {
           url: 'https://example.invalid/hook',

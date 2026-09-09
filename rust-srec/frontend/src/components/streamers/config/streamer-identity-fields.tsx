@@ -1,4 +1,5 @@
-import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -34,9 +35,10 @@ import {
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
 import { cn } from '@/lib/utils';
+import { StreamerFormValues } from '@/api/schemas';
 
 interface StreamerIdentityFieldsProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<StreamerFormValues>;
   onAutofillName?: () => void;
   isAutofilling?: boolean;
 }

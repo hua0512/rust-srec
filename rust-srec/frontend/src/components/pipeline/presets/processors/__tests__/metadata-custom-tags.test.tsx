@@ -2,14 +2,18 @@ import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
+import { z } from 'zod';
 
 import { Form } from '@/components/ui/form';
+import { MetadataConfigSchema } from '../../processor-schemas';
 import { MetadataConfigForm } from '../metadata-config-form';
 
+type Values = z.infer<typeof MetadataConfigSchema>;
+
 function renderForm(custom?: Record<string, string>) {
-  let form!: UseFormReturn<any>;
+  let form!: UseFormReturn<Values>;
   function Harness() {
-    form = useForm<any>({ defaultValues: { custom } });
+    form = useForm<Values>({ defaultValues: { custom } });
     return (
       <Form {...form}>
         <MetadataConfigForm control={form.control} />

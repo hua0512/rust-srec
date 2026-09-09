@@ -21,7 +21,7 @@ const BasePresetFormSchema = z.object({
   config: z.any(),
 });
 
-type PresetFormValues = z.infer<typeof BasePresetFormSchema>;
+export type PresetFormValues = z.infer<typeof BasePresetFormSchema>;
 
 interface PresetEditorProps {
   initialData?: z.infer<typeof JobPresetSchema> | null;

@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { FormControl, FormDescription, FormItem } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,21 +24,22 @@ const DEFAULT_RETRY_POLICY: RetryPolicy = {
   use_jitter: true,
 };
 
-interface RetryPolicyFormProps {
-  form: UseFormReturn<any>;
-  name: string; // path to the field in the form (e.g. "download_retry_policy")
+interface RetryPolicyFormProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the field in the form (e.g. "download_retry_policy"). */
+  name: Path<TFieldValues>;
   mode?: 'json' | 'object';
 }
 
-export function RetryPolicyForm({
+export function RetryPolicyForm<TFieldValues extends FieldValues>({
   form,
   name,
   mode = 'json',
-}: RetryPolicyFormProps) {
+}: RetryPolicyFormProps<TFieldValues>) {
   // Use the custom hook to manage nested form state
   const [policy, updateField] = useNestedFormState(
     form,
-    name as any,
+    name,
     DEFAULT_RETRY_POLICY,
     { mode },
   );

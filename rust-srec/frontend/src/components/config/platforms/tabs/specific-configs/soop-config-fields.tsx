@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -14,13 +14,18 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface SoopConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface SoopConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function SoopConfigFields({ form, fieldName }: SoopConfigFieldsProps) {
+export function SoopConfigFields<TFieldValues extends FieldValues>({
+  form,
+  fieldName,
+}: SoopConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-12">
@@ -32,7 +37,7 @@ export function SoopConfigFields({ form, fieldName }: SoopConfigFieldsProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.username`}
+            name={configPath<TFieldValues>(fieldName, 'username')}
             render={({ field }) => (
               <FormItem className="space-y-4">
                 <ConfigFieldLabel accent="emerald">
@@ -61,7 +66,7 @@ export function SoopConfigFields({ form, fieldName }: SoopConfigFieldsProps) {
 
           <FormField
             control={form.control}
-            name={`${fieldName}.password`}
+            name={configPath<TFieldValues>(fieldName, 'password')}
             render={({ field }) => (
               <FormItem className="space-y-4">
                 <ConfigFieldLabel accent="emerald">
@@ -97,7 +102,7 @@ export function SoopConfigFields({ form, fieldName }: SoopConfigFieldsProps) {
 
         <FormField
           control={form.control}
-          name={`${fieldName}.stream_password`}
+          name={configPath<TFieldValues>(fieldName, 'stream_password')}
           render={({ field }) => (
             <FormItem className="space-y-4 max-w-xl">
               <ConfigFieldLabel accent="emerald">

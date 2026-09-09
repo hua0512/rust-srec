@@ -1,5 +1,5 @@
-import { lazy, ReactNode, Suspense } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import { ReactNode, Suspense } from 'react';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { Trans } from '@lingui/react/macro';
 import { Clock, Combine, Layers } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -11,22 +11,29 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
+import { genericLazy } from '@/lib/generic-component';
 
 // The step editor pulls in the flow-graph library, which is far larger than the rest of a config
 // page, so it only loads once the pipeline tab is opened.
-const PipelineConfigAdapter = lazy(() =>
+const PipelineConfigAdapter = genericLazy<
+  typeof import('./pipeline-config-adapter').PipelineConfigAdapter
+>(() =>
   import('./pipeline-config-adapter').then((m) => ({
     default: m.PipelineConfigAdapter,
   })),
 );
 
-interface PipelineTabsSectionProps {
-  form: UseFormReturn<any>;
+interface PipelineTabsSectionProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
   /**
    * Field holding each pipeline. Omit `paired` or `session` for an entity that has no such
    * field; its tab then explains that the pipeline is unavailable.
    */
-  names: { perSegment: string; paired?: string; session?: string };
+  names: {
+    perSegment: Path<TFieldValues>;
+    paired?: Path<TFieldValues>;
+    session?: Path<TFieldValues>;
+  };
   /**
    * Names stored inside each DAG definition. Supplied by the global settings page, whose
    * partial update also needs an empty DAG rather than `null` to clear a pipeline.
@@ -53,12 +60,12 @@ function EditorFallback() {
  * The three pipeline triggers over the step editor, shared by the global settings page and the
  * template / platform / streamer editors so both offer the same tabs and explanations.
  */
-export function PipelineTabsSection({
+export function PipelineTabsSection<TFieldValues extends FieldValues>({
   form,
   names,
   dagNames,
   mode = 'object',
-}: PipelineTabsSectionProps) {
+}: PipelineTabsSectionProps<TFieldValues>) {
   // Only the global settings page names its DAGs, and its update request treats a `null` field
   // as "leave unchanged", so emptying a pipeline there has to send an empty DAG. Override fields
   // clear to `null`, which is how they express "inherit".
@@ -263,15 +270,15 @@ export function PipelineTabsSection({
   );
 }
 
-function PipelineEditor({
+function PipelineEditor<TFieldValues extends FieldValues>({
   form,
   name,
   dagName,
   mode,
   emptyValue,
 }: {
-  form: UseFormReturn<any>;
-  name: string;
+  form: UseFormReturn<TFieldValues>;
+  name: Path<TFieldValues>;
   dagName?: string;
   mode: 'json' | 'object';
   emptyValue: 'null' | 'dag';

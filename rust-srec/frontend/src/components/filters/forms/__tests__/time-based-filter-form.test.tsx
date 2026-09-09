@@ -6,11 +6,13 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { Form } from '@/components/ui/form';
 import { TimeBasedFilterForm } from '../TimeBasedFilterForm';
 
+type Values = { config: Record<string, unknown> };
+
 function renderForm(config?: Record<string, unknown>) {
-  let form!: UseFormReturn<any>;
+  let form!: UseFormReturn<Values>;
 
   function Harness() {
-    form = useForm<any>({
+    form = useForm<Values>({
       defaultValues: {
         config: {
           days_of_week: [],

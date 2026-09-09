@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -24,16 +24,18 @@ import {
   ConfigFieldLabel,
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
+import { configPath } from '@/components/config/shared/form-path';
 
-interface DouyinConfigFieldsProps {
-  form: UseFormReturn<any>;
-  fieldName: string;
+interface DouyinConfigFieldsProps<TFieldValues extends FieldValues> {
+  form: UseFormReturn<TFieldValues>;
+  /** Path to the object holding this platform's options. */
+  fieldName: Path<TFieldValues>;
 }
 
-export function DouyinConfigFields({
+export function DouyinConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
-}: DouyinConfigFieldsProps) {
+}: DouyinConfigFieldsProps<TFieldValues>) {
   return (
     <div className="space-y-12">
       {/* Extraction Settings Section */}
@@ -45,7 +47,7 @@ export function DouyinConfigFields({
         <div className="grid gap-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.force_origin_quality`}
+            name={configPath<TFieldValues>(fieldName, 'force_origin_quality')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-2xl border bg-muted/5 p-5 transition-all hover:bg-muted/10 border-border/50">
                 <div className="space-y-1.5 pr-4">
@@ -80,7 +82,7 @@ export function DouyinConfigFields({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
-              name={`${fieldName}.double_screen`}
+              name={configPath<TFieldValues>(fieldName, 'double_screen')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
                   <div className="flex items-center gap-3">
@@ -109,7 +111,7 @@ export function DouyinConfigFields({
 
             <FormField
               control={form.control}
-              name={`${fieldName}.force_mobile_api`}
+              name={configPath<TFieldValues>(fieldName, 'force_mobile_api')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
                   <div className="flex items-center gap-3">
@@ -139,7 +141,7 @@ export function DouyinConfigFields({
 
           <FormField
             control={form.control}
-            name={`${fieldName}.skip_interactive_games`}
+            name={configPath<TFieldValues>(fieldName, 'skip_interactive_games')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
                 <div className="flex items-center gap-3">
@@ -179,7 +181,7 @@ export function DouyinConfigFields({
         <div className="space-y-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.ttwid_management_mode`}
+            name={configPath<TFieldValues>(fieldName, 'ttwid_management_mode')}
             render={({ field }) => (
               <FormItem>
                 <ConfigFieldLabel accent="indigo" className="mb-3">
@@ -219,7 +221,7 @@ export function DouyinConfigFields({
 
           <FormField
             control={form.control}
-            name={`${fieldName}.ttwid`}
+            name={configPath<TFieldValues>(fieldName, 'ttwid')}
             render={({ field }) => (
               <FormItem>
                 <div className="flex items-center gap-2 mb-3">
@@ -255,7 +257,10 @@ export function DouyinConfigFields({
 
         <EndStreamOnDanmuCloseField
           form={form}
-          name={`${fieldName}.end_stream_on_danmu_stream_closed`}
+          name={configPath<TFieldValues>(
+            fieldName,
+            'end_stream_on_danmu_stream_closed',
+          )}
         />
       </section>
     </div>

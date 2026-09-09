@@ -41,9 +41,7 @@ export async function handleUploadTerminal(
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Auth state
-  const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
-    user?: any;
-  };
+  const { user: routeUser } = useRouteContext({ from: '/_authed' });
   const { data: sessionData } = useQuery({
     ...sessionQueryOptions,
     enabled: typeof window !== 'undefined',
