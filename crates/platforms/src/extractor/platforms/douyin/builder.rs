@@ -11,8 +11,8 @@ use crate::extractor::platforms::douyin::models::{
 };
 use crate::extractor::platforms::douyin::sign::gen_verify_fp;
 use crate::extractor::platforms::douyin::utils::{
-    GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
-    generate_odin_ttid, get_common_params,
+    GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_odin_ttid,
+    get_common_params,
 };
 use crate::extractor::utils::{extras_get_bool, extras_get_str};
 use crate::media::formats::{MediaFormat, StreamFormat};
@@ -414,7 +414,6 @@ impl<'a> DouyinRequest<'a> {
         self.ensure_ttwid().await?;
         self.ensure_ms_token().await?;
         self.ensure_odin_ttid();
-        self.ensure_nonce();
         Ok(())
     }
 
@@ -459,14 +458,6 @@ impl<'a> DouyinRequest<'a> {
         self.cookies.insert("odin_ttid".to_string(), odin_ttid);
     }
 
-    /// Ensures a valid `__ac_nonce` is present.
-    fn ensure_nonce(&mut self) {
-        if self.cookies.contains_key("__ac_nonce") {
-            return;
-        }
-        let nonce = generate_nonce();
-        self.cookies.insert("__ac_nonce".to_string(), nonce);
-    }
     /// Parses the API response body into `MediaInfo`.
     fn parse_pc_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
         if body.is_empty() {
