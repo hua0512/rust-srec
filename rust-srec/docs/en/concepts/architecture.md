@@ -513,3 +513,26 @@ remain local to each API state.
 The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
 
 Unused `database::batching` and `config::UpdateCoalescer` APIs, `domain::session` entities, streamer mutation helpers, and repository `list_active_streamers` / `resume_session` methods have been removed. Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
+
+### Actor terminal and wake policies
+
+The actor keeps mailbox execution, individual checks, reliable feedback, terminal
+decisions and live wake decisions in separate modules. Batch delegation remains
+available under its existing controls; this decomposition does not enable it.
+Only an explicit streamer-offline terminal policy submits Offline to the monitor.
+Clean completions and user/unknown stops resume verification; shutdown and disable
+park polling. Infrastructure blocks retain their existing persistence and retry
+policy, and feedback acknowledgement still follows effect application.
+
+Explicit check deadlines take precedence over the Live watchdog. For a parked Live
+actor, the earliest watchdog, stale-heartbeat or schedule-boundary wake is then
+bounded below by the failed-watchdog retry floor. Recurring polling retains its
+±10% jitter; smart-wake, admission and immediate deadlines keep their authority.
+
+Rust callers should use `DownloadEndPolicy::Stopped(DownloadStopCause::User)`:
+`UserCancelled` was removed because no caller fulfilled its claimed permanent
+monitoring-stop contract. The wire-level `DownloadStopCause::User` remains.
+`StreamerActor` and `Supervisor` metadata-store constructor parameters now contain
+`Arc<StreamerMetadata>` values. Obtain the shared store from `StreamerManager`;
+actor checks clone an immutable Arc snapshot instead of configuration JSON. Existing
+actor public re-exports and `StatusChecker` borrowed metadata inputs remain intact.

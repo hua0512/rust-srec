@@ -216,7 +216,6 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
 
 pub(super) fn download_end_policy_for_stop(cause: DownloadStopCause) -> DownloadEndPolicy {
     match cause {
-        DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
         DownloadStopCause::StreamerOffline => DownloadEndPolicy::StreamerOffline,
         DownloadStopCause::OutOfSchedule => DownloadEndPolicy::OutOfSchedule,
         other => DownloadEndPolicy::Stopped(other),
@@ -1327,7 +1326,7 @@ mod tests {
     fn clean_completion_preserves_the_requested_stop_policy() {
         assert!(matches!(
             download_end_policy_for_stop(DownloadStopCause::User),
-            DownloadEndPolicy::UserCancelled
+            DownloadEndPolicy::Stopped(DownloadStopCause::User)
         ));
         assert!(matches!(
             download_end_policy_for_stop(DownloadStopCause::StreamerOffline),
