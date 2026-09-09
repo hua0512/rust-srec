@@ -700,14 +700,35 @@ fn validate_import(
             let model = FilterDbModel::new(
                 "validation",
                 filter_type,
-                crate::config::backup::json_value_to_db_string(filter.config.clone()),
+                crate::config::backup::json_value_to_db_string(
+                    crate::config::backup::import_filter_config(
+                        &config.version,
+                        &filter.filter_type,
+                        filter.config.clone(),
+                    ),
+                ),
             );
-            crate::domain::filter::Filter::try_from(&model).map_err(|error| {
+            let parsed = crate::domain::filter::Filter::try_from(&model).map_err(|error| {
                 validation_error(format!(
                     "Invalid {} filter for streamer '{}': {}",
                     filter.filter_type, streamer.name, error
                 ))
             })?;
+            let timezone = match &parsed {
+                crate::domain::filter::Filter::TimeBased(filter) => {
+                    Some(filter.timezone.as_deref())
+                }
+                crate::domain::filter::Filter::Cron(filter) => Some(filter.timezone.as_deref()),
+                _ => None,
+            };
+            if let Some(timezone) = timezone {
+                crate::domain::filter::FilterTimezone::parse(timezone).map_err(|error| {
+                    validation_error(format!(
+                        "Invalid timezone for streamer '{}': {error}",
+                        streamer.name
+                    ))
+                })?;
+            }
         }
     }
 
@@ -1154,8 +1175,15 @@ async fn apply_streamers(
             let filter_type = FilterType::parse(&item_filter.filter_type).ok_or_else(|| {
                 validation_error(format!("Invalid filter type '{}'", item_filter.filter_type))
             })?;
-            let filter =
-                FilterDbModel::new(&model.id, filter_type, db_json(item_filter.config.clone()));
+            let filter = FilterDbModel::new(
+                &model.id,
+                filter_type,
+                db_json(crate::config::backup::import_filter_config(
+                    &config.version,
+                    &item_filter.filter_type,
+                    item_filter.config.clone(),
+                )),
+            );
             persist_filter(tx, &filter).await?;
         }
         changes
@@ -1692,6 +1720,7 @@ async fn apply_users(
 #[cfg(test)]
 mod tests {
     mod email_validation;
+    mod timezone_import;
     use super::*;
     use crate::config::backup::{GlobalConfigExport, JobPresetExport, UserExport};
     use crate::database::{init_pool_with_size, run_migrations};

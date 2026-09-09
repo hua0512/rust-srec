@@ -190,7 +190,7 @@ fn cron_second_occurrence_opens_its_entire_matching_minute() {
 }
 
 #[test]
-fn invalid_timezone_fails_closed_and_omission_preserves_legacy_defaults() {
+fn invalid_timezone_fails_closed_and_explicit_local_preserves_legacy_defaults() {
     let invalid = TimeBasedFilter::new(vec!["Monday".to_owned()], "09:00", "17:00")
         .with_timezone("Mars/Olympus");
     assert!(!invalid.matches(utc("2024-01-01T10:00:00Z")));
@@ -212,14 +212,104 @@ fn invalid_timezone_fails_closed_and_omission_preserves_legacy_defaults() {
         days,
         format!("{:02}:00", local.hour()),
         format!("{:02}:00", (local.hour() + 1) % 24),
-    );
+    )
+    .with_timezone("local");
     assert!(legacy.matches(now));
-    assert!(legacy.timezone.is_none());
-    assert!(
-        serde_json::to_value(&legacy)
-            .unwrap()
-            .get("timezone")
-            .is_none()
-    );
+    assert_eq!(legacy.timezone.as_deref(), Some("local"));
+    assert_eq!(serde_json::to_value(&legacy).unwrap()["timezone"], "local");
     assert!(CronFilter::new("0 34 12 * * *").matches(now));
+}
+
+#[test]
+fn omitted_defaults_are_utc_for_all_matching_and_wake_operations() {
+    assert!(matches!(
+        super::FilterTimezone::parse(None).unwrap(),
+        super::FilterTimezone::Named(chrono_tz::UTC)
+    ));
+    let time = TimeBasedFilter::new(vec!["Monday".into()], "16:00", "17:00");
+    let cron = CronFilter::new("0 * 16 * * Mon");
+    for moment in [
+        "2024-01-01T15:59:00Z",
+        "2024-01-01T16:30:00Z",
+        "2024-01-01T17:00:00Z",
+    ] {
+        let now = utc(moment);
+        assert_eq!(
+            time.matches(now),
+            time.clone().with_timezone("UTC").matches(now)
+        );
+        assert_eq!(time.matches(now), cron.matches(now));
+        assert_eq!(time.next_unmatch_time(now), cron.next_unmatch_time(now));
+    }
+    let before = utc("2024-01-01T15:59:00Z");
+    assert_eq!(
+        time.next_match_time(before),
+        Some(utc("2024-01-01T16:00:00Z"))
+    );
+    assert_eq!(cron.next_match_time(before), time.next_match_time(before));
+}
+
+#[test]
+fn explicit_local_uses_system_calendar_rules_for_match_and_wakes() {
+    use chrono::{Local, TimeZone};
+    assert!(matches!(
+        super::FilterTimezone::parse(Some("local")).unwrap(),
+        super::FilterTimezone::Local
+    ));
+    let days = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let time = TimeBasedFilter::new(days, "12:00", "13:00").with_timezone("local");
+    let cron = CronFilter::with_timezone("0 * 12 * * *", "local");
+    // Resolve each date in Local independently; a current fixed UTC offset must
+    // never stand in for the system's winter/summer timezone rules.
+    for month in [1, 7] {
+        let local = |hour, minute| {
+            Local
+                .with_ymd_and_hms(2024, month, 15, hour, minute, 0)
+                .single()
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        let before = local(11, 59);
+        let start = local(12, 0);
+        let inside = local(12, 30);
+        let end = local(13, 0);
+        assert!(!time.matches(before));
+        assert!(!cron.matches(before));
+        assert!(time.matches(inside));
+        assert!(cron.matches(inside));
+        assert_eq!(time.next_match_time(before), Some(start));
+        assert_eq!(cron.next_match_time(before), Some(start));
+        assert_eq!(time.next_unmatch_time(inside), Some(end));
+        assert_eq!(cron.next_unmatch_time(inside), Some(end));
+        assert!(!time.matches(end));
+        assert!(!cron.matches(end));
+    }
+}
+
+#[test]
+fn invalid_explicit_zones_fail_closed_for_matching_and_wakes() {
+    for timezone in ["", "not/a/timezone"] {
+        for filter in [
+            Filter::TimeBased(
+                TimeBasedFilter::new(vec!["Monday".into()], "00:00", "23:59")
+                    .with_timezone(timezone),
+            ),
+            Filter::Cron(CronFilter::with_timezone("0 * * * * *", timezone)),
+        ] {
+            let now = utc("2024-01-01T12:00:00Z");
+            assert!(!filter.matches("title", "category", now));
+            assert!(filter.next_match_time(now).is_none());
+            assert!(filter.next_unmatch_time(now).is_none());
+        }
+    }
 }

@@ -81,6 +81,19 @@ backend, retain a database backup, inspect those six columns, and repair only va
 time can be established from the backup or other records. Restart to retry the migration. Do not
 replace unknown dates with the current time or edit a shipped migration.
 
+## Filter Timezone Compatibility
+
+Migration `20260909120000` preserves existing TimeBased schedules by materializing
+`"timezone":"local"` where an object configuration omitted timezone or used null.
+Explicit zones, Cron rules, row identities and unrelated configuration members are
+preserved. Malformed/non-object JSON is left unchanged; the migration does not
+repair historical invalid configurations.
+
+New omitted/null timezones mean UTC. Existing TimeBased editor updates that omit
+the member retain the stored zone; explicit null requests UTC. Backup exports now
+use schema `0.1.8` and explicit zones, while older TimeBased backup omissions import
+as local. See [filter timezones](../concepts/configuration.md#filter-timezones-and-boundaries).
+
 ## Rollback
 
 Do not start an older binary against a database already migrated by a newer release unless the release notes explicitly say it is compatible.

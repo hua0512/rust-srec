@@ -3,6 +3,8 @@
 use chrono::{Datelike, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
+use super::timezone::FilterTimezone;
+
 /// Filter type enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -99,7 +101,7 @@ pub struct TimeBasedFilter {
     pub start_time: String,
     /// End time in HH:MM format.
     pub end_time: String,
-    /// Explicit IANA timezone. Omission preserves server-local time for existing filters.
+    /// IANA timezone or `local` for the system timezone. Omission uses UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
 }
@@ -168,16 +170,8 @@ impl TimeBasedFilter {
     ) -> Option<
         impl Iterator<Item = (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> + '_,
     > {
-        let timezone = self
-            .timezone
-            .as_deref()
-            .map(str::parse::<chrono_tz::Tz>)
-            .transpose()
-            .ok()?;
-        let date = match timezone {
-            Some(timezone) => now.with_timezone(&timezone).date_naive(),
-            None => now.with_timezone(&chrono::Local).date_naive(),
-        };
+        let timezone = FilterTimezone::parse(self.timezone.as_deref()).ok()?;
+        let date = timezone.date(now);
         let start = parse_time(&self.start_time)?;
         let end = parse_time(&self.end_time)?;
         if start == end {
@@ -208,24 +202,17 @@ impl TimeBasedFilter {
 /// three hours to its first representable minute; larger discontinuities (including
 /// skipped dates) omit the window. Every query uses this same bounded policy.
 fn resolve_local_boundary(
-    timezone: Option<chrono_tz::Tz>,
+    timezone: FilterTimezone,
     naive: chrono::NaiveDateTime,
     start: bool,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
-    use chrono::{TimeZone, Timelike};
+    use chrono::Timelike;
     for minute in 0..=180 {
         let mut wall = naive.checked_add_signed(chrono::Duration::minutes(minute))?;
         if minute > 0 {
             wall = wall.with_second(0)?.with_nanosecond(0)?;
         }
-        let result = match timezone {
-            Some(timezone) => timezone
-                .from_local_datetime(&wall)
-                .map(|time| time.with_timezone(&chrono::Utc)),
-            None => chrono::Local
-                .from_local_datetime(&wall)
-                .map(|time| time.with_timezone(&chrono::Utc)),
-        };
+        let result = timezone.resolve(wall);
         match result {
             chrono::LocalResult::Single(time) => return Some(time),
             chrono::LocalResult::Ambiguous(earliest, latest) => {
@@ -345,23 +332,11 @@ impl CronFilter {
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Option<chrono::DateTime<chrono::Utc>> {
-        use chrono_tz::Tz;
-
         let schedule = super::compiled::cron(&self.expression).ok()?;
-
-        let tz: Tz = match &self.timezone {
-            Some(tz_str) => tz_str.parse().ok()?,
-            None => chrono_tz::UTC,
-        };
-
-        use chrono::Timelike;
-        let next = next_cron_occurrence(&schedule, tz, now)?;
-        let wall = next.with_timezone(&tz);
-        let minute = next
-            .checked_sub_signed(chrono::Duration::seconds(i64::from(wall.second())))?
-            .checked_sub_signed(chrono::Duration::nanoseconds(i64::from(wall.nanosecond())))?;
-        // A scheduled second activates its whole minute, matching evaluate_cron.
-        Some(if minute > now { minute } else { next })
+        match FilterTimezone::parse(self.timezone.as_deref()).ok()? {
+            FilterTimezone::Named(timezone) => next_cron_match(&schedule, timezone, now),
+            FilterTimezone::Local => next_cron_match(&schedule, chrono::Local, now),
+        }
     }
 
     /// Calculate the next time this filter will stop matching.
@@ -375,46 +350,73 @@ impl CronFilter {
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Option<chrono::DateTime<chrono::Utc>> {
-        use chrono::Timelike as _;
-        use chrono_tz::Tz;
-
         let schedule = super::compiled::cron(&self.expression).ok()?;
-
-        let tz: Tz = match &self.timezone {
-            Some(tz_str) => tz_str.parse().ok()?,
-            None => chrono_tz::UTC,
-        };
-
-        let now_in_tz = now.with_timezone(&tz);
-        use crate::domain::filter::FilterEvaluator;
-        if !FilterEvaluator::time_matches_schedule(&schedule, now_in_tz).ok()? {
-            return None;
+        match FilterTimezone::parse(self.timezone.as_deref()).ok()? {
+            FilterTimezone::Named(timezone) => next_cron_unmatch(&schedule, timezone, now),
+            FilterTimezone::Local => next_cron_unmatch(&schedule, chrono::Local, now),
         }
-        // Advance real instants rather than reconstructing local wall times. Both copies
-        // of a repeated hour are checked, and spring gaps cannot fabricate a minute.
-        let mut minute = now
-            .checked_sub_signed(chrono::Duration::seconds(i64::from(now_in_tz.second())))?
-            .checked_sub_signed(chrono::Duration::nanoseconds(i64::from(
-                now_in_tz.nanosecond(),
-            )))?;
-        const MAX_MINUTES: usize = 60 * 24 * 8;
-        for _ in 0..MAX_MINUTES {
-            minute = minute.checked_add_signed(chrono::Duration::minutes(1))?;
-            if !FilterEvaluator::time_matches_schedule(&schedule, minute.with_timezone(&tz)).ok()? {
-                return Some(minute);
-            }
-        }
-        // Schedule appears to match continuously for a long period; treat as unbounded.
-        None
     }
 }
 
-fn next_cron_occurrence(
+fn next_cron_match<T: chrono::TimeZone + Copy>(
     schedule: &cron::Schedule,
-    timezone: chrono_tz::Tz,
+    tz: T,
     now: chrono::DateTime<chrono::Utc>,
-) -> Option<chrono::DateTime<chrono::Utc>> {
-    use chrono::{TimeZone, Timelike};
+) -> Option<chrono::DateTime<chrono::Utc>>
+where
+    T::Offset: std::fmt::Display,
+{
+    use chrono::Timelike;
+    let next = next_cron_occurrence(schedule, tz, now)?;
+    let wall = next.with_timezone(&tz);
+    let minute = next
+        .checked_sub_signed(chrono::Duration::seconds(i64::from(wall.second())))?
+        .checked_sub_signed(chrono::Duration::nanoseconds(i64::from(wall.nanosecond())))?;
+    // A scheduled second activates its whole minute, matching evaluate_cron.
+    Some(if minute > now { minute } else { next })
+}
+
+fn next_cron_unmatch<T: chrono::TimeZone + Copy>(
+    schedule: &cron::Schedule,
+    tz: T,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>>
+where
+    T::Offset: std::fmt::Display,
+{
+    use chrono::Timelike;
+    let now_in_tz = now.with_timezone(&tz);
+    use crate::domain::filter::FilterEvaluator;
+    if !FilterEvaluator::time_matches_schedule(schedule, now_in_tz.clone()).ok()? {
+        return None;
+    }
+    // Advance real instants rather than reconstructing local wall times. Both copies
+    // of a repeated hour are checked, and spring gaps cannot fabricate a minute.
+    let mut minute = now
+        .checked_sub_signed(chrono::Duration::seconds(i64::from(now_in_tz.second())))?
+        .checked_sub_signed(chrono::Duration::nanoseconds(i64::from(
+            now_in_tz.nanosecond(),
+        )))?;
+    const MAX_MINUTES: usize = 60 * 24 * 8;
+    for _ in 0..MAX_MINUTES {
+        minute = minute.checked_add_signed(chrono::Duration::minutes(1))?;
+        if !FilterEvaluator::time_matches_schedule(schedule, minute.with_timezone(&tz)).ok()? {
+            return Some(minute);
+        }
+    }
+    // Schedule appears to match continuously for a long period; treat as unbounded.
+    None
+}
+
+fn next_cron_occurrence<T: chrono::TimeZone + Copy>(
+    schedule: &cron::Schedule,
+    timezone: T,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>>
+where
+    T::Offset: std::fmt::Display,
+{
+    use chrono::Timelike;
     let local = now.with_timezone(&timezone);
     let normal = schedule
         .after(&local)

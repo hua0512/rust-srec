@@ -73,19 +73,18 @@ fn model_to_response(model: &FilterDbModel) -> ApiResult<FilterResponse> {
 fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiResult<String> {
     match filter_type {
         FilterType::TimeBased => {
-            let mut typed: TimeBasedFilterConfig = serde_json::from_value(config).map_err(|e| {
-                ApiError::validation(format!("Invalid time-based filter config: {}", e))
-            })?;
+            let mut typed: TimeBasedFilterConfig =
+                serde_json::from_value(config.clone()).map_err(|e| {
+                    ApiError::validation(format!("Invalid time-based filter config: {}", e))
+                })?;
             typed.normalize();
             typed
                 .validate()
                 .map_err(|e| ApiError::validation(e.to_string()))?;
-            serde_json::to_string(&typed).map_err(|e| {
-                ApiError::validation(format!(
-                    "Failed to serialize time-based filter config: {}",
-                    e
-                ))
-            })
+            serialize_preserving_extensions(
+                config,
+                serde_json::to_value(&typed).map_err(ApiError::from)?,
+            )
         }
         FilterType::Keyword => {
             let mut typed: KeywordFilterConfig = serde_json::from_value(config).map_err(|e| {
@@ -112,14 +111,15 @@ fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiR
             })
         }
         FilterType::Cron => {
-            let typed: CronFilterConfig = serde_json::from_value(config)
+            let typed: CronFilterConfig = serde_json::from_value(config.clone())
                 .map_err(|e| ApiError::validation(format!("Invalid cron filter config: {}", e)))?;
             typed
                 .validate()
                 .map_err(|e| ApiError::validation(e.to_string()))?;
-            serde_json::to_string(&typed).map_err(|e| {
-                ApiError::validation(format!("Failed to serialize cron filter config: {}", e))
-            })
+            serialize_preserving_extensions(
+                config,
+                serde_json::to_value(&typed).map_err(ApiError::from)?,
+            )
         }
         FilterType::Regex => {
             let typed: RegexFilterConfig = serde_json::from_value(config)
@@ -131,6 +131,32 @@ fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiR
                 ApiError::validation(format!("Failed to serialize regex filter config: {}", e))
             })
         }
+    }
+}
+
+fn serialize_preserving_extensions(mut original: Value, normalized: Value) -> ApiResult<String> {
+    if let (Value::Object(original), Value::Object(normalized)) = (&mut original, normalized) {
+        original.extend(normalized);
+    }
+    serde_json::to_string(&original).map_err(ApiError::from)
+}
+
+/// Older TimeBased editors send complete schedule objects but omit timezone.
+/// Only an absent member preserves the existing zone; explicit null selects UTC.
+fn preserve_omitted_timezone(
+    existing: &FilterDbModel,
+    target: FilterType,
+    replacement: &mut Value,
+) {
+    if existing.filter_type != FilterType::TimeBased.as_str() || target != FilterType::TimeBased {
+        return;
+    }
+    if let Value::Object(replacement) = replacement
+        && !replacement.contains_key("timezone")
+        && let Ok(Value::Object(stored)) = serde_json::from_str(&existing.config)
+        && let Some(timezone) = stored.get("timezone")
+    {
+        replacement.insert("timezone".into(), timezone.clone());
     }
 }
 
@@ -249,7 +275,8 @@ pub async fn get_filter(
     request_body = UpdateFilterRequest,
     responses(
         (status = 200, description = "Filter updated", body = FilterResponse),
-        (status = 404, description = "Filter not found", body = crate::api::error::ApiErrorResponse)
+        (status = 404, description = "Filter not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Filter changed concurrently; retry the request", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -260,56 +287,57 @@ pub async fn update_filter(
 ) -> ApiResult<Json<FilterResponse>> {
     let filter_repo = &state.filter_repository;
 
-    // Get existing filter
-    let mut filter = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
-
-    // Verify streamer ID matches
-    if filter.streamer_id != streamer_id {
-        return Err(ApiError::not_found(format!(
-            "Filter {} not found for streamer {}",
-            id, streamer_id
-        )));
-    }
-
-    let existing_type = FilterType::parse(&filter.filter_type).ok_or_else(|| {
-        ApiError::validation(format!(
-            "Invalid stored filter type: {}",
-            filter.filter_type
-        ))
-    })?;
-
-    let (target_type, type_changed) = match request.filter_type.as_deref() {
-        Some(ft_str) => {
-            let parsed = FilterType::parse(ft_str)
-                .ok_or_else(|| ApiError::validation(format!("Invalid filter type: {}", ft_str)))?;
-            (parsed, parsed.as_str() != filter.filter_type.as_str())
+    // A replacement may preserve stored members. Rebase the original request on
+    // each fresh row so a concurrent update cannot restore an older timezone.
+    for _ in 0..3 {
+        let existing = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
+        if existing.streamer_id != streamer_id {
+            return Err(ApiError::not_found(format!(
+                "Filter {} not found for streamer {}",
+                id, streamer_id
+            )));
         }
-        None => (existing_type, false),
-    };
 
-    if type_changed && request.config.is_none() {
-        return Err(ApiError::validation(
-            "config is required when changing filter_type".to_string(),
-        ));
-    }
+        let existing_type = FilterType::parse(&existing.filter_type).ok_or_else(|| {
+            ApiError::validation(format!(
+                "Invalid stored filter type: {}",
+                existing.filter_type
+            ))
+        })?;
 
-    // Apply type update first (canonical string form).
-    if request.filter_type.is_some() {
+        let target_type = match request.filter_type.as_deref() {
+            Some(ft_str) => FilterType::parse(ft_str)
+                .ok_or_else(|| ApiError::validation(format!("Invalid filter type: {}", ft_str)))?,
+            None => existing_type,
+        };
+        let type_changed = target_type != existing_type;
+
+        if type_changed && request.config.is_none() {
+            return Err(ApiError::validation(
+                "config is required when changing filter_type".to_string(),
+            ));
+        }
+
+        let mut filter = existing.clone();
         filter.filter_type = target_type.as_str().to_string();
+
+        if let Some(mut config_value) = request.config.clone() {
+            preserve_omitted_timezone(&existing, target_type, &mut config_value);
+            filter.config = validate_and_serialize_config(target_type, config_value)?;
+        }
+
+        if filter_repo
+            .update_filter_if_current(&existing, &filter, state.commit_hook())
+            .await
+            .map_err(ApiError::from)?
+        {
+            return model_to_response(&filter).map(Json);
+        }
     }
 
-    // Validate + normalize config if provided.
-    if let Some(config_value) = request.config {
-        filter.config = validate_and_serialize_config(target_type, config_value)?;
-    }
-
-    // Save updates
-    filter_repo
-        .update_filter_with_commit_hook(&filter, state.commit_hook())
-        .await
-        .map_err(ApiError::from)?;
-
-    model_to_response(&filter).map(Json)
+    Err(ApiError::conflict(
+        "Filter changed during the update; retry the request",
+    ))
 }
 
 #[utoipa::path(
@@ -355,3 +383,5 @@ pub async fn delete_filter(
 
 #[cfg(test)]
 mod commit_tests;
+#[cfg(test)]
+mod timezone_tests;

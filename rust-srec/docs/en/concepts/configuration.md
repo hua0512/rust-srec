@@ -362,18 +362,28 @@ already holds a snapshot finishes with that version; a retired load cannot publi
 invalidation. External SQL or writers outside the shared runtime may remain unseen for the
 30-second cache TTL; the first subsequent check refreshes expired data.
 
-Backend `TIME_BASED` filter JSON accepts an optional IANA `timezone`, for example
-`"Europe/Madrid"`. Matching and next-start/next-stop use that zone consistently.
+Backend `TIME_BASED` and `CRON` filter JSON accept an optional IANA `timezone`, for
+example `"Europe/Madrid"`, or `"local"` for the backend system timezone and its DST
+rules. Matching and next-start/next-stop use that zone consistently.
 An overnight interval belongs to its starting weekday. During a repeated clock
 hour, its start uses the earlier instant and its end uses the later instant;
 overlapping or touching intervals remain continuously matched. A missing local
 boundary advances to the first valid minute within three hours; larger skipped
 date windows are omitted.
 
-Omitting the timezone preserves compatibility: time-based rules use the server's
-local timezone, while cron rules default to UTC. Set an explicit timezone when
-comparing the two rule types. The frontend time-based form does not expose this
-field yet. Cron matching has minute granularity, including expressions containing
+Omitted or null timezone now means UTC for both rule types. Upgrades preserve
+existing TimeBased omissions by storing explicit `"local"`; existing explicit
+IANA zones and Cron rules keep their meaning. The frontend time-based form does
+not expose timezone: editing a TimeBased rule without that member preserves its
+stored timezone. Send explicit null or `"UTC"` to switch it to UTC. New filters
+and filter-type changes use the UTC default.
+
+Backup schema `0.1.8` exports an explicit timezone for both types. Importing a
+TimeBased omission from schema `0.1.7` or earlier retains local-time behavior;
+new-schema omissions mean UTC. `"local"` continues to follow the destination
+server's timezone, as legacy local rules did. Unknown JSON members are retained.
+
+Cron matching has minute granularity, including expressions containing
 seconds; stop scans remain bounded to eight days. Parsed cron/regex definitions
 are reused in separate bounded caches; eviction or oversized definitions may
 require recompilation.

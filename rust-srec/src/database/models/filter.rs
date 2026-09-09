@@ -179,7 +179,7 @@ pub struct TimeBasedFilterConfig {
     pub start_time: String,
     /// End time in HH:MM:SS format (HH:MM accepted and normalized; can be next day for overnight ranges)
     pub end_time: String,
-    /// Explicit IANA timezone; absent retains server-local time for existing filters.
+    /// IANA timezone or `local` for the system timezone; absent/null uses UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
 }
@@ -205,11 +205,8 @@ impl TimeBasedFilterConfig {
 
 impl FilterConfigValidator for TimeBasedFilterConfig {
     fn validate(&self) -> Result<(), FilterValidationError> {
-        if let Some(timezone) = &self.timezone {
-            timezone
-                .parse::<chrono_tz::Tz>()
-                .map_err(|_| FilterValidationError::InvalidTimezone(timezone.clone()))?;
-        }
+        crate::domain::filter::FilterTimezone::parse(self.timezone.as_deref())
+            .map_err(|error| FilterValidationError::InvalidTimezone(error.to_string()))?;
         for day in &self.days_of_week {
             if normalize_day_of_week(day).is_none() {
                 return Err(FilterValidationError::InvalidDayOfWeek(day.clone()));
@@ -283,7 +280,7 @@ pub struct CronFilterConfig {
     /// Example: "0 0 22 * * 5,6" (10 PM on Fridays and Saturdays)
     pub expression: String,
 
-    /// Optional timezone (IANA format, e.g., "Asia/Shanghai")
+    /// Optional IANA timezone or `local` for the system timezone.
     /// Defaults to UTC if not specified
     #[serde(default)]
     pub timezone: Option<String>,
@@ -295,15 +292,8 @@ impl FilterConfigValidator for CronFilterConfig {
         cron::Schedule::from_str(&self.expression)
             .map_err(|e| FilterValidationError::InvalidCronExpression(e.to_string()))?;
 
-        // Validate timezone if provided
-        if let Some(ref tz) = self.timezone {
-            tz.parse::<chrono_tz::Tz>().map_err(|_| {
-                FilterValidationError::InvalidTimezone(format!(
-                    "'{}' is not a valid IANA timezone",
-                    tz
-                ))
-            })?;
-        }
+        crate::domain::filter::FilterTimezone::parse(self.timezone.as_deref())
+            .map_err(|error| FilterValidationError::InvalidTimezone(error.to_string()))?;
 
         Ok(())
     }
@@ -755,6 +745,53 @@ mod tests {
         assert_eq!(filter.pattern, "live");
         assert!(filter.case_insensitive);
         assert!(!filter.exclude);
+    }
+
+    #[test]
+    fn null_timezones_convert_to_utc_domain_defaults() {
+        let utc = |value: &str| value.parse::<chrono::DateTime<chrono::Utc>>().unwrap();
+        let before = utc("2024-01-01T15:59:00Z");
+        for kind in [FilterType::TimeBased, FilterType::Cron] {
+            let config = if kind == FilterType::TimeBased {
+                serde_json::json!({"days_of_week":["Monday"], "start_time":"16:00", "end_time":"17:00", "timezone":null})
+            } else {
+                serde_json::json!({"expression":"0 * 16 * * Mon", "timezone":null})
+            };
+            let model = FilterDbModel::new("streamer", kind, config.to_string());
+            let filter = crate::domain::filter::Filter::try_from(&model).unwrap();
+            assert_eq!(
+                filter.next_match_time(before),
+                Some(utc("2024-01-01T16:00:00Z"))
+            );
+            assert!(filter.matches("title", "category", utc("2024-01-01T16:30:00Z")));
+            assert_eq!(
+                filter.next_unmatch_time(utc("2024-01-01T16:30:00Z")),
+                Some(utc("2024-01-01T17:00:00Z"))
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_explicit_zones_remain_restrictive_filters_instead_of_being_skipped() {
+        for kind in [FilterType::TimeBased, FilterType::Cron] {
+            for timezone in ["", "not/a/timezone"] {
+                let config = if kind == FilterType::TimeBased {
+                    serde_json::json!({"days_of_week":["Monday"], "start_time":"00:00", "end_time":"23:59", "timezone":timezone})
+                } else {
+                    serde_json::json!({"expression":"0 * * * * *", "timezone":timezone})
+                };
+                let model = FilterDbModel::new("streamer", kind, config.to_string());
+                let filter = crate::domain::filter::Filter::try_from(&model).expect(
+                    "invalid timezone must not turn the entire restrictive filter into a skipped row",
+                );
+                let now = "2024-01-01T12:00:00Z"
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .unwrap();
+                assert!(!filter.matches("title", "category", now));
+                assert!(filter.next_match_time(now).is_none());
+                assert!(filter.next_unmatch_time(now).is_none());
+            }
+        }
     }
 
     #[test]
