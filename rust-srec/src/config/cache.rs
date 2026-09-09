@@ -75,12 +75,20 @@ impl InFlightState {
 
 pub(super) type InFlightRequest = Arc<InFlightState>;
 
+#[cfg(test)]
+type CompletionHook = Arc<dyn Fn() + Send + Sync>;
+
 /// Thread-safe cache for merged configurations.
 ///
 /// Uses DashMap for concurrent access and supports TTL-based eviction.
 /// Also provides request deduplication to prevent duplicate config resolution.
 #[derive(Clone)]
 pub struct ConfigCache {
+    /// Identity checks, publication and invalidation are one synchronous mutation.
+    /// No caller may hold this lock across an await.
+    mutation: Arc<parking_lot::Mutex<()>>,
+    #[cfg(test)]
+    completion_hook: Arc<parking_lot::Mutex<Option<CompletionHook>>>,
     /// Cache for streamer merged configs.
     streamer_configs: Arc<DashMap<String, CacheEntry>>,
     /// In-flight requests for deduplication.
@@ -98,6 +106,9 @@ impl ConfigCache {
     /// Create a new cache with specified TTL.
     pub fn with_ttl(ttl: Duration) -> Self {
         Self {
+            mutation: Arc::new(parking_lot::Mutex::new(())),
+            #[cfg(test)]
+            completion_hook: Arc::new(parking_lot::Mutex::new(None)),
             streamer_configs: Arc::new(DashMap::new()),
             in_flight: Arc::new(DashMap::new()),
             ttl,
@@ -108,6 +119,7 @@ impl ConfigCache {
     ///
     /// Returns None if not cached or expired.
     pub fn get(&self, streamer_id: &str) -> Option<Arc<ResolvedStreamerContext>> {
+        let _mutation = self.mutation.lock();
         let entry = self.streamer_configs.get(streamer_id)?;
 
         if entry.is_expired() {
@@ -121,12 +133,14 @@ impl ConfigCache {
 
     /// Insert a configuration into the cache.
     pub fn insert(&self, streamer_id: String, context: Arc<ResolvedStreamerContext>) {
+        let _mutation = self.mutation.lock();
         let entry = CacheEntry::new(context, self.ttl);
         self.streamer_configs.insert(streamer_id, entry);
     }
 
     /// Remove a specific streamer's configuration from the cache.
     pub fn invalidate(&self, streamer_id: &str) {
+        let _mutation = self.mutation.lock();
         self.streamer_configs.remove(streamer_id);
         self.cancel_in_flight(
             streamer_id,
@@ -136,6 +150,7 @@ impl ConfigCache {
 
     /// Invalidate all cached configurations.
     pub fn invalidate_all(&self) {
+        let _mutation = self.mutation.lock();
         let reason = "Configuration cache invalidated".to_string();
         for entry in self.in_flight.iter() {
             entry.value().set_result(Err(reason.clone()));
@@ -149,6 +164,7 @@ impl ConfigCache {
     where
         F: Fn(&str) -> bool,
     {
+        let _mutation = self.mutation.lock();
         self.streamer_configs.retain(|key, _| !predicate(key));
         let reason = "Configuration cache invalidated".to_string();
         self.in_flight.retain(|key, request| {
@@ -173,6 +189,7 @@ impl ConfigCache {
 
     /// Remove all expired entries from the cache.
     pub fn cleanup_expired(&self) -> usize {
+        let _mutation = self.mutation.lock();
         let before = self.len();
         self.streamer_configs.retain(|_, entry| !entry.is_expired());
         before - self.len()
@@ -194,6 +211,7 @@ impl ConfigCache {
     /// This is used to deduplicate concurrent requests for the same streamer's config.
     /// Returns (OnceCell, is_new) where is_new indicates if this is a new request.
     pub(super) fn get_or_create_in_flight(&self, streamer_id: &str) -> (InFlightRequest, bool) {
+        let _mutation = self.mutation.lock();
         // Try to get existing in-flight request
         if let Some(existing) = self.in_flight.get(streamer_id) {
             return (existing.clone(), false);
@@ -224,6 +242,7 @@ impl ConfigCache {
         request: &InFlightRequest,
         context: Arc<ResolvedStreamerContext>,
     ) {
+        let _mutation = self.mutation.lock();
         if let Some(current) = self.in_flight.get(streamer_id) {
             if !Arc::ptr_eq(&current, request) {
                 return;
@@ -234,8 +253,15 @@ impl ConfigCache {
 
         if let Some((_, current)) = self.in_flight.remove(streamer_id) {
             if Arc::ptr_eq(&current, request) {
+                #[cfg(test)]
+                if let Some(hook) = self.completion_hook.lock().clone() {
+                    hook();
+                }
                 current.set_result(Ok(context.clone()));
-                self.insert(streamer_id.to_string(), context);
+                // The caller holds the mutation lock; calling public insert here
+                // would acquire it recursively.
+                self.streamer_configs
+                    .insert(streamer_id.to_string(), CacheEntry::new(context, self.ttl));
             } else {
                 self.in_flight.insert(streamer_id.to_string(), current);
             }
@@ -249,6 +275,7 @@ impl ConfigCache {
         request: &InFlightRequest,
         reason: String,
     ) {
+        let _mutation = self.mutation.lock();
         if let Some(current) = self.in_flight.get(streamer_id) {
             if !Arc::ptr_eq(&current, request) {
                 return;
@@ -267,6 +294,7 @@ impl ConfigCache {
     }
 
     /// Cancel an in-flight request, waking any waiters with an error message.
+    /// The caller holds the cache mutation lock.
     fn cancel_in_flight(&self, streamer_id: &str, reason: String) {
         if let Some((_, request)) = self.in_flight.remove(streamer_id) {
             request.set_result(Err(reason));
@@ -345,6 +373,94 @@ mod tests {
         ResolvedStreamerContext {
             config: Arc::new(config),
             credential_source: None,
+        }
+    }
+
+    #[test]
+    fn invalidation_serializes_with_the_gap_between_request_removal_and_cache_insertion() {
+        use std::sync::{Condvar, Mutex, mpsc};
+        let cache = ConfigCache::new();
+        let (request, _) = cache.get_or_create_in_flight("streamer");
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let worker_release = release.clone();
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        *cache.completion_hook.lock() = Some(Arc::new(move || {
+            entered_tx.send(()).unwrap();
+            let (lock, condition) = &*worker_release;
+            let (_released, timeout) = condition
+                .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(2), |released| {
+                    !*released
+                })
+                .unwrap();
+            assert!(!timeout.timed_out(), "completion hook release must arrive");
+        }));
+        let completed_cache = cache.clone();
+        let (completed_tx, completed_rx) = mpsc::sync_channel(1);
+        let completion = std::thread::spawn(move || {
+            completed_cache.complete_in_flight(
+                "streamer",
+                &request,
+                Arc::new(create_test_context()),
+            );
+            completed_tx.send(()).unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // The removed request and the not-yet-inserted value remain one mutation;
+        // invalidation cannot mistake that interval for an empty cache.
+        assert!(cache.mutation.try_lock().is_none());
+        let invalidated_cache = cache.clone();
+        let (started_tx, started_rx) = mpsc::sync_channel(1);
+        let (invalidated_tx, invalidated_rx) = mpsc::sync_channel(1);
+        let invalidation = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            invalidated_cache.invalidate("streamer");
+            invalidated_tx.send(()).unwrap();
+        });
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (lock, condition) = &*release;
+        *lock.lock().unwrap() = true;
+        condition.notify_all();
+        completed_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        invalidated_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        completion.join().unwrap();
+        invalidation.join().unwrap();
+        assert!(
+            cache.get("streamer").is_none(),
+            "invalidation must remove the old resolved configuration"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidated_resolution_cannot_replace_or_fail_a_newer_generation() {
+        for scope in 0..3 {
+            let cache = ConfigCache::new();
+            let (old, _) = cache.get_or_create_in_flight("streamer");
+            match scope {
+                0 => cache.invalidate("streamer"),
+                1 => cache.invalidate_all(),
+                _ => cache.invalidate_where(|id| id == "streamer"),
+            }
+            let (new, created) = cache.get_or_create_in_flight("streamer");
+            assert!(created);
+            cache.fail_in_flight("streamer", &old, "late failure".into());
+            cache.complete_in_flight("streamer", &old, Arc::new(create_test_context()));
+            assert!(cache.has_in_flight("streamer"));
+            assert!(cache.get("streamer").is_none());
+            let current = Arc::new(create_test_context());
+            cache.complete_in_flight("streamer", &new, current.clone());
+            assert!(Arc::ptr_eq(&cache.get("streamer").unwrap(), &current));
+            assert!(
+                tokio::time::timeout(Duration::from_secs(1), cache.wait_for_in_flight(&old))
+                    .await
+                    .unwrap()
+                    .is_err()
+            );
+            let received =
+                tokio::time::timeout(Duration::from_secs(1), cache.wait_for_in_flight(&new))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(Arc::ptr_eq(&received, &current));
         }
     }
 

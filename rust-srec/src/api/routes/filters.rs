@@ -15,6 +15,7 @@ use crate::database::models::{
     CategoryFilterConfig, CronFilterConfig, FilterConfigValidator, FilterDbModel, FilterType,
     KeywordFilterConfig, RegexFilterConfig, TimeBasedFilterConfig,
 };
+use crate::database::repositories::filter::FilterCommitHook;
 
 #[derive(Clone)]
 pub struct FilterRouteState {
@@ -33,6 +34,17 @@ impl FromRef<AppState> for FilterRouteState {
             filter_repository: state.filter_repository.clone(),
             config_service: state.config_service.clone(),
         }
+    }
+}
+
+impl FilterRouteState {
+    fn commit_hook(&self) -> FilterCommitHook {
+        let config_service = self.config_service.clone();
+        Box::new(move |owners| {
+            for owner in owners {
+                config_service.notify_streamer_filters_updated(owner);
+            }
+        })
     }
 }
 
@@ -186,14 +198,9 @@ pub async fn create_filter(
 
     // Save to DB
     filter_repo
-        .create_filter(&filter)
+        .create_filter_with_commit_hook(&filter, state.commit_hook())
         .await
         .map_err(ApiError::from)?;
-
-    // Notify scheduler/runtime that filter rules changed for this streamer.
-    state
-        .config_service
-        .notify_streamer_filters_updated(&streamer_id);
 
     model_to_response(&filter).map(|response| (StatusCode::CREATED, Json(response)))
 }
@@ -298,13 +305,9 @@ pub async fn update_filter(
 
     // Save updates
     filter_repo
-        .update_filter(&filter)
+        .update_filter_with_commit_hook(&filter, state.commit_hook())
         .await
         .map_err(ApiError::from)?;
-
-    state
-        .config_service
-        .notify_streamer_filters_updated(&streamer_id);
 
     model_to_response(&filter).map(Json)
 }
@@ -340,16 +343,15 @@ pub async fn delete_filter(
     }
 
     filter_repo
-        .delete_filter(&id)
+        .delete_filter_with_commit_hook(&id, state.commit_hook())
         .await
         .map_err(ApiError::from)?;
-
-    state
-        .config_service
-        .notify_streamer_filters_updated(&streamer_id);
 
     Ok(Json(serde_json::json!({
         "success": true,
         "message": format!("Filter {} deleted", id)
     })))
 }
+
+#[cfg(test)]
+mod commit_tests;

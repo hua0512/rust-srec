@@ -16,11 +16,14 @@ use crate::scheduler::actor::{
 };
 use crate::streamer::StreamerMetadata;
 
-fn metadata(id: &str) -> Arc<DashMap<String, StreamerMetadata>> {
+fn metadata(id: &str) -> Arc<DashMap<String, Arc<StreamerMetadata>>> {
     let mut row = StreamerDbModel::new(id, "https://example.com/live", "platform");
     row.id = id.to_owned();
     let map = Arc::new(DashMap::new());
-    map.insert(id.to_owned(), StreamerMetadata::from_db_model(&row));
+    map.insert(
+        id.to_owned(),
+        Arc::new(StreamerMetadata::from_db_model(&row)),
+    );
     map
 }
 

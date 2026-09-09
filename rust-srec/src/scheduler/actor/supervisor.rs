@@ -90,7 +90,7 @@ pub struct Supervisor {
     /// Pending restarts (actors waiting for backoff).
     pending_restarts: Vec<PendingRestart>,
     /// Shared metadata store (reference to StreamerManager's DashMap).
-    metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+    metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
     /// Streamer config cache for restarts.
     streamer_configs: HashMap<String, StreamerConfig>,
     /// Platform config cache for restarts.
@@ -110,7 +110,7 @@ impl Supervisor {
     /// The metadata_store should be obtained from `StreamerManager::metadata_store()`.
     pub fn new(
         cancellation_token: CancellationToken,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
     ) -> Self {
         Self::with_config(
             cancellation_token,
@@ -125,7 +125,7 @@ impl Supervisor {
     pub fn with_config(
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
     ) -> Self {
         Self::with_checkers(
             cancellation_token,
@@ -143,7 +143,7 @@ impl Supervisor {
     pub fn with_checkers(
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
-        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
         status_checker: Arc<dyn StatusChecker>,
         batch_checker: Arc<dyn BatchChecker>,
     ) -> Self {
@@ -935,7 +935,7 @@ mod tests {
         }
     }
 
-    fn create_test_metadata_store() -> Arc<DashMap<String, StreamerMetadata>> {
+    fn create_test_metadata_store() -> Arc<DashMap<String, Arc<StreamerMetadata>>> {
         Arc::new(DashMap::new())
     }
 
@@ -976,7 +976,7 @@ mod tests {
 
         // Add metadata to the shared store first
         let metadata = create_test_metadata("test-1");
-        metadata_store.insert("test-1".to_string(), metadata);
+        metadata_store.insert("test-1".to_string(), Arc::new(metadata));
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         let config = create_test_config();
@@ -997,7 +997,7 @@ mod tests {
 
         // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
-        metadata_store.insert("test-1".to_string(), metadata);
+        metadata_store.insert("test-1".to_string(), Arc::new(metadata));
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         let config = create_test_config();
@@ -1036,7 +1036,7 @@ mod tests {
 
         // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
-        metadata_store.insert("test-1".to_string(), metadata);
+        metadata_store.insert("test-1".to_string(), Arc::new(metadata));
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         let config = create_test_config();
@@ -1055,7 +1055,10 @@ mod tests {
     async fn test_supervisor_handle_graceful_stop() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        metadata_store.insert(
+            "test-1".to_string(),
+            Arc::new(create_test_metadata("test-1")),
+        );
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
         let handle = supervisor
@@ -1075,7 +1078,10 @@ mod tests {
     async fn test_supervisor_handle_cancellation() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        metadata_store.insert(
+            "test-1".to_string(),
+            Arc::new(create_test_metadata("test-1")),
+        );
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
         let handle = supervisor
@@ -1098,7 +1104,7 @@ mod tests {
 
         // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
-        metadata_store.insert("test-1".to_string(), metadata);
+        metadata_store.insert("test-1".to_string(), Arc::new(metadata));
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
@@ -1128,7 +1134,10 @@ mod tests {
     async fn panicking_actor_is_reaped_and_scheduled_for_restart() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("panics".to_string(), create_test_metadata("panics"));
+        metadata_store.insert(
+            "panics".to_string(),
+            Arc::new(create_test_metadata("panics")),
+        );
 
         let mut supervisor = Supervisor::with_checkers(
             token.clone(),
@@ -1171,7 +1180,10 @@ mod tests {
     async fn stale_completion_neither_evicts_nor_restarts_the_replacement() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        metadata_store.insert(
+            "test-1".to_string(),
+            Arc::new(create_test_metadata("test-1")),
+        );
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
@@ -1208,7 +1220,10 @@ mod tests {
     async fn crash_reported_after_removal_is_not_restarted() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        metadata_store.insert(
+            "test-1".to_string(),
+            Arc::new(create_test_metadata("test-1")),
+        );
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
@@ -1241,7 +1256,10 @@ mod tests {
     async fn execute_restart_keeps_the_restart_config_when_the_id_is_taken() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("test-1".to_string(), create_test_metadata("test-1"));
+        metadata_store.insert(
+            "test-1".to_string(),
+            Arc::new(create_test_metadata("test-1")),
+        );
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         supervisor
@@ -1281,7 +1299,7 @@ mod tests {
 
         // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
-        metadata_store.insert("test-1".to_string(), metadata);
+        metadata_store.insert("test-1".to_string(), Arc::new(metadata));
 
         let supervisor_config = SupervisorConfig {
             restart_config: RestartTrackerConfig {
@@ -1328,7 +1346,7 @@ mod tests {
         for i in 0..3 {
             let id = format!("test-{}", i);
             let metadata = create_test_metadata(&id);
-            metadata_store.insert(id, metadata);
+            metadata_store.insert(id, Arc::new(metadata));
         }
 
         let config = SupervisorConfig {
@@ -1358,7 +1376,10 @@ mod tests {
     async fn shutdown_reaps_forced_actor_before_returning() {
         let token = CancellationToken::new();
         let metadata_store = create_test_metadata_store();
-        metadata_store.insert("blocked".to_string(), create_test_metadata("blocked"));
+        metadata_store.insert(
+            "blocked".to_string(),
+            Arc::new(create_test_metadata("blocked")),
+        );
 
         let check_started = Arc::new(tokio::sync::Notify::new());
         let check_dropped = Arc::new(AtomicBool::new(false));
@@ -1431,7 +1452,7 @@ mod tests {
         for i in 0..2 {
             let id = format!("streamer-{}", i);
             let metadata = create_test_metadata(&id);
-            metadata_store.insert(id, metadata);
+            metadata_store.insert(id, Arc::new(metadata));
         }
 
         let config = SupervisorConfig {
@@ -1527,7 +1548,7 @@ mod tests {
 
         // Add metadata to the shared store
         let metadata = create_test_metadata("test-priority");
-        metadata_store.insert("test-priority".to_string(), metadata);
+        metadata_store.insert("test-priority".to_string(), Arc::new(metadata));
 
         let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
@@ -1592,7 +1613,10 @@ mod tests {
     async fn fatal_download_message_stops_without_scheduling_restart() {
         let token = CancellationToken::new();
         let metadata = create_test_metadata_store();
-        metadata.insert("removed".to_owned(), create_test_metadata("removed"));
+        metadata.insert(
+            "removed".to_owned(),
+            Arc::new(create_test_metadata("removed")),
+        );
         let mut supervisor = Supervisor::new(token.clone(), metadata.clone());
         let handle = supervisor
             .spawn_streamer("removed", create_test_config(), None)
@@ -1626,7 +1650,10 @@ mod tests {
     async fn permanent_crashes_stop_after_ten_even_when_failure_window_expires() {
         let token = CancellationToken::new();
         let metadata = create_test_metadata_store();
-        metadata.insert("panics".to_owned(), create_test_metadata("panics"));
+        metadata.insert(
+            "panics".to_owned(),
+            Arc::new(create_test_metadata("panics")),
+        );
         let mut supervisor = Supervisor::with_checkers(
             token.clone(),
             SupervisorConfig {

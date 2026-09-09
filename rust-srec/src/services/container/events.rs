@@ -387,6 +387,8 @@ impl ConfigEventHandler {
             }
             ConfigUpdateEvent::GlobalUpdated => {
                 debug!("Received global config update event");
+                // Also covers synthetic reconciliation after lagged broadcasts.
+                self.config_service.invalidate_all_filter_snapshots();
 
                 // Refresh resolved offline_check_* on every streamer
                 // since the global default may have changed (and any
@@ -457,6 +459,8 @@ impl ConfigEventHandler {
             ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
                 // Best-effort: drop any stale cache entry (usually already removed).
                 self.config_service.invalidate_streamer(&streamer_id);
+                self.config_service
+                    .invalidate_filter_snapshots(&streamer_id);
 
                 info!("Streamer {} deleted, initiating cleanup", streamer_id);
                 // Reuse the same cleanup logic as disabled state
@@ -489,6 +493,8 @@ impl ConfigEventHandler {
                 // them can affect OutOfSchedule smart-wake behavior. Invalidate merged
                 // config and let the scheduler/actors re-check soon.
                 self.config_service.invalidate_streamer(&streamer_id);
+                self.config_service
+                    .invalidate_filter_snapshots(&streamer_id);
                 debug!("Received streamer filters update event: {}", streamer_id);
             }
         }
@@ -1169,6 +1175,8 @@ mod tests {
 
     use super::*;
     use crate::downloader::{DownloadRejectedKind, download_coordination_channel};
+
+    mod filter_snapshots;
 
     fn rejected_event(session_id: &str) -> DownloadManagerEvent {
         DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {

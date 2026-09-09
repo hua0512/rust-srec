@@ -4,16 +4,29 @@ mod writes;
 pub(crate) use writes::{delete_for_streamer, import_filter};
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use futures::future::BoxFuture;
+use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::database::filter_store::FilterSnapshotCache;
 use crate::database::models::FilterDbModel;
 use crate::{Error, Result};
+
+/// Synchronous publication for the distinct owners changed by a committed
+/// mutation. The writer owns this hook through commit and cache invalidation,
+/// even if the caller drops its request. Empty mutations never invoke it.
+pub type FilterCommitHook = Box<dyn FnOnce(&[String]) + Send + 'static>;
 
 /// Filter repository trait.
 #[async_trait]
 pub trait FilterRepository: Send + Sync {
+    /// Associate snapshots with successful repository mutations. Custom readers
+    /// may omit this and rely on store invalidation and its bounded TTL.
+    fn filter_snapshot_cache(&self) -> Option<FilterSnapshotCache> {
+        None
+    }
     async fn get_filter(&self, id: &str) -> Result<FilterDbModel>;
     async fn get_filters_for_streamer(&self, streamer_id: &str) -> Result<Vec<FilterDbModel>>;
     /// Group filters by owner, retaining each owner's filter-type order.
@@ -33,6 +46,38 @@ pub trait FilterRepository: Send + Sync {
     async fn delete_filter(&self, id: &str) -> Result<()>;
     async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()>;
 
+    /// These entrypoints require publication to share the mutation's commit
+    /// owner. Custom repositories must not implement them as await-then-publish.
+    async fn create_filter_with_commit_hook(
+        &self,
+        _filter: &FilterDbModel,
+        _on_commit: FilterCommitHook,
+    ) -> Result<()> {
+        Err(Error::config(
+            "Filter repository does not support owned commit hooks",
+        ))
+    }
+
+    async fn update_filter_with_commit_hook(
+        &self,
+        _filter: &FilterDbModel,
+        _on_commit: FilterCommitHook,
+    ) -> Result<()> {
+        Err(Error::config(
+            "Filter repository does not support owned commit hooks",
+        ))
+    }
+
+    async fn delete_filter_with_commit_hook(
+        &self,
+        _id: &str,
+        _on_commit: FilterCommitHook,
+    ) -> Result<()> {
+        Err(Error::config(
+            "Filter repository does not support owned commit hooks",
+        ))
+    }
+
     /// Alias for get_filters_for_streamer.
     async fn get_by_streamer(&self, streamer_id: &str) -> Result<Vec<FilterDbModel>> {
         self.get_filters_for_streamer(streamer_id).await
@@ -42,17 +87,64 @@ pub trait FilterRepository: Send + Sync {
 /// SQLx implementation of FilterRepository.
 pub struct SqlxFilterRepository {
     pool: SqlitePool,
-    write_pool: SqlitePool,
+    snapshots: FilterSnapshotCache,
+    committed_writer: Arc<crate::database::CommittedWriter>,
 }
 
 impl SqlxFilterRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
-        Self { pool, write_pool }
+        let owner = Arc::new(crate::utils::task_supervisor::TaskSupervisor::new());
+        let committed_writer = Arc::new(crate::database::CommittedWriter::for_invalidation(
+            write_pool, owner,
+        ));
+        Self {
+            pool,
+            snapshots: FilterSnapshotCache::default(),
+            committed_writer,
+        }
+    }
+
+    pub(crate) fn with_committed_writer(
+        mut self,
+        writer: Arc<crate::database::CommittedWriter>,
+    ) -> Self {
+        self.committed_writer = writer;
+        self
+    }
+
+    async fn mutate<F>(
+        &self,
+        label: &'static str,
+        operation: F,
+        on_commit: FilterCommitHook,
+    ) -> Result<bool>
+    where
+        F: for<'c> FnOnce(&'c mut SqliteConnection) -> BoxFuture<'c, Result<Vec<String>>>
+            + Send
+            + 'static,
+    {
+        let cache = self.snapshots.clone();
+        let publish = move |owners: &Vec<String>| {
+            for id in owners {
+                cache.invalidate(id);
+            }
+            if !owners.is_empty() {
+                on_commit(owners);
+            }
+        };
+        let owners = self
+            .committed_writer
+            .transaction(label, operation, publish)
+            .await?;
+        Ok(!owners.is_empty())
     }
 }
 
 #[async_trait]
 impl FilterRepository for SqlxFilterRepository {
+    fn filter_snapshot_cache(&self) -> Option<FilterSnapshotCache> {
+        Some(self.snapshots.clone())
+    }
     async fn get_filters_for_streamers(
         &self,
         streamer_ids: &[String],
@@ -101,35 +193,112 @@ impl FilterRepository for SqlxFilterRepository {
     }
 
     async fn create_filter(&self, filter: &FilterDbModel) -> Result<()> {
-        writes::write_filter(
-            &mut *self.write_pool.acquire().await?,
-            filter,
-            super::row_write::WriteMode::Insert,
+        self.create_filter_with_commit_hook(filter, Box::new(|_| {}))
+            .await
+    }
+
+    async fn create_filter_with_commit_hook(
+        &self,
+        filter: &FilterDbModel,
+        on_commit: FilterCommitHook,
+    ) -> Result<()> {
+        let filter = filter.clone();
+        self.mutate(
+            "create filter",
+            move |connection| {
+                Box::pin(async move {
+                    writes::write_filter(connection, &filter, super::row_write::WriteMode::Insert)
+                        .await?;
+                    Ok(vec![filter.streamer_id])
+                })
+            },
+            on_commit,
         )
         .await?;
         Ok(())
     }
 
     async fn update_filter(&self, filter: &FilterDbModel) -> Result<()> {
-        writes::write_filter(
-            &mut *self.write_pool.acquire().await?,
-            filter,
-            super::row_write::WriteMode::Update,
+        self.update_filter_with_commit_hook(filter, Box::new(|_| {}))
+            .await
+    }
+
+    async fn update_filter_with_commit_hook(
+        &self,
+        filter: &FilterDbModel,
+        on_commit: FilterCommitHook,
+    ) -> Result<()> {
+        let filter = filter.clone();
+        self.mutate(
+            "update filter",
+            move |connection| {
+                Box::pin(async move {
+                    let previous: Option<String> =
+                        sqlx::query_scalar("SELECT streamer_id FROM filters WHERE id = ?")
+                            .bind(&filter.id)
+                            .fetch_optional(&mut *connection)
+                            .await?;
+                    let Some(previous) = previous else {
+                        return Ok(Vec::new());
+                    };
+                    writes::write_filter(connection, &filter, super::row_write::WriteMode::Update)
+                        .await?;
+                    let mut owners = vec![previous];
+                    if owners[0] != filter.streamer_id {
+                        owners.push(filter.streamer_id);
+                    }
+                    Ok(owners)
+                })
+            },
+            on_commit,
         )
         .await?;
         Ok(())
     }
 
     async fn delete_filter(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM filters WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
+        self.delete_filter_with_commit_hook(id, Box::new(|_| {}))
+            .await
+    }
+
+    async fn delete_filter_with_commit_hook(
+        &self,
+        id: &str,
+        on_commit: FilterCommitHook,
+    ) -> Result<()> {
+        let id = id.to_owned();
+        self.mutate(
+            "delete filter",
+            move |connection| {
+                Box::pin(async move {
+                    let owner: Option<String> = sqlx::query_scalar(
+                        "DELETE FROM filters WHERE id = ? RETURNING streamer_id",
+                    )
+                    .bind(id)
+                    .fetch_optional(connection)
+                    .await?;
+                    Ok(owner.into_iter().collect())
+                })
+            },
+            on_commit,
+        )
+        .await?;
         Ok(())
     }
 
     async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()> {
-        writes::delete_for_streamer(&mut *self.write_pool.acquire().await?, streamer_id).await?;
+        let id = streamer_id.to_owned();
+        self.mutate(
+            "delete streamer filters",
+            move |connection| {
+                Box::pin(async move {
+                    writes::delete_for_streamer(connection, &id).await?;
+                    Ok(vec![id])
+                })
+            },
+            Box::new(|_| {}),
+        )
+        .await?;
         Ok(())
     }
 }

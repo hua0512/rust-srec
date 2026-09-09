@@ -34,7 +34,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use parking_lot::Mutex;
-use tokio::sync::{Mutex as AsyncMutex, MutexGuard, RwLock, RwLockReadGuard, broadcast};
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard, OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -82,6 +82,7 @@ pub const ENDED_RETENTION_DEFAULT: Duration = Duration::from_secs(60);
 ///   This keeps streamer-scoped lookups deterministic while `sessions` also
 ///   retains recently-ended entries for duplicate-event dedupe.
 /// - `classifier` — per-streamer Network-failure window used by `on_download_terminal`.
+#[derive(Clone)]
 pub struct SessionLifecycle {
     repo: Arc<SessionLifecycleRepository>,
     /// Per-engine offline-signal classifier. On every Terminal::Failed,
@@ -137,19 +138,20 @@ pub struct SessionLifecycle {
     /// Shutdown takes the write side before closing the required transition
     /// channel, which guarantees that no admitted operation can publish
     /// behind the channel's shutdown marker.
-    operation_gate: RwLock<()>,
+    operation_gate: Arc<RwLock<()>>,
     /// Fixed stripes bound lock storage even as streamers are added/deleted.
     /// A stripe covers DB commit, memory mutation, and transition publication.
     /// Public entrypoints acquire admission then a stripe; private FSM helpers
-    /// rely on their caller's stripe. Owned timers acquire only the stripe and
-    /// are contained separately by shutdown's timer join.
-    streamer_operations: [AsyncMutex<()>; 256],
-    accepting_operations: AtomicBool,
-    hysteresis_tasks: Mutex<JoinSet<()>>,
-    hysteresis_shutdown: AtomicBool,
+    /// rely on their caller's stripe. Timer completion transfers admission and
+    /// its stripe to an owned operation before writing the database.
+    streamer_operations: Arc<[Arc<AsyncMutex<()>>; 256]>,
+    accepting_operations: Arc<AtomicBool>,
+    hysteresis_tasks: Arc<Mutex<JoinSet<()>>>,
+    hysteresis_shutdown: Arc<AtomicBool>,
     /// Delayed in-memory cleanup has no terminal side effects and stops on shutdown.
-    eviction_tasks: TaskSupervisor,
+    eviction_tasks: Arc<TaskSupervisor>,
     eviction_cancel: CancellationToken,
+    operation_tasks: Arc<TaskSupervisor>,
 }
 
 #[derive(Debug, Default)]
@@ -177,6 +179,13 @@ pub(crate) struct SessionLifecycleShutdownReport {
 pub type HysteresisWindowFn = Arc<dyn Fn(&str) -> Option<HysteresisConfig> + Send + Sync>;
 
 impl SessionLifecycle {
+    pub(crate) fn bind_committed_streamers(
+        &self,
+        state: Arc<crate::streamer::CommittedStreamerState>,
+    ) {
+        self.repo.bind_committed_state(state);
+    }
+
     pub fn new(
         repo: Arc<SessionLifecycleRepository>,
         classifier: Arc<OfflineClassifier>,
@@ -205,13 +214,14 @@ impl SessionLifecycle {
             event_repo: None,
             transition_tx,
             required_transition_tx: None,
-            operation_gate: RwLock::new(()),
-            streamer_operations: std::array::from_fn(|_| AsyncMutex::new(())),
-            accepting_operations: AtomicBool::new(true),
-            hysteresis_tasks: Mutex::new(JoinSet::new()),
-            hysteresis_shutdown: AtomicBool::new(false),
-            eviction_tasks: TaskSupervisor::with_cancellation(eviction_cancel.clone()),
+            operation_gate: Arc::new(RwLock::new(())),
+            streamer_operations: Arc::new(std::array::from_fn(|_| Arc::new(AsyncMutex::new(())))),
+            accepting_operations: Arc::new(AtomicBool::new(true)),
+            hysteresis_tasks: Arc::new(Mutex::new(JoinSet::new())),
+            hysteresis_shutdown: Arc::new(AtomicBool::new(false)),
+            eviction_tasks: Arc::new(TaskSupervisor::with_cancellation(eviction_cancel.clone())),
             eviction_cancel,
+            operation_tasks: Arc::new(TaskSupervisor::new()),
         }
     }
 
@@ -298,6 +308,13 @@ impl SessionLifecycle {
         {
             overruns.push("session eviction cleanup exceeded the graceful deadline".to_string());
         }
+        if !self
+            .operation_tasks
+            .shutdown(deadline.saturating_duration_since(tokio::time::Instant::now()))
+            .await
+        {
+            overruns.push("owned lifecycle completion exceeded the graceful deadline".into());
+        }
         SessionLifecycleShutdownReport {
             failures,
             overruns,
@@ -312,6 +329,9 @@ impl SessionLifecycle {
     /// process to force-kill them use this.
     ///
     /// Returns the number of hysteresis timer tasks that were still running.
+    /// A sealed operation is never aborted during COMMIT. If it cannot settle
+    /// by the hard deadline, it remains supervised and the caller must leave
+    /// database pools open.
     pub(crate) async fn abort_timers(&self, deadline: tokio::time::Instant) -> usize {
         self.accepting_operations.store(false, Ordering::Release);
         self.eviction_cancel.cancel();
@@ -338,17 +358,29 @@ impl SessionLifecycle {
         }
 
         self.eviction_tasks.abort_all(deadline).await;
+        if tokio::time::timeout_at(
+            deadline,
+            self.operation_tasks
+                .shutdown(deadline.saturating_duration_since(tokio::time::Instant::now())),
+        )
+        .await
+        .is_err()
+        {
+            warn!(
+                "Lifecycle operations remain owned beyond the hard deadline; database pools must stay open"
+            );
+        }
         aborted
     }
 
-    async fn begin_operation(&self) -> Result<RwLockReadGuard<'_, ()>> {
+    async fn begin_operation(&self) -> Result<OwnedRwLockReadGuard<()>> {
         if !self.accepting_operations.load(Ordering::Acquire) {
             return Err(crate::Error::Other(
                 "session lifecycle is shutting down".to_string(),
             ));
         }
 
-        let guard = self.operation_gate.read().await;
+        let guard = self.operation_gate.clone().read_owned().await;
         if !self.accepting_operations.load(Ordering::Acquire) {
             return Err(crate::Error::Other(
                 "session lifecycle is shutting down".to_string(),
@@ -357,11 +389,12 @@ impl SessionLifecycle {
         Ok(guard)
     }
 
-    async fn lock_streamer(&self, streamer_id: &str) -> MutexGuard<'_, ()> {
+    async fn lock_streamer(&self, streamer_id: &str) -> OwnedMutexGuard<()> {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         streamer_id.hash(&mut hasher);
         self.streamer_operations[hasher.finish() as usize % self.streamer_operations.len()]
-            .lock()
+            .clone()
+            .lock_owned()
             .await
     }
 
@@ -643,9 +676,132 @@ impl SessionLifecycle {
         &self,
         args: LiveDetectedArgs<'_>,
     ) -> Result<StartSessionOutcome> {
-        let _operation = self.begin_operation().await?;
-        let _streamer = self.lock_streamer(args.streamer_id).await;
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(args.streamer_id).await;
+        let owned = StartSessionInputs {
+            streamer_id: args.streamer_id.into(),
+            streamer_name: args.streamer_name.into(),
+            streamer_url: args.streamer_url.into(),
+            current_avatar: args.current_avatar.map(str::to_owned),
+            new_avatar: args.new_avatar.map(str::to_owned),
+            title: args.title.into(),
+            category: args.category.map(str::to_owned),
+            streams: args.streams.clone(),
+            media_headers: args.media_headers.cloned(),
+            media_extras: args.media_extras.cloned(),
+            now: args.now,
+        };
+        let lifecycle = self.clone();
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            lifecycle
+                .on_live_detected_inner(LiveDetectedArgs {
+                    streamer_id: &owned.streamer_id,
+                    streamer_name: &owned.streamer_name,
+                    streamer_url: &owned.streamer_url,
+                    current_avatar: owned.current_avatar.as_deref(),
+                    new_avatar: owned.new_avatar.as_deref(),
+                    title: &owned.title,
+                    category: owned.category.as_deref(),
+                    streams: &owned.streams,
+                    media_headers: owned.media_headers.as_ref(),
+                    media_extras: owned.media_extras.as_ref(),
+                    now: owned.now,
+                })
+                .await
+        })
+        .await
+    }
 
+    pub async fn on_offline_detected(
+        &self,
+        args: OfflineDetectedArgs<'_>,
+    ) -> Result<EndSessionOutcome> {
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(args.streamer_id).await;
+        let (id, name, session) = (
+            args.streamer_id.to_owned(),
+            args.streamer_name.to_owned(),
+            args.session_id.map(str::to_owned),
+        );
+        let (state_was_live, clear_errors, signal, now) = (
+            args.state_was_live,
+            args.clear_errors,
+            args.signal,
+            args.now,
+        );
+        let lifecycle = self.clone();
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            lifecycle
+                .on_offline_detected_inner(OfflineDetectedArgs {
+                    streamer_id: &id,
+                    streamer_name: &name,
+                    session_id: session.as_deref(),
+                    state_was_live,
+                    clear_errors,
+                    signal,
+                    now,
+                })
+                .await
+        })
+        .await
+    }
+
+    pub async fn on_download_terminal(
+        self: &Arc<Self>,
+        event: &DownloadTerminalEvent,
+    ) -> Result<()> {
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(event.streamer_id()).await;
+        let lifecycle = self.clone();
+        let event = event.clone();
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            lifecycle.on_download_terminal_inner(&event).await
+        })
+        .await
+    }
+
+    pub async fn end_for_disable(
+        &self,
+        streamer_id: &str,
+        streamer_name: &str,
+    ) -> Result<Option<String>> {
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(streamer_id).await;
+        let lifecycle = self.clone();
+        let (id, name) = (streamer_id.to_owned(), streamer_name.to_owned());
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            lifecycle.end_for_disable_inner(&id, &name).await
+        })
+        .await
+    }
+
+    pub async fn end_for_out_of_schedule(
+        &self,
+        streamer_id: &str,
+        streamer_name: &str,
+        old_state: StreamerState,
+    ) -> Result<Option<String>> {
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(streamer_id).await;
+        let lifecycle = self.clone();
+        let (id, name) = (streamer_id.to_owned(), streamer_name.to_owned());
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            lifecycle
+                .end_for_out_of_schedule_inner(&id, &name, old_state)
+                .await
+        })
+        .await
+    }
+
+    async fn on_live_detected_inner(
+        &self,
+        args: LiveDetectedArgs<'_>,
+    ) -> Result<StartSessionOutcome> {
         // Step 1: Hysteresis resume.
         //
         // `resume_from_hysteresis` returns `None` if the CAS-claim
@@ -731,13 +887,10 @@ impl SessionLifecycle {
     /// `Hysteresis` (e.g. mesio FLV clean disconnect happened first, then
     /// monitor confirmed offline), `enter_ended_state` cancels the
     /// timer.
-    pub async fn on_offline_detected(
+    async fn on_offline_detected_inner(
         &self,
         args: OfflineDetectedArgs<'_>,
     ) -> Result<EndSessionOutcome> {
-        let _operation = self.begin_operation().await?;
-        let _streamer = self.lock_streamer(args.streamer_id).await;
-
         // The repository deduplicates session ends. Always apply the offline
         // observation: a download may already have ended while state is LIVE.
         // Resolve cause and via_hysteresis BEFORE the DB write so the audit
@@ -828,13 +981,10 @@ impl SessionLifecycle {
     ///    `Unknown`) → `Hysteresis` via `enter_hysteresis_state`.
     ///    A timer task will commit `Ended` if no resume arrives within the
     ///    window.
-    pub async fn on_download_terminal(
+    async fn on_download_terminal_inner(
         self: &Arc<Self>,
         event: &DownloadTerminalEvent,
     ) -> Result<()> {
-        let _operation = self.begin_operation().await?;
-        let _streamer = self.lock_streamer(event.streamer_id()).await;
-
         let session_id = event.session_id();
         let streamer_id = event.streamer_id();
         let streamer_name = event.streamer_name();
@@ -1024,6 +1174,9 @@ impl SessionLifecycle {
         let deadline_inst = handle.deadline;
         let cancel = handle.cancel.clone();
 
+        if crate::database::committed_writer::prepare_owned_commit().is_err() {
+            return;
+        }
         // Update in-memory state to Hysteresis.
         self.sessions.insert(
             session_id.to_string(),
@@ -1073,49 +1226,75 @@ impl SessionLifecycle {
         )
         .await;
 
-        // Spawn the timer task. It owns nothing but Arc-clones of the maps,
-        // the repo, and the broadcast sender. When it fires, it calls back
-        // into a static-style helper that takes those clones, so we don't
-        // need an Arc<Self>-typed entry point for cancellation safety.
+        // Keep only a weak lifecycle reference while waiting, avoiding a cycle
+        // between the lifecycle and its timer JoinSet. A firing timer transfers
+        // its guards to the operation owner before COMMIT can begin.
         let lifecycle = Arc::downgrade(self);
         let sid = session_id.to_string();
         let strm_id = streamer_id.to_string();
         let strm_name = streamer_name.to_string();
         let timer = async move {
             tokio::select! {
-                _ = tokio::time::sleep_until(deadline_inst.into()) => {
-                    // Deadline fired — confirm Ended unless cancelled meanwhile.
-                    if cancel.is_cancelled() {
-                        debug!(session_id = %sid,
-                               "Hysteresis timer woke but cancellation already tripped");
-                        return;
-                    }
-                    let now = Utc::now();
-                    let Some(lifecycle) = lifecycle.upgrade() else {
-                        return;
-                    };
-                    let _streamer = lifecycle.lock_streamer(&strm_id).await;
-                    // Resume may cancel this timer and arm a replacement while
-                    // this task waits. Never claim the replacement's handle.
-                    if cancel.is_cancelled() {
-                        return;
-                    }
-                    if let Err(e) = lifecycle.enter_ended_state(EndedStateTransition {
-                        session_id: &sid,
-                        streamer_id: &strm_id,
-                        streamer_name: &strm_name,
-                        cause,
-                        ended_at: now,
-                        via_hysteresis: true,
-                        db_write: DbWritePath::EndSessionOnly,
-                    }).await {
-                        warn!(session_id = %sid, error = %e,
-                              "Hysteresis timer: failed to confirm Ended");
+                _ = tokio::time::sleep_until(deadline_inst.into()) => {}
+                _ = cancel.cancelled() => return,
+            }
+            loop {
+                if cancel.is_cancelled() {
+                    return;
+                }
+                let Some(lifecycle) = lifecycle.upgrade() else {
+                    return;
+                };
+                let (operation, stripe) = tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    guards = async {
+                        let operation = lifecycle.operation_gate.clone().read_owned().await;
+                        let stripe = lifecycle.lock_streamer(&strm_id).await;
+                        (operation, stripe)
+                    } => guards,
+                };
+                if cancel.is_cancelled()
+                    || !lifecycle
+                        .hysteresis
+                        .get(&sid)
+                        .is_some_and(|handle| handle.cancel == cancel)
+                {
+                    return;
+                }
+                let supervisor = lifecycle.operation_tasks.clone();
+                let (attempt_sid, attempt_id, attempt_name, attempt_cause) = (
+                    sid.clone(),
+                    strm_id.clone(),
+                    strm_name.clone(),
+                    cause.clone(),
+                );
+                let result =
+                    crate::database::committed_writer::own_operation(supervisor, async move {
+                        let (_operation, _stripe) = (operation, stripe);
+                        lifecycle
+                            .enter_ended_state(EndedStateTransition {
+                                session_id: &attempt_sid,
+                                streamer_id: &attempt_id,
+                                streamer_name: &attempt_name,
+                                cause: attempt_cause,
+                                ended_at: Utc::now(),
+                                via_hysteresis: true,
+                                db_write: DbWritePath::EndSessionOnly,
+                            })
+                            .await
+                    })
+                    .await;
+                match result {
+                    Ok(()) => return,
+                    Err(error) => {
+                        warn!(session_id = %sid, %error, "Hysteresis timer end failed; retrying while its handle remains active")
                     }
                 }
-                _ = cancel.cancelled() => {
-                    debug!(session_id = %sid,
-                           "Hysteresis timer cancelled (resume or authoritative end)");
+                // A failed SQL write leaves the original handle active. Reuse
+                // this timer, releasing admission and the stripe between tries.
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                 }
             }
         };
@@ -1145,18 +1324,10 @@ impl SessionLifecycle {
     /// `SuppressedInactive` and leaves the hysteresis handle armed, so the
     /// disable teardown or the timer ends the session normally.
     ///
-    /// CAS contract: the `self.hysteresis.remove(session_id)` operation IS
-    /// the atomic claim for the `Hysteresis → Recording` transition. If the
-    /// handle is already gone, another path (timer fire / authoritative end
-    /// from `on_offline_detected` or `on_download_terminal`) has already
-    /// won the race; we return `None` and let the caller fall through to
-    /// the normal start_or_resume flow (which will create a fresh
-    /// `session_id` since the prior session is now Ended).
-    ///
-    /// Pairs with the equivalent CAS in [`Self::enter_ended_state`]:
-    /// whichever caller successfully removes the handle wins; the loser
-    /// detects `None` and bails. No `Started` after `Ended` (or vice
-    /// versa) for the same `session_id` is emitted.
+    /// The caller's stripe excludes concurrent timer/end publication. Removing
+    /// the handle after the live write claims the exit; an absent handle means
+    /// this quiet period was already claimed, so the caller uses the normal
+    /// start_or_resume path. The handle stays armed on inactive suppression.
     async fn resume_from_hysteresis(
         &self,
         session_id: &str,
@@ -1209,6 +1380,7 @@ impl SessionLifecycle {
             }
         }
 
+        crate::database::committed_writer::prepare_owned_commit().ok()?;
         // CAS: claim the hysteresis exit. None = another path won.
         let Some((_, handle)) = self.hysteresis.remove(session_id) else {
             debug!(
@@ -1316,14 +1488,9 @@ impl SessionLifecycle {
     /// Tears down any active hysteresis handle. Idempotent: a session
     /// already in `Ended` short-circuits with a debug log.
     ///
-    /// CAS contract: when the in-memory state shows `Hysteresis`,
-    /// `self.hysteresis.remove(session_id)` IS the atomic claim. If the
-    /// handle is already gone, [`Self::resume_from_hysteresis`] won the
-    /// race and we must NOT proceed to write `Ended` — doing so would
-    /// emit an `Ended` for a session that's already broadcasted `Resumed`
-    /// plus `Started{from_hysteresis: true}` and is now actively recording.
-    ///
-    /// Pairs with the equivalent CAS in `resume_from_hysteresis`.
+    /// The caller's stripe excludes concurrent resume and timer completion.
+    /// A missing hysteresis handle indicates an already claimed quiet period.
+    /// Keep the handle until SQL succeeds so a failed end leaves it recoverable.
     async fn enter_ended_state(&self, transition: EndedStateTransition<'_>) -> Result<()> {
         let EndedStateTransition {
             session_id,
@@ -1344,32 +1511,14 @@ impl SessionLifecycle {
             return Ok(());
         }
 
-        // Snapshot the in-memory state BEFORE attempting the hysteresis
-        // claim, so we can detect a lost CAS race.
-        //
-        //   was_in_hysteresis | claim         | meaning
-        //   ------------------+---------------+--------------------------------
-        //   true              | Some(handle)  | we won; cancel + proceed
-        //   true              | None          | resume won; bail (CAS lost)
-        //   false             | Some(handle)  | impossible in practice — defensive: cancel + proceed
-        //   false             | None          | direct Recording → Ended path; proceed
-        //
-        // Pairs with the CAS in `resume_from_hysteresis` (which returns
-        // `None` on the symmetric loss case). Together they guarantee at
-        // most one of {`Resumed` + `Started{from_hysteresis: true}`,
-        // `Ended`} broadcasts fires for a single Hysteresis exit, even
-        // under timer/resume/authoritative-end races.
+        // A live hysteresis entry must still own its quiet-period handle.
+        // The stripe prevents this check from changing during the SQL write.
         let was_in_hysteresis = self
             .sessions
             .get(session_id)
             .is_some_and(|e| matches!(e.value(), SessionState::Hysteresis { .. }));
 
-        let claim = self.hysteresis.remove(session_id).map(|(_, h)| h);
-        if let Some(h) = &claim {
-            h.cancel();
-        }
-
-        if was_in_hysteresis && claim.is_none() {
+        if was_in_hysteresis && !self.hysteresis.contains_key(session_id) {
             debug!(
                 session_id,
                 streamer_id,
@@ -1405,6 +1554,12 @@ impl SessionLifecycle {
             }
         }
 
+        crate::database::committed_writer::prepare_owned_commit()?;
+        // The stripe excludes resume and timer completion until publication.
+        // Keep the existing timer armed if the preceding SQL write fails.
+        if let Some((_, handle)) = self.hysteresis.remove(session_id) {
+            handle.cancel();
+        }
         // Pull `started_at` for the `Ended` state from the prior entry.
         let started_at = self
             .sessions
@@ -1482,14 +1637,11 @@ impl SessionLifecycle {
     ///   retro-corrected);
     /// - `Ok(None)` if no active or recently-ended session existed for
     ///   the streamer.
-    pub async fn end_for_disable(
+    async fn end_for_disable_inner(
         &self,
         streamer_id: &str,
         streamer_name: &str,
     ) -> Result<Option<String>> {
-        let _operation = self.begin_operation().await?;
-        let _streamer = self.lock_streamer(streamer_id).await;
-
         let now = Utc::now();
 
         // Step 1: find the session in memory via the deterministic
@@ -1509,19 +1661,12 @@ impl SessionLifecycle {
             Some((_, state)) if state.is_ended()
         );
 
-        // Step 2: claim the hysteresis CAS. Mirrors the protocol used by
-        // `enter_ended_state` / `resume_from_hysteresis` — keep this in
-        // lockstep with those when the protocol changes.
-        let claim = if let Some(sid) = session_id_hint.as_ref() {
-            self.hysteresis.remove(sid).map(|(_, h)| h)
-        } else {
-            None
-        };
-        if let Some(h) = &claim {
-            h.cancel();
-        }
-
-        let lost_cas = was_in_hysteresis && claim.is_none();
+        // The stripe retains hysteresis ownership across the SQL write. Only
+        // remove the handle after success so errors leave its timer armed.
+        let lost_cas = was_in_hysteresis
+            && !session_id_hint
+                .as_ref()
+                .is_some_and(|sid| self.hysteresis.contains_key(sid));
 
         // Only an existing timer end is eligible for reattribution. Missing
         // timer ownership alone never means the active DB row was closed.
@@ -1551,6 +1696,11 @@ impl SessionLifecycle {
             )
             .await?;
 
+        if let Some(sid) = session_id_hint.as_ref()
+            && let Some((_, handle)) = self.hysteresis.remove(sid)
+        {
+            handle.cancel();
+        }
         let Some(session_id) = resolved else {
             debug!(streamer_id, "end_for_disable: no active session to end");
             return Ok(None);
@@ -1610,15 +1760,12 @@ impl SessionLifecycle {
     /// the same transaction as the session end. It never emits
     /// `StreamerOffline`, because this is policy-driven recording stop,
     /// not a platform offline observation.
-    pub async fn end_for_out_of_schedule(
+    async fn end_for_out_of_schedule_inner(
         &self,
         streamer_id: &str,
         streamer_name: &str,
         old_state: StreamerState,
     ) -> Result<Option<String>> {
-        let _operation = self.begin_operation().await?;
-        let _streamer = self.lock_streamer(streamer_id).await;
-
         let now = Utc::now();
 
         let in_memory = self.current_session_for_streamer(streamer_id);
@@ -1632,16 +1779,10 @@ impl SessionLifecycle {
             Some((_, state)) if state.is_ended()
         );
 
-        let claim = if let Some(sid) = session_id_hint.as_ref() {
-            self.hysteresis.remove(sid).map(|(_, h)| h)
-        } else {
-            None
-        };
-        if let Some(h) = &claim {
-            h.cancel();
-        }
-
-        let lost_hysteresis_cas = was_in_hysteresis && claim.is_none();
+        let lost_hysteresis_cas = was_in_hysteresis
+            && !session_id_hint
+                .as_ref()
+                .is_some_and(|sid| self.hysteresis.contains_key(sid));
         if was_already_ended || lost_hysteresis_cas {
             debug!(
                 streamer_id,
@@ -1664,6 +1805,11 @@ impl SessionLifecycle {
             })
             .await?;
 
+        if let Some(sid) = session_id_hint.as_ref()
+            && let Some((_, handle)) = self.hysteresis.remove(sid)
+        {
+            handle.cancel();
+        }
         let Some(session_id) = resolved else {
             debug!(
                 streamer_id,

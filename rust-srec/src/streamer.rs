@@ -5,6 +5,8 @@
 
 pub(crate) mod manager;
 pub(crate) mod metadata;
+pub(crate) mod state_store;
+pub use state_store::CommittedStreamerState;
 
 pub use manager::StreamerManager;
 pub use metadata::StreamerMetadata;

@@ -108,35 +108,65 @@ impl ServiceContainer {
         let task_supervisor = Arc::new(TaskSupervisor::with_cancellation(
             cancellation_token.clone(),
         ));
+        let committed_write_supervisor = Arc::new(TaskSupervisor::for_committed_work());
         info!("Initializing service container");
+        let committed_writer = Arc::new(crate::database::CommittedWriter::new(
+            write_pool.clone(),
+            committed_write_supervisor.clone(),
+        )?);
+        let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
+        let committed_streamers = Arc::new(crate::streamer::CommittedStreamerState::new(
+            committed_writer.clone(),
+            event_broadcaster.clone(),
+        ));
 
         // Create repositories
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
+        let streamer_repo = Arc::new(
+            SqlxStreamerRepository::new(pool.clone(), write_pool.clone())
+                .with_committed_state(committed_streamers.clone()),
+        );
 
         // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
         let global_config_start = Instant::now();
         let global_config = config_repo.get_global_config().await?;
         let global_config_ms = global_config_start.elapsed().as_millis();
 
-        // Create shared event broadcaster
-        let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
-
         // Create additional repositories for StreamMonitor
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
+        let filter_repo = Arc::new(
+            SqlxFilterRepository::new(pool.clone(), write_pool.clone())
+                .with_committed_writer(committed_writer.clone()),
+        );
+        let filter_store = Arc::new(crate::database::filter_store::FilterStore::new(
+            filter_repo.clone(),
+        ));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
 
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
-        let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
-            config_repo.clone(),
-            streamer_repo.clone(),
-            cache,
-            event_broadcaster.clone(),
-        ));
+        let config_service = Arc::new(
+            ConfigService::with_cache_and_broadcaster(
+                config_repo.clone(),
+                streamer_repo.clone(),
+                cache,
+                event_broadcaster.clone(),
+            )
+            .with_filter_store(filter_store),
+        );
+
+        let weak_config = Arc::downgrade(&config_service);
+        committed_streamers.on_changed(Arc::new(move |id| {
+            if let Some(config) = weak_config.upgrade() {
+                config.invalidate_streamer(id);
+            }
+        }));
+        let weak_config = Arc::downgrade(&config_service);
+        committed_streamers.on_removed(Arc::new(move |id| {
+            if let Some(config) = weak_config.upgrade() {
+                config.invalidate_filter_snapshots(id);
+                config.invalidate_streamer(id);
+            }
+        }));
 
         // Create streamer manager
         let streamer_manager = Arc::new(StreamerManager::new(
@@ -185,7 +215,8 @@ impl ServiceContainer {
                 Arc::new(
                     crate::database::repositories::SessionLifecycleRepository::new(
                         write_pool.clone(),
-                    ),
+                    )
+                    .with_committed_state(committed_streamers.clone()),
                 ),
                 offline_classifier,
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
@@ -510,6 +541,7 @@ impl ServiceContainer {
             api_server_config: api_config,
             cancellation_token,
             task_supervisor,
+            committed_write_supervisor,
             logging_config: std::sync::OnceLock::new(),
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             discarded_segment_keys: Arc::new(DashMap::new()),

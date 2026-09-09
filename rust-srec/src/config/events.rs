@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 ///   changed" and consult the latest metadata (e.g., `metadata.is_active()`) to decide whether
 ///   cleanup is required.
 ///
-/// - **`StreamerStateSyncedFromDb`**: Emitted by `StreamerManager::reload_from_repo()` after
+/// - **`StreamerStateSyncedFromDb`**: Emitted by committed streamer publication (or explicit reconciliation) after
 ///   transactional database updates (e.g., monitor detecting errors, session state changes).
 ///   This is for system-initiated state synchronization. The scheduler uses this to spawn/remove
 ///   actors without routing config updates.
@@ -53,7 +53,7 @@ pub enum ConfigUpdateEvent {
     EngineUpdated { engine_id: String },
     /// A streamer's state was synchronized from the database.
     ///
-    /// Emitted by: `StreamerManager::reload_from_repo()` after transactional DB updates.
+    /// Emitted by: committed streamer publication after transactional DB updates.
     ///
     /// This event is used by the scheduler to spawn/remove actors based on state changes
     /// that occurred via transactional operations (e.g., monitor error handling).

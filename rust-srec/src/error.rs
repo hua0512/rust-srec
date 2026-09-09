@@ -14,6 +14,9 @@ pub enum Error {
     #[error("Database error: {0}")]
     DatabaseSqlx(#[from] sqlx::Error),
 
+    #[error(transparent)]
+    FilterSnapshot(#[from] crate::database::filter_store::FilterSnapshotError),
+
     #[error("Database error: {0}")]
     Database(String),
 

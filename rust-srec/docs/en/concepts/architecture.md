@@ -136,10 +136,27 @@ changes without a restart.
 
 See also: [Configuration](./configuration.md)
 
-### `StreamerManager` (runtime state source of truth)
+### `StreamerManager` (committed metadata snapshots)
 
-`StreamerManager` maintains the in-memory streamer metadata used by orchestration and downloads,
-with **write-through persistence** to SQLite.
+SQLite rows are authoritative. `StreamerManager` exposes immutable shared metadata snapshots
+for actor checks and cloned values for administrative consumers. Runtime writers share a
+`CommittedStreamerState` owner: it retains the validated single-writer connection through a
+borrowed immediate transaction, commit, and synchronous metadata/URL-index publication.
+No awaited runtime effect holds that database lease.
+
+Cancellation before commit rolls back the prepared mutation. Once commit begins, supervised
+completion applies the committed snapshot even if the requesting task disappears. State,
+session and outbox changes stay atomic; `RETURNING` supplies the committed streamer fields
+without a post-commit read. Current runtime-only offline-check settings survive publication.
+Admin patches read the current database row, so unrelated credentials/counters are retained,
+and failed URL edits change neither cache index. Merged configuration invalidation shares a
+short mutation boundary with in-flight completion, so an older load cannot repopulate
+credentials after a newer committed write invalidates them.
+
+Imports publish their row snapshots silently and invalidate filter snapshots at commit. Their
+ordered credential, retirement, metadata, channel and global notifications then finish under
+the same task owner after releasing the writer, with one import admission permit bounding
+that runtime work. Post-commit reload failures remain warnings about committed changes.
 
 Important correctness detail: on startup it performs **restart recovery** by resetting any streamers
 left in `Live` back to `NotLive`, so the normal `NotLive → Live` edge can trigger downloads again.
@@ -219,6 +236,15 @@ transition publication; timer expiry follows the same order and rechecks cancell
 claiming a handle. Database end writes only affect active rows, so late events do not rewrite end
 times or duplicate completion events. An explicit offline signal for an older session cannot
 change the state of a newer active session.
+
+An admitted operation owns its admission and streamer lock through completion. Caller cancellation
+can roll back work before COMMIT or the first irreversible memory transition. Once that boundary
+starts, the supervised operation finishes cache publication, session maps, best-effort audit work,
+and required and observer transitions even if the caller disappears. SQL errors during an end leave
+the existing hysteresis handle intact; the lock keeps a resume or timer behind that end attempt.
+A failed timer end retries in the same timer task, releasing admission and the lock between tries.
+Graceful shutdown drains these owners. Forced shutdown observes the hard deadline without aborting
+an in-progress COMMIT; an unfinished operation stays supervised and database pools remain open.
 
 ### `DownloadManager` (downloads + engine abstraction)
 
@@ -397,7 +423,7 @@ query-parameter authentication paths.
 
 Streamer actors use in-memory scheduling state and the database-backed metadata cache. The unused JSON state-file interfaces (`with_state_path`, `restore_state`, the restored-state constructors, `PersistedActorState`, `PersistedConfig` and `SupervisorConfig.state_dir`) have been removed. Runtime recovery still uses the database and session lifecycle; no actor state files are required.
 
-The unused `StreamerManager::record_error` and `StreamerRepository::record_streamer_error` methods are also removed. Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache coordination remains shared across existing services.
+The unused `StreamerManager::record_error` and `StreamerRepository::record_streamer_error` methods are also removed. Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache publication now shares the committed writer boundary described above.
 
 ### Reliable lifecycle feedback
 

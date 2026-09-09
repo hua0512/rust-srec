@@ -55,6 +55,8 @@ mod health;
 mod output_roots;
 mod shutdown;
 #[cfg(test)]
+mod shutdown_tests;
+#[cfg(test)]
 mod streamer_retirement_tests;
 #[cfg(test)]
 mod tests;
@@ -206,6 +208,8 @@ pub struct ServiceContainer {
     cancellation_token: CancellationToken,
     /// Owner for background tasks started by the application runtime.
     task_supervisor: Arc<TaskSupervisor>,
+    /// Database commits and their publication/completion survive forced task aborts.
+    committed_write_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
     logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
     startup_recovery_complete: std::sync::atomic::AtomicBool,

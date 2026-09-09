@@ -296,7 +296,7 @@ async fn actor_waiting_for_startup_cannot_deadlock_on_started_application() {
         row.id = config.streamer_id.clone();
         store.insert(
             row.id.clone(),
-            crate::streamer::StreamerMetadata::from_db_model(&row),
+            Arc::new(crate::streamer::StreamerMetadata::from_db_model(&row)),
         );
         let (started, receive_started) = tokio::sync::oneshot::channel();
         let checker = Arc::new(StartupFromChecker {

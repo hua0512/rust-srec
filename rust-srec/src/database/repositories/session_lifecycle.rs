@@ -20,7 +20,10 @@
 //! writes the authoritative session row and the streamer row that the rest
 //! of the system reacts to.
 
+use crate::streamer::CommittedStreamerState;
+use crate::streamer::state_store::{StateChange, StatePublication};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use tracing::{debug, info, warn};
@@ -137,11 +140,22 @@ pub struct EndForOutOfScheduleInputs {
 /// Atomic transactional bundles for session lifecycle.
 pub struct SessionLifecycleRepository {
     write_pool: WritePool,
+    committed_state: std::sync::OnceLock<Arc<CommittedStreamerState>>,
 }
 
 impl SessionLifecycleRepository {
+    pub(crate) fn bind_committed_state(&self, state: Arc<CommittedStreamerState>) {
+        self.committed_state.get_or_init(|| state);
+    }
+    pub(crate) fn with_committed_state(self, state: Arc<CommittedStreamerState>) -> Self {
+        self.bind_committed_state(state);
+        self
+    }
     pub fn new(write_pool: WritePool) -> Self {
-        Self { write_pool }
+        Self {
+            write_pool,
+            committed_state: std::sync::OnceLock::new(),
+        }
     }
 
     /// Build the canonical [`SessionEventDbModel`] for a typed payload.
@@ -185,29 +199,70 @@ impl SessionLifecycleRepository {
         tx: &mut sqlx::SqliteConnection,
         streamer_id: &str,
     ) -> Result<Option<StreamerState>> {
-        Ok(StreamerTxOps::get_state(tx, streamer_id)
+        Ok(Self::authoritative_state(tx, streamer_id)
             .await?
-            .filter(|s| !s.is_active()))
+            .filter(|state| !state.is_active()))
+    }
+
+    async fn authoritative_state(
+        tx: &mut sqlx::SqliteConnection,
+        streamer_id: &str,
+    ) -> Result<Option<StreamerState>> {
+        let row: Option<(String, Option<i64>)> =
+            sqlx::query_as("SELECT state, deleted_at FROM streamers WHERE id = ?")
+                .bind(streamer_id)
+                .fetch_optional(tx)
+                .await?;
+        Ok(row.and_then(|(state, deleted)| {
+            if deleted.is_some() {
+                Some(StreamerState::Disabled)
+            } else {
+                StreamerState::parse(&state)
+            }
+        }))
     }
 
     pub async fn start_or_resume(&self, inputs: StartSessionInputs) -> Result<StartSessionOutcome> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            return store
+                .transaction(
+                    "session start_or_resume",
+                    StatePublication::StateOnly,
+                    move |tx| Box::pin(Self::start_or_resume_in_connection(tx, inputs)),
+                )
+                .await;
+        }
         let mut tx = begin_immediate(&self.write_pool).await?;
+        let result = Self::start_or_resume_in_connection(&mut tx, inputs).await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn start_or_resume_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        inputs: StartSessionInputs,
+    ) -> Result<StateChange<StartSessionOutcome>> {
+        let mut committed_row = None;
 
         // Authoritative inactive guard (see `inactive_state`): without it,
         // `set_live` below would overwrite a just-committed user disable
         // with LIVE, and the enqueued `StreamerLive` event would start a
         // download for a disabled streamer.
-        if let Some(state) = Self::inactive_state(&mut tx, &inputs.streamer_id).await? {
-            tx.commit().await?;
+        if let Some(state) = Self::inactive_state(&mut *tx, &inputs.streamer_id).await? {
             info!(
                 streamer_id = %inputs.streamer_id,
                 state = %state,
                 "start_or_resume suppressed: streamer state is inactive"
             );
-            return Ok(StartSessionOutcome::SuppressedInactive { state });
+            return Ok(StateChange::row(
+                StartSessionOutcome::SuppressedInactive { state },
+                committed_row,
+            ));
         }
 
-        let last = SessionTxOps::get_last_session(&mut tx, &inputs.streamer_id).await?;
+        let last = SessionTxOps::get_last_session(&mut *tx, &inputs.streamer_id).await?;
 
         // Self-heal: end any stale active session rows for this streamer.
         //
@@ -238,7 +293,7 @@ impl SessionLifecycleRepository {
             .filter(|s| s.end_time.is_none())
             .map(|s| s.id.as_str());
         let cleaned = SessionTxOps::end_all_active_for_streamer(
-            &mut tx,
+            &mut *tx,
             &inputs.streamer_id,
             keep_id,
             inputs.now,
@@ -260,7 +315,7 @@ impl SessionLifecycleRepository {
                 via_hysteresis: false,
             };
             let row = Self::event_row(stale_id, &inputs.streamer_id, &payload, inputs.now)?;
-            SessionEventTxOps::insert(&mut tx, &row).await?;
+            SessionEventTxOps::insert(&mut *tx, &row).await?;
         }
 
         // `end_time` decides the branch:
@@ -276,7 +331,7 @@ impl SessionLifecycleRepository {
             Some(session) if session.end_time.is_none() => {
                 debug!("Reusing active session {}", session.id);
                 SessionTxOps::update_titles(
-                    &mut tx,
+                    &mut *tx,
                     &session.id,
                     session.titles.as_deref(),
                     &inputs.title,
@@ -293,7 +348,7 @@ impl SessionLifecycleRepository {
             _ => {
                 let new_id = Uuid::new_v4().to_string();
                 SessionTxOps::create_session(
-                    &mut tx,
+                    &mut *tx,
                     &new_id,
                     &inputs.streamer_id,
                     &inputs.streamer_name,
@@ -311,19 +366,21 @@ impl SessionLifecycleRepository {
                     title: Some(inputs.title.clone()),
                 };
                 let row = Self::event_row(&new_id, &inputs.streamer_id, &payload, inputs.now)?;
-                SessionEventTxOps::insert(&mut tx, &row).await?;
+                SessionEventTxOps::insert(&mut *tx, &row).await?;
                 info!("Created new session {}", new_id);
                 StartSessionOutcome::Created { session_id: new_id }
             }
         };
 
-        StreamerTxOps::set_live(&mut tx, &inputs.streamer_id, inputs.now).await?;
+        committed_row =
+            StreamerTxOps::set_live_row(&mut *tx, &inputs.streamer_id, inputs.now).await?;
 
         if let Some(ref new_avatar) = inputs.new_avatar
             && !new_avatar.is_empty()
             && inputs.new_avatar != inputs.current_avatar
         {
-            StreamerTxOps::update_avatar(&mut tx, &inputs.streamer_id, new_avatar).await?;
+            committed_row =
+                StreamerTxOps::update_avatar_row(&mut *tx, &inputs.streamer_id, new_avatar).await?;
         }
 
         let event = MonitorEvent::StreamerLive {
@@ -338,11 +395,9 @@ impl SessionLifecycleRepository {
             media_extras: inputs.media_extras.clone(),
             timestamp: inputs.now,
         };
-        MonitorOutboxTxOps::enqueue_event(&mut tx, &inputs.streamer_id, &event).await?;
+        MonitorOutboxTxOps::enqueue_event(&mut *tx, &inputs.streamer_id, &event).await?;
 
-        tx.commit().await?;
-
-        Ok(outcome)
+        Ok(StateChange::row(outcome, committed_row))
     }
 
     /// Set `streamers.state = 'LIVE'` and refresh `last_live_time` in a single
@@ -366,14 +421,39 @@ impl SessionLifecycleRepository {
         streamer_id: &str,
         now: DateTime<Utc>,
     ) -> Result<Option<StreamerState>> {
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        if let Some(state) = Self::inactive_state(&mut tx, streamer_id).await? {
-            tx.commit().await?;
-            return Ok(Some(state));
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            let owned_id = streamer_id.to_owned();
+            return store
+                .transaction(
+                    "session mark_streamer_live",
+                    StatePublication::StateOnly,
+                    move |tx| {
+                        Box::pin(async move {
+                            Self::mark_streamer_live_in_connection(tx, &owned_id, now).await
+                        })
+                    },
+                )
+                .await;
         }
-        StreamerTxOps::set_live(&mut tx, streamer_id, now).await?;
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        let result = Self::mark_streamer_live_in_connection(&mut tx, streamer_id, now).await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
         tx.commit().await?;
-        Ok(None)
+        Ok(result.value)
+    }
+
+    async fn mark_streamer_live_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        streamer_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<StateChange<Option<StreamerState>>> {
+        let mut committed_row = None;
+        if let Some(state) = Self::inactive_state(&mut *tx, streamer_id).await? {
+            return Ok(StateChange::row(Some(state), committed_row));
+        }
+        committed_row = StreamerTxOps::set_live_row(&mut *tx, streamer_id, now).await?;
+        Ok(StateChange::row(None, committed_row))
     }
 
     /// Resolve terminal events after the in-memory retention window expires.
@@ -404,12 +484,58 @@ impl SessionLifecycleRepository {
         via_hysteresis: bool,
         now: DateTime<Utc>,
     ) -> Result<Option<String>> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            let id = streamer_id.to_owned();
+            let session = session_id.map(str::to_owned);
+            return store
+                .writer
+                .transaction(
+                    "session end_session_only",
+                    move |tx| {
+                        Box::pin(async move {
+                            Self::end_session_only_in_connection(
+                                tx,
+                                &id,
+                                session.as_deref(),
+                                cause,
+                                via_hysteresis,
+                                now,
+                            )
+                            .await
+                        })
+                    },
+                    |_| {},
+                )
+                .await;
+        }
         let mut tx = begin_immediate(&self.write_pool).await?;
+        let value = Self::end_session_only_in_connection(
+            &mut tx,
+            streamer_id,
+            session_id,
+            cause,
+            via_hysteresis,
+            now,
+        )
+        .await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(value)
+    }
 
+    async fn end_session_only_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        streamer_id: &str,
+        session_id: Option<&str>,
+        cause: TerminalCauseDto,
+        via_hysteresis: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>> {
         let resolved = if let Some(id) = session_id {
-            (SessionTxOps::end_session(&mut tx, id, now).await? > 0).then(|| id.to_string())
+            (SessionTxOps::end_session(&mut *tx, id, now).await? > 0).then(|| id.to_string())
         } else {
-            SessionTxOps::end_active_session(&mut tx, streamer_id, now).await?
+            SessionTxOps::end_active_session(&mut *tx, streamer_id, now).await?
         };
 
         // Same-tx audit row. Skipped when no session was actually closed
@@ -421,10 +547,8 @@ impl SessionLifecycleRepository {
                 via_hysteresis,
             };
             let row = Self::event_row(id, streamer_id, &payload, now)?;
-            SessionEventTxOps::insert(&mut tx, &row).await?;
+            SessionEventTxOps::insert(&mut *tx, &row).await?;
         }
-
-        tx.commit().await?;
 
         Ok(resolved)
     }
@@ -455,8 +579,51 @@ impl SessionLifecycleRepository {
         via_hysteresis: bool,
         now: DateTime<Utc>,
     ) -> Result<Option<String>> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            let id = streamer_id.to_owned();
+            let session = session_id.map(str::to_owned);
+            return store
+                .writer
+                .transaction(
+                    "session end_for_disable",
+                    move |tx| {
+                        Box::pin(async move {
+                            Self::end_for_disable_in_connection(
+                                tx,
+                                &id,
+                                session.as_deref(),
+                                via_hysteresis,
+                                now,
+                            )
+                            .await
+                        })
+                    },
+                    |_| {},
+                )
+                .await;
+        }
         let mut tx = begin_immediate(&self.write_pool).await?;
+        let value = Self::end_for_disable_in_connection(
+            &mut tx,
+            streamer_id,
+            session_id,
+            via_hysteresis,
+            now,
+        )
+        .await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(value)
+    }
 
+    async fn end_for_disable_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        streamer_id: &str,
+        session_id: Option<&str>,
+        via_hysteresis: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>> {
         // Resolve the active session id. When the caller named one, only
         // proceed if its `end_time IS NULL` — that's the idempotency guard
         // for repeated disable events. Without this, a second call would
@@ -472,25 +639,25 @@ impl SessionLifecycleRepository {
                 _ => None,
             }
         } else {
-            crate::database::repositories::SessionTxOps::get_active_session_id(&mut tx, streamer_id)
-                .await?
+            crate::database::repositories::SessionTxOps::get_active_session_id(
+                &mut *tx,
+                streamer_id,
+            )
+            .await?
         };
 
         let Some(sid) = resolved else {
-            tx.commit().await?;
             return Ok(None);
         };
 
-        crate::database::repositories::SessionTxOps::end_session(&mut tx, &sid, now).await?;
+        crate::database::repositories::SessionTxOps::end_session(&mut *tx, &sid, now).await?;
 
         let payload = SessionEventPayload::SessionEnded {
             cause: TerminalCauseDto::UserDisabled,
             via_hysteresis,
         };
         let row = Self::event_row(&sid, streamer_id, &payload, now)?;
-        SessionEventTxOps::insert(&mut tx, &row).await?;
-
-        tx.commit().await?;
+        SessionEventTxOps::insert(&mut *tx, &row).await?;
 
         Ok(Some(sid))
     }
@@ -507,7 +674,34 @@ impl SessionLifecycleRepository {
         &self,
         inputs: EndForOutOfScheduleInputs,
     ) -> Result<Option<String>> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            return store
+                .transaction(
+                    "session end_for_out_of_schedule",
+                    StatePublication::StateOnly,
+                    move |tx| Box::pin(Self::end_for_out_of_schedule_in_connection(tx, inputs)),
+                )
+                .await;
+        }
         let mut tx = begin_immediate(&self.write_pool).await?;
+        let result = Self::end_for_out_of_schedule_in_connection(&mut tx, inputs).await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn end_for_out_of_schedule_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        inputs: EndForOutOfScheduleInputs,
+    ) -> Result<StateChange<Option<String>>> {
+        let mut committed_row = None;
+        if Self::inactive_state(&mut *tx, &inputs.streamer_id)
+            .await?
+            .is_some()
+        {
+            return Ok(StateChange::row(None, committed_row));
+        }
 
         // Idempotency guard mirrors `end_for_disable`: when the lifecycle
         // names an id, only write if the row is still active. If another
@@ -524,22 +718,22 @@ impl SessionLifecycleRepository {
                 _ => None,
             }
         } else {
-            SessionTxOps::get_active_session_id(&mut tx, &inputs.streamer_id).await?
+            SessionTxOps::get_active_session_id(&mut *tx, &inputs.streamer_id).await?
         };
 
         if let Some(ref sid) = resolved {
-            SessionTxOps::end_session(&mut tx, sid, inputs.now).await?;
+            SessionTxOps::end_session(&mut *tx, sid, inputs.now).await?;
 
             let payload = SessionEventPayload::SessionEnded {
                 cause: TerminalCauseDto::OutOfSchedule,
                 via_hysteresis: inputs.via_hysteresis,
             };
             let row = Self::event_row(sid, &inputs.streamer_id, &payload, inputs.now)?;
-            SessionEventTxOps::insert(&mut tx, &row).await?;
+            SessionEventTxOps::insert(&mut *tx, &row).await?;
         }
 
-        StreamerTxOps::update_state(
-            &mut tx,
+        committed_row = StreamerTxOps::update_state_row(
+            &mut *tx,
             &inputs.streamer_id,
             &StreamerState::OutOfSchedule.to_string(),
         )
@@ -554,12 +748,10 @@ impl SessionLifecycleRepository {
                 reason: Some("out_of_schedule".to_string()),
                 timestamp: inputs.now,
             };
-            MonitorOutboxTxOps::enqueue_event(&mut tx, &inputs.streamer_id, &event).await?;
+            MonitorOutboxTxOps::enqueue_event(&mut *tx, &inputs.streamer_id, &event).await?;
         }
 
-        tx.commit().await?;
-
-        Ok(resolved)
+        Ok(StateChange::row(resolved, committed_row))
     }
 
     /// Reattribute an ambiguous hysteresis-timer end to a later user stop.
@@ -571,8 +763,36 @@ impl SessionLifecycleRepository {
         session_id: &str,
         new_cause: TerminalCauseDto,
     ) -> Result<bool> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            let id = session_id.to_owned();
+            return store
+                .writer
+                .transaction(
+                    "session rewrite_session_ended_cause",
+                    move |tx| {
+                        Box::pin(async move {
+                            Self::rewrite_session_ended_cause_in_connection(tx, &id, new_cause)
+                                .await
+                        })
+                    },
+                    |_| {},
+                )
+                .await;
+        }
         let mut tx = begin_immediate(&self.write_pool).await?;
+        let value =
+            Self::rewrite_session_ended_cause_in_connection(&mut tx, session_id, new_cause).await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(value)
+    }
 
+    async fn rewrite_session_ended_cause_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        session_id: &str,
+        new_cause: TerminalCauseDto,
+    ) -> Result<bool> {
         // Pick the most recent `session_ended` row. Multiple rows can exist
         // only as the result of a buggy retro-update path; we update the
         // newest one and let any older row stand as historical record.
@@ -586,7 +806,6 @@ impl SessionLifecycleRepository {
         .await?;
 
         let Some((row_id, payload_json)) = existing else {
-            tx.commit().await?;
             return Ok(false);
         };
 
@@ -601,7 +820,6 @@ impl SessionLifecycleRepository {
         {
             Some(p) => p,
             None => {
-                tx.commit().await?;
                 return Ok(false);
             }
         };
@@ -618,7 +836,6 @@ impl SessionLifecycleRepository {
                 *cause = new_cause;
             }
             _ => {
-                tx.commit().await?;
                 return Ok(false);
             }
         }
@@ -629,8 +846,6 @@ impl SessionLifecycleRepository {
             .bind(row_id)
             .execute(&mut *tx)
             .await?;
-
-        tx.commit().await?;
         Ok(true)
     }
 
@@ -639,7 +854,26 @@ impl SessionLifecycleRepository {
     /// clears accumulated errors, and (if appropriate) enqueues
     /// [`MonitorEvent::StreamerOffline`].
     pub async fn end(&self, inputs: EndSessionInputs) -> Result<EndSessionOutcome> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            return store
+                .transaction("session end", StatePublication::StateOnly, move |tx| {
+                    Box::pin(Self::end_in_connection(tx, inputs))
+                })
+                .await;
+        }
         let mut tx = begin_immediate(&self.write_pool).await?;
+        let result = Self::end_in_connection(&mut tx, inputs).await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn end_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        inputs: EndSessionInputs,
+    ) -> Result<StateChange<EndSessionOutcome>> {
+        let mut committed_row = None;
         if let Some(ref id) = inputs.session_id {
             let belongs_to_streamer: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM live_sessions WHERE id = ? AND streamer_id = ?)",
@@ -648,18 +882,21 @@ impl SessionLifecycleRepository {
             .bind(&inputs.streamer_id)
             .fetch_one(&mut *tx)
             .await?;
-            let current = SessionTxOps::get_active_session_id(&mut tx, &inputs.streamer_id).await?;
+            let current =
+                SessionTxOps::get_active_session_id(&mut *tx, &inputs.streamer_id).await?;
             // Session-scoped signals (for example a delayed danmu close) may
             // outlive their recording. They cannot take a successor offline.
             if !belongs_to_streamer || current.as_ref().is_some_and(|current| current != id) {
-                tx.commit().await?;
-                return Ok(EndSessionOutcome {
-                    resolved_session_id: None,
-                    offline_event_emitted: false,
-                });
+                return Ok(StateChange::row(
+                    EndSessionOutcome {
+                        resolved_session_id: None,
+                        offline_event_emitted: false,
+                    },
+                    committed_row,
+                ));
             }
         }
-        let state = StreamerTxOps::get_state(&mut tx, &inputs.streamer_id).await?;
+        let state = Self::authoritative_state(&mut *tx, &inputs.streamer_id).await?;
         if inputs.state_was_live != (state == Some(StreamerState::Live)) {
             debug!(
                 streamer_id = %inputs.streamer_id,
@@ -670,9 +907,9 @@ impl SessionLifecycleRepository {
         }
 
         let resolved_session_id = if let Some(ref id) = inputs.session_id {
-            (SessionTxOps::end_session(&mut tx, id, inputs.now).await? > 0).then(|| id.clone())
+            (SessionTxOps::end_session(&mut *tx, id, inputs.now).await? > 0).then(|| id.clone())
         } else {
-            SessionTxOps::end_active_session(&mut tx, &inputs.streamer_id, inputs.now).await?
+            SessionTxOps::end_active_session(&mut *tx, &inputs.streamer_id, inputs.now).await?
         };
 
         // Actor hints may lag another offline observation or a user disable.
@@ -683,11 +920,12 @@ impl SessionLifecycleRepository {
             is_active && (state == Some(StreamerState::Live) || resolved_session_id.is_some());
 
         if is_active {
-            StreamerTxOps::set_offline(&mut tx, &inputs.streamer_id).await?;
+            committed_row = StreamerTxOps::set_offline_row(&mut *tx, &inputs.streamer_id).await?;
         }
 
         if inputs.clear_errors && is_active {
-            StreamerTxOps::clear_error_state(&mut tx, &inputs.streamer_id).await?;
+            committed_row =
+                StreamerTxOps::clear_error_state_row(&mut *tx, &inputs.streamer_id).await?;
         }
 
         if should_emit {
@@ -697,7 +935,7 @@ impl SessionLifecycleRepository {
                 session_id: resolved_session_id.clone(),
                 timestamp: inputs.now,
             };
-            MonitorOutboxTxOps::enqueue_event(&mut tx, &inputs.streamer_id, &event).await?;
+            MonitorOutboxTxOps::enqueue_event(&mut *tx, &inputs.streamer_id, &event).await?;
         }
 
         // Same-tx audit row. Skipped when no session was resolved — see the
@@ -708,15 +946,16 @@ impl SessionLifecycleRepository {
                 via_hysteresis: inputs.via_hysteresis,
             };
             let row = Self::event_row(id, &inputs.streamer_id, &payload, inputs.now)?;
-            SessionEventTxOps::insert(&mut tx, &row).await?;
+            SessionEventTxOps::insert(&mut *tx, &row).await?;
         }
 
-        tx.commit().await?;
-
-        Ok(EndSessionOutcome {
-            resolved_session_id,
-            offline_event_emitted: should_emit,
-        })
+        Ok(StateChange::row(
+            EndSessionOutcome {
+                resolved_session_id,
+                offline_event_emitted: should_emit,
+            },
+            committed_row,
+        ))
     }
 }
 

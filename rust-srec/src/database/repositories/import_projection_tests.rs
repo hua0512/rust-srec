@@ -190,7 +190,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
         check!(TemplateConfigDbModel, "template_config", TemplateConfigDbModel::new("template"), config_repo, create_template_config, update_template_config, config::import_template, true);
         let platform: PlatformConfigDbModel = sqlx::query_as("SELECT * FROM platform_config WHERE id = 'platform-huya'").fetch_one(&pool).await.unwrap();
         check!(PlatformConfigDbModel, "platform_config", platform, config_repo, create_platform_config, update_platform_config, config::import_platform, false);
-        check!(StreamerDbModel, "streamers", StreamerDbModel::new("streamer", "https://example.com/source", "platform-huya"), streamer_repo, create_streamer, update_streamer, streamer::import_streamer, false);
+        check!(StreamerDbModel, "streamers", StreamerDbModel::new("streamer", "https://example.com/source", "platform-huya"), streamer_repo, create_streamer, update_streamer, streamer::import_streamer_row, false);
         check!(FilterDbModel, "filters", FilterDbModel::new("projection-ref-streamer-1", FilterType::Keyword, "{}"), filter_repo, create_filter, update_filter, filter::import_filter, false);
         check!(NotificationChannelDbModel, "notification_channel", NotificationChannelDbModel::new("channel", ChannelType::Webhook, "{}"), notification_repo, create_channel, update_channel, notification::import_channel, false);
         check!(JobPreset, "job_presets", JobPreset::new("preset", "remux", json!({})), job_repo, create_preset, update_preset, preset::import_job_preset, true);

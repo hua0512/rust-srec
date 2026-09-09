@@ -3,11 +3,14 @@
 //! This module provides the persistence layer using SQLite with sqlx.
 //! It includes connection pool management, models, repositories, and maintenance.
 
+pub(crate) mod committed_writer;
+pub mod filter_store;
 pub mod maintenance;
 pub mod models;
 pub mod repositories;
 pub mod retry;
 pub mod time;
+pub(crate) use committed_writer::CommittedWriter;
 
 #[cfg(test)]
 pub(crate) mod test_support;

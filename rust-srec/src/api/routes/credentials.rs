@@ -12,10 +12,7 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
 use crate::credentials::{CredentialError, CredentialScope, CredentialSource};
-use crate::streamer::{
-    StreamerMetadata,
-    manager::{ReloadPublish, StreamerUpdateParams},
-};
+use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
 
 /// The `StreamerManager` instantiation carried by [`CredentialRouteState`].
 type CredentialStreamerManager = crate::streamer::StreamerManager<
@@ -446,29 +443,15 @@ pub async fn refresh_streamer_credentials(
         ApiError::not_found(format!("No credentials configured for streamer {id}"))
     })?;
 
+    if let Some(owner) = state.streamer_manager.committed_state() {
+        credential_service.bind_committed_streamers(owner);
+    }
     match credential_service.check_and_refresh_source(source).await {
         Ok(Some(_new_cookies)) => {
             // Invalidate caches affected by the updated scope.
             match &source.scope {
                 CredentialScope::Streamer { streamer_id, .. } => {
                     config_service.invalidate_streamer(streamer_id);
-                    // `CredentialStore::update_credentials` rewrites `streamer_specific_config`
-                    // with its own SQL, leaving the previous cookies in the manager's metadata
-                    // cache, which `partial_update_streamer` would write back over the refreshed
-                    // ones. Only that column changed, so `reload_from_repo` publishes no event.
-                    // A failure here leaves the row correct and the cache stale, which the next
-                    // reload repairs, so it is logged rather than failing a refresh that landed.
-                    if let Err(error) = state
-                        .streamer_manager
-                        .reload_from_repo(streamer_id, ReloadPublish::StateOnly)
-                        .await
-                    {
-                        tracing::warn!(
-                            streamer_id = %streamer_id,
-                            %error,
-                            "Failed to reload streamer after credential refresh; cache may be stale"
-                        );
-                    }
                 }
                 CredentialScope::Template { template_id, .. } => {
                     config_service

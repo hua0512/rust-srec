@@ -54,6 +54,7 @@ async fn assert_current(container: &ServiceContainer, id: &str) {
 
 fn mark_stale(container: &ServiceContainer) {
     for mut entry in container.streamer_manager.metadata_store().iter_mut() {
+        let entry = Arc::make_mut(entry.value_mut());
         entry.offline_check_count = 222;
         entry.offline_check_delay_ms = 333;
     }

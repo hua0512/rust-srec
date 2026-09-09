@@ -6,7 +6,7 @@ pub(crate) async fn write_streamer(
     model: &StreamerDbModel,
     mode: WriteMode,
     updated_at: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<Option<StreamerDbModel>, sqlx::Error> {
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
@@ -35,12 +35,12 @@ pub(crate) async fn write_streamer(
     row.field("last_error", &model.last_error, true)?;
     row.field("created_at", model.created_at, false)?;
     row.field("updated_at", updated_at, true)?;
-    row.execute(connection).await
+    row.fetch_optional(connection).await
 }
 
-pub(crate) async fn import_streamer(
+pub(crate) async fn import_streamer_row(
     connection: &mut sqlx::SqliteConnection,
     model: &StreamerDbModel,
-) -> Result<(), sqlx::Error> {
+) -> Result<Option<StreamerDbModel>, sqlx::Error> {
     write_streamer(connection, model, WriteMode::Import, model.updated_at).await
 }
