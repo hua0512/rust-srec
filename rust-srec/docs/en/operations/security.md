@@ -99,10 +99,11 @@ snapshots are not reused if refresh fails. Administrative reads remain fresh.
 ## Credential Refresh Storage
 
 Refreshed cookies and supplied tokens are saved together. A failure leaves the
-previous credentials intact; omitted tokens keep their existing values. JSON
-configuration must be an object when refresh needs to modify it, so malformed or
-non-object configuration fails without partially replacing credentials. Correct
-that configuration explicitly instead of relying on refresh to repair it.
+previous credentials intact; omitted tokens keep their existing values. Platform
+and streamer JSON must contain an object or be unset when refresh modifies it.
+Invalid content fails without partially replacing credentials. Template overrides
+also retain support for initially blank content. Correct invalid configuration
+explicitly instead of relying on refresh to repair it.
 
 Missing or retiring streamer/template owners are not updated. A late credential
 refresh cannot cancel a template's pending deletion. Platform-only cookie updates
