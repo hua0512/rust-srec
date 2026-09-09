@@ -427,7 +427,16 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                       </div>
                       <div className="rounded-xl border bg-card p-6 shadow-sm">
                         <Form {...presetForm}>
-                          <form className="contents">
+                          <form
+                            className="contents"
+                            onSubmit={(event) => {
+                              // Read-only preview: its fields can still be reached with Tab,
+                              // and Enter in a lone text field would submit the form that
+                              // embeds the workflow editor.
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                          >
                             {(() => {
                               const Def = getProcessorDefinition(
                                 presetDetail.processor,
@@ -490,7 +499,13 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                   {processorDef ? (
                     <Form {...form} key={formValuesJson}>
                       <form
-                        onSubmit={form.handleSubmit(handleSubmit)}
+                        onSubmit={(event) => {
+                          // The dialog renders through a portal, yet in the React tree it still
+                          // sits inside whatever form embeds the workflow editor. Without this,
+                          // saving a step here would also submit that surrounding form.
+                          event.stopPropagation();
+                          void form.handleSubmit(handleSubmit)(event);
+                        }}
                         className="contents"
                       >
                         <Suspense

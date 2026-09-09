@@ -7,20 +7,16 @@ import {
   Workflow,
   Save,
   Settings2,
-  Layout,
-  List,
-  Share2,
   CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -32,24 +28,15 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 
-import { StepLibrary } from './step-library';
-import { StepsList } from './steps-list';
 import type { PipelinePreset } from '@/server/functions/pipeline';
 import { validateDagDefinition } from '@/server/functions/pipeline';
 import { toast } from 'sonner';
+import { DagStepDefinition, DagStepDefinitionSchema } from '@/api/schemas';
+import { useWorkflowSteps } from './use-workflow-steps';
 import {
-  PipelineStep,
-  DagStepDefinition,
-  DagStepDefinitionSchema,
-} from '@/api/schemas';
-import { WorkflowFlowEditor } from './flow-editor/workflow-flow-editor';
-import { StepConfigDialog } from './step-config-dialog';
-import {
-  createStepId,
-  removeStep,
-  replaceStep,
-  updateStep,
-} from './step-operations';
+  WorkflowStepLibrary,
+  WorkflowStructurePanel,
+} from './workflow-structure-panel';
 
 const workflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -76,11 +63,7 @@ export function WorkflowEditor({
 }: WorkflowEditorProps) {
   const { i18n } = useLingui();
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState(false);
-  const [replacingStepId, setReplacingStepId] = useState<string | null>(null);
 
   const initialSteps = initialData?.dag?.steps || [];
 
@@ -95,82 +78,14 @@ export function WorkflowEditor({
 
   const steps = form.watch('steps');
 
-  const handleAddStep = (pipelineStep: PipelineStep) => {
-    const currentSteps = form.getValues('steps');
-    const newStep: DagStepDefinition = {
-      id: createStepId(pipelineStep, currentSteps),
-      step: pipelineStep,
-      depends_on:
-        currentSteps.length > 0
-          ? [currentSteps[currentSteps.length - 1].id]
-          : [],
-    };
-    form.setValue('steps', [...currentSteps, newStep], {
-      shouldDirty: true,
-    });
-  };
+  const handleChange = useCallback(
+    (nextSteps: DagStepDefinition[]) => {
+      form.setValue('steps', nextSteps, { shouldDirty: true });
+    },
+    [form],
+  );
 
-  const handleSelectStep = (pipelineStep: PipelineStep) => {
-    if (replacingStepId === null) {
-      handleAddStep(pipelineStep);
-      return;
-    }
-
-    const currentSteps = form.getValues('steps');
-    const replacementIndex = currentSteps.findIndex(
-      (step) => step.id === replacingStepId,
-    );
-    if (replacementIndex === -1) return;
-
-    form.setValue(
-      'steps',
-      replaceStep(currentSteps, replacementIndex, pipelineStep),
-      { shouldDirty: true },
-    );
-    setLibraryOpen(false);
-    setReplacingStepId(null);
-  };
-
-  const handleRemoveStep = (index: number) => {
-    const currentSteps = form.getValues('steps');
-    const removedStep = currentSteps[index];
-    if (!removedStep) return;
-    performRemoveStep(removedStep.id, currentSteps);
-  };
-
-  const handleRemoveStepById = (id: string) => {
-    const currentSteps = form.getValues('steps');
-    performRemoveStep(id, currentSteps);
-  };
-
-  const performRemoveStep = (id: string, currentSteps: DagStepDefinition[]) => {
-    form.setValue('steps', removeStep(currentSteps, id), {
-      shouldDirty: true,
-    });
-  };
-
-  const handleReplaceStep = (id: string) => {
-    setReplacingStepId(id);
-    setLibraryOpen(true);
-  };
-
-  const handleReorder = (newOrder: DagStepDefinition[]) => {
-    form.setValue('steps', newOrder, { shouldDirty: true });
-  };
-
-  const handleUpdateStep = (index: number, newStep: DagStepDefinition) => {
-    const currentSteps = form.getValues('steps');
-    form.setValue('steps', updateStep(currentSteps, index, newStep), {
-      shouldDirty: true,
-    });
-  };
-
-  const handleEditStepById = (id: string) => {
-    const index = steps.findIndex((s) => s.id === id);
-    if (index !== -1) {
-      setEditingIndex(index);
-    }
-  };
+  const controller = useWorkflowSteps({ steps, onChange: handleChange });
 
   const handleValidate = async () => {
     const data = form.getValues();
@@ -354,98 +269,18 @@ export function WorkflowEditor({
                 </div>
               </motion.div>
 
-              <StepLibrary
-                onAddStep={handleSelectStep}
-                currentSteps={steps.map((s) =>
-                  s.step.type === 'inline' ? s.step.processor : s.step.name,
-                )}
-                open={libraryOpen}
-                onOpenChange={(open) => {
-                  setLibraryOpen(open);
-                  if (!open) setReplacingStepId(null);
-                }}
-                selectionMode={replacingStepId === null ? 'add' : 'replace'}
-              />
+              <WorkflowStepLibrary controller={controller} />
             </div>
 
             {/* Right Column: Steps Visualizer */}
-            <div className="lg:col-span-8 flex flex-col h-full min-h-[600px] space-y-4">
-              <div className="flex items-center justify-between px-1 shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Layout className="h-4 w-4 text-primary" />
-                  </div>
-                  <h3 className="font-semibold tracking-tight">
-                    <Trans>Pipeline Structure</Trans>
-                  </h3>
-                </div>
-                <div className="flex items-center gap-4">
-                  <Tabs
-                    value={viewMode}
-                    onValueChange={(v) => setViewMode(v as any)}
-                    className="h-9"
-                  >
-                    <TabsList className="grid w-full grid-cols-2 h-9 p-1">
-                      <TabsTrigger value="list" className="h-7 px-4">
-                        <List className="h-3.5 w-3.5 mr-2" />
-                        <span className="text-xs">
-                          <Trans>List</Trans>
-                        </span>
-                      </TabsTrigger>
-                      <TabsTrigger value="graph" className="h-7 px-4">
-                        <Share2 className="h-3.5 w-3.5 mr-2" />
-                        <span className="text-xs">
-                          <Trans>Graph</Trans>
-                        </span>
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </div>
-              </div>
-
-              {viewMode === 'list' ? (
-                <div className="flex-1">
-                  <StepsList
-                    steps={steps}
-                    onReorder={handleReorder}
-                    onRemove={handleRemoveStep}
-                    onUpdate={handleUpdateStep}
-                    onEdit={setEditingIndex}
-                    onReplace={(index) => {
-                      const step = steps[index];
-                      if (step) handleReplaceStep(step.id);
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="flex-1 border border-border/40 rounded-2xl overflow-hidden bg-muted/5 relative min-h-[500px]">
-                  <WorkflowFlowEditor
-                    steps={steps}
-                    onUpdateSteps={handleReorder}
-                    onEditStep={handleEditStepById}
-                    onRemoveStep={handleRemoveStepById}
-                    onReplaceStep={handleReplaceStep}
-                  />
-                </div>
-              )}
-            </div>
+            <WorkflowStructurePanel
+              controller={controller}
+              variant="standalone"
+              className="lg:col-span-8 flex flex-col h-full min-h-[600px] space-y-4"
+            />
           </form>
         </Form>
       </div>
-
-      <StepConfigDialog
-        open={editingIndex !== null}
-        onOpenChange={(open) => !open && setEditingIndex(null)}
-        dagStep={editingIndex !== null ? steps[editingIndex] : null}
-        onSave={(data) => {
-          if (editingIndex !== null) {
-            handleUpdateStep(editingIndex, data);
-            setEditingIndex(null);
-          }
-        }}
-        allSteps={steps}
-        currentStepIndex={editingIndex ?? -1}
-      />
     </div>
   );
 }
