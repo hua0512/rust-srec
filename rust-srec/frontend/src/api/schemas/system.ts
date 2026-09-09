@@ -125,7 +125,8 @@ export const GlobalConfigFormSchema = z.object({
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
 });
 
-// Schema for writing global config to backend (keeps pipeline as object, will be stringified by config.ts)
+// Schema for writing global config to backend (keeps pipeline as object, will be stringified by config.ts).
+// The request is a PATCH, so a field the caller omits carries no default: the stored value stands.
 export const GlobalConfigWriteSchema = z.object({
   output_folder: z.string(),
   output_filename_template: z.string(),
@@ -150,14 +151,14 @@ export const GlobalConfigWriteSchema = z.object({
   job_history_retention_days: z.number().int().min(0),
   notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
-  auto_thumbnail: z.boolean().default(true),
+  auto_thumbnail: z.boolean().optional(),
 
   pipeline_cpu_job_timeout_secs: z.number().int().min(1),
   pipeline_io_job_timeout_secs: z.number().int().min(1),
   pipeline_execute_timeout_secs: z.number().int().min(1),
   queue_freshness_threshold_ms: z.number().int().min(0),
   gpu_health_probe_interval_secs: z.number().int().min(1),
-  stream_proxy_allow_private_targets: z.boolean().default(false),
+  stream_proxy_allow_private_targets: z.boolean().optional(),
 
   // Accept any object - will be stringified by config.ts when sending to backend
   pipeline: z.any().nullable().optional(),

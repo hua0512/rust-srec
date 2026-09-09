@@ -532,6 +532,10 @@
 
 ## Web interface
 
+- **Saved settings no longer pick up values you never chose**
+
+  Saving a streamer or template with Douyin-specific overrides used to fill in the options you left unset, so they stopped following the platform settings; those options now stay unset and keep inheriting. Saving from the web interface also no longer carries along stray values for global settings you did not change.
+
 - **Signing out now fully forgets the account you were signed in as**
 
   After signing out, going back in the browser could still show the signed-in pages, and the next person to sign in on the same tab could briefly be treated as the previous account. Signing out now discards the account straight away, so the sign-in screen is the only way back in. In the same way, when an administrator requires you to change your password mid-session, the request now takes effect immediately instead of after a short delay.

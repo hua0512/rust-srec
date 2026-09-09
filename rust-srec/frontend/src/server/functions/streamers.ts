@@ -72,7 +72,7 @@ export const listStreamers = createServerFn({ method: 'GET' })
     if (data.sortBy) params.set('sort_by', data.sortBy);
     if (data.sortDir) params.set('sort_dir', data.sortDir);
 
-    const json = await fetchBackend(`/streamers?${params.toString()}`);
+    const json = await fetchBackend(withQuery('/streamers', params));
 
     const PaginatedStreamerSchema = z.object({
       items: z.array(StreamerSchema),
@@ -183,7 +183,9 @@ export const clearStreamerError = createServerFn({ method: 'POST' })
 export const updateStreamerPriority = createServerFn({ method: 'POST' })
   .validator((d: { id: string; priority: z.infer<typeof PrioritySchema> }) => ({
     id: parseInput(PathIdSchema, d.id),
-    priority: parseInput(PrioritySchema, d.priority),
+    // The endpoint sets the priority outright, so a missing value has to fail
+    // here rather than resolve to the schema's default.
+    priority: parseInput(PrioritySchema.removeDefault(), d.priority),
   }))
   .handler(async ({ data: { id, priority } }) => {
     const json = await fetchBackend(backendPath`/streamers/${id}/priority`, {

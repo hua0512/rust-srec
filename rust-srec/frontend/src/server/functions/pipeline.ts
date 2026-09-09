@@ -60,7 +60,7 @@ export const getPipelineJobLogs = createServerFn({ method: 'GET' })
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
     const path = backendPath`/pipeline/jobs/${data.id}/logs`;
-    const json = await fetchBackend(`${path}?${params.toString()}`);
+    const json = await fetchBackend(withQuery(path, params));
     return z
       .object({
         items: z.array(
@@ -125,7 +125,7 @@ export const listPipelines = createServerFn({ method: 'GET' })
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
-    const json = await fetchBackend(`/pipeline/dags?${params.toString()}`);
+    const json = await fetchBackend(withQuery('/pipeline/dags', params));
     return DagListResponseSchema.parse(json);
   });
 
@@ -373,7 +373,7 @@ export const listPipelineOutputs = createServerFn({ method: 'GET' })
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
-    const json = await fetchBackend(`/pipeline/outputs?${params.toString()}`);
+    const json = await fetchBackend(withQuery('/pipeline/outputs', params));
     return z
       .object({
         items: z.array(MediaOutputSchema),
@@ -397,7 +397,7 @@ export const getPipelineOutputSummary = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const params = pipelineOutputFilterParams(data);
     const json = await fetchBackend(
-      `/pipeline/outputs/summary?${params.toString()}`,
+      withQuery('/pipeline/outputs/summary', params),
     );
     return MediaOutputSummarySchema.parse(json);
   });
@@ -429,7 +429,7 @@ export const listPipelinePresets = createServerFn({ method: 'GET' })
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
-    const json = await fetchBackend(`/pipeline/presets?${params.toString()}`);
+    const json = await fetchBackend(withQuery('/pipeline/presets', params));
     return PipelinePresetListResponseSchema.parse(json);
   });
 

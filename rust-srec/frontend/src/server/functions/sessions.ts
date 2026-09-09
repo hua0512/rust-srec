@@ -1,7 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
-import { backendPath, PathIdSchema } from '../backend-path';
+import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   SessionDanmuStatisticsSchema,
   SessionSchema,
@@ -56,7 +56,7 @@ export const listSessions = createServerFn({ method: 'GET' })
     if (data.to_date) params.set('to_date', data.to_date);
     if (data.search) params.set('search', data.search);
 
-    const json = await fetchBackend(`/sessions?${params.toString()}`);
+    const json = await fetchBackend(withQuery('/sessions', params));
 
     return PaginatedSessionSchema.parse(json);
   });
@@ -110,7 +110,7 @@ export const listSessionSegments = createServerFn({ method: 'GET' })
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
     const path = backendPath`/sessions/${data.session_id}/segments`;
-    const json = await fetchBackend(`${path}?${params.toString()}`);
+    const json = await fetchBackend(withQuery(path, params));
 
     return z
       .object({

@@ -9,7 +9,11 @@ import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 
 import { Settings, Save, Loader2, ArrowLeft } from 'lucide-react';
-import { PlatformConfigFormSchema, PlatformConfigSchema } from '@/api/schemas';
+import {
+  DOUYIN_CONFIG_DISPLAY_DEFAULTS,
+  PlatformConfigFormSchema,
+  PlatformConfigSchema,
+} from '@/api/schemas';
 import { GeneralTab } from './tabs/general-tab';
 import { PlatformSpecificTab } from './tabs/platform-specific-tab';
 import {
@@ -22,6 +26,20 @@ import { listEngines } from '@/server/functions';
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
+
+/**
+ * Platform options to show for `platform`, with the extractor's own fallbacks filled in.
+ *
+ * This page edits the base layer rather than an override of it, so an option the stored
+ * configuration leaves out is shown as what the extractor will do rather than as "off".
+ */
+function displayedPlatformOptions(
+  platform: z.infer<typeof PlatformConfigSchema>,
+): z.infer<typeof PlatformConfigSchema>['platform_specific_config'] {
+  const stored = platform.platform_specific_config;
+  if (platform.name.toLowerCase() !== 'douyin' || !stored) return stored;
+  return { ...DOUYIN_CONFIG_DISPLAY_DEFAULTS, ...stored };
+}
 
 interface PlatformEditorProps {
   platform: z.infer<typeof PlatformConfigSchema>;
@@ -47,7 +65,7 @@ export function PlatformEditor({
       record_danmu: platform.record_danmu,
       danmu_statistics: platform.danmu_statistics,
       cookies: platform.cookies,
-      platform_specific_config: platform.platform_specific_config,
+      platform_specific_config: displayedPlatformOptions(platform),
       proxy_config: platform.proxy_config,
       output_folder: platform.output_folder,
       output_filename_template: platform.output_filename_template,
@@ -75,7 +93,7 @@ export function PlatformEditor({
       record_danmu: platform.record_danmu,
       danmu_statistics: platform.danmu_statistics,
       cookies: platform.cookies,
-      platform_specific_config: platform.platform_specific_config,
+      platform_specific_config: displayedPlatformOptions(platform),
       proxy_config: platform.proxy_config,
       output_folder: platform.output_folder,
       output_filename_template: platform.output_filename_template,
