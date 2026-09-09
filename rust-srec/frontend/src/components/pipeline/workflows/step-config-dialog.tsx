@@ -427,7 +427,16 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                       </div>
                       <div className="rounded-xl border bg-card p-6 shadow-sm">
                         <Form {...presetForm}>
-                          <form className="contents">
+                          <form
+                            className="contents"
+                            onSubmit={(event) => {
+                              // Read-only preview: its fields can still be reached with Tab,
+                              // and Enter in a lone text field would submit the form that
+                              // embeds the workflow editor.
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                          >
                             {(() => {
                               const Def = getProcessorDefinition(
                                 presetDetail.processor,
