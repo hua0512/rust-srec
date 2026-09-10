@@ -93,6 +93,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
               <span className="px-1.5 text-muted-foreground">–</span>
               {end_time.slice(0, 5)}
             </p>
+            <TimezoneSummary timezone={config.data.timezone} />
           </div>
         );
       }
@@ -143,11 +144,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
             <code className="block rounded-lg border bg-muted/50 px-3 py-2 font-mono text-sm">
               {config.data.expression}
             </code>
-            {config.data.timezone && (
-              <p className="text-xs text-muted-foreground">
-                {config.data.timezone}
-              </p>
-            )}
+            <TimezoneSummary timezone={config.data.timezone} />
           </div>
         );
       }
@@ -247,6 +244,18 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
       </CardHeader>
       <CardContent className="flex-1">{renderConfig()}</CardContent>
     </Card>
+  );
+}
+
+function TimezoneSummary({ timezone }: { timezone?: string | null }) {
+  const { i18n } = useLingui();
+  const label =
+    timezone === 'local' ? i18n._(msg`Server local`) : (timezone ?? 'UTC');
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      <Trans>Timezone: {label}</Trans>
+    </p>
   );
 }
 

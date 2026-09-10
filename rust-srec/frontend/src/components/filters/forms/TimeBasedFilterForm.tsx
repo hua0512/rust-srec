@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useMemo } from 'react';
+import { TimezoneField } from './TimezoneField';
 
 /**
  * `id` is the wire value stored in `config.days_of_week` and must stay English; `label` and
@@ -160,6 +161,7 @@ export function TimeBasedFilterForm() {
 
   return (
     <div className="space-y-8 p-4">
+      <TimezoneField />
       <FormField
         control={control}
         name="config.days_of_week"

@@ -373,10 +373,17 @@ date windows are omitted.
 
 Omitted or null timezone now means UTC for both rule types. Upgrades preserve
 existing TimeBased omissions by storing explicit `"local"`; existing explicit
-IANA zones and Cron rules keep their meaning. The frontend time-based form does
-not expose timezone: editing a TimeBased rule without that member preserves its
-stored timezone. Send explicit null or `"UTC"` to switch it to UTC. New filters
-and filter-type changes use the UTC default.
+IANA zones and Cron rules keep their meaning. Both filter forms let you choose
+UTC or **Server local**, or enter an IANA name. Server local means the backend
+server's timezone, which may differ from the browser's timezone. The filter cards
+show the effective timezone beside the schedule. Editing preserves the stored
+zone; clearing the timezone control explicitly selects UTC. New filters and
+filter-type changes also start with UTC. Changing the zone keeps the entered
+clock times, interpreting those times in the newly selected zone.
+
+For API clients, a same-type TimeBased update that omits the timezone member
+retains its stored value. Send explicit null or `"UTC"` to switch it to UTC.
+Replacing a Cron configuration without a timezone uses UTC.
 
 Backup schema `0.1.8` exports an explicit timezone for both types. Importing a
 TimeBased omission from schema `0.1.7` or earlier retains local-time behavior;
