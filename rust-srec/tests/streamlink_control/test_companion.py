@@ -503,35 +503,56 @@ class CompanionTests(unittest.TestCase):
             left, right = socket.socketpair()
             left.settimeout(2)
             right.settimeout(2)
+            self.connections.extend([left, right])
+            # Exercise sender backpressure even where the default socket buffer
+            # can hold the whole application record before any client read.
+            right.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024)
             release, sent = threading.Event(), threading.Event()
-            self.addCleanup(release.set)
+            server_errors = []
             payload = b"tls-pending-tail" * 1000
             headers = {"Content-Length": str(len(payload)), "Connection": "keep-alive"}
             wire = b"HTTP/1.1 200 OK\r\n" + b"".join(
                 f"{key}: {value}\r\n".encode() for key, value in headers.items()) + b"\r\n" + payload
+            self.assertLessEqual(len(wire), 16384, "the accepted payload must fit in one TLS record")
             def serve():
-                with server_context.wrap_socket(right, server_side=True) as connection:
-                    connection.sendall(wire)
-                    sent.set()
-                    release.wait(3)
+                try:
+                    with server_context.wrap_socket(right, server_side=True) as connection:
+                        connection.sendall(wire)
+                        sent.set()
+                        release.wait(3)
+                except Exception as error:
+                    server_errors.append(error)
             server = threading.Thread(target=serve, daemon=True)
             server.start()
-            client = client_context.wrap_socket(left, server_hostname="localhost")
-            self.connections.append(client)
-            self.assertTrue(sent.wait(2))
-            makefile = client.makefile
-            # Python 3.14's default 128 KiB buffer can consume the entire TLS
-            # record while parsing headers. Use a legal smaller buffer so this
-            # fixture proves the distinct SSLSocket.pending boundary.
-            with mock.patch.object(client, "makefile", side_effect=lambda mode: makefile(mode, buffering=1024)):
-                response = self.parsed_response(client, headers)
-            self.assertGreater(client.pending(), 0, "fixture must stage a decrypted TLS tail")
-            reader = self.wrap.StreamIOIterWrapper(control.HTTPBody(response, self.owner.stopped))
-            self.owner.request_stop(2)
-            self.assertEqual(self.drain(reader), payload)
-            self.assert_drained()
-            release.set()
-            server.join(2)
+            client = response = None
+            try:
+                client = client_context.wrap_socket(left, server_hostname="localhost")
+                self.connections.append(client)
+                makefile = client.makefile
+                # Begin reading while sendall can still be blocked on socket
+                # capacity. Waiting for send completion first deadlocks on macOS.
+                # Python 3.14's default 128 KiB buffer can consume the entire TLS
+                # record while parsing headers. Use a legal smaller buffer so
+                # this fixture proves the distinct SSLSocket.pending boundary.
+                with mock.patch.object(client, "makefile", side_effect=lambda mode: makefile(mode, buffering=1024)):
+                    response = self.parsed_response(client, headers)
+                self.assertTrue(sent.wait(2), server_errors)
+                self.assertGreater(client.pending(), 0, "fixture must stage a decrypted TLS tail")
+                reader = self.wrap.StreamIOIterWrapper(control.HTTPBody(response, self.owner.stopped))
+                self.owner.request_stop(2)
+                self.assertEqual(self.drain(reader), payload)
+                self.assert_drained()
+            finally:
+                release.set()
+                if response is not None:
+                    response.close()
+                if client is not None:
+                    client.close()
+                left.close()
+                right.close()
+                server.join(2)
+                self.assertFalse(server.is_alive(), "TLS fixture server must settle")
+            self.assertFalse(server_errors)
 
     def assert_manifest_reload_stops(self, dash=False):
         if dash:
