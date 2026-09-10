@@ -56,28 +56,47 @@ for fallback; use omission or `null` to clear the override.
 
 ### Stopping Streamlink Recordings
 
-Stopping a Streamlink recording keeps its stdout forwarding and stderr readers
-alive while the source stops. Unix sends SIGTERM to Streamlink. Hidden Windows
-processes have no supported console-signal path, so the source gets a bounded
-chance to exit naturally before forced termination. Source shutdown waits at most
-three seconds within the remaining configured stop budget. FFmpeg then uses the
-remaining budget to consume pipe EOF and finalize its output.
+For an audited Streamlink 8.5.0 installation, stopping a recording requests an
+acquisition stop through a private authenticated control connection. The configured
+CLI, platform plugins, authentication, proxy settings, quality and extra arguments
+remain in use. A bounded loader probe establishes support before the backend adds
+its embedded companion; unchanged executable probes are coalesced and cached.
+Each recording still verifies the companion and its actual reader graph.
 
-Both processes run under process-tree containment. A deadline forces tree
-termination, and descendants are also terminated when their direct parent exits.
-Containment assumes descendants do not deliberately escape the process group or
-Windows Job Object.
+| Reader profile | Cooperative drain behavior |
+| --- | --- |
+| Segmented HLS/DASH, including filtering and nested muxers | Stop new acquisition, finish admitted segment/map work, and drain reader buffers and every muxer input to EOF. |
+| HTTP on CPython 3.11/3.14 with requests 2.34.2 and urllib3 2.7.0 | Drain HTTP prefetch, decrypted TLS pending bytes, and identity/gzip/deflate decoder buffers. Opaque transports and other decoders are not included. |
+| TwitCasting websocket with websocket-client 1.9.2 | Finish an admitted receive and its delivery before stopping the next message. |
+| File paths and in-memory BytesIO input | Preserve the current unbuffered file read or all already-acquired in-memory bytes. Arbitrary buffered file objects are not included. |
 
-On macOS, if a group-termination request races the leader's exit, cleanup uses
-the remaining forced-cleanup budget to confirm that exit before retrying group
-termination. This does not add a new grace period; failure to confirm cleanup
-within the deadline remains an error.
+The companion checks upstream source compatibility rather than trusting version
+text alone. Unsupported old, portable or custom executables retain ordinary
+recording behavior. Unsupported reader graphs also retain their CLI behavior,
+but a requested stop reports `Streamlink cooperative drain incomplete` instead
+of claiming a verified drain. No recording engine feature is disabled to establish
+compatibility.
 
-This preserves forwarding of emitted stdout data within the available budget;
-it cannot guarantee every fetched byte still held inside Streamlink's internal
-ring buffer. Upstream's signal handler interrupts the output loop rather than
-providing a drain-all operation; see the [upstream cleanup loop](https://github.com/streamlink/streamlink/blob/16fff079ca6044cbe0fd0e855720cf8fed602de6/src/streamlink_cli/streamrunner.py#L100).
-Forced termination can still truncate the final recording tail.
+Stdout forwarding and stderr processing remain alive while producers stop. A
+successful cooperative stop requires actual source EOF, complete pipe forwarding
+and successful external FFmpeg finalization; a control acknowledgement alone is
+insufficient. Hidden Windows processes use the control connection without console
+signals. Internal FFmpeg muxers and validation processes stay hidden, and Windows
+muxer pipes flush accepted bytes before disconnecting.
+
+The attempt's remaining stop deadline bounds these process, forwarding and remux
+phases, with time reserved for FFmpeg finalization. A later shutdown can tighten
+an already-stopping attempt. Required final-event delivery remains owned until its
+consumer accepts it: direct engine integrations must drain the event channel,
+and a stalled consumer is bounded by the worker's overall force cap. Deadline
+expiry still forces contained process-tree termination and can truncate the tail.
+The guarantee covers acquired data and admitted work, not future undiscovered
+segments, upstream corruption or work that exceeds the deadline.
+
+Both subprocess trees remain contained, including descendants left by an exiting
+parent. On macOS, leader-exit races use the remaining containment budget; they do
+not introduce another grace period. This assumes descendants do not deliberately
+escape the process group or Windows Job Object.
 
 ## 1. Engines Feature List
 

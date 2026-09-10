@@ -124,6 +124,52 @@ jobs:
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
+  streamlink-control:
+    name: Streamlink control (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: check-changes
+    if: needs.check-changes.outputs.rust == 'true'
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: windows-latest
+            python: '3.14'
+          - os: macos-latest
+            python: '3.14'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: rust-srec/tests/streamlink_control/requirements.txt
+      - uses: ./.github/actions/setup-rust
+      - name: Install Linux fixture tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install Windows fixture tools
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress -y
+      - name: Install macOS fixture tools
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install audited test-only Python dependencies
+        run: python -m pip install --only-binary=:all: -r rust-srec/tests/streamlink_control/requirements.txt
+      - name: Test acquisition and buffer contracts without subprocesses
+        run: |
+          python -m unittest discover -s rust-srec/tests/streamlink_control -p test_companion.py
+          python -m unittest discover -s rust-srec/tests/streamlink_control -p test_process_tree.py
+      - name: Test local CLI loading and native nested muxer tails
+        env:
+          SREC_STREAMLINK_NATIVE: '1'
+        run: python -m unittest discover -s rust-srec/tests/streamlink_control -p test_native.py
+
   check-changes:
     name: Check Changed Files
     runs-on: ubuntu-latest

@@ -687,7 +687,7 @@ pub struct DownloadHandle {
     /// configured `graceful_stop_timeout_secs`. During shutdown that timeout
     /// can exceed the process-wide budget, so engines clamp against this
     /// through [`Self::graceful_stop_budget`] and finish inside it.
-    stop_deadline: Arc<parking_lot::Mutex<Option<tokio::time::Instant>>>,
+    stop_deadline: tokio::sync::watch::Sender<Option<tokio::time::Instant>>,
 }
 
 impl DownloadHandle {
@@ -705,16 +705,31 @@ impl DownloadHandle {
             cancellation_token: CancellationToken::new(),
             event_tx,
             started_at: Utc::now(),
-            stop_deadline: Arc::new(parking_lot::Mutex::new(None)),
+            stop_deadline: tokio::sync::watch::channel(None).0,
         }
     }
 
-    /// Record the absolute instant by which finalization must be complete.
+    /// Tighten the absolute deadline for child-process finalization.
     ///
     /// Called before `cancel` so an engine that reads its budget on the
     /// cancellation branch always sees the deadline that applies to it.
     pub fn set_stop_deadline(&self, deadline: tokio::time::Instant) {
-        *self.stop_deadline.lock() = Some(deadline);
+        self.stop_deadline.send_if_modified(|current| {
+            if current.is_none_or(|previous| deadline < previous) {
+                *current = Some(deadline);
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    /// A second shutdown request can tighten an already-cancelled attempt.
+    /// CancellationToken alone cannot wake that attempt a second time.
+    pub(crate) fn stop_deadline_updates(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Option<tokio::time::Instant>> {
+        self.stop_deadline.subscribe()
     }
 
     /// The graceful-stop window this engine may actually use.
@@ -724,7 +739,7 @@ impl DownloadHandle {
     /// outlives a 30s process shutdown budget, and the engine child is killed
     /// mid-finalization instead of being asked to finish.
     pub fn graceful_stop_budget(&self, configured: Duration) -> Duration {
-        let Some(deadline) = *self.stop_deadline.lock() else {
+        let Some(deadline) = *self.stop_deadline.borrow() else {
             return configured;
         };
         configured.min(deadline.saturating_duration_since(tokio::time::Instant::now()))
@@ -799,6 +814,39 @@ pub trait DownloadEngine: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn an_already_cancelled_handle_notifies_only_earlier_stop_deadlines() {
+        let (events, _receiver) = mpsc::channel(1);
+        let handle = DownloadHandle::new(
+            "deadline",
+            EngineType::Streamlink,
+            DownloadConfig::new(
+                "https://invalid.test/",
+                ".",
+                "streamer",
+                "Streamer",
+                "session",
+            ),
+            events,
+        );
+        let mut changes = handle.stop_deadline_updates();
+        handle.cancellation_token.cancel();
+        let first = tokio::time::Instant::now() + Duration::from_secs(10);
+        handle.set_stop_deadline(first);
+        changes.changed().await.unwrap();
+        assert_eq!(*changes.borrow_and_update(), Some(first));
+        handle.set_stop_deadline(first + Duration::from_secs(10));
+        assert!(!changes.has_changed().unwrap());
+        let earlier = tokio::time::Instant::now() + Duration::from_millis(100);
+        handle.set_stop_deadline(earlier);
+        changes.changed().await.unwrap();
+        assert_eq!(*changes.borrow_and_update(), Some(earlier));
+        assert_eq!(
+            handle.graceful_stop_budget(Duration::from_secs(60)),
+            Duration::from_millis(100)
+        );
+    }
 
     #[test]
     fn test_engine_type_from_str() {

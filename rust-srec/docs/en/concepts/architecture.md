@@ -333,8 +333,10 @@ stderr has not already identified the output error.
 Auxiliary settlement retains completed task results across timeout, aborts and
 joins unfinished tasks after unconfirmed cleanup, and lets confirmed cleanup
 finish its final events. FFmpeg's stdin stop command and Streamlink's producer,
-pipe and contained-child shutdown policies remain separate. This does not extend
-Streamlink's internal-buffer draining or hidden-Windows cooperative-stop guarantees.
+pipe and contained-child shutdown policies remain separate. Streamlink's audited
+companion stops acquisition and drains accepted work, including hidden Windows
+children, within the attempt's remaining process budget. Unsupported readers and
+forced termination report incomplete drain; see [Streamlink stopping](engines.md#stopping-streamlink-recordings).
 
 ## Key flows
 
