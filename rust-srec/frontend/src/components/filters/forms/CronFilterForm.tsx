@@ -13,8 +13,8 @@ import { Trans } from '@lingui/react/macro';
 import {
   CONFIG_DESCRIPTION,
   ConfigFieldLabel,
-  CONFIG_INPUT,
 } from '@/components/config/shared/config-field';
+import { TimezoneField } from './TimezoneField';
 
 export function CronFilterForm() {
   const { i18n } = useLingui();
@@ -46,28 +46,7 @@ export function CronFilterForm() {
           </FormItem>
         )}
       />
-      <FormField
-        control={control}
-        name="config.timezone"
-        render={({ field }) => (
-          <FormItem className="space-y-2">
-            <ConfigFieldLabel>
-              <Trans>Timezone</Trans>
-            </ConfigFieldLabel>
-            <FormControl>
-              <Input
-                className={CONFIG_INPUT}
-                placeholder={i18n._(msg`UTC`)}
-                {...field}
-              />
-            </FormControl>
-            <FormDescription className={CONFIG_DESCRIPTION}>
-              <Trans>IANA Timezone (e.g. Asia/Shanghai, UTC).</Trans>
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <TimezoneField />
     </div>
   );
 }

@@ -138,7 +138,7 @@
 
 - **Filters reuse parsed rules and handle timezone boundaries consistently**
 
-  Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Omitted/null timezones now default to UTC for both rule types. A forward migration and legacy-backup normalization preserve existing TimeBased local schedules; explicit `local` shares the same matching and wake logic. Same-type edits that omit timezone retain the stored value, and schema 0.1.8 exports explicit zones. Frontend timezone controls are not added. See [timezone compatibility](../operations/upgrading.md#filter-timezone-compatibility).
+  Cron and regex definitions use bounded caches. Time-based filters accept explicit IANA timezones and share overnight/DST interval boundaries for matching and wakeups, including overlapping repeated-hour windows. Omitted/null timezones now default to UTC for both rule types. A forward migration and legacy-backup normalization preserve existing TimeBased local schedules; explicit `local` shares the same matching and wake logic. Same-type TimeBased edits that omit timezone retain the stored value, and schema 0.1.8 exports explicit zones. Both filter forms now expose UTC, server-local and IANA timezone choices, preserve the saved zone during edits and display it on filter cards. New filters and clearing the timezone control explicitly select UTC. See [timezone compatibility](../operations/upgrading.md#filter-timezone-compatibility).
 
 - **Proxy credentials preserve literal URL characters**
 

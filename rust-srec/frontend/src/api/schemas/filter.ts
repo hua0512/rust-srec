@@ -32,11 +32,14 @@ export const DaysOfWeekSchema = z.enum([
   'Sunday',
 ]);
 
+const FilterTimezoneSchema = z.string().nullish();
+
 // TimeBased filter config (matches backend TimeBasedFilterConfig)
 export const TimeBasedFilterConfigSchema = z.object({
   days_of_week: z.array(DaysOfWeekSchema),
   start_time: TimeStringSchema,
   end_time: TimeStringSchema,
+  timezone: FilterTimezoneSchema,
 });
 
 // Keyword filter config (matches backend KeywordFilterConfig)
@@ -53,7 +56,7 @@ export const CategoryFilterConfigSchema = z.object({
 // Cron filter config
 export const CronFilterConfigSchema = z.object({
   expression: z.string(),
-  timezone: z.string().optional(),
+  timezone: FilterTimezoneSchema,
 });
 
 // Regex filter config
@@ -127,6 +130,7 @@ export function normalizeFilterConfigForType(
           days_of_week,
           start_time: normalizeTimeToHHMMSS(c.start_time),
           end_time: normalizeTimeToHHMMSS(c.end_time),
+          timezone: c.timezone ?? 'UTC',
         };
       }
 
@@ -134,6 +138,7 @@ export function normalizeFilterConfigForType(
         days_of_week: Array.isArray(c.days_of_week) ? c.days_of_week : [],
         start_time: normalizeTimeToHHMMSS(c.start_time),
         end_time: normalizeTimeToHHMMSS(c.end_time),
+        timezone: c.timezone ?? 'UTC',
       };
     }
 
@@ -168,7 +173,7 @@ export function normalizeFilterConfigForType(
       return {
         expression:
           typeof c.expression === 'string' ? c.expression : '* * * * * *',
-        timezone: typeof c.timezone === 'string' ? c.timezone : undefined,
+        timezone: c.timezone ?? 'UTC',
       };
     }
 

@@ -189,7 +189,7 @@ msgstr "{0}/{1, plural, one {# step} other {# steps}}"
 
 #. placeholder {0}: duration.hours
 #. placeholder {1}: duration.minutes
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:389
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:391
 msgid "{0}h {1}m"
 msgstr "{0}h {1}m"
 
@@ -310,7 +310,7 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:294
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:296
 msgid "24-hour timeline"
 msgstr "24-hour timeline"
 
@@ -393,7 +393,7 @@ msgstr "Actions"
 msgid "Active"
 msgstr "Active"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:171
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:173
 msgid "Active Days"
 msgstr "Active Days"
 
@@ -607,7 +607,7 @@ msgstr "Alerts when disk space is running low."
 msgid "All"
 msgstr "All"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:94
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:95
 msgctxt "day-of-week preset"
 msgid "All"
 msgstr "All"
@@ -1232,7 +1232,7 @@ msgstr "Cache"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:258
+#: src/components/filters/FilterDialog.tsx:259
 #: src/components/layout/themes/import-modal.tsx:117
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:455
@@ -1457,7 +1457,11 @@ msgstr "Choose how files are transferred to the remote."
 msgid "Choose how this streamer handles proxy connections."
 msgstr "Choose how this streamer handles proxy connections."
 
-#: src/components/filters/FilterDialog.tsx:213
+#: src/components/filters/forms/TimezoneField.tsx:40
+msgid "Choose timezone"
+msgstr "Choose timezone"
+
+#: src/components/filters/FilterDialog.tsx:214
 msgid "Choose when this streamer should be recorded."
 msgstr "Choose when this streamer should be recorded."
 
@@ -2018,7 +2022,7 @@ msgstr "Create engine"
 msgid "Create Engine"
 msgstr "Create Engine"
 
-#: src/components/filters/FilterDialog.tsx:274
+#: src/components/filters/FilterDialog.tsx:275
 msgid "Create filter"
 msgstr "Create filter"
 
@@ -2480,7 +2484,7 @@ msgstr "Delete engine"
 msgid "Delete File"
 msgstr "Delete File"
 
-#: src/components/filters/FilterCard.tsx:242
+#: src/components/filters/FilterCard.tsx:239
 msgid "Delete filter"
 msgstr "Delete filter"
 
@@ -2973,8 +2977,8 @@ msgstr "Edit channel"
 msgid "Edit Engine"
 msgstr "Edit Engine"
 
-#: src/components/filters/FilterCard.tsx:230
-#: src/components/filters/FilterDialog.tsx:207
+#: src/components/filters/FilterCard.tsx:227
+#: src/components/filters/FilterDialog.tsx:208
 msgid "Edit filter"
 msgstr "Edit filter"
 
@@ -2996,7 +3000,7 @@ msgstr "Editing Mode"
 msgid "Effective Scope"
 msgstr "Effective Scope"
 
-#: src/components/filters/FilterCard.tsx:183
+#: src/components/filters/FilterCard.tsx:180
 msgid "Empty pattern"
 msgstr "Empty pattern"
 
@@ -3055,7 +3059,7 @@ msgstr "Encoding Preset"
 msgid "Encoding Settings"
 msgstr "Encoding Settings"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:403
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:405
 msgid "End"
 msgstr "End"
 
@@ -3246,8 +3250,8 @@ msgstr "Examples:"
 msgid "Exceptional states"
 msgstr "Exceptional states"
 
-#: src/components/filters/FilterCard.tsx:129
-#: src/components/filters/FilterCard.tsx:166
+#: src/components/filters/FilterCard.tsx:130
+#: src/components/filters/FilterCard.tsx:163
 #: src/components/filters/forms/RegexFilterForm.tsx:56
 msgid "Exclude"
 msgstr "Exclude"
@@ -3402,7 +3406,7 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/filters/FilterCard.tsx:48
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:70
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
 msgctxt "Friday initial"
 msgid "F"
 msgstr "F"
@@ -3471,7 +3475,7 @@ msgstr "Failed to create API key"
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
-#: src/components/filters/FilterDialog.tsx:152
+#: src/components/filters/FilterDialog.tsx:153
 msgid "Failed to create filter"
 msgstr "Failed to create filter"
 
@@ -3691,7 +3695,7 @@ msgstr "Failed to trigger check"
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
-#: src/components/filters/FilterDialog.tsx:167
+#: src/components/filters/FilterDialog.tsx:168
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
@@ -3854,7 +3858,7 @@ msgstr "Filter"
 msgid "Filter by title keywords"
 msgstr "Filter by title keywords"
 
-#: src/components/filters/FilterDialog.tsx:145
+#: src/components/filters/FilterDialog.tsx:146
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
@@ -3874,7 +3878,7 @@ msgstr "Filter Interactive Games"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
 
-#: src/components/filters/FilterDialog.tsx:234
+#: src/components/filters/FilterDialog.tsx:235
 msgid "Filter Type"
 msgstr "Filter Type"
 
@@ -3883,7 +3887,7 @@ msgstr "Filter Type"
 msgid "Filter Type"
 msgstr "Filter Type"
 
-#: src/components/filters/FilterDialog.tsx:160
+#: src/components/filters/FilterDialog.tsx:161
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
@@ -4010,7 +4014,7 @@ msgstr "Free space on the disks recordings are written to."
 msgid "Frequent words to keep"
 msgstr "Frequent words to keep"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:72
 msgid "Friday"
 msgstr "Friday"
 
@@ -4032,7 +4036,7 @@ msgstr "Full access"
 msgid "Full access — all data and configuration"
 msgstr "Full access — all data and configuration"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:86
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
 msgid "Full Day"
 msgstr "Full Day"
 
@@ -4354,7 +4358,7 @@ msgstr "Home"
 msgid "Hour (00-23)"
 msgstr "Hour (00-23)"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:309
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:311
 msgid "Hour {hour}"
 msgstr "Hour {hour}"
 
@@ -4474,10 +4478,6 @@ msgstr "https://lb-eu.cdn-perfprod.com"
 msgid "https://twitch.tv/..."
 msgstr "https://twitch.tv/..."
 
-#: src/components/filters/forms/CronFilterForm.tsx:65
-msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
-msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
-
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:348
 msgid "Icon"
 msgstr "Icon"
@@ -4506,7 +4506,7 @@ msgstr "If enabled, streams matching this pattern will be ignored."
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "If set, stream titles must contain at least one of these keywords."
 
-#: src/components/filters/FilterCard.tsx:176
+#: src/components/filters/FilterCard.tsx:173
 msgid "Ignore case"
 msgstr "Ignore case"
 
@@ -4563,8 +4563,8 @@ msgstr "In progress"
 msgid "Inactive"
 msgstr "Inactive"
 
-#: src/components/filters/FilterCard.tsx:122
-#: src/components/filters/FilterCard.tsx:168
+#: src/components/filters/FilterCard.tsx:123
+#: src/components/filters/FilterCard.tsx:165
 msgid "Include"
 msgstr "Include"
 
@@ -4642,7 +4642,7 @@ msgstr "Inspecting"
 msgid "Interact"
 msgstr "Interact"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:255
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:257
 msgid "Interactive 24-hour timeline selection."
 msgstr "Interactive 24-hour timeline selection."
 
@@ -5080,7 +5080,7 @@ msgid "Lowest bitrate"
 msgstr "Lowest bitrate"
 
 #: src/components/filters/FilterCard.tsx:41
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:50
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
 msgctxt "Monday initial"
 msgid "M"
 msgstr "M"
@@ -5393,7 +5393,7 @@ msgstr "Modify the parameters for this processing step."
 msgid "Module Log Levels"
 msgstr "Module Log Levels"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:52
 msgid "Monday"
 msgstr "Monday"
 
@@ -5427,7 +5427,7 @@ msgstr "More filters"
 msgid "More pages"
 msgstr "More pages"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
 msgid "Morning"
 msgstr "Morning"
 
@@ -5579,7 +5579,7 @@ msgstr "New password (min 8 chars)"
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
-#: src/components/filters/FilterDialog.tsx:209
+#: src/components/filters/FilterDialog.tsx:210
 msgid "New recording filter"
 msgstr "New recording filter"
 
@@ -5596,7 +5596,7 @@ msgctxt "pagination"
 msgid "Next"
 msgstr "Next"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:90
 msgid "Night"
 msgstr "Night"
 
@@ -5686,7 +5686,7 @@ msgstr "No issues detected"
 msgid "No jobs found"
 msgstr "No jobs found"
 
-#: src/components/filters/FilterCard.tsx:113
+#: src/components/filters/FilterCard.tsx:114
 msgid "No keywords set"
 msgstr "No keywords set"
 
@@ -6751,7 +6751,7 @@ msgstr "Position"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "Powered by <0>Rust-srec</0>."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:428
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:430
 msgid "Precision Schedule"
 msgstr "Precision Schedule"
 
@@ -6827,8 +6827,8 @@ msgstr "Preset updated successfully"
 msgid "presets"
 msgstr "presets"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:188
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:267
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:190
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:269
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -6873,7 +6873,7 @@ msgstr "Primary"
 msgid "Primary Action"
 msgstr "Primary Action"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
 msgid "Prime Time"
 msgstr "Prime Time"
 
@@ -7622,13 +7622,13 @@ msgid "RUST-SREC PRO VIEWER"
 msgstr "RUST-SREC PRO VIEWER"
 
 #: src/components/filters/FilterCard.tsx:49
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:75
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
 msgctxt "Saturday initial"
 msgid "S"
 msgstr "S"
 
 #: src/components/filters/FilterCard.tsx:50
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:80
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
 msgctxt "Sunday initial"
 msgid "S"
 msgstr "S"
@@ -7658,12 +7658,12 @@ msgstr "Sanitized session title"
 msgid "Sanitized streamer name"
 msgstr "Sanitized streamer name"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:77
 msgid "Saturday"
 msgstr "Saturday"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:272
+#: src/components/filters/FilterDialog.tsx:273
 #: src/components/notifications/channel-form.tsx:460
 #: src/components/shared/save-fab.tsx:100
 #: src/components/streamers/streamer-editor.tsx:312
@@ -7691,7 +7691,7 @@ msgstr "Save with incomplete delete checks?"
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
-#: src/components/filters/FilterDialog.tsx:269
+#: src/components/filters/FilterDialog.tsx:270
 #: src/components/shared/save-fab.tsx:98
 msgid "Saving"
 msgstr "Saving"
@@ -7987,7 +7987,7 @@ msgstr "Select streamers"
 msgid "Select template"
 msgstr "Select template"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:174
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:176
 msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
@@ -8030,6 +8030,15 @@ msgstr "Send a website-style integrity token with studio requests. Enabled by de
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:323
 msgid "Separate multiple paths with commas."
 msgstr "Separate multiple paths with commas."
+
+#: src/components/filters/FilterCard.tsx:253
+#: src/components/filters/forms/TimezoneField.tsx:24
+msgid "Server local"
+msgstr "Server local"
+
+#: src/components/filters/forms/TimezoneField.tsx:75
+msgid "Server local uses the backend server's timezone. You can also enter an IANA name such as Europe/Berlin. Clearing selects UTC."
+msgstr "Server local uses the backend server's timezone. You can also enter an IANA name such as Europe/Berlin. Clearing selects UTC."
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:328
 msgid "Server not configured"
@@ -8144,7 +8153,7 @@ msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:241
+#: src/components/filters/FilterDialog.tsx:242
 #: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
@@ -8356,7 +8365,7 @@ msgstr "Standard"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "Standard cron expression (sec min hour day mon dow)."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:367
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:369
 msgid "Start"
 msgstr "Start"
 
@@ -8643,7 +8652,7 @@ msgstr "Successfully processed {0} pipelines"
 msgid "Successfully processed {0} streamers"
 msgstr "Successfully processed {0} streamers"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:82
 msgid "Sunday"
 msgstr "Sunday"
 
@@ -8710,13 +8719,13 @@ msgid "System-wide preferences"
 msgstr "System-wide preferences"
 
 #: src/components/filters/FilterCard.tsx:47
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:65
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
 msgctxt "Thursday initial"
 msgid "T"
 msgstr "T"
 
 #: src/components/filters/FilterCard.tsx:42
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:55
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
 msgctxt "Tuesday initial"
 msgid "T"
 msgstr "T"
@@ -8874,11 +8883,11 @@ msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete t
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:431
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:433
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 
-#: src/components/filters/FilterCard.tsx:258
+#: src/components/filters/FilterCard.tsx:267
 msgid "This filter's settings could not be read."
 msgstr "This filter's settings could not be read."
 
@@ -8969,7 +8978,7 @@ msgstr "Thumbnail"
 msgid "Thumbnail Generator"
 msgstr "Thumbnail Generator"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:67
 msgid "Thursday"
 msgstr "Thursday"
 
@@ -8985,7 +8994,7 @@ msgstr "Time offset to take screenshot from"
 msgid "Time Placeholders (Local Time)"
 msgstr "Time Placeholders (Local Time)"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:252
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:254
 msgid "Time Range"
 msgstr "Time Range"
 
@@ -9035,9 +9044,13 @@ msgstr "Timeout before cancelling IO-bound processors."
 msgid "Timestamp"
 msgstr "Timestamp"
 
-#: src/components/filters/forms/CronFilterForm.tsx:55
+#: src/components/filters/forms/TimezoneField.tsx:36
 msgid "Timezone"
 msgstr "Timezone"
+
+#: src/components/filters/FilterCard.tsx:257
+msgid "Timezone: {label}"
+msgstr "Timezone: {label}"
 
 #: src/components/config/platforms/tabs/general-tab.tsx:43
 msgid "Timing & Delays"
@@ -9305,7 +9318,7 @@ msgstr "Try Again"
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:57
 msgid "Tuesday"
 msgstr "Tuesday"
 
@@ -9397,7 +9410,7 @@ msgstr "Unknown error"
 msgid "Unknown File"
 msgstr "Unknown File"
 
-#: src/components/filters/FilterCard.tsx:194
+#: src/components/filters/FilterCard.tsx:191
 msgid "Unknown filter type"
 msgstr "Unknown filter type"
 
@@ -9578,10 +9591,6 @@ msgstr "Username (Optional)"
 msgid "Users"
 msgstr "Users"
 
-#: src/components/filters/forms/CronFilterForm.tsx:60
-msgid "UTC"
-msgstr "UTC"
-
 #: src/components/pipeline/workflows/workflow-editor.tsx:188
 msgid "Validate"
 msgstr "Validate"
@@ -9695,7 +9704,7 @@ msgid "VOD Segment Timeout (ms)"
 msgstr "VOD Segment Timeout (ms)"
 
 #: src/components/filters/FilterCard.tsx:45
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:60
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
 msgctxt "Wednesday initial"
 msgid "W"
 msgstr "W"
@@ -9771,7 +9780,7 @@ msgstr "Web Push priority updated"
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:62
 msgid "Wednesday"
 msgstr "Wednesday"
 
@@ -9779,11 +9788,11 @@ msgstr "Wednesday"
 msgid "Week"
 msgstr "Week"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:97
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
 msgid "Weekdays"
 msgstr "Weekdays"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:99
 msgid "Weekends"
 msgstr "Weekends"
 

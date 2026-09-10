@@ -112,6 +112,7 @@ export function FilterDialog({
               days_of_week: [],
               start_time: '00:00:00',
               end_time: '23:59:59',
+              timezone: 'UTC',
             };
             break;
           case 'KEYWORD':

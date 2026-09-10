@@ -189,7 +189,7 @@ msgstr "{0}/{1, plural, other {# 个步骤}}"
 
 #. placeholder {0}: duration.hours
 #. placeholder {1}: duration.minutes
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:389
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:391
 msgid "{0}h {1}m"
 msgstr "{0}小时{1}分"
 
@@ -310,7 +310,7 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:294
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:296
 msgid "24-hour timeline"
 msgstr "24 小时时间线"
 
@@ -393,7 +393,7 @@ msgstr "操作"
 msgid "Active"
 msgstr "启用"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:171
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:173
 msgid "Active Days"
 msgstr "生效日期"
 
@@ -607,7 +607,7 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:94
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:95
 msgctxt "day-of-week preset"
 msgid "All"
 msgstr "全部"
@@ -1232,7 +1232,7 @@ msgstr "缓存"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:258
+#: src/components/filters/FilterDialog.tsx:259
 #: src/components/layout/themes/import-modal.tsx:117
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:455
@@ -1457,7 +1457,11 @@ msgstr "选择将文件传输到远程的方式。"
 msgid "Choose how this streamer handles proxy connections."
 msgstr "选择此主播如何处理代理连接。"
 
-#: src/components/filters/FilterDialog.tsx:213
+#: src/components/filters/forms/TimezoneField.tsx:40
+msgid "Choose timezone"
+msgstr "选择时区"
+
+#: src/components/filters/FilterDialog.tsx:214
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
@@ -2018,7 +2022,7 @@ msgstr "创建引擎"
 msgid "Create Engine"
 msgstr "创建引擎"
 
-#: src/components/filters/FilterDialog.tsx:274
+#: src/components/filters/FilterDialog.tsx:275
 msgid "Create filter"
 msgstr "创建过滤器"
 
@@ -2480,7 +2484,7 @@ msgstr "删除引擎"
 msgid "Delete File"
 msgstr "删除文件"
 
-#: src/components/filters/FilterCard.tsx:242
+#: src/components/filters/FilterCard.tsx:239
 msgid "Delete filter"
 msgstr "删除过滤器"
 
@@ -2973,8 +2977,8 @@ msgstr "编辑渠道"
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
-#: src/components/filters/FilterCard.tsx:230
-#: src/components/filters/FilterDialog.tsx:207
+#: src/components/filters/FilterCard.tsx:227
+#: src/components/filters/FilterDialog.tsx:208
 msgid "Edit filter"
 msgstr "编辑过滤器"
 
@@ -2996,7 +3000,7 @@ msgstr "编辑模式"
 msgid "Effective Scope"
 msgstr "生效范围"
 
-#: src/components/filters/FilterCard.tsx:183
+#: src/components/filters/FilterCard.tsx:180
 msgid "Empty pattern"
 msgstr "表达式为空"
 
@@ -3055,7 +3059,7 @@ msgstr "编码预设"
 msgid "Encoding Settings"
 msgstr "编码设置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:403
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:405
 msgid "End"
 msgstr "结束"
 
@@ -3246,8 +3250,8 @@ msgstr "示例："
 msgid "Exceptional states"
 msgstr "异常状态"
 
-#: src/components/filters/FilterCard.tsx:129
-#: src/components/filters/FilterCard.tsx:166
+#: src/components/filters/FilterCard.tsx:130
+#: src/components/filters/FilterCard.tsx:163
 #: src/components/filters/forms/RegexFilterForm.tsx:56
 msgid "Exclude"
 msgstr "排除"
@@ -3402,7 +3406,7 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/filters/FilterCard.tsx:48
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:70
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
 msgctxt "Friday initial"
 msgid "F"
 msgstr "五"
@@ -3471,7 +3475,7 @@ msgstr "创建 API 密钥失败"
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:152
+#: src/components/filters/FilterDialog.tsx:153
 msgid "Failed to create filter"
 msgstr "创建过滤器失败"
 
@@ -3691,7 +3695,7 @@ msgstr "触发检查失败"
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:167
+#: src/components/filters/FilterDialog.tsx:168
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
@@ -3854,7 +3858,7 @@ msgstr "筛选"
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
 
-#: src/components/filters/FilterDialog.tsx:145
+#: src/components/filters/FilterDialog.tsx:146
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
@@ -3874,7 +3878,7 @@ msgstr "过滤互动玩法"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
 
-#: src/components/filters/FilterDialog.tsx:234
+#: src/components/filters/FilterDialog.tsx:235
 msgid "Filter Type"
 msgstr "过滤器类型"
 
@@ -3883,7 +3887,7 @@ msgstr "过滤器类型"
 msgid "Filter Type"
 msgstr "过滤器类型"
 
-#: src/components/filters/FilterDialog.tsx:160
+#: src/components/filters/FilterDialog.tsx:161
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
@@ -4010,7 +4014,7 @@ msgstr "录像写入的各磁盘的剩余空间。"
 msgid "Frequent words to keep"
 msgstr "保留高频词数量"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:72
 msgid "Friday"
 msgstr "星期五"
 
@@ -4032,7 +4036,7 @@ msgstr "完全访问"
 msgid "Full access — all data and configuration"
 msgstr "完全访问 — 所有数据和配置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:86
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
 msgid "Full Day"
 msgstr "全天"
 
@@ -4354,7 +4358,7 @@ msgstr "主页"
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:309
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:311
 msgid "Hour {hour}"
 msgstr "{hour} 点"
 
@@ -4474,10 +4478,6 @@ msgstr "https://lb-eu.cdn-perfprod.com"
 msgid "https://twitch.tv/..."
 msgstr "https://twitch.tv/..."
 
-#: src/components/filters/forms/CronFilterForm.tsx:65
-msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
-msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
-
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:348
 msgid "Icon"
 msgstr "图标"
@@ -4506,7 +4506,7 @@ msgstr "启用后，将忽略匹配此模式的流。"
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "如果设置，直播标题必须包含至少一个这些关键字。"
 
-#: src/components/filters/FilterCard.tsx:176
+#: src/components/filters/FilterCard.tsx:173
 msgid "Ignore case"
 msgstr "忽略大小写"
 
@@ -4563,8 +4563,8 @@ msgstr "进行中"
 msgid "Inactive"
 msgstr "未激活"
 
-#: src/components/filters/FilterCard.tsx:122
-#: src/components/filters/FilterCard.tsx:168
+#: src/components/filters/FilterCard.tsx:123
+#: src/components/filters/FilterCard.tsx:165
 msgid "Include"
 msgstr "包含"
 
@@ -4642,7 +4642,7 @@ msgstr "检查中"
 msgid "Interact"
 msgstr "查看详情"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:255
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:257
 msgid "Interactive 24-hour timeline selection."
 msgstr "24小时交互式时间线选择。"
 
@@ -5080,7 +5080,7 @@ msgid "Lowest bitrate"
 msgstr "最低码率"
 
 #: src/components/filters/FilterCard.tsx:41
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:50
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
 msgctxt "Monday initial"
 msgid "M"
 msgstr "一"
@@ -5393,7 +5393,7 @@ msgstr "修改此处理步骤的参数。"
 msgid "Module Log Levels"
 msgstr "模块日志级别"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:52
 msgid "Monday"
 msgstr "星期一"
 
@@ -5427,7 +5427,7 @@ msgstr "更多筛选"
 msgid "More pages"
 msgstr "更多页面"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
 msgid "Morning"
 msgstr "上午"
 
@@ -5579,7 +5579,7 @@ msgstr "新密码（至少 8 个字符）"
 msgid "New Preset Name"
 msgstr "新预设名称"
 
-#: src/components/filters/FilterDialog.tsx:209
+#: src/components/filters/FilterDialog.tsx:210
 msgid "New recording filter"
 msgstr "新建录制过滤器"
 
@@ -5596,7 +5596,7 @@ msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:90
 msgid "Night"
 msgstr "夜间"
 
@@ -5686,7 +5686,7 @@ msgstr "未检测到问题"
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
-#: src/components/filters/FilterCard.tsx:113
+#: src/components/filters/FilterCard.tsx:114
 msgid "No keywords set"
 msgstr "未设置关键字"
 
@@ -6751,7 +6751,7 @@ msgstr "位置"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:428
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:430
 msgid "Precision Schedule"
 msgstr "精确时间表"
 
@@ -6827,8 +6827,8 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:188
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:267
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:190
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:269
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -6873,7 +6873,7 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
 msgid "Prime Time"
 msgstr "黄金时段"
 
@@ -7622,13 +7622,13 @@ msgid "RUST-SREC PRO VIEWER"
 msgstr "RUST-SREC 专业查看器"
 
 #: src/components/filters/FilterCard.tsx:49
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:75
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
 msgctxt "Saturday initial"
 msgid "S"
 msgstr "六"
 
 #: src/components/filters/FilterCard.tsx:50
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:80
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
 msgctxt "Sunday initial"
 msgid "S"
 msgstr "日"
@@ -7658,12 +7658,12 @@ msgstr "清理后的会话标题"
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:77
 msgid "Saturday"
 msgstr "星期六"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:272
+#: src/components/filters/FilterDialog.tsx:273
 #: src/components/notifications/channel-form.tsx:460
 #: src/components/shared/save-fab.tsx:100
 #: src/components/streamers/streamer-editor.tsx:312
@@ -7691,7 +7691,7 @@ msgstr "删除检查尚未完成，仍要保存吗？"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/filters/FilterDialog.tsx:269
+#: src/components/filters/FilterDialog.tsx:270
 #: src/components/shared/save-fab.tsx:98
 msgid "Saving"
 msgstr "保存中"
@@ -7987,7 +7987,7 @@ msgstr "选择主播"
 msgid "Select template"
 msgstr "选择模板"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:174
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:176
 msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
@@ -8030,6 +8030,15 @@ msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启�
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:323
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
+
+#: src/components/filters/FilterCard.tsx:253
+#: src/components/filters/forms/TimezoneField.tsx:24
+msgid "Server local"
+msgstr "服务器本地"
+
+#: src/components/filters/forms/TimezoneField.tsx:75
+msgid "Server local uses the backend server's timezone. You can also enter an IANA name such as Europe/Berlin. Clearing selects UTC."
+msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berlin 等 IANA 时区名称。清空将选择 UTC。"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:328
 msgid "Server not configured"
@@ -8144,7 +8153,7 @@ msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:241
+#: src/components/filters/FilterDialog.tsx:242
 #: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
@@ -8356,7 +8365,7 @@ msgstr "标准"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:367
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:369
 msgid "Start"
 msgstr "开始"
 
@@ -8643,7 +8652,7 @@ msgstr "已成功处理 {0} 个流水线"
 msgid "Successfully processed {0} streamers"
 msgstr "成功处理 {0} 个主播"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:82
 msgid "Sunday"
 msgstr "星期日"
 
@@ -8710,13 +8719,13 @@ msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
 #: src/components/filters/FilterCard.tsx:47
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:65
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
 msgctxt "Thursday initial"
 msgid "T"
 msgstr "四"
 
 #: src/components/filters/FilterCard.tsx:42
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:55
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
 msgctxt "Tuesday initial"
 msgid "T"
 msgstr "二"
@@ -8874,11 +8883,11 @@ msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:431
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:433
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果开始时间在结束时间之后，窗口将自动跨越午夜。"
 
-#: src/components/filters/FilterCard.tsx:258
+#: src/components/filters/FilterCard.tsx:267
 msgid "This filter's settings could not be read."
 msgstr "无法读取该过滤器的设置。"
 
@@ -8969,7 +8978,7 @@ msgstr "缩略图"
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:67
 msgid "Thursday"
 msgstr "星期四"
 
@@ -8985,7 +8994,7 @@ msgstr "截图时间偏移"
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:252
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:254
 msgid "Time Range"
 msgstr "时间范围"
 
@@ -9035,9 +9044,13 @@ msgstr "取消 IO 密集型处理器前的超时时间。"
 msgid "Timestamp"
 msgstr "时间戳"
 
-#: src/components/filters/forms/CronFilterForm.tsx:55
+#: src/components/filters/forms/TimezoneField.tsx:36
 msgid "Timezone"
 msgstr "时区"
+
+#: src/components/filters/FilterCard.tsx:257
+msgid "Timezone: {label}"
+msgstr "时区：{label}"
 
 #: src/components/config/platforms/tabs/general-tab.tsx:43
 msgid "Timing & Delays"
@@ -9305,7 +9318,7 @@ msgstr "重试"
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:57
 msgid "Tuesday"
 msgstr "星期二"
 
@@ -9397,7 +9410,7 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
-#: src/components/filters/FilterCard.tsx:194
+#: src/components/filters/FilterCard.tsx:191
 msgid "Unknown filter type"
 msgstr "未知的过滤器类型"
 
@@ -9578,10 +9591,6 @@ msgstr "用户名（可选）"
 msgid "Users"
 msgstr "用户"
 
-#: src/components/filters/forms/CronFilterForm.tsx:60
-msgid "UTC"
-msgstr "UTC"
-
 #: src/components/pipeline/workflows/workflow-editor.tsx:188
 msgid "Validate"
 msgstr "校验"
@@ -9695,7 +9704,7 @@ msgid "VOD Segment Timeout (ms)"
 msgstr "点播分段超时（毫秒）"
 
 #: src/components/filters/FilterCard.tsx:45
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:60
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
 msgctxt "Wednesday initial"
 msgid "W"
 msgstr "三"
@@ -9771,7 +9780,7 @@ msgstr "Web 推送优先级已更新"
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:62
 msgid "Wednesday"
 msgstr "星期三"
 
@@ -9779,11 +9788,11 @@ msgstr "星期三"
 msgid "Week"
 msgstr "本周"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:97
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
 msgid "Weekdays"
 msgstr "工作日"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:99
 msgid "Weekends"
 msgstr "周末"
 
