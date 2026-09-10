@@ -403,7 +403,17 @@ mod tests {
         let temp = staged(&mut batch, &output, true, b"partial").await;
         drop(batch);
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            while tokio::fs::try_exists(&temp).await.unwrap() {
+            loop {
+                match tokio::fs::try_exists(&temp).await {
+                    Ok(false) => break,
+                    Ok(true) => {}
+                    // A Windows file pending deletion can reject metadata opens.
+                    // Keep waiting for confirmed absence within the same bound.
+                    Err(error)
+                        if cfg!(windows)
+                            && error.kind() == std::io::ErrorKind::PermissionDenied => {}
+                    Err(error) => panic!("failed to inspect staged output during cleanup: {error}"),
+                }
                 tokio::task::yield_now().await;
             }
         })

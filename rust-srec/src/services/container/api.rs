@@ -19,6 +19,8 @@ mod import_contract_tests;
 mod ownership_tests;
 #[cfg(test)]
 mod response_contract_tests;
+#[cfg(test)]
+mod timezone_import_tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ApiAuthMode {

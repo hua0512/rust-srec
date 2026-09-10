@@ -1,7 +1,6 @@
 //! Evaluation of typed domain filters.
 
 use chrono::{DateTime, TimeZone, Timelike, Utc};
-use chrono_tz::Tz;
 
 use super::{CronFilter, RegexFilter};
 
@@ -27,16 +26,16 @@ pub struct FilterEvaluator;
 impl FilterEvaluator {
     pub fn evaluate_cron(filter: &CronFilter, now: DateTime<Utc>) -> Result<bool, FilterEvalError> {
         let schedule = super::compiled::cron(&filter.expression)?;
-        let timezone: Tz = match &filter.timezone {
-            Some(timezone) => timezone.parse().map_err(|_| {
-                FilterEvalError::InvalidTimezone(format!(
-                    "'{timezone}' is not a valid IANA timezone"
-                ))
-            })?,
-            None => chrono_tz::UTC,
-        };
-
-        Self::time_matches_schedule(&schedule, now.with_timezone(&timezone))
+        let timezone = super::timezone::FilterTimezone::parse(filter.timezone.as_deref())
+            .map_err(|error| FilterEvalError::InvalidTimezone(error.to_string()))?;
+        match timezone {
+            super::timezone::FilterTimezone::Named(timezone) => {
+                Self::time_matches_schedule(&schedule, now.with_timezone(&timezone))
+            }
+            super::timezone::FilterTimezone::Local => {
+                Self::time_matches_schedule(&schedule, now.with_timezone(&chrono::Local))
+            }
+        }
     }
 
     /// Whether `now` falls inside a minute the schedule fires on.

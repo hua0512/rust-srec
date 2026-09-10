@@ -43,6 +43,21 @@ pub trait FilterRepository: Send + Sync {
     }
     async fn create_filter(&self, filter: &FilterDbModel) -> Result<()>;
     async fn update_filter(&self, filter: &FilterDbModel) -> Result<()>;
+    /// Replace a row only if its owner, type and raw config still match the
+    /// expected row. A missing or changed row returns false without invalidation
+    /// or publication. Comparison, write and publication share the commit owner;
+    /// custom repositories fail closed until they provide that guarantee.
+    /// The replacement must retain the ID.
+    async fn update_filter_if_current(
+        &self,
+        _expected: &FilterDbModel,
+        _replacement: &FilterDbModel,
+        _on_commit: FilterCommitHook,
+    ) -> Result<bool> {
+        Err(Error::config(
+            "Filter repository does not support conditional updates",
+        ))
+    }
     async fn delete_filter(&self, id: &str) -> Result<()>;
     async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()>;
 
@@ -254,6 +269,56 @@ impl FilterRepository for SqlxFilterRepository {
         )
         .await?;
         Ok(())
+    }
+
+    async fn update_filter_if_current(
+        &self,
+        expected: &FilterDbModel,
+        replacement: &FilterDbModel,
+        on_commit: FilterCommitHook,
+    ) -> Result<bool> {
+        if expected.id != replacement.id {
+            return Err(Error::validation(
+                "Conditional filter updates must retain the filter ID",
+            ));
+        }
+        let expected = expected.clone();
+        let replacement = replacement.clone();
+        self.mutate(
+            "conditionally update filter",
+            move |connection| {
+                Box::pin(async move {
+                    // CommittedWriter holds BEGIN IMMEDIATE through both
+                    // operations, excluding a writer between compare and save.
+                    let matches: bool = sqlx::query_scalar(
+                        "SELECT EXISTS(SELECT 1 FROM filters WHERE id = ? \
+                         AND streamer_id = ? AND filter_type = ? AND config = ?)",
+                    )
+                    .bind(&expected.id)
+                    .bind(&expected.streamer_id)
+                    .bind(&expected.filter_type)
+                    .bind(&expected.config)
+                    .fetch_one(&mut *connection)
+                    .await?;
+                    if !matches {
+                        return Ok(Vec::new());
+                    }
+                    writes::write_filter(
+                        connection,
+                        &replacement,
+                        super::row_write::WriteMode::Update,
+                    )
+                    .await?;
+                    let mut owners = vec![expected.streamer_id];
+                    if owners[0] != replacement.streamer_id {
+                        owners.push(replacement.streamer_id);
+                    }
+                    Ok(owners)
+                })
+            },
+            on_commit,
+        )
+        .await
     }
 
     async fn delete_filter(&self, id: &str) -> Result<()> {

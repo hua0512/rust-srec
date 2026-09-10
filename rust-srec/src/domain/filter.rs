@@ -2,7 +2,9 @@
 
 mod compiled;
 mod evaluator;
+mod timezone;
 mod types;
+pub(crate) use timezone::FilterTimezone;
 
 #[cfg(test)]
 mod timezone_tests;

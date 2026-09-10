@@ -15,15 +15,13 @@ use std::collections::HashMap;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::config::backup::{
-    ConfigExport, EngineExport, FilterExport, GlobalConfigExport, ImportRequest, ImportResult,
-    JobPresetExport, NotificationChannelExport, PipelinePresetExport, PlatformExport,
-    StreamerExport, TemplateExport, UserExport, unwrap_json_value,
+    ConfigExport, EXPORT_SCHEMA_VERSION, EngineExport, FilterExport, GlobalConfigExport,
+    ImportRequest, ImportResult, JobPresetExport, NotificationChannelExport, PipelinePresetExport,
+    PlatformExport, StreamerExport, TemplateExport, UserExport, export_filter_config,
+    unwrap_json_value,
 };
 use crate::database::models::{NotificationChannelDbModel, StreamerDbModel, UserDbModel};
 use crate::database::repositories::{FilterRepository, NotificationRepository};
-
-/// Current schema version for exports.
-const EXPORT_SCHEMA_VERSION: &str = "0.1.7";
 
 /// Helper to parse a database string into a normalized JSON Value.
 fn parse_db_config(s: impl Into<String>) -> serde_json::Value {
@@ -87,8 +85,11 @@ async fn export_streamers(
                 .unwrap_or_default()
                 .into_iter()
                 .map(|filter| FilterExport {
+                    config: export_filter_config(
+                        &filter.filter_type,
+                        parse_db_config(filter.config),
+                    ),
                     filter_type: filter.filter_type,
-                    config: parse_db_config(filter.config),
                 })
                 .collect();
             build_streamer_export(streamer, platform_map, template_map, children)
@@ -726,5 +727,60 @@ mod tests {
         let non_json = "plain text".to_string();
         let parsed3 = parse_db_config(non_json);
         assert_eq!(parsed3.as_str().unwrap(), "plain text");
+    }
+
+    #[tokio::test]
+    async fn filter_exports_materialize_utc_without_losing_explicit_zones_or_extensions() {
+        use crate::database::models::{FilterDbModel, FilterType};
+        use crate::database::repositories::{
+            SqlxFilterRepository, SqlxStreamerRepository, StreamerRepository,
+        };
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let streamers = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+        let filters = SqlxFilterRepository::new(pool.clone(), pool.clone());
+        let owner = StreamerDbModel::new(
+            "Export timezone",
+            "https://example.test/timezone",
+            "platform-huya",
+        );
+        streamers.create_streamer(&owner).await.unwrap();
+        for zone in [None, Some("local"), Some("Europe/Madrid")] {
+            let config = serde_json::json!({"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":zone,"extension":[1,true]});
+            filters
+                .create_filter(&FilterDbModel::new(
+                    &owner.id,
+                    FilterType::TimeBased,
+                    config.to_string(),
+                ))
+                .await
+                .unwrap();
+        }
+        filters
+            .create_filter(&FilterDbModel::new(
+                &owner.id,
+                FilterType::Cron,
+                serde_json::json!({"expression":"0 * * * * *","extension":[1,true]}).to_string(),
+            ))
+            .await
+            .unwrap();
+        let exported = export_streamers(
+            std::slice::from_ref(&owner),
+            &HashMap::new(),
+            &HashMap::new(),
+            &filters,
+        )
+        .await;
+        assert_eq!(exported[0].filters.len(), 4);
+        let mut zones = Vec::new();
+        for filter in &exported[0].filters {
+            assert_eq!(filter.config["extension"], serde_json::json!([1, true]));
+            zones.push(filter.config["timezone"].as_str().unwrap().to_owned());
+        }
+        zones.sort();
+        assert_eq!(zones, vec!["Europe/Madrid", "UTC", "UTC", "local"]);
+        assert_eq!(EXPORT_SCHEMA_VERSION, "0.1.8");
     }
 }
