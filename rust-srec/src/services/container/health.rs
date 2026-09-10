@@ -402,23 +402,47 @@ impl HealthProbe for StaticHealthyProbe {
 
 /// Synchronous writability probe used by `run_output_root_startup_probe`.
 ///
-/// Creates a temp file inside `root` with restrictive permissions, writes
-/// zero bytes, and drops it (RAII unlink via the `tempfile` crate). Returns
-/// the underlying `io::Error` on any failure so the gate can classify via
-/// `IoErrorKindSer::from_io_kind`.
+/// Probes the destination if it exists, otherwise its nearest existing ancestor
+/// within the same gate root. Recording startup creates missing subdirectories;
+/// an offline streamer's absent directory does not make its storage unwritable.
+/// Missing gate roots and dangling symlinks still fail instead of falling back
+/// to a different root. No recording directories are created by this probe.
+///
+/// Creates a temporary file with restrictive permissions and removes it on drop.
+/// Returns the underlying `io::Error` so the gate can classify the failure.
 ///
 /// Kept separate from `OutputRootGate::record_failure` so the gate itself
 /// stays ignorant of how failures are discovered — it just accepts an
 /// `io::Error` from any caller.
-fn probe_root_writable(root: &std::path::Path) -> std::io::Result<()> {
-    // Ensure the root itself is a directory. `std::fs::metadata` follows
-    // symlinks, which is what we want — a dangling symlink would trip the
-    // gate with ENOENT, correctly.
-    let meta = std::fs::metadata(root)?;
+fn probe_root_writable(output_dir: &std::path::Path, gate: &OutputRootGate) -> std::io::Result<()> {
+    let gate_root = gate.resolve_path(output_dir);
+    let mut probe_dir = output_dir;
+    let meta = loop {
+        match std::fs::metadata(probe_dir) {
+            Ok(meta) => break meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // A dangling symlink also returns NotFound from metadata, but is
+                // a broken destination, not a directory recording startup can create.
+                match std::fs::symlink_metadata(probe_dir) {
+                    Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
+                    Ok(_) => return Err(error),
+                    Err(error) => return Err(error),
+                }
+                let Some(parent) = probe_dir
+                    .parent()
+                    .filter(|parent| gate.resolve_path(parent) == gate_root)
+                else {
+                    return Err(error);
+                };
+                probe_dir = parent;
+            }
+            Err(error) => return Err(error),
+        }
+    };
     if !meta.is_dir() {
         return Err(std::io::Error::other(format!(
-            "root path {} is not a directory",
-            root.display()
+            "output path {} is not a directory",
+            probe_dir.display()
         )));
     }
 
@@ -427,7 +451,7 @@ fn probe_root_writable(root: &std::path::Path) -> std::io::Result<()> {
     // and no leftover probe file even if the process is killed.
     let mut file = tempfile::Builder::new()
         .prefix(".rust-srec-probe-")
-        .tempfile_in(root)?;
+        .tempfile_in(probe_dir)?;
     std::io::Write::write_all(&mut file, b"")?;
     // `file` drops here and the tempfile crate unlinks it.
     Ok(())
@@ -546,7 +570,7 @@ fn bounded_output_probe_paths(
 impl ServiceContainer {
     /// Concrete directories safe to probe, each resolving to the runtime gate key.
     /// Sorted and capped once for startup. Disk registrations and the write probe
-    /// share this exact input, without testing write access to ancestor keys.
+    /// share this exact input. Missing subdirectories fall back within their key.
     pub(super) async fn collect_output_roots(&self) -> Vec<std::path::PathBuf> {
         let roots = discover_output_probe_paths(
             &self.config_service,
@@ -588,7 +612,8 @@ impl ServiceContainer {
                         Duration::from_secs(5),
                         tokio::task::spawn_blocking({
                             let root = root.clone();
-                            move || probe_root_writable(&root)
+                            let gate = gate.clone();
+                            move || probe_root_writable(&root, &gate)
                         }),
                     )
                     .await;
