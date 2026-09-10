@@ -84,17 +84,6 @@ pub(crate) fn generate_ms_token() -> String {
 
 static CHARSET: LazyLock<&[u8]> = LazyLock::new(|| b"abcdef0123456789");
 
-/// Generate a random nonce, 21 length
-pub(crate) fn generate_nonce() -> String {
-    let mut rng = rng();
-    (0..21)
-        .map(|_| {
-            let idx = rng.random_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect()
-}
-
 /// Generate a random odin_ttid, 160 length
 pub(crate) fn generate_odin_ttid() -> String {
     let mut rng = rng();
