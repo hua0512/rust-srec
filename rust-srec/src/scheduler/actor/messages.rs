@@ -85,12 +85,8 @@ pub enum StreamerMessage {
 /// - **`SegmentFailed`**: Segment download failed. Actor continues monitoring with
 ///   immediate check to verify status.
 ///
-/// - **`UserCancelled`**: User cancelled the download. **Actor stops monitoring entirely**
-///   by returning a fatal error. The download orchestration layer should update the
-///   streamer state to `CANCELLED` in the database before sending this message.
-///
-/// - **`Stopped`**: Download was stopped by internal orchestration. Actor continues
-///   monitoring and treats this like an end-of-stream signal (publishing Offline).
+/// - **`Stopped`**: Keep the wire stop cause. Only an explicit streamer-offline
+///   cause publishes Offline; shutdown/disable park, and other causes verify status.
 ///
 /// - **`Other`**: Unknown/unexpected error. Actor continues monitoring with normal
 ///   scheduling, letting the grace period confirm actual state.
@@ -125,9 +121,8 @@ pub enum DownloadEndPolicy {
     /// check confirms platform state through the normal monitor path.
     Completed,
 
-    /// Download stopped by internal orchestration (not user intent).
-    ///
-    /// The actor treats this like an end-of-stream signal, but continues monitoring.
+    /// Recording stopped with an explicit cause. User and unknown stops request
+    /// status verification; they do not permanently disable monitoring.
     Stopped(DownloadStopCause),
 
     /// Recording stopped because the streamer is out of schedule.
@@ -143,13 +138,6 @@ pub enum DownloadEndPolicy {
     /// preserves hysteresis state and checks immediately to quickly resume if
     /// the streamer is still live.
     NetworkError(String),
-
-    /// Download was cancelled by user.
-    ///
-    /// **This stops the actor entirely.** User intent is "I don't want to monitor
-    /// this streamer anymore." The download orchestration layer must update the
-    /// streamer state to `CANCELLED` in the database before sending this message.
-    UserCancelled,
 
     /// Segment download failed (may indicate offline or network issue).
     ///

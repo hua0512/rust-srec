@@ -474,3 +474,22 @@ Healthy ◄───────────────────────
 主播状态的统一类型为 `rust_srec::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
 
 已移除未使用的 `database::batching`、`config::UpdateCoalescer`、`domain::session` 实体、主播状态修改辅助方法，以及仓库的 `list_active_streamers` / `resume_session` 方法。会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
+
+### Actor 终止与唤醒策略
+
+Actor 的邮箱执行、单次检查、可靠反馈、终止决定及在线唤醒决定分别位于独立模块。
+批量检测委托保留原有控制方式，此次拆分不会启用它。只有明确的主播下播终止策略
+才向 monitor 提交 Offline。正常完成、用户停止和未知停止原因恢复状态核验；应用
+关闭和禁用则暂停轮询。基础设施阻断保留现有持久化及重试规则，反馈确认仍在副作用
+应用完成后发送。
+
+显式检查期限优先于在线 watchdog。在线且未安排检查的 actor，先选择 watchdog、
+心跳停滞及时间窗口边界中的最早唤醒时间，再应用失败 watchdog 的最小重试间隔。
+周期轮询保留 ±10% 抖动；智能唤醒、准入与立即检查期限继续保有各自约束。
+
+Rust 调用方应使用 `DownloadEndPolicy::Stopped(DownloadStopCause::User)`。
+`UserCancelled` 已移除，因为没有调用方履行其声称的永久停止监控契约。线上的
+`DownloadStopCause::User` 保持不变。`StreamerActor` 和 `Supervisor` 的元数据存储
+构造参数现在使用 `Arc<StreamerMetadata>` 值。应通过 `StreamerManager` 获取共享
+存储；actor 检查克隆不可变的 Arc 快照，不再复制配置 JSON。原有 actor 公共导出及
+`StatusChecker` 的借用元数据输入保持不变。
