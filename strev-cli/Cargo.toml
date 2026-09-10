@@ -37,7 +37,7 @@ inquire = { version = "0.9", optional = true }
 tabled = { version = "0.21", optional = true }
 
 # Simplified configuration
-dirs = "6"
+dirs = "7"
 toml = "1.1"
 
 # Logging
