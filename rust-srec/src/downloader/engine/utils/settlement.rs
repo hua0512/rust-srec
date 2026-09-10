@@ -152,7 +152,7 @@ mod tests {
         assert!(start.elapsed() > TASK_SETTLEMENT_TIMEOUT);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn waiter_task_failure_cancels_auxiliaries_and_keeps_the_join_error() {
         let forced = CancellationToken::new();
         let reader_stop = forced.clone();
