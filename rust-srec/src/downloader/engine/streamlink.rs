@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -27,6 +28,8 @@ use crate::database::models::engine::StreamlinkEngineConfig;
 /// Used after FFmpeg exits and during cancellation, where the remaining shared
 /// stop budget can shorten this grace further.
 const STREAMLINK_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
+
+mod control;
 
 #[cfg(test)]
 mod shutdown_tests;
@@ -383,14 +386,113 @@ fn append_cleanup_result(message: &mut String, result: std::result::Result<Optio
     }
 }
 
+struct StopBudget {
+    handle: Arc<DownloadHandle>,
+    configured: Duration,
+    observed: Mutex<Option<Instant>>,
+}
+
+impl StopBudget {
+    fn deadline(&self) -> Instant {
+        let current = Instant::now() + self.handle.graceful_stop_budget(self.configured);
+        let mut observed = self.observed.lock();
+        let deadline = observed.get_or_insert(current);
+        *deadline = (*deadline).min(current);
+        *deadline
+    }
+
+    fn peer_deadlines(&self, previous: Instant) -> (Instant, Instant) {
+        let hard = self.deadline().min(previous + PROCESS_CLEANUP_TIMEOUT);
+        let reserve =
+            Duration::from_secs(1).min(hard.saturating_duration_since(Instant::now()) / 4);
+        (previous.min(hard - reserve), hard)
+    }
+
+    fn process_deadlines(&self, source: bool) -> (Instant, Instant) {
+        let hard = self.deadline();
+        let remaining = hard.saturating_duration_since(Instant::now());
+        let cleanup = Duration::from_secs(1).min(remaining / 4);
+        let finalize = if source {
+            Duration::from_secs(2).min(remaining / 2)
+        } else {
+            Duration::ZERO
+        };
+        (hard - cleanup - finalize, hard - finalize)
+    }
+
+    async fn within<T, F: std::future::Future<Output = T>>(
+        &self,
+        future: F,
+        mut deadline: Instant,
+        source: bool,
+    ) -> Option<T> {
+        let mut future = std::pin::pin!(future);
+        let mut updates = self.handle.stop_deadline_updates();
+        loop {
+            drop(updates.borrow_and_update());
+            deadline = deadline.min(if source {
+                self.process_deadlines(true).0
+            } else {
+                self.deadline()
+            });
+            tokio::select! {
+                biased;
+                result = &mut future => return Some(result),
+                changed = updates.changed() => {
+                    if changed.is_err() { return tokio::time::timeout_at(deadline, future).await.ok(); }
+                }
+                _ = tokio::time::sleep_until(deadline) => return None,
+            }
+        }
+    }
+}
+
+enum ChildWait {
+    Exited(Result<std::process::ExitStatus, process_utils::ContainmentError>),
+    Expired,
+    Stopped(Instant),
+}
+
+async fn wait_for_peer(
+    child: &mut ContainedChild,
+    timeout: Duration,
+    budget: &StopBudget,
+) -> ChildWait {
+    let deadline = Instant::now() + timeout;
+    tokio::select! {
+        biased;
+        _ = budget.handle.cancellation_token.cancelled() => ChildWait::Stopped(deadline),
+        result = tokio::time::timeout_at(deadline, child.wait()) => match result {
+            Ok(result) => ChildWait::Exited(result),
+            Err(_) => ChildWait::Expired,
+        },
+    }
+}
+
 async fn terminate_and_reap(
     child: &mut ContainedChild,
     process_name: &str,
     timeout: Duration,
+    budget: &StopBudget,
 ) -> std::result::Result<Option<i32>, String> {
-    child
-        .terminate_tree_until(Instant::now() + timeout)
-        .await
+    let mut stopping = budget.handle.cancellation_token.is_cancelled();
+    let mut deadline = Instant::now() + timeout;
+    let mut updates = budget.handle.stop_deadline_updates();
+    let result = loop {
+        stopping |= updates.borrow_and_update().is_some();
+        if stopping {
+            deadline = deadline.min(budget.deadline());
+        }
+        tokio::select! {
+            biased;
+            _ = budget.handle.cancellation_token.cancelled(), if !stopping => stopping = true,
+            changed = updates.changed() => {
+                if changed.is_err() { break child.terminate_tree_until(deadline).await; }
+            }
+            result = child.terminate_tree_until(deadline) => break result,
+        }
+    };
+    result
         .map(|status| status.code())
         .map_err(|error| format!("failed to contain and reap {process_name}: {error}"))
 }
@@ -399,34 +501,83 @@ async fn wait_then_terminate(
     child: &mut ContainedChild,
     process_name: &str,
     timeout: Duration,
+    budget: &StopBudget,
 ) -> (std::result::Result<Option<i32>, String>, bool) {
-    match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(Ok(status)) => (Ok(status.code()), true),
-        Ok(Err(error)) => {
-            let message = format!("failed to wait for {process_name}: {error}");
-            match terminate_and_reap(child, process_name, PROCESS_CLEANUP_TIMEOUT).await {
-                Ok(_) => (Err(message), true),
-                Err(cleanup_error) => (
-                    Err(format!("{message}; cleanup error: {cleanup_error}")),
-                    false,
-                ),
-            }
-        }
-        Err(_) => {
-            warn!(
-                process = process_name,
-                "Process did not exit in time; killing it"
+    let error = match wait_for_peer(child, timeout, budget).await {
+        ChildWait::Exited(Ok(status)) => return (Ok(status.code()), true),
+        ChildWait::Stopped(previous) => {
+            let (wait, hard) = budget.peer_deadlines(previous);
+            let (result, contained, natural) =
+                wait_for_stop(child, process_name, wait, hard, budget, false).await;
+            return (
+                if natural {
+                    result
+                } else {
+                    result.and_then(|_| Err(format!("{process_name} exceeded the stop deadline")))
+                },
+                contained,
             );
-            match terminate_and_reap(child, process_name, PROCESS_CLEANUP_TIMEOUT).await {
-                Ok(code) => (Ok(code), true),
-                Err(error) => (
-                    Err(format!(
-                        "{process_name} did not exit within the stop timeout; cleanup error: {error}"
-                    )),
-                    false,
-                ),
-            }
         }
+        ChildWait::Exited(Err(error)) => format!("failed to wait for {process_name}: {error}"),
+        ChildWait::Expired => format!("{process_name} did not exit within the settlement timeout"),
+    };
+    match terminate_and_reap(child, process_name, PROCESS_CLEANUP_TIMEOUT, budget).await {
+        Ok(_) => (Err(error), true),
+        Err(cleanup) => (Err(format!("{error}; cleanup error: {cleanup}")), false),
+    }
+}
+
+/// Stop-phase waits and containment share the attempt's absolute deadline.
+/// A forced zero exit is still not proof of a natural buffered drain.
+async fn wait_for_stop(
+    child: &mut ContainedChild,
+    process_name: &str,
+    mut wait_deadline: Instant,
+    mut hard_deadline: Instant,
+    budget: &StopBudget,
+    source: bool,
+) -> (std::result::Result<Option<i32>, String>, bool, bool) {
+    let mut updates = budget.handle.stop_deadline_updates();
+    let waited = loop {
+        drop(updates.borrow_and_update());
+        let (wait, hard) = budget.process_deadlines(source);
+        wait_deadline = wait_deadline.min(wait);
+        hard_deadline = hard_deadline.min(hard);
+        tokio::select! {
+            changed = updates.changed() => {
+                if changed.is_err() { break tokio::time::timeout_at(wait_deadline, child.wait()).await; }
+            }
+            result = tokio::time::timeout_at(wait_deadline, child.wait()) => break result,
+        }
+    };
+    let wait_error = match waited {
+        Ok(Ok(status)) => return (Ok(status.code()), true, true),
+        Ok(Err(error)) => Some(format!("failed to wait for {process_name}: {error}")),
+        Err(_) => None,
+    };
+    warn!(
+        process = process_name,
+        "Recording process did not finish within its stop deadline; forcing containment"
+    );
+    let contained = loop {
+        drop(updates.borrow_and_update());
+        hard_deadline = hard_deadline.min(budget.process_deadlines(source).1);
+        tokio::select! {
+            changed = updates.changed() => {
+                if changed.is_err() { break child.terminate_tree_until(hard_deadline).await; }
+            }
+            result = child.terminate_tree_until(hard_deadline) => break result,
+        }
+    };
+    match contained {
+        Ok(status) => (wait_error.map_or(Ok(status.code()), Err), true, false),
+        Err(error) => (
+            Err(format!(
+                "failed to contain {process_name} before the stop deadline: {error}"
+            )),
+            false,
+            false,
+        ),
     }
 }
 
@@ -440,29 +591,51 @@ async fn wait_then_terminate(
 async fn settle_streamlink_after_ffmpeg_exit(
     streamlink: &mut ContainedChild,
     timeout: Duration,
+    budget: &StopBudget,
 ) -> (StreamlinkSettlement, std::result::Result<(), String>) {
-    match tokio::time::timeout(timeout, streamlink.wait()).await {
-        Ok(Ok(status)) if status.success() => (StreamlinkSettlement::ExitedCleanly, Ok(())),
-        Ok(Ok(status)) => (
-            StreamlinkSettlement::ExitedWithFailure {
-                code: status.code(),
-                status: status.to_string(),
-            },
-            Ok(()),
-        ),
-        Ok(Err(error)) => (
-            StreamlinkSettlement::WaitFailed(error.to_string()),
-            terminate_and_reap(streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
-                .await
-                .map(|_| ()),
-        ),
-        Err(_) => (
-            StreamlinkSettlement::StillRunning,
-            terminate_and_reap(streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
-                .await
-                .map(|_| ()),
-        ),
-    }
+    let settlement = match wait_for_peer(streamlink, timeout, budget).await {
+        ChildWait::Exited(Ok(status)) if status.success() => {
+            return (StreamlinkSettlement::ExitedCleanly, Ok(()));
+        }
+        ChildWait::Exited(Ok(status)) => {
+            return (
+                StreamlinkSettlement::ExitedWithFailure {
+                    code: status.code(),
+                    status: status.to_string(),
+                },
+                Ok(()),
+            );
+        }
+        ChildWait::Stopped(previous) => {
+            let (wait, hard) = budget.peer_deadlines(previous);
+            let (result, contained, natural) =
+                wait_for_stop(streamlink, "streamlink", wait, hard, budget, false).await;
+            let settlement = match &result {
+                Ok(Some(0)) if natural => StreamlinkSettlement::ExitedCleanly,
+                Ok(code) if natural => StreamlinkSettlement::ExitedWithFailure {
+                    code: *code,
+                    status: format!("exit code {code:?}"),
+                },
+                _ => StreamlinkSettlement::StillRunning,
+            };
+            return (
+                settlement,
+                if contained {
+                    Ok(())
+                } else {
+                    result.map(|_| ())
+                },
+            );
+        }
+        ChildWait::Exited(Err(error)) => StreamlinkSettlement::WaitFailed(error.to_string()),
+        ChildWait::Expired => StreamlinkSettlement::StillRunning,
+    };
+    (
+        settlement,
+        terminate_and_reap(streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT, budget)
+            .await
+            .map(|_| ()),
+    )
 }
 
 impl Default for StreamlinkEngine {
@@ -479,6 +652,11 @@ impl DownloadEngine for StreamlinkEngine {
 
     async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
+        let stop_budget = Arc::new(StopBudget {
+            handle: handle.clone(),
+            configured: Duration::from_secs(self.config.graceful_stop_timeout_secs as u64),
+            observed: Mutex::new(None),
+        });
         // `DownloadManager::prepare_output_dir` runs before engine startup,
         // enforcing the output-root write gate and classifying directory errors.
         let streamlink_args = self.build_streamlink_args(&config);
@@ -498,6 +676,38 @@ impl DownloadEngine for StreamlinkEngine {
 
         // Spawn streamlink process
         let mut streamlink_command = process_utils::tokio_command(&self.config.binary_path);
+        #[cfg(not(test))]
+        let fixture_control = false;
+        #[cfg(test)]
+        let fixture_control = self.shutdown_fixture.is_some();
+        let profile_available = if control::Companion::supports_version(self.version.as_deref()) {
+            if fixture_control {
+                true
+            } else {
+                tokio::select! {
+                    supported = control::Companion::cached_capability(&self.config.binary_path) => supported,
+                    _ = handle.cancellation_token.cancelled() => {
+                        return Err(EngineStartError::new(DownloadFailureKind::Other, "Streamlink startup was cancelled"));
+                    }
+                }
+            }
+        } else {
+            false
+        };
+        let companion = if profile_available {
+            match control::Companion::prepare().await {
+                Ok(companion) => {
+                    companion.configure(&mut streamlink_command);
+                    Some(companion)
+                }
+                Err(error) => {
+                    warn!(%error, "Streamlink control unavailable; cooperative draining cannot be verified");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         streamlink_command.args(&streamlink_args);
         #[cfg(test)]
         if let Some(fixture) = &self.fixture {
@@ -506,6 +716,9 @@ impl DownloadEngine for StreamlinkEngine {
         #[cfg(test)]
         if let Some(fixture) = &self.shutdown_fixture {
             streamlink_command = fixture.command(true);
+            if let Some(companion) = &companion {
+                companion.configure_environment(&mut streamlink_command);
+            }
         }
         streamlink_command
             .stdout(Stdio::piped())
@@ -524,8 +737,13 @@ impl DownloadEngine for StreamlinkEngine {
                 let mut message = "Failed to capture streamlink stdout".to_string();
                 append_cleanup_result(
                     &mut message,
-                    terminate_and_reap(&mut streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
-                        .await,
+                    terminate_and_reap(
+                        &mut streamlink,
+                        "streamlink",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget,
+                    )
+                    .await,
                 );
                 return Err(EngineStartError::new(DownloadFailureKind::Other, message));
             }
@@ -536,8 +754,13 @@ impl DownloadEngine for StreamlinkEngine {
                 let mut message = "Failed to capture streamlink stderr".to_string();
                 append_cleanup_result(
                     &mut message,
-                    terminate_and_reap(&mut streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
-                        .await,
+                    terminate_and_reap(
+                        &mut streamlink,
+                        "streamlink",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget,
+                    )
+                    .await,
                 );
                 return Err(EngineStartError::new(DownloadFailureKind::Other, message));
             }
@@ -565,8 +788,13 @@ impl DownloadEngine for StreamlinkEngine {
                 let mut message = format!("Failed to spawn ffmpeg: {error}");
                 append_cleanup_result(
                     &mut message,
-                    terminate_and_reap(&mut streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT)
-                        .await,
+                    terminate_and_reap(
+                        &mut streamlink,
+                        "streamlink",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget,
+                    )
+                    .await,
                 );
                 return Err(EngineStartError::new(
                     DownloadFailureKind::Configuration,
@@ -580,8 +808,18 @@ impl DownloadEngine for StreamlinkEngine {
             None => {
                 let mut message = "Failed to capture ffmpeg stdin".to_string();
                 let (streamlink_cleanup, ffmpeg_cleanup) = tokio::join!(
-                    terminate_and_reap(&mut streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT,),
-                    terminate_and_reap(&mut ffmpeg, "ffmpeg", PROCESS_CLEANUP_TIMEOUT),
+                    terminate_and_reap(
+                        &mut streamlink,
+                        "streamlink",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget
+                    ),
+                    terminate_and_reap(
+                        &mut ffmpeg,
+                        "ffmpeg",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget
+                    ),
                 );
                 append_cleanup_result(&mut message, streamlink_cleanup);
                 append_cleanup_result(&mut message, ffmpeg_cleanup);
@@ -593,8 +831,18 @@ impl DownloadEngine for StreamlinkEngine {
             None => {
                 let mut message = "Failed to capture ffmpeg stderr".to_string();
                 let (streamlink_cleanup, ffmpeg_cleanup) = tokio::join!(
-                    terminate_and_reap(&mut streamlink, "streamlink", PROCESS_CLEANUP_TIMEOUT,),
-                    terminate_and_reap(&mut ffmpeg, "ffmpeg", PROCESS_CLEANUP_TIMEOUT),
+                    terminate_and_reap(
+                        &mut streamlink,
+                        "streamlink",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget
+                    ),
+                    terminate_and_reap(
+                        &mut ffmpeg,
+                        "ffmpeg",
+                        PROCESS_CLEANUP_TIMEOUT,
+                        &stop_budget
+                    ),
                 );
                 append_cleanup_result(&mut message, streamlink_cleanup);
                 append_cleanup_result(&mut message, ffmpeg_cleanup);
@@ -604,8 +852,7 @@ impl DownloadEngine for StreamlinkEngine {
 
         let cancellation_token = handle.cancellation_token.clone();
         let started_instant = Instant::now();
-        let graceful_stop_timeout_secs = self.config.graceful_stop_timeout_secs;
-        let budget_handle = handle.clone();
+        let process_stop_budget = stop_budget.clone();
 
         // 2. Spawn a waiter task for both processes.
         //
@@ -616,6 +863,8 @@ impl DownloadEngine for StreamlinkEngine {
         let forced_settlement = CancellationToken::new();
         let process_forced_settlement = forced_settlement.clone();
         let pipe_failure = Arc::new(Mutex::new(None::<String>));
+        let pipe_eof = Arc::new(AtomicBool::new(false));
+        let process_pipe_eof = pipe_eof.clone();
         let process_pipe_failure = pipe_failure.clone();
         #[cfg(test)]
         let inject_unconfirmed_cleanup = self
@@ -624,28 +873,46 @@ impl DownloadEngine for StreamlinkEngine {
             .is_some_and(|fixture| fixture.unconfirmed);
         #[cfg(test)]
         let wait_fixture = self.fixture.clone();
+        #[cfg(test)]
+        let shutdown_fixture = self.shutdown_fixture.clone();
         let process_task = AbortOnDropHandle::new(tokio::spawn(async move {
             // Resolved per use rather than once here: `set_stop_deadline` runs
             // when the stop is requested, which is after this task starts, so a
             // value captured now would still be the unclamped configured one.
-            let configured_ffmpeg_stop = Duration::from_secs(graceful_stop_timeout_secs as u64);
-            let ffmpeg_stop_timeout = || budget_handle.graceful_stop_budget(configured_ffmpeg_stop);
+            let budget = process_stop_budget;
+            let ffmpeg_stop_timeout = || budget.handle.graceful_stop_budget(budget.configured);
 
             let (pipeline_exit, cleanup_confirmed) = tokio::select! {
                 _ = cancellation_token_wait.cancelled() => {
-                    let stop_deadline = Instant::now() + ffmpeg_stop_timeout();
-                    match streamlink.request_shutdown() {
+                    let stop_deadline = budget.deadline();
+                    let remaining = stop_deadline.saturating_duration_since(Instant::now());
+                    let cleanup_reserve = Duration::from_secs(1).min(remaining / 4);
+                    let finalize_reserve = Duration::from_secs(2).min(remaining / 2);
+                    let streamlink_deadline = stop_deadline - cleanup_reserve - finalize_reserve;
+                    let cooperative = if let Some(companion) = &companion {
+                        #[cfg(test)]
+                        if let Some(fixture) = &shutdown_fixture { fixture.negotiating_stop(); }
+                        budget.within(companion.request_stop(streamlink_deadline), streamlink_deadline, true)
+                            .await.unwrap_or(false)
+                    } else { false };
+                    if !cooperative { match streamlink.request_shutdown() {
                         Ok(true) => debug!("Requested cooperative Streamlink shutdown"),
                         Ok(false) => debug!("Waiting for Streamlink exit before contained termination"),
                         Err(error) => warn!(%error, "Could not request cooperative Streamlink shutdown; using bounded exit wait"),
-                    }
-                    let (streamlink_cleanup, streamlink_confirmed) = wait_then_terminate(
+                    } }
+                    let source_deadline = if cooperative { streamlink_deadline } else {
+                        streamlink_deadline.min(Instant::now() + STREAMLINK_SETTLE_TIMEOUT)
+                    };
+                    let (streamlink_cleanup, streamlink_confirmed, source_natural) = wait_for_stop(
                         &mut streamlink,
                         "streamlink",
-                        stop_deadline.saturating_duration_since(Instant::now()).min(STREAMLINK_SETTLE_TIMEOUT),
+                        source_deadline,
+                        stop_deadline - finalize_reserve,
+                        &budget,
+                        true,
                     ).await;
-                    let (ffmpeg_result, ffmpeg_confirmed) =
-                        wait_then_terminate(&mut ffmpeg, "ffmpeg", stop_deadline.saturating_duration_since(Instant::now())).await;
+                    let (ffmpeg_result, ffmpeg_confirmed, ffmpeg_natural) =
+                        wait_for_stop(&mut ffmpeg, "ffmpeg", stop_deadline - cleanup_reserve, stop_deadline, &budget, false).await;
                     let mut outcome = match ffmpeg_result {
                         Ok(code) => StreamlinkPipelineExit::Ffmpeg(code),
                         Err(message) => StreamlinkPipelineExit::Failed {
@@ -653,9 +920,26 @@ impl DownloadEngine for StreamlinkEngine {
                             message,
                         },
                     };
+                    let source_clean = matches!(streamlink_cleanup, Ok(Some(0))) && source_natural;
                     if let Err(cleanup_error) = streamlink_cleanup {
                             warn!(%cleanup_error, "Failed to stop streamlink cleanly");
                             outcome = outcome.with_cleanup_error(cleanup_error);
+                    }
+                    let drain = if cooperative && source_clean && ffmpeg_natural
+                        && matches!(outcome, StreamlinkPipelineExit::Ffmpeg(Some(0)))
+                        && process_pipe_eof.load(Ordering::Acquire) {
+                        match &companion {
+                            Some(companion) => budget.within(companion.drain_result(stop_deadline), stop_deadline, false)
+                                .await.unwrap_or_else(|| Err("companion verification exceeded the current stop deadline".into())),
+                            None => Err("control companion unavailable".into()),
+                        }
+                    } else {
+                        Err(if !cooperative { "unsupported or unavailable Streamlink control profile" }
+                            else { "producer, stdout forwarding, or remux finalization did not finish naturally" }.into())
+                    };
+                    if let Err(reason) = drain {
+                        warn!(download_id = %budget.handle.id, %reason, "Streamlink cooperative drain incomplete");
+                        outcome = outcome.with_secondary_error(format!("Streamlink cooperative drain incomplete: {reason}"));
                     }
                     (apply_pipe_failure(outcome, process_pipe_failure.lock().clone()), streamlink_confirmed && ffmpeg_confirmed)
                 }
@@ -683,8 +967,7 @@ impl DownloadEngine for StreamlinkEngine {
                             match terminate_and_reap(
                                 &mut streamlink,
                                 "streamlink",
-                                PROCESS_CLEANUP_TIMEOUT,
-                            ).await {
+                                PROCESS_CLEANUP_TIMEOUT, &budget).await {
                                 Ok(_) => (Some(failure), true),
                                 Err(cleanup_error) => (
                                     Some(failure.with_cleanup_error(cleanup_error)),
@@ -693,10 +976,13 @@ impl DownloadEngine for StreamlinkEngine {
                             }
                         }
                     };
+                    #[cfg(test)]
+                    if let Some(fixture) = &shutdown_fixture { fixture.settling_after_source_exit(); }
                     let (ffmpeg_result, ffmpeg_confirmed) = wait_then_terminate(
                         &mut ffmpeg,
                         "ffmpeg",
                         ffmpeg_stop_timeout(),
+                        &budget,
                     ).await;
                     let ffmpeg_outcome = match ffmpeg_result {
                         Ok(code) => StreamlinkPipelineExit::Ffmpeg(code),
@@ -724,10 +1010,11 @@ impl DownloadEngine for StreamlinkEngine {
                     // streamlink finish exiting before deciding the outcome instead of reaping
                     // it here.
                     Ok(status) if status.success() => {
+                        #[cfg(test)]
+                        if let Some(fixture) = &shutdown_fixture { fixture.settling_after_ffmpeg_exit(); }
                         let (settlement, streamlink_cleanup) = settle_streamlink_after_ffmpeg_exit(
                             &mut streamlink,
-                            STREAMLINK_SETTLE_TIMEOUT,
-                        ).await;
+                            STREAMLINK_SETTLE_TIMEOUT, &budget).await;
                         let mut outcome = clean_ffmpeg_exit_outcome(
                             &settlement,
                             process_pipe_failure.lock().clone(),
@@ -755,8 +1042,7 @@ impl DownloadEngine for StreamlinkEngine {
                                 match terminate_and_reap(
                                     &mut ffmpeg,
                                     "ffmpeg",
-                                    PROCESS_CLEANUP_TIMEOUT,
-                                ).await {
+                                    PROCESS_CLEANUP_TIMEOUT, &budget).await {
                                     Ok(_) => (failure, true),
                                     Err(cleanup_error) => (
                                         failure.with_cleanup_error(cleanup_error),
@@ -768,8 +1054,7 @@ impl DownloadEngine for StreamlinkEngine {
                         let streamlink_confirmed = match terminate_and_reap(
                             &mut streamlink,
                             "streamlink",
-                            PROCESS_CLEANUP_TIMEOUT,
-                        ).await {
+                            PROCESS_CLEANUP_TIMEOUT, &budget).await {
                             Ok(_) => true,
                             Err(cleanup_error) => {
                                 warn!(%cleanup_error, "Failed to stop Streamlink after FFmpeg exited");
@@ -831,7 +1116,10 @@ impl DownloadEngine for StreamlinkEngine {
                     }
                     result = streamlink_stdout.read(&mut buffer) => {
                         match result {
-                            Ok(0) => break, // EOF
+                            Ok(0) => {
+                                pipe_eof.store(true, Ordering::Release);
+                                break;
+                            }
                             Ok(n) => {
                                 let written = tokio::select! {
                                     _ = pipe_forced_settlement.cancelled() => break,
@@ -937,6 +1225,47 @@ impl DownloadEngine for StreamlinkEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn tightened_budget_bounds_negotiation_and_proof_without_restarting_the_future() {
+        for source in [true, false] {
+            let (events, _receiver) = tokio::sync::mpsc::channel(1);
+            let handle = Arc::new(DownloadHandle::new(
+                "budget",
+                EngineType::Streamlink,
+                DownloadConfig::new(
+                    "https://invalid.test/",
+                    ".",
+                    "streamer",
+                    "Streamer",
+                    "session",
+                ),
+                events,
+            ));
+            handle.cancellation_token.cancel();
+            let budget = StopBudget {
+                handle: handle.clone(),
+                configured: Duration::from_secs(60),
+                observed: Mutex::new(None),
+            };
+            let entered = std::sync::atomic::AtomicUsize::new(0);
+            let start = Instant::now();
+            let mut waiting = Box::pin(budget.within(
+                async {
+                    entered.fetch_add(1, Ordering::Relaxed);
+                    std::future::pending::<()>().await;
+                },
+                start + Duration::from_secs(60),
+                source,
+            ));
+            assert!(futures::poll!(&mut waiting).is_pending());
+            handle.set_stop_deadline(start + Duration::from_millis(100));
+            tokio::time::advance(Duration::from_millis(101)).await;
+            assert!(waiting.await.is_none());
+            assert_eq!(Instant::now(), start + Duration::from_millis(101));
+            assert_eq!(entered.load(Ordering::Relaxed), 1);
+        }
+    }
     use crate::downloader::engine::utils::parse_time;
 
     #[test]

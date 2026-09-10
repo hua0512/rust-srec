@@ -88,7 +88,7 @@
 
 - **macOS process cleanup waits for exit confirmation within its deadline**
 
-  Forced cleanup now handles a leader that is exiting but not yet waitable when process-group termination returns EPERM. It uses the remaining cleanup budget to confirm exit without reaping, then retries guarded group termination. Unconfirmed cleanup remains an error; Streamlink buffer-draining limits are unchanged.
+  Forced cleanup now handles a leader that is exiting but not yet waitable when process-group termination returns EPERM. It uses the remaining cleanup budget to confirm exit without reaping, then retries guarded group termination. Unconfirmed cleanup remains an error.
 
 ## Logging
 
@@ -266,9 +266,9 @@
 
   Stop callers and replacement sessions wait for the same collector outcome without consuming another caller's completion signal. Waiting for startup serialization and the previous collector shares a ten-second handoff budget. A cancelled caller or timeout does not discard completion or allow an overlapping replacement; connection setup retains its separate behavior.
 
-- **Streamlink stop keeps output flowing while containing subprocesses**
+- **Streamlink cooperatively drains accepted recording data**
 
-  Stdout forwarding and stderr readers stay alive while Streamlink stops, allowing emitted tail data to reach FFmpeg before EOF. Unix requests SIGTERM; Windows uses a bounded natural-exit window before forced tree termination. Both subprocess trees are contained, including descendants left after a parent exits. Internal Streamlink ring-buffer data and forced-stop tails remain subject to loss; see [stopping Streamlink recordings](../concepts/engines.md#stopping-streamlink-recordings).
+  An authenticated companion stops new acquisition in audited Streamlink 8.5.0 readers while accepted work, buffered data, nested muxers and stdout continue draining into FFmpeg. Hidden Windows attempts use the same control channel. Completion requires verified EOF, successful forwarding and natural muxer finalization within one process deadline, including a later shortened shutdown deadline. Configured plugins, quality, authentication and proxy options remain available; opaque executables and unsupported readers retain recording behavior but cannot claim cooperative drain. Forced or unverified stops explicitly report incomplete drain; see [stopping Streamlink recordings](../concepts/engines.md#stopping-streamlink-recordings).
 
 - **Engine resolution uses bounded version probes and reports invalid settings**
 
@@ -276,7 +276,7 @@
 
 - **Recording stops retain confirmed final segments**
 
-  FFmpeg and Streamlink receive a separate bounded cleanup period after their graceful-stop deadline expires. Confirmed final segments are published once before the recording ends; unconfirmed cleanup does not advertise completion. Unused FFmpeg standard output cannot fill an unread pipe, and stopping Mesio before its first HLS segment no longer counts as an engine failure.
+  FFmpeg receives a separate bounded cleanup period after its graceful-stop deadline expires; Streamlink reserves containment and remux finalization within its shared process deadline. Confirmed final segments are published once before the recording ends; unconfirmed cleanup does not advertise completion. Required final-event delivery retains ownership until consumed. Unused FFmpeg standard output cannot fill an unread pipe, and stopping Mesio before its first HLS segment no longer counts as an engine failure.
 
 - **Sessions reconcile correctly after restart**
 

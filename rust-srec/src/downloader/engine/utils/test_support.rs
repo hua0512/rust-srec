@@ -255,7 +255,39 @@ pub(crate) async fn assert_recording_stop(
         .await
         .expect("stop remains bounded")
         .unwrap();
-    assert_eq!(result.is_err(), fixture.unconfirmed, "{case:?}: {result:?}");
+    // Streamlink now shares the already-expired attempt deadline with reaping.
+    // An immediate OS acknowledgement is valid; otherwise only this precise
+    // deadline failure is permitted, and final segment publication is forbidden.
+    // Direct FFmpeg retains its existing fixture contract.
+    let expired_streamlink_unconfirmed = if handle.engine_type
+        == crate::downloader::engine::EngineType::Streamlink
+        && matches!(case, StopCase::Expired)
+        && let Err(error) = &result
+    {
+        assert!(matches!(
+            &error.kind,
+            crate::downloader::engine::DownloadFailureKind::Other
+        ));
+        let reasons = error
+            .message
+            .strip_prefix("Streamlink task settlement failed: process cleanup was not confirmed: ")
+            .expect("expired Streamlink failure must identify unconfirmed process cleanup");
+        let reasons = reasons.strip_suffix(
+            "; secondary process error: Streamlink cooperative drain incomplete: unsupported or unavailable Streamlink control profile",
+        ).unwrap_or(reasons);
+        assert!(reasons.split("; process cleanup error: ").all(|reason| {
+            ["streamlink", "ffmpeg"].into_iter().any(|process| {
+                reason.strip_prefix(&format!(
+                    "failed to contain {process} before the stop deadline: deadline elapsed while reaping force-terminated child ",
+                )).is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit()))
+            })
+        }), "unexpected expired cleanup failure: {}", error.message);
+        true
+    } else {
+        false
+    };
+    let unconfirmed = fixture.unconfirmed || expired_streamlink_unconfirmed;
+    assert_eq!(result.is_err(), unconfirmed, "{case:?}: {result:?}");
     let mut events = Vec::new();
     while let Ok(event) = rx.try_recv() {
         events.push(event);
@@ -267,7 +299,7 @@ pub(crate) async fn assert_recording_stop(
             matches!(event, SegmentEvent::SegmentCompleted(_)).then_some(index)
         })
         .collect();
-    if fixture.unconfirmed {
+    if unconfirmed {
         assert!(
             completed.is_empty(),
             "unconfirmed cleanup must not publish completion"
@@ -276,6 +308,11 @@ pub(crate) async fn assert_recording_stop(
             events
                 .iter()
                 .any(|event| matches!(event, SegmentEvent::DownloadFailed { .. }))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, SegmentEvent::DownloadCompleted { .. }))
         );
         return;
     }

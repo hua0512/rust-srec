@@ -1,0 +1,5 @@
+# Test-only dependency. Runtime images and configured Streamlink installations are unchanged.
+streamlink==8.5.0
+requests==2.34.2
+urllib3==2.7.0
+websocket-client==1.9.2
