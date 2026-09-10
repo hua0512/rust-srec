@@ -316,6 +316,9 @@ async fn startup_probe_and_health_registration_reuse_the_collected_root_input_wi
         .await
         .unwrap();
     std::fs::remove_dir(&original_root).unwrap();
+    // Missing recording folders are valid when an ancestor is writable. A file
+    // in place of the collected directory guarantees a failure on every platform.
+    std::fs::write(&original_root, b"not a directory").unwrap();
     queries.store(0, Ordering::SeqCst);
     container.register_health_checks(&roots).await;
     container.run_output_root_startup_probe(&roots).await;
@@ -326,10 +329,11 @@ async fn startup_probe_and_health_registration_reuse_the_collected_root_input_wi
     );
     let state = container.output_root_gate.snapshot();
     assert!(
-        state
-            .iter()
-            .any(|root| root.root == container.output_root_gate.resolve_path(&original_root)),
-        "the original missing root must be probed instead of the newly configured healthy root"
+        state.iter().any(|root| {
+            root.root == container.output_root_gate.resolve_path(&original_root)
+                && root.state == crate::downloader::RootHealthState::Degraded
+        }),
+        "the original invalid path must be probed instead of the newly configured healthy directory"
     );
     container.cancellation_token.cancel();
 }
