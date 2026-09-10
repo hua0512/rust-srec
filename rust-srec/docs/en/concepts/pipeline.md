@@ -74,9 +74,22 @@ Use `program` and `args` to run an executable directly, without a shell:
 
 Omitting `args` passes no arguments. Use either `program` with optional `args`, or `command`; combining them fails the step. On Windows, `program` rejects `.bat` and `.cmd` files because Windows would run them through a shell. Use `command` for batch scripts. Both modes retain output-directory scanning, pipeline output handling, timeouts, and process cleanup.
 
-In an `execute` command, placeholder values such as `{input}`, `{output}`, `{streamer}` and `{title}` are quoted for the shell automatically, so a path or title containing spaces, quotes, `$` or `;` is passed on as plain text. The quoting matches where the placeholder sits: as a bare argument, inside `'...'` or `"..."`, inside `$(...)` or backticks, inside `$(( ... ))`, and in a here-document body. Write the placeholder as it is — with or without quotes around it — and do not add your own escaping. The rest of the command is untouched, so pipes, `&&` and redirects still work.
+Command templates without recognized placeholders retain their existing shell behavior. With placeholders, the compiler accepts a bounded grammar and passes substituted data through process-local bindings. Placeholders may appear in ordinary argument words or file redirect targets; the command name must be fixed. Unknown and out-of-range placeholders remain literal. A bare empty value contributes no word, while existing quotes retain an empty argument. Empty redirect targets fail before launch.
 
-Two limits are worth knowing. A step fails with an explanatory error if a value would end a here-document early by containing that here-document's delimiter on a line of its own — pick a delimiter that cannot appear in your paths. And on Windows, `cmd` expands a `%VAR%` reference found inside a value before the command runs, which it offers no way to escape.
+| Value-bearing templates | Accepted structure |
+| --- | --- |
+| POSIX | Bare, single-quoted and double-quoted argument fragments; `;`, LF newlines, `&&`, `||`, pipes, `<`, `>`, `>>`, and literal descriptor duplication such as `2>&1` |
+| Windows | Fixed native executable names/paths; quoted or bare argument fragments; `&`, `&&`, `||`, file redirects and literal descriptor duplication. Literal-only `echo` and `ver` stages may accompany native commands. |
+
+Templates with placeholders reject command substitution, arithmetic, parameter expansion, here-documents, command groups, assignment prefixes, command-name expansion (including POSIX brace forms) and nested shell wrappers before launch.
+
+Windows additionally rejects pipes, multiline templates, batch scripts, builtin stages with placeholders, literal `%`/`!`/`^` characters in the template, control characters in substituted words, and ambiguous literal quote/backslash combinations. These template-character restrictions apply inside quotes too; put that data in `args` or a placeholder value.
+
+Windows assembles each complete argument before applying the backslash-quote encoding used by common C-style and Shell32 parsers. Programs with custom argument parsers must accept that encoding; follow the called program's argument or data-interface requirements. Redirect filenames use separate rules and cannot contain a double quote.
+
+Fixed Windows native paths accept 8.3 aliases such as `RUNNER~1` and literal brackets. Wildcard executable names and extended `\\?\` namespace paths remain unsupported. Value-bearing Windows commands are checked before launch against cmd's 8,191 UTF-16-unit limit: each inherited binding, the generated command and a conservative expanded command must fit, with 32 units reserved for the launcher. Large JSON arrays may therefore require `program`/`args` or a file data interface.
+
+Use `program` and `args`, or a fixed script with a documented argument/data interface, for unsupported forms. Do not place untrusted values into that program's code or expression arguments: the called program still interprets its own options.
 
 ### Archives (`compression`)
 
