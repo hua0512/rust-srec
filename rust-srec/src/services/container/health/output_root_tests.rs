@@ -122,7 +122,136 @@ fn writable_child_is_probed_instead_of_ancestor_gate_key() {
         .unwrap();
     assert_eq!(probe, child);
     assert_ne!(gate.resolve_path(&probe), probe);
-    assert!(probe_root_writable(&probe).is_ok());
+    assert!(probe_root_writable(&probe, &gate).is_ok());
+}
+
+#[tokio::test]
+async fn offline_streamer_missing_directory_does_not_fail_startup_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("output");
+    std::fs::create_dir(&output).unwrap();
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let configs = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+    let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+    let service = ConfigService::new(configs.clone(), streamers.clone());
+    let manager = StreamerManager::new(streamers, ConfigEventBroadcaster::new());
+    let platform = configs.get_platform_config_by_name("huya").await.unwrap();
+    let streamer = StreamerDbModel::new("0601", "https://www.huya.com/0601", platform.id);
+    let metadata = StreamerMetadata::from_db_model(&streamer);
+    assert_eq!(metadata.state, crate::domain::StreamerState::NotLive);
+    manager.create_streamer(metadata).await.unwrap();
+    let mut global = service.get_global_config().await.unwrap();
+    global.output_folder = output
+        .join("{streamer}/%Y/%m/%d")
+        .to_string_lossy()
+        .into_owned();
+    service.update_global_config(&global).await.unwrap();
+
+    let gate = gate(vec![]);
+    let paths = discover_output_probe_paths(&service, &manager, &gate).await;
+    let probe = output.join("0601");
+    assert_eq!(paths, HashSet::from([probe.clone()]));
+    assert!(probe_root_writable(&probe, &gate).is_ok());
+    assert_eq!(std::fs::read_dir(&output).unwrap().count(), 0);
+
+    let recording_dir = probe.join("2026/09/10");
+    crate::downloader::engine::utils::ensure_output_dir(&recording_dir)
+        .await
+        .unwrap();
+    assert!(recording_dir.is_dir());
+}
+
+#[test]
+fn missing_nested_directories_probe_existing_ancestor_without_creating_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = gate(vec![dir.path().to_path_buf()]);
+    let output = dir.path().join("0601/2026/09/10");
+    assert!(probe_root_writable(&output, &gate).is_ok());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn missing_explicit_root_does_not_fall_back_to_writable_outer_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing_root = dir.path().join("missing-mount");
+    let gate = gate(vec![dir.path().to_path_buf(), missing_root.clone()]);
+    for output in [&missing_root, &missing_root.join("0601/2026")] {
+        assert_eq!(
+            probe_root_writable(output, &gate).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn file_in_output_path_does_not_fall_back_to_writable_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("0601");
+    std::fs::write(&output, b"existing file").unwrap();
+    let gate = gate(vec![dir.path().to_path_buf()]);
+    assert!(probe_root_writable(&output, &gate).is_err());
+    assert!(probe_root_writable(&output.join("2026"), &gate).is_err());
+    assert_eq!(std::fs::read(&output).unwrap(), b"existing file");
+}
+
+#[cfg(unix)]
+#[test]
+fn dangling_output_symlinks_do_not_fall_back_to_writable_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("0601");
+    std::os::unix::fs::symlink(dir.path().join("missing-target"), &output).unwrap();
+    let gate = gate(vec![dir.path().to_path_buf()]);
+    for path in [&output, &output.join("2026/09/10")] {
+        assert_eq!(
+            probe_root_writable(path, &gate).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn missing_subdirectories_under_valid_symlink_can_be_probed() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let output = dir.path().join("0601");
+    std::os::unix::fs::symlink(target.path(), &output).unwrap();
+    let gate = gate(vec![dir.path().to_path_buf()]);
+    assert!(probe_root_writable(&output.join("2026/09/10"), &gate).is_ok());
+    assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn unwritable_destination_does_not_fall_back_to_writable_parent() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("0601");
+    std::fs::create_dir(&output).unwrap();
+    let previous = std::fs::metadata(&output).unwrap().permissions();
+    std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o555)).unwrap();
+    // Privileged users can bypass mode bits, so first check that this environment
+    // can exercise permission failures. Restore permissions before any assertion.
+    let permissions_enforced = tempfile::tempfile_in(&output).is_err();
+    let gate = gate(vec![dir.path().to_path_buf()]);
+    let existing_result = probe_root_writable(&output, &gate);
+    let missing_result = probe_root_writable(&output.join("2026/09"), &gate);
+    std::fs::set_permissions(&output, previous).unwrap();
+    if permissions_enforced {
+        assert_eq!(
+            existing_result.unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            missing_result.unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+    }
 }
 
 #[cfg(unix)]
@@ -134,10 +263,11 @@ fn read_only_parent_does_not_prevent_probing_writable_child() {
     std::fs::create_dir_all(&child).unwrap();
     let previous = std::fs::metadata(dir.path()).unwrap().permissions();
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-    let probe = gate(vec![])
+    let gate = gate(vec![]);
+    let probe = gate
         .probe_path_for_template(child.to_str().unwrap())
         .unwrap();
-    let result = probe_root_writable(&probe);
+    let result = probe_root_writable(&probe, &gate);
     std::fs::set_permissions(dir.path(), previous).unwrap();
     assert!(
         result.is_ok(),
