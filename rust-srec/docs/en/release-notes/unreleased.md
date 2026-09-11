@@ -701,6 +701,10 @@
 
   If the server was restarting, unreachable for a moment, or answering with an error while the browser was renewing your sign-in, you were thrown back to the login page and had to type your password again. This happened to everyone who had a tab open during a restart or update. A renewal that fails for any reason other than your sign-in genuinely having expired now leaves you signed in, and is simply tried again a moment later.
 
+- **An expired sign-in now takes you back to the login page**
+
+  When your sign-in expired while a page was open, the page stayed put: every action failed and only a manual reload got you to the login page. The app now notices the expiry on its own and takes you to the login page, and once you sign in again you return to the page you were on, with its filters and search kept.
+
 ## Security
 
 - **Credential refresh preserves a complete replacement**

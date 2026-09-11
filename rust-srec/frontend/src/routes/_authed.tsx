@@ -3,6 +3,7 @@ import { redirect } from '@tanstack/react-router';
 import { WebSocketProvider } from '@/providers/WebSocketProvider';
 import { sessionQueryOptions } from '@/api/session';
 import { BrowserNotificationListener } from '@/components/notifications/browser-notification-listener';
+import { useSignedOutRedirect } from '@/hooks/use-signed-out-redirect';
 
 export const Route = createFileRoute('/_authed')({
   // Router runs this on every navigation into the authenticated tree, so the
@@ -33,10 +34,18 @@ export const Route = createFileRoute('/_authed')({
 
     return { user };
   },
-  component: () => (
+  component: AuthedLayout,
+});
+
+function AuthedLayout() {
+  // The guard above only runs on navigation; this covers a session that ends
+  // while the visitor stays on one page.
+  useSignedOutRedirect();
+
+  return (
     <WebSocketProvider>
       <Outlet />
       <BrowserNotificationListener />
     </WebSocketProvider>
-  ),
-});
+  );
+}
