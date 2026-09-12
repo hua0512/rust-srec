@@ -8,7 +8,9 @@ import { ExecuteConfigForm } from '../execute-config-form';
 
 function renderForm() {
   function Harness() {
-    const form = useForm<any>({ defaultValues: { command: 'echo {input}' } });
+    const form = useForm<any>({
+      defaultValues: { command: 'ffmpeg -i {input} -c copy {output}' },
+    });
     return (
       <Form {...form}>
         <ExecuteConfigForm control={form.control} />
