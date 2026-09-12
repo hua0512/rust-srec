@@ -170,6 +170,10 @@
 
 ## Post-processing
 
+- **Execute editors support programs with literal arguments**
+
+  Preset and inline workflow editors now offer shell-command or program/arguments mode. Each argument has its own field and preserves empty values, spaces, quotes and line breaks. Existing command configurations remain editable; changing modes clears the previous mode's fields while retaining output-scanning settings. Server-specific shell restrictions are explained beside the command field. See [Execute](../concepts/pipeline.md#execute-execute).
+
 - Media and transfer processors share compatible error selection, result accumulation and source-file accounting. Existing output order, skip metadata, staging/rollback and source-deletion policies remain intact; naming and path-identity rules stay processor-specific.
 
 - **Processor publication, paths and retries preserve their contracts**

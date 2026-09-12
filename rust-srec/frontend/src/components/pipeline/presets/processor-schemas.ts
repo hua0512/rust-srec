@@ -181,13 +181,45 @@ export const MetadataConfigSchema = z.object({
 });
 
 // --- Execute Processor ---
-export const ExecuteConfigSchema = z.object({
-  command: z.string().min(1),
-  // Directory to scan for new files after command execution
-  scan_output_dir: z.string().optional(),
-  // File extension filter for scanning (e.g., "mp4", "mkv")
-  scan_extension: z.string().optional(),
-});
+export const ExecuteConfigSchema = z
+  .object({
+    command: z.string().min(1).nullable().optional(),
+    program: z
+      .string()
+      .refine((value) => value.trim().length > 0, 'Program is required')
+      .nullable()
+      .optional(),
+    // Keep every argument verbatim, including empty strings and whitespace.
+    args: z.array(z.string()).nullable().optional(),
+    scan_output_dir: z.string().nullable().optional(),
+    scan_extension: z.string().nullable().optional(),
+  })
+  .superRefine((config, ctx) => {
+    const hasCommand = config.command != null;
+    const hasProgram = config.program != null;
+    if (hasCommand === hasProgram) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [hasProgram ? 'program' : 'command'],
+        message: 'Choose either a command or a program',
+      });
+    }
+    if (config.args != null && !hasProgram) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['command'],
+        message: 'Arguments require program mode',
+      });
+    }
+  })
+  .transform((config) => {
+    // Serde treats null optional mode fields as absent. Do not save them as
+    // inactive fields alongside the selected command or program.
+    if (config.command == null) delete config.command;
+    if (config.program == null) delete config.program;
+    if (config.args == null) delete config.args;
+    return config;
+  });
 
 // --- DanmakuFactory Processor ---
 export const DanmakuFactoryConfigSchema = z.object({

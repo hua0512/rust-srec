@@ -61,6 +61,10 @@ Each pipeline step is executed by a specialized processor:
 
 ### Execute (`execute`)
 
+In the preset editor or a workflow step's configuration dialog, choose **Shell command** or **Program and arguments** under **Execution mode**. Existing shell commands open in shell mode without conversion. Switching modes clears the previous command or program and arguments; the output scan settings are shared and retained.
+
+In program mode, enter the executable in **Program** and use **Add argument** for each argument in order. Each box holds one complete argument, including spaces, quotes, line breaks, or an empty string. Remove a box to omit that argument; leaving it blank passes an empty argument. Saving includes only the selected mode's fields.
+
 Use `program` and `args` to run an executable directly, without a shell:
 
 ```json
@@ -73,6 +77,8 @@ Use `program` and `args` to run an executable directly, without a shell:
 `program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
 
 Omitting `args` passes no arguments. Use either `program` with optional `args`, or `command`; combining them fails the step. On Windows, `program` rejects `.bat` and `.cmd` files because Windows would run them through a shell. Use `command` for batch scripts. Both modes retain output-directory scanning, pipeline output handling, timeouts, and process cleanup.
+
+Shell syntax follows the server's operating system, regardless of the browser's operating system. For example, `ffmpeg -nostdin -n -i {input} -c copy {output}` uses a fixed native executable with placeholder arguments and works with the supported template grammar on both platforms, when FFmpeg is installed on the server.
 
 Command templates without recognized placeholders retain their existing shell behavior. With placeholders, the compiler accepts a bounded grammar and passes substituted data through process-local bindings. Placeholders may appear in ordinary argument words or file redirect targets; the command name must be fixed. Unknown and out-of-range placeholders remain literal. A bare empty value contributes no word, while existing quotes retain an empty argument. Empty redirect targets fail before launch.
 
