@@ -106,7 +106,7 @@ impl CredentialRefreshService {
         let _guard = lock.lock().await;
 
         let current = self.store.reload_source(source).await?;
-        let refreshed = if let Some(status) = self.daily_tracker.get_cached_status(&source.scope) {
+        let refreshed = if let Some(status) = self.daily_tracker.get_cached_status(&current) {
             self.handle_cached_status(&current, status).await?
         } else {
             self.perform_check_and_refresh(&current).await?
@@ -162,23 +162,14 @@ impl CredentialRefreshService {
             }
         };
 
-        // Record the result for today
-        self.daily_tracker
-            .record_check(&source.scope, status.clone());
-
         // Also persist to DB for hydration on restart
         let result_str = match &status {
             CredentialStatus::Valid => "valid",
             CredentialStatus::NeedsRefresh { .. } => "needs_refresh",
             CredentialStatus::Invalid { .. } => "invalid",
         };
-        if let Err(e) = self
-            .store
-            .update_check_result(&source.scope, result_str)
-            .await
-        {
-            warn!(error = %e, "Failed to persist check result (non-fatal)");
-        }
+        self.persist_check_result(source, result_str).await?;
+        self.daily_tracker.record_check(source, status.clone());
 
         match status {
             CredentialStatus::Valid => {
@@ -227,6 +218,21 @@ impl CredentialRefreshService {
         }
 
         service.dispatch_notification(NotificationEvent::Credential { event });
+    }
+
+    async fn persist_check_result(
+        &self,
+        source: &CredentialSource,
+        result: &str,
+    ) -> Result<(), CredentialError> {
+        match self.store.update_check_result(source, result).await {
+            Ok(()) => Ok(()),
+            Err(e @ (CredentialError::SourceChanged | CredentialError::NoCredentials)) => Err(e),
+            Err(e) => {
+                warn!(error = %e, "Failed to persist check result (non-fatal)");
+                Ok(())
+            }
+        }
     }
 
     /// Perform credential refresh.
@@ -279,7 +285,7 @@ impl CredentialRefreshService {
 
                 // Update daily tracker with valid status
                 self.daily_tracker
-                    .record_check(&source.scope, CredentialStatus::Valid);
+                    .record_check(&source.after_refresh(&new_creds), CredentialStatus::Valid);
 
                 // Clear failure tracking
                 self.failure_tracker.clear(&source.scope);
@@ -291,6 +297,11 @@ impl CredentialRefreshService {
                 Ok(Some(new_creds.cookies))
             }
             Err(e) => {
+                // Provider failures describe the inputs it received, not a newer login.
+                let current = self.store.reload_source(source).await?;
+                if !source.same_credentials(&current) {
+                    return Err(CredentialError::SourceChanged);
+                }
                 if e.requires_relogin() {
                     let reason = match &e {
                         CredentialError::InvalidCredentials(r) => r.clone(),
@@ -299,22 +310,14 @@ impl CredentialRefreshService {
 
                     // Cache an invalid status so we don't repeatedly attempt refresh within the day
                     // when the platform indicates a manual re-login is required.
+                    self.persist_check_result(source, "invalid").await?;
                     self.daily_tracker.record_check(
-                        &source.scope,
+                        source,
                         CredentialStatus::Invalid {
                             reason: reason.clone(),
                             error_code: None,
                         },
                     );
-
-                    // Best-effort: persist invalid status for hydration on restart.
-                    if let Err(store_err) = self
-                        .store
-                        .update_check_result(&source.scope, "invalid")
-                        .await
-                    {
-                        warn!(error = %store_err, "Failed to persist invalid check result (non-fatal)");
-                    }
                 }
 
                 let failure_count = self
@@ -379,26 +382,19 @@ impl CredentialRefreshService {
 
         let lock = self.get_refresh_lock(&source.scope);
         let _guard = lock.lock().await;
-        let current = self.store.reload_source(source).await?;
         let new_creds = RefreshedCredentials {
             cookies,
-            refresh_token: current.refresh_token.clone(),
-            access_token: current.access_token.clone(),
+            refresh_token: source.refresh_token.clone(),
+            access_token: source.access_token.clone(),
             expires_at: None,
         };
 
         self.store.update_credentials(source, &new_creds).await?;
+        let current = source.after_refresh(&new_creds);
+        self.persist_check_result(&current, "valid").await?;
         self.daily_tracker
-            .record_check(&source.scope, CredentialStatus::Valid);
+            .record_check(&current, CredentialStatus::Valid);
         self.failure_tracker.clear(&source.scope);
-        if let Err(e) = self.store.update_check_result(&source.scope, "valid").await {
-            warn!(
-                platform = %source.platform_name,
-                scope = %source.scope.describe(),
-                error = %e,
-                "Failed to persist credential check status"
-            );
-        }
         info!(
             platform = %source.platform_name,
             scope = %source.scope.describe(),
@@ -523,8 +519,9 @@ mod tests {
             Some("stale-token".to_string()),
             "bilibili".to_string(),
         );
+        let cached_source = service.store.reload_source(&source).await.unwrap();
         service.daily_tracker.record_check(
-            &source.scope,
+            &cached_source,
             CredentialStatus::NeedsRefresh {
                 refresh_deadline: None,
             },

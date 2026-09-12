@@ -37,6 +37,9 @@ fn credential_failure_message(error: &CredentialError) -> &'static str {
         }
         CredentialError::RateLimited => "Credential service rate limit reached; try again later",
         CredentialError::NoCredentials => "No credentials configured for this scope",
+        CredentialError::SourceChanged => {
+            "Credentials changed during refresh; retry with the current credentials"
+        }
         _ => "Credential operation failed",
     }
 }
@@ -1222,6 +1225,7 @@ mod error_boundary_tests {
     #[test]
     fn credential_errors_preserve_relogin_signal_without_underlying_details() {
         for (source, relogin) in [
+            (CredentialError::SourceChanged, false),
             (
                 CredentialError::InvalidCredentials("private-refresh-secret".to_string()),
                 true,

@@ -9,7 +9,7 @@ use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use dashmap::DashMap;
 
 use super::manager::CredentialStatus;
-use super::types::CredentialScope;
+use super::types::{CredentialScope, CredentialSource};
 
 /// Tracks when each credential scope was last checked.
 ///
@@ -24,6 +24,7 @@ pub struct DailyCheckTracker {
 
 #[derive(Clone)]
 struct CachedCheckResult {
+    source: CredentialSource,
     status: CredentialStatus,
     checked_date: NaiveDate,
 }
@@ -70,14 +71,14 @@ impl DailyCheckTracker {
     /// # Returns
     /// - `Some(cached_status)` if already checked today
     /// - `None` if check is needed
-    pub fn get_cached_status(&self, scope: &CredentialScope) -> Option<CredentialStatus> {
+    pub fn get_cached_status(&self, source: &CredentialSource) -> Option<CredentialStatus> {
         self.prune_if_needed();
 
-        let key = scope.cache_key();
+        let key = source.scope.cache_key();
         let today = Utc::now().date_naive();
 
         self.cached_results.get(&key).and_then(|cached| {
-            if cached.checked_date == today {
+            if cached.checked_date == today && cached.source.same_credentials(source) {
                 Some(cached.status.clone())
             } else {
                 None
@@ -91,20 +92,21 @@ impl DailyCheckTracker {
     /// - `true` if we need to check
     /// - `false` if already checked today
     #[inline]
-    pub fn needs_check(&self, scope: &CredentialScope) -> bool {
-        self.get_cached_status(scope).is_none()
+    pub fn needs_check(&self, source: &CredentialSource) -> bool {
+        self.get_cached_status(source).is_none()
     }
 
     /// Record a check result.
-    pub fn record_check(&self, scope: &CredentialScope, status: CredentialStatus) {
+    pub fn record_check(&self, source: &CredentialSource, status: CredentialStatus) {
         self.prune_if_needed();
 
-        let key = scope.cache_key();
+        let key = source.scope.cache_key();
         let today = Utc::now().date_naive();
 
         self.cached_results.insert(
             key,
             CachedCheckResult {
+                source: source.clone(),
                 status,
                 checked_date: today,
             },
@@ -319,17 +321,19 @@ mod tests {
             platform_name: "bilibili".to_string(),
         };
 
+        let source = CredentialSource::new(scope.clone(), "cookie".into(), None, "bilibili".into());
+
         // Initially needs check
-        assert!(tracker.needs_check(&scope));
-        assert!(tracker.get_cached_status(&scope).is_none());
+        assert!(tracker.needs_check(&source));
+        assert!(tracker.get_cached_status(&source).is_none());
 
         // Record a check
-        tracker.record_check(&scope, CredentialStatus::Valid);
+        tracker.record_check(&source, CredentialStatus::Valid);
 
         // Now doesn't need check
-        assert!(!tracker.needs_check(&scope));
+        assert!(!tracker.needs_check(&source));
         assert_eq!(
-            tracker.get_cached_status(&scope),
+            tracker.get_cached_status(&source),
             Some(CredentialStatus::Valid)
         );
     }
@@ -342,12 +346,49 @@ mod tests {
             platform_name: "bilibili".to_string(),
         };
 
-        tracker.record_check(&scope, CredentialStatus::Valid);
-        assert!(!tracker.needs_check(&scope));
+        let source = CredentialSource::new(scope.clone(), "cookie".into(), None, "bilibili".into());
+        tracker.record_check(&source, CredentialStatus::Valid);
+        assert!(!tracker.needs_check(&source));
 
         // Invalidate
         tracker.invalidate(&scope);
-        assert!(tracker.needs_check(&scope));
+        assert!(tracker.needs_check(&source));
+    }
+
+    #[test]
+    fn late_status_publication_cannot_validate_different_credentials() {
+        let tracker = DailyCheckTracker::new();
+        let source = CredentialSource::new(
+            CredentialScope::Template {
+                template_id: "shared".into(),
+                template_name: "Shared".into(),
+            },
+            "old-cookie".into(),
+            Some("old-refresh".into()),
+            "bilibili".into(),
+        );
+        tracker.invalidate(&source.scope);
+        // Models an old check returning after the edit invalidated its entry.
+        tracker.record_check(&source, CredentialStatus::Valid);
+        assert!(!tracker.needs_check(&source));
+        for field in ["cookies", "refresh", "access", "reauth", "platform"] {
+            let mut changed = source.clone();
+            match field {
+                "cookies" => changed.cookies = "new-cookie".into(),
+                "refresh" => changed.refresh_token = None,
+                "access" => changed.access_token = Some("new-access".into()),
+                "reauth" => {
+                    changed.reauth_extra =
+                        Some(serde_json::json!({"username":"user","password":"new"}))
+                }
+                "platform" => changed.platform_name = "soop".into(),
+                _ => unreachable!(),
+            }
+            assert!(
+                tracker.needs_check(&changed),
+                "stale cache matched changed {field}"
+            );
+        }
     }
 
     #[test]

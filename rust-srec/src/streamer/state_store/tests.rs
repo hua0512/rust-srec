@@ -321,6 +321,59 @@ async fn admin_patch_uses_committed_credentials_and_counters_instead_of_its_old_
     );
 }
 
+#[tokio::test]
+async fn stale_credential_refresh_cannot_publish_over_a_new_login() {
+    use crate::credentials::{
+        CredentialError, CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
+    };
+    let f = fixture().await;
+    let credentials =
+        crate::database::repositories::SqlxCredentialStore::new(f.pool.clone(), f.pool.clone());
+    credentials.bind_committed_streamers(f.store.clone());
+    let source = CredentialSource::new(
+        CredentialScope::Streamer {
+            streamer_id: "state-test".into(),
+            streamer_name: "Original".into(),
+        },
+        "old".into(),
+        None,
+        "huya".into(),
+    );
+    let mut edit = patch();
+    edit.streamer_specific_config = Some(Some(
+        r#"{"cookies":"manual-cookie","refresh_token":"manual-refresh"}"#.into(),
+    ));
+    f.manager.partial_update_streamer(edit).await.unwrap();
+    let saved = f.repository.get_streamer("state-test").await.unwrap();
+    let result = credentials
+        .update_credentials(
+            &source,
+            &RefreshedCredentials {
+                cookies: "obsolete-cookie".into(),
+                refresh_token: Some("obsolete-refresh".into()),
+                access_token: None,
+                expires_at: None,
+            },
+        )
+        .await;
+    assert!(matches!(result, Err(CredentialError::SourceChanged)));
+    assert_eq!(
+        f.repository
+            .get_streamer("state-test")
+            .await
+            .unwrap()
+            .streamer_specific_config,
+        saved.streamer_specific_config
+    );
+    assert_eq!(
+        f.manager
+            .get_streamer("state-test")
+            .unwrap()
+            .streamer_specific_config,
+        saved.streamer_specific_config
+    );
+}
+
 fn start() -> StartSessionInputs {
     StartSessionInputs {
         streamer_id: "state-test".into(),

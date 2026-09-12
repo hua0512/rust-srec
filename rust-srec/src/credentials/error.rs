@@ -57,6 +57,10 @@ pub enum CredentialError {
     #[error("No credentials configured for this scope")]
     NoCredentials,
 
+    /// The credential material changed while an operation was in flight.
+    #[error("Credentials changed during the operation; retry with the current credentials")]
+    SourceChanged,
+
     /// Internal error.
     #[error("Internal error: {0}")]
     Internal(String),
@@ -79,7 +83,7 @@ impl CredentialError {
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
-            Self::Network(_) | Self::RateLimited | Self::ParseError(_)
+            Self::Network(_) | Self::RateLimited | Self::ParseError(_) | Self::SourceChanged
         )
     }
 }

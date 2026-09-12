@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use super::error::CredentialError;
 use super::manager::RefreshedCredentials;
-use super::types::{CredentialScope, CredentialSource};
+use super::types::CredentialSource;
 
 #[async_trait]
 pub trait CredentialStore: Send + Sync {
@@ -23,17 +23,19 @@ pub trait CredentialStore: Send + Sync {
         source: &CredentialSource,
     ) -> Result<CredentialSource, CredentialError>;
 
-    /// Persist refreshed credentials to the correct configuration layer.
+    /// Persist only if the provider inputs in `source` still match the stored credentials.
+    /// The comparison and writes must share a transaction; unrelated config edits are allowed.
     async fn update_credentials(
         &self,
         source: &CredentialSource,
         credentials: &RefreshedCredentials,
     ) -> Result<(), CredentialError>;
 
-    /// Persist a "checked today" result for hydration on restart.
+    /// Verify `source` is current and persist a "checked today" result where supported.
+    /// A stale check must not overwrite the status of newer credentials.
     async fn update_check_result(
         &self,
-        scope: &CredentialScope,
+        source: &CredentialSource,
         result: &str,
     ) -> Result<(), CredentialError>;
 }
