@@ -48,6 +48,7 @@ export type FfmpegConfig = z.infer<typeof FfmpegConfigSchema>;
 
 export const StreamlinkConfigSchema = z.object({
   binary_path: z.string().default('streamlink'),
+  ffmpeg_path: z.string().nullable().optional(),
   quality: z.string().default('best'),
   extra_args: z.array(z.string()).default([]),
   graceful_stop_timeout_secs: z.coerce.number().int().min(0).default(60),
@@ -267,6 +268,7 @@ export type FfmpegConfigOverride = z.infer<typeof FfmpegConfigOverrideSchema>;
 export const StreamlinkConfigOverrideSchema = z
   .object({
     binary_path: optionalString(),
+    ffmpeg_path: z.string().nullable().optional(),
     quality: optionalString(),
     extra_args: z.array(z.string()).optional(),
     twitch_proxy_playlist: optionalNonEmptyString(),

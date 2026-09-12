@@ -27,7 +27,7 @@ export function EngineOverrideCard({
       case 'FFMPEG':
         return <FfmpegForm basePath={basePath} />;
       case 'STREAMLINK':
-        return <StreamlinkForm basePath={basePath} />;
+        return <StreamlinkForm basePath={basePath} isOverride />;
       case 'MESIO':
         return <MesioForm basePath={basePath} />;
       default:

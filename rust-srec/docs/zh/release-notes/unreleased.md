@@ -127,6 +127,10 @@
 
 ## 配置
 
+- **前端编辑保留 Streamlink 的 FFmpeg 路径**
+
+  引擎编辑器现在会保留并显示用于重封装 Streamlink 输出的自定义 FFmpeg 路径。模板覆盖可分别选择继承引擎设置，或使用环境变量及默认可执行文件。路径文本（包括空格）会原样保留。详见 [Streamlink 的 FFmpeg 可执行文件](../concepts/engines.md#streamlink-的-ffmpeg-可执行文件)。
+
 - **导入与仓库写入共享完整字段绑定**
 
   全部十类导入配置及其替换、失效写入现由仓库统一管理。ID、时间戳、省略字段、JSON 和事务约定保持不变，缓存与运行时通知仍在提交后更新。详见[导入持久化](../operations/backup-restore.md#导入持久化所有权)。

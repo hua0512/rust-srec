@@ -23,7 +23,7 @@ msgstr " - 会话：{0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:174
+#: src/components/config/engines/forms/streamlink-form.tsx:250
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -358,7 +358,7 @@ msgstr "为此配置模板提供一个唯一的名称。"
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:47
+#: src/components/config/engines/forms/streamlink-form.tsx:52
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
@@ -657,7 +657,7 @@ msgstr "发生错误"
 msgid "Anonymized Metadata • UTF-8 Format"
 msgstr "匿名元数据 • UTF-8 格式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:179
+#: src/components/config/engines/forms/streamlink-form.tsx:255
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
@@ -1112,7 +1112,7 @@ msgstr "BDUSS + STOKEN"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:63
+#: src/components/config/engines/forms/streamlink-form.tsx:139
 msgid "best"
 msgstr "最佳"
 
@@ -1125,7 +1125,7 @@ msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:45
-#: src/components/config/engines/forms/streamlink-form.tsx:37
+#: src/components/config/engines/forms/streamlink-form.tsx:42
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "可执行文件路径"
@@ -1366,7 +1366,7 @@ msgstr "渠道已删除"
 msgid "Channel updated"
 msgstr "渠道已更新"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:142
+#: src/components/config/engines/forms/streamlink-form.tsx:218
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
@@ -1491,6 +1491,10 @@ msgstr "清除日期范围"
 msgid "Clear selection"
 msgstr "清除选择"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:94
+msgid "Clearing the field inherits the engine setting."
+msgstr "清空字段会继承引擎设置。"
+
 #: src/components/pipeline/workflows/step-library.tsx:616
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
@@ -1555,7 +1559,7 @@ msgstr "收集统计"
 msgid "Coming soon"
 msgstr "即将推出"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:147
+#: src/components/config/engines/forms/streamlink-form.tsx:223
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "用于排除代理的频道列表（逗号分隔）"
 
@@ -2222,7 +2226,7 @@ msgstr "自定义请求头"
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:126
+#: src/components/config/engines/forms/streamlink-form.tsx:202
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
@@ -2870,7 +2874,7 @@ msgstr "时长（毫秒）"
 msgid "Duration limit"
 msgstr "时长限制"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:68
+#: src/components/config/engines/forms/streamlink-form.tsx:144
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
@@ -3359,7 +3363,7 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:162
+#: src/components/config/engines/forms/streamlink-form.tsx:238
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:642
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:794
@@ -3804,13 +3808,22 @@ msgstr "ffmpeg"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:63
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:86
+msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
+msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器上的路径，不要添加 shell 引号。环境默认值优先使用 FFMPEG_PATH，然后使用 PATH 中的 ffmpeg。"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:685
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:79
+msgid "FFMPEG_PATH or ffmpeg"
+msgstr "FFMPEG_PATH 或 ffmpeg"
 
 #: src/components/config/global/file-config-card.tsx:20
 msgid "File Configuration"
@@ -4205,7 +4218,7 @@ msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail gener
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:88
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/streamlink-form.tsx:155
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
 
@@ -4470,7 +4483,7 @@ msgstr "https://discord.com/api/webhooks/..."
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:121
+#: src/components/config/engines/forms/streamlink-form.tsx:197
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -4587,6 +4600,10 @@ msgstr "继承自上层"
 #: src/components/config/shared/output-settings-card.tsx:219
 msgid "Inherited / Default"
 msgstr "继承/默认"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:77
+msgid "Inherited from engine"
+msgstr "继承引擎设置"
 
 #: src/components/sessions/timeline-tab.tsx:222
 msgid "INITIAL"
@@ -6431,6 +6448,10 @@ msgstr "路径"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:80
+msgid "Path to FFmpeg"
+msgstr "FFmpeg 可执行文件路径"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:82
 msgid "Path Variables"
 msgstr "路径变量"
@@ -7014,7 +7035,7 @@ msgstr "二维码已过期"
 msgid "QR Login"
 msgstr "扫码登录"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:58
+#: src/components/config/engines/forms/streamlink-form.tsx:134
 #: src/components/player/stream-info-card.tsx:171
 msgid "Quality"
 msgstr "质量"
@@ -8595,7 +8616,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streaming services"
 msgstr "流媒体服务"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:42
+#: src/components/config/engines/forms/streamlink-form.tsx:47
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -8999,7 +9020,7 @@ msgid "Time Range"
 msgstr "时间范围"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:99
-#: src/components/config/engines/forms/streamlink-form.tsx:90
+#: src/components/config/engines/forms/streamlink-form.tsx:166
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
@@ -9322,7 +9343,7 @@ msgstr "TTWID 管理模式"
 msgid "Tuesday"
 msgstr "星期二"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:107
+#: src/components/config/engines/forms/streamlink-form.tsx:183
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -9330,11 +9351,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:116
+#: src/components/config/engines/forms/streamlink-form.tsx:192
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch 代理播放列表"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:137
+#: src/components/config/engines/forms/streamlink-form.tsx:213
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
@@ -9540,6 +9561,14 @@ msgstr "使用 <0>-movflags +faststart</0>"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:109
+msgid "Use engine setting"
+msgstr "使用引擎设置"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:122
+msgid "Use environment default"
+msgstr "使用环境默认值"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
 msgid "Use mobile endpoint for extraction."
