@@ -1196,6 +1196,91 @@ async fn test_runtime_reconfigure_max_concurrent_downloads() {
     assert_eq!(q.in_flight(), 2);
 }
 
+#[test]
+fn throttle_capacity_is_bounded_without_mutating_configured_limits() {
+    for (configured, factor, effective) in [
+        (10, 0.5, 5),
+        (6, 0.5, 3),
+        (1, 0.5, 1),
+        (0, 0.5, 1),
+        (6, 0.0, 1),
+        (6, -1.0, 1),
+        (6, 2.0, 6),
+        (6, f32::NAN, 6),
+    ] {
+        let manager = DownloadManager::with_config(DownloadManagerConfig {
+            max_concurrent_downloads: configured,
+            high_priority_extra_slots: 2,
+            ..Default::default()
+        });
+        assert_eq!(
+            manager.set_download_throttle(Some(factor)),
+            (configured.max(1), effective)
+        );
+        assert_eq!(manager.max_concurrent_downloads(), configured.max(1));
+        assert_eq!(manager.queue.normal_capacity(), effective);
+        assert_eq!(manager.queue.high_extra_capacity(), 2);
+        assert_eq!(
+            manager.set_download_throttle(None),
+            (configured.max(1), configured.max(1))
+        );
+        assert_eq!(manager.queue.normal_capacity(), configured.max(1));
+    }
+}
+
+#[tokio::test]
+async fn throttle_monitor_teardown_restores_latest_configured_capacity() {
+    use crate::pipeline::{Job, JobQueue, ThrottleConfig, ThrottleController};
+
+    for abort in [false, true] {
+        let manager = Arc::new(DownloadManager::with_config(DownloadManagerConfig {
+            max_concurrent_downloads: 10,
+            high_priority_extra_slots: 1,
+            ..Default::default()
+        }));
+        let controller = Arc::new(ThrottleController::new(ThrottleConfig {
+            enabled: true,
+            critical_threshold: 1,
+            warning_threshold: 1,
+            check_interval_ms: 10,
+            ..Default::default()
+        }));
+        let queue = Arc::new(JobQueue::new());
+        for _ in 0..2 {
+            queue
+                .enqueue(Job::new("held", vec![], vec![], "", ""))
+                .await
+                .unwrap();
+        }
+        let cancel = CancellationToken::new();
+        let mut events = controller.subscribe();
+        let task = controller
+            .clone()
+            .start_monitoring(queue, manager.clone(), cancel.clone());
+        tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(manager.queue.normal_capacity(), 5);
+        assert_eq!(manager.set_max_concurrent_downloads(8), 8);
+        assert_eq!(manager.queue.normal_capacity(), 4);
+        if abort {
+            task.abort();
+            assert!(task.await.unwrap_err().is_cancelled());
+        } else {
+            cancel.cancel();
+            tokio::time::timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        assert!(!controller.is_throttled());
+        assert_eq!(manager.max_concurrent_downloads(), 8);
+        assert_eq!(manager.queue.normal_capacity(), 8);
+        assert_eq!(manager.queue.high_extra_capacity(), 1);
+    }
+}
+
 #[tokio::test]
 async fn queued_slot_abandoned_after_acquire_emits_dequeued() {
     let config = DownloadManagerConfig {

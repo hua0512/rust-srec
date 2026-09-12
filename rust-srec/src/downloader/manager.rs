@@ -185,6 +185,8 @@ impl AttemptPhase {
 pub struct DownloadManager {
     /// Configuration.
     config: RwLock<DownloadManagerConfig>,
+    /// Serializes configured-limit updates and temporary throttle changes through queue publication.
+    throttle_factor: Mutex<Option<f32>>,
     /// Priority-aware queue managing concurrency across both
     /// normal-priority and high-priority extra slots.
     queue: Arc<DownloadQueue>,
@@ -275,7 +277,8 @@ impl DownloadManager {
     }
 
     /// Create a new Download Manager with custom configuration.
-    pub fn with_config(config: DownloadManagerConfig) -> Self {
+    pub fn with_config(mut config: DownloadManagerConfig) -> Self {
+        config.max_concurrent_downloads = config.max_concurrent_downloads.max(1);
         // Use broadcast channel to support multiple subscribers
         let (event_tx, _) = broadcast::channel(256);
 
@@ -293,6 +296,7 @@ impl DownloadManager {
 
         let manager = Self {
             config: RwLock::new(config),
+            throttle_factor: Mutex::new(None),
             queue,
             active_downloads: Arc::new(DashMap::new()),
             attempts: AttemptSupervisor::new(),
@@ -917,24 +921,53 @@ impl DownloadManager {
             .saturating_add(config.high_priority_extra_slots)
     }
 
-    /// Adjust the normal-priority concurrency limit at runtime.
+    /// Adjust the configured normal-priority concurrency limit at runtime.
+    /// A temporary throttle is reapplied to this new base before publishing queue capacity.
     ///
     /// Increasing capacity wakes any waiters that fit. Decreasing keeps
     /// in-flight downloads running until they release naturally; new
     /// acquires beyond the new limit queue.
     pub fn set_max_concurrent_downloads(&self, limit: usize) -> usize {
         let limit = limit.max(1);
+        let factor = self.throttle_factor.lock();
+        let mut config = self.config.write();
+        config.max_concurrent_downloads = limit;
+        self.apply_download_capacity(&config, *factor);
+        limit
+    }
 
-        {
-            let mut config = self.config.write();
-            config.max_concurrent_downloads = limit;
-        }
+    /// Set/release the pipeline's temporary reduction without changing configured capacity.
+    /// Returns the configured and effective normal limits from the same mutation.
+    pub(crate) fn set_download_throttle(&self, factor: Option<f32>) -> (usize, usize) {
+        let mut throttle = self.throttle_factor.lock();
+        *throttle = factor.map(|factor| {
+            if factor.is_finite() {
+                factor.clamp(0.0, 1.0)
+            } else {
+                1.0
+            }
+        });
+        let config = self.config.read();
+        let applied = self.apply_download_capacity(&config, *throttle);
+        (config.max_concurrent_downloads, applied)
+    }
 
+    /// Caller holds throttle_factor and config, in that order, until publication completes.
+    fn apply_download_capacity(
+        &self,
+        config: &DownloadManagerConfig,
+        factor: Option<f32>,
+    ) -> usize {
+        let configured = config.max_concurrent_downloads;
+        let effective = factor.map_or(configured, |factor| {
+            ((configured as f64 * f64::from(factor)) as usize).clamp(1, configured)
+        });
         if let Some(feedback) = self.events.feedback.get() {
-            feedback
-                .ensure_attempt_capacity(limit.saturating_add(self.high_priority_extra_slots()));
+            feedback.ensure_attempt_capacity(
+                configured.saturating_add(config.high_priority_extra_slots),
+            );
         }
-        self.queue.set_normal_capacity(limit)
+        self.queue.set_normal_capacity(effective)
     }
 
     /// Current queue-wait freshness threshold in milliseconds.

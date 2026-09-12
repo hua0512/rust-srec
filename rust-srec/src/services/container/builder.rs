@@ -101,6 +101,8 @@ impl ServiceContainer {
             api_config,
         } = options;
 
+        pipeline_config.throttle.validate()?;
+
         crate::i18n::init_from_env();
 
         let overall = Instant::now();
@@ -339,6 +341,7 @@ impl ServiceContainer {
                 dag_repository: Arc::new(SqlxDagRepository::new(pool.clone(), write_pool.clone())),
                 upload_record_repository: upload_record_repo.clone(),
                 upload_broadcaster: upload_status_broadcaster.clone(),
+                download_limit_adjuster: download_manager.clone(),
             },
         ));
 
