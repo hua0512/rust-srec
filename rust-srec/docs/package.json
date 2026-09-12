@@ -1,7 +1,7 @@
 {
     "name": "rust-srec-docs",
     "type": "module",
-    "packageManager": "pnpm@11.11.0",
+    "packageManager": "pnpm@12.4.1",
     "engines": {
         "node": ">=26"
     },

@@ -13,7 +13,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # Install dependencies. node:26-alpine ships no corepack, so pnpm is installed
 # directly; keep this version matching "packageManager" in package.json.
-RUN npm install -g pnpm@11.11.0
+RUN npm install -g pnpm@12.4.1
 RUN pnpm install --frozen-lockfile
 
 # Copy source files
