@@ -109,11 +109,6 @@ export function getMenuList(_pathname: string, i18n: I18n): Group[] {
           label: i18n._(msg`System Health`),
           icon: Activity,
         },
-        // {
-        //     href: "/users", // TODO: /users
-        //     label: "Users",
-        //     icon: Users
-        // },
         {
           href: '/config',
           label: i18n._(msg`Configuration`),

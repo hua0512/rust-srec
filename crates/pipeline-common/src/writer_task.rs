@@ -1,6 +1,5 @@
 use std::error::Error;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -76,18 +75,6 @@ impl Default for ProgressConfig {
 
 /// Callback type for progress events.
 pub type ProgressCallback = Box<dyn Fn(WriterProgress) + Send + Sync>;
-
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the optional default writer strategy")
-)]
-fn expand_writer_sequence_template(template: &str, sequence_number: Option<u32>) -> String {
-    if let Some(sequence_number) = sequence_number {
-        template.replace("%i", &sequence_number.to_string())
-    } else {
-        template.to_string()
-    }
-}
 
 /// Action to take after writing an item.
 #[derive(Debug, Clone, Copy)]
@@ -228,19 +215,11 @@ pub enum WriterError {
 
 /// Internal error type for the writer task (keeps strategy error generic).
 #[derive(Error, Debug)]
-#[expect(
-    dead_code,
-    reason = "retained for optional pipeline strategies and diagnostics"
-)]
 pub(crate) enum TaskError<StrategyError: Error + Send + Sync + 'static> {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
     #[error("Strategy error: {0}")]
     Strategy(StrategyError),
-    #[error("Configuration error: {0}")]
-    Config(String),
-    #[error("File rotation error: {0}")]
-    Rotation(String),
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -250,8 +229,6 @@ impl<SE: Error + Send + Sync + 'static> From<TaskError<SE>> for WriterError {
         match e {
             TaskError::Io(io) => WriterError::Io(io),
             TaskError::Strategy(s) => WriterError::Strategy(Box::new(s)),
-            TaskError::Config(msg) => WriterError::Config(msg),
-            TaskError::Rotation(msg) => WriterError::Rotation(msg),
             TaskError::Internal(msg) => WriterError::Internal(msg),
         }
     }
@@ -758,87 +735,20 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 }
 
-/// A default file-based strategy for convenience.
-/// This can be used directly or as a template for more complex strategies.
-#[expect(
-    dead_code,
-    reason = "retained for optional pipeline strategies and diagnostics"
-)]
-pub struct DefaultFileStrategy;
-
-#[expect(
-    dead_code,
-    reason = "retained for optional pipeline strategies and diagnostics"
-)]
-#[derive(Error, Debug)]
-pub enum DefaultStrategyError {
-    #[error("I/O error: {0}")]
-    Io(#[from] io::Error),
-}
-
-impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
-    type Writer = BufWriter<File>;
-    type StrategyError = DefaultStrategyError;
-
-    fn create_writer(&self, path: &Path) -> Result<Self::Writer, Self::StrategyError> {
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-        Ok(BufWriter::new(file))
-    }
-
-    fn write_item(
-        &mut self,
-        _writer: &mut Self::Writer,
-        _item: &D,
-    ) -> Result<u64, Self::StrategyError> {
-        panic!(
-            "DefaultFileStrategy::write_item must be implemented by a concrete strategy or this strategy should not be used directly with WriterTask::process_item"
-        );
-    }
-
-    fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
-        false
-    }
-
-    fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
-        let filename = expand_writer_sequence_template(
-            &config.file_name_template,
-            Some(state.file_sequence_number + 1),
-        );
-        config
-            .base_path
-            .join(format!("{}.{}", filename, config.file_extension))
-    }
-
-    fn on_file_open(
-        &mut self,
-        _writer: &mut Self::Writer,
-        _path: &Path,
-        _config: &WriterConfig,
-        _state: &WriterState,
-    ) -> Result<u64, Self::StrategyError> {
-        Ok(0) // No header by default
-    }
-
-    fn on_file_close(
-        &mut self,
-        _writer: &mut Self::Writer,
-        _path: &Path,
-        _config: &WriterConfig,
-        _state: &WriterState,
-    ) -> Result<u64, Self::StrategyError> {
-        Ok(0) // No footer by default
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::fs::{self, File, OpenOptions};
+    use std::io::BufWriter;
     use tempfile::tempdir;
+
+    fn expand_writer_sequence_template(template: &str, sequence_number: Option<u32>) -> String {
+        if let Some(sequence_number) = sequence_number {
+            template.replace("%i", &sequence_number.to_string())
+        } else {
+            template.to_string()
+        }
+    }
 
     // Dummy data type for testing
     struct TestData(String);

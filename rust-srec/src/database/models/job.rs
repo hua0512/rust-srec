@@ -510,12 +510,6 @@ impl LogEntry {
     }
 }
 
-/// Pipeline job configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineJobConfig {
-    pub steps: Vec<PipelineStep>,
-}
-
 /// Pipeline step configuration.
 /// Uses internally tagged enum to disambiguate step types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -984,17 +978,6 @@ impl std::fmt::Display for DagExecutionStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
-}
-
-/// Pipeline job state.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PipelineJobState {
-    #[serde(default)]
-    pub current_step_index: usize,
-    #[serde(default)]
-    pub items_produced: Vec<String>,
-    #[serde(default)]
-    pub output_files: Vec<String>,
 }
 
 #[cfg(test)]

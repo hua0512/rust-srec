@@ -60,11 +60,7 @@ fn credential_internal_error(error: CredentialError) -> ApiError {
 #[derive(Clone)]
 pub struct CredentialRouteState {
     config_service: std::sync::Arc<CredentialConfigService>,
-    credential_service: std::sync::Arc<
-        crate::credentials::CredentialRefreshService<
-            crate::database::repositories::config::SqlxConfigRepository,
-        >,
-    >,
+    credential_service: std::sync::Arc<crate::credentials::CredentialRefreshService>,
     /// Streamer-scoped credential writes go through the manager rather than a
     /// `StreamerRepository`: `StreamerManager::partial_update_streamer` rebuilds the whole
     /// `streamers` row from the manager's metadata cache, so that cache has to carry the
@@ -971,8 +967,8 @@ pub async fn bilibili_qr_poll(
 mod tests {
     use super::*;
     use crate::config::{ConfigEventBroadcaster, ConfigService};
+    use crate::credentials::CredentialRefreshService;
     use crate::credentials::test_support::StubCredentialManager;
-    use crate::credentials::{CredentialRefreshService, CredentialResolver};
     use crate::database::models::StreamerDbModel;
     use crate::database::repositories::{
         SqlxConfigRepository, SqlxCredentialStore, SqlxStreamerRepository, StreamerRepository as _,
@@ -991,7 +987,6 @@ mod tests {
     struct Harness {
         pool: SqlitePool,
         repo: Arc<SqlxStreamerRepository>,
-        config_repo: Arc<SqlxConfigRepository>,
         manager: Arc<CredentialStreamerManager>,
         config_service: Arc<CredentialConfigService>,
     }
@@ -1018,12 +1013,11 @@ mod tests {
         manager.hydrate().await.unwrap();
 
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let config_service = Arc::new(ConfigService::new(config_repo.clone(), repo.clone()));
+        let config_service = Arc::new(ConfigService::new(config_repo, repo.clone()));
 
         Harness {
             pool,
             repo,
-            config_repo,
             manager,
             config_service,
         }
@@ -1034,13 +1028,9 @@ mod tests {
         /// resolves and persists for real but takes its new credentials from `StubCredentialManager`
         /// instead of a platform API.
         fn route_state(&self, refreshed_to: &str, refresh_token: &str) -> CredentialRouteState {
-            let mut credential_service = CredentialRefreshService::new(
-                Arc::new(CredentialResolver::new(self.config_repo.clone())),
-                Arc::new(SqlxCredentialStore::new(
-                    self.pool.clone(),
-                    self.pool.clone(),
-                )),
-            );
+            let mut credential_service = CredentialRefreshService::new(Arc::new(
+                SqlxCredentialStore::new(self.pool.clone(), self.pool.clone()),
+            ));
             credential_service.register_manager(Arc::new(StubCredentialManager::new(
                 "bilibili",
                 refreshed_to,

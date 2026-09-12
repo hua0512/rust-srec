@@ -81,18 +81,6 @@ impl StreamerTxOps {
     /// Pass `None` to clear the field. Used by infrastructure-level blocks
     /// (like the output-root gate) that need to stamp a distinctive marker
     /// on `last_error` so a later recovery pass can filter affected streamers.
-    pub async fn update_last_error(
-        tx: &mut SqliteConnection,
-        streamer_id: &str,
-        last_error: Option<&str>,
-    ) -> Result<u64> {
-        Ok(u64::from(
-            Self::update_last_error_row(tx, streamer_id, last_error)
-                .await?
-                .is_some(),
-        ))
-    }
-
     pub async fn update_last_error_row(
         tx: &mut SqliteConnection,
         streamer_id: &str,
@@ -285,19 +273,6 @@ impl StreamerTxOps {
     }
 
     /// Set a fatal error state (NOT_FOUND, FATAL_ERROR, etc.).
-    pub async fn set_fatal_error(
-        tx: &mut SqliteConnection,
-        streamer_id: &str,
-        state: &str,
-        reason: &str,
-    ) -> Result<u64> {
-        Ok(u64::from(
-            Self::set_fatal_error_row(tx, streamer_id, state, reason)
-                .await?
-                .is_some(),
-        ))
-    }
-
     pub async fn set_fatal_error_row(
         tx: &mut SqliteConnection,
         streamer_id: &str,

@@ -198,7 +198,7 @@ pub enum TerminalCause {
     ///
     /// Whether this counts as authoritative for the hysteresis decision
     /// depends on the engine signal; see
-    /// [`Self::is_authoritative_end`] which takes the
+    /// [`Self::is_authoritative_end_with_signal`] which takes the
     /// [`crate::downloader::EngineEndSignal`] hint.
     Completed,
     /// Engine gave up due to error. Whatever output is on disk is final.

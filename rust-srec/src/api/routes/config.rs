@@ -238,36 +238,6 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<Globa
     })
 }
 
-/// Map PlatformConfigDbModel to PlatformConfigResponse.
-fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformConfigResponse {
-    PlatformConfigResponse {
-        id: config.id,
-        name: config.platform_name,
-        fetch_delay_ms: config.fetch_delay_ms.map(|v| v as u64),
-        download_delay_ms: config.download_delay_ms.map(|v| v as u64),
-        record_danmu: config.record_danmu,
-        danmu_statistics: config.danmu_statistics,
-        cookies: config.cookies,
-        platform_specific_config: config.platform_specific_config,
-        proxy_config: config.proxy_config,
-        output_folder: config.output_folder,
-        output_filename_template: config.output_filename_template,
-        download_engine: config.download_engine,
-        extractor: config.extractor,
-        stream_selection_config: config.stream_selection_config,
-        output_file_format: config.output_file_format,
-        min_segment_size_bytes: config.min_segment_size_bytes.map(|v| v as u64),
-        max_download_duration_secs: config.max_download_duration_secs.map(|v| v as u64),
-        max_part_size_bytes: config.max_part_size_bytes.map(|v| v as u64),
-        download_retry_policy: config.download_retry_policy,
-        pipeline: config.pipeline,
-        session_complete_pipeline: config.session_complete_pipeline,
-        paired_segment_pipeline: config.paired_segment_pipeline,
-        offline_check_count: config.offline_check_count.map(|v| v as u32),
-        offline_check_delay_ms: config.offline_check_delay_ms.map(|v| v as u64),
-    }
-}
-
 /// Validate the optional offline-check overrides on a request payload.
 /// Mirrors the server-side floors enforced in
 /// [`crate::session::HysteresisConfig::from_scheduler`].
@@ -445,7 +415,7 @@ pub async fn list_platform_configs(
 
     let responses: Vec<PlatformConfigResponse> = configs
         .into_iter()
-        .map(map_platform_config_to_response)
+        .map(PlatformConfigResponse::from)
         .collect();
 
     Ok(Json(responses))
@@ -473,7 +443,7 @@ pub async fn get_platform_config(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(map_platform_config_to_response(config)))
+    Ok(Json(PlatformConfigResponse::from(config)))
 }
 
 /// Names of the overrides carried by `request`, for logging.
@@ -614,7 +584,7 @@ pub async fn replace_platform_config(
         "Platform configuration replaced successfully"
     );
 
-    Ok(Json(map_platform_config_to_response(config)))
+    Ok(Json(PlatformConfigResponse::from(config)))
 }
 
 #[cfg(test)]
@@ -627,11 +597,12 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        ConfigRouteState, map_platform_config_to_response, replace_platform_config,
-        update_global_config, validate_global_config_request, validate_optional_retention_days,
-        validate_retention_days,
+        ConfigRouteState, replace_platform_config, update_global_config,
+        validate_global_config_request, validate_optional_retention_days, validate_retention_days,
     };
-    use crate::api::models::{GlobalConfigResponse, UpdateGlobalConfigRequest};
+    use crate::api::models::{
+        GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest,
+    };
     use crate::config::ConfigService;
     use crate::database;
     use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
@@ -981,7 +952,7 @@ mod tests {
             .get_platform_config_by_name("bilibili")
             .await
             .unwrap();
-        let original = map_platform_config_to_response(before.clone());
+        let original = PlatformConfigResponse::from(before.clone());
         for name in ["renamed", "Bilibili"] {
             let mut request = original.clone();
             request.name = name.to_string();
@@ -1029,7 +1000,7 @@ mod tests {
             .get_platform_config_by_name("bilibili")
             .await
             .unwrap();
-        let original = map_platform_config_to_response(before.clone());
+        let original = PlatformConfigResponse::from(before.clone());
         let mut missing = original.clone();
         missing.id = "missing".to_string();
         let error = replace_platform_config(

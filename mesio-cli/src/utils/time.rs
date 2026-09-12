@@ -1,5 +1,4 @@
 use crate::error::AppError;
-use std::fmt::Write;
 
 /// Function to parse time with units
 /// # Arguments
@@ -57,26 +56,4 @@ pub fn parse_time(time_str: &str) -> Result<f64, AppError> {
         "h" => Ok(value * 3600.0),
         _ => Err(AppError::ParseError("Invalid unit".to_string())),
     }
-}
-
-/// Convert seconds to a human-readable format
-#[expect(
-    dead_code,
-    reason = "retained for alternate output strategies and diagnostics"
-)]
-pub fn format_duration(seconds: f64) -> String {
-    // Pre-allocate
-    let mut result = String::with_capacity(10);
-
-    if seconds >= 3600.0 {
-        let hours = seconds / 3600.0;
-        write!(result, "{hours:.2}h").unwrap();
-    } else if seconds >= 60.0 {
-        let minutes = seconds / 60.0;
-        write!(result, "{minutes:.2}m").unwrap();
-    } else {
-        write!(result, "{seconds:.2}s").unwrap();
-    }
-
-    result
 }

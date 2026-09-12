@@ -14,6 +14,23 @@
 //! Both append a single `…` (3 bytes) when clipping; if the input fits,
 //! it is returned unchanged.
 
+/// Format bytes into human-readable string.
+pub(crate) fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 /// Truncate `s` to at most `max` characters. Appends `…` when clipped.
 /// Returns `s.to_string()` when it already fits, or an empty string when
 /// `max == 0`. Single-pass over `s.chars()` so cost is `O(min(len, max))`

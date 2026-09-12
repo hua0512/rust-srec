@@ -9,14 +9,10 @@ use chrono::Utc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::database::repositories::config::ConfigRepository;
-use crate::domain::streamer::Streamer;
 use crate::notification::{NotificationEvent, NotificationService};
-use crate::streamer::StreamerMetadata;
 
 use super::error::CredentialError;
 use super::manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
-use super::resolver::CredentialResolver;
 use super::store::CredentialStore;
 use super::tracker::{DailyCheckTracker, RefreshFailureTracker};
 use super::types::{CredentialEvent, CredentialScope, CredentialSource};
@@ -24,8 +20,7 @@ use super::types::{CredentialEvent, CredentialScope, CredentialSource};
 /// Credential refresh service.
 ///
 /// Orchestrates detection, refresh, and persistence of platform credentials.
-pub struct CredentialRefreshService<R: ConfigRepository> {
-    resolver: Arc<CredentialResolver<R>>,
+pub struct CredentialRefreshService {
     store: Arc<dyn CredentialStore>,
     managers: HashMap<String, Arc<dyn CredentialManager>>,
     daily_tracker: Arc<DailyCheckTracker>,
@@ -36,7 +31,7 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
     notification_service: OnceLock<Arc<NotificationService>>,
 }
 
-impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
+impl CredentialRefreshService {
     pub(crate) fn bind_committed_streamers(
         &self,
         state: Arc<crate::streamer::CommittedStreamerState>,
@@ -45,9 +40,8 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     }
 
     /// Create a new credential refresh service.
-    pub fn new(resolver: Arc<CredentialResolver<R>>, store: Arc<dyn CredentialStore>) -> Self {
+    pub fn new(store: Arc<dyn CredentialStore>) -> Self {
         Self {
-            resolver,
             store,
             managers: HashMap::new(),
             daily_tracker: Arc::new(DailyCheckTracker::new()),
@@ -83,32 +77,6 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     /// Get the failure tracker (for testing or external access).
     pub fn failure_tracker(&self) -> Arc<RefreshFailureTracker> {
         Arc::clone(&self.failure_tracker)
-    }
-
-    /// Check and refresh credentials for a streamer if needed.
-    ///
-    /// Uses the once-per-day check strategy: only calls the platform API
-    /// once per day per credential scope.
-    ///
-    /// # Returns
-    /// * `Ok(Some(new_cookies))` - Credentials were refreshed
-    /// * `Ok(None)` - Credentials are valid, no refresh needed
-    /// * `Err(...)` - Error during check or refresh
-    #[instrument(skip_all, fields(streamer_id = %streamer.id, streamer_name = %streamer.name))]
-    pub async fn check_and_refresh(
-        &self,
-        streamer: &Streamer,
-    ) -> Result<Option<String>, CredentialError> {
-        // Find credential source
-        let source = match self.resolver.find_cookie_source(streamer).await? {
-            Some(s) => s,
-            None => {
-                debug!("No credentials configured");
-                return Ok(None);
-            }
-        };
-
-        self.check_and_refresh_source(&source).await
     }
 
     /// Check and refresh credentials for a pre-resolved credential source.
@@ -147,36 +115,6 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         // the owner rotated its cookies. Return the committed cookies to them
         // as well, without calling the provider or notifying a second time.
         Ok(refreshed.or_else(|| (current.cookies != source.cookies).then_some(current.cookies)))
-    }
-
-    /// Check and refresh credentials for a StreamerMetadata.
-    ///
-    /// This is the method used by StreamMonitor integration.
-    /// Uses the once-per-day check strategy.
-    ///
-    /// # Returns
-    /// * `Ok(Some(new_cookies))` - Credentials were refreshed
-    /// * `Ok(None)` - Credentials are valid, no refresh needed
-    /// * `Err(...)` - Error during check or refresh
-    #[instrument(skip_all, fields(streamer_id = %metadata.id, streamer_name = %metadata.name))]
-    pub async fn check_and_refresh_for_metadata(
-        &self,
-        metadata: &StreamerMetadata,
-    ) -> Result<Option<String>, CredentialError> {
-        // Find credential source
-        let source = match self
-            .resolver
-            .find_cookie_source_for_metadata(metadata)
-            .await?
-        {
-            Some(s) => s,
-            None => {
-                debug!("No credentials configured");
-                return Ok(None);
-            }
-        };
-
-        self.check_and_refresh_source(&source).await
     }
 
     /// Handle a cached status from earlier today.
@@ -514,7 +452,7 @@ mod tests {
 
     use super::*;
     use crate::credentials::types::CredentialScope;
-    use crate::database::repositories::{SqlxCredentialStore, config::SqlxConfigRepository};
+    use crate::database::repositories::SqlxCredentialStore;
 
     struct PausedRefresh {
         calls: std::sync::atomic::AtomicUsize,
@@ -567,16 +505,13 @@ mod tests {
         crate::database::run_migrations(&pool).await.unwrap();
         sqlx::query("UPDATE platform_config SET cookies = 'stored-cookie', platform_specific_config = '{\"refresh_token\":\"stored-token\"}' WHERE id = 'platform-bilibili'")
             .execute(&pool).await.unwrap();
-        let resolver = Arc::new(CredentialResolver::new(Arc::new(
-            SqlxConfigRepository::new(pool.clone(), pool.clone()),
-        )));
         let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone()));
         let provider = Arc::new(PausedRefresh {
             calls: AtomicUsize::new(0),
             started: tokio::sync::Notify::new(),
             release: tokio::sync::Semaphore::new(0),
         });
-        let mut service = CredentialRefreshService::new(resolver, store);
+        let mut service = CredentialRefreshService::new(store);
         service.register_manager(provider.clone());
         let service = Arc::new(service);
         let source = CredentialSource::new(
@@ -662,14 +597,12 @@ mod tests {
         }
     }
 
-    fn build_service() -> CredentialRefreshService<SqlxConfigRepository> {
+    fn build_service() -> CredentialRefreshService {
         let pool = SqlitePoolOptions::new()
             .connect_lazy("sqlite::memory:")
             .expect("in-memory SQLite URL should be valid");
-        let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let resolver = Arc::new(CredentialResolver::new(repository));
         let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool));
-        CredentialRefreshService::new(resolver, store)
+        CredentialRefreshService::new(store)
     }
 
     #[tokio::test]

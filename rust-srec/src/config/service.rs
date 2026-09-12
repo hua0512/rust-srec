@@ -572,11 +572,6 @@ where
         self.cache.stats()
     }
 
-    /// Cleanup expired cache entries.
-    pub fn cleanup_cache(&self) -> usize {
-        self.cache.cleanup_expired()
-    }
-
     // ========== Private Helpers ==========
 
     /// Invalidate cached configs for all streamers on a platform.

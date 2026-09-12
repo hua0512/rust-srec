@@ -187,14 +187,6 @@ impl ConfigCache {
         self.streamer_configs.is_empty()
     }
 
-    /// Remove all expired entries from the cache.
-    pub fn cleanup_expired(&self) -> usize {
-        let _mutation = self.mutation.lock();
-        let before = self.len();
-        self.streamer_configs.retain(|_, entry| !entry.is_expired());
-        before - self.len()
-    }
-
     /// Get cache statistics.
     pub fn stats(&self) -> CacheStats {
         CacheStats {
@@ -209,7 +201,7 @@ impl ConfigCache {
     /// Get or create an in-flight request for a streamer.
     ///
     /// This is used to deduplicate concurrent requests for the same streamer's config.
-    /// Returns (OnceCell, is_new) where is_new indicates if this is a new request.
+    /// Returns (request, is_new) where is_new indicates if this is a new request.
     pub(super) fn get_or_create_in_flight(&self, streamer_id: &str) -> (InFlightRequest, bool) {
         let _mutation = self.mutation.lock();
         // Try to get existing in-flight request
@@ -220,17 +212,10 @@ impl ConfigCache {
         // Create new in-flight request
         let request = Arc::new(InFlightState::new());
 
-        // Use entry API to handle race condition
-        match self.in_flight.entry(streamer_id.to_string()) {
-            dashmap::mapref::entry::Entry::Occupied(entry) => {
-                // Another thread beat us to it
-                (entry.get().clone(), false)
-            }
-            dashmap::mapref::entry::Entry::Vacant(entry) => {
-                entry.insert(request.clone());
-                (request, true)
-            }
-        }
+        // The mutation lock excludes another creator between the lookup and insert.
+        self.in_flight
+            .insert(streamer_id.to_string(), request.clone());
+        (request, true)
     }
 
     /// Complete an in-flight request by setting its result.
@@ -243,28 +228,19 @@ impl ConfigCache {
         context: Arc<ResolvedStreamerContext>,
     ) {
         let _mutation = self.mutation.lock();
-        if let Some(current) = self.in_flight.get(streamer_id) {
-            if !Arc::ptr_eq(&current, request) {
-                return;
+        if let Some((_, current)) = self
+            .in_flight
+            .remove_if(streamer_id, |_, current| Arc::ptr_eq(current, request))
+        {
+            #[cfg(test)]
+            if let Some(hook) = self.completion_hook.lock().clone() {
+                hook();
             }
-        } else {
-            return;
-        }
-
-        if let Some((_, current)) = self.in_flight.remove(streamer_id) {
-            if Arc::ptr_eq(&current, request) {
-                #[cfg(test)]
-                if let Some(hook) = self.completion_hook.lock().clone() {
-                    hook();
-                }
-                current.set_result(Ok(context.clone()));
-                // The caller holds the mutation lock; calling public insert here
-                // would acquire it recursively.
-                self.streamer_configs
-                    .insert(streamer_id.to_string(), CacheEntry::new(context, self.ttl));
-            } else {
-                self.in_flight.insert(streamer_id.to_string(), current);
-            }
+            current.set_result(Ok(context.clone()));
+            // The mutation lock keeps invalidation outside the remove/publish gap.
+            // Calling public insert here would acquire it recursively.
+            self.streamer_configs
+                .insert(streamer_id.to_string(), CacheEntry::new(context, self.ttl));
         }
     }
 
@@ -276,20 +252,11 @@ impl ConfigCache {
         reason: String,
     ) {
         let _mutation = self.mutation.lock();
-        if let Some(current) = self.in_flight.get(streamer_id) {
-            if !Arc::ptr_eq(&current, request) {
-                return;
-            }
-        } else {
-            return;
-        }
-
-        if let Some((_, current)) = self.in_flight.remove(streamer_id) {
-            if Arc::ptr_eq(&current, request) {
-                current.set_result(Err(reason));
-            } else {
-                self.in_flight.insert(streamer_id.to_string(), current);
-            }
+        if let Some((_, current)) = self
+            .in_flight
+            .remove_if(streamer_id, |_, current| Arc::ptr_eq(current, request))
+        {
+            current.set_result(Err(reason));
         }
     }
 
@@ -373,6 +340,45 @@ mod tests {
         ResolvedStreamerContext {
             config: Arc::new(config),
             credential_source: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_requests_share_one_resolution_owner_and_result() {
+        let cache = ConfigCache::new();
+        let start = Arc::new(std::sync::Barrier::new(5));
+        let (requests_tx, requests_rx) = std::sync::mpsc::channel();
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let cache = cache.clone();
+                let start = start.clone();
+                let requests_tx = requests_tx.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    requests_tx
+                        .send(cache.get_or_create_in_flight("streamer"))
+                        .unwrap();
+                })
+            })
+            .collect();
+        start.wait();
+        let requests: Vec<_> = (0..4)
+            .map(|_| requests_rx.recv_timeout(Duration::from_secs(2)).unwrap())
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(requests.iter().filter(|(_, created)| *created).count(), 1);
+
+        let context = Arc::new(create_test_context());
+        cache.complete_in_flight("streamer", &requests[0].0, context.clone());
+        for (request, _) in requests {
+            let received =
+                tokio::time::timeout(Duration::from_secs(1), cache.wait_for_in_flight(&request))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(Arc::ptr_eq(&received, &context));
         }
     }
 
@@ -548,18 +554,5 @@ mod tests {
 
         assert_eq!(cache.len(), 1);
         assert!(cache.get("platform-b-streamer-1").is_some());
-    }
-
-    #[test]
-    fn test_cache_cleanup_expired() {
-        let cache = ConfigCache::with_ttl(Duration::from_millis(10));
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_context()));
-        cache.insert("streamer-2".to_string(), Arc::new(create_test_context()));
-
-        std::thread::sleep(Duration::from_millis(20));
-
-        let removed = cache.cleanup_expired();
-        assert_eq!(removed, 2);
-        assert!(cache.is_empty());
     }
 }

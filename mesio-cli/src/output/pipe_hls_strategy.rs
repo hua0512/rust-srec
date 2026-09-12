@@ -23,18 +23,6 @@ pub enum PipeHlsStrategyError {
 }
 
 impl PipeHlsStrategyError {
-    /// Check if this error is a broken pipe error
-    #[expect(
-        dead_code,
-        reason = "retained for alternate output strategies and diagnostics"
-    )]
-    pub fn is_broken_pipe(&self) -> bool {
-        match self {
-            PipeHlsStrategyError::BrokenPipe => true,
-            PipeHlsStrategyError::Io(e) => e.kind() == io::ErrorKind::BrokenPipe,
-        }
-    }
-
     /// Create a broken pipe error from an I/O error if applicable
     pub fn from_io_error(err: io::Error) -> Self {
         if err.kind() == io::ErrorKind::BrokenPipe {
@@ -57,8 +45,6 @@ pub struct PipeHlsStrategy {
     has_written_data: bool,
     /// Total bytes written
     bytes_written: u64,
-    /// Whether a boundary was detected that should trigger pipe closure
-    should_close: bool,
     /// Count of discontinuities encountered
     discontinuity_count: u32,
 }
@@ -75,7 +61,6 @@ impl PipeHlsStrategy {
         Self {
             has_written_data: false,
             bytes_written: 0,
-            should_close: false,
             discontinuity_count: 0,
         }
     }
@@ -91,15 +76,6 @@ impl PipeHlsStrategy {
             _ if item.is_discontinuity() => true,
             _ => false,
         }
-    }
-
-    /// Get total bytes written
-    #[expect(
-        dead_code,
-        reason = "retained for alternate output strategies and diagnostics"
-    )]
-    pub fn bytes_written(&self) -> u64 {
-        self.bytes_written
     }
 
     /// Check if any data has been written
@@ -133,10 +109,6 @@ impl PipeHlsStrategy {
         writer: &mut W,
         item: &HlsData,
     ) -> Result<u64, PipeHlsStrategyError> {
-        // Check if this item should trigger pipe closure BEFORE writing
-        // This is important for boundary detection
-        self.should_close = self.should_close_pipe(item);
-
         // Track discontinuities
         if item.is_discontinuity() {
             self.discontinuity_count += 1;
@@ -215,7 +187,6 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
     ) -> Result<u64, Self::StrategyError> {
         // Reset state for new pipe session
         self.has_written_data = false;
-        self.should_close = false;
         Ok(0)
     }
 
@@ -270,45 +241,6 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use std::sync::{Arc, Mutex};
-
-    /// A thread-safe wrapper around a Vec<u8> that implements Write
-    #[derive(Clone)]
-    struct SharedBuffer {
-        inner: Arc<Mutex<Vec<u8>>>,
-    }
-
-    impl SharedBuffer {
-        fn new() -> Self {
-            Self {
-                inner: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-
-        fn get_data(&self) -> Vec<u8> {
-            self.inner.lock().unwrap().clone()
-        }
-
-        #[expect(
-            dead_code,
-            reason = "retained for alternate output strategies and diagnostics"
-        )]
-        fn clear(&self) {
-            self.inner.lock().unwrap().clear();
-        }
-    }
-
-    impl Write for SharedBuffer {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            let mut inner = self.inner.lock().unwrap();
-            inner.extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     /// Create a test TS segment using HlsData::ts constructor
     fn create_test_ts_segment(discontinuity: bool, data: Vec<u8>) -> HlsData {
@@ -406,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_write_ts_segment() {
-        let mut buffer = SharedBuffer::new();
+        let mut buffer = Vec::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let test_data = vec![0x47, 0x00, 0x11, 0x10, 0x00];
@@ -415,13 +347,13 @@ mod tests {
         let bytes_written = strategy.write_to(&mut buffer, &ts_segment).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
-        assert_eq!(buffer.get_data(), test_data);
+        assert_eq!(buffer, test_data);
         assert!(strategy.has_written_data());
     }
 
     #[test]
     fn test_write_m4s_init_segment() {
-        let mut buffer = SharedBuffer::new();
+        let mut buffer = Vec::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let test_data = vec![0x00, 0x00, 0x00, 0x18, b'f', b't', b'y', b'p'];
@@ -430,13 +362,13 @@ mod tests {
         let bytes_written = strategy.write_to(&mut buffer, &m4s_init).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
-        assert_eq!(buffer.get_data(), test_data);
+        assert_eq!(buffer, test_data);
         assert!(strategy.has_written_data());
     }
 
     #[test]
     fn test_write_m4s_media_segment() {
-        let mut buffer = SharedBuffer::new();
+        let mut buffer = Vec::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let test_data = vec![0x00, 0x00, 0x00, 0x08, b'm', b'o', b'o', b'f'];
@@ -445,13 +377,13 @@ mod tests {
         let bytes_written = strategy.write_to(&mut buffer, &m4s_segment).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
-        assert_eq!(buffer.get_data(), test_data);
+        assert_eq!(buffer, test_data);
         assert!(strategy.has_written_data());
     }
 
     #[test]
     fn test_write_end_marker() {
-        let mut buffer = SharedBuffer::new();
+        let mut buffer = Vec::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let end_marker = HlsData::end_marker();
@@ -460,12 +392,12 @@ mod tests {
 
         // EndMarker should write 0 bytes
         assert_eq!(bytes_written, 0);
-        assert!(buffer.get_data().is_empty());
+        assert!(buffer.is_empty());
     }
 
     #[test]
     fn test_discontinuity_count() {
-        let mut buffer = SharedBuffer::new();
+        let mut buffer = Vec::new();
 
         let mut strategy = PipeHlsStrategy::new();
 

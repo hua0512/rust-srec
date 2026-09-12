@@ -47,7 +47,6 @@ use crate::streamer::state_store::{StateChange, StatePublication};
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamerManager = StreamerManager<SqlxStreamerRepository>;
-type RuntimeCredentialService = CredentialRefreshService<SqlxConfigRepository>;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigurationImportError {
@@ -113,7 +112,7 @@ pub(crate) struct ConfigurationImportService {
     config_service: Arc<RuntimeConfigService>,
     streamer_manager: Arc<RuntimeStreamerManager>,
     notification_service: Arc<NotificationService>,
-    credential_service: Arc<RuntimeCredentialService>,
+    credential_service: Arc<CredentialRefreshService>,
     runtime_coordinator: Arc<RuntimeCoordinator>,
 }
 
@@ -123,7 +122,7 @@ impl ConfigurationImportService {
         config_service: Arc<RuntimeConfigService>,
         streamer_manager: Arc<RuntimeStreamerManager>,
         notification_service: Arc<NotificationService>,
-        credential_service: Arc<RuntimeCredentialService>,
+        credential_service: Arc<CredentialRefreshService>,
         runtime_coordinator: Arc<RuntimeCoordinator>,
     ) -> Self {
         Self {

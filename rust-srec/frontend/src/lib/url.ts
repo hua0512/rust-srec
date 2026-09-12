@@ -171,21 +171,3 @@ export function safeRedirectPath(value: unknown): string | null {
   }
   return value;
 }
-
-/**
- * Best-effort host extraction for display purposes.
- *
- * Used to show a CDN host without exposing URL paths or query params.
- */
-export function getUrlHost(url: string | null | undefined): string | null {
-  if (!url) return null;
-  // Fast-path: extract host without allocating URL objects.
-  // We intentionally only support absolute http(s) URLs.
-  const match = /^https?:\/\/([^/?#]+)/i.exec(url);
-  if (!match) return null;
-
-  // Guard against accidental userinfo leaks (e.g., http://user:pass@host).
-  const hostPort = match[1];
-  const at = hostPort.lastIndexOf('@');
-  return at >= 0 ? hostPort.slice(at + 1) : hostPort;
-}

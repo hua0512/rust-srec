@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use super::NotificationEvent;
 use crate::credentials::CredentialEvent;
+use crate::utils::text::format_bytes;
 
 impl NotificationEvent {
     /// Get a human-readable title for this event, in the process-wide locale.
@@ -472,23 +473,6 @@ fn credential_title(event: &CredentialEvent, locale: &str) -> String {
             platform = platform.as_str(),
             scope = scope.describe().as_str(),
         ),
-    }
-}
-
-/// Format bytes into human-readable string.
-pub(super) fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
     }
 }
 

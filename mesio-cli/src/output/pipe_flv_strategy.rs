@@ -26,18 +26,6 @@ pub enum PipeFlvStrategyError {
 }
 
 impl PipeFlvStrategyError {
-    /// Check if this error is a broken pipe error
-    #[expect(
-        dead_code,
-        reason = "retained for alternate output strategies and diagnostics"
-    )]
-    pub fn is_broken_pipe(&self) -> bool {
-        match self {
-            PipeFlvStrategyError::BrokenPipe => true,
-            PipeFlvStrategyError::Io(e) => e.kind() == io::ErrorKind::BrokenPipe,
-        }
-    }
-
     /// Create a broken pipe error from an I/O error if applicable
     pub fn from_io_error(err: io::Error) -> Self {
         if err.kind() == io::ErrorKind::BrokenPipe {
@@ -81,15 +69,6 @@ impl PipeFlvStrategy {
             should_close: false,
             segment_count: 0,
         }
-    }
-
-    /// Get the current segment count
-    #[expect(
-        dead_code,
-        reason = "retained for alternate output strategies and diagnostics"
-    )]
-    pub fn segment_count(&self) -> u32 {
-        self.segment_count
     }
 
     /// Check if the pipe should be closed based on the current item
@@ -160,24 +139,6 @@ impl PipeFlvStrategy {
         // Total bytes: 1 (type) + 3 (size) + 3 (timestamp) + 1 (timestamp ext) + 3 (stream id) + data + 4 (prev tag size)
         // = 11 + data.len() + 4
         Ok((11 + tag.data().len() + 4) as u64)
-    }
-
-    /// Get total bytes written
-    #[expect(
-        dead_code,
-        reason = "retained for alternate output strategies and diagnostics"
-    )]
-    pub fn bytes_written(&self) -> u64 {
-        self.bytes_written
-    }
-
-    /// Check if any data has been written
-    #[expect(
-        dead_code,
-        reason = "retained for alternate output strategies and diagnostics"
-    )]
-    pub fn has_written_data(&self) -> bool {
-        self.has_written_data
     }
 }
 
@@ -322,45 +283,6 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use flv::tag::{FlvTag, FlvTagType};
-    use std::sync::{Arc, Mutex};
-
-    /// A thread-safe wrapper around a Vec<u8> that implements Write
-    #[derive(Clone)]
-    struct SharedBuffer {
-        inner: Arc<Mutex<Vec<u8>>>,
-    }
-
-    impl SharedBuffer {
-        fn new() -> Self {
-            Self {
-                inner: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-
-        fn get_data(&self) -> Vec<u8> {
-            self.inner.lock().unwrap().clone()
-        }
-
-        #[expect(
-            dead_code,
-            reason = "retained for alternate output strategies and diagnostics"
-        )]
-        fn clear(&self) {
-            self.inner.lock().unwrap().clear();
-        }
-    }
-
-    impl Write for SharedBuffer {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            let mut inner = self.inner.lock().unwrap();
-            inner.extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     /// Create a test FLV header
     fn create_test_header(has_audio: bool, has_video: bool) -> FlvHeader {
@@ -420,8 +342,7 @@ mod tests {
 
     #[test]
     fn test_write_header_bytes() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut writer = BufWriter::new(Vec::new());
 
         let header = create_test_header(true, true);
         let bytes_written = PipeFlvStrategy::write_header(&mut writer, &header).unwrap();
@@ -429,7 +350,7 @@ mod tests {
 
         assert_eq!(bytes_written, 13); // 9 bytes header + 4 bytes prev tag size
 
-        let data = buffer.get_data();
+        let data = writer.get_ref();
         assert_eq!(&data[0..3], b"FLV"); // Signature
         assert_eq!(data[3], 0x01); // Version
         assert_eq!(data[4], 0x05); // Flags (audio + video)
@@ -439,8 +360,7 @@ mod tests {
 
     #[test]
     fn test_write_tag_bytes() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut writer = BufWriter::new(Vec::new());
 
         let tag_data = vec![0x17, 0x00, 0x00, 0x00, 0x00]; // 5 bytes of data
         let tag = create_test_tag(FlvTagType::Video, 1000, tag_data.clone());
@@ -450,7 +370,7 @@ mod tests {
         // 11 bytes header + 5 bytes data + 4 bytes prev tag size = 20
         assert_eq!(bytes_written, 20);
 
-        let data = buffer.get_data();
+        let data = writer.get_ref();
         assert_eq!(data[0], 9); // Video tag type
         assert_eq!(&data[1..4], &[0x00, 0x00, 0x05]); // Data size (5)
         // Timestamp: 1000 = 0x3E8

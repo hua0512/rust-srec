@@ -68,8 +68,7 @@ impl StreamerActor {
                 download_id,
                 session_id,
             } => {
-                self.handle_download_started(download_id, session_id)
-                    .await?;
+                self.handle_download_started(download_id, session_id);
                 Ok(false)
             }
             StreamerMessage::DownloadHeartbeat {

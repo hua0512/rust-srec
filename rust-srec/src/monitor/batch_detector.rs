@@ -80,12 +80,6 @@ impl Default for BatchResult {
 
 /// Batch detector for checking multiple streamers at once.
 pub struct BatchDetector {
-    /// HTTP client for API requests.
-    #[expect(
-        dead_code,
-        reason = "retained for optional runtime paths and diagnostics"
-    )]
-    client: reqwest::Client,
     /// Rate limiter manager.
     rate_limiter: RateLimiterManager,
     /// Maximum streamers per batch request.
@@ -100,18 +94,6 @@ impl BatchDetector {
     /// Create a new batch detector.
     pub fn new(rate_limiter: RateLimiterManager) -> Self {
         Self {
-            client: reqwest::Client::new(),
-            rate_limiter,
-            max_batch_size: 100,
-            retry_delay: Duration::from_secs(5),
-            max_retries: 3,
-        }
-    }
-
-    /// Create a new batch detector with a custom HTTP client.
-    pub fn with_client(client: reqwest::Client, rate_limiter: RateLimiterManager) -> Self {
-        Self {
-            client,
             rate_limiter,
             max_batch_size: 100,
             retry_delay: Duration::from_secs(5),
@@ -325,7 +307,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_detector() {
-        crate::utils::http_client::install_rustls_provider();
         let rate_limiter = RateLimiterManager::new();
         let detector = BatchDetector::new(rate_limiter);
 
@@ -349,7 +330,6 @@ mod tests {
 
     #[test]
     fn test_calculate_backoff() {
-        crate::utils::http_client::install_rustls_provider();
         let rate_limiter = RateLimiterManager::new();
         let detector = BatchDetector::new(rate_limiter).with_retry_delay(Duration::from_secs(1));
 
