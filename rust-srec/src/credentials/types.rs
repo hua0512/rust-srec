@@ -164,6 +164,30 @@ impl std::fmt::Debug for CredentialSource {
 }
 
 impl CredentialSource {
+    /// Compare provider inputs, excluding display names and unrelated configuration.
+    pub(crate) fn same_credentials(&self, other: &Self) -> bool {
+        self.scope.cache_key() == other.scope.cache_key()
+            && self
+                .platform_name
+                .eq_ignore_ascii_case(&other.platform_name)
+            && self.cookies == other.cookies
+            && self.refresh_token == other.refresh_token
+            && self.access_token == other.access_token
+            && self.reauth_extra == other.reauth_extra
+    }
+
+    pub(crate) fn after_refresh(&self, credentials: &super::manager::RefreshedCredentials) -> Self {
+        let mut current = self.clone();
+        current.cookies = credentials.cookies.clone();
+        if let Some(token) = &credentials.refresh_token {
+            current.refresh_token = Some(token.clone());
+        }
+        if let Some(token) = &credentials.access_token {
+            current.access_token = Some(token.clone());
+        }
+        current
+    }
+
     /// Create a new credential source.
     pub fn new(
         scope: CredentialScope,

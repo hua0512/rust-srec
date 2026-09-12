@@ -50,14 +50,85 @@ impl SqlxCredentialStore {
         }
     }
 
+    async fn load_source_in_connection(
+        connection: &mut sqlx::SqliteConnection,
+        source: &CredentialSource,
+    ) -> Result<CredentialSource, CredentialError> {
+        let (sql, id) = match &source.scope {
+            CredentialScope::Platform { platform_id, .. } => (
+                "SELECT cookies, platform_specific_config FROM platform_config WHERE id = ?",
+                platform_id,
+            ),
+            CredentialScope::Template { template_id, .. } => (
+                "SELECT cookies, platform_overrides FROM template_config WHERE id = ? AND NOT EXISTS (SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)",
+                template_id,
+            ),
+            CredentialScope::Streamer { streamer_id, .. } => (
+                "SELECT json_extract(streamer_specific_config, '$.cookies'), streamer_specific_config FROM streamers WHERE id = ? AND deleted_at IS NULL",
+                streamer_id,
+            ),
+        };
+        let (cookies, config): (Option<String>, Option<String>) = sqlx::query_as(sql)
+            .bind(id)
+            .fetch_optional(&mut *connection)
+            .await?
+            .ok_or(CredentialError::NoCredentials)?;
+        let config: serde_json::Value = config
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or_default();
+        let fields = if matches!(source.scope, CredentialScope::Template { .. }) {
+            &config[&source.platform_name]
+        } else {
+            &config
+        };
+        let mut current = source.clone();
+        current.cookies = cookies.unwrap_or_default();
+        current.refresh_token = fields["refresh_token"].as_str().map(str::to_owned);
+        current.access_token = fields["access_token"].as_str().map(str::to_owned);
+        if matches!(source.scope, CredentialScope::Platform { .. }) {
+            current.reauth_extra =
+                crate::credentials::platform_reauth_extra(&current.platform_name, Some(fields));
+        }
+        if !matches!(source.scope, CredentialScope::Platform { .. })
+            && source.platform_name.eq_ignore_ascii_case("soop")
+        {
+            let raw: Option<String> = sqlx::query_scalar(
+                "SELECT platform_specific_config FROM platform_config WHERE platform_name = ? COLLATE NOCASE",
+            ).bind(&source.platform_name).fetch_optional(&mut *connection).await?.flatten();
+            let config = raw
+                .as_deref()
+                .map(serde_json::from_str::<serde_json::Value>)
+                .transpose()?;
+            current.reauth_extra =
+                crate::credentials::platform_reauth_extra(&source.platform_name, config.as_ref());
+        }
+        Ok(current)
+    }
+
+    async fn require_current_source(
+        connection: &mut sqlx::SqliteConnection,
+        source: &CredentialSource,
+    ) -> Result<(), CredentialError> {
+        let current = Self::load_source_in_connection(connection, source).await?;
+        if source.same_credentials(&current) {
+            Ok(())
+        } else {
+            Err(CredentialError::SourceChanged)
+        }
+    }
+
     async fn update_platform_credentials(
         &self,
         platform_id: &str,
+        source: &CredentialSource,
         credentials: &RefreshedCredentials,
     ) -> Result<(), CredentialError> {
         debug!(platform_id = %platform_id, "Updating platform credentials");
 
         let mut tx = begin_immediate(&self.write_pool).await?;
+        Self::require_current_source(&mut tx, source).await?;
         if credentials.refresh_token.is_some() || credentials.access_token.is_some() {
             let raw: Option<String> = sqlx::query_scalar(
                 "SELECT platform_specific_config FROM platform_config WHERE id = ?",
@@ -127,6 +198,7 @@ impl SqlxCredentialStore {
         &self,
         template_id: &str,
         platform_name: &str,
+        source: &CredentialSource,
         credentials: &RefreshedCredentials,
     ) -> Result<(), CredentialError> {
         debug!(template_id = %template_id, "Updating template credentials");
@@ -135,6 +207,7 @@ impl SqlxCredentialStore {
         // Read the JSON only after reserving the write transaction, so a concurrent
         // template update cannot be overwritten using an earlier snapshot.
         let mut tx = begin_immediate(&self.write_pool).await?;
+        Self::require_current_source(&mut tx, source).await?;
 
         let overrides_to_store = if credentials.refresh_token.is_some()
             || credentials.access_token.is_some()
@@ -234,6 +307,7 @@ impl SqlxCredentialStore {
     async fn update_streamer_credentials(
         &self,
         streamer_id: &str,
+        source: &CredentialSource,
         credentials: &RefreshedCredentials,
     ) -> Result<(), CredentialError> {
         let now = crate::database::time::now_ms();
@@ -242,6 +316,7 @@ impl SqlxCredentialStore {
             state.writer.require_same_pool(&self.write_pool)?;
             let id = streamer_id.to_owned();
             let credentials = credentials.clone();
+            let source = source.clone();
             let cache = state.cache.clone();
             return state
                 .writer
@@ -249,7 +324,8 @@ impl SqlxCredentialStore {
                     "streamer credentials",
                     move |tx| {
                         Box::pin(async move {
-                            Self::update_streamer_in_connection(tx, &id, &credentials, now).await
+                            Self::update_streamer_in_connection(tx, &id, &source, &credentials, now)
+                                .await
                         })
                     },
                     move |row| {
@@ -263,7 +339,7 @@ impl SqlxCredentialStore {
                 .map(|_| ());
         }
         let mut tx = begin_immediate(&self.write_pool).await?;
-        Self::update_streamer_in_connection(&mut tx, streamer_id, credentials, now).await?;
+        Self::update_streamer_in_connection(&mut tx, streamer_id, source, credentials, now).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -271,9 +347,11 @@ impl SqlxCredentialStore {
     async fn update_streamer_in_connection(
         tx: &mut sqlx::SqliteConnection,
         streamer_id: &str,
+        source: &CredentialSource,
         credentials: &RefreshedCredentials,
         now: i64,
     ) -> Result<StreamerDbModel, CredentialError> {
+        Self::require_current_source(tx, source).await?;
         debug!(streamer_id = %streamer_id, "Updating streamer credentials");
 
         let raw: Option<String> = sqlx::query_scalar(
@@ -356,43 +434,8 @@ impl CredentialStore for SqlxCredentialStore {
         &self,
         source: &CredentialSource,
     ) -> Result<CredentialSource, CredentialError> {
-        let (sql, id) = match &source.scope {
-            CredentialScope::Platform { platform_id, .. } => (
-                "SELECT cookies, platform_specific_config FROM platform_config WHERE id = ?",
-                platform_id,
-            ),
-            CredentialScope::Template { template_id, .. } => (
-                "SELECT cookies, platform_overrides FROM template_config WHERE id = ? AND NOT EXISTS (SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)",
-                template_id,
-            ),
-            CredentialScope::Streamer { streamer_id, .. } => (
-                "SELECT json_extract(streamer_specific_config, '$.cookies'), streamer_specific_config FROM streamers WHERE id = ? AND deleted_at IS NULL",
-                streamer_id,
-            ),
-        };
-        let (cookies, config): (Option<String>, Option<String>) = sqlx::query_as(sql)
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or(CredentialError::NoCredentials)?;
-        let config: serde_json::Value = config
-            .as_deref()
-            .map(serde_json::from_str)
-            .transpose()?
-            .unwrap_or_default();
-        let fields = if matches!(source.scope, CredentialScope::Template { .. }) {
-            &config[&source.platform_name]
-        } else {
-            &config
-        };
-        let mut current = source.clone();
-        current.cookies = cookies.unwrap_or_default();
-        current.refresh_token = fields["refresh_token"].as_str().map(str::to_owned);
-        current.access_token = fields["access_token"].as_str().map(str::to_owned);
-        if matches!(source.scope, CredentialScope::Platform { .. }) {
-            current.reauth_extra =
-                crate::credentials::platform_reauth_extra(&current.platform_name, Some(fields));
-        }
+        let mut connection = self.pool.acquire().await?;
+        let current = Self::load_source_in_connection(&mut connection, source).await?;
         if current.cookies.trim().is_empty() && !current.has_reauth_extra() {
             return Err(CredentialError::NoCredentials);
         }
@@ -410,30 +453,36 @@ impl CredentialStore for SqlxCredentialStore {
     ) -> Result<(), CredentialError> {
         match &source.scope {
             CredentialScope::Platform { platform_id, .. } => {
-                self.update_platform_credentials(platform_id, credentials)
+                self.update_platform_credentials(platform_id, source, credentials)
                     .await
             }
             CredentialScope::Template { template_id, .. } => {
-                self.update_template_credentials(template_id, &source.platform_name, credentials)
-                    .await
+                self.update_template_credentials(
+                    template_id,
+                    &source.platform_name,
+                    source,
+                    credentials,
+                )
+                .await
             }
             CredentialScope::Streamer { streamer_id, .. } => {
-                self.update_streamer_credentials(streamer_id, credentials)
+                self.update_streamer_credentials(streamer_id, source, credentials)
                     .await
             }
         }
     }
 
-    #[instrument(skip(self), fields(scope = %scope.describe()))]
+    #[instrument(skip_all, fields(scope = %source.scope.describe()))]
     async fn update_check_result(
         &self,
-        scope: &CredentialScope,
+        source: &CredentialSource,
         result: &str,
     ) -> Result<(), CredentialError> {
-        // For now, only persist check results at platform level.
-        if let CredentialScope::Platform { platform_id, .. } = scope {
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        Self::require_current_source(&mut tx, source).await?;
+        // Status persistence is platform-only, but every scope must reject stale checks.
+        if let CredentialScope::Platform { platform_id, .. } = &source.scope {
             let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            let mut tx = begin_immediate(&self.write_pool).await?;
             let raw: Option<String> = sqlx::query_scalar(
                 "SELECT platform_specific_config FROM platform_config WHERE id = ?",
             )
@@ -463,8 +512,8 @@ impl CredentialStore for SqlxCredentialStore {
             .execute(&mut *tx)
             .await?;
             require_owner(updated.rows_affected())?;
-            tx.commit().await?;
         }
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -433,7 +433,7 @@ async fn timestamp_repository_writes_and_credentials_keep_integer_storage_and_st
         assert!(updated >= expected);
     }
     let store = SqlxCredentialStore::new(pool.clone(), pool.clone());
-    let source = CredentialSource {
+    let mut source = CredentialSource {
         scope: CredentialScope::Template {
             template_id: template.id.clone(),
             template_name: template.name.clone(),
@@ -457,6 +457,7 @@ async fn timestamp_repository_writes_and_credentials_keep_integer_storage_and_st
             )
             .await
             .unwrap();
+        source = store.reload_source(&source).await.unwrap();
         let refreshed = config_repo.get_template_config(&template.id).await.unwrap();
         assert_eq!(refreshed.created_at.timestamp_millis(), expected);
         assert_eq!(refreshed.cookies.as_deref(), Some("test-cookie=value"));

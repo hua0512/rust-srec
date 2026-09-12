@@ -77,6 +77,22 @@ impl Fixture {
         }
     }
 
+    async fn expected_source(&self) -> CredentialSource {
+        let (cookies, raw, _) = self.snapshot().await;
+        let fields: Value = raw
+            .as_deref()
+            .and_then(|raw| serde_json::from_str(raw).ok())
+            .unwrap_or_default();
+        let mut source = self.source.clone();
+        source.cookies = match self.owner {
+            Owner::Platform => cookies.unwrap_or_default(),
+            Owner::Streamer => fields["cookies"].as_str().unwrap_or_default().to_owned(),
+        };
+        source.refresh_token = fields["refresh_token"].as_str().map(str::to_owned);
+        source.access_token = fields["access_token"].as_str().map(str::to_owned);
+        source
+    }
+
     async fn snapshot(&self) -> (Option<String>, Option<String>, String) {
         let sql = match self.owner {
             Owner::Platform => {
@@ -121,7 +137,7 @@ async fn credential_token_combinations_preserve_unrelated_json_and_absent_values
                         let credentials = refreshed(refresh, access);
                         let day_before = chrono::Utc::now().format("%Y-%m-%d").to_string();
                         f.store
-                            .update_credentials(&f.source, &credentials)
+                            .update_credentials(&f.expected_source().await, &credentials)
                             .await
                             .unwrap();
                         let (cookies, raw, _) = f.snapshot().await;
@@ -163,7 +179,7 @@ async fn credential_token_combinations_preserve_unrelated_json_and_absent_values
             }
             f.seed(None).await;
             f.store
-                .update_credentials(&f.source, &refreshed(true, true))
+                .update_credentials(&f.expected_source().await, &refreshed(true, true))
                 .await
                 .unwrap();
             let raw = f.snapshot().await.1.unwrap();
@@ -186,7 +202,7 @@ async fn malformed_and_non_object_json_cannot_partially_refresh_credentials() {
                 let before = f.snapshot().await;
                 assert!(
                     f.store
-                        .update_credentials(&f.source, &refreshed(true, true))
+                        .update_credentials(&f.expected_source().await, &refreshed(true, true))
                         .await
                         .is_err(),
                     "{owner:?}: {raw}"
@@ -195,7 +211,10 @@ async fn malformed_and_non_object_json_cannot_partially_refresh_credentials() {
                 if matches!(owner, Owner::Streamer) {
                     assert!(
                         f.store
-                            .update_credentials(&f.source, &refreshed(false, false))
+                            .update_credentials(
+                                &f.expected_source().await,
+                                &refreshed(false, false)
+                            )
                             .await
                             .is_err()
                     );
@@ -205,15 +224,15 @@ async fn malformed_and_non_object_json_cannot_partially_refresh_credentials() {
         }
         let f = Fixture::new(Owner::Platform).await;
         f.seed(Some("opaque legacy config")).await;
-        f.store
-            .update_credentials(&f.source, &refreshed(false, false))
-            .await
-            .unwrap();
-        let snapshot = f.snapshot().await;
-        assert_eq!(
-            snapshot.0.as_deref(),
-            Some(refreshed(false, false).cookies.as_str())
+        // An opaque document cannot establish the expected credential material.
+        assert!(
+            f.store
+                .update_credentials(&f.expected_source().await, &refreshed(false, false))
+                .await
+                .is_err()
         );
+        let snapshot = f.snapshot().await;
+        assert_eq!(snapshot.0.as_deref(), Some("old-cookie"));
         assert_eq!(snapshot.1.as_deref(), Some("opaque legacy config"));
     })
     .await
@@ -232,10 +251,10 @@ async fn late_token_write_failure_rolls_back_cookies_tokens_and_timestamps() {
                 Owner::Streamer => "CREATE TRIGGER reject_refreshed_tokens BEFORE UPDATE OF streamer_specific_config ON streamers WHEN NEW.id='credential-owner' AND json_extract(NEW.streamer_specific_config,'$.access_token')='new-access' BEGIN SELECT RAISE(ABORT,'injected late token failure'); END",
             };
             sqlx::query(trigger).execute(&f.pool).await.unwrap();
-            assert!(f.store.update_credentials(&f.source, &refreshed(true, true)).await.is_err());
+            assert!(f.store.update_credentials(&f.expected_source().await, &refreshed(true, true)).await.is_err());
             assert_eq!(f.snapshot().await, before);
             sqlx::query("DROP TRIGGER reject_refreshed_tokens").execute(&f.pool).await.unwrap();
-            f.store.update_credentials(&f.source, &refreshed(true, true)).await.unwrap();
+            f.store.update_credentials(&f.expected_source().await, &refreshed(true, true)).await.unwrap();
         }
     }).await.expect("credential rollback must release its transaction");
 }
@@ -252,7 +271,7 @@ async fn missing_and_retired_owners_do_not_report_refresh_success() {
         let before = f.snapshot().await;
         assert!(matches!(
             f.store
-                .update_credentials(&f.source, &refreshed(true, true))
+                .update_credentials(&f.expected_source().await, &refreshed(true, true))
                 .await,
             Err(CredentialError::NoCredentials)
         ));
@@ -328,7 +347,7 @@ async fn check_results_preserve_json_and_reject_invalid_platform_documents() {
         ))
         .await;
         f.store
-            .update_check_result(&f.source.scope, "needs_refresh")
+            .update_check_result(&f.expected_source().await, "needs_refresh")
             .await
             .unwrap();
         let (cookies, raw, _) = f.snapshot().await;
@@ -342,7 +361,7 @@ async fn check_results_preserve_json_and_reject_invalid_platform_documents() {
             let before = f.snapshot().await;
             assert!(
                 f.store
-                    .update_check_result(&f.source.scope, "valid")
+                    .update_check_result(&f.expected_source().await, "valid")
                     .await
                     .is_err()
             );
@@ -350,7 +369,7 @@ async fn check_results_preserve_json_and_reject_invalid_platform_documents() {
         }
         f.seed(None).await;
         f.store
-            .update_check_result(&f.source.scope, "valid")
+            .update_check_result(&f.expected_source().await, "valid")
             .await
             .unwrap();
         let (cookies, raw, _) = f.snapshot().await;
@@ -367,35 +386,47 @@ async fn check_results_preserve_json_and_reject_invalid_platform_documents() {
         assert!(matches!(
             f.store
                 .update_check_result(
-                    &CredentialScope::Platform {
-                        platform_id: "missing".into(),
-                        platform_name: "bilibili".into()
-                    },
+                    &CredentialSource::new(
+                        CredentialScope::Platform {
+                            platform_id: "missing".into(),
+                            platform_name: "bilibili".into()
+                        },
+                        String::new(),
+                        None,
+                        "bilibili".into()
+                    ),
                     "valid"
                 )
                 .await,
             Err(CredentialError::NoCredentials)
         ));
         let other = Fixture::new(Owner::Streamer).await;
-        other.seed(Some("opaque")).await;
+        other.seed(Some(r#"{"cookies":"current"}"#)).await;
         let before = other.snapshot().await;
         other
             .store
-            .update_check_result(&other.source.scope, "valid")
+            .update_check_result(&other.expected_source().await, "valid")
             .await
             .unwrap();
         assert_eq!(other.snapshot().await, before);
-        other
-            .store
-            .update_check_result(
-                &CredentialScope::Template {
-                    template_id: "missing".into(),
-                    template_name: "missing".into(),
-                },
-                "valid",
-            )
-            .await
-            .unwrap();
+        assert!(matches!(
+            other
+                .store
+                .update_check_result(
+                    &CredentialSource::new(
+                        CredentialScope::Template {
+                            template_id: "missing".into(),
+                            template_name: "missing".into(),
+                        },
+                        String::new(),
+                        None,
+                        "bilibili".into()
+                    ),
+                    "valid",
+                )
+                .await,
+            Err(CredentialError::NoCredentials)
+        ));
     })
     .await
     .expect("credential check-result contracts must finish");
