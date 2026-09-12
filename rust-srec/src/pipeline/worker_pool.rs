@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::broadcast;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, error, info, warn};
 
 use super::dag_scheduler::{
@@ -195,6 +196,15 @@ impl WorkerConcurrency {
 
 struct WorkerPermit {
     concurrency: Arc<WorkerConcurrency>,
+}
+
+/// Active accounting must settle even when a worker is aborted or panics.
+struct ActiveWorkerGuard<'a>(&'a AtomicUsize);
+
+impl Drop for ActiveWorkerGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Drop for WorkerPermit {
@@ -755,6 +765,10 @@ impl JobRunner {
             info!(job_id = %job.id, "Skipping withdrawn job");
             return;
         };
+        // Stop helpers when this attempt is dropped. Keep timeout/abort cancellation
+        // separate from the queue's token, which represents an explicit job cancellation.
+        let processor_token = job_token.child_token();
+        let _cancel_processor = processor_token.clone().drop_guard();
 
         // Start metadata is a patch: prior attempts retain their diagnostics and
         // produced-item history, and historical log snapshots are not replayed.
@@ -785,6 +799,7 @@ impl JobRunner {
         }
 
         self.active_workers.fetch_add(1, Ordering::SeqCst);
+        let _active_worker = ActiveWorkerGuard(&self.active_workers);
         let started = std::time::Instant::now();
 
         // True when this job has been attempted before, which is what makes a processor's
@@ -841,12 +856,12 @@ impl JobRunner {
             facts.id.clone(),
             self.job_queue.progress_reporter(&facts.id),
             log_sink,
-            job_token.clone(),
+            processor_token.clone(),
         )
         .with_retry(is_retry);
 
         let outcome = self
-            .execute(processor, &input, &ctx, &facts.id, &job_token)
+            .execute(processor, &input, &ctx, &facts.id, &processor_token)
             .await;
 
         // Drop ctx to close the log channel
@@ -896,17 +911,15 @@ impl JobRunner {
                 );
             }
             JobOutcome::TimedOut => {
-                job_token.cancel();
                 self.finish_failed(&facts, TIMED_OUT_ERROR, DagFailureKind::Timeout)
                     .await;
             }
         }
 
-        if job_token.is_cancelled() {
+        if processor_token.is_cancelled() {
             self.job_queue.finalize_cancelled_job(&facts.id);
         }
 
-        self.active_workers.fetch_sub(1, Ordering::SeqCst);
         update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);
     }
 
@@ -954,7 +967,12 @@ impl JobRunner {
             res = &mut timed => match res {
                 Ok(Ok(output)) => JobOutcome::Completed(Box::new(output)),
                 Ok(Err(e)) => JobOutcome::Failed(e),
-                Err(_) => JobOutcome::TimedOut,
+                Err(_) => {
+                    // Helpers can retain a log sender until cancellation. Signal them
+                    // before execute_job waits for the log collector to drain.
+                    job_token.cancel();
+                    JobOutcome::TimedOut
+                },
             },
         }
     }
@@ -1177,12 +1195,12 @@ fn spawn_log_collector(
     job_id: String,
     mut log_rx: tokio::sync::mpsc::Receiver<JobLogEntry>,
     log_dropped: Arc<AtomicUsize>,
-) -> tokio::task::JoinHandle<()> {
+) -> AbortOnDropHandle<()> {
     const FLUSH_INTERVAL_MS: u64 = 200;
     const MAX_BATCH_SIZE: usize = 1000;
     const MAX_BUFFERED_LOGS: usize = 4000;
 
-    tokio::spawn(async move {
+    AbortOnDropHandle::new(tokio::spawn(async move {
         let mut flush_timer =
             tokio::time::interval(std::time::Duration::from_millis(FLUSH_INTERVAL_MS));
         flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1226,7 +1244,7 @@ fn spawn_log_collector(
                 }
             }
         }
-    })
+    }))
 }
 
 /// Retry pacing for `JobQueue::append_log_entry`, so a database that is refusing writes is
@@ -1717,6 +1735,163 @@ mod tests {
             job_timeout: Duration::from_secs(30),
             shutdown: CancellationToken::new(),
         }
+    }
+
+    struct ContextHandoffProcessor(tokio::sync::mpsc::Sender<ProcessorContext>);
+
+    #[async_trait]
+    impl Processor for ContextHandoffProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["handoff"]
+        }
+
+        fn name(&self) -> &'static str {
+            "handoff"
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            self.0.try_send(ctx.clone()).unwrap();
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timeout_cancels_processor_before_waiting_for_retained_log_sink() {
+        assert_timeout_with_retained_sink(false).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn user_cancellation_during_timeout_log_drain_remains_terminal() {
+        assert_timeout_with_retained_sink(true).await;
+    }
+
+    async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
+        let queue = Arc::new(JobQueue::new());
+        let id = queue
+            .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (events, mut event_rx) = broadcast::channel(8);
+        let runner = observed_runner(queue.clone(), events);
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let processor: Arc<dyn Processor> = Arc::new(ContextHandoffProcessor(sender));
+        let execution = runner.execute_job(job, &processor);
+        tokio::pin!(execution);
+        assert!(futures::poll!(execution.as_mut()).is_pending());
+        let retained = receiver.try_recv().unwrap();
+
+        tokio::time::advance(Duration::from_secs(31)).await;
+        assert!(futures::poll!(execution.as_mut()).is_pending());
+        assert!(
+            retained.cancellation_token.is_cancelled(),
+            "processor helpers must see timeout before the worker waits for their log sender"
+        );
+        if cancel_during_drain {
+            queue.cancel_job(&id).await.unwrap();
+        }
+        drop(retained);
+        tokio::time::timeout(Duration::from_secs(1), execution)
+            .await
+            .unwrap();
+        let stored = queue.get_job(&id).await.unwrap().unwrap();
+        assert_eq!(
+            stored.status,
+            if cancel_during_drain {
+                JobStatus::Cancelled
+            } else {
+                JobStatus::Failed
+            }
+        );
+        if !cancel_during_drain {
+            assert_eq!(stored.error.as_deref(), Some(TIMED_OUT_ERROR));
+        }
+        assert!(matches!(
+            event_rx.try_recv(),
+            Ok(PipelineEvent::JobStarted { .. })
+        ));
+        if !cancel_during_drain {
+            assert!(
+                matches!(event_rx.try_recv(), Ok(PipelineEvent::JobFailed { error, .. }) if error == TIMED_OUT_ERROR)
+            );
+        }
+        assert!(event_rx.try_recv().is_err());
+        assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn forced_worker_abort_cancels_processor_and_releases_active_count() {
+        let queue = Arc::new(JobQueue::new());
+        let id = queue
+            .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        pool.start(
+            queue.clone(),
+            vec![Arc::new(ContextHandoffProcessor(sender))],
+        );
+        let retained = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pool.active_count(), 1);
+        pool.abort(tokio::time::Instant::now() + Duration::from_secs(2))
+            .await;
+
+        assert_eq!(
+            (
+                retained.cancellation_token.is_cancelled(),
+                pool.active_count()
+            ),
+            (true, 0),
+            "aborting must cancel processor helpers and release active accounting"
+        );
+        // Interrupted work remains recoverable; abort must not claim a durable cancellation.
+        assert_eq!(
+            queue.get_job(&id).await.unwrap().unwrap().status,
+            JobStatus::Processing
+        );
+    }
+
+    #[tokio::test]
+    async fn forced_worker_abort_does_not_detach_log_collector() {
+        let queue = Arc::new(JobQueue::new());
+        queue
+            .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        pool.start(
+            queue.clone(),
+            vec![Arc::new(ContextHandoffProcessor(sender))],
+        );
+        let retained = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        pool.abort(tokio::time::Instant::now() + Duration::from_secs(2))
+            .await;
+        let weak_queue = Arc::downgrade(&queue);
+        drop(queue);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while weak_queue.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("log collector must release its queue even while a helper retains the sink");
+        drop(retained);
     }
 
     #[tokio::test]
