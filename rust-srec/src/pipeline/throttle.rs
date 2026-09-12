@@ -28,7 +28,7 @@ pub struct ThrottleConfig {
     /// When queue depth falls below this value, throttling is deactivated.
     pub warning_threshold: usize,
     /// Factor to reduce max_concurrent_downloads by when throttling (0.0-1.0).
-    /// A value of 0.5 means reduce to 50% of original.
+    /// A value of 0.5 uses 50% of the latest configured normal-slot limit.
     #[serde(default = "default_reduction_factor")]
     pub reduction_factor: f32,
     /// Interval in milliseconds between queue depth checks.
@@ -56,6 +56,30 @@ impl Default for ThrottleConfig {
     }
 }
 
+impl ThrottleConfig {
+    pub(crate) fn validate(&self) -> crate::Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.warning_threshold == 0 || self.warning_threshold > self.critical_threshold {
+            return Err(crate::Error::config(
+                "Throttle warning threshold must be positive and no greater than the critical threshold",
+            ));
+        }
+        if !self.reduction_factor.is_finite() || !(0.0..=1.0).contains(&self.reduction_factor) {
+            return Err(crate::Error::config(
+                "Throttle reduction factor must be finite and between 0 and 1",
+            ));
+        }
+        if self.check_interval_ms == 0 {
+            return Err(crate::Error::config(
+                "Throttle check interval must be positive",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Events emitted by the throttle controller.
 #[derive(Debug, Clone)]
 pub enum ThrottleEvent {
@@ -77,14 +101,35 @@ pub enum ThrottleEvent {
     },
 }
 
-/// Callback trait for adjusting download limits.
-/// Implementations should adjust the actual download manager's concurrent limit.
+/// Applies a temporary reduction while preserving the configured download limit.
 pub trait DownloadLimitAdjuster: Send + Sync {
-    /// Set the maximum concurrent downloads limit.
-    fn set_max_concurrent_downloads(&self, limit: usize);
+    /// Apply a factor, or release the reduction with None. Return the configured
+    /// and effective normal-slot limits from the same serialized update.
+    fn set_throttle_factor(&self, factor: Option<f32>) -> (usize, usize);
+}
 
-    /// Get the current maximum concurrent downloads limit.
-    fn get_max_concurrent_downloads(&self) -> usize;
+impl DownloadLimitAdjuster for crate::downloader::DownloadManager {
+    fn set_throttle_factor(&self, factor: Option<f32>) -> (usize, usize) {
+        self.set_download_throttle(factor)
+    }
+}
+
+/// Forced task aborts must release the reduction just like cooperative shutdown.
+struct ThrottleReset<'a> {
+    controller: &'a ThrottleController,
+    adjuster: &'a dyn DownloadLimitAdjuster,
+}
+
+impl Drop for ThrottleReset<'_> {
+    fn drop(&mut self) {
+        if self.controller.is_throttled.swap(false, Ordering::SeqCst) {
+            let (_, restored) = self.adjuster.set_throttle_factor(None);
+            info!(
+                restored_limit = restored,
+                "Released download throttle on monitor shutdown"
+            );
+        }
+    }
 }
 
 /// The Throttle Controller service.
@@ -138,16 +183,9 @@ impl ThrottleController {
         &self.config
     }
 
-    /// Get the original max downloads value (before throttling).
+    /// Configured normal-slot limit at the most recent activation (a historical snapshot).
     pub fn original_max_downloads(&self) -> usize {
         self.original_max_downloads.load(Ordering::SeqCst)
-    }
-
-    /// Calculate the throttled limit based on the original limit.
-    pub fn calculate_throttled_limit(&self, original: usize) -> usize {
-        let reduced = (original as f32 * self.config.reduction_factor) as usize;
-        // Ensure at least 1 concurrent download
-        reduced.max(1)
     }
 
     /// Check queue depth and update throttle state.
@@ -166,12 +204,11 @@ impl ThrottleController {
 
         if !currently_throttled && queue_depth > self.config.critical_threshold {
             // Activate throttling
-            let original = adjuster.get_max_concurrent_downloads();
+            let (original, new_limit) =
+                adjuster.set_throttle_factor(Some(self.config.reduction_factor));
             self.original_max_downloads
                 .store(original, Ordering::SeqCst);
 
-            let new_limit = self.calculate_throttled_limit(original);
-            adjuster.set_max_concurrent_downloads(new_limit);
             self.is_throttled.store(true, Ordering::SeqCst);
 
             // Log the transition
@@ -189,19 +226,18 @@ impl ThrottleController {
             return Some(event);
         } else if currently_throttled && queue_depth < self.config.warning_threshold {
             // Deactivate throttling
-            let original = self.original_max_downloads.load(Ordering::SeqCst);
-            adjuster.set_max_concurrent_downloads(original);
+            let (_, restored) = adjuster.set_throttle_factor(None);
             self.is_throttled.store(false, Ordering::SeqCst);
 
             // Log the transition
             info!(
                 "Throttling deactivated: queue_depth={}, restoring max_concurrent_downloads to {}",
-                queue_depth, original
+                queue_depth, restored
             );
 
             let event = ThrottleEvent::ThrottleDeactivated {
                 queue_depth,
-                restored_limit: original,
+                restored_limit: restored,
             };
             let _ = self.event_tx.send(event.clone());
             return Some(event);
@@ -233,7 +269,11 @@ impl ThrottleController {
             return;
         }
 
-        let check_interval = Duration::from_millis(self.config.check_interval_ms);
+        let _reset = ThrottleReset {
+            controller: &self,
+            adjuster: adjuster.as_ref(),
+        };
+        let check_interval = Duration::from_millis(self.config.check_interval_ms.max(1));
 
         info!("Throttle controller monitoring started");
 
@@ -242,12 +282,6 @@ impl ThrottleController {
                 _ = cancellation_token.cancelled() => {
                     debug!("Throttle controller monitoring shutting down");
 
-                    // Restore original limit if we're currently throttled
-                    if self.is_throttled.load(Ordering::SeqCst) {
-                        let original = self.original_max_downloads.load(Ordering::SeqCst);
-                        adjuster.set_max_concurrent_downloads(original);
-                        info!("Restored max_concurrent_downloads to {} on shutdown", original);
-                    }
                     break;
                 }
                 _ = tokio::time::sleep(check_interval) => {
@@ -274,24 +308,30 @@ mod tests {
 
     /// Mock adjuster for testing.
     struct MockAdjuster {
+        configured: usize,
         limit: AtomicUsize,
     }
 
     impl MockAdjuster {
         fn new(initial: usize) -> Self {
             Self {
+                configured: initial,
                 limit: AtomicUsize::new(initial),
             }
-        }
-    }
-
-    impl DownloadLimitAdjuster for MockAdjuster {
-        fn set_max_concurrent_downloads(&self, limit: usize) {
-            self.limit.store(limit, Ordering::SeqCst);
         }
 
         fn get_max_concurrent_downloads(&self) -> usize {
             self.limit.load(Ordering::SeqCst)
+        }
+    }
+
+    impl DownloadLimitAdjuster for MockAdjuster {
+        fn set_throttle_factor(&self, factor: Option<f32>) -> (usize, usize) {
+            let limit = factor.map_or(self.configured, |factor| {
+                ((self.configured as f32 * factor) as usize).max(1)
+            });
+            self.limit.store(limit, Ordering::SeqCst);
+            (self.configured, limit)
         }
     }
 
@@ -303,18 +343,48 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_throttled_limit() {
-        let config = ThrottleConfig {
+    fn enabled_throttle_config_rejects_unrecoverable_or_expanding_limits() {
+        let valid = ThrottleConfig {
             enabled: true,
-            reduction_factor: 0.5,
             ..Default::default()
         };
-        let controller = ThrottleController::new(config);
-
-        assert_eq!(controller.calculate_throttled_limit(10), 5);
-        assert_eq!(controller.calculate_throttled_limit(6), 3);
-        assert_eq!(controller.calculate_throttled_limit(1), 1); // Minimum of 1
-        assert_eq!(controller.calculate_throttled_limit(0), 1); // Minimum of 1
+        assert!(valid.validate().is_ok());
+        for invalid in [
+            ThrottleConfig {
+                warning_threshold: 0,
+                ..valid.clone()
+            },
+            ThrottleConfig {
+                warning_threshold: valid.critical_threshold + 1,
+                ..valid.clone()
+            },
+            ThrottleConfig {
+                reduction_factor: -0.1,
+                ..valid.clone()
+            },
+            ThrottleConfig {
+                reduction_factor: 1.1,
+                ..valid.clone()
+            },
+            ThrottleConfig {
+                reduction_factor: f32::NAN,
+                ..valid.clone()
+            },
+            ThrottleConfig {
+                check_interval_ms: 0,
+                ..valid.clone()
+            },
+        ] {
+            assert!(invalid.validate().is_err());
+            assert!(
+                ThrottleConfig {
+                    enabled: false,
+                    ..invalid
+                }
+                .validate()
+                .is_ok()
+            );
+        }
     }
 
     #[test]
@@ -545,5 +615,42 @@ mod tests {
             }
             _ => panic!("Expected ThrottleActivated event"),
         }
+    }
+
+    #[tokio::test]
+    async fn aborted_throttle_monitor_releases_its_reduction() {
+        let controller = Arc::new(ThrottleController::new(ThrottleConfig {
+            enabled: true,
+            critical_threshold: 1,
+            warning_threshold: 1,
+            check_interval_ms: 10,
+            ..Default::default()
+        }));
+        let queue = Arc::new(JobQueue::new());
+        for _ in 0..2 {
+            queue
+                .enqueue(crate::pipeline::Job::new("held", vec![], vec![], "", ""))
+                .await
+                .unwrap();
+        }
+        let adjuster = Arc::new(MockAdjuster::new(10));
+        let mut events = controller.subscribe();
+        let monitor =
+            controller
+                .clone()
+                .start_monitoring(queue, adjuster.clone(), CancellationToken::new());
+        tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        monitor.abort();
+        assert!(monitor.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            (
+                controller.is_throttled(),
+                adjuster.get_max_concurrent_downloads()
+            ),
+            (false, 10)
+        );
     }
 }

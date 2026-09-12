@@ -60,6 +60,8 @@ mod shutdown_tests;
 mod streamer_retirement_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod throttle_tests;
 
 /// Default cache TTL (1 hour).
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);

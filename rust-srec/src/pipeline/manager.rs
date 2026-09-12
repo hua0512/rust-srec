@@ -296,6 +296,7 @@ pub(crate) struct PipelineRuntimeDependencies<
     pub(crate) dag_repository: Arc<dyn DagRepository>,
     pub(crate) upload_record_repository: Arc<dyn UploadRecordRepository>,
     pub(crate) upload_broadcaster: UploadStatusBroadcaster,
+    pub(crate) download_limit_adjuster: Arc<dyn DownloadLimitAdjuster>,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -444,6 +445,7 @@ where
             dag_repository,
             upload_record_repository,
             upload_broadcaster,
+            download_limit_adjuster,
         } = dependencies;
 
         Self::with_repository(config, job_repository)
@@ -455,6 +457,7 @@ where
             .with_dag_repository(dag_repository)
             .with_upload_record_repository(upload_record_repository)
             .with_upload_broadcaster(upload_broadcaster)
+            .with_download_adjuster(download_limit_adjuster)
     }
 
     /// Set the session repository for persistence.
