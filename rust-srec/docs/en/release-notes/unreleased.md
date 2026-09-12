@@ -124,6 +124,10 @@
 
 ## Configuration
 
+- **Streamlink FFmpeg paths survive frontend edits**
+
+  The engine editor now preserves and exposes the custom FFmpeg path used to remux Streamlink output. Template overrides offer separate choices to inherit the engine setting or use the environment/default executable. Paths retain their exact text, including spaces. See [Streamlink's FFmpeg executable](../concepts/engines.md#streamlink-ffmpeg-executable).
+
 - **Import and repository writes share complete field bindings**
 
   All ten import domains and their replacement/invalidation writes now use repository-owned persistence. IDs, timestamps, omitted fields, JSON and transaction boundaries retain their existing contracts; cache/runtime publication remains after commit. See [import persistence](../operations/backup-restore.md#import-persistence-ownership).

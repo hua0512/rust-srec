@@ -23,7 +23,7 @@ msgstr " - Session: {0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:174
+#: src/components/config/engines/forms/streamlink-form.tsx:250
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -358,7 +358,7 @@ msgstr "A unique name for this configuration template."
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "Absolute path or 'ffmpeg' if in PATH"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:47
+#: src/components/config/engines/forms/streamlink-form.tsx:52
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
@@ -657,7 +657,7 @@ msgstr "An error occurred"
 msgid "Anonymized Metadata • UTF-8 Format"
 msgstr "Anonymized Metadata • UTF-8 Format"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:179
+#: src/components/config/engines/forms/streamlink-form.tsx:255
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
@@ -1112,7 +1112,7 @@ msgstr "BDUSS + STOKEN"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:63
+#: src/components/config/engines/forms/streamlink-form.tsx:139
 msgid "best"
 msgstr "best"
 
@@ -1125,7 +1125,7 @@ msgid "Bilibili QR Login"
 msgstr "Bilibili QR Login"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:45
-#: src/components/config/engines/forms/streamlink-form.tsx:37
+#: src/components/config/engines/forms/streamlink-form.tsx:42
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "Binary Path"
@@ -1366,7 +1366,7 @@ msgstr "Channel deleted"
 msgid "Channel updated"
 msgstr "Channel updated"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:142
+#: src/components/config/engines/forms/streamlink-form.tsx:218
 msgid "channel1,channel2"
 msgstr "channel1,channel2"
 
@@ -1491,6 +1491,10 @@ msgstr "Clear date range"
 msgid "Clear selection"
 msgstr "Clear selection"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:94
+msgid "Clearing the field inherits the engine setting."
+msgstr "Clearing the field inherits the engine setting."
+
 #: src/components/pipeline/workflows/step-library.tsx:616
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
@@ -1555,7 +1559,7 @@ msgstr "Collect statistics"
 msgid "Coming soon"
 msgstr "Coming soon"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:147
+#: src/components/config/engines/forms/streamlink-form.tsx:223
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "Comma-separated list of channels to exclude from proxy"
 
@@ -2222,7 +2226,7 @@ msgstr "Custom Headers"
 msgid "Custom imported theme is active."
 msgstr "Custom imported theme is active."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:126
+#: src/components/config/engines/forms/streamlink-form.tsx:202
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
@@ -2870,7 +2874,7 @@ msgstr "Duration (ms)"
 msgid "Duration limit"
 msgstr "Duration limit"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:68
+#: src/components/config/engines/forms/streamlink-form.tsx:144
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
@@ -3359,7 +3363,7 @@ msgstr "Export Configuration"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:162
+#: src/components/config/engines/forms/streamlink-form.tsx:238
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:642
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:794
@@ -3804,13 +3808,22 @@ msgstr "ffmpeg"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg Audio Filter (-af)"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:63
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg Path"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:86
+msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
+msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:685
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:79
+msgid "FFMPEG_PATH or ffmpeg"
+msgstr "FFMPEG_PATH or ffmpeg"
 
 #: src/components/config/global/file-config-card.tsx:20
 msgid "File Configuration"
@@ -4205,7 +4218,7 @@ msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail gener
 msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:88
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/streamlink-form.tsx:155
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
 
@@ -4470,7 +4483,7 @@ msgstr "https://discord.com/api/webhooks/..."
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:121
+#: src/components/config/engines/forms/streamlink-form.tsx:197
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -4587,6 +4600,10 @@ msgstr "Inherited"
 #: src/components/config/shared/output-settings-card.tsx:219
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:77
+msgid "Inherited from engine"
+msgstr "Inherited from engine"
 
 #: src/components/sessions/timeline-tab.tsx:222
 msgid "INITIAL"
@@ -6431,6 +6448,10 @@ msgstr "Path"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 
+#: src/components/config/engines/forms/streamlink-form.tsx:80
+msgid "Path to FFmpeg"
+msgstr "Path to FFmpeg"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:82
 msgid "Path Variables"
 msgstr "Path Variables"
@@ -7014,7 +7035,7 @@ msgstr "QR code expired"
 msgid "QR Login"
 msgstr "QR Login"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:58
+#: src/components/config/engines/forms/streamlink-form.tsx:134
 #: src/components/player/stream-info-card.tsx:171
 msgid "Quality"
 msgstr "Quality"
@@ -8595,7 +8616,7 @@ msgstr "Streamers currently live will appear here."
 msgid "Streaming services"
 msgstr "Streaming services"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:42
+#: src/components/config/engines/forms/streamlink-form.tsx:47
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -8999,7 +9020,7 @@ msgid "Time Range"
 msgstr "Time Range"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:99
-#: src/components/config/engines/forms/streamlink-form.tsx:90
+#: src/components/config/engines/forms/streamlink-form.tsx:166
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 
@@ -9322,7 +9343,7 @@ msgstr "TTWID Management Mode"
 msgid "Tuesday"
 msgstr "Tuesday"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:107
+#: src/components/config/engines/forms/streamlink-form.tsx:183
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -9330,11 +9351,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "Twitch OAuth token for subscriber-only and high-quality streams."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:116
+#: src/components/config/engines/forms/streamlink-form.tsx:192
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch Proxy Playlist"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:137
+#: src/components/config/engines/forms/streamlink-form.tsx:213
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
@@ -9540,6 +9561,14 @@ msgstr "Use <0>-movflags +faststart</0>"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
 msgid "Use danmu_inputs from job manifest"
 msgstr "Use danmu_inputs from job manifest"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:109
+msgid "Use engine setting"
+msgstr "Use engine setting"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:122
+msgid "Use environment default"
+msgstr "Use environment default"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
 msgid "Use mobile endpoint for extraction."

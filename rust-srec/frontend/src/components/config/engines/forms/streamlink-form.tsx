@@ -6,6 +6,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { ListInput } from '@/components/ui/list-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -22,9 +23,13 @@ import {
 
 interface StreamlinkFormProps {
   basePath?: string;
+  isOverride?: boolean;
 }
 
-export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
+export function StreamlinkForm({
+  basePath = 'config',
+  isOverride = false,
+}: StreamlinkFormProps) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-6">
@@ -46,6 +51,77 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
               <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>Absolute path or 'streamlink' in PATH</Trans>
               </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name={`${basePath}.ffmpeg_path`}
+          render={({ field }) => (
+            <FormItem>
+              <ConfigFieldLabel icon={Terminal}>
+                <Trans>FFmpeg Path</Trans>
+              </ConfigFieldLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  value={field.value ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    field.onChange(
+                      value === '' ? (isOverride ? undefined : null) : value,
+                    );
+                  }}
+                  placeholder={
+                    isOverride && field.value === undefined
+                      ? i18n._(msg`Inherited from engine`)
+                      : field.value == null
+                        ? i18n._(msg`FFMPEG_PATH or ffmpeg`)
+                        : i18n._(msg`Path to FFmpeg`)
+                  }
+                  className="bg-background/50"
+                />
+              </FormControl>
+              <FormDescription className={CONFIG_DESCRIPTION}>
+                <Trans>
+                  FFmpeg used to remux Streamlink output. Enter a path on the
+                  backend server without shell quotes. The environment default
+                  uses FFMPEG_PATH, then ffmpeg from PATH.
+                </Trans>
+                {isOverride && (
+                  <>
+                    {' '}
+                    <Trans>
+                      Clearing the field inherits the engine setting.
+                    </Trans>
+                  </>
+                )}
+              </FormDescription>
+              <div className="flex flex-wrap gap-2">
+                {isOverride && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={field.value === undefined}
+                    onClick={() => field.onChange(undefined)}
+                  >
+                    <Trans>Use engine setting</Trans>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    field.value === null ||
+                    (!isOverride && field.value === undefined)
+                  }
+                  onClick={() => field.onChange(null)}
+                >
+                  <Trans>Use environment default</Trans>
+                </Button>
+              </div>
               <FormMessage />
             </FormItem>
           )}

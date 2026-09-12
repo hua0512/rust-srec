@@ -54,6 +54,16 @@ engine, and a missing executable fails recording startup instead of falling back
 Empty or whitespace-only strings are explicit executable values, not a request
 for fallback; use omission or `null` to clear the override.
 
+The engine editor exposes **FFmpeg Path** and preserves it when other settings
+change. Clearing the field or choosing **Use environment default** restores the
+environment/default lookup. Enter the path on the backend server without shell
+quotes; path text is preserved exactly.
+
+In a template's Streamlink override, clearing the field or choosing **Use engine
+setting** removes the override and inherits the engine path. **Use environment
+default** instead writes an explicit `null`, clearing the engine path for that
+template so `FFMPEG_PATH` or `ffmpeg` is used.
+
 ### Stopping Streamlink Recordings
 
 For an audited Streamlink 8.5.0 installation, stopping a recording requests an
