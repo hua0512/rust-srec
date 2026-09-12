@@ -1,10 +1,6 @@
 use futures::StreamExt;
 use indicatif::ProgressStyle;
 use mesio_engine::{DownloadEvent, DownloadEventStream, DownloadHandle};
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
 use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
@@ -71,7 +67,7 @@ pub fn init_writing_span(span: &Span, message: impl Into<String>) {
 }
 
 pub async fn render_download_events(mut events: DownloadEventStream, download_span: Span) {
-    let total_bytes = Arc::new(AtomicU64::new(0));
+    let mut total_bytes = 0u64;
     while let Some(event) = events.next().await {
         match event {
             DownloadEvent::ResourceStarted {
@@ -81,16 +77,16 @@ pub async fn render_download_events(mut events: DownloadEventStream, download_sp
                 download_span.pb_set_length(length);
             }
             DownloadEvent::Progress { bytes_delta, .. } => {
-                let total = total_bytes.fetch_add(bytes_delta, Ordering::Relaxed) + bytes_delta;
-                download_span.pb_set_position(total);
-                download_span.pb_set_message(&format!("Downloaded {}", format_bytes(total)));
+                total_bytes += bytes_delta;
+                download_span.pb_set_position(total_bytes);
+                download_span.pb_set_message(&format!("Downloaded {}", format_bytes(total_bytes)));
             }
             DownloadEvent::ResourceFinished {
                 bytes, from_cache, ..
             } if from_cache => {
-                let total = total_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
-                download_span.pb_set_position(total);
-                download_span.pb_set_message(&format!("Downloaded {}", format_bytes(total)));
+                total_bytes += bytes;
+                download_span.pb_set_position(total_bytes);
+                download_span.pb_set_message(&format!("Downloaded {}", format_bytes(total_bytes)));
             }
             DownloadEvent::Lagged { dropped } => {
                 download_span.pb_set_message(&format!("Dropped {} progress events", dropped));

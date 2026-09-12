@@ -192,8 +192,7 @@ pub struct ServiceContainer {
         >,
     >,
     /// Credential refresh service (shared between monitor + API).
-    pub(crate) credential_service:
-        Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
+    pub(crate) credential_service: Arc<crate::credentials::CredentialRefreshService>,
     /// Live broadcaster for committed check-history rows. Cloned into the
     /// downloads WS route so per-streamer subscribers see new bars appear
     /// without polling. Same fan-out pattern as

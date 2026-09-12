@@ -135,14 +135,6 @@ fn default_method() -> String {
     "POST".to_string()
 }
 
-/// Notification subscription database model.
-/// Links a notification channel to events it should be notified about.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct NotificationSubscriptionDbModel {
-    pub channel_id: String,
-    pub event_name: String,
-}
-
 /// Notification dead letter database model.
 /// Stores notifications that failed all retry attempts.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

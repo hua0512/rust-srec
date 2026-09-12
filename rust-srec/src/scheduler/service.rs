@@ -26,9 +26,9 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
-use crate::downloader::{
-    DownloadManagerEvent, DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent,
-};
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
+#[cfg(test)]
+use crate::downloader::{DownloadStopCause, DownloadTerminalEvent};
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
@@ -212,14 +212,6 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     configuration: configuration::ConfigurationWork,
     /// Throttle map for forwarding download heartbeats to streamer actors.
     download_heartbeat_last_sent: DashMap<String, Instant>,
-}
-
-pub(super) fn download_end_policy_for_stop(cause: DownloadStopCause) -> DownloadEndPolicy {
-    match cause {
-        DownloadStopCause::StreamerOffline => DownloadEndPolicy::StreamerOffline,
-        DownloadStopCause::OutOfSchedule => DownloadEndPolicy::OutOfSchedule,
-        other => DownloadEndPolicy::Stopped(other),
-    }
 }
 
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
@@ -641,7 +633,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 } => {
                     match result {
                         Ok(event) => {
-                            self.process_download_event(event).await;
+                            self.process_download_event(event);
                         }
                         Err(broadcast::error::RecvError::Lagged(n)) => {
                             warn!("Scheduler lagged {} download events", n);
@@ -877,7 +869,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Process a download event (internal).
-    async fn process_download_event(&self, event: DownloadManagerEvent) {
+    fn process_download_event(&self, event: DownloadManagerEvent) {
         if self.reliable_feedback
             && !matches!(
                 event,
@@ -892,7 +884,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
         const HEARTBEAT_THROTTLE: Duration = Duration::from_secs(30);
 
-        let send_to_actor = |streamer_id: String, msg: StreamerMessage| async move {
+        let send_to_actor = |streamer_id: String, msg: StreamerMessage| {
             trace!(
                 "Handling download event for streamer {}: {:?}",
                 streamer_id, msg
@@ -923,81 +915,38 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                         download_id,
                         session_id,
                     },
-                )
-                .await;
+                );
             }
-            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
-                streamer_id,
-                stop_cause,
-                ..
-            }) => {
-                let policy = stop_cause
-                    .map(download_end_policy_for_stop)
-                    .unwrap_or(DownloadEndPolicy::Completed);
-                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
-            }
-            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
-                streamer_id,
-                error,
-                ..
-            }) => {
+            DownloadManagerEvent::Terminal(terminal) => {
+                let streamer_id = terminal.streamer_id().to_owned();
                 send_to_actor(
                     streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndPolicy::SegmentFailed(error)),
-                )
-                .await;
+                    StreamerMessage::DownloadEnded(DownloadEndPolicy::from(terminal)),
+                );
             }
-            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
-                streamer_id,
-                cause,
-                ..
-            }) => {
-                let policy = download_end_policy_for_stop(cause);
-                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
-            }
-            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
-                streamer_id,
-                reason,
-                retry_after_secs,
-                session_id,
-                kind,
-                ..
-            }) => {
-                let retry_secs = retry_after_secs.unwrap_or(60);
-                let policy = match kind {
-                    crate::downloader::DownloadRejectedKind::CircuitBreaker => {
-                        DownloadEndPolicy::CircuitBreakerBlocked {
-                            reason,
-                            retry_after_secs: retry_secs,
-                            session_id,
-                        }
-                    }
-                    crate::downloader::DownloadRejectedKind::OutputRootUnavailable {
-                        path,
-                        io_kind,
-                    } => DownloadEndPolicy::OutputRootBlocked {
-                        path,
-                        io_kind,
-                        retry_after_secs: retry_secs,
+            DownloadManagerEvent::Progress(event) => {
+                let (download_id, streamer_id, session_id, progress) = match event {
+                    DownloadProgressEvent::Progress {
+                        download_id,
+                        streamer_id,
                         session_id,
-                    },
-                    crate::downloader::DownloadRejectedKind::StreamerBackoff => {
-                        DownloadEndPolicy::StreamerBackoffBlocked {
-                            reason,
-                            retry_after_secs: retry_secs,
-                            session_id,
-                        }
+                        progress,
+                        ..
+                    } => (download_id, streamer_id, session_id, Some(progress)),
+                    DownloadProgressEvent::SegmentStarted {
+                        download_id,
+                        streamer_id,
+                        session_id,
+                        ..
                     }
+                    | DownloadProgressEvent::SegmentCompleted {
+                        download_id,
+                        streamer_id,
+                        session_id,
+                        ..
+                    } => (download_id, streamer_id, session_id, None),
+                    _ => return,
                 };
-                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
-            }
-            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
-                download_id,
-                streamer_id,
-                session_id,
-                progress,
-                ..
-            }) => {
                 let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,
@@ -1017,50 +966,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                         StreamerMessage::DownloadHeartbeat {
                             download_id,
                             session_id,
-                            progress: Some(progress),
+                            progress,
                         },
-                    )
-                    .await;
+                    );
                 }
             }
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-                download_id,
-                streamer_id,
-                session_id,
-                ..
-            })
-            | DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-                download_id,
-                streamer_id,
-                session_id,
-                ..
-            }) => {
-                let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
-                    Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
-                    None => true,
-                };
-                if should_send
-                    && (!self.reliable_feedback
-                        || self.feedback.is_current_download(
-                            &streamer_id,
-                            &download_id,
-                            &session_id,
-                        ))
-                {
-                    self.download_heartbeat_last_sent
-                        .insert(streamer_id.clone(), now);
-                    send_to_actor(
-                        streamer_id,
-                        StreamerMessage::DownloadHeartbeat {
-                            download_id,
-                            session_id,
-                            progress: None,
-                        },
-                    )
-                    .await;
-                }
-            }
-            _ => {}
         }
     }
 
@@ -1325,19 +1235,19 @@ mod tests {
     #[test]
     fn clean_completion_preserves_the_requested_stop_policy() {
         assert!(matches!(
-            download_end_policy_for_stop(DownloadStopCause::User),
+            DownloadEndPolicy::from(DownloadStopCause::User),
             DownloadEndPolicy::Stopped(DownloadStopCause::User)
         ));
         assert!(matches!(
-            download_end_policy_for_stop(DownloadStopCause::StreamerOffline),
+            DownloadEndPolicy::from(DownloadStopCause::StreamerOffline),
             DownloadEndPolicy::StreamerOffline
         ));
         assert!(matches!(
-            download_end_policy_for_stop(DownloadStopCause::OutOfSchedule),
+            DownloadEndPolicy::from(DownloadStopCause::OutOfSchedule),
             DownloadEndPolicy::OutOfSchedule
         ));
         assert!(matches!(
-            download_end_policy_for_stop(DownloadStopCause::DanmuStreamClosed),
+            DownloadEndPolicy::from(DownloadStopCause::DanmuStreamClosed),
             DownloadEndPolicy::Stopped(DownloadStopCause::DanmuStreamClosed)
         ));
     }

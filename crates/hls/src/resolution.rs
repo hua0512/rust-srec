@@ -328,22 +328,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolution_display() {
-        let res = Resolution::new(1920, 1080);
-        assert_eq!(format!("{}", res), "1920x1080");
-    }
-
-    #[test]
-    fn test_resolution_equality() {
-        let res1 = Resolution::new(1920, 1080);
-        let res2 = Resolution::new(1920, 1080);
-        let res3 = Resolution::new(1280, 720);
-
-        assert_eq!(res1, res2);
-        assert_ne!(res1, res3);
-    }
-
-    #[test]
     fn test_find_nal_end_fast_three_byte() {
         // NAL data followed by 3-byte start code
         let data = [0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x01, 0x68];
@@ -398,21 +382,17 @@ mod tests {
     }
 
     #[test]
-    fn test_find_h264_sps_with_three_byte_start_code() {
-        // This is a minimal H.264 SPS that won't parse correctly,
-        // but we can test that the NAL type detection works
+    fn truncated_h264_sps_with_three_byte_start_code_is_rejected() {
         let data = [0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f];
-        // The SPS parser will fail, but we verify no panic occurs
         let result = ResolutionDetector::find_and_parse_h264_sps(&data);
-        // Result depends on whether the minimal SPS can be parsed
-        assert!(result.is_none() || result.is_some());
+        assert!(result.is_none());
     }
 
     #[test]
-    fn test_find_h264_sps_with_four_byte_start_code() {
+    fn truncated_h264_sps_with_four_byte_start_code_is_rejected() {
         let data = [0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f];
         let result = ResolutionDetector::find_and_parse_h264_sps(&data);
-        assert!(result.is_none() || result.is_some());
+        assert!(result.is_none());
     }
 
     #[test]

@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use crate::Result;
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::credentials::{
-    CredentialRefreshService, CredentialResolver,
+    CredentialRefreshService,
     platforms::{BilibiliCredentialManager, SoopCredentialManager},
 };
 use crate::danmu::{DanmuService, events::danmu_coordination_channel};
@@ -245,10 +245,8 @@ impl ServiceContainer {
         );
 
         // Build credential refresh service (shared between StreamMonitor + API).
-        let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
         let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
-        let mut credential_service =
-            CredentialRefreshService::new(credential_resolver, credential_store);
+        let mut credential_service = CredentialRefreshService::new(credential_store);
         match BilibiliCredentialManager::new_lazy() {
             Ok(manager) => credential_service.register_manager(Arc::new(manager)),
             Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),

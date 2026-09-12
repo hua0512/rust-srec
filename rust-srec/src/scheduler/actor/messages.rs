@@ -11,8 +11,8 @@ use rand::RngExt;
 use tokio::sync::oneshot;
 
 use crate::domain::{Priority, StreamerState};
-use crate::downloader::DownloadStopCause;
 use crate::downloader::engine::DownloadProgress;
+use crate::downloader::{DownloadRejectedKind, DownloadStopCause, DownloadTerminalEvent};
 use crate::streamer::StreamerMetadata;
 
 /// Messages that can be sent to a StreamerActor.
@@ -204,6 +204,57 @@ pub enum DownloadEndPolicy {
     /// The actor preserves hysteresis and uses normal scheduling, allowing the
     /// grace period to confirm the actual state through status checks.
     Other(String),
+}
+
+impl From<DownloadStopCause> for DownloadEndPolicy {
+    fn from(cause: DownloadStopCause) -> Self {
+        match cause {
+            DownloadStopCause::StreamerOffline => Self::StreamerOffline,
+            DownloadStopCause::OutOfSchedule => Self::OutOfSchedule,
+            other => Self::Stopped(other),
+        }
+    }
+}
+
+impl From<DownloadTerminalEvent> for DownloadEndPolicy {
+    fn from(terminal: DownloadTerminalEvent) -> Self {
+        match terminal {
+            DownloadTerminalEvent::Completed { stop_cause, .. } => {
+                stop_cause.map(Self::from).unwrap_or(Self::Completed)
+            }
+            DownloadTerminalEvent::Cancelled { cause, .. } => Self::from(cause),
+            DownloadTerminalEvent::Failed { error, .. } => Self::SegmentFailed(error),
+            DownloadTerminalEvent::Rejected {
+                reason,
+                retry_after_secs,
+                session_id,
+                kind,
+                ..
+            } => {
+                let retry_after_secs = retry_after_secs.unwrap_or(60);
+                match kind {
+                    DownloadRejectedKind::CircuitBreaker => Self::CircuitBreakerBlocked {
+                        reason,
+                        retry_after_secs,
+                        session_id,
+                    },
+                    DownloadRejectedKind::OutputRootUnavailable { path, io_kind } => {
+                        Self::OutputRootBlocked {
+                            path,
+                            io_kind,
+                            retry_after_secs,
+                            session_id,
+                        }
+                    }
+                    DownloadRejectedKind::StreamerBackoff => Self::StreamerBackoffBlocked {
+                        reason,
+                        retry_after_secs,
+                        session_id,
+                    },
+                }
+            }
+        }
+    }
 }
 
 /// Messages that can be sent to a PlatformActor.

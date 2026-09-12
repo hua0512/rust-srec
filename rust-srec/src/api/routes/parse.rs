@@ -26,11 +26,7 @@ pub struct ParseRouteState {
             crate::database::repositories::streamer::SqlxStreamerRepository,
         >,
     >,
-    credential_service: std::sync::Arc<
-        crate::credentials::CredentialRefreshService<
-            crate::database::repositories::config::SqlxConfigRepository,
-        >,
-    >,
+    credential_service: std::sync::Arc<crate::credentials::CredentialRefreshService>,
     streamer_manager: std::sync::Arc<
         crate::streamer::StreamerManager<
             crate::database::repositories::streamer::SqlxStreamerRepository,
@@ -586,8 +582,8 @@ async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> Pro
 mod tests {
     use super::*;
     use crate::config::{ConfigEventBroadcaster, ConfigService};
+    use crate::credentials::CredentialRefreshService;
     use crate::credentials::test_support::StubCredentialManager;
-    use crate::credentials::{CredentialRefreshService, CredentialResolver};
     use crate::database::models::StreamerDbModel;
     use crate::database::repositories::{
         SqlxConfigRepository, SqlxCredentialStore, SqlxStreamerRepository, StreamerRepository as _,
@@ -611,10 +607,9 @@ mod tests {
                 config_repo.clone(),
                 streamer_repo.clone(),
             )),
-            credential_service: Arc::new(CredentialRefreshService::new(
-                Arc::new(CredentialResolver::new(config_repo)),
-                Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone())),
-            )),
+            credential_service: Arc::new(CredentialRefreshService::new(Arc::new(
+                SqlxCredentialStore::new(pool.clone(), pool.clone()),
+            ))),
             streamer_manager: Arc::new(StreamerManager::new(
                 streamer_repo,
                 ConfigEventBroadcaster::new(),
@@ -666,10 +661,9 @@ mod tests {
         streamer_manager.hydrate().await.unwrap();
 
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-        let mut credential_service = CredentialRefreshService::new(
-            Arc::new(CredentialResolver::new(config_repo.clone())),
-            Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone())),
-        );
+        let mut credential_service = CredentialRefreshService::new(Arc::new(
+            SqlxCredentialStore::new(pool.clone(), pool.clone()),
+        ));
         credential_service.register_manager(Arc::new(StubCredentialManager::new(
             "bilibili",
             "SESSDATA=new",

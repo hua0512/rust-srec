@@ -143,7 +143,7 @@ pub struct ApiServices {
     /// Shared capacity and streaming archive generation for log downloads.
     pub(crate) logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
     /// Credential refresh service for API-triggered refresh and cookie resolution.
-    pub credential_service: Arc<CredentialRefreshService<SqlxConfigRepository>>,
+    pub credential_service: Arc<CredentialRefreshService>,
     /// Validated, transactional configuration import application service.
     pub(crate) configuration_import_service:
         Arc<crate::services::config_import::ConfigurationImportService>,

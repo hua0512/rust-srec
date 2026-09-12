@@ -53,12 +53,6 @@ pub enum EngineEndSignal {
 }
 
 impl EngineEndSignal {
-    /// Whether this signal alone is sufficient to mark the stream as done
-    /// without waiting for hysteresis. Today, only HLS `#EXT-X-ENDLIST` is.
-    pub fn is_authoritative(&self) -> bool {
-        matches!(self, Self::HlsEndlist)
-    }
-
     /// Short, stable label for logging / metrics.
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -75,7 +69,7 @@ impl EngineEndSignal {
 /// Used to disambiguate user cancellation from internal orchestration stops.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DownloadStopCause {
-    /// User explicitly cancelled the download (typically implies "stop monitoring").
+    /// User cancelled the current recording; the scheduler checks status again.
     User,
     /// Stream was determined to be offline (end-of-stream).
     StreamerOffline,

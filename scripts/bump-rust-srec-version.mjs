@@ -50,17 +50,13 @@ function readText(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-function writeText(filePath, content) {
-  fs.writeFileSync(filePath, content, 'utf8');
-}
-
 function writeMaybe(filePath, content, dryRun) {
   if (dryRun) {
     process.stdout.write(`[dry-run] Would update ${path.relative(process.cwd(), filePath)}\n`);
     return;
   }
 
-  writeText(filePath, content);
+  fs.writeFileSync(filePath, content, 'utf8');
 }
 
 function ensureDir(dirPath, dryRun) {

@@ -83,7 +83,7 @@ async fn run(args: Args) -> Result<()> {
         println!("==================================================================");
         println!();
     } else {
-        init_logging(args.verbose, args.quiet)?;
+        init_logging(args.verbose, args.quiet);
     }
 
     // Load configuration
@@ -212,7 +212,7 @@ async fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-fn init_logging(verbose: bool, quiet: bool) -> Result<()> {
+fn init_logging(verbose: bool, quiet: bool) {
     let filter = if quiet {
         EnvFilter::new("error")
     } else if verbose {
@@ -226,5 +226,4 @@ fn init_logging(verbose: bool, quiet: bool) -> Result<()> {
     subscriber
         .with(fmt::layer().with_target(false).with_level(verbose))
         .init();
-    Ok(())
 }

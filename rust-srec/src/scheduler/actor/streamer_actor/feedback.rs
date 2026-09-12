@@ -6,9 +6,7 @@ impl StreamerActor {
         sequence: u64,
         event: crate::downloader::DownloadManagerEvent,
     ) -> Result<crate::scheduler::feedback::FeedbackDisposition, ActorError> {
-        use crate::downloader::{
-            DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent,
-        };
+        use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
         use crate::scheduler::feedback::FeedbackDisposition;
         match event {
             DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
@@ -16,9 +14,7 @@ impl StreamerActor {
                 session_id,
                 ..
             }) => {
-                self.current_download = Some((download_id.clone(), session_id.clone()));
-                self.handle_download_started(download_id, session_id)
-                    .await?;
+                self.handle_download_started(download_id, session_id);
             }
             DownloadManagerEvent::Terminal(terminal) => {
                 if self
@@ -32,51 +28,7 @@ impl StreamerActor {
                     self.feedback_sequence = sequence;
                     return Ok(FeedbackDisposition::Superseded);
                 }
-                let policy = match terminal {
-                    DownloadTerminalEvent::Completed { stop_cause, .. } => stop_cause
-                        .map(crate::scheduler::service::download_end_policy_for_stop)
-                        .unwrap_or(DownloadEndPolicy::Completed),
-                    DownloadTerminalEvent::Cancelled { cause, .. } => {
-                        crate::scheduler::service::download_end_policy_for_stop(cause)
-                    }
-                    DownloadTerminalEvent::Failed { error, .. } => {
-                        DownloadEndPolicy::SegmentFailed(error)
-                    }
-                    DownloadTerminalEvent::Rejected {
-                        reason,
-                        retry_after_secs,
-                        session_id,
-                        kind,
-                        ..
-                    } => {
-                        let retry_after_secs = retry_after_secs.unwrap_or(60);
-                        match kind {
-                            crate::downloader::DownloadRejectedKind::CircuitBreaker => {
-                                DownloadEndPolicy::CircuitBreakerBlocked {
-                                    reason,
-                                    retry_after_secs,
-                                    session_id,
-                                }
-                            }
-                            crate::downloader::DownloadRejectedKind::OutputRootUnavailable {
-                                path,
-                                io_kind,
-                            } => DownloadEndPolicy::OutputRootBlocked {
-                                path,
-                                io_kind,
-                                retry_after_secs,
-                                session_id,
-                            },
-                            crate::downloader::DownloadRejectedKind::StreamerBackoff => {
-                                DownloadEndPolicy::StreamerBackoffBlocked {
-                                    reason,
-                                    retry_after_secs,
-                                    session_id,
-                                }
-                            }
-                        }
-                    }
-                };
+                let policy = DownloadEndPolicy::from(terminal);
                 self.current_download = None;
                 self.handle_download_ended(policy).await?;
             }
@@ -87,19 +39,13 @@ impl StreamerActor {
     }
 
     /// Handle DownloadStarted message - pause status checking while a download is active.
-    pub(super) async fn handle_download_started(
-        &mut self,
-        download_id: String,
-        session_id: String,
-    ) -> Result<(), ActorError> {
+    pub(super) fn handle_download_started(&mut self, download_id: String, session_id: String) {
         info!(
             "StreamerActor {} download started: download_id={}, session_id={}",
             self.id, download_id, session_id
         );
 
         self.seed_active_download(download_id, session_id);
-
-        Ok(())
     }
 
     /// Initialize a replacement from the recording owner's current identity.

@@ -1163,40 +1163,10 @@ pub async fn extract_metadata(
         platform,
         valid_platform_configs: configs
             .into_iter()
-            .map(platform_config_to_response)
+            .map(PlatformConfigResponse::from)
             .collect(),
         channel_id,
     }))
-}
-
-/// Convert a platform config row to its API representation.
-fn platform_config_to_response(config: PlatformConfigDbModel) -> PlatformConfigResponse {
-    PlatformConfigResponse {
-        id: config.id,
-        name: config.platform_name,
-        fetch_delay_ms: config.fetch_delay_ms.map(|v| v as u64),
-        download_delay_ms: config.download_delay_ms.map(|v| v as u64),
-        record_danmu: config.record_danmu,
-        danmu_statistics: config.danmu_statistics,
-        cookies: config.cookies,
-        platform_specific_config: config.platform_specific_config,
-        proxy_config: config.proxy_config,
-        output_folder: config.output_folder,
-        output_filename_template: config.output_filename_template,
-        download_engine: config.download_engine,
-        extractor: config.extractor,
-        stream_selection_config: config.stream_selection_config,
-        output_file_format: config.output_file_format,
-        min_segment_size_bytes: config.min_segment_size_bytes.map(|v| v as u64),
-        max_download_duration_secs: config.max_download_duration_secs.map(|v| v as u64),
-        max_part_size_bytes: config.max_part_size_bytes.map(|v| v as u64),
-        download_retry_policy: config.download_retry_policy,
-        pipeline: config.pipeline,
-        session_complete_pipeline: config.session_complete_pipeline,
-        paired_segment_pipeline: config.paired_segment_pipeline,
-        offline_check_count: config.offline_check_count.map(|v| v as u32),
-        offline_check_delay_ms: config.offline_check_delay_ms.map(|v| v as u64),
-    }
 }
 
 /// Default check-history page size; requests are capped at the writer's

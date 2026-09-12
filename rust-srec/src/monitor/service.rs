@@ -170,7 +170,7 @@ pub struct StreamMonitor<
     /// Configuration.
     config: StreamMonitorConfig,
     /// Optional credential refresh service for automatic cookie refresh.
-    credential_service: Option<Arc<CredentialRefreshService<CR>>>,
+    credential_service: Option<Arc<CredentialRefreshService>>,
 }
 
 /// Details for a streamer going live.
@@ -340,26 +340,7 @@ impl<
             config.max_concurrent_requests,
         ));
 
-        // BatchDetector currently uses a single client (not per-streamer); keep the prior client config behavior.
-        let mut client_builder = platforms_parser::extractor::create_client_builder(None);
-
-        if config.request_timeout > Duration::ZERO {
-            client_builder = client_builder.timeout(config.request_timeout);
-        }
-
-        if config.max_concurrent_requests > 0 {
-            client_builder = client_builder.pool_max_idle_per_host(config.max_concurrent_requests);
-        }
-
-        let client = client_builder.build().unwrap_or_else(|error| {
-            warn!(
-                "Failed to create HTTP client via platforms-parser: {}. Falling back to reqwest defaults.",
-                error
-            );
-            reqwest::Client::new()
-        });
-
-        let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
+        let batch_detector = BatchDetector::new(rate_limiter.clone());
 
         let outbox_notify = Arc::new(Notify::new());
         let cancellation = CancellationToken::new();
@@ -422,7 +403,7 @@ impl<
     }
 
     /// Set the credential refresh service for automatic cookie refresh.
-    pub fn set_credential_service(&mut self, service: Arc<CredentialRefreshService<CR>>) {
+    pub fn set_credential_service(&mut self, service: Arc<CredentialRefreshService>) {
         if let Some(state) = self.streamer_manager.committed_state() {
             service.bind_committed_streamers(state);
         }
@@ -2846,15 +2827,9 @@ mod tests {
         let mut monitor = build_test_monitor(&pool).await;
         // `persist_session_cookies` reaches the store directly, so no platform manager is needed.
         monitor.set_credential_service(Arc::new(
-            crate::credentials::CredentialRefreshService::new(
-                Arc::new(crate::credentials::CredentialResolver::new(Arc::new(
-                    SqlxConfigRepository::new(pool.clone(), pool.clone()),
-                ))),
-                Arc::new(crate::database::repositories::SqlxCredentialStore::new(
-                    pool.clone(),
-                    pool.clone(),
-                )),
-            ),
+            crate::credentials::CredentialRefreshService::new(Arc::new(
+                crate::database::repositories::SqlxCredentialStore::new(pool.clone(), pool.clone()),
+            )),
         ));
 
         let streamer = monitor

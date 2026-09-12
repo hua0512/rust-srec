@@ -468,24 +468,6 @@ where
         }
     }
 
-    /// Reload multiple streamers from the repository into the in-memory cache.
-    ///
-    /// This is more efficient than calling `reload_from_repo` multiple times
-    /// when multiple streamers need to be synced after a batch transaction.
-    pub async fn reload_multiple_from_repo(&self, ids: &[&str]) -> Result<usize> {
-        let mut reloaded = 0;
-        for id in ids {
-            if self
-                .reload_from_repo(id, ReloadPublish::StateOnly)
-                .await?
-                .is_some()
-            {
-                reloaded += 1;
-            }
-        }
-        Ok(reloaded)
-    }
-
     /// Update a streamer's avatar.
     pub async fn update_avatar(&self, id: &str, avatar_url: Option<String>) -> Result<()> {
         debug!("Updating avatar for streamer {}", id);
@@ -609,15 +591,6 @@ where
             return Ok(self.get_streamer(id));
         }
         info!("Marked streamer {} deleted; retiring its runtime work", id);
-        self.reload_from_repo(id, ReloadPublish::StateOnly).await
-    }
-
-    /// Announce a `deleted_at` marker some other writer committed.
-    ///
-    /// For `ConfigurationImportService::import`, which stamps the marker inside
-    /// its own transaction so a rejected bundle stops nothing; the runtime only
-    /// learns about it once that transaction commits.
-    pub async fn note_deleted(&self, id: &str) -> Result<Option<StreamerMetadata>> {
         self.reload_from_repo(id, ReloadPublish::StateOnly).await
     }
 
