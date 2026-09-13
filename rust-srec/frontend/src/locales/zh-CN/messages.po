@@ -806,10 +806,6 @@ msgstr "分配模板"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
-msgid "Attempt to get the highest original quality available."
-msgstr "尝试获取可用的最高原画质量。"
-
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:66
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
@@ -873,6 +869,7 @@ msgid "Authentication"
 msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
 msgid "Auto"
 msgstr "自动"
 
@@ -891,6 +888,10 @@ msgstr "自动重新登录"
 #: src/components/config/global/file-config-card.tsx:39
 msgid "Auto Thumbnail"
 msgstr "自动封面"
+
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:81
+msgid "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
+msgstr "自动模式优先使用无需签名的 Web API，失败时回退到解析直播页面。直播页面更容易触发风控检测。"
 
 #: src/components/config/shared/network-settings-card.tsx:282
 msgid "Auto-Refresh"
@@ -1688,7 +1689,7 @@ msgstr "配置路径（可选）"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:52
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
 #: src/components/pipeline/workflows/workflow-editor.tsx:224
-#: src/lib/menu-list.ts:119
+#: src/lib/menu-list.ts:114
 msgid "Configuration"
 msgstr "配置"
 
@@ -2387,6 +2388,7 @@ msgstr "默认"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:509
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:136
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:90
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:101
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
@@ -3412,13 +3414,14 @@ msgid "Extract MP3"
 msgstr "提取 MP3"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:69
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:54
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:62
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:48
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:30
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
 msgid "Extraction Settings"
 msgstr "提取设置"
 
@@ -4009,7 +4012,7 @@ msgstr "强制使用移动端 API"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:56
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:170
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:98
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
@@ -4938,6 +4941,10 @@ msgstr "直播中"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1560
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
+
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:75
+msgid "Live page HTML"
+msgstr "直播页 HTML"
 
 #: src/components/notifications/browser-channel-dialog.tsx:82
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:529
@@ -5993,7 +6000,7 @@ msgstr "通知服务"
 
 #: src/components/layout/site-header.tsx:37
 #: src/components/sidebar/navbar.tsx:31
-#: src/lib/menu-list.ts:124
+#: src/lib/menu-list.ts:119
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:370
 msgid "Notifications"
 msgstr "通知"
@@ -6128,6 +6135,10 @@ msgstr "进行中"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:485
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
+
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:101
+msgid "Only keep the original-quality stream when TikTok offers one; other qualities are ignored."
+msgstr "当 TikTok 提供原画流时只保留原画，忽略其他画质。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:716
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
@@ -7953,6 +7964,7 @@ msgid "Select an engine"
 msgstr "选择引擎"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:62
 msgid "Select API Mode"
 msgstr "选择 API 模式"
 
@@ -9806,6 +9818,10 @@ msgstr "观看"
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
 msgid "WEB"
 msgstr "WEB"
+
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:72
+msgid "Web API"
+msgstr "Web API"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:906
 msgid "Web Optimize"

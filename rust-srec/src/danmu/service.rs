@@ -398,6 +398,7 @@ impl DanmuService {
         // - Douyin: uses "id_str" from extras
         // - Douyu: uses "rid" from extras
         // - Bigo: uses studio "room_id" from extras (not siteId from the URL)
+        // - TikTok: uses webcast "room_id" from extras (URL has only the @handle)
         // - Others: fallback to URL-based extraction
         let platform = provider.platform();
         let room_id = match platform {
@@ -435,6 +436,15 @@ impl DanmuService {
             }
             "bigo" => {
                 // Bigo WS enter needs studio roomId (not siteId from the URL)
+                extras
+                    .as_ref()
+                    .and_then(|e| e.get("room_id"))
+                    .cloned()
+                    .or_else(|| provider.extract_room_id(&streamer_url))
+            }
+            "tiktok" => {
+                // TikTok chat joins by numeric webcast room_id; the URL only
+                // carries the @handle, which the provider can resolve itself.
                 extras
                     .as_ref()
                     .and_then(|e| e.get("room_id"))

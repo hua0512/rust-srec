@@ -30,12 +30,6 @@ Use `xhslink.com` share links. Direct profile URLs like `xiaohongshu.com/user/pr
 Note: the `xhslink.com/m/{id}` part changes every stream. Copy a fresh share link when the streamer goes live.
 :::
 
-## TikTok
-
-- **URL**: `https://www.tiktok.com/@{username}/live`
-- **Protocol**: HLS
-- **Danmaku**: ❌ Not supported
-
 ## Twitcasting
 
 - **URL**: `https://twitcasting.tv/{user}`
