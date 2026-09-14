@@ -453,11 +453,12 @@ struct DesktopBackendState {
     log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     _instance_lock: backend::RuntimeLease,
     shutdown_started: AtomicBool,
-    /// Set once the exit owner has drained the backend (`finish_exit`, or
-    /// `restart_desktop` just before its restart). While `shutdown_started`
-    /// is set and this is not, the `ExitRequested` handler holds back every
-    /// request except the owner's own and restarts, which Tauri cannot hold,
-    /// and the final `Exit` event waits for it before the process may end.
+    /// Set once the exit owner has drained the backend (`finish_exit`,
+    /// `restart_desktop` just before its restart, or the `Exit` arm after
+    /// draining an AppKit termination). While `shutdown_started` is set and
+    /// this is not, the `ExitRequested` handler holds back every request
+    /// except the owner's own and restarts, which Tauri cannot hold, and the
+    /// final `Exit` event waits for it before the process may end.
     exit_settled: tokio::sync::watch::Sender<bool>,
 
     main_window_centered: AtomicBool,
@@ -749,6 +750,17 @@ async fn drain_backend_for_exit(app: &tauri::AppHandle) {
     if drain.await.is_err() {
         log::error!("Backend drain task ended abnormally; continuing with the exit");
     }
+}
+
+/// Whether an exit sequence has been claimed.
+///
+/// Window-state getters called from a runtime thread block until the main
+/// thread services them, and during an AppKit termination the main thread is
+/// parked in the drain; callers use this to skip such reads once an exit is
+/// under way.
+fn exit_owned(app: &tauri::AppHandle) -> bool {
+    app.try_state::<DesktopBackendState>()
+        .is_some_and(|state| state.shutdown_started.load(Ordering::SeqCst))
 }
 
 /// Claim the single exit sequence and stop the boot task at its next
@@ -1158,6 +1170,9 @@ async fn run_desktop_backend_init(
         let fallback_handle = app_handle.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_secs(6)).await;
+            if exit_owned(&fallback_handle) {
+                return;
+            }
 
             if let Some(main) = fallback_handle.get_webview_window("main") {
                 let is_visible = main.is_visible().unwrap_or(false);
@@ -1241,6 +1256,9 @@ async fn run_desktop_notification_listener(
 /// Hide the main window once the platform reports it minimized, so it lives in
 /// the tray rather than the taskbar or Dock. Returns whether it was minimized.
 fn hide_main_window_if_minimized(app: &tauri::AppHandle) -> bool {
+    if exit_owned(app) {
+        return false;
+    }
     let Some(window) = app.get_webview_window("main") else {
         return false;
     };
@@ -1338,7 +1356,8 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_opener::init());
 
         // Installed at runtime rather than behind a cfg so every target
-        // compiles the menu code; only macOS has an application menu bar.
+        // compiles the menu code. Only macOS gets it: on Windows and Linux
+        // `Builder::menu` would put a menu bar on every window.
         if cfg!(target_os = "macos") {
             builder = builder.menu(app_menu).on_menu_event(|app, event| {
                 if event.id() == APP_MENU_QUIT_ID {
