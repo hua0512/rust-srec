@@ -403,7 +403,8 @@ impl DanmuProtocolFactory for TikTokDanmuProtocol {
     /// Returns the `@handle`; `websocket_url` resolves it to the numeric room
     /// ID when the caller has not already supplied one via extras.
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        capture_group_1_owned(&URL_REGEX, url)
+        // Preserve the prefix so numeric handles remain distinct from room IDs.
+        capture_group_1_owned(&URL_REGEX, url).map(|handle| format!("@{handle}"))
     }
 
     fn create_protocol(&self) -> Self::Protocol {
@@ -416,6 +417,10 @@ impl DanmuProtocolFactory for TikTokDanmuProtocol {
 }
 
 impl DanmuProtocol for TikTokDanmuProtocol {
+    fn cookies(&self) -> Option<String> {
+        self.cookies.clone()
+    }
+
     fn configure_connection(
         &mut self,
         cookies: Option<&str>,
@@ -618,7 +623,7 @@ mod tests {
         assert!(protocol.supports_url("https://www.tiktok.com/@dj.ibai/live"));
         assert_eq!(
             protocol.extract_room_id("https://www.tiktok.com/@dj.ibai/live"),
-            Some("dj.ibai".to_string())
+            Some("@dj.ibai".to_string())
         );
         assert!(!TikTokDanmuProtocol::numeric_room_id("dj.ibai"));
         assert!(TikTokDanmuProtocol::numeric_room_id("7685002745492884246"));
