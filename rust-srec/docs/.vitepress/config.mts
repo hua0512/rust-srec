@@ -65,6 +65,7 @@ export default defineConfig({
           { text: "Operations", link: "/en/operations/production" },
           { text: "API", link: "/en/api/" },
           { text: "Release Notes", link: "/en/release-notes/" },
+          { text: "Donate", link: "/en/donate" },
           {
             text: "v0.5.1",
             items: [
@@ -157,15 +158,17 @@ export default defineConfig({
                 { text: "Unreleased", link: "/en/release-notes/unreleased" },
                 { text: "v0.5.1", link: "/en/release-notes/v0.5.1" },
                 { text: "v0.5.0", link: "/en/release-notes/v0.5.0" },
-                { text: "v0.4.0", link: "/en/release-notes/v0.4.0" },
-
-                { text: "v0.3.2", link: "/en/release-notes/v0.3.2" },
-
-                { text: "v0.3.1", link: "/en/release-notes/v0.3.1" },
-
-                { text: "v0.3.0", link: "/en/release-notes/v0.3.0" },
-
-                { text: "v0.2.1", link: "/en/release-notes/v0.2.1" },
+                {
+                  text: "Older versions",
+                  collapsed: true,
+                  items: [
+                    { text: "v0.4.0", link: "/en/release-notes/v0.4.0" },
+                    { text: "v0.3.2", link: "/en/release-notes/v0.3.2" },
+                    { text: "v0.3.1", link: "/en/release-notes/v0.3.1" },
+                    { text: "v0.3.0", link: "/en/release-notes/v0.3.0" },
+                    { text: "v0.2.1", link: "/en/release-notes/v0.2.1" },
+                  ],
+                },
               ],
             },
           ],
@@ -208,6 +211,7 @@ export default defineConfig({
           { text: "运维", link: "/zh/operations/production" },
           { text: "API", link: "/zh/api/" },
           { text: "更新日志", link: "/zh/release-notes/" },
+          { text: "捐赠", link: "/zh/donate" },
           {
             text: "v0.5.1",
             items: [
@@ -285,14 +289,17 @@ export default defineConfig({
                 { text: "未发布", link: "/zh/release-notes/unreleased" },
                 { text: "v0.5.1", link: "/zh/release-notes/v0.5.1" },
                 { text: "v0.5.0", link: "/zh/release-notes/v0.5.0" },
-                { text: "v0.4.0", link: "/zh/release-notes/v0.4.0" },
-
-                { text: "v0.3.2", link: "/zh/release-notes/v0.3.2" },
-
-                { text: "v0.3.1", link: "/zh/release-notes/v0.3.1" },
-
-                { text: "v0.3.0", link: "/zh/release-notes/v0.3.0" },
-                { text: "v0.2.1", link: "/zh/release-notes/v0.2.1" },
+                {
+                  text: "历史版本",
+                  collapsed: true,
+                  items: [
+                    { text: "v0.4.0", link: "/zh/release-notes/v0.4.0" },
+                    { text: "v0.3.2", link: "/zh/release-notes/v0.3.2" },
+                    { text: "v0.3.1", link: "/zh/release-notes/v0.3.1" },
+                    { text: "v0.3.0", link: "/zh/release-notes/v0.3.0" },
+                    { text: "v0.2.1", link: "/zh/release-notes/v0.2.1" },
+                  ],
+                },
               ],
             },
           ],
