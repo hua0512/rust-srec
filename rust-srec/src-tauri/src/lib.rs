@@ -362,8 +362,10 @@ struct DesktopBackendState {
     log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     _instance_lock: backend::RuntimeLease,
     shutdown_started: AtomicBool,
-    /// Set by `finish_exit` once the drain is over. Until then the
-    /// `ExitRequested` handler holds every other exit request back.
+    /// Set once the exit owner has drained the backend (`finish_exit`, or
+    /// `restart_desktop` just before its restart). While `shutdown_started`
+    /// is set and this is not, the `ExitRequested` handler holds back every
+    /// request except the owner's own and restarts, which Tauri cannot hold.
     exit_settled: AtomicBool,
 
     main_window_centered: AtomicBool,
@@ -614,7 +616,7 @@ fn restart_desktop(app: tauri::AppHandle) {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        contain_backend_for_exit(&app).await;
+        drain_backend_for_exit(&app).await;
         mark_exit_settled(&app);
         app.request_restart();
     });
@@ -626,11 +628,24 @@ fn mark_exit_settled(app: &tauri::AppHandle) {
     }
 }
 
-/// Exit now that the backend is drained. This is the one exit request the
-/// `ExitRequested` handler lets through while an exit is owned.
+/// Exit now that the backend is drained; the `ExitRequested` handler lets the
+/// owner's own request through while an exit is owned.
 fn finish_exit(app: &tauri::AppHandle, code: i32) {
     mark_exit_settled(app);
     app.exit(code);
+}
+
+/// Drain the backend on a task of its own, so that a panic inside the drain
+/// still lets the owner finish the exit: while an exit is owned every other
+/// request is held back, so the owner must always reach `finish_exit`.
+async fn drain_backend_for_exit(app: &tauri::AppHandle) {
+    let drain = tauri::async_runtime::spawn({
+        let app = app.clone();
+        async move { contain_backend_for_exit(&app).await }
+    });
+    if drain.await.is_err() {
+        log::error!("Backend drain task ended abnormally; continuing with the exit");
+    }
 }
 
 /// Claim the single exit sequence and stop the boot task at its next
@@ -661,7 +676,7 @@ async fn contain_backend_for_exit(app: &tauri::AppHandle) {
         == BootSettle::TimedOut
     {
         log::warn!(
-            "Desktop boot did not settle within {:?}; exiting without waiting further (the backend is drained only if it was stored)",
+            "Desktop boot did not settle within {:?}; continuing without waiting further (the backend is drained only if it was stored)",
             BOOT_SETTLE_CAP
         );
     }
@@ -962,20 +977,10 @@ async fn run_desktop_backend_init(
             };
             log::error!("Critical backend failure: {}", failure);
 
-            let should_shutdown = {
-                let state = app_handle.state::<DesktopBackendState>();
-                !state.shutdown_started.swap(true, Ordering::SeqCst)
-            };
-            if !should_shutdown {
+            if !begin_exit(&app_handle) {
                 return;
             }
-
-            if let Err(error) = container
-                .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
-                .await
-            {
-                log::error!("Error during backend failure shutdown: {}", error);
-            }
+            drain_backend_for_exit(&app_handle).await;
             finish_exit(&app_handle, 1);
         });
     }
@@ -1157,11 +1162,11 @@ fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) 
     }
 }
 
-/// Delays after the window resigns key status before its minimized state is
-/// re-read. AppKit resigns key while the miniaturize animation is still
-/// running, so the read that follows the event can precede the state change;
-/// the default animation finishes well inside the second delay and the
-/// Shift-slowed one inside the third.
+/// Successive delays between re-reads of the minimized state after the window
+/// resigns key status. AppKit resigns key while the miniaturize animation is
+/// still running, so the read that follows the event can precede the state
+/// change; the default animation finishes well inside the first two re-reads
+/// and the last one is a margin for a slowed animation.
 #[cfg(all(desktop, target_os = "macos"))]
 const MINIMIZE_RECHECK_DELAYS: [Duration; 3] = [
     Duration::from_millis(250),
@@ -1489,8 +1494,9 @@ pub fn run() {
         if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
             if !begin_exit(app_handle) {
                 // Another path owns the exit. Its `finish_exit` passes; any
-                // other request (a second Quit, Cmd-Q) would abandon the drain
-                // in progress, so hold it back. Restarts cannot be held.
+                // other request (a second tray Quit, the recovery screen's
+                // Quit) would abandon the drain in progress, so hold it back.
+                // Restarts cannot be held.
                 let draining = app_handle
                     .try_state::<DesktopBackendState>()
                     .is_some_and(|state| !state.exit_settled.load(Ordering::SeqCst));
@@ -1511,7 +1517,7 @@ pub fn run() {
             let exit_code = code.unwrap_or(0);
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                contain_backend_for_exit(&app_handle).await;
+                drain_backend_for_exit(&app_handle).await;
                 finish_exit(&app_handle, exit_code);
             });
         }
