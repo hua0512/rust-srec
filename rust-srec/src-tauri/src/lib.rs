@@ -290,6 +290,97 @@ fn show_main_window(app: &tauri::AppHandle) {
     let _ = window.set_focus();
 }
 
+/// Identifier of the application menu's Quit item.
+const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+
+/// Tauri's default macOS menu with Quit routed through this app.
+///
+/// The predefined Quit item sends AppKit `terminate:`, which never raises
+/// `ExitRequested`, so Cmd-Q and the application menu would skip the backend
+/// drain that the tray's Quit performs. A regular item with the same key
+/// equivalent goes through `AppHandle::exit` instead. Everything else mirrors
+/// `Menu::default` so the Edit key equivalents keep reaching the webview and
+/// the Window and Help submenus keep their AppKit roles.
+fn app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    use tauri::menu::{
+        AboutMetadata, HELP_SUBMENU_ID, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID,
+    };
+
+    let package = app.package_info();
+    let bundle = &app.config().bundle;
+    let about = AboutMetadata {
+        name: Some(package.name.clone()),
+        version: Some(package.version.to_string()),
+        copyright: bundle.copyright.clone(),
+        authors: bundle.publisher.clone().map(|publisher| vec![publisher]),
+        ..Default::default()
+    };
+    let quit = MenuItem::with_id(
+        app,
+        APP_MENU_QUIT_ID,
+        format!("Quit {}", package.name),
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+
+    let application = Submenu::with_items(
+        app,
+        package.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, Some(about))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    let file = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&PredefinedMenuItem::close_window(app, None)?],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let view = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?;
+    let window = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    let help = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
+
+    Menu::with_items(app, &[&application, &file, &edit, &view, &window, &help])
+}
+
 fn hide_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
@@ -365,8 +456,9 @@ struct DesktopBackendState {
     /// Set once the exit owner has drained the backend (`finish_exit`, or
     /// `restart_desktop` just before its restart). While `shutdown_started`
     /// is set and this is not, the `ExitRequested` handler holds back every
-    /// request except the owner's own and restarts, which Tauri cannot hold.
-    exit_settled: AtomicBool,
+    /// request except the owner's own and restarts, which Tauri cannot hold,
+    /// and the final `Exit` event waits for it before the process may end.
+    exit_settled: tokio::sync::watch::Sender<bool>,
 
     main_window_centered: AtomicBool,
 
@@ -403,7 +495,7 @@ impl DesktopBackendState {
             log_guard: std::sync::Mutex::new(None),
             _instance_lock: instance_lock,
             shutdown_started: AtomicBool::new(false),
-            exit_settled: AtomicBool::new(false),
+            exit_settled: tokio::sync::watch::Sender::new(false),
             main_window_centered: AtomicBool::new(false),
             boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
             init_cancel: tokio_util::sync::CancellationToken::new(),
@@ -624,8 +716,19 @@ fn restart_desktop(app: tauri::AppHandle) {
 
 fn mark_exit_settled(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<DesktopBackendState>() {
-        state.exit_settled.store(true, Ordering::SeqCst);
+        state.exit_settled.send_replace(true);
     }
+}
+
+/// Wait until the exit owner has drained the backend. Returns `false` when
+/// `cap` elapses first.
+async fn wait_for_exit_settled(
+    mut exit_settled: tokio::sync::watch::Receiver<bool>,
+    cap: Duration,
+) -> bool {
+    tokio::time::timeout(cap, exit_settled.wait_for(|settled| *settled))
+        .await
+        .is_ok()
 }
 
 /// Exit now that the backend is drained; the `ExitRequested` handler lets the
@@ -1233,6 +1336,16 @@ pub fn run() {
         }));
         builder = builder.plugin(tauri_plugin_notification::init());
         builder = builder.plugin(tauri_plugin_opener::init());
+
+        // Installed at runtime rather than behind a cfg so every target
+        // compiles the menu code; only macOS has an application menu bar.
+        if cfg!(target_os = "macos") {
+            builder = builder.menu(app_menu).on_menu_event(|app, event| {
+                if event.id() == APP_MENU_QUIT_ID {
+                    app.exit(0);
+                }
+            });
+        }
     }
 
     let app = builder
@@ -1492,24 +1605,22 @@ pub fn run() {
         }
 
         if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+            if *code == Some(tauri::RESTART_EXIT_CODE) {
+                // Tauri ignores `prevent_exit` for restarts. `restart_desktop`
+                // drains before requesting one; a restart requested by anything
+                // else is drained by the `Exit` arm below.
+                return;
+            }
             if !begin_exit(app_handle) {
                 // Another path owns the exit. Its `finish_exit` passes; any
                 // other request (a second tray Quit, the recovery screen's
                 // Quit) would abandon the drain in progress, so hold it back.
-                // Restarts cannot be held.
                 let draining = app_handle
                     .try_state::<DesktopBackendState>()
-                    .is_some_and(|state| !state.exit_settled.load(Ordering::SeqCst));
-                if draining && *code != Some(tauri::RESTART_EXIT_CODE) {
+                    .is_some_and(|state| !*state.exit_settled.borrow());
+                if draining {
                     api.prevent_exit();
                 }
-                return;
-            }
-
-            if *code == Some(tauri::RESTART_EXIT_CODE) {
-                // Tauri ignores `prevent_exit` for restarts, so only
-                // `restart_desktop` can contain the backend before one.
-                log::warn!("Restart requested outside restart_desktop; the backend is not drained");
                 return;
             }
             api.prevent_exit();
@@ -1520,6 +1631,26 @@ pub fn run() {
                 drain_backend_for_exit(&app_handle).await;
                 finish_exit(&app_handle, exit_code);
             });
+        }
+
+        if matches!(event, tauri::RunEvent::Exit) {
+            // AppKit's `terminate:` (Dock → Quit, logout, a Quit sent by
+            // another process) never raises `ExitRequested`: Tao forwards
+            // `applicationWillTerminate:` as this final event and the process
+            // ends once this callback returns. The drain therefore has to run
+            // to completion here, on the main thread; when another path owns
+            // the exit, this waits for its drain instead of ending under it.
+            if begin_exit(app_handle) {
+                tauri::async_runtime::block_on(drain_backend_for_exit(app_handle));
+                mark_exit_settled(app_handle);
+            } else if let Some(state) = app_handle.try_state::<DesktopBackendState>()
+                && !tauri::async_runtime::block_on(wait_for_exit_settled(
+                    state.exit_settled.subscribe(),
+                    BOOT_SETTLE_CAP + SHUTDOWN_HARD_CAP,
+                ))
+            {
+                log::warn!("Exit owner did not finish draining in time; letting the process end");
+            }
         }
     });
 }
@@ -1602,6 +1733,29 @@ mod tests {
             wait_for_boot_settled(rx, Duration::from_secs(5)).await,
             BootSettle::Abandoned
         );
+    }
+
+    #[tokio::test]
+    async fn exit_settle_returns_once_the_owner_has_drained() {
+        let sender = tokio::sync::watch::Sender::new(false);
+        let waiter = tokio::spawn(wait_for_exit_settled(
+            sender.subscribe(),
+            Duration::from_secs(5),
+        ));
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+
+        sender.send_replace(true);
+
+        assert!(waiter.await.expect("waiter task"));
+        assert!(wait_for_exit_settled(sender.subscribe(), Duration::from_secs(5)).await);
+    }
+
+    #[tokio::test]
+    async fn exit_settle_gives_up_after_the_cap() {
+        let sender = tokio::sync::watch::Sender::new(false);
+
+        assert!(!wait_for_exit_settled(sender.subscribe(), Duration::from_millis(20)).await);
     }
 
     #[tokio::test]

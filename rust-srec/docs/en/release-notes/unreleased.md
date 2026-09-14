@@ -769,6 +769,10 @@
 
   Quitting the desktop app while it was still starting up could leave a recording tool running in the background if a stream had already begun recording. If the recording services had already begun starting, the app now finishes starting them, stops any recordings cleanly, and only then exits. A second quit request while that is happening no longer cuts it short.
 
+- **Quitting from the macOS menu bar or Dock finishes recordings first**
+
+  On a Mac, Cmd-Q, Quit in the application menu and Quit from the Dock ended the app at once, skipping the clean stop that the tray's Quit performs, so a recording in progress could be cut short or its recording tool left running. All of them now stop recordings first, up to the usual one-minute limit. Quitting from the Dock or at logout keeps the window unresponsive while that happens.
+
 - **Less background work on Linux and macOS**
 
   The desktop app used to check the window state many times a second to move a minimized window to the tray. It now reacts to the window being minimized instead, so it does nothing while you are not touching the window. Minimizing still sends the window to the tray.
