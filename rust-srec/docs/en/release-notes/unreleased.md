@@ -765,6 +765,14 @@
 
 ## Desktop
 
+- **Quitting during startup no longer leaves recording tools behind**
+
+  Quitting the desktop app while it was still starting up could leave a recording tool running in the background if a stream had already begun recording. If the recording services had already begun starting, the app now finishes starting them, stops any recordings cleanly, and only then exits. A second quit request while that is happening no longer cuts it short.
+
+- **Less background work on Linux and macOS**
+
+  The desktop app used to check the window state many times a second to move a minimized window to the tray. It now reacts to the window being minimized instead, so it does nothing while you are not touching the window. Minimizing still sends the window to the tray.
+
 - **Closing the app finishes the recording first**
 
   Quitting the desktop app while a stream was recording could leave the recording tool running in the background or cut the file short. The app now waits for the recording to be saved before it exits, up to a one-minute limit.
