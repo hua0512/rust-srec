@@ -35,6 +35,66 @@ const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
 /// their ffmpeg/streamlink children — so `app_handle.exit` cannot orphan them.
 const SHUTDOWN_HARD_CAP: Duration = Duration::from_secs(60);
 
+/// Wall-clock cap on waiting for the boot task before the exit path contains
+/// the backend.
+///
+/// `ServiceContainer::initialize` is not cancellable and must not overlap
+/// `shutdown_with_hard_cap`, or work spawned after the drain would outlive it.
+/// An exit requested while services are starting therefore waits for the boot
+/// task to return. Past this cap the exit path proceeds anyway: a boot wedged
+/// that long is already beyond cooperative cleanup.
+const BOOT_SETTLE_CAP: Duration = Duration::from_secs(60);
+
+/// Boot progress as seen by the exit path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BootPhase {
+    /// Nothing that can own a recording process has been started.
+    Preparing,
+    /// `ServiceContainer::initialize` has been entered: actors, downloads and
+    /// pipeline workers may exist from here on.
+    Services,
+    /// The boot task returned; the exit path owns the container from here on.
+    Settled,
+}
+
+/// Outcome of waiting for the boot task before containing the backend.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BootSettle {
+    /// The boot task never entered `BootPhase::Services`, and once cancelled it
+    /// cannot enter it any more.
+    NotStarted,
+    Settled,
+    /// The boot task ended without settling (a panic dropped its sender).
+    Abandoned,
+    TimedOut,
+}
+
+/// Wait until the boot task can no longer be inside
+/// `ServiceContainer::initialize`.
+///
+/// Caller contract: cancel the boot task (`DesktopBackendState::init_cancel`)
+/// before calling this. The boot task publishes `BootPhase::Services` before it
+/// checks that token, so a `Preparing` reading here proves the boot task will
+/// observe the cancellation and return before starting services.
+async fn wait_for_boot_settled(
+    mut boot_phase: tokio::sync::watch::Receiver<BootPhase>,
+    cap: Duration,
+) -> BootSettle {
+    if *boot_phase.borrow() == BootPhase::Preparing {
+        return BootSettle::NotStarted;
+    }
+    match tokio::time::timeout(
+        cap,
+        boot_phase.wait_for(|phase| *phase == BootPhase::Settled),
+    )
+    .await
+    {
+        Ok(Ok(_)) => BootSettle::Settled,
+        Ok(Err(_)) => BootSettle::Abandoned,
+        Err(_) => BootSettle::TimedOut,
+    }
+}
+
 #[derive(Clone, Serialize)]
 struct BootProgressPayload {
     status: String,
@@ -308,6 +368,9 @@ struct DesktopBackendState {
     boot_progress: std::sync::Mutex<BootProgressPayload>,
 
     init_cancel: tokio_util::sync::CancellationToken,
+    /// Published by the boot task; read by the exit path through
+    /// `wait_for_boot_settled`.
+    boot_phase: tokio::sync::watch::Receiver<BootPhase>,
     latest_launch: std::sync::Mutex<LaunchArgsPayload>,
 
     data_dir: PathBuf,
@@ -328,6 +391,7 @@ impl DesktopBackendState {
         data_dir: PathBuf,
         log_dir: PathBuf,
         desktop_notifications: DesktopNotificationConfig,
+        boot_phase: tokio::sync::watch::Receiver<BootPhase>,
     ) -> Self {
         Self {
             container: std::sync::Mutex::new(None),
@@ -337,6 +401,7 @@ impl DesktopBackendState {
             main_window_centered: AtomicBool::new(false),
             boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
             init_cancel: tokio_util::sync::CancellationToken::new(),
+            boot_phase,
             latest_launch: std::sync::Mutex::new(initial_launch),
 
             data_dir,
@@ -469,6 +534,11 @@ async fn show_boot_error_window(app_handle: &tauri::AppHandle, failure: BootFail
     );
 
     let state = app_handle.state::<DesktopBackendState>();
+    if state.init_cancel.is_cancelled() {
+        // The exit path already owns the process; a recovery window would only
+        // flash before it closes.
+        return;
+    }
     let launch = state.current_launch();
     let desktop_notifications = state.desktop_notifications();
 
@@ -534,7 +604,58 @@ fn open_desktop_recovery_location(
 
 #[tauri::command]
 fn restart_desktop(app: tauri::AppHandle) {
-    app.request_restart();
+    // `ExitRequestApi::prevent_exit` is ignored for restart requests, so the
+    // `ExitRequested` handler cannot hold a restart back: contain first.
+    if !begin_exit(&app) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        contain_backend_for_exit(&app).await;
+        app.request_restart();
+    });
+}
+
+/// Claim the single exit sequence and stop the boot task at its next
+/// checkpoint.
+///
+/// Returns `false` when another path already owns the exit, or when the app
+/// is exiting before its state was registered; that path finishes on its own.
+fn begin_exit(app: &tauri::AppHandle) -> bool {
+    let Some(state) = app.try_state::<DesktopBackendState>() else {
+        return false;
+    };
+    if state.shutdown_started.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    // Cancel before `contain_backend_for_exit` reads the boot phase; see
+    // `wait_for_boot_settled` for the ordering this relies on.
+    state.init_cancel.cancel();
+    true
+}
+
+/// Drain the backend so no recording child outlives the process.
+///
+/// Waits for the boot task first: `ServiceContainer::initialize` may still be
+/// spawning the very work a concurrent drain would miss.
+async fn contain_backend_for_exit(app: &tauri::AppHandle) {
+    let state = app.state::<DesktopBackendState>();
+    if wait_for_boot_settled(state.boot_phase.clone(), BOOT_SETTLE_CAP).await
+        == BootSettle::TimedOut
+    {
+        log::warn!(
+            "Desktop boot did not settle within {:?}; containing the backend anyway",
+            BOOT_SETTLE_CAP
+        );
+    }
+    let Some(container) = state.backend() else {
+        return;
+    };
+    if let Err(e) = container
+        .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
+        .await
+    {
+        log::error!("Error during shutdown: {}", e);
+    }
 }
 
 #[tauri::command]
@@ -547,6 +668,7 @@ async fn run_desktop_backend_init(
     data_dir: PathBuf,
     log_dir_str: String,
     desktop_jwt_secret: Option<String>,
+    boot_phase: &tokio::sync::watch::Sender<BootPhase>,
 ) {
     let overall = Instant::now();
     let state = app_handle.state::<DesktopBackendState>();
@@ -737,6 +859,11 @@ async fn run_desktop_backend_init(
     logging_config.start_retention_cleanup(container.cancellation_token());
     container.set_logging_config(logging_config);
 
+    // Publish the phase before the cancellation check. The exit path cancels
+    // first and reads the phase second, so it either sees `Services` and waits
+    // for this task to return, or this check returns before services start.
+    boot_phase.send_replace(BootPhase::Services);
+
     if init_cancel.is_cancelled() {
         return;
     }
@@ -745,7 +872,12 @@ async fn run_desktop_backend_init(
 
     let services_start = Instant::now();
 
-    if let Err(e) = container.initialize().await {
+    let initialized = container.initialize().await;
+    // Hand the container to the exit path before inspecting the result: a
+    // failed initialize may already have started actors and downloads.
+    state.set_container(container.clone());
+
+    if let Err(e) = initialized {
         show_boot_error_window(
             &app_handle,
             BootFailurePayload::new(
@@ -754,6 +886,10 @@ async fn run_desktop_backend_init(
             ),
         )
         .await;
+        return;
+    }
+
+    if init_cancel.is_cancelled() {
         return;
     }
 
@@ -795,8 +931,6 @@ async fn run_desktop_backend_init(
         "Desktop init: api server bind/start took {}ms",
         api_server_ms
     );
-
-    state.set_container(container.clone());
 
     {
         let app_handle = app_handle.clone();
@@ -927,17 +1061,6 @@ async fn run_desktop_backend_init(
                 .await;
         });
     }
-
-    // Tao exposes a reliable resize event for minimization on Windows. Other
-    // desktop targets retain the watcher until Tao exposes a minimize event.
-    #[cfg(all(desktop, not(target_os = "windows")))]
-    {
-        let app_handle = app_handle.clone();
-        let cancellation = container.cancellation_token();
-        tauri::async_runtime::spawn(async move {
-            run_minimize_to_tray_watcher(app_handle, cancellation).await;
-        });
-    }
 }
 
 /// Run the desktop notification listener loop.
@@ -989,52 +1112,60 @@ async fn run_desktop_notification_listener(
     }
 }
 
-/// Watch for minimize events on desktop targets where Tao does not expose one.
-#[cfg(all(desktop, not(target_os = "windows")))]
-async fn run_minimize_to_tray_watcher(
-    app_handle: tauri::AppHandle,
-    cancellation: tokio_util::sync::CancellationToken,
-) {
-    let visible_poll = Duration::from_millis(80);
-    let hidden_poll = Duration::from_millis(5000);
-    let mut last_seen_minimized = false;
+/// Hide the main window once the platform reports it minimized, so it lives in
+/// the tray rather than the taskbar or Dock. Returns whether it was hidden.
+fn hide_main_window_if_minimized(app: &tauri::AppHandle) -> bool {
+    let Some(window) = app.get_webview_window("main") else {
+        return false;
+    };
+    if !window.is_minimized().unwrap_or(false) {
+        return false;
+    }
+    if let Err(error) = window.hide() {
+        log::warn!("Failed to hide minimized window: {}", error);
+    }
+    true
+}
 
-    loop {
-        let sleep_for = match app_handle.get_webview_window("main") {
-            Some(window) => match window.is_visible() {
-                Ok(true) => visible_poll,
-                _ => hidden_poll,
-            },
-            None => hidden_poll,
-        };
+/// Move a minimized main window to the tray.
+///
+/// Tao reports minimization through `Resized`: WM_SIZE on Windows and the GTK
+/// window-state change on Linux, both delivered after the minimized state is
+/// updated, so one read suffices.
+#[cfg(all(desktop, not(target_os = "macos")))]
+fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) {
+    if matches!(event, tauri::WindowEvent::Resized(_)) {
+        hide_main_window_if_minimized(app);
+    }
+}
 
-        tokio::select! {
-            _ = cancellation.cancelled() => {
-                log::debug!("Minimize-to-tray watcher shutting down");
+/// Delays after the window resigns key status before its minimized state is
+/// re-read. AppKit resigns key while the miniaturize animation is still
+/// running, so the read that follows the event can precede the state change;
+/// the default animation finishes well inside the second delay.
+#[cfg(all(desktop, target_os = "macos"))]
+const MINIMIZE_RECHECK_DELAYS: [Duration; 2] =
+    [Duration::from_millis(250), Duration::from_millis(1000)];
+
+/// Move a minimized main window to the tray.
+///
+/// macOS has no minimize event; the window only resigns key status, which
+/// also happens on every app switch. A miss is re-read a little later rather
+/// than polled for.
+#[cfg(all(desktop, target_os = "macos"))]
+fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) {
+    if !matches!(event, tauri::WindowEvent::Focused(false)) || hide_main_window_if_minimized(app) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for delay in MINIMIZE_RECHECK_DELAYS {
+            tokio::time::sleep(delay).await;
+            if hide_main_window_if_minimized(&app) {
                 break;
             }
-            _ = tokio::time::sleep(sleep_for) => {}
         }
-
-        let Some(window) = app_handle.get_webview_window("main") else {
-            continue;
-        };
-
-        if !window.is_visible().unwrap_or(false) {
-            last_seen_minimized = false;
-            continue;
-        }
-
-        let minimized = window.is_minimized().unwrap_or(false);
-        if minimized && !last_seen_minimized {
-            if let Err(error) = window.hide() {
-                log::warn!("Failed to hide minimized window: {}", error);
-            }
-            last_seen_minimized = true;
-        } else if !minimized {
-            last_seen_minimized = false;
-        }
-    }
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1119,6 +1250,8 @@ pub fn run() {
                     }
                 };
 
+            let (boot_phase_tx, boot_phase_rx) = tokio::sync::watch::channel(BootPhase::Preparing);
+
             app.manage(DesktopBackendState::new(
                 instance_lock,
                 LaunchArgsPayload {
@@ -1128,6 +1261,7 @@ pub fn run() {
                 data_dir.clone(),
                 log_dir.clone(),
                 desktop_notifications,
+                boot_phase_rx,
             ));
 
             register_desktop_notifications_ipc(app.handle());
@@ -1287,8 +1421,17 @@ pub fn run() {
             let data_dir = data_dir.clone();
             let log_dir_str = log_dir_str.clone();
             tauri::async_runtime::spawn(async move {
-                run_desktop_backend_init(app_handle, data_dir, log_dir_str, desktop_jwt_secret)
-                    .await;
+                run_desktop_backend_init(
+                    app_handle,
+                    data_dir,
+                    log_dir_str,
+                    desktop_jwt_secret,
+                    &boot_phase_tx,
+                )
+                .await;
+                // A panic above drops the sender instead, which the exit path
+                // also treats as settled.
+                boot_phase_tx.send_replace(BootPhase::Settled);
             });
 
             Ok(())
@@ -1310,52 +1453,36 @@ pub fn run() {
             return;
         }
 
-        #[cfg(target_os = "windows")]
+        #[cfg(desktop)]
         {
-            // On Windows, WM_SIZE follows the minimize command after Tao has
-            // updated its minimized state, so this path can remain event-driven.
-            if let tauri::RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::Resized(_),
-                ..
-            } = &event
+            if let tauri::RunEvent::WindowEvent { label, event, .. } = &event
                 && label == "main"
-                && let Some(window) = app_handle.get_webview_window("main")
-                && window.is_minimized().unwrap_or(false)
             {
-                if let Err(error) = window.hide() {
-                    log::warn!("Failed to hide minimized window: {}", error);
-                }
-                return;
+                handle_main_window_event(app_handle, event);
             }
         }
 
-        if let tauri::RunEvent::ExitRequested { api, .. } = event {
-            let state = app_handle.state::<DesktopBackendState>();
-
-            // Avoid infinite recursion when we call `app_handle.exit(...)` after shutdown.
-            if state.shutdown_started.swap(true, Ordering::SeqCst) {
+        if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+            // `app_handle.exit(...)` below raises this event again; the exit
+            // owner lets that one through.
+            if !begin_exit(app_handle) {
                 return;
             }
 
+            if *code == Some(tauri::RESTART_EXIT_CODE) {
+                // Tauri ignores `prevent_exit` for restarts, so only
+                // `restart_desktop` can contain the backend before one.
+                log::warn!("Restart requested outside restart_desktop; the backend is not drained");
+                return;
+            }
             api.prevent_exit();
 
-            if let Some(container) = state.backend() {
-                let app_handle = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = container
-                        .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
-                        .await
-                    {
-                        log::error!("Error during shutdown: {}", e);
-                    }
-                    app_handle.exit(0);
-                });
-            } else {
-                // Backend isn't ready yet; cancel initialization and exit immediately.
-                state.init_cancel.cancel();
-                app_handle.exit(0);
-            }
+            let exit_code = code.unwrap_or(0);
+            let app_handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                contain_backend_for_exit(&app_handle).await;
+                app_handle.exit(exit_code);
+            });
         }
     });
 }
@@ -1404,6 +1531,49 @@ mod tests {
         assert_eq!(
             classify_boot_failure(BootFailureStage::Migrations, "unexpected schema version"),
             BootFailureKind::MigrationFailed
+        );
+    }
+
+    #[tokio::test]
+    async fn boot_settle_does_not_wait_before_services_start() {
+        let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Preparing);
+
+        assert_eq!(
+            wait_for_boot_settled(rx, Duration::from_secs(5)).await,
+            BootSettle::NotStarted
+        );
+    }
+
+    #[tokio::test]
+    async fn boot_settle_waits_for_the_boot_task_to_return() {
+        let (tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
+        let waiter = tokio::spawn(wait_for_boot_settled(rx, Duration::from_secs(5)));
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+
+        tx.send_replace(BootPhase::Settled);
+
+        assert_eq!(waiter.await.expect("waiter task"), BootSettle::Settled);
+    }
+
+    #[tokio::test]
+    async fn boot_settle_treats_a_dropped_boot_task_as_settled() {
+        let (tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
+        drop(tx);
+
+        assert_eq!(
+            wait_for_boot_settled(rx, Duration::from_secs(5)).await,
+            BootSettle::Abandoned
+        );
+    }
+
+    #[tokio::test]
+    async fn boot_settle_gives_up_after_the_cap() {
+        let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
+
+        assert_eq!(
+            wait_for_boot_settled(rx, Duration::from_millis(20)).await,
+            BootSettle::TimedOut
         );
     }
 }
