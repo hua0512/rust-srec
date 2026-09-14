@@ -7,6 +7,7 @@ use crate::extractor::platforms::douyin::create_douyin_danmu_provider;
 use crate::extractor::platforms::douyu::create_douyu_danmu_provider;
 use crate::extractor::platforms::huya::create_huya_danmu_provider;
 use crate::extractor::platforms::soop::create_soop_danmu_provider;
+use crate::extractor::platforms::tiktok::create_tiktok_danmu_provider;
 use crate::extractor::platforms::twitcasting::create_twitcasting_danmu_provider;
 use crate::extractor::platforms::twitch::create_twitch_danmu_provider;
 use std::sync::Arc;
@@ -36,6 +37,7 @@ impl ProviderRegistry {
         registry.register(Arc::new(create_twitcasting_danmu_provider()));
         registry.register(Arc::new(create_soop_danmu_provider()));
         registry.register(Arc::new(create_bigo_danmu_provider()));
+        registry.register(Arc::new(create_tiktok_danmu_provider()));
         registry
     }
 
@@ -80,6 +82,7 @@ mod tests {
         assert!(platforms.contains(&"twitcasting"));
         assert!(platforms.contains(&"soop"));
         assert!(platforms.contains(&"bigo"));
+        assert!(platforms.contains(&"tiktok"));
     }
 
     #[test]

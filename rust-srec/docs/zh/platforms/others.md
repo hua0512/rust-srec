@@ -30,12 +30,6 @@
 注意：`xhslink.com/m/{id}` 的 `{id}` 每次开播都会变化，请在每次开播时重新复制分享链接。
 :::
 
-## TikTok
-
-- **URL**: `https://www.tiktok.com/@{用户名}/live`
-- **协议**: HLS
-- **弹幕**: ❌ 不支持
-
 ## Twitcasting
 
 - **URL**: `https://twitcasting.tv/{用户}`

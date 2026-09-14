@@ -87,6 +87,9 @@ pub struct TwitchConfig {
 /// TikTok platform-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TikTokConfig {
+    /// Room lookup mode: "auto", "web" (api-live JSON), or "html" (page scrape) (default: "auto")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_mode: Option<String>,
     /// Force origin quality stream
     #[serde(skip_serializing_if = "Option::is_none")]
     pub force_origin_quality: Option<bool>,

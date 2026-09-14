@@ -82,8 +82,11 @@ export const TwitchConfigSchema = z
   .strict();
 
 // TikTok platform-specific configuration
+export const TikTokApiModeValues = ['auto', 'web', 'html'] as const;
+
 export const TikTokConfigSchema = z
   .object({
+    api_mode: z.enum(TikTokApiModeValues).nullable().optional(),
     force_origin_quality: z.boolean().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
