@@ -362,6 +362,9 @@ struct DesktopBackendState {
     log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     _instance_lock: backend::RuntimeLease,
     shutdown_started: AtomicBool,
+    /// Set by `finish_exit` once the drain is over. Until then the
+    /// `ExitRequested` handler holds every other exit request back.
+    exit_settled: AtomicBool,
 
     main_window_centered: AtomicBool,
 
@@ -398,6 +401,7 @@ impl DesktopBackendState {
             log_guard: std::sync::Mutex::new(None),
             _instance_lock: instance_lock,
             shutdown_started: AtomicBool::new(false),
+            exit_settled: AtomicBool::new(false),
             main_window_centered: AtomicBool::new(false),
             boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
             init_cancel: tokio_util::sync::CancellationToken::new(),
@@ -611,8 +615,22 @@ fn restart_desktop(app: tauri::AppHandle) {
     }
     tauri::async_runtime::spawn(async move {
         contain_backend_for_exit(&app).await;
+        mark_exit_settled(&app);
         app.request_restart();
     });
+}
+
+fn mark_exit_settled(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<DesktopBackendState>() {
+        state.exit_settled.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Exit now that the backend is drained. This is the one exit request the
+/// `ExitRequested` handler lets through while an exit is owned.
+fn finish_exit(app: &tauri::AppHandle, code: i32) {
+    mark_exit_settled(app);
+    app.exit(code);
 }
 
 /// Claim the single exit sequence and stop the boot task at its next
@@ -643,7 +661,7 @@ async fn contain_backend_for_exit(app: &tauri::AppHandle) {
         == BootSettle::TimedOut
     {
         log::warn!(
-            "Desktop boot did not settle within {:?}; containing the backend anyway",
+            "Desktop boot did not settle within {:?}; exiting without waiting further (the backend is drained only if it was stored)",
             BOOT_SETTLE_CAP
         );
     }
@@ -958,7 +976,7 @@ async fn run_desktop_backend_init(
             {
                 log::error!("Error during backend failure shutdown: {}", error);
             }
-            app_handle.exit(1);
+            finish_exit(&app_handle, 1);
         });
     }
 
@@ -1113,7 +1131,7 @@ async fn run_desktop_notification_listener(
 }
 
 /// Hide the main window once the platform reports it minimized, so it lives in
-/// the tray rather than the taskbar or Dock. Returns whether it was hidden.
+/// the tray rather than the taskbar or Dock. Returns whether it was minimized.
 fn hide_main_window_if_minimized(app: &tauri::AppHandle) -> bool {
     let Some(window) = app.get_webview_window("main") else {
         return false;
@@ -1142,16 +1160,22 @@ fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) 
 /// Delays after the window resigns key status before its minimized state is
 /// re-read. AppKit resigns key while the miniaturize animation is still
 /// running, so the read that follows the event can precede the state change;
-/// the default animation finishes well inside the second delay.
+/// the default animation finishes well inside the second delay and the
+/// Shift-slowed one inside the third.
 #[cfg(all(desktop, target_os = "macos"))]
-const MINIMIZE_RECHECK_DELAYS: [Duration; 2] =
-    [Duration::from_millis(250), Duration::from_millis(1000)];
+const MINIMIZE_RECHECK_DELAYS: [Duration; 3] = [
+    Duration::from_millis(250),
+    Duration::from_millis(1000),
+    Duration::from_millis(3000),
+];
 
 /// Move a minimized main window to the tray.
 ///
 /// macOS has no minimize event; the window only resigns key status, which
 /// also happens on every app switch. A miss is re-read a little later rather
-/// than polled for.
+/// than polled for. Minimizing a window that is not key (from the Dock, or the
+/// yellow button of a background window) resigns nothing, so that window stays
+/// in the Dock until it is restored from the tray.
 #[cfg(all(desktop, target_os = "macos"))]
 fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) {
     if !matches!(event, tauri::WindowEvent::Focused(false)) || hide_main_window_if_minimized(app) {
@@ -1463,9 +1487,16 @@ pub fn run() {
         }
 
         if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
-            // `app_handle.exit(...)` below raises this event again; the exit
-            // owner lets that one through.
             if !begin_exit(app_handle) {
+                // Another path owns the exit. Its `finish_exit` passes; any
+                // other request (a second Quit, Cmd-Q) would abandon the drain
+                // in progress, so hold it back. Restarts cannot be held.
+                let draining = app_handle
+                    .try_state::<DesktopBackendState>()
+                    .is_some_and(|state| !state.exit_settled.load(Ordering::SeqCst));
+                if draining && *code != Some(tauri::RESTART_EXIT_CODE) {
+                    api.prevent_exit();
+                }
                 return;
             }
 
@@ -1481,7 +1512,7 @@ pub fn run() {
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 contain_backend_for_exit(&app_handle).await;
-                app_handle.exit(exit_code);
+                finish_exit(&app_handle, exit_code);
             });
         }
     });

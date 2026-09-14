@@ -767,7 +767,7 @@
 
 - **Quitting during startup no longer leaves recording tools behind**
 
-  Quitting or restarting the desktop app while it was still starting up could leave a recording tool running in the background if a stream had already begun recording. The app now lets startup finish, stops any recordings cleanly, and only then exits or restarts. The same applies to the Restart button on the startup recovery screen.
+  Quitting the desktop app while it was still starting up could leave a recording tool running in the background if a stream had already begun recording. If the recording services had already begun starting, the app now finishes starting them, stops any recordings cleanly, and only then exits. A second quit request while that is happening no longer cuts it short.
 
 - **Less background work on Linux and macOS**
 
