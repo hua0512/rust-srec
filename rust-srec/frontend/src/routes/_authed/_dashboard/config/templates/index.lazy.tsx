@@ -1,7 +1,8 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { listTemplates, cloneTemplate } from '@/server/functions';
+import { cloneTemplate } from '@/server/functions';
+import { templatesQueryOptions } from '@/api/templates';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -49,14 +50,7 @@ function TemplatesConfigPage() {
   > | null>(null);
   const [cloneName, setCloneName] = useState('');
 
-  const {
-    data: templates,
-    isLoading,
-    error,
-  } = useQuery({
-    queryKey: ['templates'],
-    queryFn: () => listTemplates(),
-  });
+  const { data: templates, isLoading, error } = useQuery(templatesQueryOptions);
 
   const cloneMutation = useMutation({
     mutationFn: cloneTemplate,

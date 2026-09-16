@@ -13,10 +13,10 @@ import {
   checkStreamer,
   updateStreamer,
   listPlatformConfigs,
-  listTemplates,
   batchUpdateStreamers,
 } from '@/server/functions';
 import type { BatchStreamerAction } from '@/api/schemas';
+import { templatesQueryOptions } from '@/api/templates';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -196,11 +196,7 @@ function StreamersPage() {
     staleTime: 60000,
   });
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ['templates'],
-    queryFn: () => listTemplates(),
-    staleTime: 60000,
-  });
+  const { data: templates = [] } = useQuery(templatesQueryOptions);
 
   // Fetch Streamers
   const {

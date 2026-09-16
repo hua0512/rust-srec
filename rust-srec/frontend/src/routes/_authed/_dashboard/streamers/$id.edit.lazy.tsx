@@ -60,7 +60,6 @@ function EditStreamerPage() {
   const { data: filters, isLoading: isFiltersLoading } = useQuery({
     queryKey: ['streamers', id, 'filters'],
     queryFn: () => listFilters({ data: id }),
-    initialData: [],
   });
 
   const downloads = useDownloadStore(
