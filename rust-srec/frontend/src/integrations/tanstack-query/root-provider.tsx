@@ -14,6 +14,11 @@ import { redirectToChangePasswordOnError } from '@/lib/password-change-redirect'
  * unaffected: `refetchInterval` fires regardless of staleness, and anything
  * that must be current after a write goes through `invalidateQueries`, which
  * marks entries stale whatever this value is.
+ *
+ * This is also why `initialData` must carry real data rather than an empty
+ * placeholder: seeded data counts as freshly fetched, so under this window the
+ * query skips its fetch on mount and shows the placeholder until some other
+ * trigger refetches it. Default the result at the destructure instead.
  */
 const DEFAULT_STALE_TIME_MS = 10_000;
 

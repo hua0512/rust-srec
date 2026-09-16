@@ -26,11 +26,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import {
-  extractMetadata,
-  listEngines,
-  listTemplates,
-} from '@/server/functions';
+import { extractMetadata, listEngines } from '@/server/functions';
+import { templatesQueryOptions } from '@/api/templates';
 import { useStreamerForm, StreamerPayload } from '@/hooks/use-streamer-form';
 import { getStreamer } from '@/server/functions';
 
@@ -86,11 +83,7 @@ export function StreamerEditor({
     onInvalid,
   } = useStreamerForm({ streamer });
 
-  const { data: templates } = useQuery({
-    queryKey: ['templates'],
-    queryFn: () => listTemplates(),
-    initialData: [],
-  });
+  const { data: templates = [] } = useQuery(templatesQueryOptions);
   const { data: engines } = useQuery({
     queryKey: ['engines'],
     queryFn: () => listEngines(),
