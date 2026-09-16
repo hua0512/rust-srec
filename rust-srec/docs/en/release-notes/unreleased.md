@@ -457,6 +457,10 @@
 
   Deleting a pipeline that was still running removed it from the list but left its job running in the background — the transcode or upload carried on, and the recording it belonged to kept waiting for a pipeline that no longer existed. Deleting now cancels the work first.
 
+- **A job that hits its time limit says what it was doing**
+
+  When a transcode or an upload ran past the time limit for a job, the only thing reported — on the job and in the notification — was "Job timed out". The message now also gives the limit that was passed, which step of the workflow and which tool was stuck, the file being worked on, and how far the transfer had got the last time it reported anything — including how long ago that was. A stalled upload can be told apart from a merely slow one straight from the notification.
+
 - **Queued jobs run oldest-first**
 
   With more work queued than the workers could keep up with, the most recently added job was always picked next, so an older job could be passed over indefinitely while newer recordings kept jumping ahead of it. Jobs of equal priority now run in the order they were queued; a higher priority still goes first.

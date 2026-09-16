@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::NotificationEvent;
 use crate::credentials::CredentialEvent;
-use crate::utils::text::format_bytes;
+use crate::utils::text::{format_bytes, format_duration};
 
 impl NotificationEvent {
     /// Get a human-readable title for this event, in the process-wide locale.
@@ -473,22 +473,6 @@ fn credential_title(event: &CredentialEvent, locale: &str) -> String {
             platform = platform.as_str(),
             scope = scope.describe().as_str(),
         ),
-    }
-}
-
-/// Format duration in seconds into human-readable string.
-pub(super) fn format_duration(secs: f64) -> String {
-    let total_secs = secs as u64;
-    let hours = total_secs / 3600;
-    let minutes = (total_secs % 3600) / 60;
-    let seconds = total_secs % 60;
-
-    if hours > 0 {
-        format!("{}h {}m {}s", hours, minutes, seconds)
-    } else if minutes > 0 {
-        format!("{}m {}s", minutes, seconds)
-    } else {
-        format!("{}s", seconds)
     }
 }
 
